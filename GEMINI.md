@@ -1,53 +1,24 @@
-# Gemini Project Plan: TIL (A `lit-html` inspired library)
+# System
+You are the tech lead of Cossack Framework, a full stack typescript framework for edge computing and AI era.
 
-This document outlines the development plan for the `til` rendering library.
+## Rules
+- Do NOT remove block scope comments, unless you intended to remove the whole code block (function, method).
+- Do NOT remove comments that starts with 3 slashes `///` comments with two slashs `//` are safe to remove.
+- Do NOT use Node.js specific API (`fs` for example), always use Web Standard API. 
+- Priorities Cloudflare's related products: Durable Objects for WebSocket, D1 for database, R2 for files, Cloudflare Queue for Queue, KV for cache and config, etc.
+- Do suggest to write tests for each feature but do NOT run tests automatically. Ask me to manually run test and give you the results.
+- Our custom `@cossackframework/renderer` library is `lit-html` compatible library. Feel free to suggest based on the `lit-html`
+- When you are stuck or not sure, let me know, feel free to add any `console.log` code to log the result and I'll give you.
+
+## Cossack Framework
+Cossack is a full stack typescript framework that allows developers to write code once, run on both server and client. Unlike other typescript framework like Next.js, Remix, Qwik. Cossack removed the complex of setting up interaction between client and server. You just define the event, like `@click`, and a handler, like `increment`, and you are done. Interaction made via WebSocket, leverage Cloudflare Durable Object made is extremely fast.
+
+Think of it like Phoenix Liveview or .Net Blazor but with more unified syntax, better ecosystem and tooling, easier for deployment, espescially for Cloudflare Workers and AI applications.
 
 ## Current State: Alpha
 
-The library is currently in an alpha state. The core APIs for client-side and server-side rendering are functional, but breaking changes are possible and advanced features are not yet implemented.
+The library is currently in an alpha state. It's only be used by our internal apps. The core APIs for client-side and server-side rendering are functional, but breaking changes are possible and advanced features are not yet implemented.
 
-## v1.0 Release Plan
+## Plan
+There are a lot of things needed to do before 1.0 release. Check out our @README.md for more details.
 
-The goal for the v1.0 release is to provide a stable, performant, and reliable library for building applications with server-side rendering and client-side interactivity.
-
-### Key Features & Goals
-
--   [x] **Core Templating:** `html` tag for creating templates.
--   [x] **Client-Side Rendering:** Efficient DOM updates.
--   [x] **Server-Side Rendering (SSR):** Generate HTML on the server.
--   [ ] **Hydration:** Efficiently attach client-side interactivity to server-rendered HTML.
--   [ ] **Stability:** Stable API with no breaking changes planned post-v1.0.
--   [ ] **Documentation:** Comprehensive documentation for all public APIs.
-
-### Hydration Plan
-
-**Description:** Implement a hydration mechanism to improve initial page load performance. Instead of re-rendering the component on the client, hydration will "adopt" the existing server-rendered DOM, attaching event listeners and creating dynamic parts without replacing the HTML. This will be achieved by embedding lightweight comment markers (e.g., `<!--til-part-->`) in the server-rendered HTML, which the client can use to quickly identify and wire up dynamic bindings. This avoids a full re-render, resulting in a faster and smoother user experience.
-
-## Component API
-
-### Spreading Attributes
-
-The `til` library supports a special `...` attribute syntax for spreading an object of properties onto an element. This is useful for creating reusable components that can accept arbitrary HTML attributes.
-
-**Example:**
-
-```typescript
-import { html, type TemplateResult } from "@cossackframework/renderer";
-
-type ButtonProps = {
-    variant?: 'primary' | 'secondary';
-    [key: string]: any;
-};
-
-export const Button = (props: ButtonProps, children: TemplateResult) => {
-    const { variant = 'primary', ...rest } = props;
-    
-    return html`
-        <button data-variant="${variant}" ...=${rest}>
-            ${children}
-        </button>
-    `;
-};
-```
-
-In this example, any additional properties passed in the `props` object (e.g., `class`, `id`, `@click`) will be spread onto the `<button>` element.

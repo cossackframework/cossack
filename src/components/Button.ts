@@ -7,7 +7,7 @@ type ButtonProps = {
 
 export const Button = (props: ButtonProps, children: TemplateResult) => {
     const { variant = 'primary', ...rest } = props
-    
+
     return html`
         <button data-variant="${variant}" ...=${rest}>
             ${children}
