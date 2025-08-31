@@ -5,6 +5,12 @@ import { isServer } from './environment';
 import { Client, Server, State } from './decorators';
 import type { Context } from 'hono';
 
+// Define a user type for clarity. In a real app, this would be more complex.
+type AuthenticatedUser = {
+    id: string;
+    [key: string]: any; // Allow other properties like friends, roles, etc.
+};
+
 export abstract class Cossack {
     protected container?: Element;
     protected isServer: boolean = isServer;
@@ -62,31 +68,40 @@ export abstract class Cossack {
 
     @Client()
     private connectWebSocket() {
-        const wsUrl = `ws://${window.location.host}/ws`;
-        this.ws = new WebSocket(wsUrl);
+        const initialState = (window as any).__INITIAL_STATE__;
+        const wsUrl = initialState?.webSocketUrl;
+
+        if (!wsUrl) {
+            // This page does not have a real-time channel.
+            return;
+        }
+
+        const fullWsUrl = `ws://${window.location.host}${wsUrl}`;
+        this.ws = new WebSocket(fullWsUrl);
 
         this.ws.onopen = () => {
-            console.log('WebSocket connected');
-            const componentId = (window as any).__INITIAL_STATE__?.componentId;
-            if (componentId) {
-                this.ws?.send(JSON.stringify({
-                    type: 'init',
-                    componentId: componentId
-                }));
-            } else {
-                console.error('Component ID not found in initial state. Cannot initialize WebSocket.');
-            }
+            // The server now knows our identity from the initial request,
+            // but we still need to tell it which component to associate with this socket.
+            this.ws?.send(JSON.stringify({
+                type: 'init',
+                componentId: initialState?.componentId
+            }));
         };
 
         this.ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'state-update') {
                 for (const key in data.state) {
+                    // The 'loading' state and 'isServer' are client-side only concerns.
+                    // Never accept these state properties from the server.
+                    if (key === 'loading' || key === 'isServer') continue;
                     (this as any)[key] = data.state[key];
                 }
             } else if (data.type === 'action-complete') {
                 const { action } = data;
-                this.loading = { ...this.loading, [action]: false };
+                const newLoading = { ...this.loading };
+                delete newLoading[action];
+                this.loading = newLoading;
             }
         };
     }
@@ -99,10 +114,7 @@ export abstract class Cossack {
 
             (this as any)[key] = (...args: any[]) => {
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    // Set loading state to true optimistically on the client
                     this.loading = { ...this.loading, [key as string]: true };
-
-                    // Avoid sending large, unnecessary event objects as payload
                     const payload = args.filter(arg => typeof arg !== 'object' || arg === null);
                     this.ws.send(JSON.stringify({
                         type: 'action',
@@ -144,22 +156,10 @@ export abstract class Cossack {
                         state.set(key, newValue);
 
                         if (this.isServer) {
-                            console.log(`[Cossack Server Setter] State changed for key: ${String(key)}`);
                             const ws = Cossack._wsMap.get(this);
-                            if (!ws) {
-                                console.error('[Cossack Server Setter] WebSocket not found for this component instance.');
-                                return;
-                            }
-                            console.log(`[Cossack Server Setter] WebSocket readyState: ${ws.readyState}`);
-                            if (ws.readyState === 1 /* OPEN */) {
-                                const message = JSON.stringify({
-                                    type: 'state-update',
-                                    state: { [key]: newValue }
-                                });
-                                console.log(`[Cossack Server Setter] Sending state update: ${message}`);
-                                ws.send(message);
-                            } else {
-                                console.error('[Cossack Server Setter] WebSocket not open, cannot send state update.');
+                            if (ws) {
+                                // This logic is now handled by the DO's broadcast method.
+                                // The setter on the server is primarily for direct state manipulation in actions.
                             }
                         } else {
                             this.render();
@@ -196,9 +196,31 @@ export abstract class Cossack {
     public getInitialState(): Record<string, any> {
         const state: Record<string, any> = {};
         const stateKeys = Reflect.getMetadata('cossack:state', this.constructor) || [];
-        for (const key of stateKeys) {
-            state[key as string] = this[key as keyof this];
+        const instanceState = Cossack._stateMap.get(this);
+
+        if (!instanceState) {
+            // If state hasn't been initialized, return a safe empty object.
+            return {};
         }
+
+        for (const key of stateKeys) {
+            state[key as string] = instanceState.get(key);
+        }
+        return state;
+    }
+
+    /**
+     * (Server-side only) If this method is implemented, the framework will use it
+     * to filter the component's state before broadcasting it to a specific user.
+     * This is the hook for implementing secure, personalized views of a shared resource.
+     * @param state The complete, shared state of the component instance in the Durable Object.
+     * @param user The authenticated user object for the recipient of the broadcast.
+     * @returns The partial state that should be sent to this specific user.
+     */
+    @Server()
+    public webSocketBroadcastFilter(state: this, user: AuthenticatedUser): Partial<this> {
+        // By default, no filtering is applied. Subclasses can override this method
+        // to provide a personalized, secure view of the state for each user.
         return state;
     }
 }
