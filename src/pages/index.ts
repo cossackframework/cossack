@@ -16,6 +16,7 @@ const loggingMiddleware: MiddlewareHandler = async (c, next) => {
 
 @Page({
     middlewares: [loggingMiddleware],
+    channel: true,
 })
 export class Greeting extends Cossack {
     @State() private count: number = 0;
@@ -35,12 +36,12 @@ export class Greeting extends Cossack {
     }
 
     @Server()
-    private increment = async () => {
+    private increment = async (user: any) => { // Actions now receive the user
          // Simulate a data fetch
         await new Promise(resolve => setTimeout(resolve, 100));
         
         this.count++;
-        console.log('Incrementing count on server...', this.count);
+        console.log(`Incrementing count on server by user ${user.id}...`, this.count);
     };
 
     @Server()

@@ -7,6 +7,7 @@ export type Middleware = MiddlewareHandler;
 
 export interface PageOptions {
   middlewares?: Middleware[];
+  channel?: boolean | string;
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
