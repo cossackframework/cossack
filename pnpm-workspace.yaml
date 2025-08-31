@@ -1,0 +1,3 @@
+overrides:
+  '@cossackframework/renderer': link:../../.local/share/pnpm/global/5/node_modules/@cossackframework/renderer
+  renderer: link:../../.local/share/pnpm/global/5/node_modules/@cossackframework/renderer

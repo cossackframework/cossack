@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cossack",
+  "compatibility_date": "2025-08-03",
+  "main": "dist/worker/index.js",
+  "durable_objects": {
+    "bindings": [
+      { "name": "COSSACK_OBJECT", "class_name": "CossackDurableObject" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_classes": ["CossackDurableObject"] }
+  ],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  }
+}
