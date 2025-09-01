@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import type { MiddlewareHandler } from 'hono';
 import { isServer } from './environment';
+import { CossackOptions } from './cossack';
 
 export type Middleware = MiddlewareHandler;
 
@@ -78,5 +79,17 @@ export function Computed(): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     Reflect.defineMetadata('computed', true, target, propertyKey);
     return descriptor;
+  };
+}
+
+/**
+ * (Optional) Creates typed versions of the @State and @Server decorators
+ * for a specific component, providing compile-time safety and autocompletion
+ * for channel names.
+ */
+export function createTypedDecorators<T extends CossackOptions>() {
+  return {
+    State: (options: StateOptions & { channel?: T['Channels'] | 'global' } = {}) => State(options),
+    Server: (options: ServerOptions & { channel?: T['Channels'] | 'global' } = {}) => Server(options),
   };
 }

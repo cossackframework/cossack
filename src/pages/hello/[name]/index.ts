@@ -2,9 +2,9 @@ import type { MiddlewareHandler } from 'hono';
 import { Button } from '@/components/Button';
 import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack } from '@/shared/cossack';
+import { Cossack, CossackOptions } from '@/shared/cossack';
 import { isServer } from '@/shared/environment';
-import { Page, Server, State, Computed } from '@/shared/decorators';
+import { Page, Server, State, createTypedDecorators } from '@/shared/decorators';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
@@ -16,52 +16,40 @@ const loggingMiddleware: MiddlewareHandler = async (c, next) => {
 
 @Page({
     middlewares: [loggingMiddleware],
-    channels: [
-        'feeds',
-        'notifications',
-    ],
+    channels: ['feeds', 'notifications'],
 })
 export class Greeting extends Cossack {
-    // State for the 'feeds' channel
+    // 3. Use the typed decorators. `channel` now autocompletes and is type-checked.
     @State({ channel: 'feeds' })
     private feedCount: number = 0;
 
-    // State for the 'notifications' channel
     @State({ channel: 'notifications' })
     private notificationCount: number = 0;
 
-    // State for the default 'global' channel
-    @State()
-    private name: string = 'World';
+    // @State({ channel: 'invalid-channel' }) // <-- This would now cause a compile-time TypeScript error.
+    // private invalidState: number = 0;
 
-    @Server() // Runs on the 'global' channel by default
+    @State() // 'global' is always a valid channel.
+    private greeting: string = '';
+
+    @Server()
     async init() {
-        // Simulate a data fetch
-        await new Promise(resolve => setTimeout(resolve, 50));
-        this.name = 'Cossack';
+        // 4. Access route parameters from `this.c`.
+        this.greeting = `Hello ${this.c?.req.param('name')}!`;
         this.feedCount = 1;
         this.notificationCount = 5;
     }
 
-    @Computed()
-    private get message(): string {
-        return `Hello ${this.name}!`;
-    }
-
-    // Action associated with the 'feeds' channel
     @Server({ channel: 'feeds' })
     private incrementFeed = async (user: any) => {
-        await new Promise(resolve => setTimeout(resolve, 100));
         this.feedCount++;
         console.log(`User ${user.id} incremented feeds to ${this.feedCount}`);
     };
 
-    // Action associated with the 'notifications' channel
     @Server({ channel: 'notifications' })
     private incrementNotifications = async (user: any) => {
-        await new Promise(resolve => setTimeout(resolve, 100));
         this.notificationCount++;
-         console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
+        console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
     };
 
     protected template(): TemplateResult {
@@ -72,7 +60,7 @@ export class Greeting extends Cossack {
             dir: 'ltr',
         }, html`
             <div>
-                <h1>${this.message}</h1>
+                <h1>${this.greeting}</h1>
                 
                 <div class="counters" style="margin: 20px 0;">
                     <p>Feeds Count: <strong>${this.feedCount}</strong></p>

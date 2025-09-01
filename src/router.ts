@@ -40,21 +40,20 @@ app.get('/ws/:componentId/:channel', async (c) => {
         return new Response('Unauthorized', { status: 401 });
     }
 
-    const { componentId, channel } = c.req.param();
+    const { componentId } = c.req.param();
+    const params = c.req.query();
     
-    // The DO's name is based on the component and its route params to ensure unique instances per page.
-    // This logic should mirror how the `doName` is created in the HTTP route.
-    // For simplicity, we'll assume a convention here. A more robust solution might pass the exact
-    // DO name to the client in the initial state.
-    const doName = componentId; // Simplified for this example
+    // This logic should be improved to be more robust, but for now,
+    // the componentId is sufficient to get a unique DO instance per page.
+    const doName = componentId;
     const id = c.env.COSSACK_OBJECT.idFromName(doName);
     const stub = c.env.COSSACK_OBJECT.get(id);
 
-    // Forward the request to the Durable Object, including the channel in the URL.
     const request = new Request(c.req.raw);
     request.headers.set('X-User-ID', user.id);
     request.headers.set('X-Component-Name', componentId);
     request.headers.set('X-User-Data', JSON.stringify(user));
+    request.headers.set('X-Component-Params', JSON.stringify(params)); // Forward params
 
     return await stub.fetch(request);
 });
@@ -77,7 +76,7 @@ for (const path in eagerPages) {
     const finalHandler = async (c: Context) => {
         const componentInstance = new PageComponent();
         componentInstance.setContext(c);
-        await componentInstance.bootstrap({ params: c.req.param() });
+        await componentInstance.bootstrap();
         const initialHtml = componentInstance.getInitialHtml();
         const initialState = componentInstance.getInitialState();
         

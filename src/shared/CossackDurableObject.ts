@@ -33,13 +33,16 @@ export class CossackDurableObject {
         const userId = request.headers.get('X-User-ID');
         const componentName = request.headers.get('X-Component-Name');
         const userData = request.headers.get('X-User-Data');
+        const paramsData = request.headers.get('X-Component-Params');
 
         if (!userId || !componentName) {
             return new Response('Required headers are missing', { status: 400 });
         }
 
         const user: AuthenticatedUser = userData ? JSON.parse(userData) : { id: userId };
+        const params: Record<string, string> = paramsData ? JSON.parse(paramsData) : {};
 
+        // Initialize the component instance on the first connection of a session.
         if (!this.componentInstance) {
             this.componentName = componentName;
             const componentRegistry = await this.getComponentRegistry();
@@ -48,7 +51,8 @@ export class CossackDurableObject {
                 this.componentInstance = new PageComponent();
                 // Pass the DO instance to the component for broadcasting
                 (this.componentInstance as any)._cossack_DO_instance = this;
-                await this.componentInstance.bootstrap({});
+                // Bootstrap with the params from the original request to ensure state consistency
+                await this.componentInstance.bootstrap({ params });
             } else {
                 return new Response(`Component ${this.componentName} not found`, { status: 500 });
             }
