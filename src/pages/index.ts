@@ -4,7 +4,7 @@ import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack } from '@/shared/cossack';
 import { isServer } from '@/shared/environment';
-import { Client, Page, Server, State, Computed } from '@/shared/decorators';
+import { Page, Server, State, Computed } from '@/shared/decorators';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
@@ -16,52 +16,80 @@ const loggingMiddleware: MiddlewareHandler = async (c, next) => {
 
 @Page({
     middlewares: [loggingMiddleware],
-    channel: true,
+    channels: [
+        'feeds',
+        'notifications',
+    ],
 })
 export class Greeting extends Cossack {
-    @State() private count: number = 0;
-    @State() private name: string = 'World';
+    // State for the 'feeds' channel
+    @State({ channel: 'feeds' })
+    private feedCount: number = 0;
 
-    @Server()
+    // State for the 'notifications' channel
+    @State({ channel: 'notifications' })
+    private notificationCount: number = 0;
+
+    // State for the default 'global' channel
+    @State()
+    private name: string = 'World';
+
+    @Server() // Runs on the 'global' channel by default
     async init() {
         // Simulate a data fetch
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 50));
         this.name = 'Cossack';
-        this.count = 1;
+        this.feedCount = 1;
+        this.notificationCount = 5;
     }
 
     @Computed()
     private get message(): string {
-        return `Hello ${this.name} ${this.count}`;
+        return `Hello ${this.name}!`;
     }
 
-    @Server()
-    private increment = async (user: any) => { // Actions now receive the user
-         // Simulate a data fetch
+    // Action associated with the 'feeds' channel
+    @Server({ channel: 'feeds' })
+    private incrementFeed = async (user: any) => {
         await new Promise(resolve => setTimeout(resolve, 100));
-        
-        this.count++;
-        console.log(`Incrementing count on server by user ${user.id}...`, this.count);
+        this.feedCount++;
+        console.log(`User ${user.id} incremented feeds to ${this.feedCount}`);
     };
 
-    @Server()
-    private serverSideLog() {
-        console.log('This message should only appear on the server.');
-    }
+    // Action associated with the 'notifications' channel
+    @Server({ channel: 'notifications' })
+    private incrementNotifications = async (user: any) => {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        this.notificationCount++;
+         console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
+    };
 
     protected template(): TemplateResult {
-        const isLoading = this.loading['increment'];
+        const isFeedLoading = this.loading['incrementFeed'];
+        const isNotificationLoading = this.loading['incrementNotifications'];
+
         return Layout({
             dir: 'ltr',
         }, html`
             <div>
-                ${this.message}
+                <h1>${this.message}</h1>
                 
-                ${Button({
-                    '@click': this.increment,
-                    'disabled': isLoading || this.count >= 5 ? 'disabled' : undefined,
-                    'type': 'button',
-                }, html`${isLoading ? 'Incrementing...' : 'Increment'}`)}
+                <div class="counters" style="margin: 20px 0;">
+                    <p>Feeds Count: <strong>${this.feedCount}</strong></p>
+                    <p>Notifications Count: <strong>${this.notificationCount}</strong></p>
+                </div>
+
+                <div class="buttons" style="display: flex; gap: 10px;">
+                    ${Button({                    
+                        '@click': this.incrementFeed,
+                        'disabled': isFeedLoading,
+                    }, html`${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}`)}
+                    
+                    ${Button({                    
+                        '@click': this.incrementNotifications,
+                        'disabled': isNotificationLoading,
+                    }, html`${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}`)}
+                </div>
             </div>
         `);
     }

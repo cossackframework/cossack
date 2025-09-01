@@ -1,13 +1,12 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
+import 'reflect-metadata';
 
-// Define a user type for clarity. In a real app, this would be more complex.
 type AuthenticatedUser = {
     id: string;
-    [key: string]: any; // Allow other properties like friends, roles, etc.
+    [key: string]: any;
 };
 
-// Extend the WebSocket interface to attach our user and component instance.
 interface CossackSocket extends WebSocket {
     user?: AuthenticatedUser;
 }
@@ -16,19 +15,21 @@ export class CossackDurableObject {
     state: DurableObjectState;
     componentInstance?: Cossack;
     componentName?: string;
+    private channels: Map<string, Set<CossackSocket>> = new Map();
+    private socketToChannels: Map<CossackSocket, string> = new Map();
 
     constructor(state: DurableObjectState) {
         this.state = state;
     }
 
     async fetch(request: Request) {
-        // If there are no connected clients, this is a new session.
-        // We must reset the component instance to ensure a fresh state.
+        const url = new URL(request.url);
+        const channel = url.pathname.split('/').pop() || 'global';
+
         if (this.state.getWebSockets().length === 0) {
             this.componentInstance = undefined;
         }
 
-        // The worker is responsible for authentication and passes user info in headers.
         const userId = request.headers.get('X-User-ID');
         const componentName = request.headers.get('X-Component-Name');
         const userData = request.headers.get('X-User-Data');
@@ -39,14 +40,14 @@ export class CossackDurableObject {
 
         const user: AuthenticatedUser = userData ? JSON.parse(userData) : { id: userId };
 
-        // Initialize the component instance on the first connection of a session.
         if (!this.componentInstance) {
             this.componentName = componentName;
             const componentRegistry = await this.getComponentRegistry();
             const PageComponent = componentRegistry.get(this.componentName);
             if (PageComponent) {
                 this.componentInstance = new PageComponent();
-                // Bootstrap the component on the server to initialize its state.
+                // Pass the DO instance to the component for broadcasting
+                (this.componentInstance as any)._cossack_DO_instance = this;
                 await this.componentInstance.bootstrap({});
             } else {
                 return new Response(`Component ${this.componentName} not found`, { status: 500 });
@@ -54,18 +55,14 @@ export class CossackDurableObject {
         }
 
         const { 0: client, 1: server } = new WebSocketPair();
-        
-        // Tag the WebSocket with the user object for secure, server-side filtering.
-        this.state.acceptWebSocket(server, [JSON.stringify(user)]);
+        const cossackSocket = server as CossackSocket;
+        cossackSocket.user = user;
 
-        // Immediately send the current state to the newly connected client.
-        // This ensures they don't see a stale view from the initial SSR.
+        this.state.acceptWebSocket(cossackSocket);
+        this.addSocketToChannel(cossackSocket, channel);
+
         if (this.componentInstance) {
             let stateToSend = this.componentInstance.getInitialState();
-            // We must still respect the security filter for this initial payload.
-            if (typeof this.componentInstance.webSocketBroadcastFilter === 'function') {
-                stateToSend = this.componentInstance.webSocketBroadcastFilter(this.componentInstance, user);
-            }
             server.send(JSON.stringify({ type: 'state-update', state: stateToSend }));
         }
 
@@ -73,6 +70,25 @@ export class CossackDurableObject {
             status: 101,
             webSocket: client,
         });
+    }
+
+    private addSocketToChannel(ws: CossackSocket, channel: string) {
+        if (!this.channels.has(channel)) {
+            this.channels.set(channel, new Set());
+        }
+        this.channels.get(channel)!.add(ws);
+        this.socketToChannels.set(ws, channel);
+    }
+
+    private removeSocket(ws: CossackSocket) {
+        const channel = this.socketToChannels.get(ws);
+        if (channel) {
+            this.channels.get(channel)?.delete(ws);
+            if (this.channels.get(channel)?.size === 0) {
+                this.channels.delete(channel);
+            }
+            this.socketToChannels.delete(ws);
+        }
     }
 
     async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
@@ -88,41 +104,40 @@ export class CossackDurableObject {
         return registry;
     }
 
-    broadcast(initiatorWs?: CossackSocket) {
+    public broadcast(changedProperties: string[]) {
         if (!this.componentInstance) return;
 
-        const sharedState = this.componentInstance.getInitialState();
-        const sockets = this.state.getWebSockets();
+        const stateProperties = Reflect.getMetadata('cossack:state', this.componentInstance.constructor) || {};
+        const channelsToUpdate = new Set<string>();
 
-        for (const ws of sockets) {
-            const cossackSocket = ws as CossackSocket;
-            const [userJson] = this.state.getTags(cossackSocket);
-            const user: AuthenticatedUser = JSON.parse(userJson);
+        for (const prop of changedProperties) {
+            const channel = stateProperties[prop]?.channel || 'global';
+            channelsToUpdate.add(channel);
+        }
 
-            let stateToSend = sharedState;
+        const fullState = this.componentInstance.getInitialState();
 
-            // If the component has a filter method, use it to create a personalized view.
-            if (typeof this.componentInstance.webSocketBroadcastFilter === 'function') {
-                stateToSend = this.componentInstance.webSocketBroadcastFilter(this.componentInstance, user);
+        for (const channel of channelsToUpdate) {
+            const sockets = this.channels.get(channel);
+            if (sockets) {
+                for (const ws of sockets) {
+                    // In a real app, you might filter stateToSend based on user permissions
+                    ws.send(JSON.stringify({ type: 'state-update', state: fullState }));
+                }
             }
-
-            cossackSocket.send(JSON.stringify({ type: 'state-update', state: stateToSend }));
         }
     }
 
     async webSocketMessage(ws: CossackSocket, message: string | ArrayBuffer) {
         const data = JSON.parse(message as string);
-        const [userJson] = this.state.getTags(ws);
-        const user: AuthenticatedUser = JSON.parse(userJson);
+        const user = ws.user!;
 
         if (this.componentInstance && data.type === 'action') {
             const { action, payload } = data;
             if (typeof (this.componentInstance as any)[action] === 'function') {
                 try {
-                    // Pass the authenticated user to the action for context and security.
                     await (this.componentInstance as any)[action](user, ...(payload || []));
-                    // After the action, broadcast the new state to all clients.
-                    this.broadcast(ws);
+                    // The broadcast is now handled by the component's state proxy
                 } finally {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'action-complete', action: action }));
@@ -133,9 +148,7 @@ export class CossackDurableObject {
     }
 
     async webSocketClose(ws: CossackSocket, code: number, reason: string, wasClean: boolean) {
-        // After a socket closes, check if any other clients are connected.
-        // If not, the session is over, and we should destroy the component instance
-        // to ensure the next user gets a fresh state.
+        this.removeSocket(ws);
         if (this.state.getWebSockets().length === 0) {
             this.componentInstance = undefined;
         }
@@ -143,5 +156,6 @@ export class CossackDurableObject {
 
     async webSocketError(ws: CossackSocket, error: any) {
         console.error('WebSocket error in Durable Object:', error);
+        this.removeSocket(ws);
     }
 }

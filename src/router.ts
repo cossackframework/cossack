@@ -7,16 +7,13 @@ import { Cossack } from './shared/cossack';
 // @ts-expect-error - this is a JSON import from the build output
 import manifest from '~/.vite/manifest.json';
 
-// Define a user type for clarity. In a real app, this would be more complex.
 type AuthenticatedUser = {
     id: string;
     [key: string]: any;
 };
 
-// In a real app, this would involve validating a session cookie or JWT.
-// For this example, we'll just create a mock user.
 const getAuthenticatedUser = async (c: Context): Promise<AuthenticatedUser> => {
-    return { id: 'user-123', name: 'Alice', friends: ['user-456'] };
+    return { id: 'user-123', name: 'Alice' };
 };
 
 interface Env {
@@ -36,47 +33,32 @@ for (const path in eagerPages) {
     }
 }
 
-// Dynamically create WebSocket routes based on @Page decorators
-for (const [name, PageComponent] of componentRegistry.entries()) {
-    const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-    if (!pageOptions?.channel) continue;
+// A single, generic route for all WebSocket connections
+app.get('/ws/:componentId/:channel', async (c) => {
+    const user = await getAuthenticatedUser(c);
+    if (!user) {
+        return new Response('Unauthorized', { status: 401 });
+    }
 
-    // This loop runs once per component that has a `channel` defined.
-    // It creates a generic route that will handle all instances of that channel.
-    const channelPattern = typeof pageOptions.channel === 'string' ? pageOptions.channel : '*';
-    const routePath = `/ws/${channelPattern}`;
+    const { componentId, channel } = c.req.param();
+    
+    // The DO's name is based on the component and its route params to ensure unique instances per page.
+    // This logic should mirror how the `doName` is created in the HTTP route.
+    // For simplicity, we'll assume a convention here. A more robust solution might pass the exact
+    // DO name to the client in the initial state.
+    const doName = componentId; // Simplified for this example
+    const id = c.env.COSSACK_OBJECT.idFromName(doName);
+    const stub = c.env.COSSACK_OBJECT.get(id);
 
-    app.get(routePath, async (c) => {
-        const user = await getAuthenticatedUser(c);
-        if (!user) {
-            return new Response('Unauthorized', { status: 401 });
-        }
+    // Forward the request to the Durable Object, including the channel in the URL.
+    const request = new Request(c.req.raw);
+    request.headers.set('X-User-ID', user.id);
+    request.headers.set('X-Component-Name', componentId);
+    request.headers.set('X-User-Data', JSON.stringify(user));
 
-        let channelId: string;
-        if (typeof pageOptions.channel === 'string') {
-            // Configured channel: Replace params like :userId and :currentUser.id
-            channelId = pageOptions.channel;
-            for (const [key, value] of Object.entries(c.req.param())) {
-                channelId = channelId.replace(`:${key}`, String(value));
-            }
-            channelId = channelId.replace(':currentUser.id', user.id);
-        } else {
-            // Convention-based channel: Use the request path and query string
-            const url = new URL(c.req.url);
-            channelId = `${url.pathname.substring(4)}${url.search}`; // remove /ws/
-        }
-        
-        const id = c.env.COSSACK_OBJECT.idFromName(channelId);
-        const stub = c.env.COSSACK_OBJECT.get(id);
+    return await stub.fetch(request);
+});
 
-        const request = new Request(c.req.raw);
-        request.headers.set('X-User-ID', user.id);
-        request.headers.set('X-Component-Name', name);
-        request.headers.set('X-User-Data', JSON.stringify(user));
-
-        return await stub.fetch(request);
-    });
-}
 
 // Build HTTP routes
 for (const path in eagerPages) {
@@ -98,28 +80,15 @@ for (const path in eagerPages) {
         await componentInstance.bootstrap({ params: c.req.param() });
         const initialHtml = componentInstance.getInitialHtml();
         const initialState = componentInstance.getInitialState();
-
-        let webSocketUrl: string | undefined;
-        if (pageOptions?.channel) {
-            const user = await getAuthenticatedUser(c);
-            if (typeof pageOptions.channel === 'string') {
-                webSocketUrl = `/ws/${pageOptions.channel}`;
-                for (const [key, value] of Object.entries(c.req.param())) {
-                    webSocketUrl = webSocketUrl.replace(`:${key}`, value);
-                }
-                webSocketUrl = webSocketUrl.replace(':currentUser.id', user.id);
-            } else {
-                const url = new URL(c.req.url);
-                webSocketUrl = `/ws${url.pathname}${url.search}`;
-            }
-        }
         
+        const channels = pageOptions?.channels || ['global'];
+
         return c.html(renderRoot({ 
             body: initialHtml, 
             initialState: { 
                 ...initialState, 
                 componentId: PageComponent.name,
-                webSocketUrl: webSocketUrl,
+                channels: channels,
             },
             manifest: manifest,
         }));
