@@ -1,6 +1,18 @@
 # Real-Time Functionality with WebSockets
 
-The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components using WebSockets and Cloudflare Durable Objects. The system is designed to be incredibly simple for basic use cases while scaling elegantly to support complex components with multiple, independent real-time data streams.
+The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components. This is achieved by leveraging **Cloudflare Durable Objects** and the modern **Hibernatable WebSockets API**, which offers a highly efficient and robust foundation for stateful applications.
+
+### Powered by Hibernatable WebSockets
+
+Unlike traditional WebSocket servers that require constant memory presence, Cossack's backend is built on a "serverless" model. This means:
+
+-   **Efficiency:** The Durable Object that manages your component's state can be "hibernated" (removed from memory) when it's not actively processing messages.
+-   **Persistence:** Even when hibernated, the WebSocket connections remain open. When a new message arrives, the Cloudflare runtime instantly wakes up the correct Durable Object, preserving its state and ensuring no messages are lost.
+-   **Reliability:** A built-in, low-level heartbeat mechanism (`ping-pong`) is automatically managed by the framework and the Cloudflare runtime, preventing connections from being dropped due to network timeouts.
+
+This architecture allows for thousands of concurrent, stateful connections with minimal resource overhead, making it a perfect fit for modern, real-time web applications.
+
+---
 
 ## Enabling WebSockets & Defining Channels
 
@@ -146,3 +158,54 @@ export class Greeting extends Cossack {
 -   When the "Increment Feeds" button is clicked, the `incrementFeed` action is sent over the `feeds` WebSocket. Only `feedCount` is updated, and the new state is broadcast back only to clients on the `feeds` channel.
 -   The "Increment Notifications" button behaves identically but for the `notifications` state and channel.
 -   If `this.name` were to change, the update would be sent over the `global` channel.
+
+---
+
+### (Optional) Advanced Type Safety
+
+For developers who want to ensure maximum type safety and get editor autocompletion for channel names, Cossack provides an optional "typed decorator factory." This feature guarantees at compile-time that you can only use channel names that you have explicitly defined for the component.
+
+**How It Works:**
+
+1.  **Define an Options Interface:** Create an interface that extends `CossackOptions` and specifies your channel names as a type union.
+2.  **Create Typed Decorators:** Use the `createTypedDecorators` helper function to generate versions of `@State` and `@Server` that are aware of your specific channel types.
+3.  **Extend the Generic `Cossack` Class:** Make your component class extend `Cossack<YourOptionsInterface>`.
+4.  **Use the Typed Decorators:** Use the new, typed decorators in your component.
+
+**Example:**
+
+```typescript
+import { Cossack, CossackOptions } from '@/shared/cossack';
+import { Page, createTypedDecorators } from '@/shared/decorators';
+
+// 1. Define the component's "shape"
+interface GreetingOptions extends CossackOptions {
+  Channels: 'feeds' | 'notifications';
+}
+
+// 2. Create the component-specific, typed decorators
+const { State, Server } = createTypedDecorators<GreetingOptions>();
+
+@Page({
+    channels: ['feeds', 'notifications'],
+})
+// 3. Extend the generic base class
+export class Greeting extends Cossack<GreetingOptions> {
+    
+    // 4. Use the new decorators
+    @State({ channel: 'feeds' }) // OK! Autocompletes 'feeds' | 'notifications' | 'global'
+    private feedCount: number = 0;
+
+    @State({ channel: 'notifications' }) // OK!
+    private notificationCount: number = 0;
+
+    // This would now cause a TypeScript error in your editor!
+    // @State({ channel: 'messages' }) 
+    // private messageCount: number = 0;
+
+    @Server({ channel: 'feeds' })
+    private incrementFeed = async () => { /* ... */ };
+}
+```
+
+This pattern is entirely opt-in but is highly recommended for complex components to prevent typos and ensure long-term maintainability.

@@ -26,8 +26,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     protected container?: Element;
     protected isServer: boolean = isServer;
     
-    // On the server, this is the full Hono Context.
-    // On the client, it's a lightweight object for accessing params.
     protected c!: Context | HydratedContext;
 
     @Client()
@@ -51,7 +49,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         this.container = container;
 
         if (!this.isServer) {
-            // Client-side: Create the hydrated context from the initial state payload.
             const initialState = (window as any).__INITIAL_STATE__;
             const clientParams = initialState?.params || {};
             this.c = {
@@ -60,15 +57,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 }
             };
         } else if (params) {
-            // Server-side (Durable Object): Create a mock context from the passed params.
-            // This path is only taken during WebSocket hydration inside the DO.
             this.c = {
                 req: {
                     param: (key?: string) => key ? params[key] : params
                 }
-            } as any; // Cast to `any` because it's not a full Hono context.
+            } as any;
         }
-        // Server-side (HTTP Render): `this.c` is already set by `setContext`.
 
         this.initializeState();
 
@@ -99,6 +93,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             this.websockets.set(channel, ws);
 
             ws.onmessage = (event) => {
+                if (event.data === 'pong') {
+                    return; // Server heartbeat response, ignore.
+                }
                 const data = JSON.parse(event.data);
                 if (data.type === 'state-update') {
                     for (const key in data.state) {
@@ -112,6 +109,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     this.loading = newLoading;
                 }
             };
+
+            setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('ping');
+                }
+            }, 25000);
         }
     }
 
