@@ -39,38 +39,33 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
 
-    public setContext(c: Context) {
-        if (this.isServer) {
-            this.c = c;
-        }
-    }
-
-    public async bootstrap({ container, params }: { container?: Element, params?: Record<string, string> } = {}) {
+    public async bootstrap({ container, initialState, context }: { container?: Element, initialState?: any, context?: Context | HydratedContext } = {}) {
         this.container = container;
 
-        if (!this.isServer) {
-            const initialState = (window as any).__INITIAL_STATE__;
-            const clientParams = initialState?.params || {};
+        if (this.isServer) {
+            if (!context) {
+                throw new Error('[Cossack] Context must be provided during bootstrap on the server.');
+            }
+            this.c = context;
+        } else {
+            const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
+            const clientParams = clientInitialState?.params || {};
             this.c = {
                 req: {
                     param: (key?: string) => key ? clientParams[key] : clientParams
                 }
             };
-        } else if (params) {
-            this.c = {
-                req: {
-                    param: (key?: string) => key ? params[key] : params
-                }
-            } as any;
         }
 
-        this.initializeState();
+        this.initializeState(initialState);
 
         if (this.isServer) {
+            this.proxyClientMethods();
             await this.init();
         } else {
+            const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
             this.connectWebSocket();
-            this.proxyServerMethods();
+            this.proxyServerMethods(clientInitialState?.serverMethods || []);
         }
 
         if (this.container && !this.isServer) {
@@ -107,6 +102,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     const newLoading = { ...this.loading };
                     delete newLoading[action];
                     this.loading = newLoading;
+                } else if (data.type === 'client-action') {
+                    const { action, payload } = data;
+                    const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
+                    if (clientMethods[action] && typeof (this as any)[action] === 'function') {
+                        (this as any)[action](...payload);
+                    } else {
+                        console.warn(`[Cossack] Server tried to call un-callable client method '${action}'.`);
+                    }
                 }
             };
 
@@ -119,44 +122,42 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     @Client()
-    private proxyServerMethods() {
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-        for (const key in serverMethods) {
-            if (typeof (this as any)[key] !== 'function') continue;
-
-            const { channel } = serverMethods[key];
-
-            (this as any)[key] = (...args: any[]) => {
+    private proxyServerMethods(serverMethods: { name: string, channel: string }[]) {
+        for (const method of serverMethods) {
+            const { name, channel } = method;
+            // We don't check for function existence anymore, we just overwrite it.
+            // This allows for the client-side method to be a placeholder.
+            (this as any)[name] = (...args: any[]) => {
                 const ws = this.websockets.get(channel);
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    this.loading = { ...this.loading, [key as string]: true };
+                    this.loading = { ...this.loading, [name]: true };
                     const payload = args.filter(arg => typeof arg !== 'object' || arg === null);
                     ws.send(JSON.stringify({
                         type: 'action',
-                        action: key,
+                        action: name,
                         payload: payload,
                     }));
                 } else {
-                    console.error(`WebSocket for channel '${channel}' not connected. Cannot call server method '${String(key)}'.`);
+                    console.error(`WebSocket for channel '${channel}' not connected. Cannot call server method '${name}'.`);
                 }
             };
         }
     }
 
-    private initializeState() {
+    private initializeState(initialState?: any) {
         if (this.isServer) {
             this.validateChannels();
         }
 
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const stateKeys = Object.keys(stateProperties);
-        const initialState = !this.isServer ? (window as any).__INITIAL_STATE__ : {};
+        const clientInitialState = !this.isServer ? (initialState || (window as any).__INITIAL_STATE__) : {};
 
         const privateState = new Map<string, any>();
 
         for (const key of stateKeys) {
-            const initialValue = initialState[key] !== undefined
-                ? initialState[key]
+            const initialValue = clientInitialState[key] !== undefined
+                ? clientInitialState[key]
                 : (this as any)[key];
             
             privateState.set(key, initialValue);
@@ -184,6 +185,24 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 enumerable: true,
                 configurable: true,
             });
+        }
+    }
+
+    @Server()
+    private proxyClientMethods() {
+        const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
+        for (const key in clientMethods) {
+            if (typeof (this as any)[key] !== 'function') continue;
+
+            const { channel } = clientMethods[key];
+
+            (this as any)[key] = (...args: any[]) => {
+                if (!this.isServer) {
+                    console.warn(`[Cossack] Client method '${String(key)}' cannot be called from the client.`);
+                    return;
+                }
+                this._cossack_DO_instance?.sendClientAction(channel, key, args);
+            };
         }
     }
 
@@ -237,7 +256,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         for (const key in stateProperties) {
             state[key] = (this as any)[key];
         }
+
+        const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+        const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
+            name,
+            channel: options.channel || 'global'
+        }));
+
         const params = (this.c as Context)?.req.param() || {};
-        return { ...state, params };
+        return { ...state, params, serverMethods };
     }
 }

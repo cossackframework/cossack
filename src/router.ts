@@ -75,8 +75,7 @@ for (const path in eagerPages) {
 
     const finalHandler = async (c: Context) => {
         const componentInstance = new PageComponent();
-        componentInstance.setContext(c);
-        await componentInstance.bootstrap();
+        await componentInstance.bootstrap({ context: c });
         const initialHtml = componentInstance.getInitialHtml();
         const initialState = componentInstance.getInitialState();
         

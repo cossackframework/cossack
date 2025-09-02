@@ -13,13 +13,19 @@ export interface PageOptions {
 
 export function Page(options: PageOptions = {}): ClassDecorator {
   return (target: object) => {
+    const existingOptions = Reflect.hasOwnMetadata('page:options', target)
+      ? Reflect.getOwnMetadata('page:options', target)
+      : {};
+
+    const mergedOptions = { ...existingOptions, ...options };
+
     // Ensure 'global' is always a channel if channels are defined
-    if (options.channels && !options.channels.includes('global')) {
-      options.channels.unshift('global');
-    } else if (!options.channels) {
-      options.channels = ['global'];
+    if (mergedOptions.channels && !mergedOptions.channels.includes('global')) {
+      mergedOptions.channels.unshift('global');
+    } else if (!mergedOptions.channels) {
+      mergedOptions.channels = ['global'];
     }
-    Reflect.defineMetadata('page:options', options, target);
+    Reflect.defineMetadata('page:options', mergedOptions, target);
   };
 }
 
@@ -36,7 +42,10 @@ export interface ServerOptions {
  */
 export function Server(options: ServerOptions = {}): any {
   return (target: any, propertyKey: string | symbol) => {
-    const serverMethods = Reflect.getMetadata('cossack:server-methods', target.constructor) || {};
+    const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
+      : {};
+    
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
     };
@@ -44,8 +53,25 @@ export function Server(options: ServerOptions = {}): any {
   };
 }
 
-export function Client(): any {
-  return (target: object, propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
+export interface ClientOptions {
+  channel?: string;
+}
+
+export function Client(options: ClientOptions = {}): any {
+  return (target: any, propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
+    const metadataStoreKey = 'cossack:client-methods';
+    const existingMetadata = Reflect.hasOwnMetadata(metadataStoreKey, target.constructor)
+      ? Reflect.getOwnMetadata(metadataStoreKey, target.constructor)
+      : {};
+
+    // The server needs the channel for proxying.
+    // The client just needs a flag to know the method is callable.
+    existingMetadata[propertyKey] = isServer
+      ? { channel: options.channel || 'global' }
+      : true;
+
+    Reflect.defineMetadata(metadataStoreKey, existingMetadata, target.constructor);
+
     if (descriptor) {
       if (isServer) descriptor.value = noop;
       return descriptor;
@@ -67,7 +93,10 @@ export interface StateOptions {
 
 export function State(options: StateOptions = {}): PropertyDecorator {
   return (target: any, propertyKey: string | symbol) => {
-    const stateProperties = Reflect.getMetadata('cossack:state', target.constructor) || {};
+    const stateProperties = Reflect.hasOwnMetadata('cossack:state', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:state', target.constructor)
+      : {};
+
     stateProperties[propertyKey] = {
       channel: options.channel || 'global',
     };

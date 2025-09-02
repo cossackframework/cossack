@@ -32,7 +32,8 @@ const initialize = async () => {
             }
             // Instantiate and bootstrap the component to hydrate the page
             const componentInstance = new PageComponent();
-            await componentInstance.bootstrap({ container });
+            const initialState = (window as any).__INITIAL_STATE__;
+            await componentInstance.bootstrap({ container, initialState });
         } else {
             console.error('Page component not found in module', module);
         }

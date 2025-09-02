@@ -38,7 +38,15 @@ export class CossackDurableObject {
         if (PageComponent) {
             this.componentInstance = new PageComponent();
             (this.componentInstance as any)._cossack_DO_instance = this;
-            await this.componentInstance.bootstrap({ params });
+            
+            // Create a hydrated context for the server-side component instance in the DO
+            const hydratedContext = {
+                req: {
+                    param: (key?: string) => key ? params?.[key] : params
+                }
+            } as any; // We cast to `any` to satisfy the bootstrap method's `Context` type
+
+            await this.componentInstance.bootstrap({ context: hydratedContext });
             console.log('[DO] ensureComponentInstance: Component instance re-initialized successfully.');
         }
     }
@@ -90,6 +98,17 @@ export class CossackDurableObject {
             if (PageComponent) registry.set(PageComponent.name, PageComponent);
         }
         return registry;
+    }
+
+    public async sendClientAction(channel: string, action: string, payload: any[]) {
+        const message = JSON.stringify({ type: 'client-action', action, payload });
+        const sockets = this.state.getWebSockets();
+        const socketsForChannel = sockets.filter(ws => (ws.deserializeAttachment() as any).channel === channel);
+        
+        console.log(`[DO] sendClientAction: Sending action '${action}' to ${socketsForChannel.length} clients on channel '${channel}'`);
+        for (const ws of socketsForChannel) {
+            ws.send(message);
+        }
     }
 
     public async broadcast(changedProperties: string[]) {

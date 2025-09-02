@@ -7,7 +7,7 @@ type ButtonProps = ComponentProps<HTMLButtonElement> & {
     [key: string]: any; // Allow any other props like event handlers
 };
 
-export const Button = (props: ButtonProps, children: TemplateResult) => {
+export const Button = (props: ButtonProps, children: TemplateResult|string) => {
     const { variant = 'primary', ...rest } = props
 
     return html`
