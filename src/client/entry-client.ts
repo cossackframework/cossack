@@ -1,4 +1,3 @@
-// src/client/entry-client.ts
 import '@/style.css';
 import { Cossack } from '@/shared/cossack';
 
@@ -31,9 +30,9 @@ const initialize = async () => {
                 console.error('Root container #root not found');
                 return;
             }
-            // Instantiate the component to hydrate the page
+            // Instantiate and bootstrap the component to hydrate the page
             const componentInstance = new PageComponent();
-            componentInstance.bootstrap({ container });
+            await componentInstance.bootstrap({ container });
         } else {
             console.error('Page component not found in module', module);
         }
