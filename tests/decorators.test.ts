@@ -1,204 +1,185 @@
 // tests/decorators.test.ts
 import 'reflect-metadata';
-import { describe, it, expect, vi } from 'vitest';
-import { Page, PageOptions, Middleware, State, Computed } from '../src/shared/decorators';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Page, State, Server, Client, PageOptions, createTypedDecorators } from '../src/shared/decorators';
+import * as environment from '../src/shared/environment';
 
-describe('@Page Decorator', () => {
-  it('should attach metadata to a class', () => {
-    // Define a simple middleware for testing purposes
-    const testMiddleware: Middleware = async (c, next) => {
-      await next();
-    };
+vi.mock('../src/shared/environment');
 
-    // Define options to be passed to the decorator
-    const pageOptions: PageOptions = {
-      middlewares: [testMiddleware],
-    };
+describe('Decorators', () => {
+  describe('@Page', () => {
+    it('should attach default page options if none are provided', () => {
+      @Page()
+      class TestPage {}
+      const options = Reflect.getMetadata('page:options', TestPage);
+      expect(options).toEqual({ channels: ['global'] });
+    });
 
-    // Decorate a class with @Page
-    @Page(pageOptions)
-    class TestPage {}
-
-    // Retrieve the metadata from the class
-    const retrievedOptions: PageOptions | undefined =
-      Reflect.getMetadata('page:options', TestPage);
-
-    // Assert that the metadata was attached and is correct
-    expect(retrievedOptions).toBeDefined();
-    expect(retrievedOptions).toEqual(pageOptions);
-    expect(retrievedOptions?.middlewares).toHaveLength(1);
-    expect(retrievedOptions?.middlewares?.[0]).toBe(testMiddleware);
-  });
-
-  it('should handle empty options', () => {
-    // Decorate a class with @Page using default (empty) options
-    @Page()
-    class AnotherTestPage {}
-
-    // Retrieve the metadata
-    const retrievedOptions: PageOptions | undefined = Reflect.getMetadata(
-      'page:options',
-      AnotherTestPage,
-    );
-
-    // Assert that the metadata is an empty object
-    expect(retrievedOptions).toBeDefined();
-    expect(retrievedOptions).toEqual({});
-  });
-
-  it('should execute a logging middleware', async () => {
-    const logs: string[] = [];
-    const mockResponse = new Response('OK');
-
-    // Define a logging middleware
-    const loggingMiddleware: Middleware = async (c, next) => {
-      logs.push('middleware start');
-      const response = await next();
-      logs.push('middleware end');
-      return response;
-    };
-
-    // Define options
-    const pageOptions: PageOptions = {
-      middlewares: [loggingMiddleware],
-    };
-
-    // Decorate a class
-    @Page(pageOptions)
-    class TestPageWithMiddleware {}
-
-    // Retrieve metadata
-    const retrievedOptions: PageOptions | undefined = Reflect.getMetadata(
-      'page:options',
-      TestPageWithMiddleware,
-    );
-
-    // Simulate middleware execution
-    const middleware = retrievedOptions?.middlewares?.[0];
-    let response: Response | undefined;
-    if (middleware) {
-      const mockNext = async () => {
-        logs.push('next called');
-        // Do not return a value, just resolve
+    it('should attach provided page options', () => {
+      const pageOptions: PageOptions = {
+        middlewares: [async (c, next) => next()],
+        channels: ['news', 'sports'],
       };
-      // Call middleware, then set response manually as mockResponse
-      await middleware({} as any, mockNext);
-      response = mockResponse;
-    }
+      @Page(pageOptions)
+      class TestPage {}
+      const options = Reflect.getMetadata('page:options', TestPage);
+      expect(options.middlewares).toHaveLength(1);
+      // It should also automatically add 'global'
+      expect(options.channels).toEqual(['global', 'news', 'sports']);
+    });
 
-    // Assert
-    expect(logs).toEqual(['middleware start', 'next called', 'middleware end']);
-    expect(response).toBe(mockResponse);
-  });
-});
-
-describe('@State and @Computed Decorators', () => {
-  // A mock base class that replicates the state initialization logic of Cossack
-  class MockComponent {
-      render = vi.fn();
-      _initializationPromise: Promise<void>;
-      [key: string]: any;
-      [key: symbol]: any;
-
-      constructor() {
-          // This mimics the async initialization in the real Cossack class
-          // to ensure property initializers have run before we set up reactivity.
-          this._initializationPromise = Promise.resolve().then(() => {
-              this.initializeState();
-          });
-      }
-
-      private initializeState() {
-          const stateKeys = Reflect.getMetadata('cossack:state', this.constructor);
-          if (!stateKeys) return;
-
-          for (const key of stateKeys) {
-              const privateKey = Symbol(`state_${key.toString()}`);
-              const initialValue = this[key as keyof this];
-              this[privateKey] = initialValue;
-
-              Object.defineProperty(this, key, {
-                  get() {
-                      return this[privateKey];
-                  },
-                  set(newValue) {
-                      if (this[privateKey] !== newValue) {
-                          this[privateKey] = newValue;
-                          this.render();
-                      }
-                  },
-                  enumerable: true,
-                  configurable: true,
-              });
-          }
-      }
-  }
-
-  it('should make a property reactive and call render on change', async () => {
-      class TestComponent extends MockComponent {
-          @State() count = 0;
-      }
-
-      const component = new TestComponent();
-      await component._initializationPromise; // Wait for state to be initialized
-
-      // Initial state
-      expect(component.count).toBe(0);
-
-      // Change state
-      component.count = 5;
-
-      // Assertions
-      expect(component.count).toBe(5);
-      expect(component.render).toHaveBeenCalledTimes(1);
-
-      // Change to the same value, should not re-render
-      component.count = 5;
-      expect(component.render).toHaveBeenCalledTimes(1);
+    it('should not add "global" channel if it already exists', () => {
+        const pageOptions: PageOptions = {
+          channels: ['global', 'news'],
+        };
+        @Page(pageOptions)
+        class TestPage {}
+        const options = Reflect.getMetadata('page:options', TestPage);
+        expect(options.channels).toEqual(['global', 'news']);
+      });
   });
 
-  it('should correctly compute derived values based on state changes', async () => {
-      class TestComponent extends MockComponent {
-          @State() firstName = 'John';
-          @State() lastName = 'Doe';
-
-          @Computed()
-          get fullName() {
-              return `${this.firstName} ${this.lastName}`;
-          }
-      }
-
-      const component = new TestComponent();
-      await component._initializationPromise;
-
-      expect(component.fullName).toBe('John Doe');
-
-      component.firstName = 'Jane';
-      expect(component.fullName).toBe('Jane Doe');
-      expect(component.render).toHaveBeenCalledTimes(1);
-
-      component.lastName = 'Smith';
-      expect(component.fullName).toBe('Jane Smith');
-      expect(component.render).toHaveBeenCalledTimes(2);
-  });
-
-  it('should tag a property with metadata for @State', () => {
+  describe('@State', () => {
+    it('should define state metadata with a default channel', () => {
       class TestComponent {
-          @State() myState: string = 'initial';
+        @State()
+        count = 0;
       }
+      const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
+      expect(stateMeta).toEqual({
+        count: { channel: 'global' },
+      });
+    });
 
-      const stateKeys = Reflect.getMetadata('cossack:state', TestComponent);
-      expect(stateKeys).toBeDefined();
-      expect(stateKeys).toEqual(['myState']);
+    it('should define state metadata with a specified channel', () => {
+      class TestComponent {
+        @State({ channel: 'private' })
+        message = 'hello';
+      }
+      const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
+      expect(stateMeta).toEqual({
+        message: { channel: 'private' },
+      });
+    });
+
+    it('should accumulate metadata from multiple @State decorators', () => {
+        class TestComponent {
+          @State()
+          counter = 0;
+  
+          @State({ channel: 'special' })
+          status = 'idle';
+        }
+        const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
+        expect(stateMeta).toEqual({
+          counter: { channel: 'global' },
+          status: { channel: 'special' },
+        });
+      });
   });
 
-  it('should tag a getter with metadata for @Computed', () => {
+  describe('@Server', () => {
+    it('should define server method metadata with a default channel', () => {
       class TestComponent {
-          @Computed()
-          get myComputed() { return 'value'; }
+        @Server()
+        doSomething() {}
       }
+      const serverMeta = Reflect.getMetadata('cossack:server-methods', TestComponent);
+      expect(serverMeta).toEqual({
+        doSomething: { channel: 'global' },
+      });
+    });
 
-      const isComputed = Reflect.getMetadata('computed', TestComponent.prototype, 'myComputed');
-      expect(isComputed).toBe(true);
+    it('should define server method metadata with a specified channel', () => {
+      class TestComponent {
+        @Server({ channel: 'admin' })
+        doAdminTask() {}
+      }
+      const serverMeta = Reflect.getMetadata('cossack:server-methods', TestComponent);
+      expect(serverMeta).toEqual({
+        doAdminTask: { channel: 'admin' },
+      });
+    });
+  });
+
+  describe('@Client', () => {
+    describe('when on the server (isServer = true)', () => {
+        beforeEach(() => {
+            vi.spyOn(environment, 'isServer', 'get').mockReturnValue(true);
+        });
+
+        it('should replace the method with a noop function', () => {
+            class TestComponent {
+                @Client()
+                showAlert() {
+                    return 'real implementation';
+                }
+            }
+            const instance = new TestComponent();
+            expect(instance.showAlert()).toBe(undefined);
+        });
+
+        it('should define client method metadata with channel info', () => {
+            class TestComponent {
+                @Client({ channel: 'notifications' })
+                showAlert() {}
+            }
+            const clientMeta = Reflect.getMetadata('cossack:client-methods', TestComponent);
+            expect(clientMeta).toEqual({
+                showAlert: { channel: 'notifications' },
+            });
+        });
+    });
+
+    describe('when on the client (isServer = false)', () => {
+        beforeEach(() => {
+            vi.spyOn(environment, 'isServer', 'get').mockReturnValue(false);
+        });
+
+        it('should NOT replace the method', () => {
+            class TestComponent {
+                @Client()
+                showAlert() {
+                    return 'real implementation';
+                }
+            }
+            const instance = new TestComponent();
+            expect(instance.showAlert()).toBe('real implementation');
+        });
+
+        it('should define client method metadata with a boolean flag', () => {
+            class TestComponent {
+                @Client()
+                showAlert() {}
+            }
+            const clientMeta = Reflect.getMetadata('cossack:client-methods', TestComponent);
+            expect(clientMeta).toEqual({
+                showAlert: true,
+            });
+        });
+    });
+  });
+
+  describe('createTypedDecorators', () => {
+    it('should return an object with State and Server properties', () => {
+        interface MyComponentOptions {
+            Channels: 'channel1' | 'channel2';
+        }
+        const typedDecorators = createTypedDecorators<MyComponentOptions>();
+        expect(typedDecorators).toHaveProperty('State');
+        expect(typedDecorators).toHaveProperty('Server');
+    });
+
+    it('should return decorators that function correctly', () => {
+        const { State: TypedState } = createTypedDecorators();
+        class TestComponent {
+            @TypedState({ channel: 'test' })
+            message = 'hello';
+        }
+        const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
+        expect(stateMeta).toEqual({
+            message: { channel: 'test' },
+        });
+    });
   });
 });

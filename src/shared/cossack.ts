@@ -151,14 +151,18 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const stateKeys = Object.keys(stateProperties);
-        const clientInitialState = !this.isServer ? (initialState || (window as any).__INITIAL_STATE__) : {};
-
         const privateState = new Map<string, any>();
 
         for (const key of stateKeys) {
-            const initialValue = clientInitialState[key] !== undefined
-                ? clientInitialState[key]
-                : (this as any)[key];
+            let initialValue = (this as any)[key]; // Start with the default value.
+
+            // On the client, override with the initial state from the server if it exists.
+            if (!this.isServer) {
+                const clientInitialState = initialState || (window as any)?.__INITIAL_STATE__ || {};
+                if (clientInitialState[key] !== undefined) {
+                    initialValue = clientInitialState[key];
+                }
+            }
             
             privateState.set(key, initialValue);
 
