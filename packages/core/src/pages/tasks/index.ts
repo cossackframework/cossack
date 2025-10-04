@@ -27,7 +27,7 @@ export class Tasks extends Cossack {
     }
 
     @Server({ channel: 'tasks' })
-    private async deleteTask(user: any, taskId: number) {
+    private async deleteTask(taskId: number, user: any) {
         console.log(`[Server] User ${user.id} is deleting task ${taskId}...`);
         
         // Simulate a delay for the database operation
@@ -48,8 +48,10 @@ export class Tasks extends Cossack {
 
     private confirmDelete = (taskId: number) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
-            // If confirmed, this calls the proxied server method
-            this.deleteTask({ id: 'user-from-client' }, taskId);
+            // Manually set the loading state for the specific task
+            this.loading = { ...this.loading, [`deleteTask_${taskId}`]: true };
+            // The user argument is injected by the server, no need to pass it from the client.
+            this.deleteTask(taskId);
         }
     }
 
@@ -65,7 +67,7 @@ export class Tasks extends Cossack {
                             <span>${task.text}</span>
                             ${Button({
                                 '@click': () => this.confirmDelete(task.id),
-                                'disabled': this.loading[`deleteTask_${task.id}`],
+                                '?disabled': this.loading[`deleteTask_${task.id}`],
                             }, 'Delete')}
                         </li>
                     `)}

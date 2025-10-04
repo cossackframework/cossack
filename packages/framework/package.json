@@ -1,0 +1,17 @@
+{
+  "name": "@cossackframework/framework",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/auth": "workspace:*",
+    "@cossackframework/renderer": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.2"
+  }
+}

@@ -11,13 +11,13 @@ pnpm install
 
 Run the local development server:
 ```sh
-pnpm run dev:wrangler
+pnpm --filter @cossackframework/core run dev:wrangler
 ```
 
 ## Deployment
 
 ```sh
-pnpm run deploy
+pnpm --filter @cossackframework/core run deploy
 ```
 
 ## Type Generation
@@ -25,7 +25,7 @@ pnpm run deploy
 [For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
 
 ```sh
-pnpm run cf-typegen
+pnpm --filter @cossackframework/core run cf-typegen
 ```
 
 Pass the `CloudflareBindings` as generics when instantiating `Hono`:
@@ -55,14 +55,6 @@ These are the features required to turn this from a framework into a real, produ
     2.  In the `CossackDurableObject`, access the database via `this.state.env.DB`.
     3.  Modify the component's `init()` method to fetch its initial state from D1.
     4.  Modify server-side actions (e.g., `increment()`) to write the new state back to the database after updating it in memory.
-
-#### **b. Real Authentication & Authorization**
-
--   **Description:** The `getAuthenticatedUser` function is a mock. We need to implement a real authentication system, likely using secure HTTP-only cookies or JWTs.
--   **Implementation:**
-    1.  Create Hono middleware for authentication that runs before the HTTP and WebSocket routes.
-    2.  This middleware would validate a session cookie, look up the user in our D1 database, and attach the `user` object to the request context (`c.set('user', user)`).
-    3.  The `getAuthenticatedUser` function would then be replaced with `c.get('user')`.
 
 ---
 

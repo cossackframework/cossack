@@ -1,0 +1,19 @@
+{
+  "name": "my-cossack-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-07-25",
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CossackDurableObject"]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COSSACK_OBJECT",
+        "class_name": "CossackDurableObject"
+      }
+    ]
+  }
+}

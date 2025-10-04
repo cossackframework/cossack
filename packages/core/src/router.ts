@@ -7,20 +7,15 @@ import { Cossack } from './shared/cossack';
 // @ts-expect-error - this is a JSON import from the build output
 import manifest from '~/.vite/manifest.json';
 
-type AuthenticatedUser = {
-    id: string;
-    [key: string]: any;
-};
+import { type AuthenticatedUser } from './shared/user';
 
-const getAuthenticatedUser = async (c: Context): Promise<AuthenticatedUser> => {
-    return { id: 'user-123', name: 'Alice' };
-};
+const app = new Hono<{ Bindings: Env, Variables: { user?: AuthenticatedUser } }>();
 
-interface Env {
-    COSSACK_OBJECT: DurableObjectNamespace;
-}
-
-const app = new Hono<{ Bindings: Env }>();
+// TODO: Replace this with a real authentication middleware
+app.use('*', (c, next) => {
+  c.set('user', { id: 'user-123', name: 'Alice' });
+  return next();
+});
 
 const eagerPages = import.meta.glob('./pages/**/index.ts', { eager: true });
 const componentRegistry = new Map<string, new () => Cossack>();
@@ -35,7 +30,7 @@ for (const path in eagerPages) {
 
 // A single, generic route for all WebSocket connections
 app.get('/ws/:componentId/:channel', async (c) => {
-    const user = await getAuthenticatedUser(c);
+    const user = c.get('user');
     if (!user) {
         return new Response('Unauthorized', { status: 401 });
     }
@@ -75,7 +70,8 @@ for (const path in eagerPages) {
 
     const finalHandler = async (c: Context) => {
         const componentInstance = new PageComponent();
-        await componentInstance.bootstrap({ context: c });
+        const user = c.get('user');
+        await componentInstance.bootstrap({ context: c, user });
         const initialHtml = componentInstance.getInitialHtml();
         const initialState = componentInstance.getInitialState();
         

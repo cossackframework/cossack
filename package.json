@@ -1,0 +1,10 @@
+{
+  "name": "cossack-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @cossackframework/core run dev:wrangler"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.4"
+  }
+}

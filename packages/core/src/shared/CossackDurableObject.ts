@@ -146,7 +146,7 @@ export class CossackDurableObject {
             const { action, payload } = data;
             if (typeof (this.componentInstance as any)[action] === 'function') {
                 try {
-                    await (this.componentInstance as any)[action](user, ...(payload || []));
+                    await (this.componentInstance as any)[action](...(payload || []), user);
                 } finally {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'action-complete', action }));

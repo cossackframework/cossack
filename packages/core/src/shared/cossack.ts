@@ -10,10 +10,7 @@ export interface CossackOptions {
   Channels?: string;
 }
 
-type AuthenticatedUser = {
-    id: string;
-    [key: string]: any;
-};
+import type { AuthenticatedUser } from './user';
 
 // A lightweight, client-side representation of the Hono context for params.
 type HydratedContext = {
@@ -27,6 +24,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     protected isServer: boolean = isServer;
     
     protected c!: Context | HydratedContext;
+    protected user?: AuthenticatedUser;
 
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
@@ -39,8 +37,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
 
-    public async bootstrap({ container, initialState, context }: { container?: Element, initialState?: any, context?: Context | HydratedContext } = {}) {
+    public async bootstrap({ container, initialState, context, user }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser } = {}) {
         this.container = container;
+        this.user = user;
 
         if (this.isServer) {
             if (!context) {
@@ -49,6 +48,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             this.c = context;
         } else {
             const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
+            this.user = clientInitialState?.user;
             const clientParams = clientInitialState?.params || {};
             this.c = {
                 req: {
@@ -268,6 +268,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }));
 
         const params = (this.c as Context)?.req.param() || {};
-        return { ...state, params, serverMethods };
+        return { ...state, params, serverMethods, user: this.user };
     }
 }
