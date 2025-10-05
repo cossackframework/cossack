@@ -1,2 +1,2 @@
 // src/shared/environment.ts
-export const isServer = import.meta.env.SSR;
+export const isServer = typeof window === 'undefined' || typeof window.document === 'undefined';

@@ -2,13 +2,16 @@
   "name": "@cossackframework/core",
   "version": "0.0.1",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build --mode production && vite build --mode ssr --ssr",
-    "preview": "pnpm run build && vite preview",
-    "dev:wrangler": "pnpm run build && wrangler dev",
-    "deploy": "pnpm run build && wrangler deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "build": "vite build",
+    "dev": "vite build",
     "test": "vitest"
   },
   "dependencies": {
@@ -21,8 +24,9 @@
     "@types/jsdom": "^21.1.7",
     "@types/node": "^20.11.17",
     "jsdom": "^24.0.0",
+    "typescript": "^5.5.4",
     "vite": "^5.0.0",
-    "vitest": "^1.2.2",
-    "wrangler": "^4.0.0"
+    "vite-plugin-dts": "^3.9.1",
+    "vitest": "^1.2.2"
   }
 }

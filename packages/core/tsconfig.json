@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "composite": true,
     "moduleResolution": "Bundler",
     "types": ["vite/client", "@cloudflare/workers-types"],
     "baseUrl": ".",
@@ -8,7 +9,9 @@
       "@/*": ["src/*"]
     },
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    // Let the build script handle output dirs
+    "declaration": true
   },
   "include": ["src"]
 }

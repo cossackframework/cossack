@@ -1,6 +1,10 @@
 import { Part, PartType, TemplateResult } from '../types';
 import { render } from './render';
 
+const isTemplateResult = (value: any): value is TemplateResult => {
+  return value && typeof value === 'object' && 'strings' in value && 'values' in value;
+}
+
 export class ChildPart implements Part {
   private start: Comment;
   private end: Comment;
@@ -26,7 +30,8 @@ export class ChildPart implements Part {
   }
 
   private toNodes(value: unknown): Node[] {
-    if (value instanceof TemplateResult) {
+    console.log('[Renderer Debug] toNodes processing value:', value);
+    if (isTemplateResult(value)) {
       const frag = document.createDocumentFragment();
       render(value, frag);
       return Array.from(frag.childNodes);

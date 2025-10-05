@@ -1,5 +1,7 @@
+/// <reference types="vite/client" />
+
 import '@/style.css';
-import { Cossack } from '@/shared/cossack';
+import { Cossack } from '@cossackframework/core';
 
 const initialize = async () => {
     // Use Vite's glob import to discover all page components

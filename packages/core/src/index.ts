@@ -1,9 +1,6 @@
-// src/index.ts
-import app from './router';
-import { CossackDurableObject } from './shared/CossackDurableObject';
-
-export { CossackDurableObject };
-
-export default {
-  fetch: app.fetch,
-};
+// src/lib.ts
+export * from './shared/cossack';
+export * from './shared/decorators';
+export * from './shared/environment';
+export * from './shared/user';
+export { CossackDurableObject } from './shared/CossackDurableObject';

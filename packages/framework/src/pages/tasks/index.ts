@@ -1,8 +1,7 @@
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack } from '@/shared/cossack';
-import { Client, Page, Server, State } from '@/shared/decorators';
-import { Layout } from '@/components/Layout';
-import { Button } from '@/components/Button';
+import { Cossack, Client, Page, Server, State } from '@cossackframework/core';
+import { Layout } from '../../components/Layout';
+import { Button } from '../../components/Button';
 
 interface Task {
     id: number;
@@ -47,6 +46,9 @@ export class Tasks extends Cossack {
     }
 
     private confirmDelete = (taskId: number) => {
+        // This is a client-side only method, so we guard against SSR
+        if (typeof window === 'undefined') return;
+
         if (window.confirm('Are you sure you want to delete this task?')) {
             // Manually set the loading state for the specific task
             this.loading = { ...this.loading, [`deleteTask_${taskId}`]: true };

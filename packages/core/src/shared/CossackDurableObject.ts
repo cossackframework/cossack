@@ -90,13 +90,9 @@ export class CossackDurableObject {
     }
 
     async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
+        // This method should be overridden by the application-specific Durable Object
+        // to provide the actual page components.
         const registry = new Map<string, new () => Cossack>();
-        const eagerPages = import.meta.glob('/src/pages/**/index.ts', { eager: true });
-        for (const path in eagerPages) {
-            const module = eagerPages[path] as any;
-            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-            if (PageComponent) registry.set(PageComponent.name, PageComponent);
-        }
         return registry;
     }
 

@@ -1,10 +1,8 @@
 import type { MiddlewareHandler } from 'hono';
-import { Button } from '@/components/Button';
-import { Layout } from '@/components/Layout';
+import { Button } from '../../../components/Button';
+import { Layout } from '../../../components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack, CossackOptions } from '@/shared/cossack';
-import { isServer } from '@/shared/environment';
-import { Page, Server, State, createTypedDecorators } from '@/shared/decorators';
+import { Cossack, isServer, Page, Server, State } from '@cossackframework/core';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
