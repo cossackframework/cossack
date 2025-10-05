@@ -12,5 +12,9 @@ export default defineConfig({
       formats: ['es'],
     },
   },
-  plugins: [dts()],
+  plugins: [
+    dts({
+      insertTypesEntry: true,
+    }),
+  ],
 });
