@@ -1,0 +1,11 @@
+{
+  "name": "create-cossack-app",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": "./bin/create-cossack-app.js",
+  "scripts": {
+    "start": "node ./bin/create-cossack-app.js"
+  },
+  "dependencies": {
+  }
+}

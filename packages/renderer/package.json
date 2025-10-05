@@ -1,0 +1,29 @@
+{
+  "name": "@cossackframework/renderer",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "vite": "^5.3.5",
+    "vite-plugin-dts": "^3.9.1",
+    "vitest": "^1.2.2"
+  }
+}

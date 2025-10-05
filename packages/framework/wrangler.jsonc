@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cossack",
+  "compatibility_date": "2025-08-03",
+  "build": {
+    "command": "vite build --config vite.client.config.ts && vite build --config vite.ssr.config.ts",
+    "watch_dir": "src"
+  },
+  "main": "dist/worker/index.js",
+  "durable_objects": {
+    "bindings": [
+      { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_classes": ["CossackDurableObject"] }
+  ],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  }
+}
