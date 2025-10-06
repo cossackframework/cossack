@@ -33,6 +33,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     @Server()
     private _cossack_provider_name?: string;
 
+    @Server()
+    private _cossack_ws_context?: WebSocket;
+
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
 
@@ -153,8 +156,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
                     if (clientMethods[action] && typeof (this as any)[action] === 'function') {
                         (this as any)[action](...payload);
-                    } else {
-                        console.warn(`[Cossack] Server tried to call un-callable client method '${action}'.`);
                     }
                 } else if (data.type === 'event') {
                     const { eventName, payload } = data;
@@ -224,18 +225,15 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     if (privateState.get(key) !== value) {
                         privateState.set(key, value);
                         if (this.isServer) {
-                            const propertyProvider = stateProperties[key]?.provider || 'page';
-                            if (propertyProvider === this._cossack_provider_name) {
-                                this.dirtyProperties.add(key);
-                                if (!this.broadcastScheduled) {
-                                    this.broadcastScheduled = true;
-                                    queueMicrotask(() => {
-                                        this._cossack_DO_instance?.broadcast(Array.from(this.dirtyProperties));
-                                        this._cossack_DO_instance?.persistState();
-                                        this.dirtyProperties.clear();
-                                        this.broadcastScheduled = false;
-                                    });
-                                }
+                            this.dirtyProperties.add(key);
+                            if (!this.broadcastScheduled) {
+                                this.broadcastScheduled = true;
+                                queueMicrotask(() => {
+                                    this._cossack_DO_instance?.broadcast(Array.from(this.dirtyProperties));
+                                    this._cossack_DO_instance?.persistState();
+                                    this.dirtyProperties.clear();
+                                    this.broadcastScheduled = false;
+                                });
                             }
                         } else {
                             this.render();
@@ -254,14 +252,16 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         for (const key in clientMethods) {
             if (typeof (this as any)[key] !== 'function') continue;
 
-            const { channel } = clientMethods[key];
-
             (this as any)[key] = (...args: any[]) => {
                 if (!this.isServer) {
                     console.warn(`[Cossack] Client method '${String(key)}' cannot be called from the client.`);
                     return;
                 }
-                this._cossack_DO_instance?.sendClientAction(channel, key, args);
+                if (!this._cossack_ws_context) {
+                    console.warn(`[Cossack] Client method '${String(key)}' was called from a non-WebSocket context and could not be sent.`);
+                    return;
+                }
+                this._cossack_DO_instance?.sendClientAction(this._cossack_ws_context, key, args);
             };
         }
     }
@@ -310,9 +310,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     public async init(): Promise<void> {}
 
-    public broadcast(eventName: string, ...payload: any[]) {
+    public broadcastEvent(eventName: string, ...payload: any[]) {
         if (!this.isServer) {
-            console.warn('[Cossack] broadcast() can only be called on the server.');
+            console.warn('[Cossack] broadcastEvent() can only be called on the server.');
             return;
         }
         this._cossack_DO_instance?.broadcastEvent(eventName, payload);

@@ -17,39 +17,45 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 
 ### 1. Initial HTTP Request & Server-Side Rendering (SSR)
 
-1.  A user navigates to a URL (e.g., `/tasks`). The request hits the Cloudflare Worker, which is running the code from `packages/framework/src/index.ts`.
-2.  The Hono router, defined in `packages/framework/src/router.ts`, matches the incoming URL to a route.
-3.  The router identifies the corresponding Page Component (e.g., the `Tasks` class).
-4.  An instance of the `Tasks` component is created on the server.
-5.  The component's `bootstrap` method is called. Because this is a server environment (`isServer` is true), it runs the server-side initialization path.
-6.  The component's `@Server` decorated `init()` method is called, which fetches the initial data for the page (e.g., the list of tasks).
-7.  The `getInitialHtml()` method is called, which in turn calls `render()`.
-8.  The `render()` method on the `Cossack` base class calls `renderToString()` from the `@cossackframework/renderer/server` package, passing it the component's `template()` result.
-9.  The server-side renderer walks the template. It renders HTML tags and content, but **it explicitly ignores client-side event handlers** (like `@click`) and function values, preventing them from being executed on the server.
-10. The component's `getInitialState()` method is called to serialize all `@State` properties and the names of all `@Server` methods.
-11. The final HTML page is constructed, embedding the rendered HTML into the `<body>` and the serialized initial state into a `<script>` tag (`window.__INITIAL_STATE__`).
-12. The complete HTML page is sent to the user's browser.
+1.  A user navigates to a URL (e.g., `/tasks`). The request hits the Cloudflare Worker.
+2.  The Hono router matches the incoming URL to a route and identifies the corresponding Page Component (e.g., the `Tasks` class).
+3.  An instance of the `Tasks` component is created on the server.
+4.  The component's `bootstrap` method is called. It identifies all **State Providers** registered in the `@Page` decorator (defaulting to a `PageStateProvider` if none are specified).
+5.  The component's `@Server` decorated `init()` method is called to fetch the initial data for the page.
+6.  The `getInitialHtml()` method is called, which uses the `@cossackframework/renderer/server` package to render the component's template into an HTML string.
+7.  The component's `getInitialState()` method is called. It serializes all `@State` properties, the names of all `@Server` methods, and the unique Durable Object IDs for each registered **State Provider**.
+8.  The final HTML page is constructed, embedding the rendered HTML and the serialized initial state into a `<script>` tag (`window.__INITIAL_STATE__`).
+9.  The complete HTML page is sent to the user's browser.
 
 ### 2. Client-Side Hydration & WebSocket Interactivity
 
-1.  The browser receives the HTML, renders the initial view, and starts downloading the client-side JavaScript (defined in `packages/framework/src/client/entry-client.ts`).
-2.  Once the JavaScript loads, it inspects the current URL and finds the corresponding Page Component (the `Tasks` class).
-3.  An instance of the `Tasks` component is created in the browser.
-4.  The component's `bootstrap` method is called. Because this is a client environment (`isServer` is false), it runs the client-side initialization path.
-5.  The component reads the `window.__INITIAL_STATE__` object to instantly populate its `@State` properties with the data from the server.
-6.  The `bootstrap` method also reads the list of server method names from the initial state and **replaces them** on the component instance with proxy functions.
-7.  The component connects to the `AppDurableObject` via WebSocket, opening a connection for each channel defined in the `@Page` decorator.
-8.  The page is now fully hydrated and interactive.
+1.  The browser receives the HTML, renders the initial view, and downloads the client-side JavaScript.
+2.  An instance of the `Tasks` component is created in the browser.
+3.  The component's `bootstrap` method runs its client-side path.
+4.  It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
+5.  It also reads the list of server method names and **replaces them** with proxy functions.
+6.  Crucially, it reads the Durable Object IDs for each **State Provider** and establishes a WebSocket connection for each one. For a simple page, this is typically just one connection to the `PageStateProvider`.
+7.  The page is now fully hydrated and interactive.
 
-### 3. Durable Object (DO) Interaction
+### 3. Durable Object (DO) Interaction & State Synchronization
 
-1.  When a user performs an action (e.g., clicks the "Delete" button), they are actually calling the **proxy function** that was created during hydration.
-2.  The proxy function sends a JSON message over the appropriate WebSocket channel (e.g., `{ "type": "action", "action": "deleteTask", "payload": [123] }`).
-3.  The `AppDurableObject` receives the message. It ensures a corresponding `Tasks` component instance exists within itself (creating one if it's the first message).
-4.  The DO calls the real `deleteTask` method on its internal component instance.
-5.  The `deleteTask` method modifies the component's state (the `tasks` array).
-6.  The `@State` decorator's setter is triggered by the change. It automatically queues a microtask to broadcast the state change.
-7.  The DO broadcasts a "state-update" message containing the new, complete state to all connected clients on the relevant channel ("tasks").
-8.  The client-side component receives the "state-update" message. It updates its local `@State` properties with the new data from the server.
-9.  The client-side `@State` setter is triggered, which automatically calls the component's `render()` method.
-10. The `render()` method calls the client-side `render()` function from `@cossackframework/renderer`, which efficiently updates the DOM to reflect the new state.
+1.  When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
+2.  The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
+3.  The `AppDurableObject` receives the message and calls the real method on its internal component instance.
+4.  From here, one of two state synchronization patterns occurs:
+
+    **a) Automatic State Push (Default):**
+    - The server method modifies a `@State` property (e.g., `this.feedCount++`).
+    - The `@State` decorator's setter is triggered and queues a microtask to broadcast the change.
+    - The DO identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
+    - It constructs a **partial state object** containing only the properties for that channel.
+    - The DO broadcasts this partial state to **all** clients connected to it.
+    - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI.
+
+    **b) Event-Driven Re-fetch (Manual):**
+    - The server method modifies a database or other external source of truth.
+    - It then calls `this.broadcastEvent('some-event-name')`.
+    - The DO broadcasts this simple event message to **all** connected clients.
+    - Any client-side component with an `@OnEvent('some-event-name')` handler will execute that handler.
+    - The handler's job is typically to call `this.init()` again, which re-runs the original, permission-aware query to get the fresh, secure state.
+    - The component updates its state from the new query and re-renders.

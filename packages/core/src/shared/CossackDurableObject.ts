@@ -121,12 +121,9 @@ export abstract class CossackDurableObject {
         await this.state.storage.put('componentState', stateToPersist);
     }
 
-    public async sendClientAction(channel: string, action: string, payload: any[]) {
+    public async sendClientAction(ws: WebSocket, action: string, payload: any[]) {
         const message = JSON.stringify({ type: 'client-action', action, payload });
-        const sockets = this.state.getWebSockets();
-        const socketsForChannel = sockets.filter(ws => (ws.deserializeAttachment() as any).channel === channel);
-        
-        for (const ws of socketsForChannel) {
+        if (ws.readyState === WebSocket.OPEN) {
             ws.send(message);
         }
     }
@@ -134,20 +131,34 @@ export abstract class CossackDurableObject {
     public async broadcast(changedProperties: string[]) {
         await this.ensureComponentInstance();
         if (!this.componentInstance) return;
-
+    
         const stateProperties = Reflect.getMetadata('cossack:state', this.componentInstance.constructor) || {};
+        const allState = this.componentInstance.getInitialState();
+        const sockets = this.state.getWebSockets();
+    
+        // 1. Determine which channels have changed.
         const channelsToUpdate = new Set<string>();
         for (const prop of changedProperties) {
             channelsToUpdate.add(stateProperties[prop]?.channel || 'global');
         }
-
-        const fullState = this.componentInstance.getInitialState();
-        const sockets = this.state.getWebSockets();
-
+    
+        // 2. For each changed channel, construct a partial state.
         for (const channel of channelsToUpdate) {
-            const socketsForChannel = sockets.filter(ws => (ws.deserializeAttachment() as any).channel === channel);
-            for (const ws of socketsForChannel) {
-                ws.send(JSON.stringify({ type: 'state-update', state: fullState }));
+            const partialState: Record<string, any> = {};
+            
+            // 3. Gather all state properties that belong to this channel.
+            for (const prop in stateProperties) {
+                if ((stateProperties[prop]?.channel || 'global') === channel) {
+                    partialState[prop] = allState[prop];
+                }
+            }
+    
+            // 4. Broadcast the partial state to ALL connected clients.
+            const message = JSON.stringify({ type: 'state-update', state: partialState });
+            for (const ws of sockets) {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(message);
+                }
             }
         }
     }
@@ -178,9 +189,11 @@ export abstract class CossackDurableObject {
             const { user } = ws.deserializeAttachment() as any;
             const { action, payload } = data;
             if (typeof (this.componentInstance as any)[action] === 'function') {
+                (this.componentInstance as any)._cossack_ws_context = ws;
                 try {
                     await (this.componentInstance as any)[action](...(payload || []), user);
                 } finally {
+                    (this.componentInstance as any)._cossack_ws_context = undefined;
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'action-complete', action }));
                     }

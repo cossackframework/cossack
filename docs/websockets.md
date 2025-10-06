@@ -1,61 +1,38 @@
 # Real-Time Functionality with WebSockets
 
-The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components. This is achieved by leveraging **Cloudflare Durable Objects** and the modern **Hibernatable WebSockets API**, which offers a highly efficient and robust foundation for stateful applications.
+The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components. This is achieved by leveraging **Cloudflare Durable Objects** and the modern **Hibernatable WebSockets API**.
 
 ### Powered by Hibernatable WebSockets
 
-Unlike traditional WebSocket servers that require constant memory presence, Cossack's backend is built on a "serverless" model. This means:
+Cossack's backend is built on a "serverless" model. This means:
 
 -   **Efficiency:** The Durable Object that manages your component's state can be "hibernated" (removed from memory) when it's not actively processing messages.
 -   **Persistence:** Even when hibernated, the WebSocket connections remain open. When a new message arrives, the Cloudflare runtime instantly wakes up the correct Durable Object, preserving its state and ensuring no messages are lost.
--   **Reliability:** A built-in, low-level heartbeat mechanism (`ping-pong`) is automatically managed by the framework and the Cloudflare runtime, preventing connections from being dropped due to network timeouts.
+-   **Reliability:** A built-in, low-level heartbeat mechanism (`ping-pong`) is automatically managed by the framework, preventing connections from being dropped due to network timeouts.
 
-This architecture allows for thousands of concurrent, stateful connections with minimal resource overhead, making it a perfect fit for modern, real-time web applications.
-
----
-
-## Enabling WebSockets & Defining Channels
-
-To make a component real-time, you add the `channels` property to its `@Page` decorator. This property takes an array of strings, where each string is the name of a WebSocket channel the component can connect to.
-
-```typescript
-@Page({
-    channels: [
-        'feeds',        // A channel for live feed updates
-        'notifications' // A separate channel for notifications
-    ]
-})
-export class MyComponent extends Cossack {
-    // ...
-}
-```
-
-This configuration tells the framework that `MyComponent` will manage two distinct WebSocket connections on the client-side.
+This architecture allows for thousands of concurrent, stateful connections with minimal resource overhead.
 
 ---
 
-### The `global` Channel: Simplicity by Default
+## Connections, Providers, and Channels
 
-For components that only need a single WebSocket connection, you don't need to specify any channel names. The framework includes a special **`global`** channel that is used by default.
+Real-time communication in Cossack is managed through a clear hierarchy:
 
-If you define a `channels` array, the `global` channel is automatically included.
+1.  **Connection:** A physical WebSocket connection is established for each **State Provider** a component uses. For most components, this is just a single connection to the default `PageStateProvider`.
+2.  **Channel:** A channel is a logical grouping of state *within* a single provider's connection. It allows the framework to send efficient, partial state updates.
 
-**Behavior:**
--   `@State()` decorators without a `channel` property will sync over the `global` channel.
--   `@Server()` methods without a `channel` property will be called over the `global` channel.
-
-This maintains the simplicity of the original API for the most common use cases.
+By default, all state and actions use the `global` channel within the default `page` provider.
 
 ```typescript
 @Page({
-    // No `channels` array needed for the default global channel
+    // No providers or channels needed for the default setup.
 })
 export class LiveCounter extends Cossack {
     
-    @State() // This state syncs over the 'global' channel
+    @State() // Uses the 'global' channel within the 'page' provider.
     private count: number = 0;
 
-    @Server() // This action is called over the 'global' channel
+    @Server() // Action is sent over the 'page' provider's connection.
     private increment() {
         this.count++;
     }
@@ -67,23 +44,28 @@ export class LiveCounter extends Cossack {
 
 ### Multi-Channel Components
 
-The true power of this system comes from associating specific pieces of state and server-side actions with different channels. This allows for fine-grained control over data flow, improving performance and logical separation.
+The true power of this system comes from associating specific pieces of state and server-side actions with different channels. This allows for fine-grained control over data flow.
 
 #### 1. Channel-Specific State with `@State`
 
-Use the `channel` property on the `@State` decorator to link a state variable to a specific channel. When this variable's value changes on the server, the update will **only** be broadcast to clients connected to that channel.
+Use the `channel` property on the `@State` decorator to link a state variable to a specific channel. When this variable's value changes on the server, the automatic update will **only** contain the state for other properties belonging to that same channel.
 
 ```typescript
-@State({ channel: 'feeds' })
-private feedCount: number = 0;
+@Page({
+    channels: ['feeds', 'notifications']
+})
+export class Dashboard extends Cossack {
+    @State({ channel: 'feeds' })
+    private feedCount: number = 0;
 
-@State({ channel: 'notifications' })
-private notificationCount: number = 0;
+    @State({ channel: 'notifications' })
+    private notificationCount: number = 0;
+}
 ```
 
 #### 2. Channel-Specific Actions with `@Server`
 
-Similarly, use the `channel` property on the `@Server` decorator to link a method to a channel. The client-side proxy for this method will automatically know to send the action request over the correct WebSocket.
+Similarly, use the `channel` property on the `@Server` decorator. This is primarily used for logical grouping and has no effect on which WebSocket connection is used (that is determined by the `provider` property).
 
 ```typescript
 @Server({ channel: 'feeds' })
@@ -104,15 +86,12 @@ private incrementNotifications() {
 Here is how the concepts come together in a single component.
 
 ```typescript
-import { Page, Server, State } from '@/shared/decorators';
-import { Cossack } from '@/shared/cossack';
+import { Page, Server, State } from '@cossackframework/core';
+import { Cossack } from '@cossackframework/core';
 // ... other imports
 
 @Page({
-    channels: [
-        'feeds',
-        'notifications',
-    ],
+    channels: ['feeds', 'notifications'],
 })
 export class Greeting extends Cossack {
     // State for the 'feeds' channel
@@ -155,57 +134,8 @@ export class Greeting extends Cossack {
 ```
 
 **Behavior:**
--   When the "Increment Feeds" button is clicked, the `incrementFeed` action is sent over the `feeds` WebSocket. Only `feedCount` is updated, and the new state is broadcast back only to clients on the `feeds` channel.
--   The "Increment Notifications" button behaves identically but for the `notifications` state and channel.
--   If `this.name` were to change, the update would be sent over the `global` channel.
-
----
-
-### (Optional) Advanced Type Safety
-
-For developers who want to ensure maximum type safety and get editor autocompletion for channel names, Cossack provides an optional "typed decorator factory." This feature guarantees at compile-time that you can only use channel names that you have explicitly defined for the component.
-
-**How It Works:**
-
-1.  **Define an Options Interface:** Create an interface that extends `CossackOptions` and specifies your channel names as a type union.
-2.  **Create Typed Decorators:** Use the `createTypedDecorators` helper function to generate versions of `@State` and `@Server` that are aware of your specific channel types.
-3.  **Extend the Generic `Cossack` Class:** Make your component class extend `Cossack<YourOptionsInterface>`.
-4.  **Use the Typed Decorators:** Use the new, typed decorators in your component.
-
-**Example:**
-
-```typescript
-import { Cossack, CossackOptions } from '@/shared/cossack';
-import { Page, createTypedDecorators } from '@/shared/decorators';
-
-// 1. Define the component's "shape"
-interface GreetingOptions extends CossackOptions {
-  Channels: 'feeds' | 'notifications';
-}
-
-// 2. Create the component-specific, typed decorators
-const { State, Server } = createTypedDecorators<GreetingOptions>();
-
-@Page({
-    channels: ['feeds', 'notifications'],
-})
-// 3. Extend the generic base class
-export class Greeting extends Cossack<GreetingOptions> {
-    
-    // 4. Use the new decorators
-    @State({ channel: 'feeds' }) // OK! Autocompletes 'feeds' | 'notifications' | 'global'
-    private feedCount: number = 0;
-
-    @State({ channel: 'notifications' }) // OK!
-    private notificationCount: number = 0;
-
-    // This would now cause a TypeScript error in your editor!
-    // @State({ channel: 'messages' }) 
-    // private messageCount: number = 0;
-
-    @Server({ channel: 'feeds' })
-    private incrementFeed = async () => { /* ... */ };
-}
-```
-
-This pattern is entirely opt-in but is highly recommended for complex components to prevent typos and ensure long-term maintainability.
+-   The client establishes **one** WebSocket connection for the default `page` provider.
+-   When "Increment Feeds" is clicked, `incrementFeed` is called on the server.
+-   The server automatically broadcasts a partial state update containing **only `feedCount`** to all clients connected to this page.
+-   The "Increment Notifications" button behaves identically but for the `notificationCount` state.
+-   If `this.name` were to change, the partial update would contain only the `name` property.
