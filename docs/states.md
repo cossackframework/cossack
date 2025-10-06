@@ -1,119 +1,151 @@
-# State and Action Management
+# State Management in Cossack
 
-One of the core goals of the Cossack Framework is to eliminate the complexity of client-server communication. In a traditional web application, you would need to write API endpoints, fetch data on the client, manage loading states, and handle RPC calls manually. Cossack streamlines this into a single, unified model where methods can be called across the client-server boundary as if they were local.
+Cossack's primary goal is to unify client and server state management. It provides a flexible, powerful architecture that allows you to choose the right pattern for the job, from simple, automatic UI updates to robust, secure, event-driven workflows.
 
-This is achieved through a WebSocket-based proxy system powered by decorators.
+This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
+
+-   **`StateProvider` (The "Where"):** A State Provider determines *which* stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. However, you can create custom providers to connect to other contexts, such as a `UserSessionProvider` for state shared across all pages for a logged-in user, or a `GlobalProvider` for a singleton state shared by all users.
+
+-   **`Channel` (The "What"):** A Channel is a logical partition *within* a provider. It allows you to group related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel, making updates efficient.
+
+-   **`Event` (The "When" & "How"):** An Event is a simple, stateless message broadcasted by the server. Components can listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern, which is the most secure way to handle complex state changes.
 
 ---
 
-## Calling the Server from the Client
+## Two Core Patterns
 
-Any method in your component decorated with `@Server` will only ever run on the server. On the client, this method is replaced by a proxy that automatically sends a WebSocket message to the server to execute the real implementation.
+Cossack offers two primary patterns for managing state. You can use either—or both—within the same component.
 
-This is ideal for database operations, authentication checks, or any logic that requires a secure server environment.
+### 1. Automatic State Synchronization (The "Blazor" Way)
 
-### Example: Deleting a Task
+This is the simplest and most direct way to manage state. It's perfect for UI-specific state that isn't persisted in a database or doesn't have complex security requirements.
 
-Let's look at the `Tasks` component. We have a client-side confirmation dialog that, when approved, calls a server-side method to delete a task.
+**How it works:**
+1.  You decorate a property with `@State`.
+2.  You decorate a server-side method with `@Server`.
+3.  When the `@Server` method changes the value of the `@State` property, the framework **automatically** detects the change.
+4.  It then broadcasts a **partial state update** containing only the properties for the affected channel to all clients connected to that page.
+5.  The client-side component receives the update and automatically re-renders.
+
+#### Example: A Simple Counter
 
 ```typescript
-// src/pages/tasks/index.ts
+import { Page, Server, State } from '@cossackframework/core';
 
-import { Client, Page, Server, State } from '@/shared/decorators';
+@Page()
+export class Counter extends Cossack {
+    
+    @State() // Uses the default 'global' channel
+    private count: number = 0;
 
-// ...
-
-@Page({
-    channels: ['tasks'],
-})
-export class Tasks extends Cossack {
-    @State({ channel: 'tasks' })
-    private tasks: Task[] = [];
-
-    /**
-     * This method ONLY runs on the server.
-     * It's decorated with @Server, so the framework ensures its code
-     * is never included in the client bundle.
-     */
-    @Server({ channel: 'tasks' })
-    private async deleteTask(user: any, taskId: number) {
-        console.log(`[Server] Deleting task ${taskId}...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate DB latency
-        this.tasks = this.tasks.filter(task => task.id !== taskId);
-        
-        // After deleting, we can seamlessly call a client method
-        this.showAlert('Task was deleted successfully!');
+    @Server()
+    private increment() {
+        // This one line is enough to trigger a UI update for all clients.
+        this.count++;
     }
 
-    /**
-     * This is a client-side method. It can freely call the `deleteTask`
-     * server method. The framework handles the WebSocket communication
-     * automatically.
-     */
-    private confirmDelete = (taskId: number) => {
-        if (window.confirm('Are you sure?')) {
-            // This looks like a normal method call, but it's actually an RPC call!
-            this.deleteTask({ id: 'user-from-client' }, taskId);
+    protected template() {
+        return html`
+            <p>Count: ${this.count}</p>
+            <button @click=${this.increment}>Increment</button>
+        `;
+    }
+}
+```
+
+In this example, calling `this.count++` is all that's needed. The framework handles detecting the change, serializing the new value, broadcasting it, and re-rendering the component on all connected clients.
+
+---
+
+### 2. Event-Driven Re-fetch (The "Liveview" Way)
+
+This is the most robust and secure pattern. It is the **recommended approach** for any action that modifies a shared source of truth (like a database) or requires permission checks.
+
+**How it works:**
+1.  A `@Server` method performs an action, such as writing to a database.
+2.  Instead of changing the component's state directly, it calls `this.broadcastEvent('event-name')`.
+3.  The server broadcasts this simple, stateless event message to all connected clients.
+4.  A method on the component decorated with `@OnEvent('event-name')` is triggered on every client.
+5.  This handler's primary job is to call `this.init()`, which re-runs the component's initial data-loading logic. This ensures that each client re-fetches the data *within its own permission context*.
+
+This pattern is secure by default and prevents race conditions or accidental data leaks.
+
+#### Example: Deleting a Task
+
+```typescript
+import { Page, Server, State, OnEvent } from '@cossackframework/core';
+
+@Page()
+export class Tasks extends Cossack {
+    @State()
+    private tasks: Task[] = [];
+
+    @Server()
+    async init() {
+        // In a real app, this would fetch tasks from a database,
+        // applying user-specific permissions.
+        // e.g., this.tasks = await db.getTasksForUser(this.user);
+        if (this.tasks.length === 0) {
+             this.tasks = [/* ... initial tasks ... */];
         }
+    }
+
+    @Server()
+    private async deleteTask(taskId: number) {
+        // 1. Modify the source of truth (the in-memory array here)
+        this.tasks = this.tasks.filter(task => task.id !== taskId);
+        
+        // 2. Broadcast a simple event, NOT the new state
+        this.broadcastEvent('tasks:changed');
+    }
+
+    // 3. The event handler triggers a re-fetch on all clients
+    @OnEvent('tasks:changed')
+    private async onTasksChanged() {
+        await this.init();
     }
 
     // ... template and other methods
 }
 ```
 
-When `this.deleteTask()` is called from `confirmDelete`, the client-side proxy intercepts it and sends a message like this over the WebSocket:
-
-```json
-{
-  "type": "action",
-  "action": "deleteTask",
-  "payload": [{ "id": "user-from-client" }, 1]
-}
-```
-
-The Durable Object receives this, executes the real `deleteTask` method, and the UI updates automatically.
-
 ---
 
-## Calling the Client from the Server
+## Sharing State Across Pages with Providers
 
-The reverse is also true. Any method decorated with `@Client` can be called from the server. On the server, this method is replaced by a proxy that sends a WebSocket message to the client, instructing it to execute the real implementation.
+To solve the "Shared State" problem (e.g., a shopping cart, notifications), you can create a custom `StateProvider`.
 
-This is perfect for triggering client-side effects like showing notifications, alerts, or triggering browser-specific APIs after a server action completes.
-
-### Example: Showing a Confirmation Alert
-
-Continuing with the `deleteTask` example, once the task is deleted on the server, we want to show an alert to the user.
+For example, a `UserSessionProvider` would be responsible for connecting to a Durable Object whose ID is derived from the user's session, not the URL.
 
 ```typescript
-// src/pages/tasks/index.ts
+// 1. Define a custom provider
+export class UserSessionProvider extends StateProvider {
+  getDurableObjectId() {
+    const userId = this.component.user?.id;
+    if (!userId) throw new Error("User not authenticated!");
+    // All components using this provider will connect to the SAME DO for this user
+    return this.env.SESSION_DO.idFromName(userId);
+  }
+}
 
-// ...
+// 2. Register it in your component
+@Page({
+  providers: {
+    session: new UserSessionProvider()
+  }
+})
+export class MyPageComponent extends Cossack {
 
-export class Tasks extends Cossack {
-    // ... deleteTask method from above
+  // 3. Target the provider for state and actions
+  @State({ provider: 'session' })
+  private notificationCount: number = 0;
 
-    /**
-     * This method ONLY runs on the client.
-     * It's decorated with @Client, so on the server, it becomes a proxy.
-     */
-    @Client({ channel: 'tasks' })
-    private showAlert(message: string) {
-        alert(message);
-    }
-
-    // ...
+  @Server({ provider: 'session' })
+  private async markNotificationsAsRead() {
+    // This action is sent to the user's session DO, not the page DO.
+    this.notificationCount = 0;
+  }
 }
 ```
 
-Inside `deleteTask`, the line `this.showAlert('Task was deleted successfully!')` is intercepted by the server-side proxy. It sends a message like this back to the client over the WebSocket:
-
-```json
-{
-  "type": "client-action",
-  "action": "showAlert",
-  "payload": ["Task was deleted successfully!"]
-}
-```
-
-The client's WebSocket handler receives this, validates that `showAlert` is a registered `@Client` method, and executes it, causing the alert to appear.
+Now, `notificationCount` can be accessed and modified consistently from any page that registers and uses the `session` provider.

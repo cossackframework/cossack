@@ -1,47 +1,35 @@
-/// <reference types="vite/client" />
-
-import '@/style.css';
+import '../style.css';
 import { Cossack } from '@cossackframework/core';
 
-const initialize = async () => {
-    // Use Vite's glob import to discover all page components
-    const pages = import.meta.glob('/src/pages/**/index.ts');
-    const path = window.location.pathname;
-
-    // Find the corresponding page component for the current path
-    let componentModule = null;
-    for (const pagePath in pages) {
-        const route = pagePath
-            .replace('/src/pages', '')
-            .replace('/index.ts', '')
-            .replace(/\[(\w+)\]/g, '([^/]+)') || '/';
-        
-        const regex = new RegExp(`^${route}$`);
-        if (regex.test(path)) {
-            componentModule = pages[pagePath];
-            break;
-        }
+(async () => {
+    const container = document.getElementById('root');
+    if (!container) {
+        console.error('Could not find root container');
+        return;
     }
 
-    if (componentModule) {
-        const module = await componentModule();
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-        if (PageComponent) {
-            const container = document.getElementById('root');
-            if (!container) {
-                console.error('Root container #root not found');
-                return;
-            }
-            // Instantiate and bootstrap the component to hydrate the page
-            const componentInstance = new PageComponent();
-            const initialState = (window as any).__INITIAL_STATE__;
-            await componentInstance.bootstrap({ container, initialState });
-        } else {
-            console.error('Page component not found in module', module);
-        }
+    const initialState = window.__INITIAL_STATE__;
+    const componentPath = initialState?.componentPath;
+
+    if (!componentPath) {
+        console.error('Could not find componentPath in initial state');
+        return;
+    }
+
+    const pageModules = import.meta.glob('../pages/**/index.ts', { eager: true });
+    const module = pageModules[componentPath] as any;
+
+    if (!module) {
+        console.error(`Component module not found for path: ${componentPath}`);
+        return;
+    }
+
+    const PageComponent = Object.values(module)[0] as new () => Cossack;
+
+    if (PageComponent) {
+        const componentInstance = new PageComponent();
+        await componentInstance.bootstrap({ container, initialState });
     } else {
-        console.error('No page component found for path:', path);
+        console.error(`Could not extract component from module: ${componentPath}`);
     }
-};
-
-document.addEventListener('DOMContentLoaded', initialize);
+})();

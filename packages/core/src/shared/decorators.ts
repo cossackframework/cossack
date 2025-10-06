@@ -3,12 +3,14 @@ import 'reflect-metadata';
 import type { MiddlewareHandler } from 'hono';
 import { isServer } from './environment';
 import { CossackOptions } from './cossack';
+import { StateProvider } from './StateProvider';
 
 export type Middleware = MiddlewareHandler;
 
 export interface PageOptions {
   middlewares?: Middleware[];
   channels?: string[];
+  providers?: { [key: string]: StateProvider };
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
@@ -33,6 +35,7 @@ const noop = () => {};
 
 export interface ServerOptions {
   channel?: string;
+  provider?: string;
 }
 
 /**
@@ -48,6 +51,7 @@ export function Server(options: ServerOptions = {}): any {
     
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
+      provider: options.provider || 'page',
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);
   };
@@ -89,6 +93,7 @@ export function Client(options: ClientOptions = {}): any {
 
 export interface StateOptions {
   channel?: string;
+  provider?: string;
 }
 
 export function State(options: StateOptions = {}): PropertyDecorator {
@@ -99,8 +104,21 @@ export function State(options: StateOptions = {}): PropertyDecorator {
 
     stateProperties[propertyKey] = {
       channel: options.channel || 'global',
+      provider: options.provider || 'page',
     };
     Reflect.defineMetadata('cossack:state', stateProperties, target.constructor);
+  };
+}
+
+export function OnEvent(eventName: string): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const eventHandlers = Reflect.getOwnMetadata('cossack:event-handlers', target.constructor) || {};
+    if (!eventHandlers[eventName]) {
+      eventHandlers[eventName] = [];
+    }
+    eventHandlers[eventName].push(propertyKey);
+    Reflect.defineMetadata('cossack:event-handlers', eventHandlers, target.constructor);
+    return descriptor;
   };
 }
 

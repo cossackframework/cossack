@@ -30,7 +30,6 @@ export class ChildPart implements Part {
   }
 
   private toNodes(value: unknown): Node[] {
-    console.log('[Renderer Debug] toNodes processing value:', value);
     if (isTemplateResult(value)) {
       const frag = document.createDocumentFragment();
       render(value, frag);
