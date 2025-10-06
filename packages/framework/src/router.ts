@@ -19,25 +19,29 @@ export function createApp(pages: Record<string, PageModule>) {
         return next();
     });
 
-    // A single, generic route for all WebSocket connections
-    app.get('/ws/:componentId/:channel', async (c) => {
+    // A generic route for all provider-based WebSocket connections
+    app.get('/ws/:provider/:id', async (c) => {
         const user = c.get('user');
         if (!user) {
             return new Response('Unauthorized', { status: 401 });
         }
 
-        const { componentId } = c.req.param();
-        const params = c.req.query();
-        
-        const doName = c.req.query('pathname') || componentId;
-        const id = c.env.COSSACK_OBJECT.idFromName(doName);
-        const stub = c.env.COSSACK_OBJECT.get(id);
+        const { provider, id: durableObjectId } = c.req.param();
+        const componentId = c.req.query('componentId');
+
+        if (!componentId) {
+            return new Response('componentId query parameter is required', { status: 400 });
+        }
+
+        const doBinding = c.env.COSSACK_OBJECT;
+        const id = doBinding.idFromString(durableObjectId);
+        const stub = doBinding.get(id);
 
         const request = new Request(c.req.raw);
         request.headers.set('X-User-ID', user.id);
         request.headers.set('X-Component-Name', componentId);
+        request.headers.set('X-Provider-Name', provider);
         request.headers.set('X-User-Data', JSON.stringify(user));
-        request.headers.set('X-Component-Params', JSON.stringify(params));
 
         return await stub.fetch(request);
     });
@@ -53,26 +57,33 @@ export function createApp(pages: Record<string, PageModule>) {
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent) continue;
 
+        // Tag the component with the name of the DO binding it uses for page state.
+        // This is crucial for the PageStateProvider to work correctly during SSR.
+        Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
+
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
         const middlewares = pageOptions?.middlewares ?? [];
 
         const finalHandler = async (c: Context) => {
             const componentInstance = new PageComponent();
             const user = c.get('user');
-            await componentInstance.bootstrap({ context: c, user });
+            await componentInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
             const initialHtml = componentInstance.getInitialHtml();
             const initialState = componentInstance.getInitialState();
             
             const channels = pageOptions?.channels || ['global'];
 
-            return c.html(renderRoot({ 
+            const finalInitialState = { 
+                ...initialState, 
+                componentPath: path.replace('./', '../'), // Adjust for client-side relative path
+                pathname: c.req.path,
+                channels: channels,
+            };
+
+            c.header('Content-Type', 'text/html');
+            return c.body(renderRoot({ 
                 body: initialHtml, 
-                initialState: { 
-                    ...initialState, 
-                    componentId: PageComponent.name,
-                    pathname: c.req.path,
-                    channels: channels,
-                },
+                initialState: finalInitialState,
                 manifest: manifest,
             }));
         };
