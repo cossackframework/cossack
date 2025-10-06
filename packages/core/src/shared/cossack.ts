@@ -29,7 +29,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
 
-    @State() public loading: Record<string, boolean> = {};
+    // `loading` is a public property available on server and client,
+    // but it is NOT decorated with @State, so its state is managed on the client.
+    public loading: Record<string, boolean> = {};
 
     @Server()
     private _cossack_DO_instance?: CossackDurableObject;
@@ -78,11 +80,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         const initialState = (window as any).__INITIAL_STATE__;
         const channels = initialState?.channels || ['global'];
         const componentId = initialState?.componentId;
+        const pathname = initialState?.pathname;
         const params = (this.c as HydratedContext).req.param();
         const query = new URLSearchParams(params).toString();
 
         for (const channel of channels) {
-            const wsUrl = `/ws/${componentId}/${channel}?${query}`;
+            const wsUrl = `/ws/${componentId}/${channel}?${query}&pathname=${encodeURIComponent(pathname)}`;
             const fullWsUrl = `ws://${window.location.host}${wsUrl}`;
             const ws = new WebSocket(fullWsUrl);
             this.websockets.set(channel, ws);
@@ -97,11 +100,13 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
                         (this as any)[key] = data.state[key];
                     }
+                    // A state update implies all in-flight actions are complete.
+                    this.loading = {};
+                    this.render(); // Re-render to reflect the new state and cleared loading flags.
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
-                    const newLoading = { ...this.loading };
-                    delete newLoading[action];
-                    this.loading = newLoading;
+                    delete this.loading[action];
+                    this.render();
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
@@ -125,12 +130,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private proxyServerMethods(serverMethods: { name: string, channel: string }[]) {
         for (const method of serverMethods) {
             const { name, channel } = method;
-            // We don't check for function existence anymore, we just overwrite it.
-            // This allows for the client-side method to be a placeholder.
             (this as any)[name] = (...args: any[]) => {
                 const ws = this.websockets.get(channel);
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    this.loading = { ...this.loading, [name]: true };
+                    this.loading[name] = true;
+                    this.render();
+                    
                     const payload = args.filter(arg => typeof arg !== 'object' || arg === null);
                     ws.send(JSON.stringify({
                         type: 'action',
@@ -156,7 +161,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         for (const key of stateKeys) {
             let initialValue = (this as any)[key]; // Start with the default value.
 
-            // On the client, override with the initial state from the server if it exists.
             if (!this.isServer) {
                 const clientInitialState = initialState || (window as any)?.__INITIAL_STATE__ || {};
                 if (clientInitialState[key] !== undefined) {
@@ -177,6 +181,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                                 this.broadcastScheduled = true;
                                 queueMicrotask(() => {
                                     this._cossack_DO_instance?.broadcast(Array.from(this.dirtyProperties));
+                                    this._cossack_DO_instance?.persistState(); // Persist state on change
                                     this.dirtyProperties.clear();
                                     this.broadcastScheduled = false;
                                 });

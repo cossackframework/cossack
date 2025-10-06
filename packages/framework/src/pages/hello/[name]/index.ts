@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
-import { Button } from '../../../components/Button';
-import { Layout } from '../../../components/Layout';
+import { Button } from '@/components/Button';
+import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State } from '@cossackframework/core';
 

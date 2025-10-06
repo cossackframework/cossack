@@ -29,7 +29,7 @@ export function createApp(pages: Record<string, PageModule>) {
         const { componentId } = c.req.param();
         const params = c.req.query();
         
-        const doName = componentId;
+        const doName = c.req.query('pathname') || componentId;
         const id = c.env.COSSACK_OBJECT.idFromName(doName);
         const stub = c.env.COSSACK_OBJECT.get(id);
 
@@ -70,6 +70,7 @@ export function createApp(pages: Record<string, PageModule>) {
                 initialState: { 
                     ...initialState, 
                     componentId: PageComponent.name,
+                    pathname: c.req.path,
                     channels: channels,
                 },
                 manifest: manifest,

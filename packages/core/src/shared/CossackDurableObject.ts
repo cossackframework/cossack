@@ -7,7 +7,7 @@ type AuthenticatedUser = {
     [key: string]: any;
 };
 
-export class CossackDurableObject {
+export abstract class CossackDurableObject {
     state: DurableObjectState;
     componentInstance?: Cossack;
 
@@ -16,59 +16,78 @@ export class CossackDurableObject {
         this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     }
 
-    async ensureComponentInstance(): Promise<void> {
+    private async createAndBootstrapComponent(componentName: string, params: Record<string, string>): Promise<Cossack | undefined> {
+        const componentRegistry = await this.getComponentRegistry();
+        const PageComponent = componentRegistry.get(componentName);
+    
+        if (PageComponent) {
+            const componentInstance = new PageComponent();
+            (componentInstance as any)._cossack_DO_instance = this;
+            
+            const hydratedContext = {
+                req: { param: (key?: string) => key ? params?.[key] : params }
+            } as any;
+    
+            await componentInstance.bootstrap({ context: hydratedContext });
+            console.log(`[DO] Component '${componentName}' bootstrapped successfully.`);
+            return componentInstance;
+        } else {
+            console.error(`[DO] Component '${componentName}' not found in registry.`);
+            this.state.getWebSockets().forEach(ws => ws.close(1011, 'Component not found'));
+            return undefined;
+        }
+    }
+
+    private async ensureComponentInstance(): Promise<void> {
         if (this.componentInstance) {
             return;
         }
-        console.log('[DO] ensureComponentInstance: Component instance not found. Re-initializing...');
-        const storedData = await this.state.storage.get(['componentName', 'params']);
+        console.log('[DO] Hibernated instance waking up. Initializing from storage...');
+        const storedData = await this.state.storage.get(['componentName', 'params', 'componentState']);
         const componentName = storedData.get('componentName') as string | undefined;
         const params = storedData.get('params') as Record<string, string> | undefined;
-
-        if (!componentName) {
-            console.error('[DO] ensureComponentInstance: Cannot initialize component, metadata not found in storage.');
-            // Close all websockets because the DO is in a broken state.
-            this.state.getWebSockets().forEach(ws => ws.close(1011, 'Internal Server Error'));
+        const componentState = storedData.get('componentState') as Record<string, any> | undefined;
+    
+        if (!componentName || !params) {
+            console.error('[DO] Cannot revive component, metadata not found in storage.');
             return;
         }
-
-        const componentRegistry = await this.getComponentRegistry();
-        const PageComponent = componentRegistry.get(componentName);
-
-        if (PageComponent) {
-            this.componentInstance = new PageComponent();
-            (this.componentInstance as any)._cossack_DO_instance = this;
-            
-            // Create a hydrated context for the server-side component instance in the DO
-            const hydratedContext = {
-                req: {
-                    param: (key?: string) => key ? params?.[key] : params
+        
+        const componentInstance = await this.createAndBootstrapComponent(componentName, params);
+        if (componentInstance) {
+            if (componentState) {
+                console.log('[DO] Applying persisted state...');
+                for (const key in componentState) {
+                    (componentInstance as any)[key] = componentState[key];
                 }
-            } as any; // We cast to `any` to satisfy the bootstrap method's `Context` type
-
-            await this.componentInstance.bootstrap({ context: hydratedContext });
-            console.log('[DO] ensureComponentInstance: Component instance re-initialized successfully.');
+            }
+            this.componentInstance = componentInstance;
         }
     }
 
     async fetch(request: Request) {
-        const url = new URL(request.url);
-        const channel = url.pathname.split('/').pop() || 'global';
-        console.log(`[DO] fetch: New connection for channel: ${channel}`);
+        // On a new connection, always try to revive an existing session first.
+        await this.ensureComponentInstance();
 
-        // This now only runs for the very first request that creates the DO.
+        // If there's no instance, it means this is the first-ever request.
         if (!this.componentInstance) {
+            console.log('[DO] No instance found, creating new component...');
             const componentName = request.headers.get('X-Component-Name');
             const paramsData = request.headers.get('X-Component-Params');
             if (!componentName) return new Response('Header X-Component-Name is required', { status: 400 });
             
             const params = paramsData ? JSON.parse(paramsData) : {};
-            // Persist the metadata needed to re-create the component instance after hibernation.
-            await this.state.storage.put({ componentName, params });
-        }
+            
+            const componentInstance = await this.createAndBootstrapComponent(componentName, params);
+            if (!componentInstance) {
+                return new Response('Failed to initialize component', { status: 500 });
+            }
+            this.componentInstance = componentInstance;
 
-        // Ensure the instance exists, especially for subsequent connections to a non-hibernated DO.
-        await this.ensureComponentInstance();
+            // Save the full initial state to create the first snapshot.
+            const initialState = componentInstance.getInitialState();
+            await this.state.storage.put({ componentName, params, componentState: initialState });
+        }
 
         const userId = request.headers.get('X-User-ID');
         const userData = request.headers.get('X-User-Data');
@@ -76,24 +95,24 @@ export class CossackDurableObject {
         const user: AuthenticatedUser = userData ? JSON.parse(userData) : { id: userId };
 
         const { 0: client, 1: server } = new WebSocketPair();
+        const channel = new URL(request.url).pathname.split('/').pop() || 'global';
         server.serializeAttachment({ channel, user });
         this.state.acceptWebSocket(server);
 
-        // Immediately send the current authoritative state to the newly connected client.
-        // This solves the refresh issue by ensuring the client syncs with the DO's state.
-        if (this.componentInstance) {
-            const currentState = this.componentInstance.getInitialState();
-            server.send(JSON.stringify({ type: 'state-update', state: currentState }));
-        }
+        // Always send the latest state to the connecting client.
+        const currentState = this.componentInstance.getInitialState();
+        server.send(JSON.stringify({ type: 'state-update', state: currentState }));
 
         return new Response(null, { status: 101, webSocket: client });
     }
 
-    async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
-        // This method should be overridden by the application-specific Durable Object
-        // to provide the actual page components.
-        const registry = new Map<string, new () => Cossack>();
-        return registry;
+    abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
+
+    public async persistState() {
+        if (!this.componentInstance) return;
+        const stateToPersist = this.componentInstance.getInitialState();
+        await this.state.storage.put('componentState', stateToPersist);
+        console.log('[DO] Component state persisted.');
     }
 
     public async sendClientAction(channel: string, action: string, payload: any[]) {
@@ -101,7 +120,6 @@ export class CossackDurableObject {
         const sockets = this.state.getWebSockets();
         const socketsForChannel = sockets.filter(ws => (ws.deserializeAttachment() as any).channel === channel);
         
-        console.log(`[DO] sendClientAction: Sending action '${action}' to ${socketsForChannel.length} clients on channel '${channel}'`);
         for (const ws of socketsForChannel) {
             ws.send(message);
         }
@@ -122,7 +140,6 @@ export class CossackDurableObject {
 
         for (const channel of channelsToUpdate) {
             const socketsForChannel = sockets.filter(ws => (ws.deserializeAttachment() as any).channel === channel);
-            console.log(`[DO] broadcast: Broadcasting to ${socketsForChannel.length} sockets on channel '${channel}'`);
             for (const ws of socketsForChannel) {
                 ws.send(JSON.stringify({ type: 'state-update', state: fullState }));
             }
@@ -132,7 +149,7 @@ export class CossackDurableObject {
     async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
         await this.ensureComponentInstance();
         if (!this.componentInstance) {
-            ws.close(1011, 'Component not available');
+            ws.close(1011, 'Component not available, please reconnect');
             return;
         }
 
@@ -152,11 +169,6 @@ export class CossackDurableObject {
         }
     }
 
-    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-        console.log(`[DO] webSocketClose: Socket closed. Code: ${code}, Reason: ${reason}`);
-    }
-
-    async webSocketError(ws: WebSocket, error: any) {
-        console.error('[DO] webSocketError:', error);
-    }
+    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}
+    async webSocketError(ws: WebSocket, error: any) {}
 }

@@ -13,7 +13,12 @@
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_classes": ["CossackDurableObject"] }
+    {
+      "tag": "v1",
+      "new_classes": [
+        "AppDurableObject"
+      ]
+    }
   ],
   "assets": {
     "directory": "./dist/client",
