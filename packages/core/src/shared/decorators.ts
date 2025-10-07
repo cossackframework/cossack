@@ -13,6 +13,7 @@ export interface PageOptions {
   channels?: string[];
   providers?: { [key: string]: StateProvider };
   transport?: CossackTransport;
+  route?: string;
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
