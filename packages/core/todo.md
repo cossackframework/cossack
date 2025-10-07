@@ -1,6 +1,3 @@
-- Allows client call server method directly (best case), if not possible, then add hooks, like @click.before @click.after, both before and after runs on the client.
-- Allows change header { script, style, title }
-- Page init (GET), action (POST). Static page without Web Socket or api only route.
 - Form handling and validation with `zod`
 - Client-only state
 - Database abstraction (Cloudflare D1, kysely)

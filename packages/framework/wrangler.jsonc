@@ -4,7 +4,7 @@
   "compatibility_date": "2025-08-03",
   "build": {
     "command": "vite build --config vite.client.config.ts && vite build --config vite.ssr.config.ts",
-    "watch_dir": "src"
+    "watch_dir": ["src", "src/pages"]
   },
   "main": "dist/worker/index.js",
   "durable_objects": {

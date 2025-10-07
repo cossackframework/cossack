@@ -1,6 +1,8 @@
 # Architectural Plan: Pluggable Transport Layer
 
-This document outlines the architectural plan for abstracting the framework's transport layer. The goal is to evolve Cossack from being tightly coupled to Cloudflare Durable Objects into a more flexible framework that can run on various backends, such as a standard Node.js server, while maintaining the same component-level API.
+This document outlines the architectural plan for abstracting the framework's **stateful, real-time** transport layer. The goal is to evolve Cossack from being tightly coupled to Cloudflare Durable Objects into a more flexible framework that can run on various backends, such as a standard Node.js server, while maintaining the same component-level API for real-time components.
+
+> **Note on HTTP Transport:** This plan is specifically for stateful, connection-based transports (like WebSockets). The framework also supports a stateless, request-response transport via `@Page({ transport: 'http' })`. That system is handled by a separate, parallel mechanism and is **not** an implementation of the `CossackServerRuntime` interface. See `@docs/plan-http-transport.md` for details.
 
 ## 1. Core Problem: Tight Coupling
 

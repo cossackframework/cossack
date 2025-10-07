@@ -2,11 +2,12 @@
 import { renderToString } from '@cossackframework/renderer/server';
 import { render, type TemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, Server, State } from './decorators';
+import { Client, PageOptions, Server, State } from './decorators';
 import type { Context } from 'hono';
 import type { CossackDurableObject } from './CossackDurableObject';
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { HeadTag } from './head';
+import { createCossackContext, HydratedContext } from './context';
 
 export interface CossackOptions {
   Channels?: string;
@@ -14,18 +15,11 @@ export interface CossackOptions {
 
 import type { AuthenticatedUser } from './user';
 
-// A lightweight, client-side representation of the Hono context for params.
-type HydratedContext = {
-    req: {
-        param: (key?: string) => any;
-    }
-}
-
 export abstract class Cossack<T extends CossackOptions = {}> {
     protected container?: Element;
     protected isServer: boolean = isServer;
     
-    protected c!: Context | HydratedContext;
+    protected c!: Context;
     protected user?: AuthenticatedUser;
     protected env: any;
     protected providers!: Map<string, StateProvider>;
@@ -59,7 +53,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             if (!context) {
                 throw new Error('[Cossack] Context must be provided during bootstrap on the server.');
             }
-            this.c = context;
+            this.c = createCossackContext(context, true);
             this.env = env;
             this._cossack_provider_name = providerName;
             this.initializeProviders();
@@ -67,18 +61,18 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
             this.user = clientInitialState?.user;
             const clientParams = clientInitialState?.params || {};
-            this.c = {
+            const hydratedContext: HydratedContext = {
                 req: {
                     param: (key?: string) => key ? clientParams[key] : clientParams
                 }
             };
+            this.c = createCossackContext(hydratedContext, false);
         }
 
         this.initializeState(initialState);
 
         if (this.isServer) {
             this.proxyClientMethods();
-            await this.init();
         } else {
             const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
             this.connectWebSocket();
@@ -290,7 +284,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
-    protected abstract template(): TemplateResult;
+    protected template(): TemplateResult | null { return null; }
 
     public header(): HeadTag[] {
         return [];
@@ -320,13 +314,18 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public render(): string {
+        const template = this.template();
+        if (!template) {
+            return '';
+        }
+
         if (this.container && !this.isServer) {
-            render(this.template(), this.container);
+            render(template, this.container);
             this.updateHead();
             return '';
         }
         if (this.isServer) {
-            return renderToString(this.template());
+            return renderToString(template);
         }
         return '';
     }
@@ -352,6 +351,16 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             state[key] = (this as any)[key];
         }
 
+        const params = (this.c as Context)?.req.param() || {};
+        const baseState = { ...state, params, user: this.user, componentId: this.constructor.name };
+
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+        // For HTTP transport, we only need the base state for hydration.
+        if (pageOptions?.transport === 'http') {
+            return baseState;
+        }
+
+        // For real-time transports, add the WebSocket-related info.
         const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
         const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
             name,
@@ -366,7 +375,15 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             }
         }
 
-        const params = (this.c as Context)?.req.param() || {};
-        return { ...state, params, serverMethods, user: this.user, providerDurableObjectIds, componentId: this.constructor.name };
+        return { ...baseState, serverMethods, providerDurableObjectIds };
+    }
+
+    public getPublicState(): Record<string, any> {
+        const state: Record<string, any> = {};
+        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
+        for (const key in stateProperties) {
+            state[key] = (this as any)[key];
+        }
+        return state;
     }
 }

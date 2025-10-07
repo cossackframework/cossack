@@ -62,6 +62,8 @@ export abstract class CossackDurableObject {
                 }
             }
             this.componentInstance = componentInstance;
+            // After loading state, run the init logic to seed data if necessary.
+            await this.componentInstance.init();
         }
     }
 
@@ -92,6 +94,8 @@ export abstract class CossackDurableObject {
                 return new Response('Failed to initialize component', { status: 500 });
             }
             this.componentInstance = componentInstance;
+            // For a brand new DO, run init() to seed the state *before* the first persistence.
+            await this.componentInstance.init();
 
             const initialState = componentInstance.getInitialState();
             await this.state.storage.put({ componentName, params, componentState: initialState, page, providerName });

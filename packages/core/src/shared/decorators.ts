@@ -6,11 +6,14 @@ import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 
 export type Middleware = MiddlewareHandler;
+export type CossackTransport = 'durable-object' | 'websocket' | 'http';
 
 export interface PageOptions {
   middlewares?: Middleware[];
   channels?: string[];
   providers?: { [key: string]: StateProvider };
+  transport?: CossackTransport;
+  route?: string;
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
@@ -19,7 +22,11 @@ export function Page(options: PageOptions = {}): ClassDecorator {
       ? Reflect.getOwnMetadata('page:options', target)
       : {};
 
-    const mergedOptions = { ...existingOptions, ...options };
+    const mergedOptions: PageOptions = {
+      transport: 'durable-object',
+      ...existingOptions,
+      ...options,
+    };
 
     // Ensure 'global' is always a channel if channels are defined
     if (mergedOptions.channels && !mergedOptions.channels.includes('global')) {
