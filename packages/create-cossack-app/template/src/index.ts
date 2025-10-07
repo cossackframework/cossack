@@ -1,8 +1,11 @@
-import { Hono } from 'hono';
-import { cossack } from '@cossackframework/framework';
+/// <reference types="vite/client" />
 
-const app = new Hono();
+import { createApp } from '@cossackframework/framework';
+import { AppDurableObject } from './DurableObject';
 
-app.all('*', cossack());
+const app = createApp();
 
-export default app;
+export { AppDurableObject };
+export default {
+  fetch: app.fetch,
+};

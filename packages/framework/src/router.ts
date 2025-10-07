@@ -3,14 +3,15 @@ import 'reflect-metadata';
 import { Hono, type Context } from 'hono';
 import { renderRoot } from './root';
 import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
-// @ts-expect-error - this is a JSON import from the build output
+// @ts-expect-error - this is a virtual module created by the vite plugin
+import pages from 'virtual:cossack-pages';
 import manifest from '~/.vite/manifest.json';
 
 export type PageModule = {
     [key: string]: new () => Cossack;
 }
 
-export function createApp(pages: Record<string, PageModule>) {
+export function createApp() {
     const app = new Hono<{ Bindings: CloudflareBindings, Variables: { user?: AuthenticatedUser } }>();
 
     // TODO: Replace this with a real authentication middleware
@@ -49,7 +50,7 @@ export function createApp(pages: Record<string, PageModule>) {
     // Build HTTP routes from the provided pages
     for (const path in pages) {
         const httpRoute = path
-            .replace('./pages', '')
+            .replace('/src/pages', '')
             .replace('/index.ts', '')
             .replace(/\[(\w+)\]/g, ':$1') || '/';
 
@@ -75,7 +76,7 @@ export function createApp(pages: Record<string, PageModule>) {
 
             const finalInitialState = { 
                 ...initialState, 
-                componentPath: path.replace('./', '../'), // Adjust for client-side relative path
+                componentPath: path,
                 pathname: c.req.path,
                 channels: channels,
             };

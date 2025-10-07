@@ -1,19 +1,29 @@
 {
+  "$schema": "https://schema.cloudflare.com/workers-wrangler-v3.json",
   "name": "my-cossack-app",
-  "main": "src/index.ts",
-  "compatibility_date": "2024-07-25",
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_classes": ["CossackDurableObject"]
-    }
-  ],
+  "compatibility_date": "2024-01-01",
+  "main": "dist/worker/index.js",
   "durable_objects": {
     "bindings": [
       {
         "name": "COSSACK_OBJECT",
-        "class_name": "CossackDurableObject"
+        "class_name": "AppDurableObject"
       }
     ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "AppDurableObject"
+      ]
+    }
+  ],
+  "build": {
+    "command": "vite build && vite build --ssr",
+    "watch_dir": "src"
+  },
+  "assets": {
+    "directory": "./dist/client"
   }
 }
