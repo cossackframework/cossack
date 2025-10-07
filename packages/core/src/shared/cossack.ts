@@ -14,6 +14,7 @@ export interface CossackOptions {
 }
 
 import type { AuthenticatedUser } from './user';
+import { RedirectStatusCode } from 'hono/utils/http-status';
 
 export abstract class Cossack<T extends CossackOptions = {}> {
     protected container?: Element;
@@ -192,7 +193,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 this.render();
 
                 try {
-                    const response = await fetch('/cossack/action', {
+                    const response = await fetch('/crpc', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -209,10 +210,16 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
 
-                    const newState = await response.json() as Record<string, any>;
-                    for (const key in newState) {
+                    const data = await response.json() as Record<string, any>;
+
+                    if (data._cossack_redirect) {
+                        window.location.href = data._cossack_redirect;
+                        return;
+                    }
+
+                    for (const key in data) {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        (this as any)[key] = newState[key];
+                        (this as any)[key] = data[key];
                     }
                 } catch (error) {
                     console.error(`Error calling server action '${name}':`, error);
@@ -394,6 +401,15 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public async init(): Promise<void> {}
+
+    @Server()
+    public redirect(url: string, status: RedirectStatusCode = 302) {
+        if (!this.isServer) {
+            console.warn('[Cossack] redirect() can only be called on the server.');
+            return;
+        }
+        return this.c.redirect(url, status);
+    }
 
     public broadcastEvent(eventName: string, ...payload: any[]) {
         if (!this.isServer) {

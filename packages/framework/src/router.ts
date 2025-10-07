@@ -49,7 +49,7 @@ export function createApp() {
         return await stub.fetch(request);
     });
 
-    app.post('/cossack/action', async (c) => {
+    app.post('/crpc', async (c) => {
         const { componentPath, action, state, payload } = await c.req.json();
         const user = c.get('user');
 
@@ -72,7 +72,18 @@ export function createApp() {
             return c.json({ error: `Action '${action}' not found on component` }, 404);
         }
 
-        await componentInstance[action](...(payload || []));
+        const actionResult = await componentInstance[action](...(payload || []));
+
+        // Check if the action resulted in a redirect
+        const location = c.res.headers.get('Location');
+        if (location) {
+            return c.json({ _cossack_redirect: location });
+        }
+
+        // If the action returned a value, it might be a custom response
+        if (actionResult instanceof Response) {
+            return actionResult;
+        }
 
         const newState = componentInstance.getPublicState();
         return c.json(newState);

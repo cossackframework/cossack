@@ -23,6 +23,7 @@ export class CounterHttp extends Cossack {
     @Server()
     decrement() {
         this.count--;
+        this.redirect('/tasks'); // Example of redirecting after a server action
     }
 
     protected template(): TemplateResult | null {
