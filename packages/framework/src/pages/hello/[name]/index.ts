@@ -13,6 +13,7 @@ const loggingMiddleware: MiddlewareHandler = async (c, next) => {
 };
 
 @Page({
+    transport: 'durable-object',
     middlewares: [loggingMiddleware],
     channels: ['feeds', 'notifications'],
 })

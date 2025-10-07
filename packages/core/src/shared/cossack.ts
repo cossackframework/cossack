@@ -75,8 +75,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             this.proxyClientMethods();
         } else {
             const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
-            this.connectWebSocket();
-            this.proxyServerMethods(clientInitialState?.serverMethods || []);
+            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+
+            if (pageOptions?.transport === 'http') {
+                this.proxyHttpMethods(clientInitialState?.serverMethods || []);
+            } else {
+                this.connectWebSocket();
+                this.proxyServerMethods(clientInitialState?.serverMethods || []);
+            }
         }
 
         if (this.container && !this.isServer) {
@@ -172,6 +178,53 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     @Client()
+    private proxyHttpMethods(serverMethods: { name: string }[]) {
+        const componentPath = (window as any).__INITIAL_STATE__?.componentPath;
+        if (!componentPath) {
+            console.error('[Cossack] Cannot create HTTP proxies: componentPath not found in initial state.');
+            return;
+        }
+
+        for (const method of serverMethods) {
+            const { name } = method;
+            (this as any)[name] = async (...args: any[]) => {
+                this.loading[name] = true;
+                this.render();
+
+                try {
+                    const response = await fetch('/cossack/action', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            componentPath,
+                            action: name,
+                            state: this.getPublicState(),
+                            payload: args,
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const newState = await response.json() as Record<string, any>;
+                    for (const key in newState) {
+                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                        (this as any)[key] = newState[key];
+                    }
+                } catch (error) {
+                    console.error(`Error calling server action '${name}':`, error);
+                } finally {
+                    delete this.loading[name];
+                    this.render();
+                }
+            };
+        }
+    }
+
+    @Client()
     private proxyServerMethods(serverMethods: { name: string, channel: string, provider: string }[]) {
         for (const method of serverMethods) {
             const { name, channel, provider } = method;
@@ -200,23 +253,29 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         const stateKeys = Object.keys(stateProperties);
         const privateState = new Map<string, any>();
 
-        for (const key of stateKeys) {
-            let initialValue = (this as any)[key];
+        // Determine the single source of truth for the initial state values.
+        // On the server, it's the `initialState` from the action.
+        // On the client, it's the global `__INITIAL_STATE__` object.
+        const stateSource = this.isServer 
+            ? initialState 
+            : (initialState || (window as any)?.__INITIAL_STATE__ || {});
 
-            if (!this.isServer) {
-                const clientInitialState = initialState || (window as any)?.__INITIAL_STATE__ || {};
-                if (clientInitialState[key] !== undefined) {
-                    initialValue = clientInitialState[key];
-                }
+        for (const key of stateKeys) {
+            // Start with the class property's default value.
+            let value = (this as any)[key];
+
+            // Overwrite with the value from our state source if it exists.
+            if (stateSource && stateSource[key] !== undefined) {
+                value = stateSource[key];
             }
             
-            privateState.set(key, initialValue);
+            privateState.set(key, value);
 
             Object.defineProperty(this, key, {
                 get: () => privateState.get(key),
-                set: (value: any) => {
-                    if (privateState.get(key) !== value) {
-                        privateState.set(key, value);
+                set: (newValue: any) => {
+                    if (privateState.get(key) !== newValue) {
+                        privateState.set(key, newValue);
                         if (this.isServer) {
                             this.dirtyProperties.add(key);
                             if (!this.broadcastScheduled) {
@@ -354,13 +413,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         const params = (this.c as Context)?.req.param() || {};
         const baseState = { ...state, params, user: this.user, componentId: this.constructor.name };
 
-        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
-        // For HTTP transport, we only need the base state for hydration.
-        if (pageOptions?.transport === 'http') {
-            return baseState;
-        }
-
-        // For real-time transports, add the WebSocket-related info.
         const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
         const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
             name,
@@ -368,6 +420,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             provider: options.provider || 'page',
         }));
 
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+        if (pageOptions?.transport === 'http') {
+            return { ...baseState, serverMethods };
+        }
+
+        // For real-time transports, add the WebSocket-related info.
         const providerDurableObjectIds: Record<string, string> = {};
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {

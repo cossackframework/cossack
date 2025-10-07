@@ -49,6 +49,35 @@ export function createApp() {
         return await stub.fetch(request);
     });
 
+    app.post('/cossack/action', async (c) => {
+        const { componentPath, action, state, payload } = await c.req.json();
+        const user = c.get('user');
+
+        const module = pages[componentPath];
+        if (!module) {
+            return c.json({ error: 'Component not found' }, 404);
+        }
+
+        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        if (!PageComponent) {
+            return c.json({ error: 'Could not instantiate component' }, 500);
+        }
+
+        const componentInstance = new PageComponent() as any;
+        
+        // Bootstrap with an empty context, as this is an out-of-band request
+        await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state });
+
+        if (typeof componentInstance[action] !== 'function') {
+            return c.json({ error: `Action '${action}' not found on component` }, 404);
+        }
+
+        await componentInstance[action](...(payload || []));
+
+        const newState = componentInstance.getPublicState();
+        return c.json(newState);
+    });
+
     // Build HTTP routes from the provided pages
     for (const path in pages) {
         const httpRoute = path

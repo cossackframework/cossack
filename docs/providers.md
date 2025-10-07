@@ -1,6 +1,8 @@
-# State Providers: Managing State Context
+# State Providers: Managing Real-Time State Context
 
 A **State Provider** is the core architectural concept in Cossack that answers the question: *"Where does my state live?"*
+
+**Note:** State Providers are a feature of the real-time transport and are only used when a component has `@Page({ transport: 'durable-object' })`.
 
 It is a class that decouples your component from the underlying stateful backend (the Durable Object). Its single most important job is to provide the logic for determining **which** Durable Object a component should connect to for a specific piece of state or a server action.
 
@@ -22,7 +24,7 @@ This is why the following code works out-of-the-box without any extra configurat
 ```typescript
 import { Page, Server, State } from '@cossackframework/core';
 
-@Page() // No provider specified, so PageStateProvider is used by default.
+@Page({ transport: 'durable-object' }) // Providers require the durable-object transport
 export class MyPage extends Cossack {
 
     // This state is managed by the PageStateProvider.
@@ -103,6 +105,7 @@ In your component, import your new provider and add it to the `providers` object
 import { UserSessionProvider } from '../providers/UserSessionProvider';
 
 @Page({
+  transport: 'durable-object', // Providers require the durable-object transport
   providers: {
     session: new UserSessionProvider()
     // The default 'page' provider is still available automatically.
@@ -119,6 +122,7 @@ Now, you can use the `provider` property in the `@State` and `@Server` decorator
 
 ```typescript
 @Page({
+  transport: 'durable-object', // Providers require the durable-object transport
   providers: {
     session: new UserSessionProvider()
   }
