@@ -6,6 +6,7 @@ import { Client, Server, State } from './decorators';
 import type { Context } from 'hono';
 import type { CossackDurableObject } from './CossackDurableObject';
 import { PageStateProvider, StateProvider } from './StateProvider';
+import { HeadTag } from './head';
 
 export interface CossackOptions {
   Channels?: string;
@@ -146,11 +147,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                         (this as any)[key] = data.state[key];
                     }
                     this.loading = {};
-                    this.render();
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
                     delete this.loading[action];
-                    this.render();
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
@@ -293,9 +292,37 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     protected abstract template(): TemplateResult;
 
+    public header(): HeadTag[] {
+        return [];
+    }
+
+    @Client()
+    private updateHead() {
+        const headTags = this.header();
+        const head = document.head;
+
+        // Clear existing managed tags
+        head.querySelectorAll('[data-cossack]').forEach(el => el.remove());
+
+        for (const tag of headTags) {
+            const el = document.createElement(tag.tag);
+            el.setAttribute('data-cossack', '');
+            if (tag.attributes) {
+                for (const [key, value] of Object.entries(tag.attributes)) {
+                    el.setAttribute(key, String(value));
+                }
+            }
+            if (tag.children) {
+                el.textContent = tag.children;
+            }
+            head.appendChild(el);
+        }
+    }
+
     public render(): string {
         if (this.container && !this.isServer) {
             render(this.template(), this.container);
+            this.updateHead();
             return '';
         }
         if (this.isServer) {
