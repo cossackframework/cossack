@@ -2,14 +2,20 @@
   "name": "my-cossack-app",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev src/index.ts",
-    "deploy": "wrangler deploy src/index.ts"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/framework": "latest"
+    "@cossackframework/core": "latest",
+    "@cossackframework/renderer": "latest",
+    "@cossackframework/framework": "latest",
+    "hono": "^4.9.5",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240725.0",
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.0.0",
+    "vite": "^5.0.0",
+    "typescript": "^5.0.0"
   }
 }
