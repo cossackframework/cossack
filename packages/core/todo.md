@@ -1,4 +1,3 @@
-- Page init (GET), action (POST). Static page without Web Socket or api only route.
 - Form handling and validation with `zod`
 - Client-only state
 - Database abstraction (Cloudflare D1, kysely)
