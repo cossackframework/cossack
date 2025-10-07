@@ -1,5 +1,5 @@
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack, Client, Page, Server, State, OnEvent } from '@cossackframework/core';
+import { Cossack, Client, Page, Server, State, OnEvent, HeadTag } from '@cossackframework/core';
 import { Layout } from '../../components/Layout';
 import { Button } from '../../components/Button';
 
@@ -15,6 +15,12 @@ export class Tasks extends Cossack {
     @State({ channel: 'tasks' })
     private tasks: Task[] = [];
 
+    public header(): HeadTag[] {
+        return [
+            { tag: 'title', children: 'Task List' },
+        ];
+    }
+
     @Server()
     async init() {
         // This runs on the server to initialize the state, but only if it's not already populated.
@@ -28,13 +34,13 @@ export class Tasks extends Cossack {
     }
 
     @Server({ channel: 'tasks' })
-    private async deleteTask(taskId: number) {        
+    private async deleteTask(taskId: number) {
         // Simulate a delay for the database operation
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         // In a real app, you would delete from the database here.
         this.tasks = this.tasks.filter(task => task.id !== taskId);
-        
+
         console.log(`[Server] Task ${taskId} deleted.`);
 
         // Broadcast an event instead of pushing state
@@ -75,9 +81,9 @@ export class Tasks extends Cossack {
                         <li style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
                             <span>${task.text}</span>
                             ${Button({
-                                '@click': () => this.confirmDelete(task.id),
-                                '?disabled': this.loading[`deleteTask_${task.id}`],
-                            }, 'Delete')}
+            '@click': () => this.confirmDelete(task.id),
+            '?disabled': this.loading[`deleteTask_${task.id}`],
+        }, 'Delete')}
                         </li>
                     `)}
                 </ul>

@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { Button } from '@/components/Button';
 import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack, isServer, Page, Server, State } from '@cossackframework/core';
+import { Cossack, isServer, Page, Server, State, HeadTag } from '@cossackframework/core';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
@@ -36,6 +36,12 @@ export class Greeting extends Cossack {
         this.greeting = `Hello ${this.c?.req.param('name')}!`;
         this.feedCount = 1;
         this.notificationCount = 5;
+    }
+
+    public header(): HeadTag[] {
+        return [
+            { tag: 'title', children: this.feedCount + ' Feeds & ' + this.notificationCount + ' Notifications' },
+        ];
     }
 
     @Server({ channel: 'feeds' })

@@ -7,11 +7,6 @@
     "./client": "./src/client/index.ts",
     "./vite-plugin": "./src/vite-plugin.ts"
   },
-  "main": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./vite-plugin": "./src/vite-plugin.ts"
-  },
   "scripts": {
     "dev": "wrangler dev",
     "build": "vite build --mode production && vite build --mode ssr --ssr",

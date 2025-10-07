@@ -1,8 +1,31 @@
+import { HeadTag } from '@cossackframework/core';
+import { escapeHTML } from '@cossackframework/renderer/server';
+
 type RenderRootProps = {
     body: string;
     initialState?: Record<string, any>;
     manifest: Record<string, any>;
+    headTags?: HeadTag[];
 }
+
+const renderTag = (tag: HeadTag) => {
+    const attributes = { ...tag.attributes, 'data-cossack': '' };
+    const attrs = Object.entries(attributes)
+        .map(([key, value]) => {
+            if (typeof value === 'boolean') {
+                return value ? key : '';
+            }
+            return `${key}="${String(value)}"`;
+        })
+        .filter(Boolean)
+        .join(' ');
+
+    if (['meta', 'link', 'base'].includes(tag.tag)) {
+        return `<${tag.tag} ${attrs}>`;
+    }
+    const children = tag.children ? escapeHTML(tag.children) : '';
+    return `<${tag.tag} ${attrs}>${children}</${tag.tag}>`;
+};
 
 export const renderRoot = (props: RenderRootProps) => {
     // In development, Vite handles assets. In production, we use the manifest.
@@ -14,11 +37,13 @@ export const renderRoot = (props: RenderRootProps) => {
         ? `<script>window.__INITIAL_STATE__ = ${JSON.stringify(props.initialState)}</script>`
         : '';
 
+    const headTagsHtml = (props.headTags || []).map(renderTag).join('\n');
+
     return `
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <title>Cossack Demo</title>
+                ${headTagsHtml}
                 <link rel="stylesheet" href="${css}">
                 ${initialStateScript}
                 <script type="module" src="${clientScript}"></script>

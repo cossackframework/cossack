@@ -72,6 +72,7 @@ export function createApp() {
             await componentInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
             const initialHtml = componentInstance.getInitialHtml();
             const initialState = componentInstance.getInitialState();
+            const headTags = componentInstance.header();
             
             const channels = pageOptions?.channels || ['global'];
 
@@ -87,6 +88,7 @@ export function createApp() {
                 body: initialHtml, 
                 initialState: finalInitialState,
                 manifest: manifest,
+                headTags: headTags,
             }));
         };
 
