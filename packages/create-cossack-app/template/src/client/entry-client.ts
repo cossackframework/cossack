@@ -1,5 +1,4 @@
-import { bootstrap } from '@cossackframework/framework/dist/client';
+import '../style.css';
+import { createClientApp } from '@cossackframework/framework/client';
 
-const pages = import.meta.glob('../pages/**/index.ts');
-
-bootstrap(pages);
+createClientApp({ container: '#root' });
