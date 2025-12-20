@@ -23,7 +23,7 @@ export function Page(options: PageOptions = {}): ClassDecorator {
       : {};
 
     const mergedOptions: PageOptions = {
-      transport: 'durable-object',
+      transport: 'http',
       ...existingOptions,
       ...options,
     };

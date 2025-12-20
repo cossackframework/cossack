@@ -1,26 +1,63 @@
-# Building APIs & Forms with the HTTP Transport
+# Building Interactive UIs and APIs with the HTTP Transport
 
-Cossack is not just for real-time UIs. It includes a powerful, stateless HTTP transport layer that allows you to build traditional server-side applications using the exact same component model. This is ideal for two primary use cases:
+Cossack's default transport is a powerful, stateless HTTP layer that allows you to build both traditional server-side applications and modern, AJAX-driven interactive UIs using the exact same component model. This is ideal for three primary use cases:
 
-1.  **Pure JSON APIs**: Creating RESTful endpoints for other applications.
-2.  **Hybrid Components**: Handling simple, stateless UI actions like form submissions that render HTML.
+1.  **Interactive Components**: Creating dynamic UIs that update without a full page reload (e.g., counters, filters, searches).
+2.  **Pure JSON APIs**: Creating RESTful endpoints for other applications.
+3.  **Classic Forms**: Handling simple, stateless UI actions like form submissions that render HTML.
 
-## 1. Pure JSON APIs
+This "LiveView over HTTP" model provides the simplicity of a server-rendered approach with the smooth user experience of a single-page application, and it is the default behavior for all Cossack components.
 
-This is the simplest way to expose data and services to other applications (web clients, mobile apps, etc.).
+## 1. Interactive Components (Default)
+
+This is the most common pattern. By default, any `@Server` method in a component is automatically wired up to be called from the client via a `fetch` request. The framework handles the request, state updates, and re-rendering automatically.
+
+### Example: An Interactive Counter
+
+**File:** `src/pages/counter.ts`
+```typescript
+import { Page, State, Cossack, Server } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page() // No transport needed, defaults to 'http'
+export default class extends Cossack {
+    @State()
+    private count: number = 0;
+
+    @Server()
+    private increment() {
+        this.count++;
+    }
+
+    @Server()
+    private decrement() {
+        this.count--;
+    }
+
+    protected template() {
+        return html`
+            <p>Count: ${this.count}</p>
+            <button @click=${this.increment}>+</button>
+            <button @click=${this.decrement}>-</button>
+        `;
+    }
+}
+```
+When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to seamlessly update the DOM.
+
+---
+
+## 2. Pure JSON APIs
+
+To create a pure API endpoint, simply create a component without a `template()` method.
 
 ### Getting Started: Your First API Route
 
-Creating an API route is as simple as creating a component without a `template()` method. The framework's file-based router will automatically detect and serve it.
-
 **File:** `src/pages/api/greeting.ts`
-
 ```typescript
 import { Page, State, Cossack } from '@cossackframework/core';
 
-@Page({
-    transport: 'http' // This is the magic key!
-})
+@Page() // Defaults to 'http' transport
 export default class extends Cossack {
     @State()
     private message: string = '';
@@ -31,9 +68,7 @@ export default class extends Cossack {
     }
 }
 ```
-
-If you run your development server and navigate to `/api/greeting`, you will see the following JSON response with a `200 OK` status:
-
+Navigating to `/api/greeting` will return a `200 OK` JSON response:
 ```json
 {
   "message": "Hello from your first Cossack API!"
@@ -42,9 +77,9 @@ If you run your development server and navigate to `/api/greeting`, you will see
 
 ---
 
-## 2. Hybrid Components & Form Handling
+## 3. Classic Form Handling
 
-This powerful pattern allows you to handle traditional HTML form submissions. A hybrid component uses `transport: 'http'` but also **includes a `template()` method**.
+This powerful pattern allows you to handle traditional HTML form submissions.
 
 The router intelligently handles this:
 -   A `GET` request will render the HTML template.
@@ -53,19 +88,17 @@ The router intelligently handles this:
 ### Example: A Contact Form
 
 **File:** `src/pages/contact.ts`
-
 ```typescript
 import { Page, State, Cossack } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' })
+@Page() // Defaults to 'http' transport
 export default class extends Cossack {
     @State()
     private successMessage: string = '';
 
     /**
      * Handles the initial GET request to load data and render the page.
-     * The router will also fall back to using `init()` if `get()` is not found.
      */
     async get() {
         const status = this.c.req.query('status');
@@ -105,9 +138,9 @@ export default class extends Cossack {
 
 ## Core Concepts
 
-### 1. The `@Page({ transport: 'http' })` Decorator
+### 1. The `@Page()` Decorator
 
-This is the explicit signal that tells the framework to treat a component as a stateless HTTP handler, bypassing all WebSocket and real-time logic.
+By default, all components use the `http` transport. You only need to specify the transport if you want to opt-in to real-time functionality: `@Page({ transport: 'durable-object' })`.
 
 ### 2. File-Based Routing
 
@@ -119,7 +152,7 @@ Routes are mapped directly from the file system. The router is flexible, support
 
 ### 3. HTTP Method Mapping
 
-The framework automatically maps your class method names to the corresponding HTTP verbs: `get()`, `post()`, `put()`, `patch()`, and `delete()`.
+For API routes and forms, the framework automatically maps your class method names to the corresponding HTTP verbs: `get()`, `post()`, `put()`, `patch()`, and `delete()`. For interactive components, `@Server` methods are handled by the generic `/crpc` endpoint.
 
 ## Handling Requests
 
@@ -214,7 +247,7 @@ import { authMiddleware } from '@/middleware/auth'; // Your custom auth middlewa
 
 export const middleware = [authMiddleware];
 
-@Page({ transport: 'http' })
+@Page()
 export default class extends Cossack {
     async get() {
         // The authMiddleware has already run and attached the user

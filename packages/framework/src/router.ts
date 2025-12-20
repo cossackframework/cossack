@@ -49,6 +49,46 @@ export function createApp() {
         return await stub.fetch(request);
     });
 
+    app.post('/crpc', async (c) => {
+        const { componentPath, action, state, payload } = await c.req.json();
+        const user = c.get('user');
+
+        const module = pages[componentPath];
+        if (!module) {
+            return c.json({ error: 'Component not found' }, 404);
+        }
+
+        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        if (!PageComponent) {
+            return c.json({ error: 'Could not instantiate component' }, 500);
+        }
+
+        const componentInstance = new PageComponent() as any;
+        
+        // Bootstrap with an empty context, as this is an out-of-band request
+        await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state });
+
+        if (typeof componentInstance[action] !== 'function') {
+            return c.json({ error: `Action '${action}' not found on component` }, 404);
+        }
+
+        const actionResult = await componentInstance[action](...(payload || []));
+
+        // Check if the action resulted in a redirect
+        const location = c.res.headers.get('Location');
+        if (location) {
+            return c.json({ _cossack_redirect: location });
+        }
+
+        // If the action returned a value, it might be a custom response
+        if (actionResult instanceof Response) {
+            return actionResult;
+        }
+
+        const newState = componentInstance.getPublicState();
+        return c.json(newState);
+    });
+
     // Build HTTP routes from the provided pages
     for (const path in pages) {
         const httpRoute = path

@@ -2,6 +2,8 @@
 
 The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components. This is achieved by leveraging **Cloudflare Durable Objects** and the modern **Hibernatable WebSockets API**.
 
+**Important:** To use any of the real-time features described in this document, you must explicitly enable the WebSocket transport by decorating your component with `@Page({ transport: 'durable-object' })`. The default transport is `'http'`.
+
 ### Powered by Hibernatable WebSockets
 
 Cossack's backend is built on a "serverless" model. This means:
@@ -25,7 +27,7 @@ By default, all state and actions use the `global` channel within the default `p
 
 ```typescript
 @Page({
-    // No providers or channels needed for the default setup.
+    transport: 'durable-object'
 })
 export class LiveCounter extends Cossack {
     
@@ -52,6 +54,7 @@ Use the `channel` property on the `@State` decorator to link a state variable to
 
 ```typescript
 @Page({
+    transport: 'durable-object',
     channels: ['feeds', 'notifications']
 })
 export class Dashboard extends Cossack {
@@ -91,6 +94,7 @@ import { Cossack } from '@cossackframework/core';
 // ... other imports
 
 @Page({
+    transport: 'durable-object',
     channels: ['feeds', 'notifications'],
 })
 export class Greeting extends Cossack {

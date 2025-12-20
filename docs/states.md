@@ -1,6 +1,8 @@
-# State Management in Cossack
+# Real-Time State Management in Cossack
 
-Cossack's primary goal is to unify client and server state management. It provides a flexible, powerful architecture that allows you to choose the right pattern for the job, from simple, automatic UI updates to robust, secure, event-driven workflows.
+Cossack's primary goal is to unify client and server state management. For real-time applications, it provides a flexible, powerful architecture that allows you to choose the right pattern for the job, from simple, automatic UI updates to robust, secure, event-driven workflows.
+
+**Note:** The patterns described here—Automatic State Synchronization and Event-Driven Re-fetch—are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
 
 This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
 
@@ -12,9 +14,9 @@ This architecture is built on three pillars: **State Providers**, **Channels**, 
 
 ---
 
-## Two Core Patterns
+## Two Core Patterns for Real-Time State
 
-Cossack offers two primary patterns for managing state. You can use either—or both—within the same component.
+Cossack offers two primary patterns for managing real-time state. You can use either—or both—within the same component.
 
 ### 1. Automatic State Synchronization (The "Blazor" Way)
 
@@ -32,7 +34,7 @@ This is the simplest and most direct way to manage state. It's perfect for UI-sp
 ```typescript
 import { Page, Server, State } from '@cossackframework/core';
 
-@Page()
+@Page({ transport: 'durable-object' })
 export class Counter extends Cossack {
     
     @State() // Uses the default 'global' channel
@@ -75,7 +77,7 @@ This pattern is secure by default and prevents race conditions or accidental dat
 ```typescript
 import { Page, Server, State, OnEvent } from '@cossackframework/core';
 
-@Page()
+@Page({ transport: 'durable-object' })
 export class Tasks extends Cossack {
     @State()
     private tasks: Task[] = [];
@@ -130,6 +132,7 @@ export class UserSessionProvider extends StateProvider {
 
 // 2. Register it in your component
 @Page({
+  transport: 'durable-object',
   providers: {
     session: new UserSessionProvider()
   }

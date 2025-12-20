@@ -22,6 +22,11 @@ This project is a monorepo managed by `pnpm`. It is divided into several distinc
 
 -   **`create-cossack-app`**: A command-line tool for scaffolding new Cossack Framework projects, providing a clean starting point for developers.
 
+## Todo List
+- [ ] Currently, accessing context via `this.c` seems a bit clunky. Maybe accessing directly via `this.[property]` would be cleaner? But before doing that, consider checking if it would cause issues with states because states are accessed the same way.
+- [ ] Consider adding a `@BeforeAction` decorator to allow pre-processing or validation before server actions are executed.
+- [ ]
+
 ## Development
 
 The development workflow requires building the library dependencies before starting the application's development server.

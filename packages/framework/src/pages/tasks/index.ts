@@ -9,6 +9,7 @@ interface Task {
 }
 
 @Page({
+    transport: 'durable-object',
     channels: ['tasks'],
 })
 export class Tasks extends Cossack {
