@@ -43,7 +43,7 @@ export default class extends Cossack {
     }
 }
 ```
-When a button is clicked, the client sends the component's current state to a generic `/cossack/action` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to seamlessly update the DOM.
+When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to seamlessly update the DOM.
 
 ---
 
@@ -152,7 +152,7 @@ Routes are mapped directly from the file system. The router is flexible, support
 
 ### 3. HTTP Method Mapping
 
-For API routes and forms, the framework automatically maps your class method names to the corresponding HTTP verbs: `get()`, `post()`, `put()`, `patch()`, and `delete()`. For interactive components, `@Server` methods are handled by the generic `/cossack/action` endpoint.
+For API routes and forms, the framework automatically maps your class method names to the corresponding HTTP verbs: `get()`, `post()`, `put()`, `patch()`, and `delete()`. For interactive components, `@Server` methods are handled by the generic `/crpc` endpoint.
 
 ## Handling Requests
 
