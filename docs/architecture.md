@@ -19,13 +19,15 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 
 1.  A user navigates to a URL (e.g., `/tasks`). The request hits the Cloudflare Worker.
 2.  The Hono router matches the incoming URL to a route and identifies the corresponding Page Component (e.g., the `Tasks` class).
-3.  An instance of the `Tasks` component is created on the server.
-4.  The component's `bootstrap` method is called. It identifies all **State Providers** registered in the `@Page` decorator (defaulting to a `PageStateProvider` if none are specified).
-5.  The component's `@Server` decorated `init()` method is called to fetch the initial data for the page.
-6.  The `getInitialHtml()` method is called, which uses the `@cossackframework/renderer/server` package to render the component's template into an HTML string.
-7.  The component's `getInitialState()` method is called. It serializes all `@State` properties, the names of all `@Server` methods, and the unique Durable Object IDs for each registered **State Provider**.
-8.  The final HTML page is constructed, embedding the rendered HTML and the serialized initial state into a `<script>` tag (`window.__INITIAL_STATE__`).
-9.  The complete HTML page is sent to the user's browser.
+3.  **Routing & Middleware**: The router identifies the stack of **Layouts** relevant to this page (e.g., `RootLayout` -> `DashboardLayout` -> `TasksPage`) and applies all their middlewares in order.
+4.  **Bootstrapping**:
+    *   The Global `App` component is instantiated and bootstrapped.
+    *   Each `Layout` in the stack is instantiated and bootstrapped.
+    *   The `Page` component is instantiated and bootstrapped.
+5.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
+6.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
+7.  The final HTML page is constructed, embedding the rendered HTML and the serialized initial state (for the App, all Layouts, and the Page) into a `<script>` tag (`window.__INITIAL_STATE__`).
+8.  The complete HTML page is sent to the user's browser.
 
 ### 2. Client-Side Hydration & Navigation
 

@@ -30,9 +30,31 @@ export default class MyPage extends Cossack {
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `route` | `string` | (Optional) Explicitly define the route. If omitted, the file-system-based route is used. |
 
+## Layouts
+
+Layouts in Cossack are simply components decorated with `@Page` that are named `layout.ts` in the file system. The key difference is that a layout's `template` method receives a `children` argument, which contains the rendered content of the nested page (or nested layout).
+
+```typescript
+@Page({ transport: 'http' })
+export default class MyLayout extends Cossack {
+    template(children: TemplateResult) {
+        return html`
+            <div class="wrapper">
+                <header>My Header</header>
+                <main>${children}</main>
+            </div>
+        `;
+    }
+}
+```
+
+Layouts can have their own state, transport, and middleware, just like regular pages.
+
 ## Middlewares
 
 Cossack integrates directly with Hono's middleware system. You can pass any standard Hono middleware to the `@Page` decorator. These will be executed on the server before the page is rendered or an action is handled.
+
+If a page is nested within layouts, the middlewares from all parent layouts are applied first, in order from root to leaf.
 
 ```typescript
 const authGuard: MiddlewareHandler = async (c, next) => {

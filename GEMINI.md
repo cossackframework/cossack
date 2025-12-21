@@ -77,6 +77,8 @@ The development process is critical and follows a specific order.
 
 - **Optimistic UI**: `@Optimistic` decorator for instant client-side updates.
 
+- **Nested Layouts & Route Groups**: Powerful file-based routing with `layout.ts` support and `(group)` folders for organizing complex apps.
+
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 
 - **Image Optimization**: `Image` helper component for easy responsive images.

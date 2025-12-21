@@ -8,14 +8,15 @@ The framework scans for any file named `index.ts` within the `src/pages` directo
 
 ### Basic Routing
 
-A page component at `src/pages/about/index.ts` will be served at the `/about` URL. A component at `src/pages/index.ts` will be the root page, served at `/`.
+A page component at `src/pages/about/index.ts` will be served at the `/about` URL. A component at `src/pages/index/index.ts` (or `src/pages/index.ts`) will be the root page, served at `/`.
 
 **Example File Structure:**
 
 ```
 src/
 └── pages/
-    ├── index.ts         // Serves the "/" route
+    ├── index/
+    │   └── index.ts     // Serves the "/" route
     ├── about/
     │   └── index.ts     // Serves the "/about" route
     └── contact/
@@ -28,25 +29,69 @@ To create a dynamic route that captures a segment of the URL, use square bracket
 
 For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`.
 
+### Route Groups
+
+You can organize your routes into logical groups without affecting the URL structure by wrapping the folder name in parenthesis. This is useful for sharing layouts (see below).
+
+**Example:**
+*   `src/pages/(auth)/login/index.ts` -> `/login`
+*   `src/pages/(auth)/register/index.ts` -> `/register`
+
+### Nested Layouts
+
+Cossack supports nested layouts via `layout.ts` files. A layout wraps all pages and sub-directories within its folder. Layouts nest automatically based on the file system hierarchy.
+
 **Example File Structure:**
 
 ```
 src/
 └── pages/
-    └── users/
-        └── [id]/
-            └── index.ts  // Serves "/users/:id" (e.g., /users/123)
+    ├── layout.ts            // Root Layout (wraps everything)
+    ├── index/
+    │   └── index.ts         // Home page (Root Layout -> Home)
+    ├── (auth)/
+    │   ├── layout.ts        // Auth Layout (wraps login/register)
+    │   ├── login/
+    │   │   └── index.ts     // /login (Root Layout -> Auth Layout -> Login)
+    │   └── register/
+    │       └── index.ts     // /register (Root Layout -> Auth Layout -> Register)
+    └── dashboard/
+        ├── layout.ts        // Dashboard Layout (wraps dashboard pages)
+        └── index.ts         // /dashboard (Root Layout -> Dashboard Layout -> Dashboard)
 ```
+
+**Creating a Layout:**
+A layout is just a regular Cossack component that accepts children in its `template` method.
+
+```typescript
+import { Cossack, Page } from '@cossackframework/core';
+import { html, type TemplateResult } from '@cossackframework/renderer';
+
+@Page({ transport: 'http' }) // Layouts can act as state containers too!
+export default class MyLayout extends Cossack {
+  template(children: TemplateResult) {
+    return html`
+      <div class="layout">
+        <nav>...</nav>
+        <main>${children}</main>
+      </div>
+    `;
+  }
+}
+```
+
+### Global App Component
+
+For logic that must exist outside of the routing system (like global CSS, theme providers, or a top-level progress bar), Cossack uses `src/App.ts`. This component wraps the entire application and is never destroyed during client-side navigation.
 
 ### Client-Side Navigation
 
 Cossack enables "soft navigation" by default. This means that when a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click, fetches the new page via AJAX, and swaps the content without a full browser refresh. This provides a fast, Single-Page Application (SPA) feel while maintaining the simplicity of server-side rendering.
 
-To navigate programmatically, you can use the standard browser API:
-```typescript
-// Clicking <a> tags is handled automatically.
-// Programmatic navigation support is coming soon.
-```
+**Optimizations:**
+*   **Smart Pre-fetching**: Data is fetched when you hover over a link.
+*   **Caching**: Visited pages are stored in memory for instant back/forward navigation.
+*   **Persistent Layouts**: If you navigate between pages that share a layout (e.g., `/login` to `/register`), the shared `AuthLayout` instance is **preserved**, maintaining its state and scroll position.
 
 ---
 
@@ -56,24 +101,16 @@ For those curious about the underlying mechanics, the "magic" of file-based rout
 
 ### 1. The `cossackPages` Vite Plugin
 
-The core of the system is a Vite plugin named `cossackPages`, which is automatically included when you use the Cossack framework. During the build process, this plugin scans your project for files matching the glob pattern `/src/pages/**/index.ts`.
+The core of the system is a Vite plugin named `cossackPages`, which is automatically included when you use the Cossack framework. During the build process, this plugin scans your project for `index.ts` (pages) and `layout.ts` (layouts).
 
 ### 2. The `virtual:cossack-pages` Module
 
-Once the plugin has found all the page files, it doesn't write them to a temporary file. Instead, it creates a **virtual module** named `virtual:cossack-pages`.
-
-When the framework's router tries to `import pages from 'virtual:cossack-pages'`, our plugin intercepts the request and provides the following code on-the-fly:
-
-```typescript
-// This code is generated by the plugin and doesn't actually exist on disk
-const pages = import.meta.glob('/src/pages/**/index.ts', { eager: true });
-export default pages;
-```
-
-This uses Vite's powerful `import.meta.glob` feature to create a map of all the page modules.
+Once the plugin has found all the files, it creates a **virtual module** named `virtual:cossack-pages` containing a map of all pages and layouts.
 
 ### 3. The Router
 
-The framework's `createApp()` function then consumes this `pages` object. It iterates over the map, transforming each file path (e.g., `/src/pages/users/[id]/index.ts`) into a Hono-compatible HTTP route (e.g., `/users/:id`) and registers the corresponding page component as the handler.
-
-By handling this entire process at build time, the framework provides a seamless, "just works" routing experience for the developer.
+The framework's `createApp()` function consumes this map. It constructs the route tree, identifying the stack of layouts for each page. It registers Hono routes that automatically:
+1.  Bootstrap the Global App.
+2.  Bootstrap the entire stack of Layouts (Root -> ... -> Parent).
+3.  Bootstrap the Page.
+4.  Render them nested inside each other.
