@@ -47,7 +47,7 @@ export class OptimisticCounter extends Cossack {
 
                 <div style="display: flex; gap: 10px; align-items: center;">
                     ${Button({ '@click': this.increment }, 'Increment (+1)')}
-                    ${Button({ '@click': this.toggleDetails }, this.showDetails ? 'Hide Info' : 'Show Info')}
+                    ${Button({ '@click': this.toggleDetails, 'style': 'background: #666; border-color: #444;' }, this.showDetails ? 'Hide Info' : 'Show Info')}
                 </div>
 
                 ${this.showDetails ? html`
