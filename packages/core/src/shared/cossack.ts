@@ -43,10 +43,13 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
+    private isMounted: boolean = false;
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
         const context: HeadContext = {
             title: '',
+            description: '',
+            image: '',
             meta: [],
             links: [],
             scripts: [],
@@ -59,6 +62,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     context.title = tag.children || '';
                     break;
                 case 'meta':
+                    const name = tag.attributes?.name || tag.attributes?.property;
+                    if (name === 'description' || name === 'og:description') {
+                        context.description = String(tag.attributes?.content || '');
+                    } else if (name === 'og:image' || name === 'twitter:image') {
+                        context.image = String(tag.attributes?.content || '');
+                    }
                     context.meta.push(tag);
                     break;
                 case 'link':
@@ -78,13 +87,27 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     public static mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
         const title = value.title ?? context.title;
-        const meta = value.meta ?? context.meta;
+        const description = value.description ?? context.description;
+        const image = value.image ?? context.image;
+        
+        let meta = value.meta ?? context.meta;
         const links = value.links ?? context.links;
         const scripts = value.scripts ?? context.scripts;
         const tags = value.tags ?? context.tags;
 
         const result: HeadTag[] = [];
         if (title) result.push({ tag: 'title', children: title });
+        
+        // Auto-expand SEO shortcuts
+        if (description) {
+            result.push({ tag: 'meta', attributes: { name: 'description', content: description } });
+            result.push({ tag: 'meta', attributes: { property: 'og:description', content: description } });
+        }
+        if (image) {
+            result.push({ tag: 'meta', attributes: { property: 'og:image', content: image } });
+            result.push({ tag: 'meta', attributes: { name: 'twitter:image', content: image } });
+        }
+
         result.push(...meta);
         result.push(...links);
         result.push(...scripts);
@@ -117,10 +140,23 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
+    private autoBindMethods() {
+        const proto = Object.getPrototypeOf(this);
+        const propertyNames = Object.getOwnPropertyNames(proto);
+        for (const name of propertyNames) {
+            const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+            if (descriptor && typeof descriptor.value === 'function' && name !== 'constructor') {
+                (this as any)[name] = descriptor.value.bind(this);
+            }
+        }
+    }
+
     public async bootstrap({ container, initialState, context, user, env, page, providerName }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string } = {}) {
         this.container = container;
         this.user = user;
         this.props = { page };
+
+        this.autoBindMethods();
 
         if (this.isServer) {
             if (!context) {
@@ -160,6 +196,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
         if (this.container && !this.isServer) {
             this.render();
+            if (!this.isMounted) {
+                this.isMounted = true;
+                this.onMount();
+            }
         }
     }
 
@@ -489,7 +529,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         // NOTE: In a multi-layout scenario on the client, we need access to the whole stack
         // to correctly re-run header merging. For now, we'll keep it simple as most head
         // updates are page-specific. Complex layout-based head updates might need the App instance.
-        const emptyCtx: HeadContext = { title: '', meta: [], links: [], scripts: [], tags: [] };
+        const emptyCtx: HeadContext = { title: '', description: '', image: '', meta: [], links: [], scripts: [], tags: [] };
         const value = this.head(emptyCtx);
         const tags = Cossack.mergeHead(emptyCtx, value);
         Cossack.applyHeadTags(tags);
@@ -517,6 +557,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public async init(): Promise<void> {}
+    
+    // Lifecycle hooks
+    public onMount(): void {}
+    public onCleanup(): void {}
 
     @Server()
     public redirect(url: string, status: RedirectStatusCode = 302) {
@@ -580,6 +624,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public destroy() {
+        this.onCleanup();
         if (!this.isServer) {
             this.websockets.forEach(ws => {
                 ws.close();

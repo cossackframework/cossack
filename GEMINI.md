@@ -53,9 +53,10 @@ The project is a `pnpm` workspace.
 ## 6. Key Architectural Decisions & "Gotchas"
 
 -   **`isServer` Check**: `typeof window === 'undefined' || typeof window.document === 'undefined'`.
--   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation.
+-   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation and auto-expands SEO shortcuts (`description`, `image`) into OG/Twitter tags.
 -   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
--   **Function Binding**: All event handlers MUST be defined as **Arrow Functions** (e.g., `handleClick = () => { ... }`) to ensure the correct `this` context is preserved in the browser.
+-   **Auto-Binding**: All component methods are automatically bound to the instance during `bootstrap`. Standard class methods can be used as event handlers without manual binding or arrow functions.
+-   **Lifecycle Hooks**: Components can implement `onMount()` (runs once after first client-render) and `onCleanup()` (runs before component destruction).
 
 ## 7. Key Features
 
@@ -65,5 +66,6 @@ The project is a `pnpm` workspace.
 - **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.
 - **Optimistic UI**: Built-in support for instant feedback on actions.
 - **Client-Only State**: `@ClientState` decorator for local UI state that triggers re-renders without server sync.
+- **Lifecycle Hooks**: Browser-only `onMount` and `onCleanup` for easy library integration.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 - **Image Optimization**: `Image` component for responsive, edge-optimized assets.

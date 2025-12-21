@@ -11,23 +11,18 @@ This project is a monorepo managed by `pnpm`. It is divided into several distinc
 ### Core Packages
 
 -   **`@cossackframework/core`**: The heart of the framework. It provides the `Cossack` base class, decorators (`@Page`, `@State`, `@Server`, `@Client`), the base `CossackDurableObject`, and other essential utilities. This package is a pure library and contains no application-specific logic.
-
 -   **`@cossackframework/renderer`**: A dual-environment rendering engine inspired by `lit-html`. It has separate entry points for the server (`@cossackframework/renderer/server`) and the client, allowing the same `html` template syntax to be used for both initial server-side rendering and client-side hydration.
-
 -   **`@cossackframework/node-adapter`**: Provides the runtime adapter for running Cossack applications on a standard Node.js server using `ws`.
 
 ### Application & Tooling
 
 -   **`@cossackframework/framework`**: A complete, runnable application that serves as the primary example and template for a Cossack project. It consumes the `core` and `renderer` packages and contains all the application-specific logic, including the Cloudflare Worker entrypoint, the Hono router, page components, and the application-specific Durable Object.
-
 -   **`@cossackframework/auth`**: (In Development) A package dedicated to handling authentication logic, including user sessions, database interactions, and middleware.
-
 -   **`create-cossack-app`**: A command-line tool for scaffolding new Cossack Framework projects, providing a clean starting point for developers.
 
 ## Todo List
 - [ ] Currently, accessing context via `this.c` seems a bit clunky. Maybe accessing directly via `this.[property]` would be cleaner? But before doing that, consider checking if it would cause issues with states because states are accessed the same way.
 - [ ] Consider adding a `@BeforeAction` decorator to allow pre-processing or validation before server actions are executed.
-- [ ]
 
 ## Development
 
