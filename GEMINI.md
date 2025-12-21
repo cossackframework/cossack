@@ -57,16 +57,19 @@ The project is a `pnpm` workspace.
 -   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
 -   **Auto-Binding**: All component methods are automatically bound to the instance during `bootstrap`. Standard class methods can be used as event handlers without manual binding or arrow functions.
 -   **Lifecycle Hooks**: Components can implement `onMount()` (runs once after first client-render) and `onCleanup()` (runs before component destruction).
+-   **SPA Redirects**: `this.redirect()` on the client is automatically intercepted and handled as a soft navigation.
+-   **Hierarchical Error Boundaries**: The router searches for the nearest `error/index.ts` or `404/index.ts` up the directory tree relative to the current route.
 
 ## 7. Key Features
 
 - **Instant App**: Soft navigation with pre-fetching on hover and a client-side page cache.
-- **Progress Bar**: Automatic visual feedback for background page loads.
+- **Progress Bar**: Automatic visual feedback for background page loads and redirects.
 - **Nested Layouts & Route Groups**: Standardized file-based organization with inheritance.
 - **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.
 - **Optimistic UI**: Built-in support for instant feedback on actions.
 - **Client-Only State**: `@ClientState` decorator for local UI state that triggers re-renders without server sync.
-- **Lifecycle Hooks**: Browser-only `onMount` and `onCleanup` for easy library integration.
+- **Universal Loading State**: Built-in `this.loading[methodName]` support for all transport modes.
+- **Hierarchical Error Pages**: Folder-level `404` and `error` pages for localized error handling.
 - **MDX Support**: Zero-configuration support for `.mdx` files as endpoints, allowing markdown-based content with full layout support.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 - **Image Optimization**: `Image` component for responsive, edge-optimized assets.

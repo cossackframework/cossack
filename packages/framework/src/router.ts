@@ -38,6 +38,28 @@ function getLayoutStack(pagePath: string) {
     return stack;
 }
 
+/**
+ * Searches up the directory tree for a special page (404 or error).
+ */
+function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
+    const relativePath = pagePath.replace('/src/pages/', '');
+    const parts = relativePath.split('/');
+    
+    // Search from the current directory upwards
+    for (let i = parts.length - 1; i >= 0; i--) {
+        const dir = parts.slice(0, i).join('/');
+        const searchPath = dir 
+            ? `/src/pages/${dir}/${type}/index.ts`
+            : `/src/pages/${type}/index.ts`;
+            
+        if (pages[searchPath]) {
+            return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
+        }
+    }
+    
+    return null;
+}
+
 export function createApp() {
     const app = new Hono<{ Bindings: CloudflareBindings, Variables: { user?: AuthenticatedUser } }>();
 
@@ -119,11 +141,10 @@ export function createApp() {
             } catch (err) {
                 console.error('[Cossack SSR Error]:', err);
                 
-                // Try to render the error page if it exists
-                const errorPagePath = Object.keys(pages).find(p => p.includes('/error/index.ts'));
-                if (errorPagePath && path !== errorPagePath) {
-                    const ErrorComp = Object.values(pages[errorPagePath] as object)[0] as new () => Cossack;
-                    const handler = createSsrHandler(ErrorComp, errorPagePath);
+                // Try to render the nearest error page
+                const errorPage = findNearestSpecialPage(path, 'error');
+                if (errorPage && path !== errorPage.path) {
+                    const handler = createSsrHandler(errorPage.component, errorPage.path);
                     return handler(c);
                 }
 
@@ -208,7 +229,7 @@ export function createApp() {
         if (httpRoute === '/index') httpRoute = '/';
 
         // Skip 404 and Error pages from direct routing (they are handled specially)
-        if (httpRoute === '/404' || httpRoute === '/error') continue;
+        if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
 
         const module = pages[path];
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
@@ -247,10 +268,12 @@ export function createApp() {
 
     // 404 Handler
     app.notFound(async (c) => {
-        const notFoundPath = Object.keys(pages).find(p => p.includes('/404/index.ts'));
-        if (notFoundPath) {
-            const NotFoundComp = Object.values(pages[notFoundPath] as object)[0] as new () => Cossack;
-            const handler = createSsrHandler(NotFoundComp, notFoundPath);
+        // Try to find the nearest 404 page relative to the requested path
+        const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
+        const notFoundPage = findNearestSpecialPage(virtualPath, '404');
+        
+        if (notFoundPage) {
+            const handler = createSsrHandler(notFoundPage.component, notFoundPage.path);
             return handler(c);
         }
         return c.text('404 Not Found', 404);

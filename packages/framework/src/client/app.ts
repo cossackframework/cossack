@@ -187,35 +187,25 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   await loadComponent(window.__INITIAL_STATE__);
 
-  const fetchPage = async (url: string) => {
-    if (pageCache.has(url)) return pageCache.get(url)!;
+  const navigate = async (url: string) => {
+    try {
+      setProgress(30);
+      const { state } = await fetchPage(url);
+      setProgress(100);
 
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Network response was not ok');
-    const html = await response.text();
-    const result = parseStateFromHTML(html);
-    if (result) {
-      const entry = { html, state: result.state, title: result.title };
-      pageCache.set(url, entry as any);
-      return entry;
+      window.__INITIAL_STATE__ = state;
+      await loadComponent(state);
+    } catch (error) {
+      console.error('Navigation failed:', error);
+      window.location.reload();
     }
-    throw new Error('Failed to parse page state');
   };
 
-  enableClientNavigation(
-    async (url) => {
-      try {
-        setProgress(30);
-        const { state } = await fetchPage(url);
-        setProgress(100);
+  // Register for programmatic redirects
+  Cossack._onNavigate = navigate;
 
-        window.__INITIAL_STATE__ = state;
-        await loadComponent(state);
-      } catch (error) {
-        console.error('Navigation failed:', error);
-        window.location.reload();
-      }
-    },
+  enableClientNavigation(
+    navigate,
     async (url) => {
       if (!pageCache.has(url)) {
         console.log(`[Cossack] Pre-fetching: ${url}`);

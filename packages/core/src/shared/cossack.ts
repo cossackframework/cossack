@@ -562,10 +562,17 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     public onMount(): void {}
     public onCleanup(): void {}
 
+    public static _onNavigate?: (url: string) => Promise<void>;
+
     @Server()
     public redirect(url: string, status: RedirectStatusCode = 302) {
         if (!this.isServer) {
-            console.warn('[Cossack] redirect() can only be called on the server.');
+            if (Cossack._onNavigate) {
+                window.history.pushState({}, '', url);
+                Cossack._onNavigate(url);
+            } else {
+                window.location.href = url;
+            }
             return;
         }
         return this.c.redirect(url, status);

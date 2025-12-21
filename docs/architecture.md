@@ -22,18 +22,18 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     *   **TypeScript Components**: Standard `index.ts` files.
     *   **MDX Components**: `index.mdx` files which are automatically transformed into component classes during the Vite build process.
 3.  **Routing & Middleware**: The router identifies the stack of **Layouts** relevant to this page (e.g., `RootLayout` -> `DashboardLayout` -> `TasksPage`) and applies all their middlewares in order.
-4.  **Bootstrapping**:
+4.  **Error Boundaries**: If a component fails to load or render, the router searches for the **nearest `error/index.ts`** page up the directory tree. Similarly, if a route is not found, the router searches for the **nearest `404/index.ts`**. This allows for localized error UI while preserving parent layouts (like sidebars).
+5.  **Bootstrapping**:
     *   The Global `App` component is instantiated and bootstrapped.
     *   Each `Layout` in the stack is instantiated and bootstrapped.
     *   The `Page` component is instantiated and bootstrapped.
-5.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
-6.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
-7.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values (automatically extracted from frontmatter in MDX components), which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
-8.  The final HTML page is constructed, embedding the rendered HTML, the serialized initial state, and the merged head tags into the response.
-9.  The complete HTML page is sent to the user's browser.
+6.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
+7.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
+8.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values (automatically extracted from frontmatter in MDX components), which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
+9.  The final HTML page is constructed, embedding the rendered HTML, the serialized initial state, and the merged head tags into the response.
+10. The complete HTML page is sent to the user's browser.
 
 ### 2. Client-Side Hydration & Navigation
-// ... rest of the file ...
 
 1.  The browser receives the HTML, renders the initial view, and downloads the client-side JavaScript.
 2.  An instance of the `Tasks` component is created in the browser.
@@ -46,6 +46,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     *   **Pre-fetching**: The framework automatically begins fetching the next page data when the user hovers over a link, effectively hiding network latency.
     *   **Caching**: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
     *   **Component Swap**: The current component instance is destroyed (closing WebSockets), and the new component is instantiated and bootstrapped using the state parsed from the fetched HTML.
+9.  **Programmatic Navigation**: Components can call `this.redirect('/new-path')`. On the client, this is automatically intercepted and handled as a soft navigation (SPA transition) rather than a full browser reload.
 
 ### 3. Server Runtime Interaction & State Synchronization
 
