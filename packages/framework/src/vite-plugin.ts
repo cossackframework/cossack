@@ -13,11 +13,10 @@ export function cossackPages(): Plugin {
     },
     load(id) {
       if (id === resolvedVirtualModuleId) {
-        const globPath = '/src/pages/**/*.ts';
-        
         return `
-          const pages = import.meta.glob('${globPath}', { eager: true });
-          export default pages;
+          const pages = import.meta.glob('/src/pages/**/index.ts', { eager: true });
+          const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
+          export default { pages, layouts };
         `;
       }
     },

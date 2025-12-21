@@ -1,6 +1,9 @@
 import { Cossack, enableClientNavigation } from '@cossackframework/core';
+import { App } from '../App';
 // @ts-expect-error - this is a virtual module created by the vite plugin
-import pages from 'virtual:cossack-pages';
+import registry from 'virtual:cossack-pages';
+
+const { pages, layouts } = registry;
 
 declare global {
   interface Window {
@@ -74,18 +77,50 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     return;
   }
 
+  const appInstance = new App();
+  await appInstance.bootstrap({ 
+    container: containerEl as Element, 
+    initialState: window.__INITIAL_STATE__._app_state 
+  });
+
   let currentComponent: Cossack | null = null;
+  const currentLayouts = new Map<string, Cossack>();
 
   const loadComponent = async (initialState: any) => {
     const componentPath = initialState?.componentPath;
+    const layoutStack = initialState?._layout_stack || [];
 
     if (!componentPath) {
       console.error('Could not find componentPath in initial state');
       return;
     }
 
-    const module = pages[componentPath] as any;
+    // 1. Manage Layouts
+    const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
+    
+    // Destroy layouts no longer in use
+    for (const [path, instance] of currentLayouts.entries()) {
+        if (!activeLayoutPaths.has(path)) {
+            instance.destroy();
+            currentLayouts.delete(path);
+        }
+    }
 
+    // Bootstrap new layouts
+    const layoutInstances: Cossack[] = [];
+    for (const { path, state } of layoutStack) {
+        let instance = currentLayouts.get(path);
+        if (!instance) {
+            const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
+            instance = new LComp();
+            await instance.bootstrap({ container: containerEl as Element, initialState: state });
+            currentLayouts.set(path, instance);
+        }
+        layoutInstances.push(instance);
+    }
+
+    // 2. Manage Page Component
+    const module = pages[componentPath] as any;
     if (!module) {
       console.error(`Component module not found for path: ${componentPath}`);
       return;
@@ -99,6 +134,16 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       }
       const componentInstance = new PageComponent();
       currentComponent = componentInstance;
+      
+      // Override render to wrap with layouts
+      componentInstance.render = () => {
+         let body = (componentInstance as any).template();
+         for (let i = layoutInstances.length - 1; i >= 0; i--) {
+            body = (layoutInstances[i] as any).template(body);
+         }
+         return appInstance.render(body);
+      };
+
       await componentInstance.bootstrap({ container: containerEl as Element, initialState });
     } else {
       console.error(`Could not extract component from module: ${componentPath}`);

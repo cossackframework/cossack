@@ -29,9 +29,7 @@ export class Contact extends Cossack {
     }
 
     public template(): TemplateResult {
-        return Layout({
-            dir: 'ltr',
-        }, html`
+        return html`
             <h1>Contact Page</h1>
             <div>Hello ${this.greeting}</div>
             <form method="post" action="/contact">
@@ -39,6 +37,6 @@ export class Contact extends Cossack {
                 <input type="text" id="name" name="name" value="${this.greeting}" />
                 ${Button({ type: 'submit' }, 'Submit')}
             </form> 
-        `);
+        `;
     }
 }

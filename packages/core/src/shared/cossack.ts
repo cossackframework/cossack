@@ -396,7 +396,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
-    protected template(): TemplateResult | null { return null; }
+    protected template(children?: TemplateResult): TemplateResult | null { return null; }
 
     public header(): HeadTag[] {
         return [];
@@ -425,8 +425,8 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
-    public render(): string {
-        const template = this.template();
+    public render(children?: TemplateResult): string {
+        const template = this.template(children);
         if (!template) {
             return '';
         }
