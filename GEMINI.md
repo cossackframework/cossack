@@ -69,7 +69,16 @@ The development process is critical and follows a specific order.
 
 ## 7. Key Features
 
--   **Client-Side Navigation**: Automatic "Turbo-like" navigation for `<a>` tags.
--   **Optimistic UI**: `@Optimistic` decorator for instant client-side updates.
--   **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
--   **Image Optimization**: `Image` helper component for easy responsive images.
+- **Client-Side Navigation**: Automatic "Turbo-like" navigation for `<a>` tags.
+
+- **Instant Navigation**: Smart pre-fetching on hover (50ms delay) and a client-side page cache (Memory Map) for zero-latency transitions.
+
+- **Progress Bar**: Automatic top-loading bar for soft navigations.
+
+- **Optimistic UI**: `@Optimistic` decorator for instant client-side updates.
+
+- **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
+
+- **Image Optimization**: `Image` helper component for easy responsive images.
+
+

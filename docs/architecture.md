@@ -35,11 +35,10 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 4.  It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5.  It also reads the list of server method names and **replaces them** with proxy functions.
 6.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one.
-7.  **Soft Navigation**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
-    *   Fetches the new page HTML via AJAX.
-    *   Parses the new `__INITIAL_STATE__` from the response.
-    *   Destroys the current component instance (closing WebSockets).
-    *   Instantiates and bootstraps the new component, swapping the UI seamlessly.
+7.  **Instant Navigation (Soft Navigation)**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
+    *   **Pre-fetching**: The framework automatically begins fetching the next page data when the user hovers over a link, effectively hiding network latency.
+    *   **Caching**: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
+    *   **Component Swap**: The current component instance is destroyed (closing WebSockets), and the new component is instantiated and bootstrapped using the state parsed from the fetched HTML.
 
 ### 3. Server Runtime Interaction & State Synchronization
 
