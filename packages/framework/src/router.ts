@@ -200,7 +200,7 @@ export function createApp() {
     for (const path in pages) {
         let httpRoute = path
             .replace('/src/pages', '')
-            .replace(/\.(ts|tsx|js|jsx)$/, '')
+            .replace(/\.(ts|tsx|js|jsx|mdx)$/, '')
             .replace(/\/index$/, '')
             .replace(/\/\([^)]+\)/g, '')
             .replace(/\[([^\]]+)\]/g, ':$1') || '/';

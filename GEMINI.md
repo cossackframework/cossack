@@ -67,5 +67,6 @@ The project is a `pnpm` workspace.
 - **Optimistic UI**: Built-in support for instant feedback on actions.
 - **Client-Only State**: `@ClientState` decorator for local UI state that triggers re-renders without server sync.
 - **Lifecycle Hooks**: Browser-only `onMount` and `onCleanup` for easy library integration.
+- **MDX Support**: Zero-configuration support for `.mdx` files as endpoints, allowing markdown-based content with full layout support.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 - **Image Optimization**: `Image` component for responsive, edge-optimized assets.
