@@ -14,6 +14,8 @@ This project is a monorepo managed by `pnpm`. It is divided into several distinc
 
 -   **`@cossackframework/renderer`**: A dual-environment rendering engine inspired by `lit-html`. It has separate entry points for the server (`@cossackframework/renderer/server`) and the client, allowing the same `html` template syntax to be used for both initial server-side rendering and client-side hydration.
 
+-   **`@cossackframework/node-adapter`**: Provides the runtime adapter for running Cossack applications on a standard Node.js server using `ws`.
+
 ### Application & Tooling
 
 -   **`@cossackframework/framework`**: A complete, runnable application that serves as the primary example and template for a Cossack project. It consumes the `core` and `renderer` packages and contains all the application-specific logic, including the Cloudflare Worker entrypoint, the Hono router, page components, and the application-specific Durable Object.
@@ -39,7 +41,7 @@ The development workflow requires building the library dependencies before start
 2.  **Build Libraries:**
     Build the `core` and `renderer` packages. This only needs to be done once, or whenever you make changes to them.
     ```sh
-    pnpm --filter @cossackframework/core --filter @cossackframework/renderer run build
+    pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build
     ```
 
 3.  **Run the Development Server:**

@@ -12,7 +12,7 @@ describe('Decorators', () => {
       @Page()
       class TestPage {}
       const options = Reflect.getMetadata('page:options', TestPage);
-      expect(options).toEqual({ channels: ['global'] });
+      expect(options).toEqual({ channels: ['global'], transport: 'http' });
     });
 
     it('should attach provided page options', () => {
@@ -26,6 +26,7 @@ describe('Decorators', () => {
       expect(options.middlewares).toHaveLength(1);
       // It should also automatically add 'global'
       expect(options.channels).toEqual(['global', 'news', 'sports']);
+      expect(options.transport).toBe('http');
     });
 
     it('should not add "global" channel if it already exists', () => {
@@ -36,6 +37,7 @@ describe('Decorators', () => {
         class TestPage {}
         const options = Reflect.getMetadata('page:options', TestPage);
         expect(options.channels).toEqual(['global', 'news']);
+        expect(options.transport).toBe('http');
       });
   });
 
@@ -47,7 +49,7 @@ describe('Decorators', () => {
       }
       const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
       expect(stateMeta).toEqual({
-        count: { channel: 'global' },
+        count: { channel: 'global', provider: 'page' },
       });
     });
 
@@ -58,7 +60,7 @@ describe('Decorators', () => {
       }
       const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
       expect(stateMeta).toEqual({
-        message: { channel: 'private' },
+        message: { channel: 'private', provider: 'page' },
       });
     });
 
@@ -72,8 +74,8 @@ describe('Decorators', () => {
         }
         const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
         expect(stateMeta).toEqual({
-          counter: { channel: 'global' },
-          status: { channel: 'special' },
+          counter: { channel: 'global', provider: 'page' },
+          status: { channel: 'special', provider: 'page' },
         });
       });
   });
@@ -86,7 +88,7 @@ describe('Decorators', () => {
       }
       const serverMeta = Reflect.getMetadata('cossack:server-methods', TestComponent);
       expect(serverMeta).toEqual({
-        doSomething: { channel: 'global' },
+        doSomething: { channel: 'global', provider: 'page' },
       });
     });
 
@@ -97,7 +99,7 @@ describe('Decorators', () => {
       }
       const serverMeta = Reflect.getMetadata('cossack:server-methods', TestComponent);
       expect(serverMeta).toEqual({
-        doAdminTask: { channel: 'admin' },
+        doAdminTask: { channel: 'admin', provider: 'page' },
       });
     });
   });
@@ -178,7 +180,7 @@ describe('Decorators', () => {
         }
         const stateMeta = Reflect.getMetadata('cossack:state', TestComponent);
         expect(stateMeta).toEqual({
-            message: { channel: 'test' },
+            message: { channel: 'test', provider: 'page' },
         });
     });
   });

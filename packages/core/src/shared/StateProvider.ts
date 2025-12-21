@@ -11,11 +11,11 @@ export abstract class StateProvider {
     this.env = env;
   }
 
-  abstract getDurableObjectId(): DurableObjectId;
+  abstract getConnectionTarget(): unknown;
 }
 
 export class PageStateProvider extends StateProvider {
-  getDurableObjectId(): DurableObjectId {
+  getConnectionTarget(): unknown {
     const { page } = this.component.props;
     if (!page) {
       throw new Error('Could not determine page for PageStateProvider. Ensure `page` is in component props.');

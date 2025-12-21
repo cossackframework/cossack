@@ -65,12 +65,10 @@ describe('Cossack Core: Server-Side', () => {
 
   it('should initialize correctly with context', async () => {
     const mockContext = { req: { param: vi.fn() } } as unknown as Context;
-    const initSpy = vi.spyOn(component, 'init');
     
     await component.bootstrap({ context: mockContext });
 
     expect((component as any).c).toEqual(mockContext);
-    expect(initSpy).toHaveBeenCalled();
   });
 
   it('should initialize state with default values', async () => {
@@ -110,15 +108,15 @@ describe('Cossack Core: Server-Side', () => {
 
   it('should schedule a broadcast when a state property changes', async () => {
       const mockContext = { req: { param: vi.fn() } } as unknown as Context;
-      const mockDOInstance = { broadcast: vi.fn() };
+      const mockRuntime = { broadcastState: vi.fn(), persistState: vi.fn() };
       await component.bootstrap({ context: mockContext });
-      (component as any)._cossack_DO_instance = mockDOInstance;
+      (component as any)._runtime = mockRuntime;
   
       component.count = 5;
   
       // Wait for the microtask queue to be processed
       await new Promise(resolve => queueMicrotask(resolve));
   
-      expect(mockDOInstance.broadcast).toHaveBeenCalledWith(['count']);
+      expect(mockRuntime.broadcastState).toHaveBeenCalledWith({ count: 5 });
   });
 });

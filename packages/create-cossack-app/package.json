@@ -7,5 +7,6 @@
     "start": "node ./bin/create-cossack-app.js"
   },
   "dependencies": {
+    "prompts": "^2.4.2"
   }
 }

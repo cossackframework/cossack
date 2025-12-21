@@ -4,7 +4,7 @@ import { render, type TemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State } from './decorators';
 import type { Context } from 'hono';
-import type { CossackDurableObject } from './CossackDurableObject';
+import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { HeadTag } from './head';
 import { createCossackContext, HydratedContext } from './context';
@@ -30,7 +30,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private _cossack_provider_name?: string;
 
     @Server()
-    private _cossack_ws_context?: WebSocket;
+    private _cossack_ws_context?: unknown;
 
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
@@ -40,7 +40,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     public loading: Record<string, boolean> = {};
 
     @Server()
-    private _cossack_DO_instance?: CossackDurableObject;
+    private _runtime?: CossackServerRuntime;
 
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
@@ -91,6 +91,21 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
+    public async executeAction(action: string, payload: any[], user: any, clientContext: unknown) {
+        if (typeof (this as any)[action] === 'function') {
+            this._cossack_ws_context = clientContext;
+            try {
+                await (this as any)[action](...(payload || []), user);
+            } finally {
+                this._cossack_ws_context = undefined;
+                const ws = clientContext as WebSocket;
+                if (ws.readyState === WebSocket.OPEN) {
+                     ws.send(JSON.stringify({ type: 'action-complete', action }));
+                }
+            }
+        }
+    }
+
     @Server()
     private initializeProviders() {
         if (!this.isServer) return;
@@ -114,10 +129,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     @Client()
     private connectWebSocket() {
         const initialState = (window as any).__INITIAL_STATE__;
-        const providerDurableObjectIds = initialState?.providerDurableObjectIds || {};
+        const providerTargets = initialState?.providerTargets || {};
 
-        for (const providerName in providerDurableObjectIds) {
-            const durableObjectId = providerDurableObjectIds[providerName];
+        for (const providerName in providerTargets) {
+            const target = providerTargets[providerName];
             
             const componentId = initialState?.componentId;
             if (!componentId) {
@@ -132,7 +147,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 ...initialState?.params,
             }).toString();
 
-            const wsUrl = `/ws/${providerName}/${durableObjectId}?${params}`;
+            const wsUrl = `/ws/${providerName}/${target}?${params}`;
             const fullWsUrl = `ws://${window.location.host}${wsUrl}`;
             const ws = new WebSocket(fullWsUrl);
             this.websockets.set(providerName, ws);
@@ -147,10 +162,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
                         (this as any)[key] = data.state[key];
                     }
-                    this.loading = {};
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
                     delete this.loading[action];
+                    requestAnimationFrame(() => this.render());
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
@@ -288,8 +303,13 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                             if (!this.broadcastScheduled) {
                                 this.broadcastScheduled = true;
                                 queueMicrotask(() => {
-                                    this._cossack_DO_instance?.broadcast(Array.from(this.dirtyProperties));
-                                    this._cossack_DO_instance?.persistState();
+                                    const partialState: Record<string, any> = {};
+                                    for (const key of this.dirtyProperties) {
+                                        partialState[key] = (this as any)[key];
+                                    }
+                                    
+                                    this._runtime?.broadcastState(partialState);
+                                    this._runtime?.persistState();
                                     this.dirtyProperties.clear();
                                     this.broadcastScheduled = false;
                                 });
@@ -320,7 +340,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     console.warn(`[Cossack] Client method '${String(key)}' was called from a non-WebSocket context and could not be sent.`);
                     return;
                 }
-                this._cossack_DO_instance?.sendClientAction(this._cossack_ws_context, key, args);
+                this._runtime?.sendClientAction(this._cossack_ws_context, key, args);
             };
         }
     }
@@ -416,7 +436,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             console.warn('[Cossack] broadcastEvent() can only be called on the server.');
             return;
         }
-        this._cossack_DO_instance?.broadcastEvent(eventName, payload);
+        this._runtime?.broadcastEvent(eventName, payload);
     }
 
     public getInitialState(): Record<string, any> {
@@ -442,14 +462,17 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
 
         // For real-time transports, add the WebSocket-related info.
-        const providerDurableObjectIds: Record<string, string> = {};
+        const providerTargets: Record<string, string> = {};
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {
-                providerDurableObjectIds[name] = provider.getDurableObjectId().toString();
+                const target = provider.getConnectionTarget();
+                if (target) {
+                     providerTargets[name] = target.toString();
+                }
             }
         }
 
-        return { ...baseState, serverMethods, providerDurableObjectIds };
+        return { ...baseState, serverMethods, providerTargets };
     }
 
     public getPublicState(): Record<string, any> {

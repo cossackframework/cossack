@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "wrangler dev",
-    "build": "vite build --mode production && vite build --mode ssr --ssr",
+    "build": "vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr",
     "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "test": "vitest"

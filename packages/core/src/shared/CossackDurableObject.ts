@@ -1,5 +1,6 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
+import { DurableObjectRuntime } from './runtimes/durable-object';
 import 'reflect-metadata';
 
 type AuthenticatedUser = {
@@ -10,6 +11,7 @@ type AuthenticatedUser = {
 export abstract class CossackDurableObject {
     state: DurableObjectState;
     componentInstance?: Cossack;
+    runtime?: DurableObjectRuntime;
     env: any;
 
     constructor(state: DurableObjectState, env: any) {
@@ -24,13 +26,15 @@ export abstract class CossackDurableObject {
     
         if (PageComponent) {
             const componentInstance = new PageComponent();
-            (componentInstance as any)._cossack_DO_instance = this;
             
             const hydratedContext = {
                 req: { param: (key?: string) => key ? params?.[key] : params }
             } as any;
     
             await componentInstance.bootstrap({ context: hydratedContext, env: this.env, page, providerName });
+            
+            this.runtime = new DurableObjectRuntime(componentInstance, this.state);
+            
             return componentInstance;
         } else {
             console.error(`[DO] Component '${componentName}' not found in registry.`);
@@ -119,91 +123,14 @@ export abstract class CossackDurableObject {
 
     abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
 
-    public async persistState() {
-        if (!this.componentInstance) return;
-        const stateToPersist = this.componentInstance.getInitialState();
-        await this.state.storage.put('componentState', stateToPersist);
-    }
-
-    public async sendClientAction(ws: WebSocket, action: string, payload: any[]) {
-        const message = JSON.stringify({ type: 'client-action', action, payload });
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(message);
-        }
-    }
-
-    public async broadcast(changedProperties: string[]) {
-        await this.ensureComponentInstance();
-        if (!this.componentInstance) return;
-    
-        const stateProperties = Reflect.getMetadata('cossack:state', this.componentInstance.constructor) || {};
-        const allState = this.componentInstance.getInitialState();
-        const sockets = this.state.getWebSockets();
-    
-        // 1. Determine which channels have changed.
-        const channelsToUpdate = new Set<string>();
-        for (const prop of changedProperties) {
-            channelsToUpdate.add(stateProperties[prop]?.channel || 'global');
-        }
-    
-        // 2. For each changed channel, construct a partial state.
-        for (const channel of channelsToUpdate) {
-            const partialState: Record<string, any> = {};
-            
-            // 3. Gather all state properties that belong to this channel.
-            for (const prop in stateProperties) {
-                if ((stateProperties[prop]?.channel || 'global') === channel) {
-                    partialState[prop] = allState[prop];
-                }
-            }
-    
-            // 4. Broadcast the partial state to ALL connected clients.
-            const message = JSON.stringify({ type: 'state-update', state: partialState });
-            for (const ws of sockets) {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(message);
-                }
-            }
-        }
-    }
-
-    public async broadcastEvent(eventName: string, payload: any[]) {
-        await this.ensureComponentInstance();
-        if (!this.componentInstance) return;
-
-        const message = JSON.stringify({ type: 'event', eventName, payload });
-        const sockets = this.state.getWebSockets();
-        
-        for (const ws of sockets) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(message);
-            }
-        }
-    }
-
     async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
         await this.ensureComponentInstance();
-        if (!this.componentInstance) {
+        if (!this.componentInstance || !this.runtime) {
             ws.close(1011, 'Component not available, please reconnect');
             return;
         }
 
-        const data = JSON.parse(message as string);
-        if (data.type === 'action') {
-            const { user } = ws.deserializeAttachment() as any;
-            const { action, payload } = data;
-            if (typeof (this.componentInstance as any)[action] === 'function') {
-                (this.componentInstance as any)._cossack_ws_context = ws;
-                try {
-                    await (this.componentInstance as any)[action](...(payload || []), user);
-                } finally {
-                    (this.componentInstance as any)._cossack_ws_context = undefined;
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'action-complete', action }));
-                    }
-                }
-            }
-        }
+        await this.runtime.onClientMessage(ws, message as string);
     }
 
     async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}

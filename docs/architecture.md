@@ -34,28 +34,35 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 3.  The component's `bootstrap` method runs its client-side path.
 4.  It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5.  It also reads the list of server method names and **replaces them** with proxy functions.
-6.  Crucially, it reads the Durable Object IDs for each **State Provider** and establishes a WebSocket connection for each one. For a simple page, this is typically just one connection to the `PageStateProvider`.
+6.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one. For a simple page, this is typically just one connection to the `PageStateProvider`.
 7.  The page is now fully hydrated and interactive.
 
-### 3. Durable Object (DO) Interaction & State Synchronization
+### 3. Server Runtime Interaction & State Synchronization
 
 1.  When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
 2.  The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
-3.  The `AppDurableObject` receives the message and calls the real method on its internal component instance.
+3.  The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
 4.  From here, one of two state synchronization patterns occurs:
 
     **a) Automatic State Push (Default):**
     - The server method modifies a `@State` property (e.g., `this.feedCount++`).
     - The `@State` decorator's setter is triggered and queues a microtask to broadcast the change.
-    - The DO identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
+    - The Runtime identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
     - It constructs a **partial state object** containing only the properties for that channel.
-    - The DO broadcasts this partial state to **all** clients connected to it.
+    - The Runtime broadcasts this partial state to **all** clients connected to it.
     - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI.
 
     **b) Event-Driven Re-fetch (Manual):**
     - The server method modifies a database or other external source of truth.
     - It then calls `this.broadcastEvent('some-event-name')`.
-    - The DO broadcasts this simple event message to **all** connected clients.
+    - The Runtime broadcasts this simple event message to **all** connected clients.
     - Any client-side component with an `@OnEvent('some-event-name')` handler will execute that handler.
     - The handler's job is typically to call `this.init()` again, which re-runs the original, permission-aware query to get the fresh, secure state.
     - The component updates its state from the new query and re-renders.
+
+### 4. State Persistence
+
+The framework handles state persistence differently depending on the runtime environment:
+
+-   **Cloudflare Workers (Durable Objects):** The `@State` properties are automatically persisted to the Durable Object's transactional storage. State survives server restarts and hibernation.
+-   **Node.js (Node Adapter):** The `@State` properties are strictly **in-memory**. If the Node.js server process restarts, all component state is reset to initial values. Developers running on Node.js should persist critical data to an external database manually within their action methods.

@@ -1,4 +1,6 @@
-# Architectural Plan: Pluggable Transport Layer
+# Architectural Plan: Pluggable Transport Layer (Completed)
+
+> **Status:** Completed. This plan has been implemented. The framework now supports both Cloudflare Durable Objects and Node.js via `@cossackframework/node-adapter`.
 
 This document outlines the architectural plan for abstracting the framework's **stateful, real-time** transport layer. The goal is to evolve Cossack from being tightly coupled to Cloudflare Durable Objects into a more flexible framework that can run on various backends, such as a standard Node.js server, while maintaining the same component-level API for real-time components.
 

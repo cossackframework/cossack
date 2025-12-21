@@ -1,0 +1,26 @@
+{
+  "name": "@cossackframework/node-adapter",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.10",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.9.1",
+    "vite-tsconfig-paths": "^5.1.4",
+    "typescript": "^5.0.0"
+  }
+}

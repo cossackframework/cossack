@@ -53,9 +53,10 @@ describe('Cossack Core: Client-Side', () => {
       count: 10,
       message: 'from server',
       params: { name: 'cossack' },
-      serverMethods: [{ name: 'increment', channel: 'global' }],
+      serverMethods: [{ name: 'increment', channel: 'global', provider: 'page' }],
       componentId: 'test-comp',
       channels: ['global', 'private'],
+      providerTargets: { page: 'durable-object-id-123' },
   };
 
   beforeEach(() => {
@@ -94,11 +95,12 @@ describe('Cossack Core: Client-Side', () => {
       expect((component as any).c.req.param()).toEqual({ name: 'cossack' });
   });
 
-  it('should connect to WebSocket for each channel', async () => {
+  it('should connect to WebSocket for the provider', async () => {
       await component.bootstrap();
-      expect(global.WebSocket).toHaveBeenCalledTimes(2);
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/test-comp/global?name=cossack');
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/test-comp/private?name=cossack');
+      expect(global.WebSocket).toHaveBeenCalledTimes(1);
+      // Expected URL based on new logic: /ws/{provider}/{target}?componentId=...&pathname=...&params...
+      // pathname is undefined in mockInitialState so it defaults to ''
+      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?componentId=test-comp&pathname=&name=cossack');
   });
 
   it('should proxy server methods to send WebSocket messages', async () => {
@@ -112,6 +114,7 @@ describe('Cossack Core: Client-Side', () => {
           type: 'action',
           action: 'increment',
           payload: [],
+          channel: 'global',
       }));
       // It should also update the loading state
       expect(component.loading['increment']).toBe(true);
@@ -138,5 +141,24 @@ describe('Cossack Core: Client-Side', () => {
 
     // But the loading state should have been updated by the proxy
     expect(component.loading['increment']).toBe(true);
+  });
+
+  it('should clear loading state when action-complete is received', async () => {
+      await component.bootstrap();
+      const wsInstance = (global.WebSocket as any).mock.results[0].value;
+
+      // Call action
+      await component.increment();
+      expect(component.loading['increment']).toBe(true);
+
+      // Simulate response
+      wsInstance.onmessage({
+          data: JSON.stringify({
+              type: 'action-complete',
+              action: 'increment'
+          })
+      });
+
+      expect(component.loading['increment']).toBeUndefined();
   });
 });
