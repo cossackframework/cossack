@@ -30,6 +30,32 @@ export default class MyPage extends Cossack {
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `route` | `string` | (Optional) Explicitly define the route. If omitted, the file-system-based route is used. |
 
+## MDX Components
+
+Cossack supports `.mdx` files as first-class page components. Any `index.mdx` file in your `src/pages` directory will be automatically transformed into a Cossack component.
+
+### Metadata via Frontmatter
+
+MDX components use frontmatter to define their metadata, which is automatically fed into the framework's `head()` merging system.
+
+```markdown
+---
+title: "Documentation"
+description: "Learn how to use Cossack"
+image: "/assets/og-image.png"
+---
+
+# Welcome
+
+Cossack is fast!
+```
+
+The fields `title`, `description`, and `image` are automatically mapped to the corresponding properties in the component's `head()` method, allowing them to be correctly merged with layouts and the global app shell.
+
+### Layout Support
+
+MDX components fully support the nested layout system. If an MDX file is placed in a folder with a `layout.ts`, it will be wrapped by that layout just like a standard TypeScript component.
+
 ## Layouts
 
 Layouts in Cossack are simply components decorated with `@Page` that are named `layout.ts` in the file system. The key difference is that a layout's `template` method receives a `children` argument, which contains the rendered content of the nested page (or nested layout).

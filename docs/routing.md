@@ -4,7 +4,7 @@ Cossack uses a simple and intuitive file-based routing system. You don't need to
 
 ## How it Works
 
-The framework scans for any file named `index.ts` within the `src/pages` directory and its subdirectories. The path to that file directly maps to a URL route.
+The framework scans for any file named `index.ts` or `index.mdx` within the `src/pages` directory and its subdirectories. The path to that file directly maps to a URL route.
 
 ### Basic Routing
 
@@ -19,6 +19,8 @@ src/
     │   └── index.ts     // Serves the "/" route
     ├── about/
     │   └── index.ts     // Serves the "/about" route
+    ├── docs/
+    │   └── index.mdx    // Serves the "/docs" route (Markdown support!)
     └── contact/
         └── index.ts     // Serves the "/contact" route
 ```

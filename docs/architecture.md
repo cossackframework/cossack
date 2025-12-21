@@ -18,7 +18,9 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 ### 1. Initial HTTP Request & Server-Side Rendering (SSR)
 
 1.  A user navigates to a URL (e.g., `/tasks`). The request hits the Cloudflare Worker.
-2.  The Hono router matches the incoming URL to a route and identifies the corresponding Page Component (e.g., the `Tasks` class).
+2.  The Hono router matches the incoming URL to a route and identifies the corresponding Page Component.
+    *   **TypeScript Components**: Standard `index.ts` files.
+    *   **MDX Components**: `index.mdx` files which are automatically transformed into component classes during the Vite build process.
 3.  **Routing & Middleware**: The router identifies the stack of **Layouts** relevant to this page (e.g., `RootLayout` -> `DashboardLayout` -> `TasksPage`) and applies all their middlewares in order.
 4.  **Bootstrapping**:
     *   The Global `App` component is instantiated and bootstrapped.
@@ -26,11 +28,12 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     *   The `Page` component is instantiated and bootstrapped.
 5.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
 6.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
-7.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values, which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
+7.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values (automatically extracted from frontmatter in MDX components), which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
 8.  The final HTML page is constructed, embedding the rendered HTML, the serialized initial state, and the merged head tags into the response.
 9.  The complete HTML page is sent to the user's browser.
 
 ### 2. Client-Side Hydration & Navigation
+// ... rest of the file ...
 
 1.  The browser receives the HTML, renders the initial view, and downloads the client-side JavaScript.
 2.  An instance of the `Tasks` component is created in the browser.
