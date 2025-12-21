@@ -1,71 +1,65 @@
-# Head Management
+# Metadata Management (Head)
 
-Cossack provides a simple yet powerful API for managing the document's `<head>` section directly from your components. This allows you to control tags like `<title>`, `<meta>`, `<script>`, and `<link>` dynamically.
+Cossack provides a simple yet powerful API for managing the document's `<head>` section directly from your components. This allows you to control tags like `<title>`, `<meta>`, `<script>`, and `<link>` dynamically with automatic inheritance from layouts.
 
 ## Basic Usage
 
-To manage head tags, simply override the optional `header()` method in your page component. This method should return an array of `HeadTag` objects.
+To manage head tags, override the optional `head()` method in your component. This method receives a `HeadContext` and should return a `HeadValue` object.
 
-The framework will automatically render these tags on the server during the initial request and keep them updated on the client whenever your component's state changes.
+The framework automatically merges metadata from the **inside out**: 
+`Page` -> `Layouts` -> `Global App`.
 
-### The `HeadTag` Interface
-
-The `HeadTag` object has a simple and predictable structure:
+### The `head()` Signature
 
 ```typescript
-interface HeadTag {
-  tag: 'title' | 'script' | 'style' | 'link' | 'meta' | 'base';
-  attributes?: Record<string, string | boolean>;
-  children?: string; // For inner content of tags like <title> or <style>
+public head(context: HeadContext): HeadValue {
+    return {
+        title: 'My Page Title',
+        meta: [
+            { tag: 'meta', attributes: { name: 'description', content: 'Page description' } }
+        ]
+    };
 }
 ```
 
-## Example
+### Automatic Merging Logic
 
-Here is an example of a component that sets a reactive `<title>` and a static `<meta>` description tag.
+Cossack's metadata system is designed for maximum Developer Experience (DX). If you don't return a specific category (like `links` or `meta`) in your `HeadValue` object, the framework automatically preserves the tags from the nested children.
+
+#### Example: Root Branding in `App.ts`
 
 ```typescript
-import { Cossack, Page, Server, State, HeadTag } from '@cossackframework/core';
-import { html, TemplateResult } from '@cossackframework/renderer';
-
-@Page()
-export class CounterPage extends Cossack {
-    @State()
-    private count: number = 0;
-
-    @Server()
-    private increment() {
-        this.count++;
-    }
-
-    /**
-     * This method is called on the initial server render and then
-     * re-evaluated on the client every time the component's state changes.
-     */
-    public header(): HeadTag[] {
-        return [
-            // This title is reactive because it uses the `this.count` state property.
-            { tag: 'title', children: `Count is: ${this.count}` },
-
-            // This meta tag is static.
-            { tag: 'meta', attributes: { name: 'description', content: 'A simple counter page.' } }
-        ];
-    }
-
-    protected template(): TemplateResult {
-        return html`
-            <h1>The current count is ${this.count}</h1>
-            <button @click=${this.increment}>Increment</button>
-        `;
-    }
+// src/App.ts
+public head(context: HeadContext): HeadValue {
+    return {
+        // Wrap the child title with branding
+        title: `Cossack Framework - ${context.title || 'Welcome'}`,
+        // Set global viewport, while preserving all other meta/links from the page
+        meta: [
+            { tag: 'meta', attributes: { name: 'viewport', content: 'width=device-width, initial-scale=1' } }
+        ]
+    };
 }
 ```
 
-### How Reactivity Works
+## API Reference
 
-Reactivity for the `header()` method works exactly like it does for the `template()` method.
+### `HeadContext`
+Contains the accumulated metadata from nested components:
+*   `title`: The current accumulated title string.
+*   `meta`: Array of accumulated meta tags.
+*   `links`: Array of accumulated link tags.
+*   `scripts`: Array of accumulated script tags.
+*   `tags`: Array of other accumulated tags (styles, base, etc.).
 
--   If the `header()` method uses properties decorated with `@State`, the head tags will be automatically updated on the client whenever that state changes.
--   If the `header()` method only uses regular class properties or static values, the tags will be rendered once on the server and will remain static.
+### `HeadValue`
+The object you return from `head()`:
+*   `title`: (Optional) Set a new title.
+*   `meta`: (Optional) Override or add meta tags.
+*   `links`: (Optional) Override or add link tags.
+*   `scripts`: (Optional) Override or add script tags.
+*   `tags`: (Optional) Override or add other tags.
 
-There is no need for a special decorator or flag to enable reactivity; it's built into the core state management system.
+## Client-Side Synchronization
+
+Cossack handles metadata updates automatically during **Soft Navigation**. When you navigate between pages or update a component's `@State`, the framework re-runs the entire merge stack and updates the DOM (including `document.title`) instantaneously.

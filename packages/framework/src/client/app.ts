@@ -78,13 +78,52 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
   }
 
   const appInstance = new App();
+  // Capture original render logic to avoid infinite recursion
+  const originalAppRender = appInstance.render.bind(appInstance);
+  
+  let currentPage: Cossack | null = null;
+  let currentLayoutInstances: Cossack[] = [];
+
+  const syncHead = () => {
+    if (!currentPage) return;
+    const emptyCtx = Cossack.buildHeadContext([]);
+    const pageHeadValue = currentPage.head(emptyCtx);
+    
+    let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
+    
+    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
+        const headContext = Cossack.buildHeadContext(tags);
+        const headValue = currentLayoutInstances[i].head(headContext);
+        tags = Cossack.mergeHead(headContext, headValue);
+    }
+    
+    const finalHeadContext = Cossack.buildHeadContext(tags);
+    const appHeadValue = appInstance.head(finalHeadContext);
+    const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+    
+    Cossack.applyHeadTags(headTags);
+  };
+
+  const fullRender = () => {
+    if (!currentPage) return '';
+    let body = (currentPage as any).template();
+    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
+       body = (currentLayoutInstances[i] as any).template(body);
+    }
+    // Use the captured original logic that performs the actual DOM update
+    return originalAppRender(body);
+  };
+
+  // Redirect App's re-renders to the full stack
+  appInstance.render = fullRender;
+  appInstance.updateHead = syncHead;
+
   await appInstance.bootstrap({ 
     container: containerEl as Element, 
     initialState: window.__INITIAL_STATE__._app_state 
   });
 
-  let currentComponent: Cossack | null = null;
-  const currentLayouts = new Map<string, Cossack>();
+  const currentLayoutsMap = new Map<string, Cossack>();
 
   const loadComponent = async (initialState: any) => {
     const componentPath = initialState?.componentPath;
@@ -98,25 +137,25 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     // 1. Manage Layouts
     const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
     
-    // Destroy layouts no longer in use
-    for (const [path, instance] of currentLayouts.entries()) {
+    for (const [path, instance] of currentLayoutsMap.entries()) {
         if (!activeLayoutPaths.has(path)) {
             instance.destroy();
-            currentLayouts.delete(path);
+            currentLayoutsMap.delete(path);
         }
     }
 
-    // Bootstrap new layouts
-    const layoutInstances: Cossack[] = [];
+    currentLayoutInstances = [];
     for (const { path, state } of layoutStack) {
-        let instance = currentLayouts.get(path);
+        let instance = currentLayoutsMap.get(path);
         if (!instance) {
             const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
             instance = new LComp();
+            instance.render = fullRender;
+            instance.updateHead = syncHead;
             await instance.bootstrap({ container: containerEl as Element, initialState: state });
-            currentLayouts.set(path, instance);
+            currentLayoutsMap.set(path, instance);
         }
-        layoutInstances.push(instance);
+        currentLayoutInstances.push(instance);
     }
 
     // 2. Manage Page Component
@@ -129,22 +168,18 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     const PageComponent = Object.values(module)[0] as new () => Cossack;
 
     if (PageComponent) {
-      if (currentComponent) {
-        currentComponent.destroy();
+      if (currentPage) {
+        currentPage.destroy();
       }
       const componentInstance = new PageComponent();
-      currentComponent = componentInstance;
+      currentPage = componentInstance;
       
-      // Override render to wrap with layouts
-      componentInstance.render = () => {
-         let body = (componentInstance as any).template();
-         for (let i = layoutInstances.length - 1; i >= 0; i--) {
-            body = (layoutInstances[i] as any).template(body);
-         }
-         return appInstance.render(body);
-      };
+      componentInstance.render = fullRender;
+      componentInstance.updateHead = syncHead;
 
       await componentInstance.bootstrap({ container: containerEl as Element, initialState });
+      
+      syncHead();
     } else {
       console.error(`Could not extract component from module: ${componentPath}`);
     }
@@ -171,12 +206,11 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     async (url) => {
       try {
         setProgress(30);
-        const { state, title } = await fetchPage(url);
+        const { state } = await fetchPage(url);
         setProgress(100);
 
         window.__INITIAL_STATE__ = state;
         await loadComponent(state);
-        if (title) document.title = title;
       } catch (error) {
         console.error('Navigation failed:', error);
         window.location.reload();

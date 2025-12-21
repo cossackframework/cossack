@@ -37,50 +37,31 @@ The project is a `pnpm` workspace.
 
 ## 4. Request & Interactivity Lifecycle
 
-1.  **SSR**: A request hits the server (Worker or Node). The Hono router instantiates a Page Component, calls its `init()` method for data, and uses the `@cossackframework/renderer/server` to render the initial HTML. The component's state is serialized into the page.
-2.  **Hydration**: The client-side JS loads, instantiates the same Page Component, and uses the serialized state from the HTML to populate its data. It then connects to the Server Runtime via WebSocket.
-    *   **2a. Navigation**: Subsequent navigation via `<a>` tags is intercepted by the client. The new page is fetched via AJAX, and the content/state is swapped without a full browser refresh (Soft Navigation).
-3.  **Interactivity**: User actions call proxy methods on the client-side component, which sends a message to the Server Runtime over the WebSocket.
-    *   **Optimistic UI**: Methods decorated with `@Optimistic` run immediately on the client before the request is sent, providing instant feedback.
-4.  **State Sync**: The Server Runtime (Durable Object or Node Adapter) processes the action, updates its internal component's state, and broadcasts the new state to all connected clients.
-    *   **Note**: On Cloudflare with Durable Objects, `@State` is persisted automatically. On Node.js, `@State` is currently memory-only and resets on server restart.
-5.  **Re-render**: The client-side component receives the new state and uses the `@cossackframework/renderer` to efficiently update the DOM.
+1.  **SSR**: A request hits the server. The Hono router identifies the layout stack and Page component. It instantiates, bootstraps, and calls `init()`/`get()` on all components. Metadata is merged from inside-out using `head()`.
+2.  **Hydration**: The client-side JS loads, instantiates the stack, and populates `@State` from `window.__INITIAL_STATE__`.
+    *   **2a. Navigation**: Subsequent navigation via `<a>` tags is intercepted. The new page data is fetched, and the component stack is updated. Global `App` and shared `Layout` instances are preserved.
+3.  **Interactivity**: User actions call proxy methods on the client, sending messages over WebSockets.
+    *   **Optimistic UI**: Methods decorated with `@Optimistic` run immediately on the client.
+4.  **State Sync**: The Server Runtime processes the action, updates state, and broadcasts partial state objects to all connected clients.
+5.  **Re-render**: Any state update triggers a full-stack re-render and metadata re-merge via a centralized client-side controller.
 
 ## 5. Development Workflow
 
-The development process is critical and follows a specific order.
-
-1.  **Build Dependencies**: The library packages (`core`, `renderer`, `node-adapter`) must be built first so the application (`framework`) can import them.
-    ```sh
-    pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build
-    ```
-2.  **Run Application**: The development server is run from the `framework` package. It uses `wrangler` (for CF) or `node` (for Node.js).
-    ```sh
-    pnpm --filter @cossackframework/framework run dev
-    ```
+1.  **Build Dependencies**: Build `core`, `renderer`, and `node-adapter` first.
+2.  **Run Application**: Use `pnpm --filter @cossackframework/framework run dev`.
 
 ## 6. Key Architectural Decisions & "Gotchas"
 
--   **`isServer` Check**: The definitive way to check for the environment is `typeof window === 'undefined' || typeof window.document === 'undefined'`. This is located in `packages/core/src/shared/environment.ts`.
--   **`instanceof` is Unreliable**: Due to dual-entry points (client/server) in the renderer, `instanceof TemplateResult` fails. We use "duck typing" (`isTemplateResult` helper function) to check for template objects instead.
--   **Server Runtime Abstraction**: The `Cossack` base class uses a generic `CossackServerRuntime` interface. This decouples the framework logic from the underlying transport (Durable Objects vs Node `ws`).
--   **Durable Object Extensibility**: The base `CossackDurableObject` in `core` is generic. The `framework` contains an `AppDurableObject` that extends it and provides the application-specific list of page components. This is the correct pattern for Cloudflare.
--   **Dependencies**: The `framework` must explicitly list all dependencies it uses, even if they are also used by `core` (e.g., `hono`, `reflect-metadata`).
+-   **`isServer` Check**: `typeof window === 'undefined' || typeof window.document === 'undefined'`.
+-   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation.
+-   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
 
 ## 7. Key Features
 
-- **Client-Side Navigation**: Automatic "Turbo-like" navigation for `<a>` tags.
-
-- **Instant Navigation**: Smart pre-fetching on hover (50ms delay) and a client-side page cache (Memory Map) for zero-latency transitions.
-
-- **Progress Bar**: Automatic top-loading bar for soft navigations.
-
-- **Optimistic UI**: `@Optimistic` decorator for instant client-side updates.
-
-- **Nested Layouts & Route Groups**: Powerful file-based routing with `layout.ts` support and `(group)` folders for organizing complex apps.
-
+- **Instant App**: Soft navigation with pre-fetching on hover and a client-side page cache.
+- **Progress Bar**: Automatic visual feedback for background page loads.
+- **Nested Layouts & Route Groups**: Standardized file-based organization with inheritance.
+- **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.
+- **Optimistic UI**: Built-in support for instant feedback on actions.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
-
-- **Image Optimization**: `Image` helper component for easy responsive images.
-
-
+- **Image Optimization**: `Image` component for responsive, edge-optimized assets.

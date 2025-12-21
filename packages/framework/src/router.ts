@@ -18,20 +18,15 @@ export type PageModule = {
 
 function getLayoutStack(pagePath: string) {
     const stack: string[] = [];
-    // Ensure we are working with the part relative to pages directory
-    // Expected pagePath format: /src/pages/some/path/index.ts
     const relativePath = pagePath.replace('/src/pages/', '');
     const parts = relativePath.split('/');
     
     let currentPath = '/src/pages';
     
-    // 1. Check root layout first
     if (layouts[`${currentPath}/layout.ts`]) {
         stack.push(`${currentPath}/layout.ts`);
     }
     
-    // 2. Iterate path segments to find nested layouts
-    // We stop before the last segment because that's the page file itself (e.g. index.ts)
     for (let i = 0; i < parts.length - 1; i++) {
         currentPath += `/${parts[i]}`;
         const layoutPath = `${currentPath}/layout.ts`;
@@ -51,6 +46,91 @@ export function createApp() {
         c.set('user', { id: 'user-123', name: 'Alice' });
         return next();
     });
+
+    const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
+        return async (c: Context) => {
+            try {
+                const user = c.get('user');
+                const appInstance = new App();
+                const layoutInstances: any[] = [];
+                const pageInstance = new PageComponent();
+                const layoutPaths = getLayoutStack(path);
+
+                // Bootstrap App
+                await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+
+                // Bootstrap Layouts
+                const layoutStates: Record<string, any> = {};
+                for (const lPath of layoutPaths) {
+                    const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+                    const lInst = new LComp();
+                    await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+                    layoutInstances.push(lInst);
+                    layoutStates[lPath] = lInst.getInitialState();
+                }
+
+                // Bootstrap Page
+                await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+
+                // Call get() or init() for data loading
+                if (typeof (pageInstance as any).get === 'function') {
+                    await (pageInstance as any).get();
+                } else if (typeof (pageInstance as any).init === 'function') {
+                    await (pageInstance as any).init();
+                }
+                
+                // Wrap rendering
+                let body = (pageInstance as any).template();
+                for (let i = layoutInstances.length - 1; i >= 0; i--) {
+                    body = layoutInstances[i].template(body);
+                }
+                const finalHtml = appInstance.render(body);
+
+                // Head Merging (Page -> Layouts -> App)
+                // 1. Get initial HeadValue from Page
+                const emptyCtx = Cossack.buildHeadContext([]);
+                const pageHeadValue = pageInstance.head(emptyCtx);
+                
+                // 2. Accumulate tags through Layouts
+                let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
+                
+                for (let i = layoutInstances.length - 1; i >= 0; i--) {
+                    const headContext = Cossack.buildHeadContext(tags);
+                    const headValue = layoutInstances[i].head(headContext);
+                    tags = Cossack.mergeHead(headContext, headValue);
+                }
+                
+                // 3. Final merge with App
+                const finalHeadContext = Cossack.buildHeadContext(tags);
+                const appHeadValue = appInstance.head(finalHeadContext);
+                const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+
+                const finalInitialState = { 
+                    ...pageInstance.getInitialState(),
+                    componentPath: path,
+                    pathname: c.req.path,
+                    channels: pageOptions?.channels || ['global'],
+                    _app_state: appInstance.getInitialState(),
+                    _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] }))
+                };
+
+                c.header('Content-Type', 'text/html');
+                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags }));
+            } catch (err) {
+                console.error('[Cossack SSR Error]:', err);
+                
+                // Try to render the error page if it exists
+                const errorPagePath = Object.keys(pages).find(p => p.includes('/error/index.ts'));
+                if (errorPagePath && path !== errorPagePath) {
+                    const ErrorComp = Object.values(pages[errorPagePath] as object)[0] as new () => Cossack;
+                    const handler = createSsrHandler(ErrorComp, errorPagePath);
+                    return handler(c);
+                }
+
+                return c.html(`<h1>Internal Server Error</h1><pre>${err instanceof Error ? err.stack : err}</pre>`, 500);
+            }
+        };
+    };
 
     // A generic route for all provider-based WebSocket connections
     app.get('/ws/:provider/:id', async (c) => {
@@ -95,7 +175,6 @@ export function createApp() {
 
         const componentInstance = new PageComponent() as any;
         
-        // Bootstrap with an empty context, as this is an out-of-band request
         await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state });
 
         if (typeof componentInstance[action] !== 'function') {
@@ -104,13 +183,11 @@ export function createApp() {
 
         const actionResult = await componentInstance[action](...(payload || []));
 
-        // Check if the action resulted in a redirect
         const location = c.res.headers.get('Location');
         if (location) {
             return c.json({ _cossack_redirect: location });
         }
 
-        // If the action returned a value, it might be a custom response
         if (actionResult instanceof Response) {
             return actionResult;
         }
@@ -123,12 +200,15 @@ export function createApp() {
     for (const path in pages) {
         let httpRoute = path
             .replace('/src/pages', '')
-            .replace(/\.(ts|tsx|js|jsx)$/, '') // Strip file extension
-            .replace(/\/index$/, '') // Handle index files
-            .replace(/\/\([^)]+\)/g, '') // Strip route groups like (marketing)
-            .replace(/\[([^\]]+)\]/g, ':$1') || '/'; // Improved param regex
+            .replace(/\.(ts|tsx|js|jsx)$/, '')
+            .replace(/\/index$/, '')
+            .replace(/\/\([^)]+\)/g, '')
+            .replace(/\[([^\]]+)\]/g, ':$1') || '/';
 
         if (httpRoute === '/index') httpRoute = '/';
+
+        // Skip 404 and Error pages from direct routing (they are handled specially)
+        if (httpRoute === '/404' || httpRoute === '/error') continue;
 
         const module = pages[path];
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
@@ -137,7 +217,6 @@ export function createApp() {
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
         const layoutPaths = getLayoutStack(path);
 
-        // Collect middlewares from layouts (parent first) and then the page
         const combinedMiddlewares = [];
         for (const lPath of layoutPaths) {
             const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
@@ -150,66 +229,12 @@ export function createApp() {
             combinedMiddlewares.push(...pageOptions.middlewares);
         }
 
-        const ssrHandler = async (c: Context) => {
-            const user = c.get('user');
-            const appInstance = new App();
-            const layoutInstances: any[] = [];
-            const pageInstance = new PageComponent();
-
-            // Bootstrap App
-            await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-
-            // Bootstrap Layouts
-            const layoutStates: Record<string, any> = {};
-            for (const lPath of layoutPaths) {
-                const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-                const lInst = new LComp();
-                await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-                layoutInstances.push(lInst);
-                layoutStates[lPath] = lInst.getInitialState();
-            }
-
-            // Bootstrap Page
-            await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-
-            // Call get() or init() for data loading
-            if (typeof (pageInstance as any).get === 'function') {
-                await (pageInstance as any).get();
-            } else if (typeof (pageInstance as any).init === 'function') {
-                await (pageInstance as any).init();
-            }
-            
-            // Wrap rendering
-            let body = (pageInstance as any).template();
-            for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                body = layoutInstances[i].template(body);
-            }
-            const finalHtml = appInstance.render(body);
-
-            const headTags = [
-                ...appInstance.header(),
-                ...layoutInstances.flatMap(l => l.header()),
-                ...pageInstance.header()
-            ];
-
-            const finalInitialState = { 
-                ...pageInstance.getInitialState(),
-                componentPath: path,
-                pathname: c.req.path,
-                channels: pageOptions?.channels || ['global'],
-                _app_state: appInstance.getInitialState(),
-                _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] }))
-            };
-
-            c.header('Content-Type', 'text/html');
-            return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags }));
-        };
+        const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
 
         if (pageOptions?.transport !== 'http') {
             Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
             app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
         } else {
-            // Minimal HTTP transport logic for now
             app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
             const httpMethods = ['post', 'put', 'patch', 'delete'];
             for (const method of httpMethods) {
@@ -219,6 +244,17 @@ export function createApp() {
             }
         }
     }
+
+    // 404 Handler
+    app.notFound(async (c) => {
+        const notFoundPath = Object.keys(pages).find(p => p.includes('/404/index.ts'));
+        if (notFoundPath) {
+            const NotFoundComp = Object.values(pages[notFoundPath] as object)[0] as new () => Cossack;
+            const handler = createSsrHandler(NotFoundComp, notFoundPath);
+            return handler(c);
+        }
+        return c.text('404 Not Found', 404);
+    });
 
     return app;
 }

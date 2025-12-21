@@ -26,8 +26,9 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     *   The `Page` component is instantiated and bootstrapped.
 5.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
 6.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
-7.  The final HTML page is constructed, embedding the rendered HTML and the serialized initial state (for the App, all Layouts, and the Page) into a `<script>` tag (`window.__INITIAL_STATE__`).
-8.  The complete HTML page is sent to the user's browser.
+7.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values, which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
+8.  The final HTML page is constructed, embedding the rendered HTML, the serialized initial state, and the merged head tags into the response.
+9.  The complete HTML page is sent to the user's browser.
 
 ### 2. Client-Side Hydration & Navigation
 

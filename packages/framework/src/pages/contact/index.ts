@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { Button } from '@/components/Button';
 import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack, isServer, Page, Server, State, HeadTag } from '@cossackframework/core';
+import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 
 @Page({
     transport: 'http',
@@ -11,10 +11,10 @@ export class Contact extends Cossack {
     @State() // 'global' is always a valid channel.
     private greeting: string = 'Tan';
 
-    public header(): HeadTag[] {
-        return [
-            { tag: 'title', children: 'Contact' },
-        ];
+    public head(context: HeadContext): HeadValue {
+        return {
+            title: 'Contact'
+        };
     }
 
     async get() {

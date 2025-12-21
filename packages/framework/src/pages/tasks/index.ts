@@ -1,5 +1,5 @@
 import { html, type TemplateResult } from '@cossackframework/renderer';
-import { Cossack, Client, Page, Server, State, OnEvent, HeadTag } from '@cossackframework/core';
+import { Cossack, Client, Page, Server, State, OnEvent, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 import { Layout } from '../../components/Layout';
 import { Button } from '../../components/Button';
 
@@ -16,10 +16,10 @@ export class Tasks extends Cossack {
     @State({ channel: 'tasks' })
     private tasks: Task[] = [];
 
-    public header(): HeadTag[] {
-        return [
-            { tag: 'title', children: 'Task List' },
-        ];
+    public head(context: HeadContext): HeadValue {
+        return {
+            title: 'Task List'
+        };
     }
 
     @Server()

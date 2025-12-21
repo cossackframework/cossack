@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State } from "@cossackframework/core";
+import { Cossack, Page, Server, State, HeadContext, HeadValue } from "@cossackframework/core";
 import { TemplateResult } from "@cossackframework/renderer";
 import { html } from "@cossackframework/renderer";
 
@@ -8,6 +8,13 @@ import { html } from "@cossackframework/renderer";
 export class CounterHttp extends Cossack {
     @State()
     count = 0;
+
+    public head(context: HeadContext): HeadValue {
+        return {
+            title: 'Counter (HTTP)'
+        }
+    }
+// ...
 
     async init() {
         // This now runs on the server during the initial GET request.

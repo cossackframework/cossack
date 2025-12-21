@@ -1,13 +1,21 @@
-import { Cossack, Page, State } from '@cossackframework/core';
+import { Cossack, Page, State, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export class App extends Cossack {
     @State() theme: 'light' | 'dark' = 'light';
 
+    public head(context: HeadContext): HeadValue {
+        return {
+            title: `Cossack Framework - ${context.title || 'Welcome'}`,
+            meta: [
+                { tag: 'meta', attributes: { name: 'viewport', content: 'width=device-width, initial-scale=1' } },
+            ]
+        };
+    }
+
     toggleTheme() {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
-        // In a real app, you might save this preference to cookies or localStorage
         if (!this.isServer) {
             document.body.className = this.theme;
         }

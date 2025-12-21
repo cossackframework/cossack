@@ -6,7 +6,7 @@ import { Client, PageOptions, Server, State } from './decorators';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
-import { HeadTag } from './head';
+import { HeadTag, HeadContext, HeadValue } from './head';
 import { createCossackContext, HydratedContext } from './context';
 
 export interface CossackOptions {
@@ -17,6 +17,7 @@ import type { AuthenticatedUser } from './user';
 import { RedirectStatusCode } from 'hono/utils/http-status';
 
 export abstract class Cossack<T extends CossackOptions = {}> {
+    // ... existing properties ...
     protected container?: Element;
     protected isServer: boolean = isServer;
     
@@ -35,8 +36,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
 
-    // `loading` is a public property available on server and client,
-    // but it is NOT decorated with @State, so its state is managed on the client.
     public loading: Record<string, boolean> = {};
 
     @Server()
@@ -44,6 +43,79 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
+
+    public static buildHeadContext(tags: HeadTag[]): HeadContext {
+        const context: HeadContext = {
+            title: '',
+            meta: [],
+            links: [],
+            scripts: [],
+            tags: []
+        };
+
+        for (const tag of tags) {
+            switch (tag.tag) {
+                case 'title':
+                    context.title = tag.children || '';
+                    break;
+                case 'meta':
+                    context.meta.push(tag);
+                    break;
+                case 'link':
+                    context.links.push(tag);
+                    break;
+                case 'script':
+                    context.scripts.push(tag);
+                    break;
+                default:
+                    context.tags.push(tag);
+                    break;
+            }
+        }
+
+        return context;
+    }
+
+    public static mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
+        const title = value.title ?? context.title;
+        const meta = value.meta ?? context.meta;
+        const links = value.links ?? context.links;
+        const scripts = value.scripts ?? context.scripts;
+        const tags = value.tags ?? context.tags;
+
+        const result: HeadTag[] = [];
+        if (title) result.push({ tag: 'title', children: title });
+        result.push(...meta);
+        result.push(...links);
+        result.push(...scripts);
+        result.push(...tags);
+        return result;
+    }
+
+    public static applyHeadTags(tags: HeadTag[]) {
+        const headElement = document.head;
+
+        // Clear existing managed tags
+        headElement.querySelectorAll('[data-cossack]').forEach(el => el.remove());
+
+        for (const tag of tags) {
+            const el = document.createElement(tag.tag);
+            el.setAttribute('data-cossack', '');
+            if (tag.attributes) {
+                for (const [key, value] of Object.entries(tag.attributes)) {
+                    el.setAttribute(key, String(value));
+                }
+            }
+            if (tag.children) {
+                if (tag.tag === 'title') {
+                    document.title = tag.children;
+                } else {
+                    el.textContent = tag.children;
+                }
+            }
+            headElement.appendChild(el);
+        }
+    }
 
     public async bootstrap({ container, initialState, context, user, env, page, providerName }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string } = {}) {
         this.container = container;
@@ -301,18 +373,13 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         const stateKeys = Object.keys(stateProperties);
         const privateState = new Map<string, any>();
 
-        // Determine the single source of truth for the initial state values.
-        // On the server, it's the `initialState` from the action.
-        // On the client, it's the global `__INITIAL_STATE__` object.
         const stateSource = this.isServer 
             ? initialState 
             : (initialState || (window as any)?.__INITIAL_STATE__ || {});
 
         for (const key of stateKeys) {
-            // Start with the class property's default value.
             let value = (this as any)[key];
 
-            // Overwrite with the value from our state source if it exists.
             if (stateSource && stateSource[key] !== undefined) {
                 value = stateSource[key];
             }
@@ -398,31 +465,19 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     protected template(children?: TemplateResult): TemplateResult | null { return null; }
 
-    public header(): HeadTag[] {
-        return [];
+    public head(context: HeadContext): HeadValue {
+        return {};
     }
 
     @Client()
-    private updateHead() {
-        const headTags = this.header();
-        const head = document.head;
-
-        // Clear existing managed tags
-        head.querySelectorAll('[data-cossack]').forEach(el => el.remove());
-
-        for (const tag of headTags) {
-            const el = document.createElement(tag.tag);
-            el.setAttribute('data-cossack', '');
-            if (tag.attributes) {
-                for (const [key, value] of Object.entries(tag.attributes)) {
-                    el.setAttribute(key, String(value));
-                }
-            }
-            if (tag.children) {
-                el.textContent = tag.children;
-            }
-            head.appendChild(el);
-        }
+    public updateHead() {
+        // NOTE: In a multi-layout scenario on the client, we need access to the whole stack
+        // to correctly re-run header merging. For now, we'll keep it simple as most head
+        // updates are page-specific. Complex layout-based head updates might need the App instance.
+        const emptyCtx: HeadContext = { title: '', meta: [], links: [], scripts: [], tags: [] };
+        const value = this.head(emptyCtx);
+        const tags = Cossack.mergeHead(emptyCtx, value);
+        Cossack.applyHeadTags(tags);
     }
 
     public render(children?: TemplateResult): string {
@@ -487,13 +542,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             return { ...baseState, serverMethods };
         }
 
-        // For real-time transports, add the WebSocket-related info.
         const providerTargets: Record<string, string> = {};
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {
                 const target = provider.getConnectionTarget();
                 if (target) {
-                     providerTargets[name] = target.toString();
+                     providerTargets[name] = (target as any).toString();
                 }
             }
         }

@@ -55,20 +55,24 @@ src/
     │   │   └── index.ts     // /login (Root Layout -> Auth Layout -> Login)
     │   └── register/
     │       └── index.ts     // /register (Root Layout -> Auth Layout -> Register)
-    └── dashboard/
-        ├── layout.ts        // Dashboard Layout (wraps dashboard pages)
-        └── index.ts         // /dashboard (Root Layout -> Dashboard Layout -> Dashboard)
 ```
 
 **Creating a Layout:**
-A layout is just a regular Cossack component that accepts children in its `template` method.
+A layout is a Cossack component that accepts children in its `template` method and can provide metadata via its `head` method.
 
 ```typescript
-import { Cossack, Page } from '@cossackframework/core';
+import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' }) // Layouts can act as state containers too!
+@Page({ transport: 'http' })
 export default class MyLayout extends Cossack {
+  public head(context: HeadContext): HeadValue {
+    return {
+      // Branding that applies to all nested pages
+      title: `My App | ${context.title}`
+    };
+  }
+
   template(children: TemplateResult) {
     return html`
       <div class="layout">

@@ -3,15 +3,18 @@ import type { DurableObjectId, DurableObjectNamespace } from '@cloudflare/worker
 
 export abstract class StateProvider {
   // This will be set by the Cossack instance after it's constructed.
-  public component!: Cossack;
+  public component!: Cossack<any>;
   public env!: any;
 
-  public setContext(component: Cossack, env: any) {
+  public setContext(component: Cossack<any>, env: any) {
     this.component = component;
     this.env = env;
   }
 
-  abstract getConnectionTarget(): unknown;
+  /**
+   * Returns the target for the WebSocket connection (e.g. a Durable Object ID).
+   */
+  abstract getConnectionTarget(): { toString(): string } | string | undefined | unknown;
 }
 
 export class PageStateProvider extends StateProvider {
