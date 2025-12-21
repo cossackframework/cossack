@@ -370,17 +370,23 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     private initializeState(initialState?: any) {
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
+        const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
+        
         const stateKeys = Object.keys(stateProperties);
+        const clientKeys = Array.from(clientStateProperties) as string[];
+        const allKeys = [...new Set([...stateKeys, ...clientKeys])];
+        
         const privateState = new Map<string, any>();
 
         const stateSource = this.isServer 
             ? initialState 
             : (initialState || (window as any)?.__INITIAL_STATE__ || {});
 
-        for (const key of stateKeys) {
+        for (const key of allKeys) {
             let value = (this as any)[key];
 
-            if (stateSource && stateSource[key] !== undefined) {
+            // Only sync properties that are NOT client-only
+            if (!clientStateProperties.has(key) && stateSource && stateSource[key] !== undefined) {
                 value = stateSource[key];
             }
             
@@ -391,24 +397,33 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 set: (newValue: any) => {
                     if (privateState.get(key) !== newValue) {
                         privateState.set(key, newValue);
-                        if (this.isServer) {
-                            this.dirtyProperties.add(key);
-                            if (!this.broadcastScheduled) {
-                                this.broadcastScheduled = true;
-                                queueMicrotask(() => {
-                                    const partialState: Record<string, any> = {};
-                                    for (const key of this.dirtyProperties) {
-                                        partialState[key] = (this as any)[key];
-                                    }
-                                    
-                                    this._runtime?.broadcastState(partialState);
-                                    this._runtime?.persistState();
-                                    this.dirtyProperties.clear();
-                                    this.broadcastScheduled = false;
-                                });
+                        
+                        // Sync logic for server-connected state
+                        if (stateProperties[key]) {
+                            if (this.isServer) {
+                                this.dirtyProperties.add(key);
+                                if (!this.broadcastScheduled) {
+                                    this.broadcastScheduled = true;
+                                    queueMicrotask(() => {
+                                        const partialState: Record<string, any> = {};
+                                        for (const key of this.dirtyProperties) {
+                                            partialState[key] = (this as any)[key];
+                                        }
+                                        
+                                        this._runtime?.broadcastState(partialState);
+                                        this._runtime?.persistState();
+                                        this.dirtyProperties.clear();
+                                        this.broadcastScheduled = false;
+                                    });
+                                }
+                            } else {
+                                this.render();
                             }
-                        } else {
-                            this.render();
+                        } else if (clientStateProperties.has(key)) {
+                            // Client-only state just triggers a render on the client
+                            if (!this.isServer) {
+                                this.render();
+                            }
                         }
                     }
                 },

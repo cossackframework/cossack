@@ -36,9 +36,10 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 2.  An instance of the `Tasks` component is created in the browser.
 3.  The component's `bootstrap` method runs its client-side path.
 4.  It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
-5.  It also reads the list of server method names and **replaces them** with proxy functions.
-6.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one.
-7.  **Instant Navigation (Soft Navigation)**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
+5.  **Client-Only State**: It also initializes any properties decorated with `@ClientState`. These properties are NOT synchronized with the server and are excluded from the initial state script.
+6.  It also reads the list of server method names and **replaces them** with proxy functions.
+7.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one.
+8.  **Instant Navigation (Soft Navigation)**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
     *   **Pre-fetching**: The framework automatically begins fetching the next page data when the user hovers over a link, effectively hiding network latency.
     *   **Caching**: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
     *   **Component Swap**: The current component instance is destroyed (closing WebSockets), and the new component is instantiated and bootstrapped using the state parsed from the fetched HTML.
@@ -46,7 +47,8 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 ### 3. Server Runtime Interaction & State Synchronization
 
 1.  When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
-2.  **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
+2.  **Function Binding**: All event handlers must use **Arrow Functions** (e.g., `toggle = () => { ... }`) to ensure the correct `this` context is preserved when called by the browser's event system.
+3.  **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
 3.  The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
 4.  The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
 5.  From here, one of two state synchronization patterns occurs:

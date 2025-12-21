@@ -17,7 +17,7 @@ Cossack is a modern, full-stack TypeScript framework designed for the edge compu
 The project is a `pnpm` workspace.
 
 -   **`@cossackframework/core`**: The essential library.
-    -   **Purpose**: Provides the `Cossack` base class, decorators (`@Page`, `@State`, `@Server`, `@Client`, `@Optimistic`), the `CossackServerRuntime` interface, and other shared utilities.
+    -   **Purpose**: Provides the `Cossack` base class, decorators (`@Page`, `@State`, `@ClientState`, `@Server`, `@Client`, `@Optimistic`), the `CossackServerRuntime` interface, and other shared utilities.
     -   **Entrypoint**: `packages/core/src/index.ts`
     -   **Key Detail**: This is a pure library. It contains no application-specific logic.
 
@@ -55,6 +55,7 @@ The project is a `pnpm` workspace.
 -   **`isServer` Check**: `typeof window === 'undefined' || typeof window.document === 'undefined'`.
 -   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation.
 -   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
+-   **Function Binding**: All event handlers MUST be defined as **Arrow Functions** (e.g., `handleClick = () => { ... }`) to ensure the correct `this` context is preserved in the browser.
 
 ## 7. Key Features
 
@@ -63,5 +64,6 @@ The project is a `pnpm` workspace.
 - **Nested Layouts & Route Groups**: Standardized file-based organization with inheritance.
 - **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.
 - **Optimistic UI**: Built-in support for instant feedback on actions.
+- **Client-Only State**: `@ClientState` decorator for local UI state that triggers re-renders without server sync.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 - **Image Optimization**: `Image` component for responsive, edge-optimized assets.

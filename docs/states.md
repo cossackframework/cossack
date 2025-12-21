@@ -149,7 +149,102 @@ class Counter extends Cossack {
 
 ---
 
+### 4. Client-Only State (@ClientState)
+
+Not all state needs to be synchronized with the server. Cosmetic UI state—like whether a dropdown is open, which tab is active, or the current value of an unsubmitted input—shouldn't require a network round-trip. 
+
+For these cases, use the `@ClientState` decorator.
+
+**How it works:**
+1.  You decorate a property with `@ClientState`.
+2.  When you change this property on the client, it **automatically** triggers a re-render.
+3.  The property is **ignored** during Server-Side Rendering (initial state) and is **never** sent over the WebSocket.
+
+#### Example: A Toggle Switch
+
+```typescript
+import { Page, ClientState } from '@cossackframework/core';
+
+@Page({ transport: 'http' })
+export class ToggleDemo extends Cossack {
+    
+    @ClientState() 
+    private isExpanded: boolean = false;
+
+    toggle() {
+        this.isExpanded = !this.isExpanded;
+    }
+
+    protected template() {
+        return html`
+            <button @click=${this.toggle}>
+                ${this.isExpanded ? 'Hide' : 'Show'} Details
+            </button>
+
+            ${this.isExpanded ? html`<div>Secret details here...</div>` : ''}
+        `;
+    }
+}
+```
+
+// ... existing @ClientState section ...
+
+---
+
+## Best Practices & Gotchas
+
+### 1. Correct `this` Binding for Event Handlers
+
+When passing a method to an event handler (like `@click`), it is **critical** to ensure the method is correctly bound to your component instance. If you use a standard class method, `this` will be `undefined` when the event is triggered, and your state updates will fail.
+
+**❌ INCORRECT (Loss of context):**
+
+```typescript
+export class MyComponent extends Cossack {
+    @ClientState() isVisible = false;
+
+    // Standard method - 'this' will be lost!
+    toggle() {
+        this.isVisible = !this.isVisible; 
+    }
+
+    template() {
+        return html`<button @click=${this.toggle}>Toggle</button>`;
+    }
+}
+```
+
+**✅ CORRECT (Arrow Function - Automatic binding):**
+
+```typescript
+export class MyComponent extends Cossack {
+    @ClientState() isVisible = false;
+
+    // Arrow function - 'this' is preserved!
+    toggle = () => {
+        this.isVisible = !this.isVisible;
+    }
+
+    template() {
+        return html`<button @click=${this.toggle}>Toggle</button>`;
+    }
+}
+```
+
+**✅ CORRECT (Inline Arrow Function):**
+
+```typescript
+    template() {
+        return html`<button @click=${() => this.toggle()}>Toggle</button>`;
+    }
+```
+
+We recommend using **Arrow Functions** for any method intended to be used as an event handler or passed to a child component.
+
+---
+
 ## Sharing State Across Pages with Providers
+// ... rest of the file ...
 
 To solve the "Shared State" problem (e.g., a shopping cart, notifications), you can create a custom `StateProvider`.
 

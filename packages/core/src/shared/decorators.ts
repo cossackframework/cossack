@@ -117,6 +117,22 @@ export function State(options: StateOptions = {}): PropertyDecorator {
   };
 }
 
+/**
+ * Decorator for client-only state.
+ * These properties trigger UI re-renders when changed on the client,
+ * but are NEVER synchronized with the server.
+ */
+export function ClientState(): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const clientStateProperties = Reflect.hasOwnMetadata('cossack:client-state', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:client-state', target.constructor)
+      : new Set();
+    
+    (clientStateProperties as Set<string | symbol>).add(propertyKey);
+    Reflect.defineMetadata('cossack:client-state', clientStateProperties, target.constructor);
+  };
+}
+
 export function OnEvent(eventName: string): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const eventHandlers = Reflect.getOwnMetadata('cossack:event-handlers', target.constructor) || {};
