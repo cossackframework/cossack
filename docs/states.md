@@ -111,6 +111,42 @@ export class Tasks extends Cossack {
 }
 ```
 
+### 3. Optimistic UI Updates (Instant Feedback)
+
+For interactions where latency matters (like "liking" a post or incrementing a counter), you can use the `@Optimistic` decorator to update the UI *instantly* on the client, before the server has even processed the request.
+
+**How it works:**
+1.  You define a method that updates local state.
+2.  You decorate it with `@Optimistic('serverActionName')`.
+3.  When the client calls `this.serverActionName()`, the framework *immediately* runs the optimistic handler.
+4.  The request is sent to the server.
+5.  If the server responds with a state update (Scenario 1), the "true" server state overwrites your optimistic guess.
+6.  If the server throws an error (Scenario 2), the state remains (for now) unless you handle the rollback or re-fetch manually.
+
+**Example:**
+
+```typescript
+import { Page, Server, State, Optimistic } from '@cossackframework/core';
+
+@Page({ transport: 'durable-object' })
+class Counter extends Cossack {
+    @State() count = 0;
+
+    @Server()
+    async increment() {
+        // Simulate slow network/DB
+        await new Promise(r => setTimeout(r, 500));
+        this.count++;
+    }
+
+    // This runs immediately on the client when this.increment() is called
+    @Optimistic('increment') 
+    applyOptimisticIncrement() {
+        this.count++; 
+    }
+}
+```
+
 ---
 
 ## Sharing State Across Pages with Providers

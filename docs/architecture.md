@@ -27,22 +27,27 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 8.  The final HTML page is constructed, embedding the rendered HTML and the serialized initial state into a `<script>` tag (`window.__INITIAL_STATE__`).
 9.  The complete HTML page is sent to the user's browser.
 
-### 2. Client-Side Hydration & WebSocket Interactivity
+### 2. Client-Side Hydration & Navigation
 
 1.  The browser receives the HTML, renders the initial view, and downloads the client-side JavaScript.
 2.  An instance of the `Tasks` component is created in the browser.
 3.  The component's `bootstrap` method runs its client-side path.
 4.  It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5.  It also reads the list of server method names and **replaces them** with proxy functions.
-6.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one. For a simple page, this is typically just one connection to the `PageStateProvider`.
-7.  The page is now fully hydrated and interactive.
+6.  Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one.
+7.  **Soft Navigation**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
+    *   Fetches the new page HTML via AJAX.
+    *   Parses the new `__INITIAL_STATE__` from the response.
+    *   Destroys the current component instance (closing WebSockets).
+    *   Instantiates and bootstraps the new component, swapping the UI seamlessly.
 
 ### 3. Server Runtime Interaction & State Synchronization
 
 1.  When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
-2.  The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
-3.  The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
-4.  From here, one of two state synchronization patterns occurs:
+2.  **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
+3.  The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
+4.  The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
+5.  From here, one of two state synchronization patterns occurs:
 
     **a) Automatic State Push (Default):**
     - The server method modifies a `@State` property (e.g., `this.feedCount++`).
@@ -50,7 +55,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     - The Runtime identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
     - It constructs a **partial state object** containing only the properties for that channel.
     - The Runtime broadcasts this partial state to **all** clients connected to it.
-    - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI.
+    - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI (overwriting any optimistic state).
 
     **b) Event-Driven Re-fetch (Manual):**
     - The server method modifies a database or other external source of truth.

@@ -136,6 +136,15 @@ export function Computed(): MethodDecorator {
   };
 }
 
+export function Optimistic(actionName: string): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const optimisticHandlers = Reflect.getOwnMetadata('cossack:optimistic-handlers', target.constructor) || {};
+    optimisticHandlers[actionName] = propertyKey;
+    Reflect.defineMetadata('cossack:optimistic-handlers', optimisticHandlers, target.constructor);
+    return descriptor;
+  };
+}
+
 /**
  * (Optional) Creates typed versions of the @State and @Server decorators
  * for a specific component, providing compile-time safety and autocompletion

@@ -201,9 +201,22 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             return;
         }
 
+        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+
         for (const method of serverMethods) {
             const { name } = method;
             (this as any)[name] = async (...args: any[]) => {
+                
+                // Optimistic UI Handler
+                if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
+                    try {
+                        (this as any)[optimisticHandlers[name]](...args);
+                        this.render(); 
+                    } catch (e) {
+                        console.error(`Error in optimistic handler for '${name}':`, e);
+                    }
+                }
+
                 this.loading[name] = true;
                 this.render();
 
@@ -248,11 +261,24 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
     @Client()
     private proxyServerMethods(serverMethods: { name: string, channel: string, provider: string }[]) {
+        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+
         for (const method of serverMethods) {
             const { name, channel, provider } = method;
             (this as any)[name] = (...args: any[]) => {
                 const ws = this.websockets.get(provider);
                 if (ws && ws.readyState === WebSocket.OPEN) {
+                    
+                    // Optimistic UI Handler
+                    if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
+                        try {
+                            (this as any)[optimisticHandlers[name]](...args);
+                            this.render(); // Render immediately after optimistic update
+                        } catch (e) {
+                            console.error(`Error in optimistic handler for '${name}':`, e);
+                        }
+                    }
+
                     this.loading[name] = true;
                     this.render();
                     
@@ -482,5 +508,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             state[key] = (this as any)[key];
         }
         return state;
+    }
+
+    public destroy() {
+        if (!this.isServer) {
+            this.websockets.forEach(ws => {
+                ws.close();
+            });
+            this.websockets.clear();
+        }
     }
 }

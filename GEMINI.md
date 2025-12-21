@@ -17,7 +17,7 @@ Cossack is a modern, full-stack TypeScript framework designed for the edge compu
 The project is a `pnpm` workspace.
 
 -   **`@cossackframework/core`**: The essential library.
-    -   **Purpose**: Provides the `Cossack` base class, decorators (`@Page`, `@State`, `@Server`, `@Client`), the `CossackServerRuntime` interface, and other shared utilities.
+    -   **Purpose**: Provides the `Cossack` base class, decorators (`@Page`, `@State`, `@Server`, `@Client`, `@Optimistic`), the `CossackServerRuntime` interface, and other shared utilities.
     -   **Entrypoint**: `packages/core/src/index.ts`
     -   **Key Detail**: This is a pure library. It contains no application-specific logic.
 
@@ -39,7 +39,9 @@ The project is a `pnpm` workspace.
 
 1.  **SSR**: A request hits the server (Worker or Node). The Hono router instantiates a Page Component, calls its `init()` method for data, and uses the `@cossackframework/renderer/server` to render the initial HTML. The component's state is serialized into the page.
 2.  **Hydration**: The client-side JS loads, instantiates the same Page Component, and uses the serialized state from the HTML to populate its data. It then connects to the Server Runtime via WebSocket.
+    *   **2a. Navigation**: Subsequent navigation via `<a>` tags is intercepted by the client. The new page is fetched via AJAX, and the content/state is swapped without a full browser refresh (Soft Navigation).
 3.  **Interactivity**: User actions call proxy methods on the client-side component, which sends a message to the Server Runtime over the WebSocket.
+    *   **Optimistic UI**: Methods decorated with `@Optimistic` run immediately on the client before the request is sent, providing instant feedback.
 4.  **State Sync**: The Server Runtime (Durable Object or Node Adapter) processes the action, updates its internal component's state, and broadcasts the new state to all connected clients.
     *   **Note**: On Cloudflare with Durable Objects, `@State` is persisted automatically. On Node.js, `@State` is currently memory-only and resets on server restart.
 5.  **Re-render**: The client-side component receives the new state and uses the `@cossackframework/renderer` to efficiently update the DOM.
@@ -64,3 +66,10 @@ The development process is critical and follows a specific order.
 -   **Server Runtime Abstraction**: The `Cossack` base class uses a generic `CossackServerRuntime` interface. This decouples the framework logic from the underlying transport (Durable Objects vs Node `ws`).
 -   **Durable Object Extensibility**: The base `CossackDurableObject` in `core` is generic. The `framework` contains an `AppDurableObject` that extends it and provides the application-specific list of page components. This is the correct pattern for Cloudflare.
 -   **Dependencies**: The `framework` must explicitly list all dependencies it uses, even if they are also used by `core` (e.g., `hono`, `reflect-metadata`).
+
+## 7. Key Features
+
+-   **Client-Side Navigation**: Automatic "Turbo-like" navigation for `<a>` tags.
+-   **Optimistic UI**: `@Optimistic` decorator for instant client-side updates.
+-   **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
+-   **Image Optimization**: `Image` helper component for easy responsive images.

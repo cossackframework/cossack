@@ -38,6 +38,16 @@ src/
             └── index.ts  // Serves "/users/:id" (e.g., /users/123)
 ```
 
+### Client-Side Navigation
+
+Cossack enables "soft navigation" by default. This means that when a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click, fetches the new page via AJAX, and swaps the content without a full browser refresh. This provides a fast, Single-Page Application (SPA) feel while maintaining the simplicity of server-side rendering.
+
+To navigate programmatically, you can use the standard browser API:
+```typescript
+// Clicking <a> tags is handled automatically.
+// Programmatic navigation support is coming soon.
+```
+
 ---
 
 ## Advanced: The Magic Behind the Scenes
