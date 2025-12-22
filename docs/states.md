@@ -176,7 +176,7 @@ export class ToggleDemo extends Cossack {
     }
 
     protected template() {
-        return html`
+         return html`
             <button @click=${this.toggle}>
                 ${this.isExpanded ? 'Hide' : 'Show'} Details
             </button>
