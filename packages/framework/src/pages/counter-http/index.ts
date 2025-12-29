@@ -33,7 +33,7 @@ export class CounterHttp extends Cossack {
         this.redirect('/tasks'); // Example of redirecting after a server action
     }
 
-    protected template(): TemplateResult | null {
+    render(): TemplateResult | null {
         return html`
             <div>
                 <h1>Counter (HTTP)</h1>

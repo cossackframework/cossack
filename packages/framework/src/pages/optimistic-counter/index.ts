@@ -49,7 +49,7 @@ export class OptimisticCounter extends Cossack {
         this.showDetails = !this.showDetails;
     }
 
-    protected template(): TemplateResult {
+    render(): TemplateResult {
         return html`
             <div>
                 <h1>Optimistic Counter</h1>

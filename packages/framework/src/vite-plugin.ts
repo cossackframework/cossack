@@ -45,7 +45,7 @@ export function cossackPages(): Plugin {
                 };
               }
 
-              template() {
+              render() {
                 return html\`<div class="mdx-content">${escapedHtml}</div>\`;
               }
             }

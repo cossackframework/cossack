@@ -71,7 +71,7 @@ export class Tasks extends Cossack {
         }
     }
 
-    protected template(): TemplateResult {
+    render(): TemplateResult {
         return Layout({
             dir: 'ltr',
         }, html`

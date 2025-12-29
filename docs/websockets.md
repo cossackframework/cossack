@@ -122,7 +122,7 @@ export class Greeting extends Cossack {
         this.notificationCount++;
     };
 
-    protected template(): TemplateResult {
+    protected render(): TemplateResult {
         return html`
             <div>
                 <h1>Hello ${this.name}!</h1>

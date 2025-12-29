@@ -39,7 +39,7 @@ class TestComponent extends Cossack<{}> {
     // This would be implemented on the client
   }
 
-  template(): TemplateResult {
+  render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
       strings,
@@ -82,7 +82,7 @@ describe('Cossack Core: Server-Side', () => {
     const mockContext = { req: { param: vi.fn() } } as unknown as Context;
     await component.bootstrap({ context: mockContext });
     
-    const html = component.render();
+    const html = component._render();
 
     expect(renderToString).toHaveBeenCalled();
     expect(html).toContain('SSR:');

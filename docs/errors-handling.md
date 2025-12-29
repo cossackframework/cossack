@@ -18,7 +18,7 @@ export default class NotFoundPage extends Cossack {
         return { title: 'Page Not Found' };
     }
 
-    template() {
+    render() {
         return html`
             <div style="text-align: center; padding: 5rem;">
                 <h1>404</h1>
@@ -49,7 +49,7 @@ export default class ErrorPage extends Cossack {
         return { title: 'Server Error' };
     }
 
-    template() {
+    render() {
         return html`
             <div style="text-align: center; padding: 5rem; color: #d32f2f;">
                 <h1>Something went wrong</h1>

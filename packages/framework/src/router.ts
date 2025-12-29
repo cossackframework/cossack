@@ -102,11 +102,11 @@ export function createApp() {
                 }
                 
                 // Wrap rendering
-                let body = (pageInstance as any).template();
+                let body = (pageInstance as any).render();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                    body = layoutInstances[i].template(body);
+                    body = layoutInstances[i].render(body);
                 }
-                const finalHtml = appInstance.render(body);
+                const finalHtml = appInstance._render(body);
 
                 // Head Merging (Page -> Layouts -> App)
                 // 1. Get initial HeadValue from Page

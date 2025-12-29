@@ -5,7 +5,7 @@ import { Layout } from '@/components/Layout';
 
 @Page({ transport: 'http' })
 export default class ImageDemo extends Cossack {
-  template() {
+  render() {
     return Layout({ dir: 'ltr' }, html`
       <h1>Image Optimization Demo</h1>
       <p>This image is rendered using the <code>Image</code> helper.</p>

@@ -4,7 +4,7 @@ import { Button } from '@/components/Button';
 
 @Page({ transport: 'http' })
 export default class RegisterPage extends Cossack {
-  template() {
+  render() {
     return html`
       <h3 style="margin-bottom: 1rem;">Create Account</h3>
       <form>

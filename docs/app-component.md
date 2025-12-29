@@ -25,7 +25,7 @@ export class App extends Cossack {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
     }
 
-    template(children: TemplateResult) {
+    render(children: TemplateResult) {
         return html`
             <div id="app-wrapper" class="${this.theme}">
                 <nav>Global Nav</nav>

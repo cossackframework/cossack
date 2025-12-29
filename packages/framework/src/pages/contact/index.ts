@@ -28,7 +28,7 @@ export class Contact extends Cossack {
         return this.c.redirect('/contact?name=' + encodeURIComponent(this.greeting));
     }
 
-    public template(): TemplateResult {
+    render(): TemplateResult {
         return html`
             <h1>Contact Page</h1>
             <div>Hello ${this.greeting}</div>

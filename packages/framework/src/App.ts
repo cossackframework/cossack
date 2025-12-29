@@ -21,7 +21,7 @@ export class App extends Cossack {
         }
     }
 
-    template(children: TemplateResult) {
+    render(children: TemplateResult) {
         return html`
             <div id="app-wrapper" class="${this.theme}">
                 <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">

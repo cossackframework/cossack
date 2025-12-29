@@ -57,7 +57,7 @@ export class Greeting extends Cossack {
         console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
     };
 
-    protected template(): TemplateResult {
+    render(): TemplateResult {
         const isFeedLoading = this.loading['incrementFeed'];
         const isNotificationLoading = this.loading['incrementNotifications'];
 

@@ -34,7 +34,7 @@ export default class extends Cossack {
         this.count--;
     }
 
-    protected template() {
+    protected render() {
         return html`
             <p>Count: ${this.count}</p>
             <button @click=${this.increment}>+</button>
@@ -49,7 +49,7 @@ When a button is clicked, the client sends the component's current state to a ge
 
 ## 2. Pure JSON APIs
 
-To create a pure API endpoint, simply create a component without a `template()` method.
+To create a pure API endpoint, simply create a component without a `render()` method.
 
 ### Getting Started: Your First API Route
 
@@ -117,7 +117,7 @@ export default class extends Cossack {
         return this.c.redirect('/contact?status=success');
     }
 
-    protected template() {
+    protected render() {
         return html`
             <h1>Contact Us</h1>
             ${this.successMessage
@@ -193,7 +193,7 @@ async post() {
 
 ### Automatic JSON Responses
 
-If a method in a **pure JSON API** (a component without a `template()`) doesn't explicitly return a value, the framework automatically calls the component's `getPublicState()` method, which serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
+If a method in a **pure JSON API** (a component without a `render()`) doesn't explicitly return a value, the framework automatically calls the component's `getPublicState()` method, which serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
 
 ### Custom Responses
 

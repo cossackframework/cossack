@@ -14,7 +14,7 @@ import { html } from '@cossackframework/renderer';
     channels: ['global', 'notifications'],
 })
 export default class MyPage extends Cossack {
-    template() {
+    render() {
         return html`<h1>Hello World</h1>`;
     }
 }
@@ -63,7 +63,7 @@ Layouts in Cossack are simply components decorated with `@Page` that are named `
 ```typescript
 @Page({ transport: 'http' })
 export default class MyLayout extends Cossack {
-    template(children: TemplateResult) {
+    render(children: TemplateResult) {
         return html`
             <div class="wrapper">
                 <header>My Header</header>

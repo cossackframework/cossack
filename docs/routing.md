@@ -75,7 +75,7 @@ export default class MyLayout extends Cossack {
     };
   }
 
-  template(children: TemplateResult) {
+  render(children: TemplateResult) {
     return html`
       <div class="layout">
         <nav>...</nav>

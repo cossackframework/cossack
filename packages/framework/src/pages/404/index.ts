@@ -7,7 +7,7 @@ export default class NotFoundPage extends Cossack {
         return { title: 'Page Not Found' };
     }
 
-    template() {
+    render() {
         return html`
             <div style="text-align: center; padding: 5rem 2rem;">
                 <h1 style="font-size: 4rem; margin-bottom: 1rem;">404</h1>

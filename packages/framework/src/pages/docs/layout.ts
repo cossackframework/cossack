@@ -3,7 +3,7 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class DocsLayout extends Cossack {
-  template(children: TemplateResult) {
+  render(children: TemplateResult) {
     return html`
       <div class="docs-container" style="display: flex; min-height: 100vh;">
         <aside style="width: 250px; background: #f9f9f9; padding: 2rem; border-right: 1px solid #eee;">

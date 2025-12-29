@@ -13,7 +13,7 @@ import { Image } from '@cossackframework/core';
 
 @Page()
 export class Hero extends Cossack {
-    protected template() {
+    protected render() {
         return html`
             <div class="hero">
                 ${Image({

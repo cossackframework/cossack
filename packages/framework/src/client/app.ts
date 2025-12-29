@@ -66,6 +66,24 @@ function parseStateFromHTML(html: string) {
   return null;
 }
 
+async function fetchPage(url: string) {
+  if (pageCache.has(url)) {
+    return pageCache.get(url)!;
+  }
+
+  const response = await fetch(url);
+  const html = await response.text();
+  const parsed = parseStateFromHTML(html);
+
+  if (parsed) {
+    const data = { html, state: parsed.state };
+    pageCache.set(url, data);
+    return data;
+  }
+
+  throw new Error('Failed to load page state');
+}
+
 export async function createClientApp({ container }: CreateClientAppOptions) {
   const containerEl =
     typeof container === 'string'
@@ -79,7 +97,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   const appInstance = new App();
   // Capture original render logic to avoid infinite recursion
-  const originalAppRender = appInstance.render.bind(appInstance);
+  const originalAppRender = appInstance._render.bind(appInstance);
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
@@ -106,16 +124,16 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   const fullRender = () => {
     if (!currentPage) return '';
-    let body = (currentPage as any).template();
+    let body = (currentPage as any).render();
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
-       body = (currentLayoutInstances[i] as any).template(body);
+       body = (currentLayoutInstances[i] as any).render(body);
     }
     // Use the captured original logic that performs the actual DOM update
     return originalAppRender(body);
   };
 
   // Redirect App's re-renders to the full stack
-  appInstance.render = fullRender;
+  appInstance._render = fullRender;
   appInstance.updateHead = syncHead;
 
   await appInstance.bootstrap({ 
@@ -150,7 +168,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
         if (!instance) {
             const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
             instance = new LComp();
-            instance.render = fullRender;
+            instance._render = fullRender;
             instance.updateHead = syncHead;
             await instance.bootstrap({ container: containerEl as Element, initialState: state });
             currentLayoutsMap.set(path, instance);
@@ -174,7 +192,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       const componentInstance = new PageComponent();
       currentPage = componentInstance;
       
-      componentInstance.render = fullRender;
+      componentInstance._render = fullRender;
       componentInstance.updateHead = syncHead;
 
       await componentInstance.bootstrap({ container: containerEl as Element, initialState });

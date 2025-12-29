@@ -195,7 +195,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
 
         if (this.container && !this.isServer) {
-            this.render();
+            this._render();
             if (!this.isMounted) {
                 this.isMounted = true;
                 this.onMount();
@@ -282,7 +282,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                             delete this.loading[action];
                         }
                     }
-                    requestAnimationFrame(() => this.render());
+                    requestAnimationFrame(() => this._render());
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
@@ -328,14 +328,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
                     try {
                         (this as any)[optimisticHandlers[name]](...args);
-                        this.render(); 
+                        this._render(); 
                     } catch (e) {
                         console.error(`Error in optimistic handler for '${name}':`, e);
                     }
                 }
 
-                this.loading[name] = true;
-                this.render();
+                this.loading[name] = (this.loading[name] || 0) + 1;
+                this._render();
 
                 try {
                     const response = await fetch('/crpc', {
@@ -370,7 +370,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     console.error(`Error calling server action '${name}':`, error);
                 } finally {
                     delete this.loading[name];
-                    this.render();
+                    this._render();
                 }
             };
         }
@@ -390,14 +390,14 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
                         try {
                             (this as any)[optimisticHandlers[name]](...args);
-                            this.render(); // Render immediately after optimistic update
+                            this._render(); // Render immediately after optimistic update
                         } catch (e) {
                             console.error(`Error in optimistic handler for '${name}':`, e);
                         }
                     }
 
-                    this.loading[name] = true;
-                    this.render();
+                    this.loading[name] = (this.loading[name] || 0) + 1;
+                    this._render();
                     
                     const payload = args.filter(arg => typeof arg !== 'object' || arg === null);
                     ws.send(JSON.stringify({
@@ -462,12 +462,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                                     });
                                 }
                             } else {
-                                this.render();
+                                this._render();
                             }
                         } else if (clientStateProperties.has(key)) {
                             // Client-only state just triggers a render on the client
                             if (!this.isServer) {
-                                this.render();
+                                this._render();
                             }
                         }
                     }
@@ -523,7 +523,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
-    protected template(children?: TemplateResult): TemplateResult | null { return null; }
+    public render(children?: TemplateResult): TemplateResult | null { return null; }
 
     public head(context: HeadContext): HeadValue {
         return {};
@@ -540,8 +540,8 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         Cossack.applyHeadTags(tags);
     }
 
-    public render(children?: TemplateResult): string {
-        const template = this.template(children);
+    public _render(children?: TemplateResult): string {
+        const template = this.render(children);
         if (!template) {
             return '';
         }
@@ -558,7 +558,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public getInitialHtml(): string {
-        return this.render();
+        return this._render();
     }
 
     public async init(): Promise<void> {}

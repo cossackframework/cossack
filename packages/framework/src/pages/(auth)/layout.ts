@@ -3,7 +3,7 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {
-  template(children: TemplateResult) {
+  render(children: TemplateResult) {
     return html`
       <div class="auth-layout" style="display: flex; justify-content: center; align-items: center; min-height: 80vh; background: #f0f2f5;">
         <div style="background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px;">

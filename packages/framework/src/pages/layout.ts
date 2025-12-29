@@ -3,7 +3,7 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class RootLayout extends Cossack {
-  template(children: TemplateResult) {
+  render(children: TemplateResult) {
     return html`
       <div class="root-layout">
         <header style="padding: 1rem; border-bottom: 1px solid #ccc;">

@@ -36,7 +36,7 @@ class TestComponent extends Cossack<{}> {
     // This would be implemented on the client
   }
 
-  template(): TemplateResult {
+  render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
       strings,
@@ -117,7 +117,7 @@ describe('Cossack Core: Client-Side', () => {
           channel: 'global',
       }));
       // It should also update the loading state
-      expect(component.loading['increment']).toBe(true);
+      expect(component.loading['increment']).toBeTruthy();
   });
 
   it('should render the template into the container if provided', async () => {
@@ -140,7 +140,7 @@ describe('Cossack Core: Client-Side', () => {
     expect(component.count).toBe(10);
 
     // But the loading state should have been updated by the proxy
-    expect(component.loading['increment']).toBe(true);
+    expect(component.loading['increment']).toBeTruthy();
   });
 
   it('should clear loading state when action-complete is received', async () => {
@@ -149,7 +149,7 @@ describe('Cossack Core: Client-Side', () => {
 
       // Call action
       await component.increment();
-      expect(component.loading['increment']).toBe(true);
+      expect(component.loading['increment']).toBeTruthy();
 
       // Simulate response
       wsInstance.onmessage({

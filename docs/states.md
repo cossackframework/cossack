@@ -46,7 +46,7 @@ export class Counter extends Cossack {
         this.count++;
     }
 
-    protected template() {
+    protected render() {
         return html`
             <p>Count: ${this.count}</p>
             <button @click=${this.increment}>Increment</button>
@@ -188,7 +188,7 @@ export class OptimisticCounter extends Cossack {
         this.optCount++;
     }
 
-    template() {
+    render() {
         return html`Count: ${this.displayCount}`;
     }
 }
@@ -222,7 +222,7 @@ export class ToggleDemo extends Cossack {
         this.isExpanded = !this.isExpanded;
     }
 
-    protected template() {
+    protected render() {
          return html`
             <button @click=${this.toggle}>
                 ${this.isExpanded ? 'Hide' : 'Show'} Details
@@ -261,7 +261,7 @@ export class Counter extends Cossack {
         return this.count * 2;
     }
 
-    protected template() {
+    protected render() {
         return html`
             <p>Count: ${this.count}</p>
             <p>Doubled: ${this.doubleCount}</p>
@@ -289,7 +289,7 @@ export class MyComponent extends Cossack {
         this.isVisible = !this.isVisible; 
     }
 
-    template() {
+    render() {
         return html`<button @click=${this.toggle}>Toggle</button>`;
     }
 }
@@ -308,7 +308,7 @@ export class MyComponent extends Cossack {
         this.isVisible = !this.isVisible;
     }
 
-    template() {
+    render() {
         return html`<button @click=${this.toggle}>Toggle</button>`;
     }
 }

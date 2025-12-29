@@ -7,7 +7,7 @@ export default class ErrorPage extends Cossack {
         return { title: 'Server Error' };
     }
 
-    template() {
+    render() {
         return html`
             <div style="text-align: center; padding: 5rem 2rem; color: #d32f2f;">
                 <h1 style="font-size: 3rem; margin-bottom: 1rem;">Something went wrong</h1>
