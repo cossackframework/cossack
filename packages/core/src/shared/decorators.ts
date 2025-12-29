@@ -145,6 +145,33 @@ export function OnEvent(eventName: string): MethodDecorator {
   };
 }
 
+export function On(eventName: string): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const domEvents = Reflect.getOwnMetadata('cossack:dom-events', target.constructor) || [];
+    domEvents.push({ eventName, propertyKey });
+    Reflect.defineMetadata('cossack:dom-events', domEvents, target.constructor);
+    return descriptor;
+  };
+}
+
+export function OnDocument(eventName: string): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const documentEvents = Reflect.getOwnMetadata('cossack:document-events', target.constructor) || [];
+    documentEvents.push({ eventName, propertyKey });
+    Reflect.defineMetadata('cossack:document-events', documentEvents, target.constructor);
+    return descriptor;
+  };
+}
+
+export function OnWindow(eventName: string): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const windowEvents = Reflect.getOwnMetadata('cossack:window-events', target.constructor) || [];
+    windowEvents.push({ eventName, propertyKey });
+    Reflect.defineMetadata('cossack:window-events', windowEvents, target.constructor);
+    return descriptor;
+  };
+}
+
 export function Computed(): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     Reflect.defineMetadata('computed', true, target, propertyKey);
@@ -157,6 +184,30 @@ export function Optimistic(actionName: string): MethodDecorator {
     const optimisticHandlers = Reflect.getOwnMetadata('cossack:optimistic-handlers', target.constructor) || {};
     optimisticHandlers[actionName] = propertyKey;
     Reflect.defineMetadata('cossack:optimistic-handlers', optimisticHandlers, target.constructor);
+    return descriptor;
+  };
+}
+
+export function Task(): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const tasks = Reflect.getOwnMetadata('cossack:tasks', target.constructor) || [];
+    tasks.push(propertyKey);
+    Reflect.defineMetadata('cossack:tasks', tasks, target.constructor);
+    return descriptor;
+  };
+}
+
+export interface VisibleTaskOptions {
+    strategy?: 'intersection-observer' | 'document-ready';
+    threshold?: number;
+    selector?: string;
+}
+
+export function VisibleTask(options: VisibleTaskOptions = {}): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const visibleTasks = Reflect.getOwnMetadata('cossack:visible-tasks', target.constructor) || [];
+    visibleTasks.push({ propertyKey, options });
+    Reflect.defineMetadata('cossack:visible-tasks', visibleTasks, target.constructor);
     return descriptor;
   };
 }

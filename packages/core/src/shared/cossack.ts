@@ -2,7 +2,7 @@
 import { renderToString } from '@cossackframework/renderer/server';
 import { render, type TemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, PageOptions, Server, State } from './decorators';
+import { Client, PageOptions, Server, State, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
@@ -44,6 +44,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private dirtyProperties: Set<string> = new Set();
     private broadcastScheduled: boolean = false;
     private isMounted: boolean = false;
+    private skipRenderTasks: boolean = false;
+    private isRunningTasks: boolean = false;
+    private isBootstrapping: boolean = false;
+    private eventCleanupFns: (() => void)[] = [];
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
         const context: HeadContext = {
@@ -152,6 +156,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public async bootstrap({ container, initialState, context, user, env, page, providerName }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string } = {}) {
+        this.isBootstrapping = true;
         this.container = container;
         this.user = user;
         this.props = { page };
@@ -180,6 +185,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
 
         this.initializeState(initialState);
 
+        // Run tasks after state initialization
+        await this.runTasks();
+
         if (this.isServer) {
             this.proxyClientMethods();
         } else {
@@ -194,8 +202,13 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             }
         }
 
+        this.isBootstrapping = false;
+
         if (this.container && !this.isServer) {
+            this.skipRenderTasks = true;
             this._render();
+            this.skipRenderTasks = false;
+            
             if (!this.isMounted) {
                 this.isMounted = true;
                 this.onMount();
@@ -413,6 +426,116 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
     }
 
+    private async runTasks() {
+        if (this.isRunningTasks) return;
+        this.isRunningTasks = true;
+        try {
+            const tasks = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
+            for (const task of tasks) {
+                if (typeof (this as any)[task] === 'function') {
+                    try {
+                        const result = (this as any)[task]();
+                        if (result instanceof Promise) {
+                            await result;
+                        }
+                    } catch (e) {
+                        console.error(`[Cossack] Error in task '${String(task)}':`, e);
+                    }
+                }
+            }
+        } finally {
+            this.isRunningTasks = false;
+        }
+    }
+
+    private setupEventListeners() {
+        if (this.isServer) return;
+
+        // Helper to attach and track events
+        const attach = (target: EventTarget, eventName: string, method: Function) => {
+            const handler = method.bind(this);
+            target.addEventListener(eventName, handler);
+            this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler));
+        };
+
+        // 1. @On (Component/Container Events)
+        if (this.container) {
+            const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+            for (const { eventName, propertyKey } of domEvents) {
+                if (typeof (this as any)[propertyKey] === 'function') {
+                    attach(this.container, eventName, (this as any)[propertyKey]);
+                }
+            }
+        }
+
+        // 2. @OnDocument
+        if (typeof document !== 'undefined') {
+            const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
+            for (const { eventName, propertyKey } of documentEvents) {
+                if (typeof (this as any)[propertyKey] === 'function') {
+                    attach(document, eventName, (this as any)[propertyKey]);
+                }
+            }
+        }
+
+        // 3. @OnWindow
+        if (typeof window !== 'undefined') {
+            const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
+            for (const { eventName, propertyKey } of windowEvents) {
+                if (typeof (this as any)[propertyKey] === 'function') {
+                    attach(window, eventName, (this as any)[propertyKey]);
+                }
+            }
+        }
+    }
+
+    private setupVisibleTasks() {
+        if (this.isServer) return;
+
+        const visibleTasks = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
+        for (const { propertyKey, options } of visibleTasks) {
+            const strategy = options.strategy || 'intersection-observer';
+            
+            if (typeof (this as any)[propertyKey] !== 'function') continue;
+
+            const execute = () => {
+                 try {
+                     const cleanup = (this as any)[propertyKey]();
+                     // TODO: Handle cleanup if needed, possibly store it in a map to call on component destroy
+                 } catch (e) {
+                     console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
+                 }
+            };
+
+            if (strategy === 'document-ready') {
+                execute();
+            } else if (strategy === 'intersection-observer') {
+                if (!this.container) {
+                     console.warn(`[Cossack] Cannot setup intersection observer for '${String(propertyKey)}': container not found.`);
+                     continue;
+                }
+
+                let targetElement: Element | null = this.container;
+                if (options.selector) {
+                    targetElement = this.container.querySelector(options.selector);
+                    if (!targetElement) {
+                        console.warn(`[Cossack] VisibleTask '${String(propertyKey)}' specifies selector '${options.selector}', but element was not found in the component container.`);
+                        continue;
+                    }
+                }
+
+                const observer = new IntersectionObserver((entries) => {
+                    if (entries[0].isIntersecting) {
+                        execute();
+                        observer.disconnect(); // Run once
+                    }
+                }, { threshold: options.threshold || 0 });
+                
+                observer.observe(targetElement);
+            }
+        }
+    }
+
     private initializeState(initialState?: any) {
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
@@ -449,7 +572,8 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                                 this.dirtyProperties.add(key);
                                 if (!this.broadcastScheduled) {
                                     this.broadcastScheduled = true;
-                                    queueMicrotask(() => {
+                                    queueMicrotask(async () => {
+                                        await this.runTasks();
                                         const partialState: Record<string, any> = {};
                                         for (const key of this.dirtyProperties) {
                                             partialState[key] = (this as any)[key];
@@ -461,12 +585,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                                         this.broadcastScheduled = false;
                                     });
                                 }
-                            } else {
+                            } else if (!this.isBootstrapping) {
                                 this._render();
                             }
                         } else if (clientStateProperties.has(key)) {
                             // Client-only state just triggers a render on the client
-                            if (!this.isServer) {
+                            if (!this.isServer && !this.isBootstrapping) {
                                 this._render();
                             }
                         }
@@ -541,6 +665,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public _render(children?: TemplateResult): string {
+        if (!this.isServer && !this.skipRenderTasks) {
+            this.runTasks();
+        }
         const template = this.render(children);
         if (!template) {
             return '';
@@ -564,7 +691,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     public async init(): Promise<void> {}
     
     // Lifecycle hooks
-    public onMount(): void {}
+    public onMount(): void {
+        this.setupVisibleTasks();
+        this.setupEventListeners();
+    }
     public onCleanup(): void {}
 
     public static _onNavigate?: (url: string) => Promise<void>;
@@ -642,6 +772,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 ws.close();
             });
             this.websockets.clear();
+            
+            // Clean up event listeners
+            this.eventCleanupFns.forEach(cleanup => cleanup());
+            this.eventCleanupFns = [];
         }
     }
 }

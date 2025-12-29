@@ -1,5 +1,0 @@
-- Form handling and validation with `zod`
-- Client-only state
-- Database abstraction (Cloudflare D1, kysely)
-- Authentication (db tables: users, sessions) (methods: Auth.attempt(), Auth.user(), Auth.id(), `auth` middleware) `Session.create()` `Session.logout(id)` `Session.logoutAllDevices()` throttle login, OAuth, etc.
-- TailwindCSS integration.
