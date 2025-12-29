@@ -16,14 +16,14 @@ export interface CossackOptions {
 import type { AuthenticatedUser } from './user';
 import { RedirectStatusCode } from 'hono/utils/http-status';
 
-export abstract class Cossack<T extends CossackOptions = {}> {
+export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
     // Standard Properties
     protected container?: Element;
     protected isServer: boolean = isServer;
     
     protected c!: Context;
     protected user?: AuthenticatedUser;
-    protected env: any;
+    protected env!: Env;
     protected providers!: Map<string, StateProvider>;
     public props: Record<string, any> = {};
 

@@ -5,12 +5,15 @@ import { HTTPException } from 'hono/http-exception';
 @Page({
     transport: 'http'
 })
-export class Hello extends Cossack {
+export class Hello extends Cossack<CloudflareBindings> {
     @State()
     private message: string = '';
 
     async get() {
         this.message = 'This message is in the state, but will not be returned.';
+
+        // Example of accessing typed env:
+        // const stub = this.env.COSSACK_OBJECT.get(id);
 
         // Return a custom response object using the Hono context
         return this.c.json({

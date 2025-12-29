@@ -2,13 +2,39 @@
 
 Cossack provides built-in support for handling asynchronous operations, allowing you to easily show spinners or skeleton screens while data is being fetched or actions are processing.
 
+## File-based Loading Convention (`loading.ts`)
+
+You can create a `loading.ts` (or `loading.tsx`) file in any route directory. Cossack will automatically render this component **instantly** when a user navigates to that route, while the main Page component is being fetched and its `init()` method is running.
+
+This is the recommended way to implement global page transitions and high-fidelity skeleton screens.
+
+### Example
+
+Directory structure:
+```text
+src/pages/dashboard/
+  ├── index.ts    <-- Dashboard Page
+  └── loading.ts  <-- Dashboard Skeleton
+```
+
+`loading.ts`:
+```typescript
+import { Cossack, html } from '@cossackframework/core';
+
+export default class DashboardSkeleton extends Cossack {
+  render() {
+    return html`<div class="skeleton">Loading dashboard...</div>`;
+  }
+}
+```
+
 ## Initialization Loading (`init` / `get`)
 
 When a component is being initialized (via `init()` or `get()` methods), Cossack automatically sets `this.loading.init` to `1`.
 
 ### The `loadingTemplate()` Convention
 
-If you define a `loadingTemplate()` method in your component, Cossack will automatically render it while `this.loading.init` is true. This is the preferred way to implement **Skeleton Screens**.
+If you define a `loadingTemplate()` method in your component, Cossack will automatically render it while `this.loading.init` is true. This is useful for component-level loading states or when triggering a refresh.
 
 ```typescript
 import { Cossack, Page, html } from '@cossackframework/core';
@@ -19,7 +45,6 @@ export default class UserProfile extends Cossack {
         this.user = await fetchUser(); // Takes 1s
     }
 
-    // This is rendered automatically while init() is running
     loadingTemplate() {
         return html`
             <div class="skeleton-profile">
@@ -32,19 +57,6 @@ export default class UserProfile extends Cossack {
     render() {
         return html`<h1>Welcome, ${this.user.name}</h1>`;
     }
-}
-```
-
-### Manual Check in `render()`
-
-If you don't want to use the `loadingTemplate()` method convention, you can manually check `this.loading.init` inside your `render()` method:
-
-```typescript
-render() {
-    if (this.loading.init) {
-        return html`<p>Loading data...</p>`;
-    }
-    return html`<div>Data: ${this.data}</div>`;
 }
 ```
 
@@ -68,6 +80,6 @@ render() {
 
 ## How it Works
 
-1.  **Automatic Tracking**: The `Cossack` base class wraps `init()` and `get()` calls. It increments `this.loading.init` before the call and decrements it after.
-2.  **Reactive Re-rendering**: On the client, changing any value in `this.loading` automatically triggers a re-render of the component.
-3.  **SSR Behavior**: During Server-Side Rendering, Cossack waits for `init()` to complete before sending the final HTML. Therefore, the loading state is typically only visible during client-side interactions or manual calls to `init()`.
+1.  **File Convention**: The Vite plugin discovers `loading.ts` files and registers them. During navigation, the client router swaps the current page with the nearest matching loading component before starting the network request.
+2.  **Automatic Tracking**: The `Cossack` base class wraps `init()` and `get()` calls. It increments `this.loading.init` before the call and decrements it after.
+3.  **SSR Behavior**: During Server-Side Rendering, Cossack waits for `init()` to complete before sending the final HTML. Therefore, the loading state is typically only visible during client-side interactions.

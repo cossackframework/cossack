@@ -3,7 +3,7 @@ import { App } from '../App';
 // @ts-expect-error - this is a virtual module created by the vite plugin
 import registry from 'virtual:cossack-pages';
 
-const { pages, layouts } = registry;
+const { pages, layouts, loadings } = registry;
 
 declare global {
   interface Window {
@@ -96,11 +96,11 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
   }
 
   const appInstance = new App();
-  // Capture original render logic to avoid infinite recursion
   const originalAppRender = appInstance._render.bind(appInstance);
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
+  let isDisplayingLoadingState = false;
 
   const syncHead = () => {
     if (!currentPage) return;
@@ -128,11 +128,9 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
        body = (currentLayoutInstances[i] as any)._getWrappedTemplate(body);
     }
-    // Use the captured original logic that performs the actual DOM update
     return originalAppRender(body);
   };
 
-  // Redirect App's re-renders to the full stack
   appInstance._render = fullRender;
   appInstance.updateHead = syncHead;
 
@@ -153,10 +151,8 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       return;
     }
 
-    // 0. Update App Path
     appInstance.updatePath(pathname);
 
-    // 1. Manage Layouts
     const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
     
     for (const [path, instance] of currentLayoutsMap.entries()) {
@@ -181,7 +177,6 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
         currentLayoutInstances.push(instance);
     }
 
-    // 2. Manage Page Component
     const module = pages[componentPath] as any;
     if (!module) {
       console.error(`Component module not found for path: ${componentPath}`);
@@ -204,20 +199,17 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       componentInstance.updatePath(pathname);
       
       syncHead();
-    } else {
-      console.error(`Could not extract component from module: ${componentPath}`);
     }
+    isDisplayingLoadingState = false;
   };
 
   await loadComponent(window.__INITIAL_STATE__);
 
-  // Use a second argument to force navigation if already confirmed
   const navigate = async (url: string, force = false): Promise<boolean> => {
-    if (!force && currentPage) {
+    if (!force && currentPage && !isDisplayingLoadingState) {
         const prevented = await currentPage._checkPreventNavigation();
         if (prevented) {
             currentPage._pendingNavigation = () => navigate(url, true);
-            // Trigger a re-render to update UI (e.g. show prompt)
             currentPage._render();
             return false;
         }
@@ -225,6 +217,24 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
     try {
       setProgress(30);
+
+      // Check for loading.ts convention
+      const urlObj = new URL(url, window.location.href);
+      const cleanPath = urlObj.pathname.replace(/\/$/, '') || '/index';
+      const potentialLoadingPath = `/src/pages${cleanPath}/loading.ts`;
+      const LoadingCompClass = loadings[potentialLoadingPath] ? Object.values(loadings[potentialLoadingPath])[0] as new () => Cossack : null;
+
+      if (LoadingCompClass && !isDisplayingLoadingState) {
+          isDisplayingLoadingState = true;
+          const loadingInstance = new LoadingCompClass();
+          // We swap current page with loading component temporarily
+          if (currentPage) currentPage.destroy();
+          currentPage = loadingInstance;
+          loadingInstance._render = fullRender;
+          await loadingInstance.bootstrap({ container: containerEl as Element });
+          syncHead();
+      }
+
       const { state } = await fetchPage(url);
       setProgress(100);
 
@@ -238,7 +248,6 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     }
   };
 
-  // Register for programmatic redirects
   Cossack._onNavigate = async (url) => {
       const accepted = await navigate(url);
       if (accepted) {
@@ -250,8 +259,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     navigate,
     async (url) => {
       if (!pageCache.has(url)) {
-        console.log(`[Cossack] Pre-fetching: ${url}`);
-        fetchPage(url).catch(() => {}); // Silent pre-fetch
+        fetchPage(url).catch(() => {});
       }
     }
   );
