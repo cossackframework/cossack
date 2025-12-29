@@ -1,5 +1,5 @@
 export function enableClientNavigation(
-    onNavigate: (url: string) => Promise<void>,
+    onNavigate: (url: string) => Promise<boolean>,
     onPreFetch?: (url: string) => Promise<void>
 ) {
     const isLocalLink = (target: HTMLAnchorElement) => {
@@ -20,11 +20,10 @@ export function enableClientNavigation(
         const href = target.getAttribute('href')!;
         e.preventDefault();
         
-        // Push state
-        window.history.pushState({}, '', href);
-        
-        // Navigate
-        await onNavigate(href);
+        const accepted = await onNavigate(href);
+        if (accepted) {
+            window.history.pushState({}, '', href);
+        }
     });
 
     // Pre-fetch on hover

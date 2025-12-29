@@ -1,81 +1,45 @@
-import { Cossack, Page, State, Task, VisibleTask, ClientState } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
+import { Cossack, Page, State, html } from '@cossackframework/core';
 
-@Page({
-    transport: 'durable-object'
-})
+@Page()
 export default class LifecycleDemo extends Cossack {
     @State()
-    count: number = 0;
+    data: string[] = [];
 
-    @ClientState()
-    logs: string[] = [];
-
-    @ClientState()
-    isVisible: boolean = false;
-
-    @Task()
-    logUpdate() {
-        const message = `[Task] Component updated. Count: ${this.count} (${this.isServer ? 'Server' : 'Client'})`;
-        console.log(message);
-        if (!this.isServer) {
-            this.logs = [...this.logs, message];
-        }
+    // This method is called by the framework during bootstrap
+    async init() {
+        // Simulate a slow data fetch (e.g., from D1 or KV)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.data = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
     }
 
-    @VisibleTask({ strategy: 'intersection-observer', threshold: 0.5, selector: '#visible-target' })
-    onVisible() {
-        console.log('[VisibleTask] Element is now visible!');
-        this.isVisible = true;
-        this.logs = [...this.logs, '[VisibleTask] Element is now visible!'];
-        
-        return () => {
-            console.log('[VisibleTask] Cleanup (if implemented)');
-        };
-    }
-
-    increment() {
-        this.count++;
+    // Convention: If this method exists, it's rendered when this.loading.init is true
+    loadingTemplate() {
+        return html`
+            <style>
+                .skeleton { background: #eee; height: 24px; margin-bottom: 12px; border-radius: 4px; animation: pulse 1.5s infinite; }
+                @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+            </style>
+            <h1>Loading Data...</h1>
+            <div class="skeleton" style="width: 60%"></div>
+            <div class="skeleton" style="width: 80%"></div>
+            <div class="skeleton" style="width: 40%"></div>
+            <div class="skeleton" style="width: 70%"></div>
+        `;
     }
 
     render() {
-        const targetStyle = `
-            padding: 50px; 
-            background: ${this.isVisible ? '#d4edda' : '#f8d7da'}; 
-            color: ${this.isVisible ? '#155724' : '#721c24'};
-            border: 2px solid ${this.isVisible ? '#c3e6cb' : '#f5c6cb'};
-            text-align: center;
-            transition: all 0.5s ease;
+        return html`
+            <h1>Data Loaded!</h1>
+            <p>The initialization logic (init) was called. You can trigger it again manually to see the loading UI.</p>
+            <ul>
+                ${this.data.map(item => html`<li>${item}</li>`)}
+            </ul>
+            <button 
+                @click="${() => this.init()}"
+                style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;"
+            >
+                Refresh Data (Show Loading UI)
+            </button>
         `;
-
-        return Layout({ dir: 'ltr' }, html`
-            <div style="padding: 20px;">
-                <h1>Lifecycle Hooks Demo</h1>
-                <p>Open console to see logs.</p>
-
-                <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9;">
-                    <h2>@Task Demo</h2>
-                    <p>Current Count: ${this.count}</p>
-                    <button @click=${() => this.increment()}>Increment (Triggers Task)</button>
-                    
-                    <h3>Logs:</h3>
-                    <ul style="max-height: 200px; overflow-y: auto; background: #333; color: #fff; padding: 10px; font-family: monospace;">
-                        ${this.logs.map(log => html`<li>${log}</li>`)}
-                    </ul>
-                </div>
-
-                <div style="height: 120vh; background: linear-gradient(to bottom, #fff, #eee); display: flex; align-items: center; justify-content: center;">
-                    <p>Scroll down to see @VisibleTask in action...</p>
-                </div>
-
-                <div id="visible-target" style="${targetStyle}">
-                    <h2>@VisibleTask Target</h2>
-                    <p>${this.isVisible ? 'I am VISIBLE!' : 'I am NOT yet visible (or observer waiting)'}</p>
-                </div>
-
-                <div style="height: 50vh;"></div>
-            </div>
-        `);
     }
 }

@@ -233,6 +233,13 @@ export function VisibleTask(options: VisibleTaskOptions = {}): MethodDecorator {
   };
 }
 
+export function PreventNavigation(): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    Reflect.defineMetadata('cossack:prevent-navigation', propertyKey, target.constructor);
+    return descriptor;
+  };
+}
+
 /**
  * (Optional) Creates typed versions of the @State and @Server decorators
  * for a specific component, providing compile-time safety and autocompletion

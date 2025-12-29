@@ -4,6 +4,8 @@ import type { Context } from 'hono';
 export type HydratedContext = {
     req: {
         param: (key?: string) => any;
+        path: string;
+        query: (key?: string) => any;
     }
 }
 

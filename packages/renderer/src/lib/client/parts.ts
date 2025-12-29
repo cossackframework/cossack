@@ -1,5 +1,7 @@
 import { Part, PartType, TemplateResult } from '../types';
 
+const MARKER = '{{__C__}}';
+
 const isTemplateResult = (value: any): value is TemplateResult => {
   return value && typeof value === 'object' && 'strings' in value && 'values' in value;
 }
@@ -12,7 +14,7 @@ export class Template {
 
   constructor(strings: TemplateStringsArray) {
     this.strings = strings;
-    const html = strings.join('?');
+    const html = strings.join(MARKER);
     this.element = document.createElement('template');
     this.element.innerHTML = html;
   }
@@ -99,7 +101,12 @@ export class ChildPart implements Part {
   }
 
   private toNodes(value: unknown): Node[] {
-    if (Array.isArray(value)) {
+    if (isTemplateResult(value)) {
+      const instance = new TemplateInstance(getTemplate(value.strings));
+      const fragment = instance.clone();
+      instance.update(value.values);
+      return Array.from(fragment.childNodes);
+    } else if (Array.isArray(value)) {
       return value.flatMap((v) => this.toNodes(v));
     } else {
       const node = this.toNode(value);
@@ -263,10 +270,10 @@ export function createParts(container: Element | DocumentFragment): Part[] {
       const elem = node as Element;
       const attrs = Array.from(elem.attributes); // Create a copy as we may modify the collection
       for (const attr of attrs) {
-        if (attr.name === '...' && attr.value === '?') {
+        if (attr.name === '...' && attr.value === MARKER) {
           parts.push(new SpreadPart(elem));
           elem.removeAttribute('...');
-        } else if (attr.value === '?') {
+        } else if (attr.value === MARKER) {
           let name = attr.name;
           let type: PartType = 'attribute';
           if (name === 'ref') {
@@ -283,9 +290,9 @@ export function createParts(container: Element | DocumentFragment): Part[] {
           }
           elem.removeAttribute(attr.name);
           parts.push(new AttributePart(elem, name, type));
-        } else if (attr.value.includes('?')) {
+        } else if (attr.value.includes(MARKER)) {
           // Multi-interpolation
-          const statics = attr.value.split('?');
+          const statics = attr.value.split(MARKER);
           const committer = new AttributeCommitter(elem, attr.name, statics);
           for (let i = 0; i < statics.length - 1; i++) {
             parts.push(new MultiAttributePart(committer, i));
@@ -295,8 +302,8 @@ export function createParts(container: Element | DocumentFragment): Part[] {
       }
     } else if (node.nodeType === Node.TEXT_NODE) {
       const textNode = node as Text;
-      if (textNode.textContent?.includes('?')) {
-        const statics = textNode.textContent.split('?');
+      if (textNode.textContent?.includes(MARKER)) {
+        const statics = textNode.textContent.split(MARKER);
         const frag = document.createDocumentFragment();
         for (let i = 0; i < statics.length; i++) {
           frag.appendChild(document.createTextNode(statics[i]));

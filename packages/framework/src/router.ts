@@ -94,13 +94,6 @@ export function createApp() {
                 // Bootstrap Page
                 await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
 
-                // Call get() or init() for data loading
-                if (typeof (pageInstance as any).get === 'function') {
-                    await (pageInstance as any).get();
-                } else if (typeof (pageInstance as any).init === 'function') {
-                    await (pageInstance as any).init();
-                }
-                
                 // Wrap rendering
                 let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {

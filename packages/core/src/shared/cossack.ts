@@ -2,7 +2,7 @@
 import { renderToString } from '@cossackframework/renderer/server';
 import { render, html, type TemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, PageOptions, Server, State, VisibleTaskOptions } from './decorators';
+import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
@@ -27,6 +27,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     protected providers!: Map<string, StateProvider>;
     public props: Record<string, any> = {};
 
+    @ClientState()
+    private _cossack_path: string = '';
+
     @Server()
     private _cossack_provider_name?: string;
 
@@ -48,6 +51,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private isRunningTasks: boolean = false;
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
+
+    // Navigation blocking state
+    public _pendingNavigation: (() => void) | null = null;
 
     // DevTools Metadata (Injected by Vite plugin)
     public static __source?: { file: string };
@@ -165,6 +171,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         this.props = { page };
 
         this.autoBindMethods();
+        this._wrapLifecycleMethods();
 
         if (this.isServer) {
             if (!context) {
@@ -178,11 +185,26 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
             this.user = clientInitialState?.user;
             const clientParams = clientInitialState?.params || {};
+            this._cossack_path = clientInitialState?.pathname || window.location.pathname;
+
             const hydratedContext: HydratedContext = {
                 req: {
-                    param: (key?: string) => key ? clientParams[key] : clientParams
+                    param: (key?: string) => key ? clientParams[key] : clientParams,
+                    get path() { return (this as any)._component._cossack_path; },
+                    query: (key?: string) => {
+                         const url = new URL(window.location.href);
+                         if (key) return url.searchParams.get(key);
+                         const params: Record<string, string> = {};
+                         url.searchParams.forEach((value, k) => {
+                             params[k] = value;
+                         });
+                         return params;
+                    }
                 }
             };
+            // Link the hydrated context to this component instance
+            (hydratedContext.req as any)._component = this;
+
             this.c = createCossackContext(hydratedContext, false);
         }
 
@@ -205,6 +227,10 @@ export abstract class Cossack<T extends CossackOptions = {}> {
             }
         }
 
+        // Perform initialization (wrapped hooks)
+        await this.get();
+        await this.init();
+
         this.isBootstrapping = false;
 
         if (this.container && !this.isServer) {
@@ -217,6 +243,52 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                 this.onMount();
             }
         }
+    }
+
+    private _wrapLifecycleMethods() {
+        const wrap = (methodName: 'init' | 'get') => {
+            const original = (this as any)[methodName];
+            if (typeof original !== 'function') return;
+            if (original.__cossack_wrapped) return;
+
+            const wrapped = async (...args: any[]) => {
+                this.loading.init = (this.loading.init || 0) + 1;
+                if (!this.isServer && this.container) {
+                    this.skipRenderTasks = true;
+                    this._render();
+                    this.skipRenderTasks = false;
+                }
+                try {
+                    return await original.apply(this, args);
+                } finally {
+                    this.loading.init--;
+                    if (this.loading.init <= 0) delete this.loading.init;
+                    if (!this.isServer && this.container) {
+                        this.skipRenderTasks = true;
+                        this._render();
+                        this.skipRenderTasks = false;
+                    }
+                }
+            };
+            wrapped.__cossack_wrapped = true;
+            (this as any)[methodName] = wrapped;
+        };
+
+        wrap('init');
+        wrap('get');
+    }
+
+    @Client()
+    public updatePath(path: string) {
+        this._cossack_path = path;
+    }
+
+    public isActive(path: string, exact: boolean = true): boolean {
+        const current = this.c.req.path;
+        if (exact) {
+            return current === path;
+        }
+        return current.startsWith(path);
     }
 
     public async executeAction(action: string, payload: any[], user: any, clientContext: unknown) {
@@ -651,6 +723,8 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public render(children?: TemplateResult): TemplateResult | null { return null; }
+    public async get(): Promise<any> {}
+    public async init(): Promise<any> {}
 
     public head(context: HeadContext): HeadValue {
         return {};
@@ -668,6 +742,11 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     }
 
     public _getWrappedTemplate(children?: TemplateResult): TemplateResult | null {
+        // Special case: check if we should render a loading UI instead of standard output
+        if (this.loading.init && typeof (this as any).loadingTemplate === 'function') {
+            return (this as any).loadingTemplate();
+        }
+
         let template = this.render(children);
         
         // Inject devtools markers if source info is present
@@ -696,6 +775,28 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         return template;
     }
 
+    @Client()
+    public async _checkPreventNavigation(): Promise<boolean> {
+        const method = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
+        if (method && typeof (this as any)[method] === 'function') {
+            const allow = await (this as any)[method]();
+            return !allow; // Returns TRUE if PREVENTED (blocked)
+        }
+        return false;
+    }
+
+    @Client()
+    public confirmNavigation(allow: boolean) {
+        if (allow && this._pendingNavigation) {
+            const nav = this._pendingNavigation;
+            this._pendingNavigation = null;
+            nav();
+        } else {
+            this._pendingNavigation = null;
+            this._render();
+        }
+    }
+
     public _render(children?: TemplateResult): string {
         if (!this.isServer && !this.skipRenderTasks) {
             this.runTasks();
@@ -721,8 +822,6 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     public getInitialHtml(): string {
         return this._render();
     }
-
-    public async init(): Promise<void> {}
     
     // Lifecycle hooks
     public onMount(): void {
@@ -763,7 +862,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         }
 
         const params = (this.c as Context)?.req.param() || {};
-        const baseState = { ...state, params, user: this.user, componentId: this.constructor.name };
+        const baseState = { ...state, params, user: this.user, componentId: this.constructor.name, pathname: (this.c as Context)?.req.path };
 
         const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
         const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({

@@ -146,11 +146,15 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
   const loadComponent = async (initialState: any) => {
     const componentPath = initialState?.componentPath;
     const layoutStack = initialState?._layout_stack || [];
+    const pathname = initialState?.pathname || window.location.pathname;
 
     if (!componentPath) {
       console.error('Could not find componentPath in initial state');
       return;
     }
+
+    // 0. Update App Path
+    appInstance.updatePath(pathname);
 
     // 1. Manage Layouts
     const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
@@ -173,6 +177,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
             await instance.bootstrap({ container: containerEl as Element, initialState: state });
             currentLayoutsMap.set(path, instance);
         }
+        instance.updatePath(pathname);
         currentLayoutInstances.push(instance);
     }
 
@@ -196,6 +201,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       componentInstance.updateHead = syncHead;
 
       await componentInstance.bootstrap({ container: containerEl as Element, initialState });
+      componentInstance.updatePath(pathname);
       
       syncHead();
     } else {
@@ -205,7 +211,18 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   await loadComponent(window.__INITIAL_STATE__);
 
-  const navigate = async (url: string) => {
+  // Use a second argument to force navigation if already confirmed
+  const navigate = async (url: string, force = false): Promise<boolean> => {
+    if (!force && currentPage) {
+        const prevented = await currentPage._checkPreventNavigation();
+        if (prevented) {
+            currentPage._pendingNavigation = () => navigate(url, true);
+            // Trigger a re-render to update UI (e.g. show prompt)
+            currentPage._render();
+            return false;
+        }
+    }
+
     try {
       setProgress(30);
       const { state } = await fetchPage(url);
@@ -213,14 +230,21 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
       window.__INITIAL_STATE__ = state;
       await loadComponent(state);
+      return true;
     } catch (error) {
       console.error('Navigation failed:', error);
       window.location.reload();
+      return false;
     }
   };
 
   // Register for programmatic redirects
-  Cossack._onNavigate = navigate;
+  Cossack._onNavigate = async (url) => {
+      const accepted = await navigate(url);
+      if (accepted) {
+          window.history.pushState({}, '', url);
+      }
+  };
 
   enableClientNavigation(
     navigate,
