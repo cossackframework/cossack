@@ -185,25 +185,59 @@ export class ToggleDemo extends Cossack {
         `;
     }
 }
-```
 
-// ... existing @ClientState section ...
+---
+
+### 5. Computed State (@Computed)
+
+For values that can be derived from existing state, use the `@Computed` decorator on a getter.
+
+**How it works:**
+1. You define a getter method that calculates a value based on other properties.
+2. You decorate it with `@Computed`.
+3. The value is automatically re-calculated whenever the underlying state changes (because the template re-renders).
+4. Computed properties are **not** serialized or sent over the network; they are always calculated locally.
+
+#### Example: Derived Calculation
+
+```typescript
+import { Page, State, Computed } from '@cossackframework/core';
+
+@Page({ transport: 'durable-object' })
+export class Counter extends Cossack {
+    @State()
+    private count: number = 0;
+
+    // Derived state
+    @Computed()
+    get doubleCount() {
+        return this.count * 2;
+    }
+
+    protected template() {
+        return html`
+            <p>Count: ${this.count}</p>
+            <p>Doubled: ${this.doubleCount}</p>
+        `;
+    }
+}
+```
 
 ---
 
 ## Best Practices & Gotchas
 
-### 1. Correct `this` Binding for Event Handlers
+### 1. Automatic `this` Binding
 
-When passing a method to an event handler (like `@click`), it is **critical** to ensure the method is correctly bound to your component instance. If you use a standard class method, `this` will be `undefined` when the event is triggered, and your state updates will fail.
+Cossack automatically binds all component methods to the instance during initialization. This means you can safely use standard class methods as event handlers without needing manual binding or arrow functions.
 
-**❌ INCORRECT (Loss of context):**
+**✅ CORRECT (Standard Method):**
 
 ```typescript
 export class MyComponent extends Cossack {
     @ClientState() isVisible = false;
 
-    // Standard method - 'this' will be lost!
+    // Standard method - automatically bound by Cossack!
     toggle() {
         this.isVisible = !this.isVisible; 
     }
@@ -214,13 +248,15 @@ export class MyComponent extends Cossack {
 }
 ```
 
-**✅ CORRECT (Arrow Function - Automatic binding):**
+**✅ CORRECT (Arrow Function):**
+
+You can still use arrow functions if you prefer, but they are no longer required for context preservation.
 
 ```typescript
 export class MyComponent extends Cossack {
     @ClientState() isVisible = false;
 
-    // Arrow function - 'this' is preserved!
+    // Arrow function - also works!
     toggle = () => {
         this.isVisible = !this.isVisible;
     }
@@ -230,16 +266,6 @@ export class MyComponent extends Cossack {
     }
 }
 ```
-
-**✅ CORRECT (Inline Arrow Function):**
-
-```typescript
-    template() {
-        return html`<button @click=${() => this.toggle()}>Toggle</button>`;
-    }
-```
-
-We recommend using **Arrow Functions** for any method intended to be used as an event handler or passed to a child component.
 
 ---
 

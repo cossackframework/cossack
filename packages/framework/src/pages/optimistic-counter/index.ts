@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, ClientState, Optimistic } from '@cossackframework/core';
+import { Cossack, Page, Server, State, ClientState, Optimistic, Computed } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { Button } from '@/components/Button';
 
@@ -14,6 +14,11 @@ export class OptimisticCounter extends Cossack {
 
     public head() {
         return { title: 'Optimistic Counter' };
+    }
+
+    @Computed()
+    get doubleCount() {
+        return this.count * 2;
     }
 
     @Server()
@@ -42,7 +47,7 @@ export class OptimisticCounter extends Cossack {
                 </p>
                 
                 <div style="font-size: 2rem; margin: 20px 0;">
-                    Count: ${this.count}
+                    Count: ${this.count} (+${this.doubleCount} doubled)
                 </div>
 
                 <div style="display: flex; gap: 10px; align-items: center;">
