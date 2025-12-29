@@ -5,7 +5,11 @@ import matter from 'gray-matter';
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
-export function cossackPages(): Plugin {
+export interface CossackPagesOptions {
+  mode?: string;
+}
+
+export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   return {
     name: 'cossack-pages',
     enforce: 'pre',
@@ -24,6 +28,20 @@ export function cossackPages(): Plugin {
       }
     },
     async transform(code, id) {
+      const isDev = options.mode === 'development' || process.env.NODE_ENV === 'development';
+
+      // Inject source metadata for DevTools
+      if (isDev && id.endsWith('.ts') && code.includes('extends Cossack')) {
+        const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
+        const match = code.match(regex);
+        if (match) {
+            const insertionIndex = match.index! + match[0].length;
+            const sourceInfo = JSON.stringify({ file: id });
+            const injection = `\n  static __source = ${sourceInfo};\n`;
+            code = code.slice(0, insertionIndex) + injection + code.slice(insertionIndex);
+        }
+      }
+
       if (id.endsWith('.mdx')) {
         const { data, content } = matter(code);
         const htmlContent = await marked(content);
@@ -59,6 +77,8 @@ export function cossackPages(): Plugin {
           map: null
         };
       }
+      
+      return { code, map: null };
     }
   };
 }

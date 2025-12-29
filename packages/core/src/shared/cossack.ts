@@ -1,6 +1,6 @@
 // src/shared/cossack.ts
 import { renderToString } from '@cossackframework/renderer/server';
-import { render, type TemplateResult } from '@cossackframework/renderer';
+import { render, html, type TemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
@@ -17,7 +17,7 @@ import type { AuthenticatedUser } from './user';
 import { RedirectStatusCode } from 'hono/utils/http-status';
 
 export abstract class Cossack<T extends CossackOptions = {}> {
-    // ... existing properties ...
+    // Standard Properties
     protected container?: Element;
     protected isServer: boolean = isServer;
     
@@ -48,6 +48,9 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     private isRunningTasks: boolean = false;
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
+
+    // DevTools Metadata (Injected by Vite plugin)
+    public static __source?: { file: string };
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
         const context: HeadContext = {
@@ -664,11 +667,42 @@ export abstract class Cossack<T extends CossackOptions = {}> {
         Cossack.applyHeadTags(tags);
     }
 
+    public _getWrappedTemplate(children?: TemplateResult): TemplateResult | null {
+        let template = this.render(children);
+        
+        // Inject devtools markers if source info is present
+        // Since __source is injected by the Vite plugin only in DEV mode, 
+        // we can safely assume if it exists, we are in DEV.
+        const source = (this.constructor as any).__source;
+        if (template && source) {
+            const Ctor = this.constructor as any;
+            if (!Ctor.__devStrings) {
+                const marker = JSON.stringify(source);
+                // Create a stable TemplateStringsArray with the marker embedded
+                // We use manual construction to avoid interpolation issues with comments
+                // and to ensure stable references for the renderer.
+                const strings = [`<!--cossack-start:${marker}-->`, `<!--cossack-end:${marker}-->`];
+                (strings as any).raw = strings;
+                Ctor.__devStrings = strings;
+            }
+            
+            // Wrap the template. The new template has 1 value (the original template).
+            // The strings array has 2 parts (start marker, end marker).
+            template = {
+                strings: Ctor.__devStrings,
+                values: [template]
+            } as unknown as TemplateResult;
+        }
+        return template;
+    }
+
     public _render(children?: TemplateResult): string {
         if (!this.isServer && !this.skipRenderTasks) {
             this.runTasks();
         }
-        const template = this.render(children);
+        
+        const template = this._getWrappedTemplate(children);
+        
         if (!template) {
             return '';
         }

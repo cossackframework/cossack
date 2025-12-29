@@ -124,9 +124,9 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   const fullRender = () => {
     if (!currentPage) return '';
-    let body = (currentPage as any).render();
+    let body = (currentPage as any)._getWrappedTemplate();
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
-       body = (currentLayoutInstances[i] as any).render(body);
+       body = (currentLayoutInstances[i] as any)._getWrappedTemplate(body);
     }
     // Use the captured original logic that performs the actual DOM update
     return originalAppRender(body);

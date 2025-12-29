@@ -97,58 +97,6 @@ export default class Page extends Cossack {
 React to Cossack guide
 A guide for React developers to migrate their knowledge to Cossack framework.
 
-## Refs
-Implement a way to reference DOM elements directly within Cossack components, similar to React's `useRef` hook.
-
-Example usage:
-
-```typescript
-import { Cossack, Ref } from '@cossackframework/core';
-export default class Page extends Cossack {
-    @Ref()
-    inputRef!: HTMLInputElement;
-
-    focusInput() {
-        this.inputRef.focus();
-    }
-
-    render() {
-        return `
-            <input type="text" name="greeting" ${this.inputRef} />
-            <button onclick="${() => this.focusInput()}">Focus Input</button>
-        `;
-    }
-}
-```
-
 ## Directives
 
 Implement custom directives similar to Lit.
-
-## Renderer
-Multiple interpolations in attribute values
-
-Currently, only single interpolation is supported in attribute values. We should support multiple interpolations.
-
-Example:
-
-This does not work yet:
-
-```typescript
-html`
-    <div style="
-        color: ${this.textColor};
-        background-color: ${this.bgColor};
-    "></div>
-`
-```
-
-We have to do a workaround like this at the moment, I think we can improve the renderer so the previous example works:
-
-```typescript
-const targetStyle = `color: ${this.textColor}; background-color: ${this.bgColor};`;
-
-html`
-    <div style="${targetStyle}"></div>
-`
-```

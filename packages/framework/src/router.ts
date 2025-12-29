@@ -102,9 +102,9 @@ export function createApp() {
                 }
                 
                 // Wrap rendering
-                let body = (pageInstance as any).render();
+                let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                    body = layoutInstances[i].render(body);
+                    body = layoutInstances[i]._getWrappedTemplate(body);
                 }
                 const finalHtml = appInstance._render(body);
 
