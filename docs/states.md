@@ -147,6 +147,53 @@ class Counter extends Cossack {
 }
 ```
 
+#### Advanced: Stable Optimistic UI Pattern
+
+When users perform actions rapidly (e.g., clicking a button multiple times), naive optimistic updates can cause "flapping" in the UI. This happens because the server processes requests sequentially, sending state updates in between your local optimistic changes.
+
+**The Problem (Flapping):**
+1. User clicks twice. Local count: 0 -> 1 -> 2.
+2. Server processes 1st click. Returns count: 1. UI resets to 1.
+3. Server processes 2nd click. Returns count: 2. UI jumps to 2.
+   Result: 0 -> 1 -> 2 -> 1 -> 2.
+
+**The Solution:**
+Use `this.loading[methodName]` (which is a counter of pending requests) combined with a separate `@ClientState` for the optimistic value and a `@Computed` property for the display value.
+
+```typescript
+@Page({ transport: 'durable-object' })
+export class OptimisticCounter extends Cossack {
+    @State() count = 0;           // True server state
+    @ClientState() optCount = 0;  // Local optimistic state
+
+    @Computed()
+    get displayCount() {
+        // If we have pending requests, show our local guess.
+        // Otherwise, show the authoritative server state.
+        return (this.loading['increment'] > 0) ? this.optCount : this.count;
+    }
+
+    @Server()
+    async increment() {
+        await new Promise(r => setTimeout(r, 500));
+        this.count++;
+    }
+
+    @Optimistic('increment')
+    applyOptimistic() {
+        // If starting a new chain of requests, sync with server state first
+        if (!this.loading['increment']) {
+            this.optCount = this.count;
+        }
+        this.optCount++;
+    }
+
+    template() {
+        return html`Count: ${this.displayCount}`;
+    }
+}
+```
+
 ---
 
 ### 4. Client-Only State (@ClientState)

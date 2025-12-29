@@ -36,7 +36,7 @@ export abstract class Cossack<T extends CossackOptions = {}> {
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
 
-    public loading: Record<string, boolean> = {};
+    public loading: Record<string, number> = {};
 
     @Server()
     private _runtime?: CossackServerRuntime;
@@ -276,7 +276,12 @@ export abstract class Cossack<T extends CossackOptions = {}> {
                     }
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
-                    delete this.loading[action];
+                    if (this.loading[action]) {
+                        this.loading[action]--;
+                        if (this.loading[action] <= 0) {
+                            delete this.loading[action];
+                        }
+                    }
                     requestAnimationFrame(() => this.render());
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
