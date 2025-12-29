@@ -50,9 +50,23 @@ export class CossackNodeAdapter {
                 }
 
                 const componentInstance = new ComponentClass();
+                const pathname = params.get('pathname') || '/';
+
                 const context = {
                     req: {
-                        param: (key?: string) => key ? params.get(key) : Object.fromEntries(params.entries())
+                        path: pathname,
+                        param: (key?: string) => {
+                            if (key) return params.get(key);
+                            const p: Record<string, string> = {};
+                            params.forEach((v, k) => { p[k] = v; });
+                            return p;
+                        },
+                        query: (key?: string) => {
+                            if (key) return params.get(key);
+                            const q: Record<string, string> = {};
+                            params.forEach((v, k) => { q[k] = v; });
+                            return q;
+                        }
                     }
                 } as any;
                 
@@ -61,12 +75,11 @@ export class CossackNodeAdapter {
                 // Users can pass a global env to the Adapter if needed, but for now we'll pass empty.
                 await componentInstance.bootstrap({ 
                     context, 
-                    page: params.get('pathname') || undefined, 
+                    page: pathname, 
                     providerName: provider 
                 });
                 
-                // Initialize the component (data fetching)
-                await componentInstance.init();
+                // init() and get() are now automatically called during bootstrap
 
                 runtime = new NodeWebSocketRuntime(componentInstance);
                 this.instances.set(target, runtime);
