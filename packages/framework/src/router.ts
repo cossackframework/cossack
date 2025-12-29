@@ -1,6 +1,6 @@
 // src/router.ts
 import 'reflect-metadata';
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot } from './root';
 import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
 import { createApiHandler } from './api-handler';
@@ -13,7 +13,7 @@ import manifest from '~/.vite/manifest.json';
 const { pages, layouts } = registry;
 
 export type PageModule = {
-    [key: string]: new () => Cossack;
+    [key: string]: (new () => Cossack) | Handler | Record<string, Handler>;
 }
 
 function getLayoutStack(pagePath: string) {
@@ -38,14 +38,10 @@ function getLayoutStack(pagePath: string) {
     return stack;
 }
 
-/**
- * Searches up the directory tree for a special page (404 or error).
- */
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
     const relativePath = pagePath.replace('/src/pages/', '');
     const parts = relativePath.split('/');
     
-    // Search from the current directory upwards
     for (let i = parts.length - 1; i >= 0; i--) {
         const dir = parts.slice(0, i).join('/');
         const searchPath = dir 
@@ -93,7 +89,7 @@ export function createApp() {
 
                 // Bootstrap Page
                 await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-
+                
                 // Wrap rendering
                 let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
@@ -101,21 +97,15 @@ export function createApp() {
                 }
                 const finalHtml = appInstance._render(body);
 
-                // Head Merging (Page -> Layouts -> App)
-                // 1. Get initial HeadValue from Page
+                // Head Merging
                 const emptyCtx = Cossack.buildHeadContext([]);
                 const pageHeadValue = pageInstance.head(emptyCtx);
-                
-                // 2. Accumulate tags through Layouts
                 let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-                
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
                     const headContext = Cossack.buildHeadContext(tags);
                     const headValue = layoutInstances[i].head(headContext);
                     tags = Cossack.mergeHead(headContext, headValue);
                 }
-                
-                // 3. Final merge with App
                 const finalHeadContext = Cossack.buildHeadContext(tags);
                 const appHeadValue = appInstance.head(finalHeadContext);
                 const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
@@ -133,84 +123,51 @@ export function createApp() {
                 return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags }));
             } catch (err) {
                 console.error('[Cossack SSR Error]:', err);
-                
-                // Try to render the nearest error page
                 const errorPage = findNearestSpecialPage(path, 'error');
                 if (errorPage && path !== errorPage.path) {
                     const handler = createSsrHandler(errorPage.component, errorPage.path);
                     return handler(c);
                 }
-
                 return c.html(`<h1>Internal Server Error</h1><pre>${err instanceof Error ? err.stack : err}</pre>`, 500);
             }
         };
     };
 
-    // A generic route for all provider-based WebSocket connections
     app.get('/ws/:provider/:id', async (c) => {
         const user = c.get('user');
-        if (!user) {
-            return new Response('Unauthorized', { status: 401 });
-        }
-
+        if (!user) return new Response('Unauthorized', { status: 401 });
         const { provider, id: durableObjectId } = c.req.param();
         const componentId = c.req.query('componentId');
-
-        if (!componentId) {
-            return new Response('componentId query parameter is required', { status: 400 });
-        }
-
+        if (!componentId) return new Response('componentId query parameter is required', { status: 400 });
         const doBinding = c.env.COSSACK_OBJECT;
         const id = doBinding.idFromString(durableObjectId);
         const stub = doBinding.get(id);
-
         const request = new Request(c.req.raw);
         request.headers.set('X-User-ID', user.id);
         request.headers.set('X-Component-Name', componentId);
         request.headers.set('X-Provider-Name', provider);
         request.headers.set('X-User-Data', JSON.stringify(user));
-
         return await stub.fetch(request);
     });
 
     app.post('/crpc', async (c) => {
         const { componentPath, action, state, payload } = await c.req.json();
         const user = c.get('user');
-
         const module = pages[componentPath] || layouts[componentPath];
-        if (!module) {
-            return c.json({ error: 'Component not found' }, 404);
-        }
-
+        if (!module) return c.json({ error: 'Component not found' }, 404);
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-        if (!PageComponent) {
-            return c.json({ error: 'Could not instantiate component' }, 500);
-        }
-
+        if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
         const componentInstance = new PageComponent() as any;
-        
         await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state });
-
-        if (typeof componentInstance[action] !== 'function') {
-            return c.json({ error: `Action '${action}' not found on component` }, 404);
-        }
-
+        if (typeof componentInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
         const actionResult = await componentInstance[action](...(payload || []));
-
         const location = c.res.headers.get('Location');
-        if (location) {
-            return c.json({ _cossack_redirect: location });
-        }
-
-        if (actionResult instanceof Response) {
-            return actionResult;
-        }
-
-        const newState = componentInstance.getPublicState();
-        return c.json(newState);
+        if (location) return c.json({ _cossack_redirect: location });
+        if (actionResult instanceof Response) return actionResult;
+        return c.json(componentInstance.getPublicState());
     });
 
-    // Build HTTP routes from the provided pages
+    // Register all routes
     for (const path in pages) {
         let httpRoute = path
             .replace('/src/pages', '')
@@ -220,55 +177,60 @@ export function createApp() {
             .replace(/\[([^\]]+)\]/g, ':$1') || '/';
 
         if (httpRoute === '/index') httpRoute = '/';
-
-        // Skip 404 and Error pages from direct routing (they are handled specially)
         if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
 
-        const module = pages[path];
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-        if (!PageComponent) continue;
+        const module = pages[path] as any;
+        const mainExport = Object.values(module)[0];
 
-        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-        const layoutPaths = getLayoutStack(path);
-
-        const combinedMiddlewares = [];
-        for (const lPath of layoutPaths) {
-            const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-            const lOpts = Reflect.getMetadata('page:options', LComp);
-            if (lOpts?.middlewares) {
-                combinedMiddlewares.push(...lOpts.middlewares);
+        // 1. Check if it's a Cossack Component
+        if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
+            const PageComponent = mainExport as new () => Cossack;
+            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
+            const layoutPaths = getLayoutStack(path);
+            const combinedMiddlewares = [];
+            for (const lPath of layoutPaths) {
+                const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+                const lOpts = Reflect.getMetadata('page:options', LComp);
+                if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
             }
-        }
-        if (pageOptions?.middlewares) {
-            combinedMiddlewares.push(...pageOptions.middlewares);
-        }
+            if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
 
-        const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
+            const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
+            if (pageOptions?.transport !== 'http') {
+                Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
+            }
+            app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
 
-        if (pageOptions?.transport !== 'http') {
-            Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
-            app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
-        } else {
-            app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
-            const httpMethods = ['post', 'put', 'patch', 'delete'];
-            for (const method of httpMethods) {
-                if (method in PageComponent.prototype) {
-                    (app as any)[method](httpRoute, ...combinedMiddlewares, createApiHandler(PageComponent, method));
+            // Handle class-based HTTP methods
+            if (pageOptions?.transport === 'http') {
+                const httpMethods = ['post', 'put', 'patch', 'delete'];
+                for (const method of httpMethods) {
+                    if (method in PageComponent.prototype) {
+                        (app as any)[method](httpRoute, ...combinedMiddlewares, createApiHandler(PageComponent, method));
+                    }
+                }
+            }
+        } 
+        // 2. Check if it's a functional API Route
+        else if (path.includes('/src/pages/api/')) {
+            // Handle default export as a generic handler
+            if (typeof module.default === 'function') {
+                app.all(httpRoute, module.default);
+            } 
+            // Handle named exports for HTTP methods (Nuxt/Next style)
+            const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
+            for (const m of methods) {
+                if (typeof module[m] === 'function') {
+                    (app as any)[m.toLowerCase()](httpRoute, module[m]);
                 }
             }
         }
     }
 
-    // 404 Handler
     app.notFound(async (c) => {
-        // Try to find the nearest 404 page relative to the requested path
         const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
         const notFoundPage = findNearestSpecialPage(virtualPath, '404');
-        
-        if (notFoundPage) {
-            const handler = createSsrHandler(notFoundPage.component, notFoundPage.path);
-            return handler(c);
-        }
+        if (notFoundPage) return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
         return c.text('404 Not Found', 404);
     });
 
