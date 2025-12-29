@@ -1,4 +1,4 @@
-export type PartType = 'attribute' | 'property' | 'boolean' | 'event';
+export type PartType = 'attribute' | 'property' | 'boolean' | 'event' | 'ref';
 
 export interface Part {
   commit(value: unknown): void;

@@ -7,8 +7,10 @@ export * from './shared/user';
 export * from './shared/head';
 export * from './shared/runtime';
 export * from './shared/image';
+export * from './shared/ref';
 export * from './shared/runtimes/durable-object';
 
 export * from './client/navigation';
 
 export { CossackDurableObject } from './shared/CossackDurableObject';
+export { html, TemplateResult } from '@cossackframework/renderer';

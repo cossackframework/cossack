@@ -1,12 +1,49 @@
-// tests/decorators.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Page, State, Server, Client, PageOptions, createTypedDecorators } from '../src/shared/decorators';
+import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref } from '../src/shared/decorators';
 import * as environment from '../src/shared/environment';
 
 vi.mock('../src/shared/environment');
 
 describe('Decorators', () => {
+  describe('@Ref', () => {
+    it('should initialize a property as a RefObject', () => {
+      class TestComponent {
+        @Ref()
+        declare inputRef: any;
+      }
+      const instance = new TestComponent();
+      expect(instance.inputRef).toHaveProperty('value');
+      expect(instance.inputRef.value).toBeUndefined();
+    });
+
+    it('should maintain the value across accesses', () => {
+      class TestComponent {
+        @Ref()
+        declare inputRef: any;
+      }
+      const instance = new TestComponent();
+      const ref1 = instance.inputRef;
+      const ref2 = instance.inputRef;
+      expect(ref1).toBe(ref2);
+      
+      instance.inputRef.value = 'test';
+      expect(instance.inputRef.value).toBe('test');
+    });
+
+    it('should allow setting the ref directly (though unusual)', () => {
+      class TestComponent {
+        @Ref()
+        declare inputRef: any;
+      }
+      const instance = new TestComponent();
+      const newRef = { value: 'custom' };
+      instance.inputRef = newRef;
+      expect(instance.inputRef).toBe(newRef);
+      expect(instance.inputRef.value).toBe('custom');
+    });
+  });
+
   describe('@Page', () => {
     it('should attach default page options if none are provided', () => {
       @Page()

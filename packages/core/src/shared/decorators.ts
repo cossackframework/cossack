@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from 'hono';
 import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
+import { createRef } from './ref';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http';
@@ -130,6 +131,26 @@ export function ClientState(): PropertyDecorator {
     
     (clientStateProperties as Set<string | symbol>).add(propertyKey);
     Reflect.defineMetadata('cossack:client-state', clientStateProperties, target.constructor);
+  };
+}
+
+export function Ref(): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const privateKey = Symbol(String(propertyKey));
+
+    Object.defineProperty(target, propertyKey, {
+      get: function() {
+        if (!this[privateKey]) {
+          this[privateKey] = createRef();
+        }
+        return this[privateKey];
+      },
+      set: function(val) {
+        this[privateKey] = val;
+      },
+      enumerable: true,
+      configurable: true
+    });
   };
 }
 
