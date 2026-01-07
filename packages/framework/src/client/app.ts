@@ -136,7 +136,8 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
   await appInstance.bootstrap({ 
     container: containerEl as Element, 
-    initialState: window.__INITIAL_STATE__._app_state 
+    initialState: window.__INITIAL_STATE__._app_state,
+    skipInit: true,
   });
 
   const currentLayoutsMap = new Map<string, Cossack>();
@@ -170,7 +171,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
             instance = new LComp();
             instance._render = fullRender;
             instance.updateHead = syncHead;
-            await instance.bootstrap({ container: containerEl as Element, initialState: state });
+            await instance.bootstrap({ container: containerEl as Element, initialState: state, skipInit: true });
             currentLayoutsMap.set(path, instance);
         }
         instance.updatePath(pathname);
@@ -195,7 +196,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       componentInstance._render = fullRender;
       componentInstance.updateHead = syncHead;
 
-      await componentInstance.bootstrap({ container: containerEl as Element, initialState });
+      await componentInstance.bootstrap({ container: containerEl as Element, initialState, skipInit: true });
       componentInstance.updatePath(pathname);
       
       syncHead();

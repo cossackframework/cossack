@@ -432,6 +432,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                     const files = new Map<string, File>();
                     
                     const extractFiles = (arg: any): any => {
+                        // Skip recursion for DOM nodes, Events, Window, etc.
+                        if (arg && (
+                            arg instanceof Node || 
+                            arg instanceof Event || 
+                            arg instanceof Window ||
+                            (arg.constructor && arg.constructor.name && (
+                                arg.constructor.name.endsWith('Event') || 
+                                arg.constructor.name === 'Window' ||
+                                arg.constructor.name === 'Document'
+                            ))
+                        )) {
+                            return arg;
+                        }
+
                         if (arg instanceof File) {
                             const id = `file_${files.size}`;
                             files.set(id, arg);
@@ -525,7 +539,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                 componentPath,
                                 action: name,
                                 state: this.getPublicState(),
-                                payload: args,
+                                payload: args, // Note: We use original args for JSON RPC (JSON.stringify handles them, might fail on circular)
                             }),
                         });
 
