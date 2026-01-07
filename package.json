@@ -2,7 +2,8 @@
   "name": "cossack-monorepo",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @cossackframework/core run dev:wrangler"
+    "dev": "pnpm --filter @cossackframework/framework run dev",
+    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build"
   },
   "devDependencies": {
     "typescript": "^5.0.4"
