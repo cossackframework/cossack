@@ -12,6 +12,16 @@ import manifest from '~/.vite/manifest.json';
 
 const { pages, layouts } = registry;
 
+// Generate secure IDs for components
+const routeIdMap = new Map<string, string>();
+const routePathToIdMap = new Map<string, string>();
+
+[...Object.keys(pages), ...Object.keys(layouts)].sort().forEach((path, index) => {
+    const id = `cmp_${index.toString(36)}`;
+    routeIdMap.set(id, path);
+    routePathToIdMap.set(path, id);
+});
+
 export type PageModule = {
     [key: string]: (new () => Cossack) | Handler | Record<string, Handler>;
 }
@@ -113,6 +123,7 @@ export function createApp() {
                 const finalInitialState = { 
                     ...pageInstance.getInitialState(),
                     componentPath: path,
+                    componentRouteId: routePathToIdMap.get(path),
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
                     _app_state: appInstance.getInitialState(),
@@ -152,12 +163,15 @@ export function createApp() {
 
     app.post('/upload', async (c) => {
         const body = await c.req.parseBody({ all: true });
-        const componentPath = body.componentPath as string;
+        const componentRouteId = body.componentRouteId as string;
         const action = body.action as string;
         const stateStr = body.state as string;
         const payloadStr = body.payload as string;
 
-        if (!componentPath || !action) return c.json({ error: 'Missing componentPath or action' }, 400);
+        if (!componentRouteId || !action) return c.json({ error: 'Missing componentRouteId or action' }, 400);
+
+        const componentPath = routeIdMap.get(componentRouteId);
+        if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
 
         const state = stateStr ? JSON.parse(stateStr) : {};
         const payload = payloadStr ? JSON.parse(payloadStr) : [];
@@ -198,8 +212,12 @@ export function createApp() {
     });
 
     app.post('/crpc', async (c) => {
-        const { componentPath, action, state, payload } = await c.req.json();
+        const { componentRouteId, action, state, payload } = await c.req.json();
         const user = c.get('user');
+        
+        const componentPath = routeIdMap.get(componentRouteId);
+        if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+
         const module = pages[componentPath] || layouts[componentPath];
         if (!module) return c.json({ error: 'Component not found' }, 404);
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;

@@ -402,9 +402,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
 
     @Client()
     private proxyHttpMethods(serverMethods: { name: string }[]) {
-        const componentPath = (window as any).__INITIAL_STATE__?.componentPath;
-        if (!componentPath) {
-            console.error('[Cossack] Cannot create HTTP proxies: componentPath not found in initial state.');
+        const componentRouteId = (window as any).__INITIAL_STATE__?.componentRouteId;
+        if (!componentRouteId) {
+            console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
             return;
         }
 
@@ -443,7 +443,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                 arg.constructor.name === 'Document'
                             ))
                         )) {
-                            return arg;
+                            return null;
                         }
 
                         if (arg instanceof File) {
@@ -471,7 +471,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
 
                     if (files.size > 0) {
                         const formData = new FormData();
-                        formData.append('componentPath', componentPath);
+                        formData.append('componentRouteId', componentRouteId);
                         formData.append('action', name);
                         formData.append('state', JSON.stringify(this.getPublicState()));
                         formData.append('payload', JSON.stringify(processedArgs));
@@ -536,7 +536,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                 'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({
-                                componentPath,
+                                componentRouteId,
                                 action: name,
                                 state: this.getPublicState(),
                                 payload: args, // Note: We use original args for JSON RPC (JSON.stringify handles them, might fail on circular)
