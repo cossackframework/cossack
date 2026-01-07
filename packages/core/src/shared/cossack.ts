@@ -428,33 +428,129 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                 this._render();
 
                 try {
-                    const response = await fetch('/crpc', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            componentPath,
-                            action: name,
-                            state: this.getPublicState(),
-                            payload: args,
-                        }),
-                    });
+                    // Check for files in arguments
+                    const files = new Map<string, File>();
+                    
+                    const extractFiles = (arg: any): any => {
+                        if (arg instanceof File) {
+                            const id = `file_${files.size}`;
+                            files.set(id, arg);
+                            return { _cossack_file_id: id };
+                        }
+                        if (arg instanceof FileList) {
+                             return Array.from(arg).map(file => extractFiles(file));
+                        }
+                        if (Array.isArray(arg)) {
+                            return arg.map(item => extractFiles(item));
+                        }
+                        if (arg && typeof arg === 'object' && arg !== null) {
+                            const newObj: any = {};
+                            for (const key in arg) {
+                                newObj[key] = extractFiles(arg[key]);
+                            }
+                            return newObj;
+                        }
+                        return arg;
+                    };
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
+                    const processedArgs = args.map(arg => extractFiles(arg));
 
-                    const data = await response.json() as Record<string, any>;
+                    if (files.size > 0) {
+                        const formData = new FormData();
+                        formData.append('componentPath', componentPath);
+                        formData.append('action', name);
+                        formData.append('state', JSON.stringify(this.getPublicState()));
+                        formData.append('payload', JSON.stringify(processedArgs));
+                        
+                        files.forEach((file, id) => {
+                            formData.append(id, file);
+                        });
 
-                    if (data._cossack_redirect) {
-                        window.location.href = data._cossack_redirect;
-                        return;
-                    }
+                        return await new Promise<any>((resolve, reject) => {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('POST', '/upload', true);
 
-                    for (const key in data) {
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        (this as any)[key] = data[key];
+                            // Upload Progress
+                            xhr.upload.onprogress = (e) => {
+                                if (e.lengthComputable) {
+                                    const percentComplete = (e.loaded / e.total) * 100;
+                                    const progressProp = `${name}Progress`;
+                                    if (typeof (this as any)[progressProp] === 'number') {
+                                        (this as any)[progressProp] = percentComplete;
+                                        this._render();
+                                    }
+                                }
+                            };
+
+                            xhr.onload = () => {
+                                if (xhr.status >= 200 && xhr.status < 300) {
+                                    try {
+                                        const data = JSON.parse(xhr.responseText);
+                                        if (data._cossack_redirect) {
+                                            window.location.href = data._cossack_redirect;
+                                            resolve(undefined); 
+                                            return;
+                                        }
+                                        
+                                        let returnValue;
+                                        if ('_cossack_return' in data) {
+                                            returnValue = data._cossack_return;
+                                            delete data._cossack_return;
+                                        }
+
+                                        for (const key in data) {
+                                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                                            (this as any)[key] = data[key];
+                                        }
+                                        resolve(returnValue);
+                                    } catch (e) {
+                                        reject(e);
+                                    }
+                                } else {
+                                    reject(new Error(`HTTP error! status: ${xhr.status}`));
+                                }
+                            };
+
+                            xhr.onerror = () => reject(new Error('Network error'));
+                            xhr.send(formData);
+                        });
+
+                    } else {
+                        const response = await fetch('/crpc', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                componentPath,
+                                action: name,
+                                state: this.getPublicState(),
+                                payload: args,
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const data = await response.json() as Record<string, any>;
+
+                        if (data._cossack_redirect) {
+                            window.location.href = data._cossack_redirect;
+                            return;
+                        }
+
+                        let returnValue;
+                        if ('_cossack_return' in data) {
+                            returnValue = data._cossack_return;
+                            delete data._cossack_return;
+                        }
+
+                        for (const key in data) {
+                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                            (this as any)[key] = data[key];
+                        }
+                        return returnValue;
                     }
                 } catch (error) {
                     console.error(`Error calling server action '${name}':`, error);

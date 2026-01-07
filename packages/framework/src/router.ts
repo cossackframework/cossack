@@ -150,6 +150,53 @@ export function createApp() {
         return await stub.fetch(request);
     });
 
+    app.post('/upload', async (c) => {
+        const body = await c.req.parseBody({ all: true });
+        const componentPath = body.componentPath as string;
+        const action = body.action as string;
+        const stateStr = body.state as string;
+        const payloadStr = body.payload as string;
+
+        if (!componentPath || !action) return c.json({ error: 'Missing componentPath or action' }, 400);
+
+        const state = stateStr ? JSON.parse(stateStr) : {};
+        const payload = payloadStr ? JSON.parse(payloadStr) : [];
+
+        // Reconstruct arguments with files
+        const args = payload.map((arg: any) => {
+            if (arg && typeof arg === 'object' && arg._cossack_file_id) {
+                const fileId = arg._cossack_file_id;
+                const file = body[fileId];
+                return file;
+            }
+            return arg;
+        });
+
+        const user = c.get('user');
+        const module = pages[componentPath] || layouts[componentPath];
+        if (!module) return c.json({ error: 'Component not found' }, 404);
+        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
+        
+        const componentInstance = new PageComponent() as any;
+        await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
+        
+        if (typeof componentInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+        
+        const actionResult = await componentInstance[action](...args);
+        
+        const location = c.res.headers.get('Location');
+        if (location) return c.json({ _cossack_redirect: location });
+        if (actionResult instanceof Response) return actionResult;
+
+        const responseData = componentInstance.getPublicState();
+        if (actionResult !== undefined) {
+            (responseData as any)._cossack_return = actionResult;
+        }
+        
+        return c.json(responseData);
+    });
+
     app.post('/crpc', async (c) => {
         const { componentPath, action, state, payload } = await c.req.json();
         const user = c.get('user');
@@ -164,7 +211,12 @@ export function createApp() {
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });
         if (actionResult instanceof Response) return actionResult;
-        return c.json(componentInstance.getPublicState());
+
+        const responseData = componentInstance.getPublicState();
+        if (actionResult !== undefined) {
+            (responseData as any)._cossack_return = actionResult;
+        }
+        return c.json(responseData);
     });
 
     // Register all routes
