@@ -539,7 +539,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                 componentRouteId,
                                 action: name,
                                 state: this.getPublicState(),
-                                payload: args, // Note: We use original args for JSON RPC (JSON.stringify handles them, might fail on circular)
+                                payload: processedArgs, // Note: We use processedArgs for JSON RPC
                             }),
                         });
 
