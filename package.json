@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @cossackframework/framework run dev",
-    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build"
+    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build",
+    "test": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run test"
   },
   "devDependencies": {
     "typescript": "^5.0.4"

@@ -31,7 +31,7 @@ export abstract class CossackDurableObject {
                 req: { param: (key?: string) => key ? params?.[key] : params }
             } as any;
     
-            await componentInstance.bootstrap({ context: hydratedContext, env: this.env, page, providerName });
+            await componentInstance.bootstrap({ context: hydratedContext, env: this.env, page, providerName, skipInit: true });
             
             this.runtime = new DurableObjectRuntime(componentInstance, this.state);
             
@@ -66,8 +66,7 @@ export abstract class CossackDurableObject {
                 }
             }
             this.componentInstance = componentInstance;
-            // After loading state, run the init logic to seed data if necessary.
-            await this.componentInstance.init();
+            // State already restored from storage - skip init() to prevent reset
         }
     }
 
@@ -98,7 +97,7 @@ export abstract class CossackDurableObject {
                 return new Response('Failed to initialize component', { status: 500 });
             }
             this.componentInstance = componentInstance;
-            // For a brand new DO, run init() to seed the state *before* the first persistence.
+            // For a brand new DO, run init() to seed the initial state (skipInit was used in bootstrap)
             await this.componentInstance.init();
 
             const initialState = componentInstance.getInitialState();

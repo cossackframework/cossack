@@ -164,7 +164,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
         }
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string } = {}) {
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
         this.isBootstrapping = true;
         this.container = container;
         this.user = user;
@@ -229,7 +229,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
 
         // Perform initialization (wrapped hooks)
         await this.get();
-        await this.init();
+        if (!skipInit) {
+            await this.init();
+        }
 
         this.isBootstrapping = false;
 
