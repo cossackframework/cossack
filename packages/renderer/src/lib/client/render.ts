@@ -1,4 +1,4 @@
-import { TemplateResult, Part, PartType } from '../types';
+import { TemplateResult } from '../types';
 import { TemplateInstance, getTemplate } from './parts';
 
 export function render(result: TemplateResult, container: Element | DocumentFragment): void {

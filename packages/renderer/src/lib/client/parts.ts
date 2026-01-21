@@ -55,6 +55,8 @@ export class ChildPart implements Part {
   private start: Comment;
   private end: Comment;
   private _templateInstance?: TemplateInstance;
+  private _parts?: ChildPart[]; // For array values
+  private _value: unknown;
 
   constructor(start: Comment, end: Comment) {
     this.start = start;
@@ -62,55 +64,94 @@ export class ChildPart implements Part {
   }
 
   commit(value: unknown) {
+    if (value === this._value) return;
+
     if (isTemplateResult(value)) {
-        if (this._templateInstance && this._templateInstance.template.strings === value.strings) {
-            this._templateInstance.update(value.values);
-            return;
-        }
-        
-        this._templateInstance = new TemplateInstance(getTemplate(value.strings));
-        
-        // Clear previous content
+        this.handleTemplateResult(value);
+    } else if (Array.isArray(value)) {
+        this.handleArray(value);
+    } else {
+        this.handleText(value);
+    }
+
+    this._value = value;
+  }
+
+  private handleTemplateResult(result: TemplateResult) {
+    // Clear previous non-template state
+    if (this._parts) {
         this.clear();
-        
-        const fragment = this._templateInstance.clone();
-        this._templateInstance.update(value.values);
-        
-        this.start.parentNode!.insertBefore(fragment, this.end);
+        this._parts = undefined;
+    }
+
+    if (this._templateInstance && this._templateInstance.template.strings === result.strings) {
+        this._templateInstance.update(result.values);
         return;
     }
-
-    this._templateInstance = undefined;
+    
     this.clear();
+    this._templateInstance = new TemplateInstance(getTemplate(result.strings));
+    const fragment = this._templateInstance.clone();
+    this._templateInstance.update(result.values);
+    this.start.parentNode!.insertBefore(fragment, this.end);
+  }
 
-    const nodes = this.toNodes(value);
-    const parent = this.start.parentNode!;
-    for (const node of nodes) {
-      parent.insertBefore(node, this.end);
+  private handleArray(items: unknown[]) {
+    // Clear previous single-template or text state
+    if (this._templateInstance || (this._value !== undefined && !Array.isArray(this._value))) {
+        this.clear();
+        this._templateInstance = undefined;
     }
+
+    const parent = this.start.parentNode!;
+    const oldParts = this._parts || [];
+    const newParts: ChildPart[] = [];
+
+    // Reconcile parts
+    for (let i = 0; i < items.length; i++) {
+        let part = oldParts[i];
+        if (!part) {
+            const s = document.createComment('');
+            const e = document.createComment('');
+            parent.insertBefore(s, this.end);
+            parent.insertBefore(e, this.end);
+            part = new ChildPart(s, e);
+        }
+        part.commit(items[i]);
+        newParts.push(part);
+    }
+
+    // Cleanup extra parts
+    for (let i = items.length; i < oldParts.length; i++) {
+        const part = oldParts[i];
+        part.clear();
+        parent.removeChild(part.start);
+        parent.removeChild(part.end);
+    }
+
+    this._parts = newParts;
+  }
+
+  private handleText(value: unknown) {
+    // Clear previous complex state
+    if (this._templateInstance || this._parts) {
+        this.clear();
+        this._templateInstance = undefined;
+        this._parts = undefined;
+    }
+
+    this.clear();
+    const node = this.toNode(value);
+    this.start.parentNode!.insertBefore(node, this.end);
   }
 
   clear() {
     const parent = this.start.parentNode!;
     let current = this.start.nextSibling;
-    while (current !== this.end) {
-      const next = current!.nextSibling;
-      parent.removeChild(current!);
+    while (current && current !== this.end) {
+      const next = current.nextSibling;
+      parent.removeChild(current);
       current = next;
-    }
-  }
-
-  private toNodes(value: unknown): Node[] {
-    if (isTemplateResult(value)) {
-      const instance = new TemplateInstance(getTemplate(value.strings));
-      const fragment = instance.clone();
-      instance.update(value.values);
-      return Array.from(fragment.childNodes);
-    } else if (Array.isArray(value)) {
-      return value.flatMap((v) => this.toNodes(v));
-    } else {
-      const node = this.toNode(value);
-      return [node];
     }
   }
 
@@ -118,11 +159,13 @@ export class ChildPart implements Part {
     if (value instanceof Node) {
       return value;
     }
-    return document.createTextNode(String(value));
+    // Handle null/undefined as empty string to clear text
+    return document.createTextNode(value == null ? '' : String(value));
   }
 }
 
 export class AttributePart implements Part {
+  private _listener: any;
   constructor(
     public element: Element,
     public name: string,
@@ -149,7 +192,13 @@ export class AttributePart implements Part {
         (this.element as any)[this.name] = value;
         break;
       case 'event':
-        (this.element as any)[`on${this.name}`] = value;
+        if (this._listener) {
+            this.element.removeEventListener(this.name, this._listener);
+        }
+        if (value) {
+            this.element.addEventListener(this.name, value as EventListener);
+            this._listener = value;
+        }
         break;
       case 'ref':
         if (typeof value === 'function') {
@@ -170,7 +219,7 @@ export class AttributeCommitter {
     public name: string,
     public strings: string[]
   ) {
-    this.values = new Array(strings.length - 1).fill('');
+    this.values = Array.from({ length: strings.length - 1 }).fill('');
   }
 
   commit(index: number, value: unknown) {
@@ -198,6 +247,7 @@ export class MultiAttributePart implements Part {
 
 export class SpreadPart implements Part {
   private _previousProps: Record<string, unknown> = {};
+  private _listeners: Record<string, any> = {};
   constructor(public element: Element) {}
 
   commit(value: unknown) {
@@ -210,7 +260,11 @@ export class SpreadPart implements Part {
     for (const name in oldProps) {
       if (!(name in props)) {
         if (name.startsWith('@')) {
-          (this.element as any)[`on${name.slice(1)}`] = null;
+          const eventName = name.slice(1);
+          if (this._listeners[eventName]) {
+              this.element.removeEventListener(eventName, this._listeners[eventName]);
+              delete this._listeners[eventName];
+          }
         } else if (name.startsWith('?')) {
           this.element.removeAttribute(name.slice(1));
         } else if (name.startsWith('.')) {
@@ -228,7 +282,16 @@ export class SpreadPart implements Part {
       if (oldProps[name] !== propValue) {
         if (name.startsWith('@')) {
           // event
-          (this.element as any)[`on${name.slice(1)}`] = propValue;
+          const eventName = name.slice(1);
+          if (this._listeners[eventName]) {
+              this.element.removeEventListener(eventName, this._listeners[eventName]);
+          }
+          if (propValue) {
+              this.element.addEventListener(eventName, propValue as EventListener);
+              this._listeners[eventName] = propValue;
+          } else {
+              delete this._listeners[eventName];
+          }
         } else if (name.startsWith('?')) {
           // boolean
           const attrName = name.slice(1);

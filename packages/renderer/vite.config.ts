@@ -9,8 +9,17 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
         server: resolve(__dirname, 'src/server.ts'),
+        plugin: resolve(__dirname, 'src/plugin.ts'),
       },
       formats: ['es'],
+    },
+    rollupOptions: {
+      external: [
+        'typescript',
+        'magic-string',
+        'htmlparser2',
+        'vite'
+      ],
     },
   },
   plugins: [
