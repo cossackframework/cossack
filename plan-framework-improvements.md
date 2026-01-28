@@ -15,18 +15,30 @@
 
 ## P0 - Immediate Fixes
 
-### 1. Apply State Sync Fix to `/upload` Endpoint
+### ✅ 1. Apply State Sync Fix to `/upload` Endpoint
 
 **Issue**: The `/crpc` endpoint was fixed to properly apply state to the target component, but the `/upload` endpoint has the same issue.
+
+**Status**: ✅ **COMPLETED**
+
+**Fix Applied**: Removed `initialState: state` from bootstrap call and added direct state application to target component.
 
 **Files**: `packages/framework/src/router.ts`
 
 ```typescript
-// Add this to the /upload endpoint after finding targetInstance:
+// Before:
+await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
+
+// After:
+await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+
+// Added after finding targetInstance:
 for (const key in state) {
     (targetInstance as any)[key] = state[key];
 }
 ```
+
+**Impact**: Both `/crpc` and `/upload` endpoints now correctly handle nested component state synchronization.
 
 ---
 

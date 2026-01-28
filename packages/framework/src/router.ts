@@ -211,10 +211,10 @@ export function createApp() {
         if (!module) return c.json({ error: 'Component not found' }, 404);
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-        
+
         const componentInstance = new PageComponent() as any;
-        await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
-        
+        await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+
         // Rebuild component tree to find target
         componentInstance._render();
 
@@ -227,6 +227,12 @@ export function createApp() {
                 // For HTTP, if target missing, action likely fails.
                 return c.json({ error: `Target component '${target}' not found` }, 404);
             }
+        }
+
+        // Apply the received state directly to the target component
+        // The state sent from client is the target component's public state
+        for (const key in state) {
+            (targetInstance as any)[key] = state[key];
         }
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
