@@ -149,7 +149,9 @@ render() {
 
 ## Server Actions in Components
 
-Reusable components **can** now define and handle their own `@Server` actions directly. They are fully stateful and persisted as part of the Page's state tree.
+Reusable components **can** define and handle their own `@Server` actions directly. Components are fully stateful and their state is persisted as part of the Page's state tree.
+
+### Basic Example
 
 ```typescript
 // src/components/Counter.ts
@@ -173,9 +175,76 @@ export class Counter extends Cossack {
 }
 ```
 
+### How It Works
+
+When a component with `@Server` actions is used in a Page:
+
+1. **Initial Render (Server):** The component is rendered, and its state is included in the Page's initial state tree under `_children`.
+2. **Client Hydration:** The component is restored with its server state.
+3. **Action Dispatch:** When `@Server` method is called, the framework sends the action to the server with the component's current state.
+4. **State Update:** The server executes the action and returns the updated state.
+5. **Re-render:** The client receives the new state and re-renders the component.
+
+### Nested Component State Flow
+
+State is automatically synchronized between nested components and the page:
+
+```typescript
+// Parent Page
+@Page()
+export class Dashboard extends Cossack {
+    render() {
+        return html`
+            <div>
+                <c:Counter />
+                <c:Counter />
+            </div>
+        `;
+    }
+}
+```
+
+Each `Counter` instance maintains its own independent state, managed through unique component IDs (`root:0`, `root:1`, etc.).
+
+### Accessing Framework Context
+
+Server actions in components can access `this.env`, `this.user`, and `this.c` directly:
+
+```typescript
+@Component()
+export class LikeButton extends Cossack {
+    @State() liked = false;
+    @State() count = 0;
+
+    @Server()
+    async toggleLike() {
+        // Access database bindings
+        const stmt = this.env.DB.prepare(
+            "INSERT INTO likes (user_id, post_id) VALUES (?, ?)"
+        );
+        await stmt.bind(this.user?.id, this.postId).run();
+
+        this.liked = !this.liked;
+        this.count += this.liked ? 1 : -1;
+    }
+
+    @Prop() postId!: string;
+
+    render() {
+        return html`
+            <button @click="${this.toggleLike}">
+                ${this.liked ? '❤️' : '🤍'} ${this.count}
+            </button>
+        `;
+    }
+}
+```
+
 ## Accessing Context
 
 Components can access the global framework context (`env`, `user`, `c` for request) directly using `this.env`, `this.user`, and `this.c`, without needing them passed as props.
+
+> **See [Framework Context API](./framework-context.md)** for complete documentation on accessing environment bindings, authenticated users, and request context from any component.
 
 ```typescript
 @Component()
@@ -195,16 +264,124 @@ export class UserProfile extends Cossack {
 
 Use `@cossackframework/test-utils` to test components in isolation.
 
+### Installation
+
+```bash
+pnpm add -D @cossackframework/test-utils
+```
+
+### Basic Example
+
 ```typescript
 import { render } from '@cossackframework/test-utils';
 import { Counter } from './Counter';
 
 test('increments count', async () => {
     const { click, html } = await render(Counter);
-    
+
     expect(html()).toContain('Count: 0');
     await click('button');
     expect(html()).toContain('Count: 1');
+});
+```
+
+### Render API
+
+The `render` function returns a helper object with the following methods:
+
+| Method | Description |
+|--------|-------------|
+| `instance` | The component instance |
+| `container` | The DOM element containing the rendered component |
+| `html()` | Returns the current HTML as a string |
+| `click(selector)` | Dispatches a click event on the matching element |
+| `type(selector, text)` | Types text into an input field |
+| `waitForUpdate()` | Waits for the next component update |
+| `unmount()` | Cleans up and removes the component |
+
+### Testing with Props
+
+```typescript
+test('renders with custom label', async () => {
+    const { html } = await render(Button, {
+        props: { variant: 'primary', label: 'Click Me' }
+    });
+
+    expect(html()).toContain('Click Me');
+});
+```
+
+### Testing with Initial State
+
+```typescript
+test('renders with initial state', async () => {
+    const { html } = await render(TodoList, {
+        state: { todos: ['Task 1', 'Task 2'] }
+    });
+
+    expect(html()).toContain('Task 1');
+    expect(html()).toContain('Task 2');
+});
+```
+
+### Testing User Input
+
+```typescript
+test('handles form input', async () => {
+    const { type, html } = await render(SearchBox);
+
+    await type('input', 'search query');
+    expect(html()).toContain('search query');
+});
+```
+
+### Testing Server Actions (Mocking)
+
+For components with `@Server` actions, mock the server methods:
+
+```typescript
+import { render } from '@cossackframework/test-utils';
+import { LikeButton } from './LikeButton';
+
+test('toggles like state', async () => {
+    const { click, html } = await render(LikeButton);
+
+    // Mock the server method
+    (LikeButton.prototype as any).toggleLike = async function() {
+        this.liked = !this.liked;
+    };
+
+    await click('button');
+    expect(html()).toContain('❤️');
+});
+```
+
+### Cleanup
+
+The `unmount` helper cleans up the component:
+
+```typescript
+test('cleanup', async () => {
+    const { unmount } = await render(MyComponent);
+
+    // ... test code ...
+
+    unmount(); // Removes component from DOM
+});
+```
+
+### Using with Testing Frameworks
+
+Works with Vitest, Jest, or any TypeScript test framework:
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+    test: {
+        environment: 'jsdom',
+    },
 });
 ```
 
