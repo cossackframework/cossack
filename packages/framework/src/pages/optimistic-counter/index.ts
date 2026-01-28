@@ -1,5 +1,5 @@
 import { Cossack, Page, Server, State, ClientState, Optimistic, Computed } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Button } from '@/components/Button';
 
 @Page({
@@ -63,8 +63,8 @@ export class OptimisticCounter extends Cossack {
                 </div>
 
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    ${Button({ '@click': this.increment }, 'Increment (+1)')}
-                    ${Button({ '@click': this.toggleDetails, 'style': 'background: #666; border-color: #444;' }, this.showDetails ? 'Hide Info' : 'Show Info')}
+                    ${component(Button, { '@click': this.increment }, 'Increment (+1)')}
+                    ${component(Button, { '@click': this.toggleDetails, 'style': 'background: #666; border-color: #444;' }, this.showDetails ? 'Hide Info' : 'Show Info')}
                 </div>
 
                 ${this.showDetails ? html`

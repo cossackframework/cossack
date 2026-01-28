@@ -1,0 +1,59 @@
+import { describe, it, expect } from 'vitest';
+import { html, renderToString, unsafeHTML } from './cossack-html';
+import { live } from './directives';
+
+describe('SSR Fixes & Regressions', () => {
+    
+    it('suppresses events (@event) cleanly without extra spaces or quotes', () => {
+        const template = html`<button @click=${() => {}} class="btn">Click</button>`;
+        expect(renderToString(template)).toBe('<button class="btn">Click</button>');
+        
+        const template2 = html`<button @click="${() => {}}">Click</button>`;
+        expect(renderToString(template2)).toBe('<button>Click</button>');
+    });
+
+    it('suppresses boolean attributes (?attr) cleanly', () => {
+        const template = html`<button ?disabled=${false}>Click</button>`;
+        expect(renderToString(template)).toBe('<button>Click</button>');
+        
+        const template2 = html`<button ?disabled="${false}">Click</button>`;
+        expect(renderToString(template2)).toBe('<button>Click</button>');
+        
+        const template3 = html`<button ?disabled=${true}>Click</button>`;
+        expect(renderToString(template3)).toBe('<button disabled>Click</button>');
+    });
+
+    it('handles property binding (.prop) with directives (live)', () => {
+        const template = html`<input .value=${live("test")}>`;
+        expect(renderToString(template)).toBe('<input value="test">');
+        
+        const template2 = html`<input .value="${live("test")}">`;
+        expect(renderToString(template2)).toBe('<input value="test">');
+    });
+
+    it('handles property binding (.prop) with null/undefined cleanly', () => {
+        const template = html`<input .value=${null}>`;
+        expect(renderToString(template)).toBe('<input>');
+        
+        const template2 = html`<input .value="${undefined}">`;
+        expect(renderToString(template2)).toBe('<input>');
+    });
+
+    it('handles mixed attributes with correct spacing', () => {
+        const template = html`<div id="1" @click=${() => {}} class="foo"></div>`;
+        expect(renderToString(template)).toBe('<div id="1" class="foo"></div>');
+        
+        // Test adjacent suppressions
+        const template2 = html`<div @click=${1} ?hidden=${false} id="2"></div>`;
+        expect(renderToString(template2)).toBe('<div id="2"></div>');
+    });
+
+    it('handles quotes correctly in attribute replacement', () => {
+        // This was the bug where it produced value="""
+        const template = html`<input .value="${""}" />`;
+        expect(renderToString(template)).toBe('<input value="" />');
+        
+        const template2 = html`<input .value="${live("")}" />`;
+        expect(renderToString(template2)).toBe('<input value="" />');
+    });
+});

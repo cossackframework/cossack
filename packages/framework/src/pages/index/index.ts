@@ -1,12 +1,12 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
 import { Image } from '@cossackframework/core';
 import { Layout } from '@/components/Layout';
 
 @Page({ transport: 'http' })
 export default class ImageDemo extends Cossack {
   render() {
-    return Layout({ dir: 'ltr' }, html`
+    return component(Layout, { dir: 'ltr' }, html`
       <h1>Image Optimization Demo</h1>
       <p>This image is rendered using the <code>Image</code> helper.</p>
       

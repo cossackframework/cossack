@@ -39,6 +39,14 @@ export function Page(options: PageOptions = {}): ClassDecorator {
   };
 }
 
+/**
+ * Decorator for reusable components. 
+ * Currently behaves like @Page but semantic distinction is important for future tooling.
+ */
+export function Component(options: PageOptions = {}): ClassDecorator {
+    return Page(options);
+}
+
 const noop = () => {};
 
 export interface ServerOptions {
@@ -132,6 +140,15 @@ export function ClientState(): PropertyDecorator {
     (clientStateProperties as Set<string | symbol>).add(propertyKey);
     Reflect.defineMetadata('cossack:client-state', clientStateProperties, target.constructor);
   };
+}
+
+/**
+ * Decorator for properties that are passed from a parent component.
+ * Functionally equivalent to @ClientState (reactive, client-side only),
+ * but semantically indicates an input.
+ */
+export function Prop(): PropertyDecorator {
+  return ClientState();
 }
 
 export function Ref(): PropertyDecorator {

@@ -1,6 +1,4 @@
 import type { MiddlewareHandler } from 'hono';
-import { Button } from '@/components/Button';
-import { Layout } from '@/components/Layout';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 
@@ -57,33 +55,31 @@ export class Greeting extends Cossack {
         console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
     };
 
-    render(): TemplateResult {
+    render() {
         const isFeedLoading = this.loading['incrementFeed'];
         const isNotificationLoading = this.loading['incrementNotifications'];
 
-        return Layout({
-            dir: 'ltr',
-        }, html`
-            <div>
-                <h1>${this.greeting}</h1>
-                
-                <div class="counters" style="margin: 20px 0;">
-                    <p>Feeds Count: <strong>${this.feedCount}</strong></p>
-                    <p>Notifications Count: <strong>${this.notificationCount}</strong></p>
-                </div>
-
-                <div class="buttons" style="display: flex; gap: 10px;">
-                    ${Button({                    
-                        '@click': this.incrementFeed,
-                        'disabled': isFeedLoading,
-                    }, html`${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}`)}
+        return html`
+            <c:Layout dir="ltr">
+                <div>
+                    <h1>${this.greeting}</h1>
                     
-                    ${Button({                    
-                        '@click': this.incrementNotifications,
-                        'disabled': isNotificationLoading,
-                    }, html`${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}`)}
+                    <div class="counters" style="margin: 20px 0;">
+                        <p>Feeds Count: <strong>${this.feedCount}</strong></p>
+                        <p>Notifications Count: <strong>${this.notificationCount}</strong></p>
+                    </div>
+
+                    <div class="buttons" style="display: flex; gap: 10px;">
+                        <c:Button @click="${this.incrementFeed}" ?disabled="${!!isFeedLoading}">
+                            ${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}
+                        </c:Button>
+                        
+                        <c:Button @click="${this.incrementNotifications}" ?disabled="${!!isNotificationLoading}">
+                            ${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}
+                        </c:Button>
+                    </div>
                 </div>
-            </div>
-        `);
+            </c:Layout>
+        `;
     }
 }

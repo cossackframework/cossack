@@ -19,5 +19,13 @@ export default defineConfig({
       formats: ['es'],
     },
     outDir: 'dist',
+    rollupOptions: {
+      external: [
+        '@cossackframework/renderer',
+        'hono',
+        'reflect-metadata',
+        '@cloudflare/workers-types'
+      ]
+    }
   },
 });

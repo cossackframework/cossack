@@ -1,5 +1,5 @@
 import { Cossack, Page, ClientState, On, OnDocument, OnWindow } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
 import { Layout } from '@/components/Layout';
 
 @Page({
@@ -42,7 +42,7 @@ export default class EventsDemo extends Cossack {
     }
 
     render() {
-        return Layout({ dir: 'ltr' }, html`
+        return component(Layout, { dir: 'ltr' }, html`
             <div style="padding: 20px; border: 2px dashed #ccc; margin: 20px;">
                 <h1>Event Decorators Demo</h1>
                 <p>Interact with the page to see events in action.</p>

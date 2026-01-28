@@ -11,12 +11,26 @@ import { Cossack } from '../src/shared/cossack';
 import { On, OnDocument, OnWindow } from '../src/shared/decorators';
 import type { TemplateResult } from '@cossackframework/renderer';
 
-vi.mock('@cossackframework/renderer/server', () => ({
-  renderToString: vi.fn(),
-}));
-vi.mock('@cossackframework/renderer', () => ({
-  render: vi.fn(),
-}));
+vi.mock('@cossackframework/renderer', () => {
+    const render = vi.fn();
+    const renderToString = vi.fn();
+    class CossackElement {
+        render() { return null; }
+        requestUpdate() {}
+        mount(container: any) { render(this.render(), container); }
+        updated() {}
+        connectedCallback() {}
+        disconnectedCallback() {}
+        static properties = {};
+        autoBindMethods() {}
+    }
+    return {
+        render,
+        renderToString,
+        html: (strings: any, ...values: any[]) => ({ strings, values }),
+        CossackElement,
+    };
+});
 
 class EventComponent extends Cossack<{}> {
     public domClickCount = 0;

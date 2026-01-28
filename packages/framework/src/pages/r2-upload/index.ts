@@ -1,5 +1,5 @@
 import { Cossack, Page, State, ClientState, HeadContext, HeadValue, Server } from "@cossackframework/core";
-import { TemplateResult, html } from "@cossackframework/renderer";
+import { TemplateResult, html, component } from "@cossackframework/renderer";
 import { FileUploader } from "../../components/FileUploader";
 import { createR2PresignedUrl, getR2ConfigFromEnv, uploadToPresignedUrl } from "../../storage/s3";
 
@@ -66,10 +66,10 @@ export class CloudflareR2UploadDemo extends Cossack {
                     The file is then uploaded <strong>directly</strong> from your browser to Cloudflare R2, bypassing the worker's CPU and bandwidth limits.
                 </p>
                 
-                ${FileUploader({
+                ${component(FileUploader, {
                     uploading: uploading,
                     progress: this.uploadProgress,
-                    onUpload: (file) => {
+                    onUpload: (file: File) => {
                         this.uploadProgress = 0;
                         this.upload(file);
                     }

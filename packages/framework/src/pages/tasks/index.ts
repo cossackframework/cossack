@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Cossack, Client, Page, Server, State, OnEvent, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 import { Layout } from '../../components/Layout';
 import { Button } from '../../components/Button';
@@ -65,14 +65,14 @@ export class Tasks extends Cossack {
     private confirmDelete = (taskId: number) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             // Manually set the loading state for the specific task
-            this.loading = { ...this.loading, [`deleteTask_${taskId}`]: true };
+            this.loading = { ...this.loading, [`deleteTask_${taskId}`]: 1 };
             // The user argument is injected by the server, no need to pass it from the client.
             this.deleteTask(taskId);
         }
     }
 
     render(): TemplateResult {
-        return Layout({
+        return component(Layout, {
             dir: 'ltr',
         }, html`
             <div>
@@ -81,9 +81,9 @@ export class Tasks extends Cossack {
                     ${this.tasks.map(task => html`
                         <li style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
                             <span>${task.text}</span>
-                            ${Button({
+                            ${component(Button, {
             '@click': () => this.confirmDelete(task.id),
-            '?disabled': this.loading[`deleteTask_${task.id}`],
+            '?disabled': !!this.loading[`deleteTask_${task.id}`],
         }, 'Delete')}
                         </li>
                     `)}

@@ -21,7 +21,7 @@ export class App extends Cossack {
         }
     }
 
-    render(children: TemplateResult) {
+    render() {
         return html`
             <div id="app-wrapper" class="${this.theme}">
                 <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
@@ -32,7 +32,7 @@ export class App extends Cossack {
                         ${this.theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
                     </button>
                 </div>
-                ${children}
+                ${this.children}
             </div>
         `;
     }

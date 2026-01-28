@@ -15,10 +15,6 @@
     "./server": {
       "import": "./dist/server.js",
       "types": "./dist/server.d.ts"
-    },
-    "./plugin": {
-      "import": "./dist/plugin.js",
-      "types": "./dist/plugin.d.ts"
     }
   },
   "scripts": {

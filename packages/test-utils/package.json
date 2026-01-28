@@ -1,0 +1,22 @@
+{
+  "name": "@cossackframework/test-utils",
+  "version": "0.0.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/renderer": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": "^1.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.0.0",
+    "vitest": "^1.0.0"
+  }
+}

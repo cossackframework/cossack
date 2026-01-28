@@ -3,7 +3,7 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class RootLayout extends Cossack {
-  render(children: TemplateResult) {
+  render() {
     return html`
       <style>
         .nav-link { text-decoration: none; color: inherit; }
@@ -21,7 +21,7 @@ export default class RootLayout extends Cossack {
           </nav>
         </header>
         <div style="padding: 2rem;">
-          ${children}
+          ${this.children}
         </div>
         <footer style="padding: 1rem; border-top: 1px solid #ccc; margin-top: 2rem; font-size: 0.8rem;">
           Built with Cossack

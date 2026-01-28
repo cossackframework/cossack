@@ -13,12 +13,26 @@ import * as renderer from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 
 // Mock the renderer sub-imports
-vi.mock('@cossackframework/renderer/server', () => ({
-  renderToString: vi.fn(),
-}));
-vi.mock('@cossackframework/renderer', () => ({
-  render: vi.fn(),
-}));
+vi.mock('@cossackframework/renderer', () => {
+    const render = vi.fn();
+    const renderToString = vi.fn();
+    class CossackElement {
+        render() { return null; }
+        requestUpdate() {}
+        mount(container: any) { render(this.render(), container); }
+        updated() {}
+        connectedCallback() {}
+        disconnectedCallback() {}
+        static properties = {};
+        autoBindMethods() {} // Add if used
+    }
+    return {
+        render,
+        renderToString,
+        html: (strings: any, ...values: any[]) => ({ strings, values }),
+        CossackElement,
+    };
+});
 
 // A concrete implementation for testing. This is now a top-level declaration.
 class TestComponent extends Cossack<{}> {

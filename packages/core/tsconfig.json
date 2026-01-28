@@ -4,9 +4,8 @@
     "composite": true,
     "moduleResolution": "Bundler",
     "types": ["vite/client", "@cloudflare/workers-types"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
