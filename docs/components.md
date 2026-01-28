@@ -142,37 +142,69 @@ async saveData(data: any) {
 
 render() {
     return html`
-        ${component(MyForm, { 
-            onSave: (data) => this.saveData(data) 
-        })}
+        <c:MyForm @save="${this.saveData}" />
     `;
 }
 ```
 
 ## Server Actions in Components
 
-Reusable components **do not** automatically connect to the server via `@Server` methods because they are not bootstrapped by the router.
-
-To perform server actions from a reusable component, you should either:
-
-1.  **Pass the action as a prop**: Define the `@Server` method in the parent Page and pass it down (as shown above). This is the recommended pattern for "dumb" UI components.
-2.  **Use standard Fetch**: Call an API route (`/api/...`) using `fetch()`. This is useful for self-contained widgets.
+Reusable components **can** now define and handle their own `@Server` actions directly. They are fully stateful and persisted as part of the Page's state tree.
 
 ```typescript
-// Self-contained component using fetch
-import { Cossack, Component, ClientState } from "@cossackframework/core";
+// src/components/Counter.ts
+import { Cossack, Component, Server, State } from "@cossackframework/core";
 import { html } from "@cossackframework/renderer";
 
 @Component()
-export class WeatherWidget extends Cossack {
-    @ClientState() weather: string = 'Loading...';
+export class Counter extends Cossack {
+    @State() count = 0;
 
-    onMount() {
-        fetch('/api/weather').then(res => res.text()).then(data => this.weather = data);
+    @Server()
+    increment() {
+        this.count++;
     }
 
     render() {
-        return html`<div>${this.weather}</div>`;
+        return html`
+            <button @click="${this.increment}">Count: ${this.count}</button>
+        `;
     }
 }
 ```
+
+## Accessing Context
+
+Components can access the global framework context (`env`, `user`, `c` for request) directly using `this.env`, `this.user`, and `this.c`, without needing them passed as props.
+
+```typescript
+@Component()
+export class UserProfile extends Cossack {
+    render() {
+        return html`
+            <div>
+                Logged in as: ${this.user?.name}
+                (DB: ${this.env.DB_NAME})
+            </div>
+        `;
+    }
+}
+```
+
+## Testing
+
+Use `@cossackframework/test-utils` to test components in isolation.
+
+```typescript
+import { render } from '@cossackframework/test-utils';
+import { Counter } from './Counter';
+
+test('increments count', async () => {
+    const { click, html } = await render(Counter);
+    
+    expect(html()).toContain('Count: 0');
+    await click('button');
+    expect(html()).toContain('Count: 1');
+});
+```
+

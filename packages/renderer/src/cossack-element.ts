@@ -42,9 +42,13 @@ export class CossackElement implements ReactiveControllerHost {
 
   // Holds content projected from the parent
   public children: unknown = null;
+  public props: Record<string, unknown> = {};
 
   // Context Support
   public __parent: CossackElement | null = null;
+  public _id: string = '';
+  public _childCounter: number = 0;
+
   private __providedContexts: Map<Context<unknown>, unknown> = new Map();
   private __properties: Map<string, unknown> = new Map();
   private __updatePromise: Promise<boolean> | null = null;
@@ -64,6 +68,10 @@ export class CossackElement implements ReactiveControllerHost {
   // --- Static Stack Access for cossack-html ---
   static get currentRenderingInstance(): CossackElement | null {
       return instanceStack.length > 0 ? instanceStack[instanceStack.length - 1] : null;
+  }
+
+  resetRenderState() {
+      this._childCounter = 0;
   }
 
   // --- Controller API ---
@@ -152,6 +160,7 @@ export class CossackElement implements ReactiveControllerHost {
             
             this.willUpdate(this.__changedProperties);
             
+            this.resetRenderState();
             pushCurrentInstance(this);
             
             const template = this.render();

@@ -1,5 +1,10 @@
 // src/shared/context.ts
 import type { Context } from 'hono';
+import { createContext } from '@cossackframework/renderer';
+
+export const EnvContext = createContext<any>(undefined);
+export const UserContext = createContext<any>(undefined);
+export const RequestContext = createContext<Context | undefined>(undefined);
 
 export type HydratedContext = {
     req: {

@@ -21,7 +21,6 @@ for (const path in components) {
         const exported = (module as any)[key];
         if (typeof exported === 'function' && (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)) {
             // Register by export name
-            console.log(`[SSR] Registering component: ${key}`);
             CossackElement.components[key] = exported;
         }
     }
@@ -115,6 +114,9 @@ export function createApp() {
                 // Bootstrap Page
                 await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
                 
+                // Force render to populate registry
+                pageInstance._render();
+                
                 // Wrap rendering
                 let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
@@ -182,6 +184,7 @@ export function createApp() {
         const body = await c.req.parseBody({ all: true });
         const componentRouteId = body.componentRouteId as string;
         const action = body.action as string;
+        const target = body.target as string;
         const stateStr = body.state as string;
         const payloadStr = body.payload as string;
 
@@ -212,26 +215,41 @@ export function createApp() {
         const componentInstance = new PageComponent() as any;
         await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
         
-        if (typeof componentInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-        
-        const actionResult = await componentInstance[action](...args);
-        
+        // Rebuild component tree to find target
+        componentInstance._render();
+
+        let targetInstance = componentInstance;
+        if (target && target !== targetInstance._id) {
+            if (targetInstance.activeComponents.has(target)) {
+                targetInstance = targetInstance.activeComponents.get(target);
+            } else {
+                // Warning only, fall back to root or error?
+                // For HTTP, if target missing, action likely fails.
+                return c.json({ error: `Target component '${target}' not found` }, 404);
+            }
+        }
+
+        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+
+        const actionResult = await targetInstance[action](...args);
+
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });
         if (actionResult instanceof Response) return actionResult;
 
-        const responseData = componentInstance.getPublicState();
+        // Get the state of the component that was actually modified
+        const responseData = targetInstance.getPublicState();
         if (actionResult !== undefined) {
             (responseData as any)._cossack_return = actionResult;
         }
-        
+
         return c.json(responseData);
     });
 
     app.post('/crpc', async (c) => {
-        const { componentRouteId, action, state, payload } = await c.req.json();
+        const { componentRouteId, action, state, payload, target } = await c.req.json();
         const user = c.get('user');
-        
+
         const componentPath = routeIdMap.get(componentRouteId);
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
 
@@ -240,14 +258,34 @@ export function createApp() {
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
         const componentInstance = new PageComponent() as any;
-        await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
-        if (typeof componentInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-        const actionResult = await componentInstance[action](...(payload || []));
+        await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+
+        // Rebuild component tree
+        componentInstance._render();
+
+        let targetInstance = componentInstance;
+        if (target && target !== targetInstance._id) {
+            if (targetInstance.activeComponents.has(target)) {
+                targetInstance = targetInstance.activeComponents.get(target);
+            } else {
+                return c.json({ error: `Target component '${target}' not found` }, 404);
+            }
+        }
+
+        // Apply the received state directly to the target component
+        // The state sent from client is the target component's public state
+        for (const key in state) {
+            (targetInstance as any)[key] = state[key];
+        }
+
+        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+        const actionResult = await targetInstance[action](...(payload || []));
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });
         if (actionResult instanceof Response) return actionResult;
 
-        const responseData = componentInstance.getPublicState();
+        // Get the state of the component that was actually modified
+        const responseData = targetInstance.getPublicState();
         if (actionResult !== undefined) {
             (responseData as any)._cossack_return = actionResult;
         }

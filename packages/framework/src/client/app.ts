@@ -14,7 +14,6 @@ for (const path in components) {
         const exported = (module as any)[key];
         if (typeof exported === 'function' && (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)) {
             // Register by export name (usually file name matches class name in our convention, e.g. Button.ts -> Button)
-            console.log(`[Client] Registering component: ${key}`);
             CossackElement.components[key] = exported;
         }
     }
@@ -223,7 +222,10 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       }
       const componentInstance = new PageComponent();
       currentPage = componentInstance;
-      
+
+      // Register the page with the app instance for child component state restoration
+      appInstance.setCurrentPage(componentInstance);
+
       componentInstance.updateHead = syncHead;
 
       // Hook reactivity

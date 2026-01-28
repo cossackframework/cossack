@@ -15,7 +15,18 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         const data = JSON.parse(message);
         if (data.type === 'action') {
             const { user } = (client as any).deserializeAttachment() as any;
-            await this.component.executeAction(data.action, data.payload, user, client);
+            
+            let targetInstance = this.component;
+            if (data.target && data.target !== targetInstance._id) {
+                if (targetInstance.activeComponents.has(data.target)) {
+                    targetInstance = targetInstance.activeComponents.get(data.target)!;
+                } else {
+                    console.warn(`[Cossack] Target component '${data.target}' not found. Action '${data.action}' dropped.`);
+                    return;
+                }
+            }
+
+            await targetInstance.executeAction(data.action, data.payload, user, client);
         }
     }
 

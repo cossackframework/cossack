@@ -311,7 +311,16 @@ class SSRScanner {
         }
         instance.children = children;
         instance.__parent = CossackElement.currentRenderingInstance;
-        
+
+        if (instance.__parent) {
+            instance._id = `${instance.__parent._id}:${instance.__parent._childCounter++}`;
+        }
+
+        // Register child component with parent for SSR state collection
+        if (instance.__parent && (instance.__parent as any).registerComponent) {
+            (instance.__parent as any).registerComponent(instance);
+        }
+
         pushCurrentInstance(instance);
         (instance as any).willUpdate(new Map());
         const template = instance.render();
@@ -502,6 +511,9 @@ class NodePart implements Part {
       if (!this.componentInstance) {
           this.componentInstance = new result.clazz();
           this.componentInstance.__parent = CossackElement.currentRenderingInstance;
+          if (this.componentInstance.__parent) {
+              this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
+          }
           this.renderListener = (template) => {
               this.updateNode(template); 
           };
@@ -838,6 +850,9 @@ export const render = (result: TemplateResult, container: Node) => {
                         
                                             if (compClass) {                        const compInstance = new compClass();
                         compInstance.__parent = CossackElement.currentRenderingInstance;
+                        if (compInstance.__parent) {
+                            compInstance._id = `${compInstance.__parent._id}:${compInstance.__parent._childCounter++}`;
+                        }
                         
                         const start = document.createComment(`c:${tagName}`);
                     const end = document.createComment(`/c:${tagName}`);
@@ -869,6 +884,7 @@ export const render = (result: TemplateResult, container: Node) => {
                     
                     const fragment = document.createDocumentFragment();
                     while (el.firstChild) fragment.appendChild(el.firstChild);
+                    
                     compInstance.children = fragment;
                     
                     el.parentNode!.removeChild(el);

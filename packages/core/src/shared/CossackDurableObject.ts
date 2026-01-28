@@ -61,10 +61,19 @@ export abstract class CossackDurableObject {
         const componentInstance = await this.createAndBootstrapComponent(componentName, params || {}, page, providerName);
         if (componentInstance) {
             if (componentState) {
+                // Populate _restoredChildrenState before re-rendering
+                if (componentState._children) {
+                    (componentInstance as any)._restoredChildrenState = componentState._children;
+                }
+                
                 for (const key in componentState) {
+                    if (key === '_children') continue;
                     (componentInstance as any)[key] = componentState[key];
                 }
             }
+            // Rebuild the component tree to populate activeComponents
+            componentInstance._render();
+            
             this.componentInstance = componentInstance;
             // State already restored from storage - skip init() to prevent reset
         }

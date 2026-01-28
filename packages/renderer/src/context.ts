@@ -1,11 +1,11 @@
 export interface Context<T> {
-    __context__: true;
-    defaultValue?: T;
+  id: string;
+  defaultValue?: T;
 }
 
-export const createContext = <T>(defaultValue?: T): Context<T> => {
-    return {
-        __context__: true,
-        defaultValue
-    };
-};
+export function createContext<T>(defaultValue?: T): Context<T> {
+  return {
+    id: Math.random().toString(36).slice(2),
+    defaultValue
+  };
+}
