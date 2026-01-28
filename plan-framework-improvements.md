@@ -42,9 +42,46 @@ for (const key in state) {
 
 ---
 
+### ✅ 2. Fix Self-Closing Custom Component Tags
+
+**Issue**: Self-closing custom components (`<c:Component />`) don't work properly on the client side. Only the first component renders when using self-closing syntax, while SSR works correctly.
+
+**Root Cause**: Two-fold issue:
+1. **SSR**: The `renderComponent()` method wasn't outputting explicit closing tags, causing browser parsing ambiguity
+2. **Client**: The render function had a check `if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return;` that skipped processing nested custom elements after the parent was removed
+
+**Status**: ✅ **COMPLETED**
+
+**Fixes Applied**:
+
+1. **SSR Fix** (`packages/renderer/src/cossack-html.ts`, line 341):
+```typescript
+private renderComponent(clazz: new () => CossackElement, props: Record<string, unknown>, children: unknown) {
+    // ... component setup ...
+
+    // Always output explicit closing tag to prevent browser parsing issues
+    // Self-closing tags don't work reliably for custom elements in HTML5
+    this.result += `</c:${className}>`;
+}
+```
+
+2. **Client Fix** (`packages/renderer/src/cossack-html.ts`, line 918):
+```typescript
+// REMOVED: This check prevented processing nested custom elements
+// if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return;
+```
+
+**Impact**: Self-closing component syntax now works correctly. Both syntaxes produce the same output:
+```html
+<c:NestedCounter />     <!-- Now works! -->
+<c:NestedCounter></c:NestedCounter>  <!-- Also works -->
+```
+
+---
+
 ## P1 - High Priority
 
-### 2. Simplify State Management Flow
+### 3. Simplify State Management Flow
 
 **Problem**: State is passed through too many concepts (`_restoredChildrenState`, `initialState`, `getInitialState()`, `getPublicState()`). This makes reasoning about state flow difficult.
 
@@ -65,7 +102,7 @@ interface ComponentState {
 
 ---
 
-### 3. Reduce Lifecycle Method Complexity
+### 4. Reduce Lifecycle Method Complexity
 
 **Problem**: The interaction between `connectedCallback()`, `willUpdate()`, `bootstrap()`, and `initializeState()` caused the proxy bug.
 
@@ -88,7 +125,7 @@ private _phase: LifecyclePhase = LifecyclePhase.Creating;
 
 ---
 
-### 4. Replace `any` Type Casts with Proper Types
+### 5. Replace `any` Type Casts with Proper Types
 
 **Problem**: Heavy use of `(this as any)` makes code error-prone and loses type safety.
 
@@ -110,7 +147,7 @@ interface CossackElementInternal {
 
 ## P2 - Medium Priority
 
-### 5. Add Error Boundaries
+### 6. Add Error Boundaries
 
 **Problem**: Errors in nested components can crash the entire page with no graceful degradation.
 
@@ -144,7 +181,7 @@ class MyPage extends Cossack {
 
 ---
 
-### 6. Unified Proxy Pattern
+### 7. Unified Proxy Pattern
 
 **Problem**: `proxyHttpMethods()` and `proxyServerMethods()` have similar logic but are separate.
 
@@ -168,7 +205,7 @@ async myMethod() { }
 
 ---
 
-### 7. Proper Debug/Logging System
+### 8. Proper Debug/Logging System
 
 **Problem**: Debugging required scattered console.log statements that needed cleanup.
 
@@ -190,7 +227,7 @@ this.debug('proxy', 'Calling server method', { method: 'increment' });
 
 ---
 
-### 8. Improve Component Registration Pattern
+### 9. Improve Component Registration Pattern
 
 **Problem**: The `__parent` vs `RootContext` pattern caused bugs and is confusing.
 
@@ -215,7 +252,7 @@ class ParentPage extends Cossack {
 
 ## P3 - Low Priority
 
-### 9. State Validation
+### 10. State Validation
 
 **Problem**: No runtime validation for state changes.
 
@@ -234,7 +271,7 @@ progress: number = 0;
 
 ---
 
-### 10. Improved Optimistic UI Pattern
+### 11. Improved Optimistic UI Pattern
 
 **Problem**: Current optimistic handler requires separate method.
 
@@ -262,7 +299,7 @@ async increment() {
 
 ---
 
-### 11. Component State DevTools
+### 12. Component State DevTools
 
 **Problem**: Hard to debug state flow between server and client.
 
@@ -275,7 +312,7 @@ Cossack.devtools.show();
 
 ---
 
-### 12. Performance Monitoring
+### 13. Performance Monitoring
 
 **Problem**: No visibility into component render performance or proxy latency.
 

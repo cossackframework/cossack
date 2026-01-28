@@ -218,6 +218,7 @@ class SSRScanner {
     private charIdxForNext = 0;
 
     private processComponent(tagName: string) {
+        console.log('[SSR processComponent] Processing tag:', tagName);
         const currentInstance = CossackElement.currentRenderingInstance;
         // Primary registry: current instance's class components (allows local overrides/shadowing)
         // Fallback: Global CossackElement components
@@ -225,31 +226,33 @@ class SSRScanner {
         const globalRegistry = CossackElement.components;
 
         let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
-        
+
         if (!compClass) {
             compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
         }
-        
+
         if (!compClass) {
             this.result += `<c:${tagName}`;
-            this.charIdx += 3 + tagName.length; 
+            this.charIdx += 3 + tagName.length;
             return;
         }
 
         this.charIdx += 3 + tagName.length;
-        
+
         const props: Record<string, unknown> = {};
-        
+
         while (true) {
             this.skipWhitespace();
-            
+
             if (this.peek() === '/' && this.peek(1) === '>') {
-                this.consume(2); 
+                console.log('[SSR processComponent] Found self-closing tag for:', tagName);
+                this.consume(2);
                 this.renderComponent(compClass, props, null);
                 return;
             }
             if (this.peek() === '>') {
-                this.consume(1); 
+                console.log('[SSR processComponent] Found opening tag for:', tagName);
+                this.consume(1);
                 const childrenHtml = this.captureChildren(tagName);
                 const processedChildren = renderToString(new TemplateResult([childrenHtml] as unknown as TemplateStringsArray, []));
                 this.renderComponent(compClass, props, unsafeHTML(processedChildren));
@@ -321,6 +324,9 @@ class SSRScanner {
             (instance.__parent as any).registerComponent(instance);
         }
 
+        // Get the component class name for the closing tag
+        const className = clazz.name;
+
         pushCurrentInstance(instance);
         (instance as any).willUpdate(new Map());
         const template = instance.render();
@@ -332,6 +338,10 @@ class SSRScanner {
             }
         }
         popCurrentInstance();
+
+        // Always output explicit closing tag to prevent browser parsing issues
+        // Self-closing tags don't work reliably for custom elements in HTML5
+        this.result += `</c:${className}>`;
     }
 
     private captureChildren(tagName: string): string {
@@ -784,13 +794,19 @@ export const render = (result: TemplateResult, container: Node) => {
 
     const parts: Part[] = [];
     const values = result.values;
-    
+
+    // Pre-process template strings to convert self-closing custom component tags to explicit opening/closing tags
+    // This must be done BEFORE concatenation to prevent browser from nesting custom elements
+    const processedStrings = result.strings.map(str => {
+        return str.replace(/<c:([a-zA-Z0-9_-]+)(\s*[^>/]*)\/\s*>/gi, '<c:$1$2></c:$1>');
+    });
+
     let htmlString = '';
     let isInsideTag = false;
 
     const updateState = (str: string) => {
         for (let i = 0; i < str.length; i++) {
-            if (str[i] === '<' && str[i+1] !== '!' && str[i+1] !== '/') { 
+            if (str[i] === '<' && str[i+1] !== '!' && str[i+1] !== '/') {
                 isInsideTag = true;
             } else if (str[i] === '>') {
                 isInsideTag = false;
@@ -800,21 +816,21 @@ export const render = (result: TemplateResult, container: Node) => {
 
     const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
 
-    for (let i = 0; i < result.strings.length - 1; i++) {
-        const str = result.strings[i];
+    for (let i = 0; i < processedStrings.length - 1; i++) {
+        const str = processedStrings[i];
         updateState(str);
-        
+
         htmlString += str;
-        
+
         const match = str.match(attrMatch);
         if (isInsideTag && match) {
-            htmlString += `__CRP_${i}__`; 
+            htmlString += `__CRP_${i}__`;
         } else {
             htmlString += `<!--CRP_${i}-->`;
         }
     }
-    
-    const lastStr = result.strings[result.strings.length - 1];
+
+    const lastStr = processedStrings[processedStrings.length - 1];
     updateState(lastStr);
     htmlString += lastStr;
 
@@ -829,40 +845,40 @@ export const render = (result: TemplateResult, container: Node) => {
     while ((currentNode = walker.nextNode())) {
         nodes.push(currentNode);
     }
-    
+
     const processedIndices = new Set<number>();
 
     nodes.forEach(node => {
                     if (node.nodeType === Node.ELEMENT_NODE) {
                         const el = node as Element;
-                                        if (el.tagName.toUpperCase().startsWith('C:')) { 
+                                        if (el.tagName.toUpperCase().startsWith('C:')) {
                                             const tagName = el.tagName.substring(2);
                                             const currentInstance = CossackElement.currentRenderingInstance;
-                                            
+
                                             const localRegistry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : null;
                                             const globalRegistry = CossackElement.components;
-                        
+
                                             let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
-                                            
+
                                             if (!compClass) {
                                                 compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
                                             }
-                        
+
                                             if (compClass) {                        const compInstance = new compClass();
                         compInstance.__parent = CossackElement.currentRenderingInstance;
                         if (compInstance.__parent) {
                             compInstance._id = `${compInstance.__parent._id}:${compInstance.__parent._childCounter++}`;
                         }
-                        
+
                         const start = document.createComment(`c:${tagName}`);
                     const end = document.createComment(`/c:${tagName}`);
                     el.parentNode!.insertBefore(start, el);
                     el.parentNode!.insertBefore(end, el);
-                    
+
                                         const part = new NodePart(start, end);
                                         part['componentInstance'] = compInstance;
                                         compInstance.addRenderListener((t: unknown) => part['updateNode'](t));
-                                        compInstance.connectedCallback();                        
+                                        compInstance.connectedCallback();
                     Array.from(el.attributes).forEach(attr => {
                         const match = attr.value.match(/__CRP_(\d+)__/);
                         if (match) {
@@ -906,10 +922,9 @@ export const render = (result: TemplateResult, container: Node) => {
                     parts[index] = part;
                 }
             }
-        } else if (node.nodeType === Node.ELEMENT_NODE && !processedIndices.has(-1)) { 
+        } else if (node.nodeType === Node.ELEMENT_NODE && !processedIndices.has(-1)) {
              const el = node as Element;
-             if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return; 
-             
+
              Array.from(el.attributes).forEach(attr => {
                 const match = attr.value.match(/__CRP_(\d+)__/);
                 if (match) {

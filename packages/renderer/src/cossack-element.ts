@@ -150,27 +150,27 @@ export class CossackElement implements ReactiveControllerHost {
   }
 
   protected async performUpdate() {
-    await Promise.resolve(); 
+    await Promise.resolve();
     let shouldUpdate = false;
     try {
         shouldUpdate = this.shouldUpdate(this.__changedProperties);
         if (shouldUpdate) {
             // Controller hostUpdate
             this.__controllers.forEach(c => c.hostUpdate && c.hostUpdate());
-            
+
             this.willUpdate(this.__changedProperties);
-            
+
             this.resetRenderState();
             pushCurrentInstance(this);
-            
+
             const template = this.render();
-            
+
             this.__notifyListeners(template);
-            
+
             popCurrentInstance();
-            
+
             this.updated(this.__changedProperties);
-            
+
             // Controller hostUpdated
             this.__controllers.forEach(c => c.hostUpdated && c.hostUpdated());
         }
@@ -180,7 +180,7 @@ export class CossackElement implements ReactiveControllerHost {
             popCurrentInstance();
         }
     }
-    
+
     this.__changedProperties = new Map();
     this.__updatePromise = null;
     return shouldUpdate;
