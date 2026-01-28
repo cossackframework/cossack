@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { Button } from '@/components/Button';
 import { Layout } from '@/components/Layout';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 
 // Example middleware
@@ -61,7 +61,7 @@ export class Greeting extends Cossack {
         const isFeedLoading = this.loading['incrementFeed'];
         const isNotificationLoading = this.loading['incrementNotifications'];
 
-        return Layout({
+        return component(Layout, {
             dir: 'ltr',
         }, html`
             <div>
@@ -73,12 +73,12 @@ export class Greeting extends Cossack {
                 </div>
 
                 <div class="buttons" style="display: flex; gap: 10px;">
-                    ${Button({                    
+                    ${component(Button, {                    
                         '@click': this.incrementFeed,
                         'disabled': !!isFeedLoading,
                     }, html`${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}`)}
                     
-                    ${Button({                    
+                    ${component(Button, {                    
                         '@click': this.incrementNotifications,
                         'disabled': !!isNotificationLoading,
                     }, html`${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}`)}

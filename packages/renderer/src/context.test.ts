@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { html, render, renderToString } from './cossack-html';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { html, renderToString } from './cossack-html';
-import { component } from './component';
+import { component } from './cossack-html';
 import { createContext } from './context';
 
 describe('Context API', () => {

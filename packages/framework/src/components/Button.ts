@@ -1,21 +1,17 @@
-import { html, type TemplateResult } from "@cossackframework/renderer"
+import { html } from "@cossackframework/renderer"
+import { Cossack, Prop } from "@cossackframework/core"
 
-type ComponentProps<T> = Omit<Partial<T>, 'children' | 'style' | 'class'> & {
-    style?: string | Partial<CSSStyleDeclaration> | Record<string, string | number>;
-    class?: string;
-};
+export class Button extends Cossack {
+    @Prop()
+    variant: 'primary' | 'secondary' = 'primary';
 
-type ButtonProps = ComponentProps<HTMLButtonElement> & {
-    variant?: 'primary' | 'secondary';
-    [key: string]: any; 
-};
+    render() {
+        const { variant, rest } = this.props;
 
-export const Button = (props: ButtonProps, children: TemplateResult|string) => {
-    const { variant = 'primary', ...rest } = props
-
-    return html`
-        <button data-variant="${variant}" ...=${rest}>
-            ${children}
-        </button>
-    `
+        return html`
+            <button data-variant="${this.variant}" ...=${rest}>
+                ${this.children}
+            </button>
+        `
+    }
 }

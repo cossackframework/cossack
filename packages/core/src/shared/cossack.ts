@@ -1,6 +1,6 @@
 // src/shared/cossack.ts
 import { renderToString } from '@cossackframework/renderer/server';
-import { html, TemplateResult, CossackElement } from '@cossackframework/renderer';
+import { html, TemplateResult, CossackElement, isTemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
@@ -61,6 +61,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     constructor() {
         super();
         this.autoBindMethods();
+    }
+
+    connectedCallback() {
+        this.initializeState();
+        super.connectedCallback();
+    }
+
+    willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
+        this.initializeState();
+        super.willUpdate(changedProperties);
     }
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
@@ -728,7 +738,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
+    private isStateInitialized = false;
+
     private initializeState(initialState?: any) {
+        if (this.isStateInitialized && !initialState) return;
+        this.isStateInitialized = true;
+
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
         
@@ -932,7 +947,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         if (this.isServer) {
-            return renderToString(template);
+            if (isTemplateResult(template)) {
+                return renderToString(template);
+            }
+            return renderToString(html`${template}`);
         }
         return '';
     }

@@ -187,7 +187,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
                 return true;
             };
 
-            await instance.bootstrap({ container: containerEl as Element, initialState: state, skipInit: true });
+            await instance.bootstrap({ initialState: state, skipInit: true });
             currentLayoutsMap.set(path, instance);
         }
         instance.updatePath(pathname);
@@ -220,7 +220,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
           return true;
       };
 
-      await componentInstance.bootstrap({ container: containerEl as Element, initialState, skipInit: true });
+      await componentInstance.bootstrap({ initialState, skipInit: true });
       componentInstance.updatePath(pathname);
       
       // Perform initial composition and render
@@ -267,7 +267,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
               return true;
           };
 
-          await loadingInstance.bootstrap({ container: containerEl as Element });
+          await loadingInstance.bootstrap({});
           await triggerAppUpdate();
       }
 

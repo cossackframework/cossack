@@ -1,4 +1,4 @@
-import { TemplateResult, render } from './cossack-html';
+import { TemplateResult, render, html, isTemplateResult } from './cossack-html';
 import { Context } from './context';
 
 export type PropertyDeclaration = {
@@ -48,7 +48,7 @@ export class CossackElement implements ReactiveControllerHost {
   private __properties: Map<string, unknown> = new Map();
   private __updatePromise: Promise<boolean> | null = null;
   private __changedProperties: PropertyValues = new Map();
-  private __renderListeners: Set<(template: TemplateResult | null) => void> = new Set();
+  private __renderListeners: Set<(template: TemplateResult | unknown | null) => void> = new Set();
   
   // Controllers
   private __controllers: Set<ReactiveController> = new Set();
@@ -176,22 +176,26 @@ export class CossackElement implements ReactiveControllerHost {
     return shouldUpdate;
   }
 
-  private __notifyListeners(template: TemplateResult | null) {
+  private __notifyListeners(template: TemplateResult | unknown | null) {
       this.__renderListeners.forEach(listener => listener(template));
   }
 
-  addRenderListener(listener: (template: TemplateResult | null) => void) {
+  addRenderListener(listener: (template: TemplateResult | unknown | null) => void) {
       this.__renderListeners.add(listener);
   }
 
-  removeRenderListener(listener: (template: TemplateResult | null) => void) {
+  removeRenderListener(listener: (template: TemplateResult | unknown | null) => void) {
       this.__renderListeners.delete(listener);
   }
 
   mount(container: HTMLElement) {
       this.addRenderListener((template) => {
           if (template) {
-             render(template, container);
+             if (isTemplateResult(template)) {
+                 render(template, container);
+             } else {
+                 render(html`${template}`, container);
+             }
           }
       });
       this.requestUpdate();

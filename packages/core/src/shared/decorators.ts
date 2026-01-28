@@ -134,6 +134,15 @@ export function ClientState(): PropertyDecorator {
   };
 }
 
+/**
+ * Decorator for properties that are passed from a parent component.
+ * Functionally equivalent to @ClientState (reactive, client-side only),
+ * but semantically indicates an input.
+ */
+export function Prop(): PropertyDecorator {
+  return ClientState();
+}
+
 export function Ref(): PropertyDecorator {
   return (target: any, propertyKey: string | symbol) => {
     const privateKey = Symbol(String(propertyKey));
