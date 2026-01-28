@@ -24,7 +24,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           const pages = import.meta.glob(['/src/pages/**/index.ts', '/src/pages/**/index.mdx', '/src/pages/api/**/*.ts'], { eager: true });
           const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
           const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });
-          export default { pages, layouts, loadings };
+          const components = import.meta.glob('/src/components/**/*.ts', { eager: true });
+          export default { pages, layouts, loadings, components };
         `;
       }
     },

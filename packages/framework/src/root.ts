@@ -1,5 +1,5 @@
 import { HeadTag } from '@cossackframework/core';
-import { escapeHtml } from '@cossackframework/renderer/server';
+import { escapeHtml } from '@cossackframework/renderer';
 
 type RenderRootProps = {
     body: string;

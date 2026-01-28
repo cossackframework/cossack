@@ -219,8 +219,16 @@ class SSRScanner {
 
     private processComponent(tagName: string) {
         const currentInstance = CossackElement.currentRenderingInstance;
-        const registry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : {};
-        const compClass = registry[tagName] || registry[Object.keys(registry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
+        // Primary registry: current instance's class components (allows local overrides/shadowing)
+        // Fallback: Global CossackElement components
+        const localRegistry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : null;
+        const globalRegistry = CossackElement.components;
+
+        let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
+        
+        if (!compClass) {
+            compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
+        }
         
         if (!compClass) {
             this.result += `<c:${tagName}`;
@@ -288,7 +296,7 @@ class SSRScanner {
             } else if (attrName.startsWith('?')) {
                 props[attrName.slice(1)] = Boolean(value);
             } else if (attrName.startsWith('@')) {
-                // Ignore events for props
+                props[attrName] = value;
             } else {
                 props[attrName] = value;
             }
@@ -424,21 +432,30 @@ interface Part {
 class ComponentPropPart implements Part {
     constructor(public instance: CossackElement, public name: string) {}
     update(value: unknown) {
+        // Ensure props object exists
+        if (!('props' in this.instance)) (this.instance as any).props = {};
+        const props = (this.instance as any).props;
+
         if (this.name === '...') {
             if (typeof value === 'object' && value !== null) {
                 Object.assign(this.instance, value);
+                Object.assign(props, value);
             }
         } else if (this.name.startsWith('@')) {
             const eventName = this.name.slice(1);
             this.instance.addEventListener(eventName, value as EventListener);
+            props[this.name] = value;
         } else if (this.name.startsWith('.')) {
             const propName = this.name.slice(1);
             (this.instance as any)[propName] = value;
+            props[propName] = value;
         } else if (this.name.startsWith('?')) {
             const propName = this.name.slice(1);
             (this.instance as any)[propName] = Boolean(value);
+            props[propName] = Boolean(value);
         } else {
             (this.instance as any)[this.name] = value;
+            props[this.name] = value;
         }
         this.instance.requestUpdate();
     }
@@ -614,6 +631,9 @@ class NodePart implements Part {
         const temp = document.createElement('template');
         temp.innerHTML = value.value;
         this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
+    } else if (value instanceof Node) {
+        this.clear();
+        this.startNode.parentNode!.insertBefore(value, this.endNode);
     } else if (value === null || value === undefined || value === false) {
         this.clear();
     } else {
@@ -742,169 +762,172 @@ class AttributePart implements Part {
 const containerCache = new WeakMap<Node, { strings: TemplateStringsArray, parts: Part[] }>();
 
 export const render = (result: TemplateResult, container: Node) => {
-    try {
-        const existing = containerCache.get(container);
-        if (existing && existing.strings === result.strings) {
-            existing.parts.forEach((part, i) => {
-                part.update(result.values[i]);
-            });
-            return;
-        }
+    const existing = containerCache.get(container);
+    if (existing && existing.strings === result.strings) {
+        existing.parts.forEach((part, i) => {
+            part.update(result.values[i]);
+        });
+        return;
+    }
 
-        const parts: Part[] = [];
-        const values = result.values;
-        
-        let htmlString = '';
-        let isInsideTag = false;
+    const parts: Part[] = [];
+    const values = result.values;
+    
+    let htmlString = '';
+    let isInsideTag = false;
 
-        const updateState = (str: string) => {
-            for (let i = 0; i < str.length; i++) {
-                if (str[i] === '<' && str[i+1] !== '!' && str[i+1] !== '/') { 
-                    isInsideTag = true;
-                } else if (str[i] === '>') {
-                    isInsideTag = false;
-                }
-            }
-        };
-
-        const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
-
-        for (let i = 0; i < result.strings.length - 1; i++) {
-            const str = result.strings[i];
-            updateState(str);
-            
-            htmlString += str;
-            
-            const match = str.match(attrMatch);
-            if (isInsideTag && match) {
-                htmlString += `__CRP_${i}__`; 
-            } else {
-                htmlString += `<!--CRP_${i}-->`;
+    const updateState = (str: string) => {
+        for (let i = 0; i < str.length; i++) {
+            if (str[i] === '<' && str[i+1] !== '!' && str[i+1] !== '/') { 
+                isInsideTag = true;
+            } else if (str[i] === '>') {
+                isInsideTag = false;
             }
         }
-        
-        const lastStr = result.strings[result.strings.length - 1];
-        updateState(lastStr);
-        htmlString += lastStr;
+    };
 
-        const template = document.createElement('template');
-        template.innerHTML = htmlString;
-        const instance = template.content.cloneNode(true);
+    const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
+
+    for (let i = 0; i < result.strings.length - 1; i++) {
+        const str = result.strings[i];
+        updateState(str);
         
-        const walker = document.createTreeWalker(instance, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
-        let currentNode: Node | null;
+        htmlString += str;
         
-        const nodes: Node[] = [];
-        while ((currentNode = walker.nextNode())) {
-            nodes.push(currentNode);
+        const match = str.match(attrMatch);
+        if (isInsideTag && match) {
+            htmlString += `__CRP_${i}__`; 
+        } else {
+            htmlString += `<!--CRP_${i}-->`;
         }
-        
-        const processedIndices = new Set<number>();
+    }
+    
+    const lastStr = result.strings[result.strings.length - 1];
+    updateState(lastStr);
+    htmlString += lastStr;
 
-        nodes.forEach(node => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                const el = node as Element;
-                if (el.tagName.toUpperCase().startsWith('C:')) { 
-                    const tagName = el.tagName.substring(2);
-                    const currentInstance = CossackElement.currentRenderingInstance;
-                    const registry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : {};
-                    const compClass = registry[tagName] || registry[Object.keys(registry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
-                    
-                    if (compClass) {
-                        const compInstance = new compClass();
+    const template = document.createElement('template');
+    template.innerHTML = htmlString;
+    const instance = template.content.cloneNode(true);
+    
+    const walker = document.createTreeWalker(instance, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+    let currentNode: Node | null;
+    
+    const nodes: Node[] = [];
+    while ((currentNode = walker.nextNode())) {
+        nodes.push(currentNode);
+    }
+    
+    const processedIndices = new Set<number>();
+
+    nodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const el = node as Element;
+                                        if (el.tagName.toUpperCase().startsWith('C:')) { 
+                                            const tagName = el.tagName.substring(2);
+                                            const currentInstance = CossackElement.currentRenderingInstance;
+                                            
+                                            const localRegistry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : null;
+                                            const globalRegistry = CossackElement.components;
+                        
+                                            let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
+                                            
+                                            if (!compClass) {
+                                                compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
+                                            }
+                        
+                                            if (compClass) {                        const compInstance = new compClass();
                         compInstance.__parent = CossackElement.currentRenderingInstance;
                         
                         const start = document.createComment(`c:${tagName}`);
-                        const end = document.createComment(`/c:${tagName}`);
-                        el.parentNode!.insertBefore(start, el);
-                        el.parentNode!.insertBefore(end, el);
-                        
-                                            const part = new NodePart(start, end);
-                                            part['componentInstance'] = compInstance;
-                                            compInstance.addRenderListener((t: unknown) => part['updateNode'](t));
-                                            compInstance.connectedCallback();                        
-                        Array.from(el.attributes).forEach(attr => {
-                            const match = attr.value.match(/__CRP_(\d+)__/);
-                            if (match) {
-                                const index = parseInt(match[1]);
-                                processedIndices.add(index);
-                                if (attr.name === '...') {
-                                    const propPart = new ComponentPropPart(compInstance, '...');
-                                    parts[index] = propPart;
-                                } else {
-                                    const propPart = new ComponentPropPart(compInstance, attr.name);
-                                    parts[index] = propPart;
-                                }
+                    const end = document.createComment(`/c:${tagName}`);
+                    el.parentNode!.insertBefore(start, el);
+                    el.parentNode!.insertBefore(end, el);
+                    
+                                        const part = new NodePart(start, end);
+                                        part['componentInstance'] = compInstance;
+                                        compInstance.addRenderListener((t: unknown) => part['updateNode'](t));
+                                        compInstance.connectedCallback();                        
+                    Array.from(el.attributes).forEach(attr => {
+                        const match = attr.value.match(/__CRP_(\d+)__/);
+                        if (match) {
+                            const index = parseInt(match[1]);
+                            processedIndices.add(index);
+                            if (attr.name === '...') {
+                                const propPart = new ComponentPropPart(compInstance, '...');
+                                parts[index] = propPart;
                             } else {
-                                (compInstance as any)[attr.name] = attr.value;
+                                const propPart = new ComponentPropPart(compInstance, attr.name);
+                                parts[index] = propPart;
                             }
-                        });
-                        
-                        const fragment = document.createDocumentFragment();
-                        while (el.firstChild) fragment.appendChild(el.firstChild);
-                        compInstance.children = fragment;
-                        
-                        el.parentNode!.removeChild(el);
-                        compInstance.requestUpdate();
-                    }
+                        } else {
+                            (compInstance as any)[attr.name] = attr.value;
+                            if (!('props' in compInstance)) (compInstance as any).props = {};
+                            (compInstance as any).props[attr.name] = attr.value;
+                        }
+                    });
+                    
+                    const fragment = document.createDocumentFragment();
+                    while (el.firstChild) fragment.appendChild(el.firstChild);
+                    compInstance.children = fragment;
+                    
+                    el.parentNode!.removeChild(el);
+                    compInstance.requestUpdate();
                 }
             }
-        });
+        }
+    });
 
-        nodes.forEach(node => {
-            if (node.nodeType === Node.COMMENT_NODE) {
-                const match = node.nodeValue?.match(/CRP_(\d+)/);
+    nodes.forEach(node => {
+        if (node.nodeType === Node.COMMENT_NODE) {
+            const match = node.nodeValue?.match(/CRP_(\d+)/);
+            if (match) {
+                const index = parseInt(match[1]);
+                if (!processedIndices.has(index)) {
+                    const endNode = document.createComment('/CRP');
+                    node.parentNode!.insertBefore(endNode, node.nextSibling);
+                    const part = new NodePart(node as Comment, endNode);
+                    parts[index] = part;
+                }
+            }
+        } else if (node.nodeType === Node.ELEMENT_NODE && !processedIndices.has(-1)) { 
+             const el = node as Element;
+             if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return; 
+             
+             Array.from(el.attributes).forEach(attr => {
+                const match = attr.value.match(/__CRP_(\d+)__/);
                 if (match) {
                     const index = parseInt(match[1]);
-                    if (!processedIndices.has(index)) {
-                        const endNode = document.createComment('/CRP');
-                        node.parentNode!.insertBefore(endNode, node.nextSibling);
-                        const part = new NodePart(node as Comment, endNode);
-                        parts[index] = part;
+                    if (!parts[index]) {
+                         if (attr.name === '...') {
+                             const part = new SpreadPart(el);
+                             parts[index] = part;
+                             el.removeAttribute('...');
+                         } else {
+                             const part = new AttributePart(el, attr.name);
+                             parts[index] = part;
+                         }
                     }
                 }
-            } else if (node.nodeType === Node.ELEMENT_NODE && !processedIndices.has(-1)) { 
-                 const el = node as Element;
-                 if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return; 
-                 
-                 Array.from(el.attributes).forEach(attr => {
-                    const match = attr.value.match(/__CRP_(\d+)__/);
-                    if (match) {
-                        const index = parseInt(match[1]);
-                        if (!parts[index]) {
-                             if (attr.name === '...') {
-                                 const part = new SpreadPart(el);
-                                 parts[index] = part;
-                                 el.removeAttribute('...');
-                             } else {
-                                 const part = new AttributePart(el, attr.name);
-                                 parts[index] = part;
-                             }
-                        }
-                    }
-                });
-            }
-        });
-
-        for (let i = 0; i < values.length; i++) {
-            if (parts[i]) {
-                parts[i].update(values[i]);
-            }
+            });
         }
+    });
 
-        if (container instanceof HTMLElement) {
-            container.innerHTML = '';
-            container.appendChild(instance);
-        } else if (container instanceof DocumentFragment) {
-            while (container.firstChild) {
-                container.removeChild(container.firstChild);
-            }
-            container.appendChild(instance);
+    for (let i = 0; i < values.length; i++) {
+        if (parts[i]) {
+            parts[i].update(values[i]);
         }
-
-        containerCache.set(container, { strings: result.strings, parts });
-    } catch (e) {
-        console.error('Error in render:', e, 'Result:', result);
-        throw e;
     }
+
+    if (container instanceof HTMLElement) {
+        container.innerHTML = '';
+        container.appendChild(instance);
+    } else if (container instanceof DocumentFragment) {
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        container.appendChild(instance);
+    }
+
+    containerCache.set(container, { strings: result.strings, parts });
 };

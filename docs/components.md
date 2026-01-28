@@ -10,8 +10,9 @@ To create a component, extend the `Cossack` class. You can use standard decorato
 
 ```typescript
 import { html } from "@cossackframework/renderer";
-import { Cossack, Prop } from "@cossackframework/core";
+import { Cossack, Component, Prop } from "@cossackframework/core";
 
+@Component()
 export class Button extends Cossack {
     // 1. Define inputs using @Prop
     @Prop()
@@ -44,8 +45,9 @@ Components can have their own internal state using `@ClientState` (for UI state)
 
 ```typescript
 import { html } from "@cossackframework/renderer";
-import { Cossack, Prop, ClientState } from "@cossackframework/core";
+import { Cossack, Component, Prop, ClientState } from "@cossackframework/core";
 
+@Component()
 export class FileUploader extends Cossack {
     // Inputs from parent
     @Prop()
@@ -81,7 +83,24 @@ export class FileUploader extends Cossack {
 
 ## Using Components
 
-To use a class-based component within a template, use the `component()` helper function from `@cossackframework/renderer`.
+You can use components in two ways:
+
+### 1. Auto-Discovered Syntax (Recommended)
+
+Components placed in `src/components` are automatically discovered and registered. You can use them directly in your templates using the `<c:ComponentName>` syntax without importing them.
+
+```typescript
+// No import needed!
+html`
+    <div>
+        <c:Button variant="secondary" @click="${this.handleClick}">Click Me</c:Button>
+    </div>
+`
+```
+
+### 2. Manual Import & Helper
+
+To use a class-based component explicitly (e.g., if it's not in `src/components` or you prefer explicit imports), use the `component()` helper function from `@cossackframework/renderer`.
 
 ```typescript
 import { html, component } from "@cossackframework/renderer";
@@ -141,6 +160,10 @@ To perform server actions from a reusable component, you should either:
 
 ```typescript
 // Self-contained component using fetch
+import { Cossack, Component, ClientState } from "@cossackframework/core";
+import { html } from "@cossackframework/renderer";
+
+@Component()
 export class WeatherWidget extends Cossack {
     @ClientState() weather: string = 'Loading...';
 

@@ -1,6 +1,7 @@
 import { html } from "@cossackframework/renderer"
-import { Cossack, Prop } from "@cossackframework/core"
+import { Cossack, Component, Prop } from "@cossackframework/core"
 
+@Component()
 export class Layout extends Cossack {
     @Prop()
     dir: string = 'ltr';

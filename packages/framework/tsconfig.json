@@ -3,13 +3,11 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "noEmit": true,
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "jsx": "react",
-    "jsxFactory": "h",
-    "jsxFragmentFactory": "Fragment",
     "types": [
       "reflect-metadata",
       "@cloudflare/workers-types"
@@ -17,7 +15,6 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"

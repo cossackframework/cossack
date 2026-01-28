@@ -1,9 +1,24 @@
 import { Cossack, enableClientNavigation } from '@cossackframework/core';
 import { App } from '../App';
+import { CossackElement } from '@cossackframework/renderer';
 // @ts-expect-error - this is a virtual module created by the vite plugin
 import registry from 'virtual:cossack-pages';
 
-const { pages, layouts, loadings } = registry;
+const { pages, layouts, loadings, components } = registry;
+
+// Register Components
+for (const path in components) {
+    const module = components[path];
+    // Find the exported class
+    for (const key in module) {
+        const exported = (module as any)[key];
+        if (typeof exported === 'function' && (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)) {
+            // Register by export name (usually file name matches class name in our convention, e.g. Button.ts -> Button)
+            console.log(`[Client] Registering component: ${key}`);
+            CossackElement.components[key] = exported;
+        }
+    }
+}
 
 declare global {
   interface Window {

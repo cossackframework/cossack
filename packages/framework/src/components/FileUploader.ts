@@ -1,6 +1,7 @@
 import { html } from "@cossackframework/renderer";
-import { Cossack, Prop, ClientState } from "@cossackframework/core";
+import { Cossack, Component, Prop, ClientState } from "@cossackframework/core";
 
+@Component()
 export class FileUploader extends Cossack {
     @Prop()
     uploading: boolean = false;

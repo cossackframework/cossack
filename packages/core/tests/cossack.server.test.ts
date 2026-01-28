@@ -9,14 +9,11 @@ vi.mock('../src/shared/environment', () => ({
 
 import { Cossack } from '../src/shared/cossack';
 import { State, Server, Client } from '../src/shared/decorators';
-import { renderToString } from '@cossackframework/renderer/server';
+import { renderToString } from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 import type { Context } from 'hono';
 
 // Mock the renderer sub-imports
-vi.mock('@cossackframework/renderer/server', () => ({
-  renderToString: vi.fn((template) => `SSR: ${template.strings.join('')}`),
-}));
 vi.mock('@cossackframework/renderer', () => {
     class CossackElement {
         render() { return null; }
@@ -30,6 +27,7 @@ vi.mock('@cossackframework/renderer', () => {
     }
     return {
         render: vi.fn(),
+        renderToString: vi.fn((template) => `SSR: ${template.strings.join('')}`),
         html: (strings: any, ...values: any[]) => ({ strings, values }),
         CossackElement,
     };

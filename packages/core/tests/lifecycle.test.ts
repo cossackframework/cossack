@@ -12,11 +12,9 @@ import { Task, VisibleTask } from '../src/shared/decorators';
 import * as renderer from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 
-vi.mock('@cossackframework/renderer/server', () => ({
-  renderToString: vi.fn(),
-}));
 vi.mock('@cossackframework/renderer', () => {
     const render = vi.fn();
+    const renderToString = vi.fn();
     class CossackElement {
         render() { return null; }
         requestUpdate() {}
@@ -29,6 +27,7 @@ vi.mock('@cossackframework/renderer', () => {
     }
     return {
         render,
+        renderToString,
         html: (strings: any, ...values: any[]) => ({ strings, values }),
         CossackElement,
     };

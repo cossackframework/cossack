@@ -39,6 +39,14 @@ export function Page(options: PageOptions = {}): ClassDecorator {
   };
 }
 
+/**
+ * Decorator for reusable components. 
+ * Currently behaves like @Page but semantic distinction is important for future tooling.
+ */
+export function Component(options: PageOptions = {}): ClassDecorator {
+    return Page(options);
+}
+
 const noop = () => {};
 
 export interface ServerOptions {

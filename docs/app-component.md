@@ -25,13 +25,13 @@ export class App extends Cossack {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
     }
 
-    render(children: TemplateResult) {
+    render() {
         return html`
             <div id="app-wrapper" class="${this.theme}">
                 <nav>Global Nav</nav>
                 
                 <!-- The current page (and its layouts) are rendered here -->
-                ${children}
+                ${this.children}
                 
                 <GlobalFooter />
             </div>

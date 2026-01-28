@@ -1,6 +1,5 @@
 // src/shared/cossack.ts
-import { renderToString } from '@cossackframework/renderer/server';
-import { html, TemplateResult, CossackElement, isTemplateResult } from '@cossackframework/renderer';
+import { renderToString, html, TemplateResult, CossackElement, isTemplateResult } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
