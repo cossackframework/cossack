@@ -103,9 +103,11 @@ export function createApp() {
                 // Wrap rendering
                 let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                    body = layoutInstances[i]._getWrappedTemplate(body);
+                    layoutInstances[i].children = body;
+                    body = layoutInstances[i]._getWrappedTemplate();
                 }
-                const finalHtml = appInstance._render(body);
+                appInstance.children = body;
+                const finalHtml = appInstance._render();
 
                 // Head Merging
                 const emptyCtx = Cossack.buildHeadContext([]);

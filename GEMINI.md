@@ -2,6 +2,9 @@
 
 This document provides the necessary context for the Gemini AI to act as an effective contributor to the Cossack Framework project.
 
+## Rules
+- Run type checks after code changes: `pnpm tsc --noEmit`
+
 ## 1. High-Level Project Goal
 
 Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. It is heavily inspired by Phoenix Liveview and .NET Blazor. The core goal is to enable developers to write stateful, real-time web applications with a unified syntax that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
@@ -22,9 +25,9 @@ The project is a `pnpm` workspace.
     -   **Key Detail**: This is a pure library. It contains no application-specific logic.
 
 -   **`@cossackframework/renderer`**: The rendering engine.
-    -   **Purpose**: Provides `html` template tag and rendering functions. It has two distinct entry points for different environments.
-    -   **Server Entrypoint**: `packages/renderer/src/server.ts` (exports `renderToString`).
-    -   **Client Entrypoint**: `packages/renderer/src/index.ts` (exports `render`).
+    -   **Purpose**: A custom, Lit-compatible rendering engine designed for Light DOM and SSR. It provides the `CossackElement` base class for components, `html` template tag, and `TemplateResult`.
+    -   **Server Entrypoint**: `packages/renderer/src/server.ts` (exports `renderToString`, `escapeHtml`).
+    -   **Client Entrypoint**: `packages/renderer/src/index.ts` (exports `render`, `CossackElement`, `html`).
 
 -   **`@cossackframework/node-adapter`**: The Node.js runtime adapter.
     -   **Purpose**: Provides the runtime implementation for Node.js environments using `ws` for WebSockets.
@@ -43,7 +46,7 @@ The project is a `pnpm` workspace.
 3.  **Interactivity**: User actions call proxy methods on the client, sending messages over WebSockets.
     *   **Optimistic UI**: Methods decorated with `@Optimistic` run immediately on the client.
 4.  **State Sync**: The Server Runtime processes the action, updates state, and broadcasts partial state objects to all connected clients.
-5.  **Re-render**: Any state update triggers a full-stack re-render and metadata re-merge via a centralized client-side controller.
+5.  **Re-render**: State updates trigger `requestUpdate()` on individual `CossackElement` instances. On the client, a top-level orchestrator intercepts these updates to re-compose the Page/Layout tree and trigger a root app re-render.
 
 ## 5. Development Workflow
 
@@ -63,6 +66,7 @@ The project is a `pnpm` workspace.
 ## 7. Key Features
 
 - **Instant App**: Soft navigation with pre-fetching on hover and a client-side page cache.
+- **Light DOM Components**: Class-based `CossackElement` components (Lit-compatible) that render directly to Light DOM for easy global styling.
 - **Progress Bar**: Automatic visual feedback for background page loads and redirects.
 - **Nested Layouts & Route Groups**: Standardized file-based organization with inheritance.
 - **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.

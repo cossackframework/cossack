@@ -1,5 +1,5 @@
 import { HeadTag } from '@cossackframework/core';
-import { escapeHTML } from '@cossackframework/renderer/server';
+import { escapeHtml } from '@cossackframework/renderer/server';
 
 type RenderRootProps = {
     body: string;
@@ -23,7 +23,7 @@ const renderTag = (tag: HeadTag) => {
     if (['meta', 'link', 'base'].includes(tag.tag)) {
         return `<${tag.tag} ${attrs}>`;
     }
-    const children = tag.children ? escapeHTML(tag.children) : '';
+    const children = tag.children ? escapeHtml(tag.children) : '';
     return `<${tag.tag} ${attrs}>${children}</${tag.tag}>`;
 };
 

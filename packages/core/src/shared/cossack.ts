@@ -1,6 +1,6 @@
 // src/shared/cossack.ts
 import { renderToString } from '@cossackframework/renderer/server';
-import { render, html, type TemplateResult } from '@cossackframework/renderer';
+import { html, TemplateResult, CossackElement } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
 import type { Context } from 'hono';
@@ -16,7 +16,7 @@ export interface CossackOptions {
 import type { AuthenticatedUser } from './user';
 import { RedirectStatusCode } from 'hono/utils/http-status';
 
-export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
+export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     // Standard Properties
     protected container?: Element;
     protected isServer: boolean = isServer;
@@ -57,6 +57,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
 
     // DevTools Metadata (Injected by Vite plugin)
     public static __source?: { file: string };
+
+    constructor() {
+        super();
+        this.autoBindMethods();
+    }
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
         const context: HeadContext = {
@@ -164,13 +169,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
         }
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
         this.isBootstrapping = true;
-        this.container = container;
+        if (typeof container === 'string') {
+            this.container = document.querySelector(container) || undefined;
+        } else {
+            this.container = container;
+        }
+        
         this.user = user;
         this.props = { page };
 
-        this.autoBindMethods();
         this._wrapLifecycleMethods();
 
         if (this.isServer) {
@@ -237,7 +246,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
 
         if (this.container && !this.isServer) {
             this.skipRenderTasks = true;
-            this._render();
+            this.mount(this.container as HTMLElement);
             this.skipRenderTasks = false;
             
             if (!this.isMounted) {
@@ -256,9 +265,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
             const wrapped = async (...args: any[]) => {
                 this.loading.init = (this.loading.init || 0) + 1;
                 if (!this.isServer && this.container) {
-                    this.skipRenderTasks = true;
-                    this._render();
-                    this.skipRenderTasks = false;
+                    this.requestUpdate();
                 }
                 try {
                     return await original.apply(this, args);
@@ -266,9 +273,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                     this.loading.init--;
                     if (this.loading.init <= 0) delete this.loading.init;
                     if (!this.isServer && this.container) {
-                        this.skipRenderTasks = true;
-                        this._render();
-                        this.skipRenderTasks = false;
+                        this.requestUpdate();
                     }
                 }
             };
@@ -372,7 +377,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                             delete this.loading[action];
                         }
                     }
-                    requestAnimationFrame(() => this._render());
+                    this.requestUpdate();
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
@@ -418,14 +423,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                 if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
                     try {
                         (this as any)[optimisticHandlers[name]](...args);
-                        this._render(); 
+                        this.requestUpdate(); 
                     } catch (e) {
                         console.error(`Error in optimistic handler for '${name}':`, e);
                     }
                 }
 
                 this.loading[name] = (this.loading[name] || 0) + 1;
-                this._render();
+                this.requestUpdate();
 
                 try {
                     // Check for files in arguments
@@ -491,7 +496,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                     const progressProp = `${name}Progress`;
                                     if (typeof (this as any)[progressProp] === 'number') {
                                         (this as any)[progressProp] = percentComplete;
-                                        this._render();
+                                        this.requestUpdate();
                                     }
                                 }
                             };
@@ -570,7 +575,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                     console.error(`Error calling server action '${name}':`, error);
                 } finally {
                     delete this.loading[name];
-                    this._render();
+                    this.requestUpdate();
                 }
             };
         }
@@ -590,14 +595,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                     if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
                         try {
                             (this as any)[optimisticHandlers[name]](...args);
-                            this._render(); // Render immediately after optimistic update
+                            this.requestUpdate(); // Render immediately after optimistic update
                         } catch (e) {
                             console.error(`Error in optimistic handler for '${name}':`, e);
                         }
                     }
 
                     this.loading[name] = (this.loading[name] || 0) + 1;
-                    this._render();
+                    this.requestUpdate();
                     
                     const payload = args.filter(arg => typeof arg !== 'object' || arg === null);
                     ws.send(JSON.stringify({
@@ -750,7 +755,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
             Object.defineProperty(this, key, {
                 get: () => privateState.get(key),
                 set: (newValue: any) => {
-                    if (privateState.get(key) !== newValue) {
+                    const oldValue = privateState.get(key);
+                    if (oldValue !== newValue) {
                         privateState.set(key, newValue);
                         
                         // Sync logic for server-connected state
@@ -773,12 +779,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
                                     });
                                 }
                             } else if (!this.isBootstrapping) {
-                                this._render();
+                                this.requestUpdate(key, oldValue);
                             }
                         } else if (clientStateProperties.has(key)) {
                             // Client-only state just triggers a render on the client
                             if (!this.isServer && !this.isBootstrapping) {
-                                this._render();
+                                this.requestUpdate(key, oldValue);
                             }
                         }
                     }
@@ -834,12 +840,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
         }
     }
 
-    public render(children?: TemplateResult): TemplateResult | null { return null; }
+    public render(): TemplateResult | null { return null; }
     public async get(): Promise<any> {}
     public async init(): Promise<any> {}
 
     public head(context: HeadContext): HeadValue {
         return {};
+    }
+
+    // Overriding CossackElement updated to handle head updates
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
+        super.updated(changedProperties);
+        if (!this.isServer) {
+            this.updateHead();
+        }
     }
 
     @Client()
@@ -853,13 +867,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
         Cossack.applyHeadTags(tags);
     }
 
-    public _getWrappedTemplate(children?: TemplateResult): TemplateResult | null {
+    public _getWrappedTemplate(): TemplateResult | null {
         // Special case: check if we should render a loading UI instead of standard output
         if (this.loading.init && typeof (this as any).loadingTemplate === 'function') {
             return (this as any).loadingTemplate();
         }
 
-        let template = this.render(children);
+        let template = this.render();
         
         // Inject devtools markers if source info is present
         // Since __source is injected by the Vite plugin only in DEV mode, 
@@ -879,10 +893,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
             
             // Wrap the template. The new template has 1 value (the original template).
             // The strings array has 2 parts (start marker, end marker).
-            template = {
-                strings: Ctor.__devStrings,
-                values: [template]
-            } as unknown as TemplateResult;
+            template = new TemplateResult(Ctor.__devStrings, [template]);
         }
         return template;
     }
@@ -905,26 +916,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> {
             nav();
         } else {
             this._pendingNavigation = null;
-            this._render();
+            this.requestUpdate();
         }
     }
 
-    public _render(children?: TemplateResult): string {
+    public _render(): string {
         if (!this.isServer && !this.skipRenderTasks) {
             this.runTasks();
         }
         
-        const template = this._getWrappedTemplate(children);
+        const template = this._getWrappedTemplate();
         
         if (!template) {
             return '';
         }
 
-        if (this.container && !this.isServer) {
-            render(template, this.container);
-            this.updateHead();
-            return '';
-        }
         if (this.isServer) {
             return renderToString(template);
         }

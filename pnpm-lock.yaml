@@ -23,7 +23,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^5.0.0
-        version: 5.4.20(@types/node@20.19.19)
+        version: 5.4.20(@types/node@25.0.10)
 
   packages/auth:
     dependencies:
@@ -33,7 +33,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^1.2.2
-        version: 1.6.1(@types/node@20.19.19)(jsdom@24.1.3)
+        version: 1.6.1(@types/node@25.0.10)(happy-dom@20.4.0)(jsdom@24.1.3)
 
   packages/core:
     dependencies:
@@ -73,7 +73,7 @@ importers:
         version: 5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19))
       vitest:
         specifier: ^1.2.2
-        version: 1.6.1(@types/node@20.19.19)(jsdom@24.1.3)
+        version: 1.6.1(@types/node@20.19.19)(happy-dom@20.4.0)(jsdom@24.1.3)
 
   packages/create-cossack-app:
     dependencies:
@@ -119,10 +119,10 @@ importers:
         version: 4.20251004.0
       vite:
         specifier: ^5.0.0
-        version: 5.4.20(@types/node@20.19.19)
+        version: 5.4.20(@types/node@25.0.10)
       vitest:
         specifier: ^1.2.2
-        version: 1.6.1(@types/node@20.19.19)(jsdom@24.1.3)
+        version: 1.6.1(@types/node@25.0.10)(happy-dom@20.4.0)(jsdom@24.1.3)
       wrangler:
         specifier: ^4.0.0
         version: 4.42.0(@cloudflare/workers-types@4.20251004.0)
@@ -144,13 +144,13 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^5.0.0
-        version: 5.4.20(@types/node@20.19.19)
+        version: 5.4.20(@types/node@25.0.10)
       vite-plugin-dts:
         specifier: ^3.9.1
-        version: 3.9.1(@types/node@20.19.19)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19))
+        version: 3.9.1(@types/node@25.0.10)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10))
       vite-tsconfig-paths:
         specifier: ^5.1.4
-        version: 5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19))
+        version: 5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10))
 
   packages/renderer:
     devDependencies:
@@ -165,16 +165,16 @@ importers:
         version: 1.41.0
       vite:
         specifier: ^5.3.5
-        version: 5.4.20(@types/node@20.19.19)
+        version: 5.4.20(@types/node@25.0.10)
       vite-plugin-dts:
         specifier: ^3.9.1
-        version: 3.9.1(@types/node@20.19.19)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19))
+        version: 3.9.1(@types/node@25.0.10)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10))
       vite-tsconfig-paths:
         specifier: ^5.1.4
-        version: 5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19))
+        version: 5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10))
       vitest:
         specifier: ^1.2.2
-        version: 1.6.1(@types/node@20.19.19)(jsdom@24.1.3)
+        version: 1.6.1(@types/node@25.0.10)(happy-dom@20.4.0)(jsdom@24.1.3)
 
 packages:
 
@@ -1319,6 +1319,9 @@ packages:
   '@types/node@20.19.19':
     resolution: {integrity: sha512-pb1Uqj5WJP7wrcbLU7Ru4QtA0+3kAXrkutGiD26wUKzSMgNNaPARTUDQmElUXp64kh3cWdou3Q0C7qwwxqSFmg==}
 
+  '@types/node@25.0.10':
+    resolution: {integrity: sha512-zWW5KPngR/yvakJgGOmZ5vTBemDoSqF3AcV/LrO5u5wTWyEAVVh+IT39G4gtyAkh3CtTZs8aX/yRM82OfzHJRg==}
+
   '@types/tough-cookie@4.0.5':
     resolution: {integrity: sha512-/Ad8+nIOV7Rl++6f1BdKxFSMgmoqEoYbHRpPcx3JEfv8VRsQe9Z4mCXeJBzxs7mbHY/XOZZuXlRNfhpVPbs6ZA==}
 
@@ -1327,6 +1330,9 @@ packages:
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
+
+  '@types/whatwg-mimetype@3.0.2':
+    resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -1731,6 +1737,10 @@ packages:
   gray-matter@4.0.3:
     resolution: {integrity: sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q==}
     engines: {node: '>=6.0'}
+
+  happy-dom@20.4.0:
+    resolution: {integrity: sha512-RDeQm3dT9n0A5f/TszjUmNCLEuPnMGv3Tv4BmNINebz/h17PA6LMBcxJ5FrcqltNBMh9jA/8ufgDdBYUdBt+eg==}
+    engines: {node: '>=20.0.0'}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -2400,6 +2410,9 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici-types@7.16.0:
+    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+
   undici@7.14.0:
     resolution: {integrity: sha512-Vqs8HTzjpQXZeXdpsfChQTlafcMQaaIwnGwLam1wudSSjlJeQ3bw1j+TLPePgrCnCpUXx7Ba5Pdpf5OBih62NQ==}
     engines: {node: '>=20.18.1'}
@@ -2552,6 +2565,10 @@ packages:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
     engines: {node: '>=18'}
     deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-mimetype@4.0.0:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
@@ -3493,6 +3510,14 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
+  '@microsoft/api-extractor-model@7.28.13(@types/node@25.0.10)':
+    dependencies:
+      '@microsoft/tsdoc': 0.14.2
+      '@microsoft/tsdoc-config': 0.16.2
+      '@rushstack/node-core-library': 4.0.2(@types/node@25.0.10)
+    transitivePeerDependencies:
+      - '@types/node'
+
   '@microsoft/api-extractor@7.43.0(@types/node@20.19.19)':
     dependencies:
       '@microsoft/api-extractor-model': 7.28.13(@types/node@20.19.19)
@@ -3502,6 +3527,24 @@ snapshots:
       '@rushstack/rig-package': 0.5.2
       '@rushstack/terminal': 0.10.0(@types/node@20.19.19)
       '@rushstack/ts-command-line': 4.19.1(@types/node@20.19.19)
+      lodash: 4.17.21
+      minimatch: 3.0.8
+      resolve: 1.22.10
+      semver: 7.5.4
+      source-map: 0.6.1
+      typescript: 5.4.2
+    transitivePeerDependencies:
+      - '@types/node'
+
+  '@microsoft/api-extractor@7.43.0(@types/node@25.0.10)':
+    dependencies:
+      '@microsoft/api-extractor-model': 7.28.13(@types/node@25.0.10)
+      '@microsoft/tsdoc': 0.14.2
+      '@microsoft/tsdoc-config': 0.16.2
+      '@rushstack/node-core-library': 4.0.2(@types/node@25.0.10)
+      '@rushstack/rig-package': 0.5.2
+      '@rushstack/terminal': 0.10.0(@types/node@25.0.10)
+      '@rushstack/ts-command-line': 4.19.1(@types/node@25.0.10)
       lodash: 4.17.21
       minimatch: 3.0.8
       resolve: 1.22.10
@@ -3641,6 +3684,17 @@ snapshots:
     optionalDependencies:
       '@types/node': 20.19.19
 
+  '@rushstack/node-core-library@4.0.2(@types/node@25.0.10)':
+    dependencies:
+      fs-extra: 7.0.1
+      import-lazy: 4.0.0
+      jju: 1.4.0
+      resolve: 1.22.10
+      semver: 7.5.4
+      z-schema: 5.0.5
+    optionalDependencies:
+      '@types/node': 25.0.10
+
   '@rushstack/rig-package@0.5.2':
     dependencies:
       resolve: 1.22.10
@@ -3653,9 +3707,25 @@ snapshots:
     optionalDependencies:
       '@types/node': 20.19.19
 
+  '@rushstack/terminal@0.10.0(@types/node@25.0.10)':
+    dependencies:
+      '@rushstack/node-core-library': 4.0.2(@types/node@25.0.10)
+      supports-color: 8.1.1
+    optionalDependencies:
+      '@types/node': 25.0.10
+
   '@rushstack/ts-command-line@4.19.1(@types/node@20.19.19)':
     dependencies:
       '@rushstack/terminal': 0.10.0(@types/node@20.19.19)
+      '@types/argparse': 1.0.38
+      argparse: 1.0.10
+      string-argv: 0.3.2
+    transitivePeerDependencies:
+      - '@types/node'
+
+  '@rushstack/ts-command-line@4.19.1(@types/node@25.0.10)':
+    dependencies:
+      '@rushstack/terminal': 0.10.0(@types/node@25.0.10)
       '@types/argparse': 1.0.38
       argparse: 1.0.10
       string-argv: 0.3.2
@@ -4040,11 +4110,19 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@25.0.10':
+    dependencies:
+      undici-types: 7.16.0
+    optional: true
+
   '@types/tough-cookie@4.0.5': {}
 
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
+
+  '@types/whatwg-mimetype@3.0.2':
+    optional: true
 
   '@types/ws@8.18.1':
     dependencies:
@@ -4522,6 +4600,19 @@ snapshots:
       kind-of: 6.0.3
       section-matter: 1.0.0
       strip-bom-string: 1.0.0
+
+  happy-dom@20.4.0:
+    dependencies:
+      '@types/node': 20.19.19
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      entities: 4.5.0
+      whatwg-mimetype: 3.0.0
+      ws: 8.18.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+    optional: true
 
   has-flag@4.0.0: {}
 
@@ -5439,6 +5530,9 @@ snapshots:
 
   undici-types@6.21.0: {}
 
+  undici-types@7.16.0:
+    optional: true
+
   undici@7.14.0: {}
 
   unenv@2.0.0-rc.21:
@@ -5529,6 +5623,24 @@ snapshots:
       - supports-color
       - terser
 
+  vite-node@1.6.1(@types/node@25.0.10):
+    dependencies:
+      cac: 6.7.14
+      debug: 4.4.3
+      pathe: 1.1.2
+      picocolors: 1.1.1
+      vite: 5.4.20(@types/node@25.0.10)
+    transitivePeerDependencies:
+      - '@types/node'
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
   vite-plugin-dts@3.9.1(@types/node@20.19.19)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19)):
     dependencies:
       '@microsoft/api-extractor': 7.43.0(@types/node@20.19.19)
@@ -5546,6 +5658,23 @@ snapshots:
       - rollup
       - supports-color
 
+  vite-plugin-dts@3.9.1(@types/node@25.0.10)(rollup@4.52.4)(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10)):
+    dependencies:
+      '@microsoft/api-extractor': 7.43.0(@types/node@25.0.10)
+      '@rollup/pluginutils': 5.3.0(rollup@4.52.4)
+      '@vue/language-core': 1.8.27(typescript@5.9.3)
+      debug: 4.4.3
+      kolorist: 1.8.0
+      magic-string: 0.30.21
+      typescript: 5.9.3
+      vue-tsc: 1.8.27(typescript@5.9.3)
+    optionalDependencies:
+      vite: 5.4.20(@types/node@25.0.10)
+    transitivePeerDependencies:
+      - '@types/node'
+      - rollup
+      - supports-color
+
   vite-tsconfig-paths@5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@20.19.19)):
     dependencies:
       debug: 4.4.3
@@ -5553,6 +5682,17 @@ snapshots:
       tsconfck: 3.1.6(typescript@5.9.3)
     optionalDependencies:
       vite: 5.4.20(@types/node@20.19.19)
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
+
+  vite-tsconfig-paths@5.1.4(typescript@5.9.3)(vite@5.4.20(@types/node@25.0.10)):
+    dependencies:
+      debug: 4.4.3
+      globrex: 0.1.2
+      tsconfck: 3.1.6(typescript@5.9.3)
+    optionalDependencies:
+      vite: 5.4.20(@types/node@25.0.10)
     transitivePeerDependencies:
       - supports-color
       - typescript
@@ -5566,7 +5706,16 @@ snapshots:
       '@types/node': 20.19.19
       fsevents: 2.3.3
 
-  vitest@1.6.1(@types/node@20.19.19)(jsdom@24.1.3):
+  vite@5.4.20(@types/node@25.0.10):
+    dependencies:
+      esbuild: 0.21.5
+      postcss: 8.5.6
+      rollup: 4.52.4
+    optionalDependencies:
+      '@types/node': 25.0.10
+      fsevents: 2.3.3
+
+  vitest@1.6.1(@types/node@20.19.19)(happy-dom@20.4.0)(jsdom@24.1.3):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -5590,6 +5739,43 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.19.19
+      happy-dom: 20.4.0
+      jsdom: 24.1.3
+    transitivePeerDependencies:
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+
+  vitest@1.6.1(@types/node@25.0.10)(happy-dom@20.4.0)(jsdom@24.1.3):
+    dependencies:
+      '@vitest/expect': 1.6.1
+      '@vitest/runner': 1.6.1
+      '@vitest/snapshot': 1.6.1
+      '@vitest/spy': 1.6.1
+      '@vitest/utils': 1.6.1
+      acorn-walk: 8.3.4
+      chai: 4.5.0
+      debug: 4.4.3
+      execa: 8.0.1
+      local-pkg: 0.5.1
+      magic-string: 0.30.21
+      pathe: 1.1.2
+      picocolors: 1.1.1
+      std-env: 3.9.0
+      strip-literal: 2.1.1
+      tinybench: 2.9.0
+      tinypool: 0.8.4
+      vite: 5.4.20(@types/node@25.0.10)
+      vite-node: 1.6.1(@types/node@25.0.10)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 25.0.10
+      happy-dom: 20.4.0
       jsdom: 24.1.3
     transitivePeerDependencies:
       - less
@@ -5622,6 +5808,9 @@ snapshots:
   whatwg-encoding@3.1.1:
     dependencies:
       iconv-lite: 0.6.3
+
+  whatwg-mimetype@3.0.0:
+    optional: true
 
   whatwg-mimetype@4.0.0: {}
 

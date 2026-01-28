@@ -65,7 +65,7 @@ export class Tasks extends Cossack {
     private confirmDelete = (taskId: number) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             // Manually set the loading state for the specific task
-            this.loading = { ...this.loading, [`deleteTask_${taskId}`]: true };
+            this.loading = { ...this.loading, [`deleteTask_${taskId}`]: 1 };
             // The user argument is injected by the server, no need to pass it from the client.
             this.deleteTask(taskId);
         }

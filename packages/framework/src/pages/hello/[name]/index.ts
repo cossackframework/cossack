@@ -75,12 +75,12 @@ export class Greeting extends Cossack {
                 <div class="buttons" style="display: flex; gap: 10px;">
                     ${Button({                    
                         '@click': this.incrementFeed,
-                        'disabled': isFeedLoading,
+                        'disabled': !!isFeedLoading,
                     }, html`${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}`)}
                     
                     ${Button({                    
                         '@click': this.incrementNotifications,
-                        'disabled': isNotificationLoading,
+                        'disabled': !!isNotificationLoading,
                     }, html`${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}`)}
                 </div>
             </div>

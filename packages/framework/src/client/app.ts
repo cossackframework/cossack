@@ -96,11 +96,27 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
   }
 
   const appInstance = new App();
-  const originalAppRender = appInstance._render.bind(appInstance);
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
   let isDisplayingLoadingState = false;
+
+  const composeContent = () => {
+    if (!currentPage) return null;
+    let body = (currentPage as any)._getWrappedTemplate();
+    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
+       const layout = currentLayoutInstances[i];
+       layout.children = body;
+       body = (layout as any)._getWrappedTemplate();
+    }
+    return body;
+  }
+
+  const triggerAppUpdate = async () => {
+      appInstance.children = composeContent();
+      await appInstance.requestUpdate();
+      syncHead();
+  };
 
   const syncHead = () => {
     if (!currentPage) return;
@@ -122,18 +138,9 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     Cossack.applyHeadTags(headTags);
   };
 
-  const fullRender = () => {
-    if (!currentPage) return '';
-    let body = (currentPage as any)._getWrappedTemplate();
-    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
-       body = (currentLayoutInstances[i] as any)._getWrappedTemplate(body);
-    }
-    return originalAppRender(body);
-  };
-
-  appInstance._render = fullRender;
   appInstance.updateHead = syncHead;
 
+  // Initial bootstrap without render logic override
   await appInstance.bootstrap({ 
     container: containerEl as Element, 
     initialState: window.__INITIAL_STATE__._app_state,
@@ -169,8 +176,17 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
         if (!instance) {
             const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
             instance = new LComp();
-            instance._render = fullRender;
             instance.updateHead = syncHead;
+            
+            // Hook reactivity
+            const originalRequestUpdate = instance.requestUpdate.bind(instance);
+            instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+                const p = originalRequestUpdate(name, oldValue);
+                await p;
+                await triggerAppUpdate();
+                return true;
+            };
+
             await instance.bootstrap({ container: containerEl as Element, initialState: state, skipInit: true });
             currentLayoutsMap.set(path, instance);
         }
@@ -193,13 +209,22 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       const componentInstance = new PageComponent();
       currentPage = componentInstance;
       
-      componentInstance._render = fullRender;
       componentInstance.updateHead = syncHead;
+
+      // Hook reactivity
+      const originalRequestUpdate = componentInstance.requestUpdate.bind(componentInstance);
+      componentInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+          const p = originalRequestUpdate(name, oldValue);
+          await p;
+          await triggerAppUpdate();
+          return true;
+      };
 
       await componentInstance.bootstrap({ container: containerEl as Element, initialState, skipInit: true });
       componentInstance.updatePath(pathname);
       
-      syncHead();
+      // Perform initial composition and render
+      await triggerAppUpdate();
     }
     isDisplayingLoadingState = false;
   };
@@ -211,7 +236,8 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
         const prevented = await currentPage._checkPreventNavigation();
         if (prevented) {
             currentPage._pendingNavigation = () => navigate(url, true);
-            currentPage._render();
+            // Force re-render to show prevention UI if any
+            await currentPage.requestUpdate(); 
             return false;
         }
     }
@@ -231,9 +257,18 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
           // We swap current page with loading component temporarily
           if (currentPage) currentPage.destroy();
           currentPage = loadingInstance;
-          loadingInstance._render = fullRender;
+          
+          // Hook reactivity for loading component too
+          const originalRequestUpdate = loadingInstance.requestUpdate.bind(loadingInstance);
+          loadingInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+              const p = originalRequestUpdate(name, oldValue);
+              await p;
+              await triggerAppUpdate();
+              return true;
+          };
+
           await loadingInstance.bootstrap({ container: containerEl as Element });
-          syncHead();
+          await triggerAppUpdate();
       }
 
       const { state } = await fetchPage(url);
