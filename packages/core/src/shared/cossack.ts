@@ -1,13 +1,14 @@
 // src/shared/cossack.ts
-import { 
-    renderToString, 
-    html, 
-    TemplateResult, 
-    CossackElement, 
-    isTemplateResult, 
+import {
+    renderToString,
+    html,
+    TemplateResult,
+    CossackElement,
+    isTemplateResult,
     createContext,
     pushCurrentInstance,
-    popCurrentInstance
+    popCurrentInstance,
+    instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
@@ -1108,6 +1109,46 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._render();
     }
     
+    // Override performUpdate to wrap template with devtools markers for client-side rendering
+    protected async performUpdate() {
+        await Promise.resolve();
+        let shouldUpdate = false;
+        const changedProperties = (this as any).__changedProperties;
+        const controllers = (this as any).__controllers;
+        try {
+            shouldUpdate = this.shouldUpdate(changedProperties);
+            if (shouldUpdate) {
+                // Controller hostUpdate
+                controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
+
+                this.willUpdate(changedProperties);
+
+                this.resetRenderState();
+                pushCurrentInstance(this);
+
+                const template = this._getWrappedTemplate();
+
+                (this as any).__notifyListeners(template);
+
+                popCurrentInstance();
+
+                this.updated(changedProperties);
+
+                // Controller hostUpdated
+                controllers.forEach((c: any) => c.hostUpdated && c.hostUpdated());
+            }
+        } catch (e) {
+            console.error('Error during update:', e);
+            if (instanceStack[instanceStack.length - 1] === this) {
+                popCurrentInstance();
+            }
+        }
+
+        (this as any).__changedProperties = new Map();
+        (this as any).__updatePromise = null;
+        return shouldUpdate;
+    }
+
     // Lifecycle hooks
     public onMount(): void {
         this.setupVisibleTasks();

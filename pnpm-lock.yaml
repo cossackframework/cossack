@@ -12,19 +12,6 @@ importers:
         specifier: ^5.0.4
         version: 5.9.3
 
-  examples/todo-app:
-    dependencies:
-      '@cossackframework/renderer':
-        specifier: workspace:*
-        version: link:../../packages/renderer
-    devDependencies:
-      typescript:
-        specifier: ^5.0.0
-        version: 5.9.3
-      vite:
-        specifier: ^5.0.0
-        version: 5.4.20(@types/node@25.0.10)
-
   packages/auth:
     dependencies:
       hono:

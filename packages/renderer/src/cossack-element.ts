@@ -30,7 +30,7 @@ export interface ReactiveControllerHost {
 }
 
 // Global stack to track the current rendering component
-const instanceStack: CossackElement[] = [];
+export const instanceStack: CossackElement[] = [];
 
 export const pushCurrentInstance = (instance: CossackElement) => instanceStack.push(instance);
 export const popCurrentInstance = () => instanceStack.pop();
