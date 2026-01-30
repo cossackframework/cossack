@@ -47,49 +47,55 @@ export abstract class CossackDurableObject {
         if (this.componentInstance) {
             return;
         }
-        const storedData = await this.state.storage.get(['componentName', 'params', 'componentState', 'page', 'providerName']);
-        const componentName = storedData.get('componentName') as string | undefined;
+        const storedData = await this.state.storage.get(['componentPath', 'url', 'params', 'componentState', 'providerName']);
+        const componentPath = storedData.get('componentPath') as string | undefined;
+        const url = storedData.get('url') as string | undefined;
         const params = storedData.get('params') as Record<string, string> | undefined;
         const componentState = storedData.get('componentState') as Record<string, any> | undefined;
-        const page = storedData.get('page') as string | undefined;
         const providerName = storedData.get('providerName') as string | undefined;
-    
-        if (!componentName || !page || !providerName) {
-            return; // Not an error, just means it's a fresh DO.
+
+        if (!componentPath || !url || !providerName) {
+            return;
         }
-        
-        const componentInstance = await this.createAndBootstrapComponent(componentName, params || {}, page, providerName);
+
+        const componentInstance = await this.createAndBootstrapComponent(componentPath, params || {}, url, providerName);
         if (componentInstance) {
             if (componentState) {
-                // Populate _restoredChildrenState before re-rendering
-                if (componentState._children) {
-                    (componentInstance as any)._restoredChildrenState = componentState._children;
+                // Restore children state registry
+                if (componentState.children) {
+                    (componentInstance as any)._childrenStateRegistry = componentState.children;
                 }
-                
-                for (const key in componentState) {
-                    if (key === '_children') continue;
-                    (componentInstance as any)[key] = componentState[key];
+
+                // Restore public state from SerializedComponentState
+                const publicState = componentState.public || {};
+                for (const key in publicState) {
+                    (componentInstance as any)[key] = publicState[key];
                 }
             }
             // Rebuild the component tree to populate activeComponents
             componentInstance._render();
-            
+
             this.componentInstance = componentInstance;
-            // State already restored from storage - skip init() to prevent reset
         }
     }
 
     async fetch(request: Request) {
-        await this.ensureComponentInstance();
+        const url = new URL(request.url);
 
-        const componentName = request.headers.get('X-Component-Name');
-        const providerName = request.headers.get('X-Provider-Name');
-
-        if (!componentName || !providerName) {
-            return new Response('Headers X-Component-Name and X-Provider-Name are required', { status: 400 });
+        // Handle HTTP state requests for SSR
+        if (request.method === 'GET' && url.pathname === '/state') {
+            return this.handleStateRequest(request);
         }
 
-        const url = new URL(request.url);
+        await this.ensureComponentInstance();
+
+        const componentPath = request.headers.get('X-Component-Path');
+        const providerName = request.headers.get('X-Provider-Name');
+
+        if (!componentPath || !providerName) {
+            return new Response('Headers X-Component-Path and X-Provider-Name are required', { status: 400 });
+        }
+
         const params: Record<string, string> = {};
         url.searchParams.forEach((value, key) => {
             params[key] = value;
@@ -101,7 +107,7 @@ export abstract class CossackDurableObject {
         }
 
         if (!this.componentInstance) {
-            const componentInstance = await this.createAndBootstrapComponent(componentName, params, page, providerName);
+            const componentInstance = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
             if (!componentInstance) {
                 return new Response('Failed to initialize component', { status: 500 });
             }
@@ -110,7 +116,9 @@ export abstract class CossackDurableObject {
             await this.componentInstance.init();
 
             const initialState = componentInstance.getInitialState();
-            await this.state.storage.put({ componentName, params, componentState: initialState, page, providerName });
+            // Store the full URL for consistent DO ID generation
+            const fullUrl = `${page}${url.search}`;
+            await this.state.storage.put({ componentPath, url: fullUrl, params, componentState: initialState, providerName });
         }
 
         const userId = request.headers.get('X-User-ID');
@@ -123,13 +131,48 @@ export abstract class CossackDurableObject {
         server.serializeAttachment({ channel, user });
         this.state.acceptWebSocket(server);
 
+        // Send only the public state to the client (not the entire SerializedComponentState)
         const currentState = this.componentInstance.getInitialState();
-        server.send(JSON.stringify({ type: 'state-update', state: currentState }));
+        server.send(JSON.stringify({ type: 'state-update', state: currentState.public }));
 
         return new Response(null, { status: 101, webSocket: client });
     }
 
     abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
+
+    /**
+     * Handle HTTP requests to the DO (for querying state during SSR)
+     * Supports a GET endpoint to retrieve the current component state
+     */
+    async handleStateRequest(request: Request): Promise<Response> {
+        const url = new URL(request.url);
+
+        // Extract component context from query params for on-demand initialization
+        const componentPath = url.searchParams.get('componentPath');
+        const paramsStr = url.searchParams.get('params');
+        const fullUrl = url.searchParams.get('url');
+        const providerName = url.searchParams.get('providerName');
+
+        // If DO hasn't been initialized yet, create it on-demand with the provided context
+        if (!this.componentInstance && componentPath && fullUrl && providerName) {
+            const params = paramsStr ? JSON.parse(paramsStr) : {};
+            await this.createAndBootstrapComponent(componentPath, params, fullUrl, providerName);
+        }
+
+        await this.ensureComponentInstance();
+        if (!this.componentInstance) {
+            return new Response(JSON.stringify({ error: 'Component not initialized' }), { status: 404 });
+        }
+
+        if (url.pathname === '/state') {
+            const currentState = this.componentInstance.getInitialState();
+            return new Response(JSON.stringify(currentState), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        return new Response('Not found', { status: 404 });
+    }
 
     async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
         await this.ensureComponentInstance();
