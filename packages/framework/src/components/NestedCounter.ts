@@ -7,9 +7,7 @@ export class NestedCounter extends Cossack {
 
     @Server()
     increment() {
-        console.log(`[NestedCounter] ORIGINAL increment method called - THIS MEANS PROXY FAILED! Count: ${this.count}`);
         this.count++;
-        console.log(`[NestedCounter] count incremented to ${this.count}`);
     }
 
     render() {

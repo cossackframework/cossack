@@ -7,12 +7,28 @@ const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
 export interface CossackPagesOptions {
   mode?: string;
+  ssr?: boolean;
 }
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
+  // Check for SSR in multiple ways since mode can be overridden
+  const isSsr = options.ssr === true || options.mode === 'ssr' ||
+                 (typeof process !== 'undefined' && process.env?.VITE_BUILD_SSR === 'true');
+
+  // Use a closure variable to store SSR detection from config hook
+  let detectedSsr = false;
+
   return {
     name: 'cossack-pages',
     enforce: 'pre',
+    config(config, { command }) {
+      // Detect SSR build from config (build.ssr: true)
+      const isSsrBuild = config.build?.ssr === true;
+      if (isSsrBuild) {
+        detectedSsr = true;
+      }
+      return undefined;
+    },
     resolveId(id) {
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
@@ -20,11 +36,23 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     load(id) {
       if (id === resolvedVirtualModuleId) {
+        // Check if SSR was detected in config hook
+        const finalIsSsr = isSsr || detectedSsr;
+
+        // SSR build: eager loading (synchronous access needed for server routes)
+        // Client build: lazy loading (code splitting for performance)
         return `
-          const pages = import.meta.glob(['/src/pages/**/index.ts', '/src/pages/**/index.mdx', '/src/pages/api/**/*.ts'], { eager: true });
+          const pages = import.meta.glob(['/src/pages/**/index.ts', '/src/pages/**/index.mdx']${finalIsSsr ? ', { eager: true }' : ''});
+
+          // Layouts: always eager (small, shared, needed immediately)
           const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
+
+          // Loading states: always eager (small, needed immediately for UX)
           const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });
+
+          // Components: always eager (typically small UI components)
           const components = import.meta.glob('/src/components/**/*.ts', { eager: true });
+
           export default { pages, layouts, loadings, components };
         `;
       }

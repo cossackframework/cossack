@@ -98,6 +98,48 @@ export function createApp() {
                 const pageInstance = new PageComponent();
                 const layoutPaths = getLayoutStack(path);
 
+                // For durable-object transport, query the DO for existing state before SSR
+                let doInitialState: any = undefined;
+                if (pageOptions?.transport === 'durable-object') {
+                    try {
+                        const doBinding = c.env.COSSACK_OBJECT;
+                        // Use the full URL (path + query string) for DO ID
+                        // This ensures different states for:
+                        // - /hello/tan vs /hello/trang (dynamic routes)
+                        // - /items?page=1 vs /items?page=2 (query params)
+                        const id = doBinding.idFromName(c.req.url);
+                        const stub = doBinding.get(id);
+
+                        // Build query params for on-demand DO initialization
+                        // Pass the file path since the DO registry is keyed by file path
+                        const queryParams = new URLSearchParams({
+                            componentPath: path,
+                            url: c.req.url,
+                            providerName: 'page',
+                            params: JSON.stringify(c.req.param() || {}),
+                        });
+
+                        // Query the DO for current state via HTTP
+                        const stateRequest = new Request(`http://dummy.local/state?${queryParams.toString()}`, {
+                            method: 'GET',
+                        });
+                        const stateResponse = await stub.fetch(stateRequest);
+                        if (stateResponse.ok) {
+                            const responseData = await stateResponse.json();
+                            // Extract public state from SerializedComponentState
+                            if (responseData.public) {
+                                doInitialState = responseData.public;
+                            } else if (!responseData.error) {
+                                // If no public field but no error, use the response directly
+                                doInitialState = responseData;
+                            }
+                        }
+                    } catch (e) {
+                        // DO might not exist yet, or other error - proceed with default state
+                        console.log('[Cossack] Could not query DO state:', e);
+                    }
+                }
+
                 // Bootstrap App
                 await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
 
@@ -111,8 +153,8 @@ export function createApp() {
                     layoutStates[lPath] = lInst.getInitialState();
                 }
 
-                // Bootstrap Page
-                await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+                // Bootstrap Page with retrieved DO initial state (if any)
+                await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path, initialState: doInitialState });
                 
                 // Force render to populate registry
                 pageInstance._render();
@@ -139,9 +181,28 @@ export function createApp() {
                 const appHeadValue = appInstance.head(finalHeadContext);
                 const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
 
-                const finalInitialState = { 
-                    ...pageInstance.getInitialState(),
-                    componentPath: path,
+                const pageInitialState = pageInstance.getInitialState();
+
+                // For durable-object transport, add the DO ID to providerTargets
+                // Also add componentPath to metadata for client WebSocket connections
+                if (pageOptions?.transport === 'durable-object') {
+                    const doBinding = c.env.COSSACK_OBJECT;
+                    // Use the full URL for DO ID so query params create separate DOs
+                    const doId = doBinding.idFromName(c.req.url);
+                    // Convert DurableObjectId to string for client-side use
+                    pageInitialState.providerTargets = {
+                        ...(pageInitialState.providerTargets || {}),
+                        page: doId.toString()
+                    };
+                    // Add componentPath to metadata for client WebSocket connections
+                    if (pageInitialState.metadata) {
+                        pageInitialState.metadata.componentPath = path;
+                    }
+                }
+
+                const finalInitialState = {
+                    ...pageInitialState,
+                    componentPath: path,  // Keep at top level for backward compatibility
                     componentRouteId: routePathToIdMap.get(path),
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
@@ -167,14 +228,14 @@ export function createApp() {
         const user = c.get('user');
         if (!user) return new Response('Unauthorized', { status: 401 });
         const { provider, id: durableObjectId } = c.req.param();
-        const componentId = c.req.query('componentId');
-        if (!componentId) return new Response('componentId query parameter is required', { status: 400 });
+        const componentPath = c.req.query('componentPath');
+        if (!componentPath) return new Response('componentPath query parameter is required', { status: 400 });
         const doBinding = c.env.COSSACK_OBJECT;
         const id = doBinding.idFromString(durableObjectId);
         const stub = doBinding.get(id);
         const request = new Request(c.req.raw);
         request.headers.set('X-User-ID', user.id);
-        request.headers.set('X-Component-Name', componentId);
+        request.headers.set('X-Component-Path', componentPath);
         request.headers.set('X-Provider-Name', provider);
         request.headers.set('X-User-Data', JSON.stringify(user));
         return await stub.fetch(request);

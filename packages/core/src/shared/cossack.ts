@@ -1,13 +1,14 @@
 // src/shared/cossack.ts
-import { 
-    renderToString, 
-    html, 
-    TemplateResult, 
-    CossackElement, 
-    isTemplateResult, 
+import {
+    renderToString,
+    html,
+    TemplateResult,
+    CossackElement,
+    isTemplateResult,
     createContext,
     pushCurrentInstance,
-    popCurrentInstance
+    popCurrentInstance,
+    instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
@@ -18,6 +19,155 @@ import { HeadTag, HeadContext, HeadValue } from './head';
 import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
 
 export const RootContext = createContext<Cossack | null>(null);
+
+/**
+ * Lifecycle phases for explicit state management and preventing invalid transitions.
+ */
+export enum LifecyclePhase {
+    /** Component is being constructed */
+    Creating = 'Creating',
+    /** bootstrap() is being called (not yet connected to DOM) */
+    Bootstrapping = 'Bootstrapping',
+    /** Component is connected to DOM and ready */
+    Mounted = 'Mounted',
+    /** An update is in progress (willUpdate) */
+    Updating = 'Updating',
+    /** Component has been destroyed */
+    Destroyed = 'Destroyed',
+}
+
+/**
+ * Unified state management interface.
+ * Separates concerns between public/shared state, internal/private state, and children state.
+ */
+export interface ComponentState {
+    /** Public state that is synced between server and client (decorated with @State()) */
+    public: Record<string, unknown>;
+    /** Internal state that lives only on the client (decorated with @ClientState()) */
+    internal: Record<string, unknown>;
+    /** Nested children component states */
+    children: Record<string, SerializedComponentState>;
+}
+
+/**
+ * Serialized state format for transmission between server and client.
+ * Contains both the state values and metadata needed for hydration.
+ */
+export interface SerializedComponentState {
+    /** Public state values */
+    public: Record<string, unknown>;
+    /** Internal state values (only present for client-side restoration) */
+    internal?: Record<string, unknown>;
+    /** Metadata needed for initialization */
+    metadata?: {
+        componentId: string;
+        componentPath?: string;
+        pathname?: string;
+        params?: Record<string, string>;
+        user?: unknown;
+    };
+    /** Server methods metadata for proxy setup */
+    serverMethods?: Array<{ name: string; channel: string; provider: string }>;
+    /** Provider targets for WebSocket connections */
+    providerTargets?: Record<string, string>;
+    /** Nested children states */
+    children?: Record<string, SerializedComponentState>;
+    /** Component route ID for HTTP transport */
+    componentRouteId?: string;
+}
+
+/**
+ * Internal state container for a component.
+ * This is the single source of truth for all component state.
+ */
+class StateContainer {
+    private _publicState = new Map<string, unknown>();
+    private _internalState = new Map<string, unknown>();
+    private _initializedKeys = new Set<string>();
+
+    /** Get all public state as a plain object */
+    getPublicState(): Record<string, unknown> {
+        return Object.fromEntries(this._publicState);
+    }
+
+    /** Get all internal state as a plain object */
+    getInternalState(): Record<string, unknown> {
+        return Object.fromEntries(this._internalState);
+    }
+
+    /** Get a public state value */
+    getPublic(key: string): unknown {
+        return this._publicState.get(key);
+    }
+
+    /** Get an internal state value */
+    getInternal(key: string): unknown {
+        return this._internalState.get(key);
+    }
+
+    /** Set a public state value */
+    setPublic(key: string, value: unknown): void {
+        this._publicState.set(key, value);
+        this._initializedKeys.add(key);
+    }
+
+    /** Set an internal state value */
+    setInternal(key: string, value: unknown): void {
+        this._internalState.set(key, value);
+        this._initializedKeys.add(key);
+    }
+
+    /** Check if a key has been initialized */
+    isInitialized(key: string): boolean {
+        return this._initializedKeys.has(key);
+    }
+
+    /** Check if this container has any public state */
+    hasPublicState(): boolean {
+        return this._publicState.size > 0;
+    }
+
+    /** Check if this container has any internal state */
+    hasInternalState(): boolean {
+        return this._internalState.size > 0;
+    }
+}
+
+/**
+ * Internal interfaces for type-safe property access.
+ * These define the shape of internal properties and methods that were previously accessed via `as any`.
+ */
+
+/** Dynamic method/function type that can be called with any arguments */
+type DynamicFunction = (...args: unknown[]) => unknown;
+
+/** Map of component methods by name */
+type ComponentMethods = Record<string, DynamicFunction>;
+
+/** Internal properties from CossackElement that need to be accessed */
+interface CossackElementInternal {
+    /** Parent component in the render tree */
+    __parent?: CossackElement & { registerComponent?(comp: Cossack): void };
+    /** Changed properties pending update */
+    __changedProperties: Map<string | number | symbol, unknown>;
+    /** Update promise for concurrent updates */
+    __updatePromise: Promise<boolean> | null;
+    /** Controllers attached to this element */
+    __controllers: unknown[];
+    /** Notify listeners of template changes */
+    __notifyListeners(template: TemplateResult | null): void;
+}
+
+/** Internal state properties that exist on component instances */
+interface CossackInternalState {
+    /** Initial state loaded from window for hydration */
+    __INITIAL_STATE__?: SerializedComponentState;
+}
+
+/** Dynamic property access interface for state properties */
+interface DynamicPropertyAccess {
+    [key: string]: unknown;
+}
 
 export interface CossackOptions {
   Channels?: string;
@@ -53,7 +203,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     // Component Registry (Server-Side mostly)
     public activeComponents: Map<string, Cossack> = new Map();
-    private _restoredChildrenState: Record<string, any> = {};
+
+    // Unified State Management
+    private _stateContainer = new StateContainer();
+    /** Serialized children state for restoration during hydration */
+    private _childrenStateRegistry: Record<string, SerializedComponentState> = {};
 
     // Track the current page component (client-side only)
     private _currentPage?: Cossack;
@@ -86,6 +240,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
 
+    // Lifecycle phase management
+    protected _phase: LifecyclePhase = LifecyclePhase.Creating;
+    private _phaseTransitionStack: LifecyclePhase[] = [];
+
     // Navigation blocking state
     public _pendingNavigation: (() => void) | null = null;
 
@@ -99,25 +257,48 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     connectedCallback() {
-        // Register first so parent can provide restored child state
-        this.registerSelf();
-        this.initializeState();
-        super.connectedCallback();
+        // Transition to Mounted phase from Creating phase
+        this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
+
+        try {
+            // Register first so parent can provide restored child state
+            this.registerSelf();
+            this.initializeState();
+            super.connectedCallback();
+        } finally {
+            // Restore phase after lifecycle complete
+            this._restorePhase();
+        }
     }
 
     willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
-        // Don't call registerSelf on updates - it's only for initial registration
-        // This prevents re-initializing with old state from restoredChildrenState
-        this.initializeState();
-        super.willUpdate(changedProperties);
+        // Transition to Updating phase from Creating, Bootstrapping, or Mounted phase
+        // This allows willUpdate to be called during:
+        // - SSR: bootstrap() → render() → willUpdate() (from Creating/Bootstrapping)
+        // - Client: connectedCallback() → willUpdate() (from Mounted)
+        this._transitionToPhase(LifecyclePhase.Updating, [
+            LifecyclePhase.Creating,
+            LifecyclePhase.Bootstrapping,
+            LifecyclePhase.Mounted
+        ]);
+
+        try {
+            // Don't call registerSelf on updates - it's only for initial registration
+            // This prevents re-initializing with old state from childrenStateRegistry
+            this.initializeState();
+            super.willUpdate(changedProperties);
+        } finally {
+            // Restore phase after update complete
+            this._restorePhase();
+        }
     }
 
     private registerSelf() {
         // Use __parent directly instead of RootContext
         // RootContext points to the App component, but we need the actual rendering parent
-        const parent = (this as any).__parent;
-        if (parent && parent !== this && this._id && typeof parent.registerComponent === 'function') {
-            parent.registerComponent(this);
+        const parent = this.getParentComponent();
+        if (parent && parent !== this && this._id && typeof (parent as any).registerComponent === 'function') {
+            (parent as any).registerComponent(this);
         } else {
             // Fall back to RootContext for root-level components
             const root = this.consume(RootContext);
@@ -131,16 +312,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // If this component doesn't have the child state but is the App component,
         // it might be a client-side render where the actual parent is in the rendering tree.
         // Try to find the actual parent component that has the child state.
-        if (!this._restoredChildrenState[component._id] && this._id === 'root') {
+        if (!this._childrenStateRegistry[component._id] && this._id === 'root') {
             // Check current page first (if it exists and has the child state)
-            if (this._currentPage && this._currentPage._restoredChildrenState && this._currentPage._restoredChildrenState[component._id]) {
+            if (this._currentPage && this._currentPage._childrenStateRegistry && this._currentPage._childrenStateRegistry[component._id]) {
                 this._currentPage.registerComponent(component);
                 return;
             }
 
             // Search through activeComponents to find the component that should have this child
             for (const [id, comp] of this.activeComponents) {
-                if (comp._restoredChildrenState && comp._restoredChildrenState[component._id]) {
+                if (comp._childrenStateRegistry && comp._childrenStateRegistry[component._id]) {
                     comp.registerComponent(component);
                     return;
                 }
@@ -149,8 +330,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         if (component._id) {
             this.activeComponents.set(component._id, component);
-            if (this._restoredChildrenState[component._id]) {
-                component.initializeState(this._restoredChildrenState[component._id]);
+            const childState = this._childrenStateRegistry[component._id];
+            if (childState) {
+                component.initializeState(childState);
             }
         }
     }
@@ -261,15 +443,127 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         for (const name of propertyNames) {
             const descriptor = Object.getOwnPropertyDescriptor(proto, name);
             if (descriptor && typeof descriptor.value === 'function' && name !== 'constructor') {
-                (this as any)[name] = descriptor.value.bind(this);
+                this.setProperty(name, descriptor.value.bind(this));
             }
         }
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
-        this.isBootstrapping = true;
+    /**
+     * Transition to a new lifecycle phase with validation.
+     * Prevents invalid state transitions that could cause bugs.
+     */
+    private _transitionToPhase(newPhase: LifecyclePhase, allowedFrom: LifecyclePhase[]): void {
+        if (this._phase === LifecyclePhase.Destroyed) {
+            throw new Error(`[Cossack] Cannot transition from Destroyed phase. Component has been destroyed.`);
+        }
 
-        if (!this._id) this._id = 'root';
+        if (!allowedFrom.includes(this._phase)) {
+            throw new Error(
+                `[Cossack] Invalid phase transition from ${this._phase} to ${newPhase}. ` +
+                `Allowed transitions: ${allowedFrom.join(', ')}.`
+            );
+        }
+
+        // Push current phase to stack for restoration
+        this._phaseTransitionStack.push(this._phase);
+        this._phase = newPhase;
+    }
+
+    /**
+     * Restore the previous lifecycle phase.
+     * Used when a lifecycle operation completes.
+     */
+    private _restorePhase(): void {
+        const previousPhase = this._phaseTransitionStack.pop();
+        if (previousPhase !== undefined) {
+            this._phase = previousPhase;
+        }
+    }
+
+    /**
+     * Check if the component is in a specific lifecycle phase.
+     */
+    protected isInPhase(phase: LifecyclePhase): boolean {
+        return this._phase === phase;
+    }
+
+    /**
+     * Check if the component is in one of the specified lifecycle phases.
+     */
+    protected isInAnyPhase(phases: LifecyclePhase[]): boolean {
+        return phases.includes(this._phase);
+    }
+
+    /**
+     * Get the current lifecycle phase for debugging purposes.
+     */
+    public getPhase(): LifecyclePhase {
+        return this._phase;
+    }
+
+    // ========== Type-safe internal property access helpers ==========
+
+    /**
+     * Get parent component from the render tree.
+     */
+    protected getParentComponent(): CossackElement | undefined {
+        return (this as unknown as CossackElementInternal).__parent;
+    }
+
+    /**
+     * Get a method by name with type-safe function access.
+     * Returns undefined if the method doesn't exist or isn't a function.
+     */
+    protected getMethod(name: string): DynamicFunction | undefined {
+        const value = (this as unknown as DynamicPropertyAccess)[name];
+        return typeof value === 'function' ? (value as DynamicFunction) : undefined;
+    }
+
+    /**
+     * Check if a method exists on this component.
+     */
+    protected hasMethod(name: string): boolean {
+        return typeof (this as unknown as DynamicPropertyAccess)[name] === 'function';
+    }
+
+    /**
+     * Get a property value by name.
+     */
+    protected getProperty(name: string): unknown {
+        return (this as unknown as DynamicPropertyAccess)[name];
+    }
+
+    /**
+     * Set a property value by name.
+     */
+    protected setProperty(name: string, value: unknown): void {
+        (this as unknown as DynamicPropertyAccess)[name] = value;
+    }
+
+    /**
+     * Get the initial state from window (client-side only).
+     */
+    protected getInitialStateFromWindow(): SerializedComponentState | undefined {
+        if (typeof window === 'undefined') return undefined;
+        const win = window as unknown as CossackInternalState;
+        return win.__INITIAL_STATE__;
+    }
+
+    /**
+     * Get internal element properties from CossackElement base class.
+     */
+    protected getElementInternal(): CossackElementInternal {
+        return this as unknown as CossackElementInternal;
+    }
+
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+        // Transition to Bootstrapping phase from Creating phase
+        this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
+
+        try {
+            this.isBootstrapping = true;
+
+            if (!this._id) this._id = 'root';
 
         if (typeof container === 'string') {
             this.container = document.querySelector(container) || undefined;
@@ -291,15 +585,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this._cossack_provider_name = providerName;
             this.initializeProviders();
         } else {
-            const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
-            this.user = clientInitialState?.user;
-            const clientParams = clientInitialState?.params || {};
-            this._cossack_path = clientInitialState?.pathname || window.location.pathname;
+            const clientInitialState = initialState || this.getInitialStateFromWindow();
+            // Access metadata from the new state structure
+            const metadata = clientInitialState?.metadata || {};
+            this.user = metadata.user;
+            const clientParams = metadata.params || {};
+            this._cossack_path = metadata.pathname || window.location.pathname;
 
+            // Capture component reference for the getter
+            const component = this;
             const hydratedContext: HydratedContext = {
                 req: {
                     param: (key?: string) => key ? clientParams[key] : clientParams,
-                    get path() { return (this as any)._component._cossack_path; },
+                    get path() { return (this as any)._component?._cossack_path || component._cossack_path; },
                     query: (key?: string) => {
                          const url = new URL(window.location.href);
                          if (key) return url.searchParams.get(key);
@@ -325,26 +623,27 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         this.initializeState(initialState);
 
-        if (initialState?._children) {
-            this._restoredChildrenState = initialState._children;
+        // Restore children state registry for nested component initialization
+        if (initialState?.children) {
+            this._childrenStateRegistry = initialState.children;
         }
 
         // Run tasks after state initialization
         await this.runTasks();
 
-                        if (this.isServer) {
-                            this.proxyClientMethods();
-                        } else {
-                            const clientInitialState = initialState || (window as any).__INITIAL_STATE__;
-                            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+        if (this.isServer) {
+            this.proxyClientMethods();
+        } else {
+            const clientInitialState = initialState || this.getInitialStateFromWindow();
+            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
 
-                            if (pageOptions?.transport === 'http') {
-                                this.proxyHttpMethods(clientInitialState?.serverMethods || []);
-                            } else {
-                                this.connectWebSocket();
-                                this.proxyServerMethods(clientInitialState?.serverMethods || []);
-                            }
-                        }
+            if (pageOptions?.transport === 'http') {
+                this.proxyHttpMethods(clientInitialState?.serverMethods || []);
+            } else {
+                this.connectWebSocket();
+                this.proxyServerMethods(clientInitialState?.serverMethods || []);
+            }
+        }
 
         // Perform initialization (wrapped hooks)
         await this.get();
@@ -358,19 +657,23 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.skipRenderTasks = true;
             this.mount(this.container as HTMLElement);
             this.skipRenderTasks = false;
-            
+
             if (!this.isMounted) {
                 this.isMounted = true;
                 this.onMount();
             }
         }
+        } finally {
+            // Restore phase after bootstrap complete
+            this._restorePhase();
+        }
     }
 
     private _wrapLifecycleMethods() {
         const wrap = (methodName: 'init' | 'get') => {
-            const original = (this as any)[methodName];
-            if (typeof original !== 'function') return;
-            if (original.__cossack_wrapped) return;
+            const original = this.getMethod(methodName);
+            if (!original) return;
+            if ((original as any).__cossack_wrapped) return;
 
             const wrapped = async (...args: any[]) => {
                 this.loading.init = (this.loading.init || 0) + 1;
@@ -378,7 +681,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     this.requestUpdate();
                 }
                 try {
-                    return await original.apply(this, args);
+                    return await (original as any).apply(this, args);
                 } finally {
                     this.loading.init--;
                     if (this.loading.init <= 0) delete this.loading.init;
@@ -387,8 +690,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     }
                 }
             };
-            wrapped.__cossack_wrapped = true;
-            (this as any)[methodName] = wrapped;
+            (wrapped as any).__cossack_wrapped = true;
+            this.setProperty(methodName, wrapped);
         };
 
         wrap('init');
@@ -409,10 +712,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async executeAction(action: string, payload: any[], user: any, clientContext: unknown) {
-        if (typeof (this as any)[action] === 'function') {
+        const actionMethod = this.getMethod(action);
+        if (actionMethod) {
             this._cossack_ws_context = clientContext;
             try {
-                await (this as any)[action](...(payload || []), user);
+                await (actionMethod as any)(...(payload || []), user);
             } finally {
                 this._cossack_ws_context = undefined;
                 const ws = clientContext as WebSocket;
@@ -445,23 +749,24 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     @Client()
     private connectWebSocket() {
-        const initialState = (window as any).__INITIAL_STATE__;
+        const initialState = this.getInitialStateFromWindow();
         const providerTargets = initialState?.providerTargets || {};
 
         for (const providerName in providerTargets) {
             const target = providerTargets[providerName];
-            
-            const componentId = initialState?.componentId;
-            if (!componentId) {
-                console.error('[Cossack] Cannot connect WebSocket: componentId not found in initial state.');
+
+            // Access metadata from the new state structure
+            const componentPath = initialState?.metadata?.componentPath;
+            if (!componentPath) {
+                console.error('[Cossack] Cannot connect WebSocket: componentPath not found in initial state.');
                 continue;
             }
-            
-            const pathname = initialState?.pathname;
+
+            const pathname = initialState?.metadata?.pathname;
             const params = new URLSearchParams({
-                componentId,
+                componentPath,
                 pathname: pathname || '',
-                ...initialState?.params,
+                ...(initialState?.metadata?.params || {}),
             }).toString();
 
             const wsUrl = `/ws/${providerName}/${target}?${params}`;
@@ -475,9 +780,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
                 const data = JSON.parse(event.data);
                 if (data.type === 'state-update') {
-                    for (const key in data.state) {
+                    // Update public state from the new structure
+                    const stateUpdate = data.state || {};
+                    for (const key in stateUpdate) {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        (this as any)[key] = data.state[key];
+                        this.setProperty(key, stateUpdate[key]);
                     }
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
@@ -491,16 +798,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } else if (data.type === 'client-action') {
                     const { action, payload } = data;
                     const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
-                    if (clientMethods[action] && typeof (this as any)[action] === 'function') {
-                        (this as any)[action](...payload);
+                    if (clientMethods[action] && this.hasMethod(action)) {
+                        const method = this.getMethod(action);
+                        (method as any)(...payload);
                     }
                 } else if (data.type === 'event') {
                     const { eventName, payload } = data;
                     const eventHandlers = Reflect.getMetadata('cossack:event-handlers', this.constructor) || {};
                     if (eventHandlers[eventName]) {
                         for (const handlerMethod of eventHandlers[eventName]) {
-                            if (typeof (this as any)[handlerMethod] === 'function') {
-                                (this as any)[handlerMethod](...payload);
+                            if (this.hasMethod(handlerMethod)) {
+                                const method = this.getMethod(handlerMethod);
+                                (method as any)(...payload);
                             }
                         }
                     }
@@ -517,7 +826,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     @Client()
     private proxyHttpMethods(serverMethods: { name: string }[]) {
-        const componentRouteId = (window as any).__INITIAL_STATE__?.componentRouteId;
+        const initialState = this.getInitialStateFromWindow();
+        const componentRouteId = initialState?.componentRouteId;
         if (!componentRouteId) {
             console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
             return;
@@ -527,12 +837,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         for (const method of serverMethods) {
             const { name } = method;
-            (this as any)[name] = async (...args: any[]) => {
+            this.setProperty(name, async (...args: any[]) => {
                 // Optimistic UI Handler
-                if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
+                if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                     try {
-                        (this as any)[optimisticHandlers[name]](...args);
-                        this.requestUpdate(); 
+                        const optimisticMethod = this.getMethod(optimisticHandlers[name]);
+                        (optimisticMethod as any)(...args);
+                        this.requestUpdate();
                     } catch (e) {
                         console.error(`Error in optimistic handler for '${name}':`, e);
                     }
@@ -544,15 +855,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 try {
                     // Check for files in arguments
                     const files = new Map<string, File>();
-                    
+
                     const extractFiles = (arg: any): any => {
                         // Skip recursion for DOM nodes, Events, Window, etc.
                         if (arg && (
-                            arg instanceof Node || 
-                            arg instanceof Event || 
+                            arg instanceof Node ||
+                            arg instanceof Event ||
                             arg instanceof Window ||
                             (arg.constructor && arg.constructor.name && (
-                                arg.constructor.name.endsWith('Event') || 
+                                arg.constructor.name.endsWith('Event') ||
                                 arg.constructor.name === 'Window' ||
                                 arg.constructor.name === 'Document'
                             ))
@@ -590,7 +901,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         formData.append('action', name);
                         formData.append('state', JSON.stringify(this.getPublicState()));
                         formData.append('payload', JSON.stringify(processedArgs));
-                        
+
                         files.forEach((file, id) => {
                             formData.append(id, file);
                         });
@@ -604,8 +915,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 if (e.lengthComputable) {
                                     const percentComplete = (e.loaded / e.total) * 100;
                                     const progressProp = `${name}Progress`;
-                                    if (typeof (this as any)[progressProp] === 'number') {
-                                        (this as any)[progressProp] = percentComplete;
+                                    const progressValue = this.getProperty(progressProp);
+                                    if (typeof progressValue === 'number') {
+                                        this.setProperty(progressProp, percentComplete);
                                         this.requestUpdate();
                                     }
                                 }
@@ -617,10 +929,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                         const data = JSON.parse(xhr.responseText);
                                         if (data._cossack_redirect) {
                                             window.location.href = data._cossack_redirect;
-                                            resolve(undefined); 
+                                            resolve(undefined);
                                             return;
                                         }
-                                        
+
                                         let returnValue;
                                         if ('_cossack_return' in data) {
                                             returnValue = data._cossack_return;
@@ -629,7 +941,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
                                         for (const key in data) {
                                             if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                                            (this as any)[key] = data[key];
+                                            this.setProperty(key, data[key]);
                                         }
                                         resolve(returnValue);
                                     } catch (e) {
@@ -678,7 +990,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
                         for (const key in data) {
                             if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                            (this as any)[key] = data[key];
+                            this.setProperty(key, data[key]);
                         }
                         return returnValue;
                     }
@@ -688,7 +1000,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     delete this.loading[name];
                     this.requestUpdate();
                 }
-            };
+            });
         }
     }
 
@@ -698,8 +1010,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         for (const method of serverMethods) {
             const { name, channel, provider } = method;
-            const originalMethod = (this as any)[name];
-            (this as any)[name] = (...args: any[]) => {
+            const originalMethod = this.getMethod(name);
+            this.setProperty(name, (...args: any[]) => {
                 let ws = this.websockets.get(provider);
                 if (!ws) {
                     const root = this.consume(RootContext);
@@ -710,9 +1022,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     // Optimistic UI Handler
-                    if (optimisticHandlers[name] && typeof (this as any)[optimisticHandlers[name]] === 'function') {
+                    if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                         try {
-                            (this as any)[optimisticHandlers[name]](...args);
+                            const optimisticMethod = this.getMethod(optimisticHandlers[name]);
+                            (optimisticMethod as any)(...args);
                             this.requestUpdate(); // Render immediately after optimistic update
                         } catch (e) {
                             console.error(`Error in optimistic handler for '${name}':`, e);
@@ -740,7 +1053,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } else {
                     console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
                 }
-            };
+            });
         }
     }
 
@@ -750,9 +1063,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         try {
             const tasks = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
             for (const task of tasks) {
-                if (typeof (this as any)[task] === 'function') {
+                if (this.hasMethod(task)) {
                     try {
-                        const result = (this as any)[task]();
+                        const taskMethod = this.getMethod(task);
+                        const result = (taskMethod as any)();
                         if (result instanceof Promise) {
                             await result;
                         }
@@ -780,8 +1094,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.container) {
             const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
             for (const { eventName, propertyKey } of domEvents) {
-                if (typeof (this as any)[propertyKey] === 'function') {
-                    attach(this.container, eventName, (this as any)[propertyKey]);
+                if (this.hasMethod(propertyKey)) {
+                    const method = this.getMethod(propertyKey);
+                    attach(this.container, eventName, method as any);
                 }
             }
         }
@@ -790,8 +1105,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (typeof document !== 'undefined') {
             const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
             for (const { eventName, propertyKey } of documentEvents) {
-                if (typeof (this as any)[propertyKey] === 'function') {
-                    attach(document, eventName, (this as any)[propertyKey]);
+                if (this.hasMethod(propertyKey)) {
+                    const method = this.getMethod(propertyKey);
+                    attach(document, eventName, method as any);
                 }
             }
         }
@@ -800,8 +1116,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (typeof window !== 'undefined') {
             const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
             for (const { eventName, propertyKey } of windowEvents) {
-                if (typeof (this as any)[propertyKey] === 'function') {
-                    attach(window, eventName, (this as any)[propertyKey]);
+                if (this.hasMethod(propertyKey)) {
+                    const method = this.getMethod(propertyKey);
+                    attach(window, eventName, method as any);
                 }
             }
         }
@@ -813,12 +1130,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const visibleTasks = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
         for (const { propertyKey, options } of visibleTasks) {
             const strategy = options.strategy || 'intersection-observer';
-            
-            if (typeof (this as any)[propertyKey] !== 'function') continue;
+
+            if (!this.hasMethod(propertyKey)) continue;
 
             const execute = () => {
                  try {
-                     const cleanup = (this as any)[propertyKey]();
+                     const method = this.getMethod(propertyKey);
+                     const cleanup = (method as any)();
                      // TODO: Handle cleanup if needed, possibly store it in a map to call on component destroy
                  } catch (e) {
                      console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
@@ -854,13 +1172,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    private isStateInitialized = false;
-    private _initializedStateProperties = new Set<string>();
-
-    private initializeState(initialState?: any) {
-        if (this.isStateInitialized && !initialState) return;
-        this.isStateInitialized = true;
-
+    /**
+     * Initialize state properties using the unified state container.
+     * This method sets up reactive getters/setters for all @State and @ClientState properties.
+     */
+    private initializeState(serializedState?: SerializedComponentState) {
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
 
@@ -868,60 +1184,66 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const clientKeys = Array.from(clientStateProperties) as string[];
         const allKeys = [...new Set([...stateKeys, ...clientKeys])];
 
-        const privateState = new Map<string, any>();
-
-        const stateSource = this.isServer
-            ? initialState
-            : (initialState || (this._id === 'root' ? (window as any)?.__INITIAL_STATE__ : undefined) || {});
-
-        // Debug log removed
+        // Determine the state source based on environment
+        // Ensure stateSource is always a Record<string, unknown> for type-safe indexing
+        const stateSource: Record<string, unknown> = this.isServer
+            ? (serializedState?.public || {})
+            : (serializedState?.public || (this._id === 'root' ? this.getInitialStateFromWindow()?.public : undefined) || {});
 
         for (const key of allKeys) {
             // Skip if this property has already been initialized (to prevent resetting state)
-            if (this._initializedStateProperties.has(key)) {
+            if (this._stateContainer.isInitialized(key)) {
                 continue;
             }
 
-            let value = (this as any)[key];
+            const isClientOnly = clientStateProperties.has(key);
+            const isPublic = stateProperties[key];
+
+            // Get initial value from state source or from existing property value
+            let value = this.getProperty(key);
 
             // Only sync properties that are NOT client-only
-            if (!clientStateProperties.has(key) && stateSource && stateSource[key] !== undefined) {
+            if (!isClientOnly && stateSource && stateSource[key] !== undefined) {
                 value = stateSource[key];
             }
 
-            privateState.set(key, value);
+            // Store in the appropriate container
+            if (isPublic) {
+                this._stateContainer.setPublic(key, value);
+            } else {
+                this._stateContainer.setInternal(key, value);
+            }
 
+            // Create reactive property with getter/setter
             Object.defineProperty(this, key, {
-                get: () => privateState.get(key),
+                get: () => {
+                    return isPublic
+                        ? this._stateContainer.getPublic(key)
+                        : this._stateContainer.getInternal(key);
+                },
                 set: (newValue: any) => {
-                    const oldValue = privateState.get(key);
+                    const oldValue = isPublic
+                        ? this._stateContainer.getPublic(key)
+                        : this._stateContainer.getInternal(key);
+
                     if (oldValue !== newValue) {
-                        privateState.set(key, newValue);
+                        // Update the container
+                        if (isPublic) {
+                            this._stateContainer.setPublic(key, newValue);
+                        } else {
+                            this._stateContainer.setInternal(key, newValue);
+                        }
 
-                        // Sync logic for server-connected state
-                        if (stateProperties[key]) {
+                        // Handle reactivity based on state type
+                        if (isPublic) {
+                            // Public state: sync to server and trigger re-render
                             if (this.isServer) {
-                                this.dirtyProperties.add(key);
-                                if (!this.broadcastScheduled) {
-                                    this.broadcastScheduled = true;
-                                    queueMicrotask(async () => {
-                                        await this.runTasks();
-                                        const partialState: Record<string, any> = {};
-                                        for (const key of this.dirtyProperties) {
-                                            partialState[key] = (this as any)[key];
-                                        }
-
-                                        this._runtime?.broadcastState(partialState);
-                                        this._runtime?.persistState();
-                                        this.dirtyProperties.clear();
-                                        this.broadcastScheduled = false;
-                                    });
-                                }
+                                this._scheduleStateBroadcast(key);
                             } else if (!this.isBootstrapping) {
                                 this.requestUpdate(key, oldValue);
                             }
-                        } else if (clientStateProperties.has(key)) {
-                            // Client-only state just triggers a render on the client
+                        } else {
+                            // Client-only state: just trigger re-render on client
                             if (!this.isServer && !this.isBootstrapping) {
                                 this.requestUpdate(key, oldValue);
                             }
@@ -931,36 +1253,63 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 enumerable: true,
                 configurable: true,
             });
-
-            // Mark this property as initialized
-            this._initializedStateProperties.add(key);
         }
 
-        if (!this.isServer && stateSource?.serverMethods) {
-            // Skip re-proxying if methods have already been proxied (unless we have new methods)
-            if (this._serverMethodsProxied) {
-                // Skip - already proxied
-            } else {
-                // Nested component proxy setup
-                const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+        // Setup server method proxies for nested components (client-side only)
+        if (!this.isServer && serializedState?.serverMethods) {
+            this._setupServerMethodProxies(serializedState.serverMethods);
+        }
+    }
 
-                if (pageOptions?.transport === 'http') {
-                    this.proxyHttpMethods(stateSource.serverMethods);
-                } else {
-                    this.proxyServerMethods(stateSource.serverMethods);
+    /**
+     * Schedule state broadcast to connected clients.
+     * Batches updates and broadcasts them together via microtask.
+     */
+    private _scheduleStateBroadcast(changedKey: string) {
+        this.dirtyProperties.add(changedKey);
+        if (!this.broadcastScheduled) {
+            this.broadcastScheduled = true;
+            queueMicrotask(async () => {
+                await this.runTasks();
+                const partialState: Record<string, any> = {};
+                for (const key of this.dirtyProperties) {
+                    partialState[key] = this._stateContainer.getPublic(key);
                 }
-                this._serverMethodsProxied = true;
-            }
+
+                this._runtime?.broadcastState(partialState);
+                this._runtime?.persistState();
+                this.dirtyProperties.clear();
+                this.broadcastScheduled = false;
+            });
         }
+    }
+
+    /**
+     * Setup server method proxies for nested components.
+     * Skips re-proxying if methods have already been proxied.
+     */
+    private _setupServerMethodProxies(serverMethods: Array<{ name: string; channel: string; provider: string }>) {
+        if (this._serverMethodsProxied) {
+            return; // Already proxied
+        }
+
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+
+        if (pageOptions?.transport === 'http') {
+            this.proxyHttpMethods(serverMethods);
+        } else {
+            this.proxyServerMethods(serverMethods);
+        }
+        this._serverMethodsProxied = true;
     }
 
     @Server()
     private proxyClientMethods() {
         const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
         for (const key in clientMethods) {
-            if (typeof (this as any)[key] !== 'function') continue;
+            if (!this.hasMethod(key)) continue;
 
-            (this as any)[key] = (...args: any[]) => {
+            this.setProperty(key, (...args: any[]) => {
                 if (!this.isServer) {
                     console.warn(`[Cossack] Client method '${String(key)}' cannot be called from the client.`);
                     return;
@@ -970,7 +1319,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     return;
                 }
                 this._runtime?.sendClientAction(this._cossack_ws_context, key, args);
-            };
+            });
         }
     }
 
@@ -1028,14 +1377,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public _getWrappedTemplate(): TemplateResult | null {
         // Special case: check if we should render a loading UI instead of standard output
-        if (this.loading.init && typeof (this as any).loadingTemplate === 'function') {
-            return (this as any).loadingTemplate();
+        if (this.loading.init && this.hasMethod('loadingTemplate')) {
+            const method = this.getMethod('loadingTemplate');
+            return (method as any)();
         }
 
         let template = this.render();
-        
+
         // Inject devtools markers if source info is present
-        // Since __source is injected by the Vite plugin only in DEV mode, 
+        // Since __source is injected by the Vite plugin only in DEV mode,
         // we can safely assume if it exists, we are in DEV.
         const source = (this.constructor as any).__source;
         if (template && source) {
@@ -1049,7 +1399,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 (strings as any).raw = strings;
                 Ctor.__devStrings = strings;
             }
-            
+
             // Wrap the template. The new template has 1 value (the original template).
             // The strings array has 2 parts (start marker, end marker).
             template = new TemplateResult(Ctor.__devStrings, [template]);
@@ -1060,8 +1410,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @Client()
     public async _checkPreventNavigation(): Promise<boolean> {
         const method = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
-        if (method && typeof (this as any)[method] === 'function') {
-            const allow = await (this as any)[method]();
+        if (method && this.hasMethod(method)) {
+            const methodFn = this.getMethod(method);
+            const allow = await (methodFn as any)();
             return !allow; // Returns TRUE if PREVENTED (blocked)
         }
         return false;
@@ -1108,6 +1459,47 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._render();
     }
     
+    // Override performUpdate to wrap template with devtools markers for client-side rendering
+    protected async performUpdate() {
+        await Promise.resolve();
+        let shouldUpdate = false;
+        const elementInternal = this.getElementInternal();
+        const changedProperties = elementInternal.__changedProperties;
+        const controllers = elementInternal.__controllers;
+        try {
+            shouldUpdate = this.shouldUpdate(changedProperties);
+            if (shouldUpdate) {
+                // Controller hostUpdate
+                controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
+
+                this.willUpdate(changedProperties);
+
+                this.resetRenderState();
+                pushCurrentInstance(this);
+
+                const template = this._getWrappedTemplate();
+
+                elementInternal.__notifyListeners(template);
+
+                popCurrentInstance();
+
+                this.updated(changedProperties);
+
+                // Controller hostUpdated
+                controllers.forEach((c: any) => c.hostUpdated && c.hostUpdated());
+            }
+        } catch (e) {
+            console.error('Error during update:', e);
+            if (instanceStack[instanceStack.length - 1] === this) {
+                popCurrentInstance();
+            }
+        }
+
+        elementInternal.__changedProperties = new Map();
+        elementInternal.__updatePromise = null;
+        return shouldUpdate;
+    }
+
     // Lifecycle hooks
     public onMount(): void {
         this.setupVisibleTasks();
@@ -1139,18 +1531,27 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._runtime?.broadcastEvent(eventName, payload);
     }
 
-    public getInitialState(): Record<string, any> {
-        const state: Record<string, any> = {};
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
-        for (const key in stateProperties) {
-            state[key] = (this as any)[key];
-        }
-
+    /**
+     * Serialize the component's state for transmission between server and client.
+     * Returns a unified SerializedComponentState containing public state, metadata, and children.
+     */
+    public getInitialState(): SerializedComponentState {
         const params = (this.c as Context)?.req.param() || {};
-        const baseState = { ...state, params, user: this.user, componentId: this.constructor.name, pathname: (this.c as Context)?.req.path };
 
+        // Build the serialized state object
+        const serializedState: SerializedComponentState = {
+            public: this._stateContainer.getPublicState(),
+            metadata: {
+                componentId: this.constructor.name,
+                pathname: (this.c as Context)?.req.path,
+                params,
+                user: this.user,
+            },
+        };
+
+        // Add server methods metadata
         const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-        const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
+        serializedState.serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
             name,
             channel: options.channel || 'global',
             provider: options.provider || 'page',
@@ -1158,47 +1559,63 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
         if (pageOptions?.transport === 'http') {
-            return { ...baseState, serverMethods };
+            return serializedState;
         }
 
+        // Add provider targets for WebSocket connections
         const providerTargets: Record<string, string> = {};
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {
                 const target = provider.getConnectionTarget();
                 if (target) {
-                     providerTargets[name] = (target as any).toString();
+                    providerTargets[name] = (target as any).toString();
                 }
             }
         }
+        serializedState.providerTargets = providerTargets;
 
-        const childrenState: Record<string, any> = {};
+        // Add nested children states
+        const childrenState: Record<string, SerializedComponentState> = {};
         for (const [id, comp] of this.activeComponents) {
-             childrenState[id] = comp.getInitialState();
+            childrenState[id] = comp.getInitialState();
         }
+        serializedState.children = childrenState;
 
-        return { ...baseState, serverMethods, providerTargets, _children: childrenState };
+        return serializedState;
     }
 
-    public getPublicState(): Record<string, any> {
-        const state: Record<string, any> = {};
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
-        for (const key in stateProperties) {
-            state[key] = (this as any)[key];
-        }
-        return state;
+    /**
+     * Get only the public state (for HTTP transport state sync).
+     * This is a simple accessor that returns the public state from the container.
+     */
+    public getPublicState(): Record<string, unknown> {
+        return this._stateContainer.getPublicState();
     }
 
     public destroy() {
-        this.onCleanup();
-        if (!this.isServer) {
-            this.websockets.forEach(ws => {
-                ws.close();
-            });
-            this.websockets.clear();
-            
-            // Clean up event listeners
-            this.eventCleanupFns.forEach(cleanup => cleanup());
-            this.eventCleanupFns = [];
+        // Transition to Destroyed phase from any phase except already Destroyed
+        this._transitionToPhase(LifecyclePhase.Destroyed, [
+            LifecyclePhase.Creating,
+            LifecyclePhase.Bootstrapping,
+            LifecyclePhase.Mounted,
+            LifecyclePhase.Updating
+        ]);
+
+        try {
+            this.onCleanup();
+            if (!this.isServer) {
+                this.websockets.forEach(ws => {
+                    ws.close();
+                });
+                this.websockets.clear();
+
+                // Clean up event listeners
+                this.eventCleanupFns.forEach(cleanup => cleanup());
+                this.eventCleanupFns = [];
+            }
+        } finally {
+            // Don't restore phase after destroy - the component is destroyed
+            // This ensures any subsequent operations will throw an error
         }
     }
 }

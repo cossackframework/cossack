@@ -132,7 +132,7 @@ export function enableDevTools() {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Alt') {
+      if (e.key === 'Ctrl') {
           document.body.style.cursor = 'crosshair';
           // Check what's under the mouse immediately
           const target = document.elementFromPoint(lastMouseX, lastMouseY);
@@ -141,7 +141,7 @@ export function enableDevTools() {
   };
 
   const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Alt') {
+      if (e.key === 'Ctrl') {
           document.body.style.cursor = '';
           overlay.style.display = 'none';
           activeComponent = null;
@@ -152,10 +152,10 @@ export function enableDevTools() {
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
 
-      if (e.altKey) {
+      if (e.ctrlKey) {
           inspectAt(e.target as Node);
       } else if (activeComponent) {
-          // If Alt is released but we are moving, hide the overlay
+          // If Ctrl is released but we are moving, hide the overlay
           // This handles cases where keyup might have been missed or order of events
           overlay.style.display = 'none';
           activeComponent = null;
@@ -164,7 +164,7 @@ export function enableDevTools() {
   };
 
   const onClick = (e: MouseEvent) => {
-      if (e.altKey && activeComponent) {
+      if (e.ctrlKey && activeComponent) {
           e.preventDefault();
           e.stopPropagation();
           const { file } = activeComponent;

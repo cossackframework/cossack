@@ -15,7 +15,10 @@ export class AppDurableObject extends CossackDurableObject {
             const module = eagerPages[path] as any;
             const PageComponent = Object.values(module as object)[0] as new () => Cossack;
             if (PageComponent) {
-                registry.set(PageComponent.name, PageComponent);
+                // Use the file path (without './') as the key to match how the router works
+                // Transform './pages/optimistic-counter/index.ts' to '/src/pages/optimistic-counter/index.ts'
+                const registryKey = path.replace('./', '/src/');
+                registry.set(registryKey, PageComponent);
             }
         }
         return registry;

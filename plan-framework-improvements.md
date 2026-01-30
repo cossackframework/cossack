@@ -1,147 +1,54 @@
 # Cossack Framework Improvements Plan
 
-> Created after fixing the `@Server()` proxy bug for nested components. This document outlines recommended improvements to make the framework more robust, maintainable, and developer-friendly.
-
 ---
 
 ## Priority Legend
 
-- **P0 - Critical**: Bug fixes, security issues, breaking inconsistencies
 - **P1 - High**: Major improvements that prevent bugs or significantly improve DX
 - **P2 - Medium**: Nice-to-have features, code quality improvements
 - **P3 - Low**: Minor enhancements, can be done incrementally
 
 ---
 
-## P0 - Immediate Fixes
-
-### ✅ 1. Apply State Sync Fix to `/upload` Endpoint
-
-**Issue**: The `/crpc` endpoint was fixed to properly apply state to the target component, but the `/upload` endpoint has the same issue.
-
-**Status**: ✅ **COMPLETED**
-
-**Fix Applied**: Removed `initialState: state` from bootstrap call and added direct state application to target component.
-
-**Files**: `packages/framework/src/router.ts`
-
-```typescript
-// Before:
-await componentInstance.bootstrap({ context: c, user, env: c.env, initialState: state, skipInit: true });
-
-// After:
-await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
-
-// Added after finding targetInstance:
-for (const key in state) {
-    (targetInstance as any)[key] = state[key];
-}
-```
-
-**Impact**: Both `/crpc` and `/upload` endpoints now correctly handle nested component state synchronization.
-
----
-
-### ✅ 2. Fix Self-Closing Custom Component Tags
-
-**Issue**: Self-closing custom components (`<c:Component />`) don't work properly on the client side. Only the first component renders when using self-closing syntax, while SSR works correctly.
-
-**Root Cause**: Two-fold issue:
-1. **SSR**: The `renderComponent()` method wasn't outputting explicit closing tags, causing browser parsing ambiguity
-2. **Client**: The render function had a check `if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return;` that skipped processing nested custom elements after the parent was removed
-
-**Status**: ✅ **COMPLETED**
-
-**Fixes Applied**:
-
-1. **SSR Fix** (`packages/renderer/src/cossack-html.ts`, line 341):
-```typescript
-private renderComponent(clazz: new () => CossackElement, props: Record<string, unknown>, children: unknown) {
-    // ... component setup ...
-
-    // Always output explicit closing tag to prevent browser parsing issues
-    // Self-closing tags don't work reliably for custom elements in HTML5
-    this.result += `</c:${className}>`;
-}
-```
-
-2. **Client Fix** (`packages/renderer/src/cossack-html.ts`, line 918):
-```typescript
-// REMOVED: This check prevented processing nested custom elements
-// if (!el.parentNode && el.tagName.toUpperCase().startsWith('C:')) return;
-```
-
-**Impact**: Self-closing component syntax now works correctly. Both syntaxes produce the same output:
-```html
-<c:NestedCounter />     <!-- Now works! -->
-<c:NestedCounter></c:NestedCounter>  <!-- Also works -->
-```
-
----
-
-## P1 - High Priority
-
-### 3. Simplify State Management Flow
-
-**Problem**: State is passed through too many concepts (`_restoredChildrenState`, `initialState`, `getInitialState()`, `getPublicState()`). This makes reasoning about state flow difficult.
-
-**Proposal**: Unify state concepts with clearer naming and single source of truth.
-
-```typescript
-interface ComponentState {
-  // Public state (synced server-client)
-  public: Record<string, unknown>;
-  // Internal state (not synced)
-  internal: Record<string, unknown>;
-  // Children state (nested components)
-  children: Record<string, ComponentState>;
-}
-```
-
-**Files**: `packages/core/src/shared/cossack.ts`
-
----
-
-### 4. Reduce Lifecycle Method Complexity
-
-**Problem**: The interaction between `connectedCallback()`, `willUpdate()`, `bootstrap()`, and `initializeState()` caused the proxy bug.
-
-**Proposal**: Introduce explicit lifecycle phases with guards.
-
-```typescript
-enum LifecyclePhase {
-  Creating,      // Constructor
-  Bootstrapping, // bootstrap() called
-  Mounted,       // connectedCallback() done
-  Updating,      // willUpdate() in progress
-  Destroyed      // cleanup done
-}
-
-// Add phase guards to prevent invalid state transitions
-private _phase: LifecyclePhase = LifecyclePhase.Creating;
-```
-
-**Files**: `packages/core/src/shared/cossack.ts`
-
----
-
-### 5. Replace `any` Type Casts with Proper Types
+### 5. Replace `any` Type Casts with Proper Types ✅
 
 **Problem**: Heavy use of `(this as any)` makes code error-prone and loses type safety.
 
 **Proposal**: Define proper internal interfaces.
 
+**Status**: COMPLETED
+
+**Implementation**: Added internal interfaces and type-safe helper methods.
+
 ```typescript
+// Internal interfaces for type-safe property access
+type DynamicFunction = (...args: unknown[]) => unknown;
+
 interface CossackElementInternal {
-  __parent?: CossackElement;
-  registerComponent(comp: CossackElement): void;
-  _id: string;
-  _restoredChildrenState: Record<string, unknown>;
-  activeComponents: Map<string, CossackElement>;
+    __parent?: CossackElement & { registerComponent?(comp: Cossack): void };
+    __changedProperties: Map<string | number | symbol, unknown>;
+    __updatePromise: Promise<boolean> | null;
+    __controllers: unknown[];
+    __notifyListeners(template: TemplateResult | null): void;
 }
+
+interface DynamicPropertyAccess {
+    [key: string]: unknown;
+}
+
+// Type-safe helper methods
+protected getParentComponent(): CossackElement | undefined;
+protected getMethod(name: string): DynamicFunction | undefined;
+protected hasMethod(name: string): boolean;
+protected getProperty(name: string): unknown;
+protected setProperty(name: string, value: unknown): void;
+protected getInitialStateFromWindow(): SerializedComponentState | undefined;
+protected getElementInternal(): CossackElementInternal;
 ```
 
-**Files**: `packages/core/src/shared/cossack.ts`, `packages/renderer/src/cossack-element.ts`
+**Result**: Reduced `(this as any)` casts from ~50 to just 1 (in hydratedContext path getter, which is unavoidable).
+
+**Files**: `packages/core/src/shared/cossack.ts`
 
 ---
 
@@ -329,7 +236,6 @@ async slowOperation() {
 
 ## Implementation Order Recommendation
 
-1. **P0**: Apply `/upload` endpoint fix (quick, prevents similar bugs)
 2. **P1**: Lifecycle simplification (prevents whole class of bugs)
 3. **P1**: Type safety improvements (better DX, catch errors at compile time)
 4. **P2**: Debug system (makes future debugging easier)
