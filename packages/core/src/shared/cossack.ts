@@ -45,6 +45,7 @@ export interface SerializedComponentState {
     /** Metadata needed for initialization */
     metadata?: {
         componentId: string;
+        componentPath?: string;
         pathname?: string;
         params?: Record<string, string>;
         user?: unknown;
