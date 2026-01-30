@@ -10,64 +10,36 @@
 
 ---
 
-
-## P1 - High Priority
-
-### 3. Simplify State Management Flow ✅ COMPLETED
-
-**Problem**: State is passed through too many concepts (`_restoredChildrenState`, `initialState`, `getInitialState()`, `getPublicState()`). This makes reasoning about state flow difficult.
-
-**Proposal**: Unify state concepts with clearer naming and single source of truth.
-
-**Implementation**:
-- Created `ComponentState` and `SerializedComponentState` interfaces
-- Added `StateContainer` class as the single source of truth for all component state
-- Replaced `_restoredChildrenState` with `_childrenStateRegistry`
-- Refactored `initializeState()` to use the new state structure
-- Simplified `getInitialState()` to return `SerializedComponentState`
-- Simplified `getPublicState()` to directly return from state container
-
-```typescript
-// New unified state interface
-export interface ComponentState {
-  // Public state (synced server-client)
-  public: Record<string, unknown>;
-  // Internal state (not synced)
-  internal: Record<string, unknown>;
-  // Children state (nested components)
-  children: Record<string, SerializedComponentState>;
-}
-
-// New internal state container (single source of truth)
-class StateContainer {
-  private _publicState = new Map<string, unknown>();
-  private _internalState = new Map<string, unknown>();
-  // ... unified state management methods
-}
-```
-
-**Files**: `packages/core/src/shared/cossack.ts`
-
----
-
-### 4. Reduce Lifecycle Method Complexity
+### 4. Reduce Lifecycle Method Complexity ✅
 
 **Problem**: The interaction between `connectedCallback()`, `willUpdate()`, `bootstrap()`, and `initializeState()` caused the proxy bug.
 
 **Proposal**: Introduce explicit lifecycle phases with guards.
 
-```typescript
-enum LifecyclePhase {
-  Creating,      // Constructor
-  Bootstrapping, // bootstrap() called
-  Mounted,       // connectedCallback() done
-  Updating,      // willUpdate() in progress
-  Destroyed      // cleanup done
-}
+**Status**: COMPLETED
 
-// Add phase guards to prevent invalid state transitions
-private _phase: LifecyclePhase = LifecyclePhase.Creating;
+**Implementation**: Added `LifecyclePhase` enum and phase transition guards.
+
+```typescript
+export enum LifecyclePhase {
+    /** Component is being constructed */
+    Creating = 'Creating',
+    /** bootstrap() is being called (not yet connected to DOM) */
+    Bootstrapping = 'Bootstrapping',
+    /** Component is connected to DOM and ready */
+    Mounted = 'Mounted',
+    /** An update is in progress (willUpdate) */
+    Updating = 'Updating',
+    /** Component has been destroyed */
+    Destroyed = 'Destroyed',
+}
 ```
+
+Phase transitions are validated with `_transitionToPhase()` and restored with `_restorePhase()`:
+- `bootstrap()` transitions from `Creating` → `Bootstrapping`
+- `connectedCallback()` transitions from `Creating` → `Mounted`
+- `willUpdate()` transitions from `Mounted` → `Updating`
+- `destroy()` transitions from any phase → `Destroyed` (permanent)
 
 **Files**: `packages/core/src/shared/cossack.ts`
 

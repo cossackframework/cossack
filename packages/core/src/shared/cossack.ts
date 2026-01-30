@@ -21,6 +21,22 @@ import { createCossackContext, HydratedContext, EnvContext, UserContext, Request
 export const RootContext = createContext<Cossack | null>(null);
 
 /**
+ * Lifecycle phases for explicit state management and preventing invalid transitions.
+ */
+export enum LifecyclePhase {
+    /** Component is being constructed */
+    Creating = 'Creating',
+    /** bootstrap() is being called (not yet connected to DOM) */
+    Bootstrapping = 'Bootstrapping',
+    /** Component is connected to DOM and ready */
+    Mounted = 'Mounted',
+    /** An update is in progress (willUpdate) */
+    Updating = 'Updating',
+    /** Component has been destroyed */
+    Destroyed = 'Destroyed',
+}
+
+/**
  * Unified state management interface.
  * Separates concerns between public/shared state, internal/private state, and children state.
  */
@@ -186,6 +202,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
 
+    // Lifecycle phase management
+    protected _phase: LifecyclePhase = LifecyclePhase.Creating;
+    private _phaseTransitionStack: LifecyclePhase[] = [];
+
     // Navigation blocking state
     public _pendingNavigation: (() => void) | null = null;
 
@@ -199,17 +219,40 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     connectedCallback() {
-        // Register first so parent can provide restored child state
-        this.registerSelf();
-        this.initializeState();
-        super.connectedCallback();
+        // Transition to Mounted phase from Creating phase
+        this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
+
+        try {
+            // Register first so parent can provide restored child state
+            this.registerSelf();
+            this.initializeState();
+            super.connectedCallback();
+        } finally {
+            // Restore phase after lifecycle complete
+            this._restorePhase();
+        }
     }
 
     willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
-        // Don't call registerSelf on updates - it's only for initial registration
-        // This prevents re-initializing with old state from childrenStateRegistry
-        this.initializeState();
-        super.willUpdate(changedProperties);
+        // Transition to Updating phase from Creating, Bootstrapping, or Mounted phase
+        // This allows willUpdate to be called during:
+        // - SSR: bootstrap() → render() → willUpdate() (from Creating/Bootstrapping)
+        // - Client: connectedCallback() → willUpdate() (from Mounted)
+        this._transitionToPhase(LifecyclePhase.Updating, [
+            LifecyclePhase.Creating,
+            LifecyclePhase.Bootstrapping,
+            LifecyclePhase.Mounted
+        ]);
+
+        try {
+            // Don't call registerSelf on updates - it's only for initial registration
+            // This prevents re-initializing with old state from childrenStateRegistry
+            this.initializeState();
+            super.willUpdate(changedProperties);
+        } finally {
+            // Restore phase after update complete
+            this._restorePhase();
+        }
     }
 
     private registerSelf() {
@@ -367,10 +410,67 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
-        this.isBootstrapping = true;
+    /**
+     * Transition to a new lifecycle phase with validation.
+     * Prevents invalid state transitions that could cause bugs.
+     */
+    private _transitionToPhase(newPhase: LifecyclePhase, allowedFrom: LifecyclePhase[]): void {
+        if (this._phase === LifecyclePhase.Destroyed) {
+            throw new Error(`[Cossack] Cannot transition from Destroyed phase. Component has been destroyed.`);
+        }
 
-        if (!this._id) this._id = 'root';
+        if (!allowedFrom.includes(this._phase)) {
+            throw new Error(
+                `[Cossack] Invalid phase transition from ${this._phase} to ${newPhase}. ` +
+                `Allowed transitions: ${allowedFrom.join(', ')}.`
+            );
+        }
+
+        // Push current phase to stack for restoration
+        this._phaseTransitionStack.push(this._phase);
+        this._phase = newPhase;
+    }
+
+    /**
+     * Restore the previous lifecycle phase.
+     * Used when a lifecycle operation completes.
+     */
+    private _restorePhase(): void {
+        const previousPhase = this._phaseTransitionStack.pop();
+        if (previousPhase !== undefined) {
+            this._phase = previousPhase;
+        }
+    }
+
+    /**
+     * Check if the component is in a specific lifecycle phase.
+     */
+    protected isInPhase(phase: LifecyclePhase): boolean {
+        return this._phase === phase;
+    }
+
+    /**
+     * Check if the component is in one of the specified lifecycle phases.
+     */
+    protected isInAnyPhase(phases: LifecyclePhase[]): boolean {
+        return phases.includes(this._phase);
+    }
+
+    /**
+     * Get the current lifecycle phase for debugging purposes.
+     */
+    public getPhase(): LifecyclePhase {
+        return this._phase;
+    }
+
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+        // Transition to Bootstrapping phase from Creating phase
+        this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
+
+        try {
+            this.isBootstrapping = true;
+
+            if (!this._id) this._id = 'root';
 
         if (typeof container === 'string') {
             this.container = document.querySelector(container) || undefined;
@@ -462,11 +562,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.skipRenderTasks = true;
             this.mount(this.container as HTMLElement);
             this.skipRenderTasks = false;
-            
+
             if (!this.isMounted) {
                 this.isMounted = true;
                 this.onMount();
             }
+        }
+        } finally {
+            // Restore phase after bootstrap complete
+            this._restorePhase();
         }
     }
 
@@ -1378,16 +1482,29 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public destroy() {
-        this.onCleanup();
-        if (!this.isServer) {
-            this.websockets.forEach(ws => {
-                ws.close();
-            });
-            this.websockets.clear();
-            
-            // Clean up event listeners
-            this.eventCleanupFns.forEach(cleanup => cleanup());
-            this.eventCleanupFns = [];
+        // Transition to Destroyed phase from any phase except already Destroyed
+        this._transitionToPhase(LifecyclePhase.Destroyed, [
+            LifecyclePhase.Creating,
+            LifecyclePhase.Bootstrapping,
+            LifecyclePhase.Mounted,
+            LifecyclePhase.Updating
+        ]);
+
+        try {
+            this.onCleanup();
+            if (!this.isServer) {
+                this.websockets.forEach(ws => {
+                    ws.close();
+                });
+                this.websockets.clear();
+
+                // Clean up event listeners
+                this.eventCleanupFns.forEach(cleanup => cleanup());
+                this.eventCleanupFns = [];
+            }
+        } finally {
+            // Don't restore phase after destroy - the component is destroyed
+            // This ensures any subsequent operations will throw an error
         }
     }
 }
