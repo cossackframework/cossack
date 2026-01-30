@@ -10,58 +10,45 @@
 
 ---
 
-### 4. Reduce Lifecycle Method Complexity ✅
-
-**Problem**: The interaction between `connectedCallback()`, `willUpdate()`, `bootstrap()`, and `initializeState()` caused the proxy bug.
-
-**Proposal**: Introduce explicit lifecycle phases with guards.
-
-**Status**: COMPLETED
-
-**Implementation**: Added `LifecyclePhase` enum and phase transition guards.
-
-```typescript
-export enum LifecyclePhase {
-    /** Component is being constructed */
-    Creating = 'Creating',
-    /** bootstrap() is being called (not yet connected to DOM) */
-    Bootstrapping = 'Bootstrapping',
-    /** Component is connected to DOM and ready */
-    Mounted = 'Mounted',
-    /** An update is in progress (willUpdate) */
-    Updating = 'Updating',
-    /** Component has been destroyed */
-    Destroyed = 'Destroyed',
-}
-```
-
-Phase transitions are validated with `_transitionToPhase()` and restored with `_restorePhase()`:
-- `bootstrap()` transitions from `Creating` → `Bootstrapping`
-- `connectedCallback()` transitions from `Creating` → `Mounted`
-- `willUpdate()` transitions from `Mounted` → `Updating`
-- `destroy()` transitions from any phase → `Destroyed` (permanent)
-
-**Files**: `packages/core/src/shared/cossack.ts`
-
----
-
-### 5. Replace `any` Type Casts with Proper Types
+### 5. Replace `any` Type Casts with Proper Types ✅
 
 **Problem**: Heavy use of `(this as any)` makes code error-prone and loses type safety.
 
 **Proposal**: Define proper internal interfaces.
 
+**Status**: COMPLETED
+
+**Implementation**: Added internal interfaces and type-safe helper methods.
+
 ```typescript
+// Internal interfaces for type-safe property access
+type DynamicFunction = (...args: unknown[]) => unknown;
+
 interface CossackElementInternal {
-  __parent?: CossackElement;
-  registerComponent(comp: CossackElement): void;
-  _id: string;
-  _restoredChildrenState: Record<string, unknown>;
-  activeComponents: Map<string, CossackElement>;
+    __parent?: CossackElement & { registerComponent?(comp: Cossack): void };
+    __changedProperties: Map<string | number | symbol, unknown>;
+    __updatePromise: Promise<boolean> | null;
+    __controllers: unknown[];
+    __notifyListeners(template: TemplateResult | null): void;
 }
+
+interface DynamicPropertyAccess {
+    [key: string]: unknown;
+}
+
+// Type-safe helper methods
+protected getParentComponent(): CossackElement | undefined;
+protected getMethod(name: string): DynamicFunction | undefined;
+protected hasMethod(name: string): boolean;
+protected getProperty(name: string): unknown;
+protected setProperty(name: string, value: unknown): void;
+protected getInitialStateFromWindow(): SerializedComponentState | undefined;
+protected getElementInternal(): CossackElementInternal;
 ```
 
-**Files**: `packages/core/src/shared/cossack.ts`, `packages/renderer/src/cossack-element.ts`
+**Result**: Reduced `(this as any)` casts from ~50 to just 1 (in hydratedContext path getter, which is unavoidable).
+
+**Files**: `packages/core/src/shared/cossack.ts`
 
 ---
 
