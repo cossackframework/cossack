@@ -176,7 +176,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     appInstance.updatePath(pathname);
 
     const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
-    
+
     for (const [path, instance] of currentLayoutsMap.entries()) {
         if (!activeLayoutPaths.has(path)) {
             instance.destroy();
@@ -191,7 +191,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
             const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
             instance = new LComp();
             instance.updateHead = syncHead;
-            
+
             // Hook reactivity
             const originalRequestUpdate = instance.requestUpdate.bind(instance);
             instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
@@ -208,9 +208,17 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
         currentLayoutInstances.push(instance);
     }
 
-    const module = pages[componentPath] as any;
+    // Dynamic import for page module (code splitting)
+    const pageModuleLoader = pages[componentPath];
+    if (!pageModuleLoader) {
+      console.error(`Component module loader not found for path: ${componentPath}`);
+      return;
+    }
+
+    // Load the page module asynchronously
+    const module = await pageModuleLoader();
     if (!module) {
-      console.error(`Component module not found for path: ${componentPath}`);
+      console.error(`Failed to load module for path: ${componentPath}`);
       return;
     }
 
@@ -239,7 +247,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
       await componentInstance.bootstrap({ initialState, skipInit: true });
       componentInstance.updatePath(pathname);
-      
+
       // Perform initial composition and render
       await triggerAppUpdate();
     }

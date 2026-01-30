@@ -7,9 +7,9 @@ export default defineConfig(({ mode }) => {
   if (process.env.COSSACK_DEV) {
     mode = 'development';
   }
-  
+
   return {
-    mode: mode, 
+    mode: mode,
     define: {
       // Force DEV to true if we are in our custom dev mode, otherwise let Vite decide
       ...(process.env.COSSACK_DEV ? { 'import.meta.env.DEV': 'true' } : {})
@@ -28,8 +28,31 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: 'src/client/entry-client.ts',
         output: {
-          entryFileNames: '[name].js',
-          format: 'esm'
+          entryFileNames: 'assets/[name].[hash].js',
+          chunkFileNames: 'assets/[name].[hash].js',
+          assetFileNames: 'assets/[name].[hash][extname]',
+          format: 'esm',
+          // Manual chunk splitting for better caching and code organization
+          manualChunks: (id) => {
+            // Core framework chunks - our own packages
+            if (id.includes('@cossackframework/core') || id.includes('@cossackframework/renderer')) {
+              return 'cossack-framework';
+            }
+
+            // Vendor chunks for third-party libraries
+            if (id.includes('node_modules')) {
+              // Split major libraries into their own chunks
+              if (id.includes('marked') || id.includes('gray-matter')) {
+                return 'vendor-markdown';
+              }
+              // Other vendor code
+              return 'vendor';
+            }
+
+            // Page-specific chunks are handled automatically by dynamic imports
+            // Each page becomes its own chunk
+            return undefined;
+          }
         }
       },
     },
