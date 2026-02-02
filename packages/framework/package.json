@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client/index.ts",
-    "./vite-plugin": "./src/vite-plugin.ts"
+    "./vite-plugin": "./src/vite-plugin.ts",
+    "./vite-security-plugin": "./src/vite-security-plugin.ts"
   },
   "scripts": {
     "dev": "node scripts/dev.js",

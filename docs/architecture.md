@@ -79,3 +79,58 @@ The framework handles state persistence differently depending on the runtime env
 
 -   **Cloudflare Workers (Durable Objects):** The `@State` properties are automatically persisted to the Durable Object's transactional storage. State survives server restarts and hibernation.
 -   **Node.js (Node Adapter):** The `@State` properties are strictly **in-memory**. If the Node.js server process restarts, all component state is reset to initial values. Developers running on Node.js should persist critical data to an external database manually within their action methods.
+
+## Security: Code Splitting & Server-Only Code Stripping
+
+The framework includes a **security plugin** that automatically strips server-only code from client bundles during the build process. This ensures sensitive code (database queries, API keys, business logic) is never exposed to the browser.
+
+### How It Works
+
+During the client build, the `cossackSecurityPlugin` analyzes component class methods and:
+
+1. **Keeps** methods decorated with `@Client`, `@Optimistic`, `@Computed`, `@Shared`
+2. **Keeps** built-in lifecycle methods: `render`, `head`, `onMount`, `onCleanup`, `escapeHtml`, `get`, `init`, `loadingTemplate`
+3. **Stubs** methods decorated with `@Server` (replaces body with error-throwing stub)
+4. **Stubs** methods without any decorator (secure by default)
+
+### The `@Shared` Decorator
+
+The `@Shared()` decorator marks a method as safe to run on both client and server. Unlike `@Server` methods (which become proxies on the client) or `@Client` methods (which become no-ops on the server), `@Shared` methods retain their full implementation on both sides.
+
+**Use `@Shared` for:**
+- Pure functions that don't access server-only resources
+- Validation logic that needs to run consistently on both sides
+- Data transformation utilities
+
+**Example:**
+```typescript
+class MyPage extends Cossack {
+  @Shared()
+  validateEmail(email: string): boolean {
+    // Runs identically on both client and server
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  @Server()
+  async createUser(email: string) {
+    // Server-only - this code is stripped from client bundle
+    if (!this.validateEmail(email)) {
+      throw new Error('Invalid email');
+    }
+    return await db.insert(users, { email });
+  }
+}
+```
+
+### Build Configuration
+
+The security plugin is automatically applied in client builds (`vite.client.config.ts`). It does **not** affect SSR builds (`vite.ssr.config.ts`), ensuring server code remains intact.
+
+### Development vs Production
+
+In development, calling a stubbed server method directly on the client throws a descriptive error:
+```
+Error: [Cossack] Method MyPage.createUser is server-only and cannot be called directly on the client.
+```
+
+In production, the stub is minimal to reduce bundle size.

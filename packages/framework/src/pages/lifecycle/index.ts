@@ -1,4 +1,4 @@
-import { Cossack, Page, State, html } from '@cossackframework/core';
+import { Client, Cossack, Page, Shared, State, html } from '@cossackframework/core';
 
 @Page()
 export default class LifecycleDemo extends Cossack {
@@ -9,6 +9,12 @@ export default class LifecycleDemo extends Cossack {
     async init() {
         // Simulate a slow data fetch (e.g., from D1 or KV)
         await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    @Client()
+    async reload() {
+        await this.init();
+
         this.data = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
     }
 
@@ -35,7 +41,7 @@ export default class LifecycleDemo extends Cossack {
                 ${this.data.map(item => html`<li>${item}</li>`)}
             </ul>
             <button 
-                @click="${() => this.init()}"
+                @click="${() => this.reload()}"
                 style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;"
             >
                 Refresh Data (Show Loading UI)
