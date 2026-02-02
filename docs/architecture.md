@@ -27,7 +27,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     *   The Global `App` component is instantiated and bootstrapped.
     *   Each `Layout` in the stack is instantiated and bootstrapped.
     *   The `Page` component is instantiated and bootstrapped.
-6.  **Data Loading**: The component's `@Server` decorated `init()` (or `get()`) method is called to fetch the initial data.
+6.  **Data Loading**: The component's `init()` method is called to fetch the initial data. This method is server-only by default and runs in the server environment, with access to databases and other server resources.
 7.  **Rendering**: The content is rendered inside-out: `App(RootLayout(DashboardLayout(Page())))`.
 8.  **Metadata Merging**: The framework processes metadata from the inside-out using the `head()` method. The Page provides the initial values (automatically extracted from frontmatter in MDX components), which are then passed to each Layout in the stack, and finally to the Global App for final branding or global tags.
 9.  The final HTML page is constructed, embedding the rendered HTML, the serialized initial state, and the merged head tags into the response.
@@ -82,20 +82,70 @@ The framework handles state persistence differently depending on the runtime env
 
 ## Security: Code Splitting & Server-Only Code Stripping
 
-The framework includes a **security plugin** that automatically strips server-only code from client bundles during the build process. This ensures sensitive code (database queries, API keys, business logic) is never exposed to the browser.
+The framework includes a **security plugin** (`vite-security-plugin.ts`) that automatically strips server-only code from client bundles during the build process. This ensures sensitive code (database queries, API keys, business logic) is never exposed to the browser.
 
 ### How It Works
 
-During the client build, the `cossackSecurityPlugin` analyzes component class methods and:
+During the client build, the `cossackSecurityPlugin` analyzes component class methods using AST-style brace depth tracking and:
 
-1. **Keeps** methods decorated with `@Client`, `@Optimistic`, `@Computed`, `@Shared`
-2. **Keeps** built-in lifecycle methods: `render`, `head`, `onMount`, `onCleanup`, `escapeHtml`, `get`, `init`, `loadingTemplate`
-3. **Stubs** methods decorated with `@Server` (replaces body with error-throwing stub)
-4. **Stubs** methods without any decorator (secure by default)
+1. **Keeps** methods decorated with `@Client`, `@Optimistic`, `@Computed`, `@Shared`, `@OnEvent`
+2. **Keeps** built-in lifecycle methods: `render`, `head`, `onMount`, `onCleanup`, `escapeHtml`, `loadingTemplate`, `toString`, `valueOf`
+3. **Keeps** property getters and setters (accessor methods)
+4. **Stubs** methods decorated with `@Server` (replaces body with RPC proxy stub)
+5. **Stubs** methods without any decorator (secure by default)
+
+**Note:** The `init()` and `get()` methods are **server-only by default** and will be stubbed in client bundles unless explicitly marked with `@Shared`.
+
+### Method Classification
+
+#### Server-Only (Stripped from Client Bundle)
+- Methods decorated with `@Server` → stub becomes RPC proxy
+- Methods without any decorator → stub becomes RPC proxy
+- `init()` method (unless marked `@Shared`)
+- `get()` method (unless marked `@Shared`)
+
+#### Client-Safe (Kept in Client Bundle)
+- Methods decorated with `@Client`, `@Optimistic`, `@Computed`, `@Shared`, `@OnEvent`
+- Built-in lifecycle methods: `render`, `head`, `onMount`, `onCleanup`, `escapeHtml`, `loadingTemplate`
+- Property getters/setters
+- Properties decorated with `@ClientState`
+
+### Seamless RPC Proxying
+
+When a server-only method is stubbed, the framework enables **seamless RPC proxying**. Client methods can call server-only methods directly, and the calls are automatically routed through the appropriate transport (HTTP or WebSocket).
+
+**How it works:**
+1. Server-only methods are replaced with stub functions that check `this.__cossack_proxies` map
+2. During client bootstrap, proxy functions are automatically registered for all server-only methods
+3. When a client method calls a server-only method (e.g., `await this.init()`), the proxy intercepts the call
+4. The proxy forwards the call to the server via the configured transport
+5. The server executes the real method and returns the result
+
+**Example:**
+```typescript
+class LifecycleDemo extends Cossack {
+  @State()
+  data: string[] = [];
+
+  // Server-only - stub becomes RPC proxy
+  async init() {
+    // Database query, API calls - stripped from client
+    this.data = await db.select().from('users');
+  }
+
+  // Client method can seamlessly call server-only method
+  @Client()
+  async reload() {
+    // This call is automatically proxied to the server
+    await this.init();
+    this.data = ['Cossack', 'Hono', 'Cloudflare'];
+  }
+}
+```
 
 ### The `@Shared` Decorator
 
-The `@Shared()` decorator marks a method as safe to run on both client and server. Unlike `@Server` methods (which become proxies on the client) or `@Client` methods (which become no-ops on the server), `@Shared` methods retain their full implementation on both sides.
+The `@Shared()` decorator marks a method as safe to run on both client and server. Unlike `@Server` methods (which become proxies on the client) or `@Client` methods (which run only on the client), `@Shared` methods retain their full implementation on both sides.
 
 **Use `@Shared` for:**
 - Pure functions that don't access server-only resources
@@ -122,15 +172,19 @@ class MyPage extends Cossack {
 }
 ```
 
+### Metadata Injection
+
+For methods detected as server-only (without explicit `@Server` decorator), the plugin automatically injects a static `__registerServerOnlyMethods()` method that registers them in the `cossack:server-methods` metadata. This enables the RPC proxying system to work seamlessly without requiring explicit `@Server` decorators on every server-only method.
+
 ### Build Configuration
 
 The security plugin is automatically applied in client builds (`vite.client.config.ts`). It does **not** affect SSR builds (`vite.ssr.config.ts`), ensuring server code remains intact.
 
 ### Development vs Production
 
-In development, calling a stubbed server method directly on the client throws a descriptive error:
+In development, calling a server-only method via a proxy that hasn't been set up yet throws a descriptive error:
 ```
-Error: [Cossack] Method MyPage.createUser is server-only and cannot be called directly on the client.
+Error: [Cossack] Method MyPage.init is server-only. The proxy has not been set up yet. Make sure this method is called after bootstrap.
 ```
 
-In production, the stub is minimal to reduce bundle size.
+In production, the stub is minimal to reduce bundle size while still checking for the proxy before execution.
