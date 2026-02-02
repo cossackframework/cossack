@@ -57,7 +57,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   ): boolean {
     // Check for client-safe decorators
     const hasClientDecorator = decorators.some((d) =>
-      /@(?:Client|Optimistic|Computed|Shared)\b/.test(d)
+      /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d)
     );
     if (hasClientDecorator) return true;
 

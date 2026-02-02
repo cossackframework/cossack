@@ -3,7 +3,6 @@ import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot } from './root';
 import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
-import { createApiHandler } from './api-handler';
 import { App } from './App';
 // @ts-expect-error - this is a virtual module created by the vite plugin
 import registry from 'virtual:cossack-pages';
@@ -392,16 +391,6 @@ export function createApp() {
                 Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
             }
             app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
-
-            // Handle class-based HTTP methods
-            if (pageOptions?.transport === 'http') {
-                const httpMethods = ['post', 'put', 'patch', 'delete'];
-                for (const method of httpMethods) {
-                    if (method in PageComponent.prototype) {
-                        (app as any)[method](httpRoute, ...combinedMiddlewares, createApiHandler(PageComponent, method));
-                    }
-                }
-            }
         } 
         // 2. Check if it's a functional API Route
         else if (path.includes('/src/pages/api/')) {

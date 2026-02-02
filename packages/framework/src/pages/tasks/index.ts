@@ -62,6 +62,7 @@ export class Tasks extends Cossack {
         alert(message);
     }
 
+    @Client()
     private confirmDelete = (taskId: number) => {
         if (window.confirm('Are you sure you want to delete this task?')) {
             // Manually set the loading state for the specific task

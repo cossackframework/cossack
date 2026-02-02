@@ -1,40 +1,25 @@
-// src/pages/api/hello/index.ts
-import { Page, State, Cossack } from '@cossackframework/core';
-import { HTTPException } from 'hono/http-exception';
+// Hono-style API routes
+// The default export handles GET requests
+export default (c: any) => {
+    return c.json({
+        success: true,
+        payload: 'Hello from a custom API response!'
+    }, 201, { 'X-Custom-Header': 'Cossack-Framework' });
+};
 
-@Page({
-    transport: 'http'
-})
-export class Hello extends Cossack<CloudflareBindings> {
-    @State()
-    private message: string = '';
+// Named exports handle other HTTP methods
+export const POST = async (c: any) => {
+    const body = await c.req.json();
+    return c.json({
+        success: true,
+        mirroredBody: body
+    });
+};
 
-    async get() {
-        this.message = 'This message is in the state, but will not be returned.';
-
-        // Example of accessing typed env:
-        // const stub = this.env.COSSACK_OBJECT.get(id);
-
-        // Return a custom response object using the Hono context
-        return this.c.json({
-            success: true,
-            payload: 'Hello from a custom API response!'
-        }, 201, { 'X-Custom-Header': 'Cossack-Framework' });
+export const PUT = async (c: any) => {
+    const validation = c.req.query('validation');
+    if (!validation) {
+        return c.json({ success: false, message: 'Validation query parameter is required' }, 400);
     }
-
-    async post() {
-        const body = await this.c.req.json();
-        return this.c.json({
-            success: true,
-            mirroredBody: body
-        });
-    }
-
-    async put() {
-        const validation = this.c.req.query('validation');
-        if (!validation) {
-            throw new HTTPException(400, { message: 'Validation query parameter is required' });
-        }
-        return this.c.json({ success: true, message: 'Validation passed!' });
-    }
-}
+    return c.json({ success: true, message: 'Validation passed!' });
+};
