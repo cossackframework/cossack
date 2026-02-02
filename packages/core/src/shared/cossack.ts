@@ -215,6 +215,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     // Track if server methods have been proxied to prevent re-proxying
     private _serverMethodsProxied = false;
 
+    // Map of server-only method names to their proxy functions
+    // This allows client methods to call server-only methods seamlessly
+    public __cossack_proxies: Map<string, (...args: any[]) => any> = new Map();
+
     @ClientState()
     private _cossack_path: string = '';
 
@@ -837,7 +841,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         for (const method of serverMethods) {
             const { name } = method;
-            this.setProperty(name, async (...args: any[]) => {
+            const proxy = async (...args: any[]) => {
                 // Optimistic UI Handler
                 if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                     try {
@@ -1000,7 +1004,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     delete this.loading[name];
                     this.requestUpdate();
                 }
-            });
+            };
+
+            // Store proxy in the map so stubbed methods can find it
+            this.__cossack_proxies.set(name, proxy);
+
+            // Set the method on the instance
+            this.setProperty(name, proxy);
         }
     }
 
@@ -1011,7 +1021,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         for (const method of serverMethods) {
             const { name, channel, provider } = method;
             const originalMethod = this.getMethod(name);
-            this.setProperty(name, (...args: any[]) => {
+            const proxy = (...args: any[]) => {
                 let ws = this.websockets.get(provider);
                 if (!ws) {
                     const root = this.consume(RootContext);
@@ -1053,7 +1063,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } else {
                     console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
                 }
-            });
+            };
+
+            // Store proxy in the map so stubbed methods can find it
+            this.__cossack_proxies.set(name, proxy);
+
+            // Set the method on the instance
+            this.setProperty(name, proxy);
         }
     }
 
@@ -1550,7 +1566,60 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
 
         // Add server methods metadata
-        const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+        let serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+
+        // On server side, automatically detect methods without decorators as server-only
+        if (this.isServer) {
+            const clientSafeMethods = new Set(
+                Object.keys(Reflect.getMetadata('cossack:client-methods', this.constructor) || {})
+            );
+            const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+            const computedMethods = Reflect.getMetadata('computed', this.constructor) || {};
+
+            // Add client-safe methods to the set
+            Object.values(optimisticHandlers).forEach((handler: any) => clientSafeMethods.add(handler));
+            Object.keys(computedMethods).forEach(key => clientSafeMethods.add(key));
+
+            // Scan for methods without decorators (server-only by default)
+            const proto = Object.getPrototypeOf(this);
+            const propertyNames = Object.getOwnPropertyNames(proto);
+
+            const builtInMethods = new Set([
+                'constructor', 'render', 'head', 'onMount', 'onCleanup', 'escapeHtml',
+                'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
+                'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
+                'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
+                'initializeState', 'initializeProviders', 'connectWebSocket',
+                'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
+                'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
+                'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
+                'redirect', 'requestUpdate', 'validateChannels', 'willUpdate',
+                'connectedCallback', 'disconnectedCallback', 'shouldUpdate',
+                'performUpdate', 'updated', '_render', 'getInitialHtml',
+                '_getWrappedTemplate', 'autoBindMethods', 'setupEventListeners',
+                'setupVisibleTasks', 'runTasks', 'consume', 'provide',
+                '_transitionToPhase', '_restorePhase', 'isInPhase', 'isInAnyPhase',
+                'getPhase', 'getParentComponent', 'getElementInternal',
+                'getInitialStateFromWindow', '_scheduleStateBroadcast',
+                '_wrapLifecycleMethods', '_setupServerMethodProxies',
+                'confirmNavigation', '_checkPreventNavigation'
+            ]);
+
+            for (const name of propertyNames) {
+                if (builtInMethods.has(name)) continue;
+                if (clientSafeMethods.has(name)) continue;
+                if (name.startsWith('_')) continue; // Skip private properties
+
+                const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+                if (descriptor && typeof descriptor.value === 'function') {
+                    // This is a method without any client-safe decorator - mark as server-only
+                    if (!serverMethodsMetadata[name]) {
+                        serverMethodsMetadata[name] = { channel: 'global', provider: 'page', __serverOnly: true };
+                    }
+                }
+            }
+        }
+
         serializedState.serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
             name,
             channel: options.channel || 'global',

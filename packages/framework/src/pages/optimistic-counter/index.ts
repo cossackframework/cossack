@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, ClientState, Optimistic, Computed } from '@cossackframework/core';
+import { Cossack, Page, Server, State, ClientState, Optimistic, Computed, Client } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Button } from '@/components/Button';
 
@@ -45,6 +45,7 @@ export class OptimisticCounter extends Cossack {
         this.optimisticCount++;
     }
 
+    @Client()
     toggleDetails = () => {
         this.showDetails = !this.showDetails;
     }

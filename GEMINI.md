@@ -79,3 +79,64 @@ The project is a `pnpm` workspace.
 - **MDX Support**: Zero-configuration support for `.mdx` files as endpoints, allowing markdown-based content with full layout support.
 - **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
 - **Image Optimization**: `Image` component for responsive, edge-optimized assets.
+- **Code Splitting & Security**: Automatic server-only code stripping from client bundles via `@Server`, `@Client`, `@Shared`, `@Optimistic`, and `@Computed` decorators.
+
+## Decorators Reference
+
+### Server-Only Decorators
+These decorators mark code that should only run on the server:
+
+- **`@Server()`**: Marks a method as server-only. The method body is stripped from the client bundle and replaced with a proxy function that calls the server via WebSocket or HTTP.
+- **`@State()`**: Marks a property as synchronized state (server-to-client).
+- **`@Client()`**: Marks a method as client-only. On the server, these methods are replaced with no-ops.
+
+### Client-Only Decorators
+These decorators mark code that only runs on the client:
+
+- **`@ClientState()`**: Marks a property as client-only state (triggers re-renders, no server sync).
+- **`@Prop()`**: Semantic equivalent to `@ClientState()` for component inputs.
+- **`@Optimistic()`**: Marks an optimistic UI handler that runs immediately on the client while the server processes the action.
+
+### Shared Decorators
+- **`@Shared()`**: Marks a method as safe to run on both client and server. The full implementation is retained in both bundles. Use for pure functions, validation logic, and data transformation utilities.
+
+### Computed Properties
+- **`@Computed()`**: Marks a getter method as a computed property (memoized).
+
+### Built-in Methods (Always Kept in Client)
+The following lifecycle methods are never stripped from the client bundle:
+- `render()`, `head()`, `onMount()`, `onCleanup()`, `escapeHtml()`, `get()`, `init()`, `loadingTemplate()`
+
+## Security: Code Stripping
+
+The framework includes a Vite security plugin (`cossackSecurityPlugin`) that automatically strips server-only code from client bundles. This ensures that:
+
+1. Database queries, API keys, and server-side business logic are never exposed to the browser
+2. Methods without any decorator are treated as server-only by default (secure by default)
+3. Only explicitly marked client-safe code reaches the browser
+
+**Method Classification:**
+- **Server-Only** (stubs in client): `@Server` decorated methods, methods without decorators
+- **Client-Safe** (full implementation): `@Client`, `@Optimistic`, `@Computed`, `@Shared`, built-in lifecycle methods
+
+**Example:**
+```typescript
+class MyPage extends Cossack {
+  @Server()
+  async queryDatabase() {
+    // This code is stripped from client bundle
+    return await db.select().from(users);
+  }
+
+  @Shared()
+  validateEmail(email: string): boolean {
+    // This runs on both client and server
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  @Client()
+  updateUI() {
+    // Client-only, stubbed on server
+  }
+}
+```

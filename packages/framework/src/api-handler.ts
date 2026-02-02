@@ -4,6 +4,11 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { Cossack } from '@cossackframework/core';
 
+/**
+ * Create an API handler for a Cossack class method.
+ * This allows page components to expose HTTP method handlers (post, put, etc.)
+ * while still being regular page components that render HTML.
+ */
 export function createApiHandler(ComponentClass: new () => Cossack, methodName: string) {
     return async (c: Context) => {
         try {

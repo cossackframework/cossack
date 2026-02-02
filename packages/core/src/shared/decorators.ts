@@ -217,6 +217,54 @@ export function Computed(): MethodDecorator {
   };
 }
 
+/**
+ * Decorator for methods that are safe to run on both client and server.
+ * This marks the method as shared, ensuring it is NOT stripped from the client bundle.
+ *
+ * Unlike @Server methods (which are stubbed on the client) and @Client methods (which are stubbed on the server),
+ * @Shared methods retain their full implementation on both sides.
+ *
+ * Use this decorator for:
+ * - Pure functions that don't access server-only resources
+ * - Validation logic that needs to run consistently on both sides
+ * - Data transformation utilities
+ *
+ * @example
+ * ```ts
+ * @Shared()
+ * validateEmail(email: string): boolean {
+ *   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+ * }
+ * ```
+ */
+export function Shared(): MethodDecorator {
+    return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+        // Mark as server-callable (like @Server)
+        const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
+            ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
+            : {};
+
+        serverMethods[propertyKey] = {
+            channel: 'global',
+            provider: 'page',
+        };
+        Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);
+
+        // Also mark as client-safe (like @Client) so it's NOT stubbed
+        const clientMethods = Reflect.hasOwnMetadata('cossack:client-methods', target.constructor)
+            ? Reflect.getOwnMetadata('cossack:client-methods', target.constructor)
+            : {};
+
+        clientMethods[propertyKey] = true;
+        Reflect.defineMetadata('cossack:client-methods', clientMethods, target.constructor);
+
+        // Mark as shared for the security plugin to detect
+        Reflect.defineMetadata('cossack:shared', true, target, propertyKey);
+
+        return descriptor;
+    };
+}
+
 export function Optimistic(actionName: string): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const optimisticHandlers = Reflect.getOwnMetadata('cossack:optimistic-handlers', target.constructor) || {};

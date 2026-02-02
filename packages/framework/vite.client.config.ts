@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import path from 'path'
 import { cossackPages } from './src/vite-plugin';
+import { cossackSecurityPlugin } from './src/vite-security-plugin';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -14,7 +15,15 @@ export default defineConfig(({ mode }) => {
       // Force DEV to true if we are in our custom dev mode, otherwise let Vite decide
       ...(process.env.COSSACK_DEV ? { 'import.meta.env.DEV': 'true' } : {})
     },
-    plugins: [cossackPages({ mode })],
+    plugins: [
+      // Security plugin: strips server-only code from client bundle
+      // Must run before cossackPages (enforce: 'pre') to process raw source
+      cossackSecurityPlugin({
+        mode: 'client', // Only strip in client builds
+        devWarning: true, // Warn in development if server code is accessed
+      }),
+      cossackPages({ mode }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
