@@ -134,41 +134,181 @@ function transformCossackClass(
 
   let match;
   let result = code;
+  let replacements: Array<{ start: number; end: number; replacement: string }> = [];
 
   while ((match = classRegex.exec(code)) !== null) {
     const className = match[1];
-    const classStart = match.index + match[0].length;
+    const classStart = match.index;
+    const classEnd = match.index + match[0].length;
 
     // Find the matching closing brace for the class
-    const classBody = extractClassBody(code, classStart);
+    const classBody = extractClassBody(code, classEnd);
     if (!classBody) {
       console.warn(`[Cossack Security] Could not extract class body for ${className} in ${id}`);
       continue;
     }
 
-    const { body: classBodyText, bodyEnd } = classBody;
+    const { body: classBodyText, bodyEnd, closingBrace } = classBody;
 
     // Transform method definitions using depth tracking
     const transformedBody = transformMethodsWithDepthTracking(
       code,
-      classStart,
-      classStart + classBodyText.length,
+      classEnd,
+      classEnd + classBodyText.length,
       className,
       id,
       isClientSafeMethod,
       devWarning
     );
 
-    if (transformedBody !== classBodyText) {
-      // Replace the class body in the original code
-      result =
-        result.slice(0, classStart) +
-        transformedBody +
-        result.slice(classStart + classBodyText.length);
+    // Collect server-only method names that were stubbed
+    const serverOnlyMethods = extractServerOnlyMethodNames(
+      code,
+      classEnd,
+      classEnd + classBodyText.length,
+      isClientSafeMethod
+    );
+
+    let finalBody = transformedBody;
+
+    // Inject metadata registration at the end of the class for server-only methods
+    if (serverOnlyMethods.length > 0) {
+      const metadataInjection = createMetadataInjection(serverOnlyMethods);
+      finalBody = transformedBody + metadataInjection;
+    }
+
+    if (finalBody !== classBodyText) {
+      replacements.push({
+        start: classEnd,
+        end: closingBrace,
+        replacement: finalBody,
+      });
     }
   }
 
+  // Apply replacements in reverse order to maintain positions
+  if (replacements.length === 0) return code;
+
+  for (const replacement of [...replacements].reverse()) {
+    result =
+      result.slice(0, replacement.start) +
+      replacement.replacement +
+      result.slice(replacement.end);
+  }
+
   return result;
+}
+
+/**
+ * Extract the names of server-only methods that will be stubbed.
+ */
+function extractServerOnlyMethodNames(
+  fullCode: string,
+  classBodyStart: number,
+  classBodyEnd: number,
+  isClientSafeMethod: (decorators: string[], methodName: string) => boolean
+): string[] {
+  const serverOnlyMethods: string[] = [];
+  const classBody = fullCode.slice(classBodyStart, classBodyEnd);
+
+  let i = 0;
+  const len = classBody.length;
+  let braceDepth = 0;
+  let pendingDecorators: string[] = [];
+
+  while (i < len) {
+    const char = classBody[i];
+
+    if (char === '"' || char === "'" || char === '`') {
+      const stringEnd = findStringEndInString(classBody, i, char);
+      if (stringEnd === -1) break;
+      i = stringEnd + 1;
+      continue;
+    }
+
+    if (char === '/' && i + 1 < len) {
+      const next = classBody[i + 1];
+      if (next === '/') {
+        i = classBody.indexOf('\n', i + 2);
+        if (i === -1) i = len;
+        continue;
+      } else if (next === '*') {
+        i = classBody.indexOf('*/', i + 2);
+        if (i === -1) break;
+        i += 2;
+        continue;
+      }
+    }
+
+    if (braceDepth === 0 && char === '@') {
+      const decoratorEnd = findDecoratorEnd(classBody, i);
+      if (decoratorEnd > i) {
+        const decorator = classBody.slice(i, decoratorEnd);
+        pendingDecorators.push(decorator);
+        i = decoratorEnd;
+        while (i < len && classBody[i] !== '\n') i++;
+        continue;
+      }
+    }
+
+    if (char === '{') {
+      braceDepth++;
+      i++;
+      continue;
+    }
+    if (char === '}') {
+      braceDepth--;
+      if (braceDepth < 0) break;
+      if (braceDepth === 0) pendingDecorators = [];
+      i++;
+      continue;
+    }
+
+    if (braceDepth === 0 && /[a-zA-Z_$]/.test(char)) {
+      const methodMatch = findMethodDefinition(classBody, i);
+      if (methodMatch) {
+        const { methodName, bodyEnd } = methodMatch;
+
+        if (methodName !== 'constructor' && !isClientSafeMethod(pendingDecorators, methodName)) {
+          serverOnlyMethods.push(methodName);
+        }
+
+        pendingDecorators = [];
+        i = bodyEnd;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return serverOnlyMethods;
+}
+
+/**
+ * Create metadata injection code that registers server-only methods.
+ * This is injected at the end of the class body.
+ */
+function createMetadataInjection(methodNames: string[]): string {
+  const methodList = JSON.stringify(methodNames);
+  return `
+    // Register server-only methods for RPC proxying
+    static __registerServerOnlyMethods() {
+      if (typeof Reflect === 'undefined' || !Reflect.hasMetadata) return;
+      const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', this) || {};
+      const methods = ${methodList};
+      for (const name of methods) {
+        if (!serverMethods[name]) {
+          serverMethods[name] = { channel: 'global', provider: 'page', __serverOnly: true };
+        }
+      }
+      Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
+    }
+    constructor() {
+      super();
+      (this.constructor as any).__registerServerOnlyMethods?.();
+    }
+  `;
 }
 
 /**
@@ -569,6 +709,9 @@ function findStringEndInString(code: string, pos: number, quote: string): number
 
 /**
  * Create a stub function for a server-only method.
+ *
+ * The stub checks if a runtime proxy exists and calls it.
+ * This allows client methods to seamlessly call server-only methods via RPC.
  */
 function createStub(
   methodName: string,
@@ -577,13 +720,24 @@ function createStub(
 ): string {
   if (devWarning) {
     return `{
+      // Check if a proxy has been set up for this server-only method
+      const proxy = this.__cossack_proxies?.get('${methodName}');
+      if (proxy) {
+        return proxy.apply(this, arguments);
+      }
+      // No proxy yet - throw an error
       throw new Error(
-        '[Cossack] Method ' + '${className}.${methodName}' + ' is server-only and cannot be called directly on the client. ' +
-        'Use the proxy method or call it via the server transport.'
+        '[Cossack] Method ' + '${className}.${methodName}' + ' is server-only. ' +
+        'The proxy has not been set up yet. Make sure this method is called after bootstrap.'
       );
     }`;
   }
-  return '{}'; // Production: minimal stub
+  // Production: minimal stub that still checks for proxy
+  return `{
+    const proxy = this.__cossack_proxies?.get('${methodName}');
+    if (proxy) return proxy.apply(this, arguments);
+    throw new Error('[Cossack] Method ${className}.${methodName} is server-only.');
+  }`;
 }
 
 export default cossackSecurityPlugin;

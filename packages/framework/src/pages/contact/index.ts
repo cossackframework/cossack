@@ -16,7 +16,7 @@ export class Contact extends Cossack {
         };
     }
 
-    async get() {
+    async init() {
         this.greeting = this.c.req.query('name') || 'Tan';
     }
 
