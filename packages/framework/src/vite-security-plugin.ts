@@ -49,31 +49,6 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   ]);
 
   /**
-   * Check if a method is decorated with a client-safe decorator.
-   */
-  function isClientSafeMethod(
-    decorators: string[],
-    methodName: string
-  ): boolean {
-    // Check for client-safe decorators
-    const hasClientDecorator = decorators.some((d) =>
-      /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d)
-    );
-    if (hasClientDecorator) return true;
-
-    // Check for built-in methods
-    if (BUILTIN_METHODS.has(methodName)) return true;
-
-    // Check for @Server decorator explicitly - these should be stubbed
-    if (decorators.some((d) => /@Server\b/.test(d))) {
-      return false;
-    }
-
-    // Default: methods without decorators are considered server-only (secure by default)
-    return false;
-  }
-
-  /**
    * Check if the file should be processed.
    * Only process user application code, not framework/library code.
    */
@@ -105,7 +80,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       try {
-        const transformed = transformCossackClass(code, id, isClientSafeMethod, devWarning);
+        const transformed = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
         if (transformed !== code) {
           return { code: transformed, map: null };
         }
@@ -122,10 +97,11 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
  * Transform a Cossack class by stubbing server-only methods.
  * Uses brace depth tracking to ensure only top-level methods are processed.
  */
-function transformCossackClass(
+export function transformCossackClass(
   code: string,
   id: string,
-  isClientSafeMethod: (decorators: string[], methodName: string) => boolean,
+  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>,
   devWarning: boolean
 ): string {
   // Find class definitions extending Cossack or CossackElement
@@ -158,6 +134,7 @@ function transformCossackClass(
       className,
       id,
       isClientSafeMethod,
+      builtinMethods,
       devWarning
     );
 
@@ -166,7 +143,8 @@ function transformCossackClass(
       code,
       classEnd,
       classEnd + classBodyText.length,
-      isClientSafeMethod
+      isClientSafeMethod,
+      builtinMethods
     );
 
     let finalBody = transformedBody;
@@ -206,7 +184,8 @@ function extractServerOnlyMethodNames(
   fullCode: string,
   classBodyStart: number,
   classBodyEnd: number,
-  isClientSafeMethod: (decorators: string[], methodName: string) => boolean
+  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>
 ): string[] {
   const serverOnlyMethods: string[] = [];
   const classBody = fullCode.slice(classBodyStart, classBodyEnd);
@@ -269,7 +248,7 @@ function extractServerOnlyMethodNames(
       if (methodMatch) {
         const { methodName, bodyEnd } = methodMatch;
 
-        if (methodName !== 'constructor' && !isClientSafeMethod(pendingDecorators, methodName)) {
+        if (methodName !== 'constructor' && !isClientSafeMethod(pendingDecorators, methodName, builtinMethods)) {
           serverOnlyMethods.push(methodName);
         }
 
@@ -321,7 +300,8 @@ function transformMethodsWithDepthTracking(
   classBodyEnd: number,
   className: string,
   id: string,
-  isClientSafeMethod: (decorators: string[], methodName: string) => boolean,
+  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>,
   devWarning: boolean
 ): string {
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
@@ -411,8 +391,15 @@ function transformMethodsWithDepthTracking(
             continue;
           }
 
+          // Skip getters/setters (property accessors)
+          if (methodName === 'get' || methodName === 'set') {
+            pendingDecorators = [];
+            i = bodyEnd;
+            continue;
+          }
+
           // Check if this method is client-safe
-          if (isClientSafeMethod(pendingDecorators, methodName)) {
+          if (isClientSafeMethod(pendingDecorators, methodName, builtinMethods)) {
             pendingDecorators = [];
             i = bodyEnd;
             continue;
@@ -462,6 +449,111 @@ function findMethodDefinition(
   let i = startPos;
   const len = code.length;
 
+  // Skip leading whitespace
+  while (i < len && /\s/.test(code[i])) i++;
+  if (i >= len) return null;
+
+  // Check for get/set at the current position - these are property accessors, not methods
+  // Note: We check the first 4 characters which includes the space after get/set
+  const next4 = code.slice(i, i + 4);
+  const isGet = code[i] === 'g' && next4 === 'get ';
+  const isSet = code[i] === 's' && next4 === 'set ';
+  const isGetOrSet = isGet || isSet;
+  if (isGetOrSet) {
+    // Property accessors should not be stubbed
+    // For getters/setters, we need to return the full definition so the main loop skips it
+    // We'll use 'get' or 'set' as the method name and let the main loop skip it
+    const accessorType = code.slice(i, i + 3); // 'get' or 'set'
+    i += 3; // Skip 'get' or 'set'
+    while (i < len && /\s/.test(code[i])) i++; // Skip whitespace after get/set
+
+    // Find the property name (identifier)
+    const propNameMatch = code.slice(i).match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+    if (!propNameMatch) return null;
+    const propName = propNameMatch[1];
+    i += propName.length;
+
+    // Skip whitespace
+    while (i < len && /\s/.test(code[i])) i++;
+
+    // Skip parameter list for getters/setters
+    // For getters: `get value()` - we need to skip the `()`
+    // For setters: `set value(v)` - we need to skip the `(v)`
+    if (i < len && code[i] === '(') {
+      let parenDepth = 1;
+      i++;
+      while (i < len && parenDepth > 0) {
+        if (code[i] === '(') parenDepth++;
+        else if (code[i] === ')') parenDepth--;
+        else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+          const stringEnd = findStringEndInString(code, i, code[i]);
+          if (stringEnd === -1) return null;
+          i = stringEnd;
+        }
+        i++;
+      }
+    }
+
+    // Skip whitespace
+    while (i < len && /\s/.test(code[i])) i++;
+
+    // Skip optional type annotation (for getters)
+    if (i < len && code[i] === ':') {
+      i++;
+      while (i < len && code[i] !== '{') {
+        if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+          const stringEnd = findStringEndInString(code, i, code[i]);
+          if (stringEnd === -1) return null;
+          i = stringEnd + 1;
+        } else if (code[i] === '(') {
+          // Handle parentheses in type annotations (e.g., function types)
+          let depth = 1;
+          i++;
+          while (i < len && depth > 0) {
+            if (code[i] === '(') depth++;
+            else if (code[i] === ')') depth--;
+            i++;
+          }
+        } else {
+          i++;
+        }
+      }
+    }
+
+    // Skip whitespace
+    while (i < len && /\s/.test(code[i])) i++;
+
+    // Find opening brace
+    if (i >= len || code[i] !== '{') return null;
+    const bodyStart = i;
+
+    // Find closing brace (matching braces)
+    let braceDepth = 1;
+    i++;
+    while (i < len && braceDepth > 0) {
+      if (code[i] === '{') braceDepth++;
+      else if (code[i] === '}') braceDepth--;
+      else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+        const stringEnd = findStringEndInString(code, i, code[i]);
+        if (stringEnd === -1) return null;
+        i = stringEnd;
+      }
+      i++;
+    }
+    const bodyEnd = i;
+
+    // Return as if it's a method with a special marker
+    return {
+      nameStart: startPos,
+      nameEnd: startPos + 3,
+      methodName: accessorType, // 'get' or 'set' - will be checked in main loop
+      paramsStart: bodyStart,
+      paramsEnd: bodyStart,
+      bodyStart,
+      bodyEnd
+    };
+  }
+
   // Skip optional access modifiers and async keyword
   const accessModifiers = ['public', 'private', 'protected', 'static', 'readonly'];
   while (i < len) {
@@ -482,6 +574,17 @@ function findMethodDefinition(
     } else if (!found) {
       break;
     }
+  }
+
+  // Skip whitespace
+  while (i < len && /\s/.test(code[i])) i++;
+  if (i >= len) return null;
+
+  // Check for get/set after access modifiers
+  if ((code[i] === 'g' && code.slice(i, i + 4) === 'get ' && (i + 3 >= len || /\s/.test(code[i + 3]))) ||
+      (code[i] === 's' && code.slice(i, i + 4) === 'set ' && (i + 3 >= len || /\s/.test(code[i + 3])))) {
+    // Property accessors should not be stubbed
+    return null;
   }
 
   // Find method name (identifier)
@@ -738,6 +841,33 @@ function createStub(
     if (proxy) return proxy.apply(this, arguments);
     throw new Error('[Cossack] Method ${className}.${methodName} is server-only.');
   }`;
+}
+
+/**
+ * Check if a method is decorated with a client-safe decorator.
+ * Exported for testing purposes.
+ */
+export function isClientSafeMethod(
+  decorators: string[],
+  methodName: string,
+  builtinMethods: Set<string>
+): boolean {
+  // Check for client-safe decorators
+  const hasClientDecorator = decorators.some((d) =>
+    /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d)
+  );
+  if (hasClientDecorator) return true;
+
+  // Check for built-in methods
+  if (builtinMethods.has(methodName)) return true;
+
+  // Check for @Server decorator explicitly - these should be stubbed
+  if (decorators.some((d) => /@Server\b/.test(d))) {
+    return false;
+  }
+
+  // Default: methods without decorators are considered server-only (secure by default)
+  return false;
 }
 
 export default cossackSecurityPlugin;
