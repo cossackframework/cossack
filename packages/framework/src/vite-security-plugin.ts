@@ -46,6 +46,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     'loadingTemplate',
     'toString',
     'valueOf',
+    'clientInit', // Client-side initialization method for fake loading
   ]);
 
   /**

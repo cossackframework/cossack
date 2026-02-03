@@ -561,6 +561,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+        console.log('[bootstrap] START', this.constructor.name, 'skipInit=', skipInit, 'has container=', !!container);
+
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -657,21 +659,28 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         this.isBootstrapping = false;
 
+        console.log('[bootstrap]', this.constructor.name, 'isMounted=', this.isMounted, 'has container=', !!this.container, 'hasMethod(clientInit)=', this.hasMethod('clientInit'));
+
+        // Mount to DOM if we have a container (for root/app components)
         if (this.container && !this.isServer) {
             this.skipRenderTasks = true;
             this.mount(this.container as HTMLElement);
             this.skipRenderTasks = false;
+        }
 
-            if (!this.isMounted) {
-                this.isMounted = true;
-                this.onMount();
-                // Run clientInit() if it exists - for client-only initialization
-                // that should show loading state on initial page load
-                if (this.hasMethod('clientInit')) {
-                    const clientInitMethod = this.getMethod('clientInit');
-                    if (clientInitMethod) {
-                        (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
-                    }
+        // Call onMount() and clientInit() for all components (not just those with containers)
+        // Page components don't have containers, but they still need their lifecycle hooks
+        if (!this.isServer && !this.isMounted) {
+            this.isMounted = true;
+            this.onMount();
+
+            // Run clientInit() if it exists - for client-only initialization
+            // that should show loading state on initial page load
+            if (this.hasMethod('clientInit')) {
+                console.log('[bootstrap] calling clientInit for', this.constructor.name);
+                const clientInitMethod = this.getMethod('clientInit');
+                if (clientInitMethod) {
+                    (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
                 }
             }
         }
