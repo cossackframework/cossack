@@ -561,8 +561,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
-        console.log('[bootstrap] START', this.constructor.name, 'skipInit=', skipInit, 'has container=', !!container);
-
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -659,8 +657,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         this.isBootstrapping = false;
 
-        console.log('[bootstrap]', this.constructor.name, 'isMounted=', this.isMounted, 'has container=', !!this.container, 'hasMethod(clientInit)=', this.hasMethod('clientInit'));
-
         // Mount to DOM if we have a container (for root/app components)
         if (this.container && !this.isServer) {
             this.skipRenderTasks = true;
@@ -677,7 +673,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Run clientInit() if it exists - for client-only initialization
             // that should show loading state on initial page load
             if (this.hasMethod('clientInit')) {
-                console.log('[bootstrap] calling clientInit for', this.constructor.name);
                 const clientInitMethod = this.getMethod('clientInit');
                 if (clientInitMethod) {
                     (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
@@ -1462,8 +1457,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const method = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
         if (method && this.hasMethod(method)) {
             const methodFn = this.getMethod(method);
-            const allow = await (methodFn as any)();
-            return !allow; // Returns TRUE if PREVENTED (blocked)
+            // Call with proper 'this' context - method returns true to PREVENT navigation
+            return await (methodFn as any).call(this);
         }
         return false;
     }
@@ -1613,6 +1608,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Add client-safe methods to the set
             Object.values(optimisticHandlers).forEach((handler: any) => clientSafeMethods.add(handler));
             Object.keys(computedMethods).forEach(key => clientSafeMethods.add(key));
+
+            // Add @PreventNavigation() decorated methods as client-safe
+            const preventNavigationMethod = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
+            if (preventNavigationMethod) {
+                clientSafeMethods.add(preventNavigationMethod);
+            }
 
             // Scan for methods without decorators (server-only by default)
             const proto = Object.getPrototypeOf(this);

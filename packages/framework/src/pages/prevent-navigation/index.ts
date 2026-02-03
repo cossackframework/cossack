@@ -17,7 +17,7 @@ export default class PreventNavigationDemo extends Cossack {
 
     @PreventNavigation()
     checkNavigation() {
-        // Return true to BLOCK navigation
+        // Return true to PREVENT navigation (has unsaved changes)
         return this.isDirty;
     }
 

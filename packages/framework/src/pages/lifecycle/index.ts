@@ -3,16 +3,16 @@ import { Cossack, Page, Client, State, html } from '@cossackframework/core';
 /**
  * LifecycleDemo - Demonstrates loading states in Cossack
  *
- * This page shows two different loading mechanisms:
+ * This page demonstrates convention-based loading:
  *
- * 1. loading.ts (file-based convention):
- *    - Shown instantly during client-side navigation
- *    - Displays while init() runs on the server
- *    - See: /src/pages/lifecycle/loading.ts
+ * Because this component has a loadingTemplate() method (and a loading.ts file exists),
+ * the framework automatically skips init() during SSR and shows the loading UI immediately.
  *
- * 2. loadingTemplate() (method-based convention):
- *    - Shown when this.loading.init is true
- *    - Used for "Refresh Data" button (reload() calls init())
+ * Flow:
+ * 1. SSR: Render loading template, send HTML immediately (no wait)
+ * 2. Client: Hydrate with loading template showing
+ * 3. clientInit(): Calls init() via RPC to fetch data from server
+ * 4. Data loads: Re-render with actual content
  */
 @Page()
 export default class LifecycleDemo extends Cossack {
@@ -20,25 +20,27 @@ export default class LifecycleDemo extends Cossack {
     data: string[] = [];
 
     /**
-     * Server-side initialization (runs during SSR)
-     * Simulates slow data fetching to demonstrate loading.ts
+     * Server-side initialization
+     * - Skipped during SSR if loadingTemplate() exists (instant HTML response)
+     * - Called via RPC from clientInit() to fetch data
+     * - Also called manually via "Refresh Data" button
      */
     async init() {
-        // Simulate slow server-side data fetch
+        // Simulate slow server-side data fetch (DB query, API call, etc.)
         await new Promise(resolve => setTimeout(resolve, 2000));
         this.data = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
     }
 
     /**
-     * Client-side initialization (runs after hydration on first mount)
+     * Client-side initialization (runs after hydration)
      * No @Client decorator needed - clientInit is a built-in method
      *
-     * For direct visits, init() already populated the data on the server.
-     * This is called after hydration for any client-specific setup.
+     * Calls init() via RPC to fetch data from the server after loading UI is shown.
      */
     async clientInit() {
-        // Data is already set by server-side init()
-        // Use this for client-only initialization if needed
+        // Fetch data from server via RPC
+        // This triggers loading state, shows skeleton, then populates data
+        await this.init();
     }
 
     @Client()
