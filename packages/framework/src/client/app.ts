@@ -260,9 +260,13 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     if (!force && currentPage && !isDisplayingLoadingState) {
         const prevented = await currentPage._checkPreventNavigation();
         if (prevented) {
-            currentPage._pendingNavigation = () => navigate(url, true);
+            currentPage._pendingNavigation = async () => {
+                if (await navigate(url, true)) {
+                    window.history.pushState({}, '', url);
+                }
+            };
             // Force re-render to show prevention UI if any
-            await currentPage.requestUpdate(); 
+            await currentPage.requestUpdate();
             return false;
         }
     }

@@ -5,7 +5,7 @@ This document provides the necessary context for the Gemini AI to act as an effe
 ## Rules
 - Run type checks after code changes: `pnpm tsc --noEmit`
 - Create tests for new features and bug fixes.
-
+- Check `/docs/architecture.md` for architectural guidelines before making significant changes.
 
 ## 1. High-Level Project Goal
 

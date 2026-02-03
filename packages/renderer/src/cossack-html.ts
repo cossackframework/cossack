@@ -485,6 +485,9 @@ class NodePart implements Part {
   private renderListener: ((t: TemplateResult | unknown | null) => void) | null = null;
   private _childParts: NodePart[] = [];
   private _partKeys: unknown[] = [];
+  // Cache for nested template result updates
+  private _cachedTemplateStrings: TemplateStringsArray | null = null;
+  private _cachedParts: Part[] | null = null;
 
   constructor(public startNode: Comment, public endNode: Comment) {}
 
@@ -514,6 +517,7 @@ class NodePart implements Part {
         this.componentInstance.disconnectedCallback();
         this.componentInstance = null;
         this.renderListener = null;
+        this._clearTemplateCache();
       }
   }
 
@@ -625,6 +629,8 @@ class NodePart implements Part {
 
   dispose() {
       this.clear();
+      this._clearTemplateCache();
+      this.clearChildParts();
       if (this.startNode.parentNode) this.startNode.parentNode.removeChild(this.startNode);
       if (this.endNode.parentNode) this.endNode.parentNode.removeChild(this.endNode);
       if (this.componentInstance) {
@@ -638,37 +644,63 @@ class NodePart implements Part {
   private updateNode(value: unknown) {
     if (!this.startNode.parentNode) return;
     if (isTemplateResult(value)) {
-       this.clear();
-       const container = document.createDocumentFragment();
-       render(value, container);
-       this.startNode.parentNode!.insertBefore(container, this.endNode);
+       // Check if we have a cached template with the same strings
+       if (this._cachedTemplateStrings === value.strings && this._cachedParts) {
+           // Template structure is the same, just update the parts
+           this._cachedParts.forEach((part, i) => {
+               part.update(value.values[i]);
+           });
+       } else {
+           // Template structure changed, clear and re-render
+           this._clearTemplateCache();
+           this.clear();
+           const container = document.createDocumentFragment();
+           render(value, container);
+           this.startNode.parentNode!.insertBefore(container, this.endNode);
+           // Cache the template strings and parts for future updates
+           const cached = containerCache.get(container.firstChild?.childNodes[0] || container);
+           if (cached) {
+               this._cachedTemplateStrings = cached.strings;
+               this._cachedParts = cached.parts;
+           }
+       }
     } else if (isComponentResult(value) || (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))) {
         // Handle ComponentResult or other objects by wrapping in template
+       this._clearTemplateCache();
        this.clear();
        const container = document.createDocumentFragment();
        render(html`${value}`, container);
        this.startNode.parentNode!.insertBefore(container, this.endNode);
     } else if (isUnsafeHTML(value)) {
-        this.clear();
-        const temp = document.createElement('template');
-        temp.innerHTML = value.value;
-        this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
+       this._clearTemplateCache();
+       this.clear();
+       const temp = document.createElement('template');
+       temp.innerHTML = value.value;
+       this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
     } else if (value instanceof Node) {
-        this.clear();
-        this.startNode.parentNode!.insertBefore(value, this.endNode);
+       this._clearTemplateCache();
+       this.clear();
+       this.startNode.parentNode!.insertBefore(value, this.endNode);
     } else if (value === null || value === undefined || value === false) {
-        this.clear();
+       this._clearTemplateCache();
+       this.clear();
     } else {
         const text = String(value);
         const node = this.startNode.nextSibling;
         if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
             if (node.nodeValue !== text) node.nodeValue = text;
         } else {
+            this._clearTemplateCache();
             this.clear();
             const textNode = document.createTextNode(text);
             this.startNode.parentNode!.insertBefore(textNode, this.endNode);
         }
     }
+  }
+
+  private _clearTemplateCache() {
+      this._cachedTemplateStrings = null;
+      this._cachedParts = null;
   }
 
   clear() {

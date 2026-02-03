@@ -854,7 +854,7 @@ export function isClientSafeMethod(
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>
-    /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d)
+    /@(?:Client|Optimistic|Computed|Shared|OnEvent|PreventNavigation)\b/.test(d)
   );
   if (hasClientDecorator) return true;
 
