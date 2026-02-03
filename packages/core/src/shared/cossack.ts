@@ -665,6 +665,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (!this.isMounted) {
                 this.isMounted = true;
                 this.onMount();
+                // Run clientInit() if it exists - for client-only initialization
+                // that should show loading state on initial page load
+                if (this.hasMethod('clientInit')) {
+                    const clientInitMethod = this.getMethod('clientInit');
+                    if (clientInitMethod) {
+                        (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
+                    }
+                }
             }
         }
         } finally {
@@ -674,10 +682,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     private _wrapLifecycleMethods() {
-        const wrap = (methodName: 'init' | 'get') => {
-            const original = this.getMethod(methodName);
-            if (!original) return;
-            if ((original as any).__cossack_wrapped) return;
+        const wrap = (methodName: 'init' | 'get' | 'clientInit') => {
+            // Get the original method from the prototype, before any proxy is set up
+            const proto = Object.getPrototypeOf(this);
+            const descriptor = Object.getOwnPropertyDescriptor(proto, methodName);
+            const original = descriptor?.value;
+            if (!original || typeof original !== 'function') return;
 
             const wrapped = async (...args: any[]) => {
                 this.loading.init = (this.loading.init || 0) + 1;
@@ -700,6 +710,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         wrap('init');
         wrap('get');
+        // Wrap clientInit if it exists for client-only initialization with loading state
+        wrap('clientInit');
     }
 
     @Client()
@@ -842,6 +854,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         for (const method of serverMethods) {
             const { name } = method;
             const proxy = async (...args: any[]) => {
+                // Optimistic UI Handler
+                if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
+                    try {
+                        const optimisticMethod = this.getMethod(optimisticHandlers[name]);
+                        (optimisticMethod as any)(...args);
+                        this.requestUpdate();
+                    } catch (e) {
+                        console.error(`Error in optimistic handler for '${name}':`, e);
+                    }
+                }
+
+                this.loading[name] = (this.loading[name] || 0) + 1;
+                this.requestUpdate();
                 // Optimistic UI Handler
                 if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                     try {
@@ -1602,7 +1627,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 'getPhase', 'getParentComponent', 'getElementInternal',
                 'getInitialStateFromWindow', '_scheduleStateBroadcast',
                 '_wrapLifecycleMethods', '_setupServerMethodProxies',
-                'confirmNavigation', '_checkPreventNavigation'
+                'confirmNavigation', '_checkPreventNavigation',
+                'clientInit' // Client-only initialization method
             ]);
 
             for (const name of propertyNames) {

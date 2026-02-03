@@ -1,4 +1,3 @@
-- Fix `/prevent-nav` example
 - Integration tests for all examples
 - Fix all items in [plan-fix-new-renderer.md](plan-fix-new-renderer.md)
 - Static site generation

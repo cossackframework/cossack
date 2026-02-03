@@ -1,20 +1,28 @@
-import { Client, Cossack, Page, Shared, State, html } from '@cossackframework/core';
+import { Cossack, Page, Client, State, html } from '@cossackframework/core';
 
 @Page()
 export default class LifecycleDemo extends Cossack {
     @State()
     data: string[] = [];
 
-    // This method is called by the framework during bootstrap
+    // Server-side initialization (runs during SSR, skipped for @Page with clientInit)
     async init() {
-        // Simulate a slow data fetch (e.g., from D1 or KV)
+        // This runs on the server during SSR, but we skip it for direct visits
+        // by using clientInit() instead
+    }
+
+    // Client-side initialization (runs after hydration on first mount)
+    async clientInit() {
+        // Simulate a slow data fetch (e.g., from an API)
         await new Promise(resolve => setTimeout(resolve, 2000));
+        this.data = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
     }
 
     @Client()
     async reload() {
+        // Call init() to re-fetch from server (RPC call)
         await this.init();
-
+        // Set data to demonstrate loading state works
         this.data = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
     }
 

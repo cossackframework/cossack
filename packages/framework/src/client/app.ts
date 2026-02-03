@@ -296,7 +296,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
               return true;
           };
 
-          await loadingInstance.bootstrap({});
+          await loadingInstance.bootstrap({ skipInit: true });
           await triggerAppUpdate();
       }
 
