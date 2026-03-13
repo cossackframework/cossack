@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { html, renderToString, render } from './cossack-html';
+import { html, renderToString, render, component } from './cossack-html';
 
 describe('Spread Syntax ...=${vars}', () => {
     
@@ -20,17 +20,16 @@ describe('Spread Syntax ...=${vars}', () => {
             };
             declare id: string;
             declare title: string;
-            
+
             render() {
                 return html`<span>${this.id} - ${this.title}</span>`;
             }
         }
 
         class Parent extends CossackElement {
-            static components = { SpreadComp };
             render() {
                 const props = { id: '123', title: 'Hello' };
-                return html`<c:SpreadComp ...=${props}></c:SpreadComp>`;
+                return html`${component(SpreadComp, props)}`;
             }
         }
 
@@ -38,7 +37,7 @@ describe('Spread Syntax ...=${vars}', () => {
         pushCurrentInstance(root);
         const output = renderToString(root.render()!);
         popCurrentInstance();
-        
+
         expect(output).toContain('<span>123 - Hello</span>');
     });
 

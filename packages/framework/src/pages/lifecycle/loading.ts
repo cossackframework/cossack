@@ -1,13 +1,24 @@
 import { Cossack, html } from '@cossackframework/core';
 
+/**
+ * QuickSkeleton - Loading state component
+ *
+ * This component follows the Cossack loading convention:
+ * - When a user navigates to /lifecycle, the framework first looks for loading.ts
+ * - If found, it displays this component immediately (instant visual feedback)
+ * - Meanwhile, the page component is fetched from the server
+ * - Once the page loads, this loading component is replaced with the actual page
+ *
+ * This provides a better UX than a blank page or browser spinner during navigation.
+ */
 export default class QuickSkeleton extends Cossack {
     render() {
         return html`
             <style>
-                .loading-shell { 
-                    padding: 20px; 
-                    border: 2px dashed #cbd5e1; 
-                    border-radius: 12px; 
+                .loading-shell {
+                    padding: 20px;
+                    border: 2px dashed #cbd5e1;
+                    border-radius: 12px;
                     background: #f8fafc;
                     animation: pulse 1.5s infinite;
                 }

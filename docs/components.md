@@ -83,24 +83,7 @@ export class FileUploader extends Cossack {
 
 ## Using Components
 
-You can use components in two ways:
-
-### 1. Auto-Discovered Syntax (Recommended)
-
-Components placed in `src/components` are automatically discovered and registered. You can use them directly in your templates using the `<c:ComponentName>` syntax without importing them.
-
-```typescript
-// No import needed!
-html`
-    <div>
-        <c:Button variant="secondary" @click="${this.handleClick}">Click Me</c:Button>
-    </div>
-`
-```
-
-### 2. Manual Import & Helper
-
-To use a class-based component explicitly (e.g., if it's not in `src/components` or you prefer explicit imports), use the `component()` helper function from `@cossackframework/renderer`.
+To use a class-based component, you the use the `component()` helper function from `@cossackframework/renderer`.
 
 ```typescript
 import { html, component } from "@cossackframework/renderer";
@@ -142,7 +125,7 @@ async saveData(data: any) {
 
 render() {
     return html`
-        <c:MyForm @save="${this.saveData}" />
+        ${component(MyForm, { '@save': this.saveData })}
     `;
 }
 ```

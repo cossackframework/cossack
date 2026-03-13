@@ -11,7 +11,7 @@ import registry from 'virtual:cossack-pages';
 import manifest from '~/.vite/manifest.json';
 import { CossackElement } from '@cossackframework/renderer';
 
-const { pages, layouts, components } = registry;
+const { pages, layouts, components, loadings } = registry;
 
 // Register Components
 for (const path in components) {
@@ -98,6 +98,13 @@ export function createApp() {
                 const pageInstance = new PageComponent();
                 const layoutPaths = getLayoutStack(path);
 
+                // Check if component has a loading template (method or file convention)
+                // If so, skip init() during SSR to show loading UI immediately
+                const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
+                const loadingFilePath = path.replace(/\/index\.(ts|tsx|js|jsx|mdx)$/, '/loading.ts');
+                const hasLoadingFile = loadings[loadingFilePath];
+                const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
+
                 // For durable-object transport, query the DO for existing state before SSR
                 let doInitialState: any = undefined;
                 if (pageOptions?.transport === 'durable-object') {
@@ -154,7 +161,21 @@ export function createApp() {
                 }
 
                 // Bootstrap Page with retrieved DO initial state (if any)
-                await pageInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path, initialState: doInitialState });
+                // Skip init() if component has a loading template to show loading UI immediately
+                await pageInstance.bootstrap({
+                    context: c,
+                    user,
+                    env: c.env,
+                    page: c.req.path,
+                    initialState: doInitialState,
+                    skipInit: shouldSkipInit
+                });
+
+                // If we skipped init, set loading state so loadingTemplate() renders during SSR
+                // The client will then call init() via RPC to get the actual data
+                if (shouldSkipInit) {
+                    (pageInstance as any).loading.init = 1;
+                }
                 
                 // Force render to populate registry
                 pageInstance._render();

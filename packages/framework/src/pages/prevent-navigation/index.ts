@@ -1,21 +1,23 @@
-import { Cossack, Page, State, PreventNavigation, html } from '@cossackframework/core';
+import { Cossack, Page, ClientState, PreventNavigation, html, Client } from '@cossackframework/core';
 
 @Page()
 export default class PreventNavigationDemo extends Cossack {
-    @State()
+    @ClientState()
     inputValue: string = '';
 
-    @State()
+    @ClientState()
     isDirty: boolean = false;
 
+    @Client()
     onInput(e: Event) {
-        this.inputValue = (e.target as HTMLInputElement).value;
+        const target = e.currentTarget as HTMLInputElement;
+        this.inputValue = target.value;
         this.isDirty = this.inputValue.length > 0;
     }
 
     @PreventNavigation()
     checkNavigation() {
-        // Return true to BLOCK navigation
+        // Return true to PREVENT navigation (has unsaved changes)
         return this.isDirty;
     }
 

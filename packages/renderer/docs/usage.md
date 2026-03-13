@@ -129,11 +129,7 @@ html`<div>${unsafeHTML('<script>...</script>')}</div>`
 
 ## Using Components in Templates
 
-There are two ways to use other components within a template.
-
-### 1. The `component` Helper
-
-Type-safe and explicit.
+Use the `component` helper function to include child components in your templates.
 
 ```typescript
 import { component } from 'cossack-renderer';
@@ -146,25 +142,16 @@ html`
 `
 ```
 
-### 2. JSX-like Syntax `<c:TagName>`
-
-More declarative. Requires registering components in `static components`.
+You can also pass children to components:
 
 ```typescript
-class ParentComponent extends CossackElement {
-  static components = { ChildComponent };
-
-  render() {
-    return html`
-      <div class="parent">
-        <c:ChildComponent .someProp="value"></c:ChildComponent>
-        
-        <!-- Spread props -->
-        <c:ChildComponent ...=${{ otherProp: 123 }}></c:ChildComponent>
-      </div>
-    `;
-  }
-}
+html`
+  <div class="parent">
+    ${component(ChildComponent, { someProp: 'value' }, html`
+      <span>Child content</span>
+    `)}
+  </div>
+`
 ```
 
 ## Directives

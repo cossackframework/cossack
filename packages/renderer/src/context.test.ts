@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { html, render, renderToString } from './cossack-html';
+import { describe, it, expect } from 'vitest';
+import { html, renderToString } from './cossack-html';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
 import { component } from './cossack-html';
 import { createContext } from './context';

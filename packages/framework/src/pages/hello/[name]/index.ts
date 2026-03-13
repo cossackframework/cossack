@@ -1,6 +1,8 @@
 import type { MiddlewareHandler } from 'hono';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
+import { Button } from '@/components/Button';
+import { Layout } from '@/components/Layout';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
@@ -60,7 +62,7 @@ export class Greeting extends Cossack {
         const isNotificationLoading = this.loading['incrementNotifications'];
 
         return html`
-            <c:Layout dir="ltr">
+            ${component(Layout, { dir: 'ltr' }, html`
                 <div>
                     <h1>${this.greeting}</h1>
                     
@@ -70,16 +72,19 @@ export class Greeting extends Cossack {
                     </div>
 
                     <div class="buttons" style="display: flex; gap: 10px;">
-                        <c:Button @click="${this.incrementFeed}" ?disabled="${!!isFeedLoading}">
-                            ${isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'}
-                        </c:Button>
-                        
-                        <c:Button @click="${this.incrementNotifications}" ?disabled="${!!isNotificationLoading}">
-                            ${isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications'}
-                        </c:Button>
+                        ${component(Button, {
+                            '@click': this.incrementFeed,
+                            disabled: !!isFeedLoading,
+                            children: isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'
+                        }, 'Increment Feeds')}
+
+                        ${component(Button, {
+                            '@click': this.incrementNotifications,
+                            disabled: !!isNotificationLoading
+                        }, isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications')}
                     </div>
                 </div>
-            </c:Layout>
+            `)}
         `;
     }
 }

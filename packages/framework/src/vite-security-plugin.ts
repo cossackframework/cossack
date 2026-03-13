@@ -46,6 +46,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     'loadingTemplate',
     'toString',
     'valueOf',
+    'clientInit', // Client-side initialization method for fake loading
   ]);
 
   /**
@@ -854,7 +855,7 @@ export function isClientSafeMethod(
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>
-    /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d)
+    /@(?:Client|Optimistic|Computed|Shared|OnEvent|PreventNavigation)\b/.test(d)
   );
   if (hasClientDecorator) return true;
 

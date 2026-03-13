@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { html, render, renderToString } from './cossack-html';
+import { describe, it, expect } from 'vitest';
+import { html, renderToString, component } from './cossack-html';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { component } from './cossack-html';
 
 describe('Children Projection', () => {
     class Wrapper extends CossackElement {
