@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { html, renderToString, unsafeHTML } from './cossack-html';
+import { html, renderToString } from './cossack-html';
 import { live } from './directives';
 
 describe('SSR Fixes & Regressions', () => {

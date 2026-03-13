@@ -136,304 +136,74 @@ const renderSpread = (obj: unknown): string => {
 class SSRScanner {
     private result: string = '';
     private stringIdx = 0;
-    private charIdx = 0;
-    
-    constructor(private resultObj: TemplateResult) {}
-    
-    scan(): string {
-        const { strings, values } = this.resultObj;
-        
-        while (this.stringIdx < strings.length) {
-            const str = strings[this.stringIdx];
-            const remaining = str.substring(this.charIdx);
-            const tagMatch = remaining.match(/<c:([a-zA-Z0-9_]+)/);
-            
-            if (tagMatch && tagMatch.index !== undefined) {
-                this.result += remaining.substring(0, tagMatch.index);
-                this.charIdx += tagMatch.index;
-                this.processComponent(tagMatch[1]);
-            } else {
-                const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/);
-                
-                this.result += remaining;
-                this.charIdx = 0; 
-                
-                if (this.stringIdx < strings.length - 1) {
-                    const val = values[this.stringIdx];
-                    if (attrMatch) {
-                        const fullMatch = attrMatch[0];
-                        const name = attrMatch[1];
-                        
-                        this.result = this.result.substring(0, this.result.length - fullMatch.length);
-                        
-                        // Check if we opened a quote
-                        const quote = fullMatch.endsWith('"') ? '"' : fullMatch.endsWith("'") ? "'" : '';
-                        
-                        let replaced = true;
-
-                        if (name === '...') {
-                            this.result = this.result.trimEnd();
-                            this.result += renderSpread(val);
-                        } else if (name.startsWith('@')) {
-                            this.result = this.result.trimEnd();
-                        } else if (name.startsWith('?')) {
-                            if (val) {
-                                this.result = this.result.trimEnd();
-                                this.result += ` ${name.slice(1)}`;
-                            } else {
-                                this.result = this.result.trimEnd();
-                            }
-                        } else if (name.startsWith('.')) {
-                            if (val !== null && val !== undefined && val !== false) {
-                                this.result = this.result.trimEnd();
-                                this.result += ` ${name.slice(1)}="${valueToString(val)}"`;
-                            } else {
-                                this.result = this.result.trimEnd();
-                            }
-                        } else {
-                            this.result += fullMatch; 
-                            this.result += valueToString(val);
-                            replaced = false;
-                        }
-
-                        // Consume closing quote if we replaced the attribute logic (suppressed or rewrote)
-                        if (quote && replaced) {
-                             const nextStr = strings[this.stringIdx + 1];
-                             if (nextStr && nextStr.startsWith(quote)) {
-                                 this.charIdxForNext = 1; 
-                             }
-                        }
-                    } else {
-                        this.result += valueToString(val);
-                    }
-                }
-                this.stringIdx++;
-                this.charIdx = this.charIdxForNext || 0;
-                this.charIdxForNext = 0;
-            }
-        }
-        return this.result;
-    }
-    
     private charIdxForNext = 0;
 
-    private processComponent(tagName: string) {
-        console.log('[SSR processComponent] Processing tag:', tagName);
-        const currentInstance = CossackElement.currentRenderingInstance;
-        // Primary registry: current instance's class components (allows local overrides/shadowing)
-        // Fallback: Global CossackElement components
-        const localRegistry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : null;
-        const globalRegistry = CossackElement.components;
+    constructor(private resultObj: TemplateResult) {}
 
-        let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
+    scan(): string {
+        const { strings, values } = this.resultObj;
 
-        if (!compClass) {
-            compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
-        }
+        while (this.stringIdx < strings.length) {
+            const str = strings[this.stringIdx];
+            const remaining = str.substring(this.charIdxForNext || 0);
 
-        if (!compClass) {
-            this.result += `<c:${tagName}`;
-            this.charIdx += 3 + tagName.length;
-            return;
-        }
+            const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/);
 
-        this.charIdx += 3 + tagName.length;
+            this.result += remaining;
+            this.charIdxForNext = 0;
 
-        const props: Record<string, unknown> = {};
+            if (this.stringIdx < strings.length - 1) {
+                const val = values[this.stringIdx];
+                if (attrMatch) {
+                    const fullMatch = attrMatch[0];
+                    const name = attrMatch[1];
 
-        while (true) {
-            this.skipWhitespace();
+                    this.result = this.result.substring(0, this.result.length - fullMatch.length);
 
-            if (this.peek() === '/' && this.peek(1) === '>') {
-                console.log('[SSR processComponent] Found self-closing tag for:', tagName);
-                this.consume(2);
-                this.renderComponent(compClass, props, null);
-                return;
-            }
-            if (this.peek() === '>') {
-                console.log('[SSR processComponent] Found opening tag for:', tagName);
-                this.consume(1);
-                const childrenHtml = this.captureChildren(tagName);
-                const processedChildren = renderToString(new TemplateResult([childrenHtml] as unknown as TemplateStringsArray, []));
-                this.renderComponent(compClass, props, unsafeHTML(processedChildren));
-                return;
-            }
-            
-            const attrName = this.readAttrName();
-            if (!attrName) break; 
-            
-            this.skipWhitespace();
-            
-            let value: unknown = true; 
-            let quote = '';
-            if (this.peek() === '=') {
-                this.consume(1);
-                if (this.peek() === '"' || this.peek() === "'") {
-                    quote = this.consume(1);
-                }
-                
-                if (this.charIdx >= this.resultObj.strings[this.stringIdx].length) {
-                    value = this.resultObj.values[this.stringIdx];
-                    this.stringIdx++;
-                    this.charIdx = 0;
-                    
-                    if (quote && this.peek() === quote) {
-                        this.consume(1);
+                    // Check if we opened a quote
+                    const quote = fullMatch.endsWith('"') ? '"' : fullMatch.endsWith("'") ? "'" : '';
+
+                    let replaced = true;
+
+                    if (name === '...') {
+                        this.result = this.result.trimEnd();
+                        this.result += renderSpread(val);
+                    } else if (name.startsWith('@')) {
+                        this.result = this.result.trimEnd();
+                    } else if (name.startsWith('?')) {
+                        if (val) {
+                            this.result = this.result.trimEnd();
+                            this.result += ` ${name.slice(1)}`;
+                        } else {
+                            this.result = this.result.trimEnd();
+                        }
+                    } else if (name.startsWith('.')) {
+                        if (val !== null && val !== undefined && val !== false) {
+                            this.result = this.result.trimEnd();
+                            this.result += ` ${name.slice(1)}="${valueToString(val)}"`;
+                        } else {
+                            this.result = this.result.trimEnd();
+                        }
+                    } else {
+                        this.result += fullMatch;
+                        this.result += valueToString(val);
+                        replaced = false;
+                    }
+
+                    // Consume closing quote if we replaced the attribute logic (suppressed or rewrote)
+                    if (quote && replaced) {
+                         const nextStr = strings[this.stringIdx + 1];
+                         if (nextStr && nextStr.startsWith(quote)) {
+                             this.charIdxForNext = 1;
+                         }
                     }
                 } else {
-                     if (quote) {
-                         value = this.readUntil(quote);
-                         this.consume(1);
-                     } else {
-                         value = this.readUntilRegex(/[\s>]/);
-                     }
+                    this.result += valueToString(val);
                 }
-            }
-
-            if (attrName === '...') {
-                if (typeof value === 'object' && value !== null) {
-                    Object.assign(props, value);
-                }
-            } else if (attrName.startsWith('.')) {
-                props[attrName.slice(1)] = value;
-            } else if (attrName.startsWith('?')) {
-                props[attrName.slice(1)] = Boolean(value);
-            } else if (attrName.startsWith('@')) {
-                props[attrName] = value;
-            } else {
-                props[attrName] = value;
-            }
-        }
-    }
-
-    private renderComponent(clazz: new () => CossackElement, props: Record<string, unknown>, children: unknown) {
-        const instance = new clazz();
-        Object.assign(instance, props);
-        if ('props' in instance) {
-            (instance as any).props = props;
-        }
-        instance.children = children;
-        instance.__parent = CossackElement.currentRenderingInstance;
-
-        if (instance.__parent) {
-            instance._id = `${instance.__parent._id}:${instance.__parent._childCounter++}`;
-        }
-
-        // Register child component with parent for SSR state collection
-        if (instance.__parent && (instance.__parent as any).registerComponent) {
-            (instance.__parent as any).registerComponent(instance);
-        }
-
-        // Get the component class name for the closing tag
-        const className = clazz.name;
-
-        pushCurrentInstance(instance);
-        (instance as any).willUpdate(new Map());
-        const template = instance.render();
-        if (template) {
-            if (isTemplateResult(template)) {
-                this.result += renderToString(template);
-            } else {
-                this.result += renderToString(html`${template}`);
-            }
-        }
-        popCurrentInstance();
-
-        // Always output explicit closing tag to prevent browser parsing issues
-        // Self-closing tags don't work reliably for custom elements in HTML5
-        this.result += `</c:${className}>`;
-    }
-
-    private captureChildren(tagName: string): string {
-        let depth = 1;
-        let buffer = '';
-        
-        while (this.stringIdx < this.resultObj.strings.length) {
-            const str = this.resultObj.strings[this.stringIdx];
-            const remaining = str.substring(this.charIdx);
-            const regex = new RegExp(`</?c:${tagName}`, 'g');
-            
-            let match;
-            let lastIndex = 0;
-            
-            while ((match = regex.exec(remaining)) !== null) {
-                const isClose = match[0].startsWith('</');
-                buffer += remaining.substring(lastIndex, match.index);
-                if (isClose) depth--; else depth++;
-                
-                if (depth === 0) {
-                    this.charIdx += match.index + match[0].length;
-                    if (this.peek() === '>') this.consume(1);
-                    return buffer;
-                }
-                
-                buffer += match[0];
-                lastIndex = match.index + match[0].length;
-            }
-            
-            buffer += remaining.substring(lastIndex);
-            this.charIdx = 0;
-            if (this.stringIdx < this.resultObj.strings.length - 1) {
-                buffer += valueToString(this.resultObj.values[this.stringIdx]);
             }
             this.stringIdx++;
         }
-        return buffer;
-    }
-
-    private skipWhitespace() {
-        while (this.charIdx < this.resultObj.strings[this.stringIdx].length) {
-            const char = this.resultObj.strings[this.stringIdx][this.charIdx];
-            if (!/\s/.test(char)) return;
-            this.charIdx++;
-        }
-    }
-    
-    private peek(offset = 0): string {
-        const str = this.resultObj.strings[this.stringIdx];
-        if (this.charIdx + offset < str.length) return str[this.charIdx + offset];
-        return '';
-    }
-    
-    private consume(count: number): string {
-        const str = this.resultObj.strings[this.stringIdx];
-        const sub = str.substring(this.charIdx, this.charIdx + count);
-        this.charIdx += count;
-        return sub;
-    }
-    
-    private readAttrName(): string {
-        const str = this.resultObj.strings[this.stringIdx];
-        const remaining = str.substring(this.charIdx);
-        if (remaining.startsWith('...')) {
-            this.charIdx += 3;
-            return '...';
-        }
-        const match = remaining.match(/^[.@?]?[a-zA-Z0-9_-]+/);
-        if (match) {
-            this.charIdx += match[0].length;
-            return match[0];
-        }
-        return '';
-    }
-    
-    private readUntil(char: string): string {
-        const str = this.resultObj.strings[this.stringIdx];
-        let endIdx = str.indexOf(char, this.charIdx);
-        if (endIdx === -1) endIdx = str.length;
-        const sub = str.substring(this.charIdx, endIdx);
-        this.charIdx = endIdx;
-        return sub;
-    }
-
-    private readUntilRegex(regex: RegExp): string {
-         const str = this.resultObj.strings[this.stringIdx];
-         const remaining = str.substring(this.charIdx);
-         const match = remaining.match(regex);
-         const endIdx = match && match.index !== undefined ? this.charIdx + match.index : str.length;
-         const sub = str.substring(this.charIdx, endIdx);
-         this.charIdx = endIdx;
-         return sub;
+        return this.result;
     }
 }
 
@@ -446,38 +216,6 @@ export const renderToString = (result: TemplateResult): string => {
 
 interface Part {
   update(value: unknown): void;
-}
-
-class ComponentPropPart implements Part {
-    constructor(public instance: CossackElement, public name: string) {}
-    update(value: unknown) {
-        // Ensure props object exists
-        if (!('props' in this.instance)) (this.instance as any).props = {};
-        const props = (this.instance as any).props;
-
-        if (this.name === '...') {
-            if (typeof value === 'object' && value !== null) {
-                Object.assign(this.instance, value);
-                Object.assign(props, value);
-            }
-        } else if (this.name.startsWith('@')) {
-            const eventName = this.name.slice(1);
-            this.instance.addEventListener(eventName, value as EventListener);
-            props[this.name] = value;
-        } else if (this.name.startsWith('.')) {
-            const propName = this.name.slice(1);
-            (this.instance as any)[propName] = value;
-            props[propName] = value;
-        } else if (this.name.startsWith('?')) {
-            const propName = this.name.slice(1);
-            (this.instance as any)[propName] = Boolean(value);
-            props[propName] = Boolean(value);
-        } else {
-            (this.instance as any)[this.name] = value;
-            props[this.name] = value;
-        }
-        this.instance.requestUpdate();
-    }
 }
 
 class NodePart implements Part {
@@ -827,12 +565,6 @@ export const render = (result: TemplateResult, container: Node) => {
     const parts: Part[] = [];
     const values = result.values;
 
-    // Pre-process template strings to convert self-closing custom component tags to explicit opening/closing tags
-    // This must be done BEFORE concatenation to prevent browser from nesting custom elements
-    const processedStrings = result.strings.map(str => {
-        return str.replace(/<c:([a-zA-Z0-9_-]+)(\s*[^>/]*)\/\s*>/gi, '<c:$1$2></c:$1>');
-    });
-
     let htmlString = '';
     let isInsideTag = false;
 
@@ -848,8 +580,8 @@ export const render = (result: TemplateResult, container: Node) => {
 
     const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
 
-    for (let i = 0; i < processedStrings.length - 1; i++) {
-        const str = processedStrings[i];
+    for (let i = 0; i < result.strings.length - 1; i++) {
+        const str = result.strings[i];
         updateState(str);
 
         htmlString += str;
@@ -862,7 +594,7 @@ export const render = (result: TemplateResult, container: Node) => {
         }
     }
 
-    const lastStr = processedStrings[processedStrings.length - 1];
+    const lastStr = result.strings[result.strings.length - 1];
     updateState(lastStr);
     htmlString += lastStr;
 
@@ -878,83 +610,17 @@ export const render = (result: TemplateResult, container: Node) => {
         nodes.push(currentNode);
     }
 
-    const processedIndices = new Set<number>();
-
-    nodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const el = node as Element;
-                                        if (el.tagName.toUpperCase().startsWith('C:')) {
-                                            const tagName = el.tagName.substring(2);
-                                            const currentInstance = CossackElement.currentRenderingInstance;
-
-                                            const localRegistry = currentInstance ? (currentInstance.constructor as typeof CossackElement).components : null;
-                                            const globalRegistry = CossackElement.components;
-
-                                            let compClass = localRegistry ? (localRegistry[tagName] || localRegistry[Object.keys(localRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || '']) : null;
-
-                                            if (!compClass) {
-                                                compClass = globalRegistry[tagName] || globalRegistry[Object.keys(globalRegistry).find(k => k.toUpperCase() === tagName.toUpperCase()) || ''];
-                                            }
-
-                                            if (compClass) {                        const compInstance = new compClass();
-                        compInstance.__parent = CossackElement.currentRenderingInstance;
-                        if (compInstance.__parent) {
-                            compInstance._id = `${compInstance.__parent._id}:${compInstance.__parent._childCounter++}`;
-                        }
-
-                        const start = document.createComment(`c:${tagName}`);
-                    const end = document.createComment(`/c:${tagName}`);
-                    el.parentNode!.insertBefore(start, el);
-                    el.parentNode!.insertBefore(end, el);
-
-                                        const part = new NodePart(start, end);
-                                        part['componentInstance'] = compInstance;
-                                        compInstance.addRenderListener((t: unknown) => part['updateNode'](t));
-                                        compInstance.connectedCallback();
-                    Array.from(el.attributes).forEach(attr => {
-                        const match = attr.value.match(/__CRP_(\d+)__/);
-                        if (match) {
-                            const index = parseInt(match[1]);
-                            processedIndices.add(index);
-                            if (attr.name === '...') {
-                                const propPart = new ComponentPropPart(compInstance, '...');
-                                parts[index] = propPart;
-                            } else {
-                                const propPart = new ComponentPropPart(compInstance, attr.name);
-                                parts[index] = propPart;
-                            }
-                        } else {
-                            (compInstance as any)[attr.name] = attr.value;
-                            if (!('props' in compInstance)) (compInstance as any).props = {};
-                            (compInstance as any).props[attr.name] = attr.value;
-                        }
-                    });
-                    
-                    const fragment = document.createDocumentFragment();
-                    while (el.firstChild) fragment.appendChild(el.firstChild);
-                    
-                    compInstance.children = fragment;
-                    
-                    el.parentNode!.removeChild(el);
-                    compInstance.requestUpdate();
-                }
-            }
-        }
-    });
-
     nodes.forEach(node => {
         if (node.nodeType === Node.COMMENT_NODE) {
             const match = node.nodeValue?.match(/CRP_(\d+)/);
             if (match) {
                 const index = parseInt(match[1]);
-                if (!processedIndices.has(index)) {
-                    const endNode = document.createComment('/CRP');
-                    node.parentNode!.insertBefore(endNode, node.nextSibling);
-                    const part = new NodePart(node as Comment, endNode);
-                    parts[index] = part;
-                }
+                const endNode = document.createComment('/CRP');
+                node.parentNode!.insertBefore(endNode, node.nextSibling);
+                const part = new NodePart(node as Comment, endNode);
+                parts[index] = part;
             }
-        } else if (node.nodeType === Node.ELEMENT_NODE && !processedIndices.has(-1)) {
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
              const el = node as Element;
 
              Array.from(el.attributes).forEach(attr => {

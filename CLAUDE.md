@@ -1,6 +1,4 @@
-# Gemini Context for the Cossack Framework Project
-
-This document provides the necessary context for the Gemini AI to act as an effective contributor to the Cossack Framework project.
+# Cossack Framework
 
 ## Rules
 - Run type checks after code changes: `pnpm tsc --noEmit`

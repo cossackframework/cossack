@@ -1,5 +1,6 @@
 import { Cossack, Page } from "@cossackframework/core";
-import { html } from "@cossackframework/renderer";
+import { html, component } from "@cossackframework/renderer";
+import { NestedCounter } from "@/components/NestedCounter";
 
 @Page({
     transport: 'durable-object' // Required for stateful components
@@ -10,10 +11,10 @@ export class NestedStatePage extends Cossack {
             <div style="padding: 20px;">
                 <h1>Nested Stateful Components</h1>
                 <p>These counters maintain their own state on the server.</p>
-                
-                <c:NestedCounter></c:NestedCounter>
-                <c:NestedCounter></c:NestedCounter>
-                <c:NestedCounter></c:NestedCounter>
+
+                ${component(NestedCounter)}
+                ${component(NestedCounter)}
+                ${component(NestedCounter)}
             </div>
         `;
     }
