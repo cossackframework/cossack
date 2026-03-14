@@ -15,6 +15,7 @@ import type { TemplateResult } from '@cossackframework/renderer';
 vi.mock('@cossackframework/renderer', () => {
     const render = vi.fn();
     const renderToString = vi.fn();
+    const createContext = <T>(defaultValue: T) => ({ defaultValue, _id: Math.random().toString() });
     class CossackElement {
         render() { return null; }
         requestUpdate() {}
@@ -24,12 +25,20 @@ vi.mock('@cossackframework/renderer', () => {
         disconnectedCallback() {}
         static properties = {};
         autoBindMethods() {}
+        consume() { return undefined; }
+        provide() {}
+        resetRenderState() {}
     }
     return {
         render,
         renderToString,
         html: (strings: any, ...values: any[]) => ({ strings, values }),
         CossackElement,
+        createContext,
+        isTemplateResult: vi.fn(() => true),
+        pushCurrentInstance: vi.fn(),
+        popCurrentInstance: vi.fn(),
+        instanceStack: [],
     };
 });
 

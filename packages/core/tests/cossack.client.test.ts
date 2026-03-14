@@ -16,6 +16,7 @@ import type { TemplateResult } from '@cossackframework/renderer';
 vi.mock('@cossackframework/renderer', () => {
     const render = vi.fn();
     const renderToString = vi.fn();
+    const createContext = <T>(defaultValue: T) => ({ defaultValue, _id: Math.random().toString() });
     class CossackElement {
         render() { return null; }
         requestUpdate() {}
@@ -25,12 +26,20 @@ vi.mock('@cossackframework/renderer', () => {
         disconnectedCallback() {}
         static properties = {};
         autoBindMethods() {} // Add if used
+        consume() { return undefined; }
+        provide() {}
+        resetRenderState() {}
     }
     return {
         render,
         renderToString,
         html: (strings: any, ...values: any[]) => ({ strings, values }),
         CossackElement,
+        createContext,
+        isTemplateResult: vi.fn(() => true),
+        pushCurrentInstance: vi.fn(),
+        popCurrentInstance: vi.fn(),
+        instanceStack: [],
     };
 });
 
@@ -64,11 +73,16 @@ describe('Cossack Core: Client-Side', () => {
   let component: TestComponent;
 
   const mockInitialState = {
-      count: 10,
-      message: 'from server',
-      params: { name: 'cossack' },
-      serverMethods: [{ name: 'increment', channel: 'global', provider: 'page' }],
-      componentId: 'test-comp',
+      public: {
+          count: 10,
+          message: 'from server',
+      },
+      metadata: {
+          componentId: 'test-comp',
+          params: { name: 'cossack' },
+          pathname: '/test',
+      },
+      routePath: '/test',
       channels: ['global', 'private'],
       providerTargets: { page: 'durable-object-id-123' },
   };
@@ -112,15 +126,15 @@ describe('Cossack Core: Client-Side', () => {
   it('should connect to WebSocket for the provider', async () => {
       await component.bootstrap();
       expect(global.WebSocket).toHaveBeenCalledTimes(1);
-      // Expected URL based on new logic: /ws/{provider}/{target}?componentId=...&pathname=...&params...
-      // pathname is undefined in mockInitialState so it defaults to ''
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?componentId=test-comp&pathname=&name=cossack');
+      // Expected URL based on new logic: /ws/{provider}/{target}?routePath=...&pathname=...&params...
+      // pathname and routePath come from mockInitialState
+      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&name=cossack');
   });
 
   it('should proxy server methods to send WebSocket messages', async () => {
       await component.bootstrap();
       const wsInstance = (global.WebSocket as any).mock.results[0].value;
-      
+
       // This is now a proxied method
       await component.increment();
 
@@ -129,6 +143,7 @@ describe('Cossack Core: Client-Side', () => {
           action: 'increment',
           payload: [],
           channel: 'global',
+          target: 'root',
       }));
       // It should also update the loading state
       expect(component.loading['increment']).toBeTruthy();
