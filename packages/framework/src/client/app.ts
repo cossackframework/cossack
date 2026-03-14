@@ -6,6 +6,24 @@ import registry from 'virtual:cossack-pages';
 
 const { pages, layouts, loadings, components } = registry;
 
+/**
+ * Convert a file path to a simplified route path.
+ * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
+ */
+function filePathToRoutePath(filePath: string): string {
+    return filePath
+        .replace('/src/pages/', '/')
+        .replace('/index.ts', '')
+        .replace('/index.mdx', '');
+}
+
+// Create mapping from route paths to file paths for component loading
+const routeToFilePath = new Map<string, string>();
+for (const filePath in pages) {
+    const routePath = filePathToRoutePath(filePath);
+    routeToFilePath.set(routePath, filePath);
+}
+
 // Register Components
 for (const path in components) {
     const module = components[path];
@@ -164,18 +182,27 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
   const currentLayoutsMap = new Map<string, Cossack>();
 
   const loadComponent = async (initialState: any) => {
-    const componentPath = initialState?.componentPath;
+    // Support both routePath (new) and componentPath (legacy) for backward compatibility
+    const routePath = initialState?.routePath || initialState?.componentPath;
     const layoutStack = initialState?._layout_stack || [];
     const pathname = initialState?.pathname || window.location.pathname;
 
-    if (!componentPath) {
-      console.error('Could not find componentPath in initial state');
+    if (!routePath) {
+      console.error('Could not find routePath or componentPath in initial state');
       return;
     }
 
+    // Convert route path to file path for module lookup
+    const componentPath = routeToFilePath.get(routePath) || routePath;
+
     appInstance.updatePath(pathname);
 
-    const activeLayoutPaths = new Set(layoutStack.map((l: any) => l.path));
+    // Build a set of active layout file paths (layoutStack now contains file paths)
+    const activeLayoutPaths = new Set<string>();
+    for (const l of layoutStack) {
+        // Layout paths are already file paths (from server)
+        activeLayoutPaths.add(l.path);
+    }
 
     for (const [path, instance] of currentLayoutsMap.entries()) {
         if (!activeLayoutPaths.has(path)) {
@@ -185,10 +212,16 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     }
 
     currentLayoutInstances = [];
-    for (const { path, state } of layoutStack) {
-        let instance = currentLayoutsMap.get(path);
+    for (const { path: layoutFilePath, state } of layoutStack) {
+        // Layout paths are already file paths (from server)
+        let instance = currentLayoutsMap.get(layoutFilePath);
         if (!instance) {
-            const LComp = Object.values(layouts[path] as object)[0] as new () => Cossack;
+            const layoutModule = layouts[layoutFilePath];
+            if (!layoutModule) {
+                console.warn(`[Cossack] Layout module not found for path: ${layoutFilePath}`);
+                continue;
+            }
+            const LComp = Object.values(layoutModule)[0] as new () => Cossack;
             instance = new LComp();
             instance.updateHead = syncHead;
 
@@ -202,7 +235,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
             };
 
             await instance.bootstrap({ initialState: state, skipInit: true });
-            currentLayoutsMap.set(path, instance);
+            currentLayoutsMap.set(layoutFilePath, instance);
         }
         instance.updatePath(pathname);
         currentLayoutInstances.push(instance);
@@ -286,10 +319,14 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
           // We swap current page with loading component temporarily
           if (currentPage) currentPage.destroy();
           currentPage = loadingInstance;
-          
+
           // Hook reactivity for loading component too
           const originalRequestUpdate = loadingInstance.requestUpdate.bind(loadingInstance);
           loadingInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+              // Skip update if component is already destroyed
+              if (loadingInstance._phase === LifecyclePhase.Destroyed) {
+                  return;
+              }
               const p = originalRequestUpdate(name, oldValue);
               await p;
               await triggerAppUpdate();

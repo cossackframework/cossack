@@ -15,6 +15,7 @@ import type { Context } from 'hono';
 
 // Mock the renderer sub-imports
 vi.mock('@cossackframework/renderer', () => {
+    const createContext = <T>(defaultValue: T) => ({ defaultValue, _id: Math.random().toString() });
     class CossackElement {
         render() { return null; }
         requestUpdate() {}
@@ -24,12 +25,20 @@ vi.mock('@cossackframework/renderer', () => {
         disconnectedCallback() {}
         static properties = {};
         autoBindMethods() {}
+        consume() { return undefined; }
+        provide() {}
+        resetRenderState() {}
     }
     return {
         render: vi.fn(),
         renderToString: vi.fn((template) => `SSR: ${template.strings.join('')}`),
         html: (strings: any, ...values: any[]) => ({ strings, values }),
         CossackElement,
+        createContext,
+        isTemplateResult: vi.fn(() => true),
+        pushCurrentInstance: vi.fn(),
+        popCurrentInstance: vi.fn(),
+        instanceStack: [],
     };
 });
 
@@ -108,14 +117,12 @@ describe('Cossack Core: Server-Side', () => {
 
     const initialState = component.getInitialState();
 
-    expect(initialState).toHaveProperty('count', 0);
-    expect(initialState).toHaveProperty('message', 'initial');
-    expect(initialState).toHaveProperty('params', mockParams);
-    expect(initialState.serverMethods).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: 'increment', channel: 'global' })
-      ])
-    );
+    expect(initialState).toHaveProperty('public');
+    expect(initialState.public).toHaveProperty('count', 0);
+    expect(initialState.public).toHaveProperty('message', 'initial');
+    expect(initialState.metadata).toHaveProperty('params', mockParams);
+    // Note: serverMethods is no longer included in serialized state for security.
+    // Server methods are obtained directly from Reflect metadata on the client side.
   });
 
   it('should schedule a broadcast when a state property changes', async () => {

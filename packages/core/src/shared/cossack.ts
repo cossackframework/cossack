@@ -61,19 +61,22 @@ export interface SerializedComponentState {
     /** Metadata needed for initialization */
     metadata?: {
         componentId: string;
+        /** @deprecated Use routePath instead - kept for backward compatibility */
         componentPath?: string;
+        /** Simplified route path (e.g., /hello/[name] instead of /src/pages/hello/[name]/index.ts) */
+        routePath?: string;
         pathname?: string;
         params?: Record<string, string>;
         user?: unknown;
     };
-    /** Server methods metadata for proxy setup */
-    serverMethods?: Array<{ name: string; channel: string; provider: string }>;
     /** Provider targets for WebSocket connections */
     providerTargets?: Record<string, string>;
     /** Nested children states */
     children?: Record<string, SerializedComponentState>;
     /** Component route ID for HTTP transport */
     componentRouteId?: string;
+    /** Route path at top level for easier access */
+    routePath?: string;
 }
 
 /**
@@ -276,6 +279,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
+        // Skip if component is already destroyed
+        if (this._phase === LifecyclePhase.Destroyed) {
+            return;
+        }
+
         // Transition to Updating phase from Creating, Bootstrapping, or Mounted phase
         // This allows willUpdate to be called during:
         // - SSR: bootstrap() → render() → willUpdate() (from Creating/Bootstrapping)
@@ -457,8 +465,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Prevents invalid state transitions that could cause bugs.
      */
     private _transitionToPhase(newPhase: LifecyclePhase, allowedFrom: LifecyclePhase[]): void {
+        // Silently return if component is destroyed (defensive programming)
         if (this._phase === LifecyclePhase.Destroyed) {
-            throw new Error(`[Cossack] Cannot transition from Destroyed phase. Component has been destroyed.`);
+            return;
         }
 
         if (!allowedFrom.includes(this._phase)) {
@@ -638,14 +647,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.isServer) {
             this.proxyClientMethods();
         } else {
-            const clientInitialState = initialState || this.getInitialStateFromWindow();
             const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
 
+            // Get server methods directly from Reflect metadata instead of serialized state
+            const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+            const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
+                name,
+                channel: options.channel || 'global',
+                provider: options.provider || 'page',
+            }));
+
             if (pageOptions?.transport === 'http') {
-                this.proxyHttpMethods(clientInitialState?.serverMethods || []);
+                this.proxyHttpMethods(serverMethods);
             } else {
                 this.connectWebSocket();
-                this.proxyServerMethods(clientInitialState?.serverMethods || []);
+                this.proxyServerMethods(serverMethods);
             }
         }
 
@@ -775,16 +791,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         for (const providerName in providerTargets) {
             const target = providerTargets[providerName];
 
-            // Access metadata from the new state structure
-            const componentPath = initialState?.metadata?.componentPath;
-            if (!componentPath) {
-                console.error('[Cossack] Cannot connect WebSocket: componentPath not found in initial state.');
+            // Access metadata - support both routePath (new) and componentPath (legacy)
+            const routePath = initialState?.routePath || initialState?.metadata?.routePath || initialState?.metadata?.componentPath;
+            if (!routePath) {
+                console.error('[Cossack] Cannot connect WebSocket: routePath not found in initial state.');
                 continue;
             }
 
             const pathname = initialState?.metadata?.pathname;
             const params = new URLSearchParams({
-                componentPath,
+                routePath,
                 pathname: pathname || '',
                 ...(initialState?.metadata?.params || {}),
             }).toString();
@@ -1301,8 +1317,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         // Setup server method proxies for nested components (client-side only)
-        if (!this.isServer && serializedState?.serverMethods) {
-            this._setupServerMethodProxies(serializedState.serverMethods);
+        if (!this.isServer) {
+            this._setupServerMethodProxies();
         }
     }
 
@@ -1331,11 +1347,99 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Setup server method proxies for nested components.
+     * Uses Reflect metadata directly instead of serialized state for security.
      * Skips re-proxying if methods have already been proxied.
      */
-    private _setupServerMethodProxies(serverMethods: Array<{ name: string; channel: string; provider: string }>) {
+    private _setupServerMethodProxies() {
         if (this._serverMethodsProxied) {
             return; // Already proxied
+        }
+
+        // Get server methods directly from Reflect metadata
+        const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+
+        // Build the server methods list from metadata
+        const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
+            name,
+            channel: options.channel || 'global',
+            provider: options.provider || 'page',
+        }));
+
+        // Also detect methods without decorators (server-only by default)
+        const clientSafeMethods = new Set(
+            Object.keys(Reflect.getMetadata('cossack:client-methods', this.constructor) || {})
+        );
+        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+        const computedMethods = Reflect.getMetadata('computed', this.constructor) || {};
+
+        // Add client-safe methods to the set
+        Object.values(optimisticHandlers || {}).forEach((handler: any) => clientSafeMethods.add(handler));
+        Object.keys(computedMethods || {}).forEach(key => clientSafeMethods.add(key));
+
+        // Add @PreventNavigation() decorated methods as client-safe
+        const preventNavigationMethod = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
+        if (preventNavigationMethod) {
+            clientSafeMethods.add(preventNavigationMethod);
+        }
+
+        // Add @Task decorated methods as client-safe
+        const taskMethods = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
+        taskMethods.forEach((method: string) => clientSafeMethods.add(method));
+
+        // Add @VisibleTask decorated methods as client-safe
+        const visibleTaskMethods = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
+        visibleTaskMethods.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
+
+        // Add @On, @OnDocument, @OnWindow decorated methods as client-safe
+        const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+        domEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
+        const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
+        documentEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
+        const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
+        windowEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
+
+        // Scan for methods without decorators (server-only by default)
+        const proto = Object.getPrototypeOf(this);
+        const propertyNames = Object.getOwnPropertyNames(proto);
+
+        const builtInMethods = new Set([
+            'constructor', 'render', 'head', 'onMount', 'onCleanup', 'escapeHtml',
+            'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
+            'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
+            'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
+            'initializeState', 'initializeProviders', 'connectWebSocket',
+            'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
+            'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
+            'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
+            'redirect', 'requestUpdate', 'validateChannels', 'willUpdate',
+            'connectedCallback', 'disconnectedCallback', 'shouldUpdate',
+            'performUpdate', 'updated', '_render', 'getInitialHtml',
+            '_getWrappedTemplate', 'autoBindMethods', 'setupEventListeners',
+            'setupVisibleTasks', 'runTasks', 'consume', 'provide',
+            '_transitionToPhase', '_restorePhase', 'isInPhase', 'isInAnyPhase',
+            'getPhase', 'getParentComponent', 'getElementInternal',
+            'getInitialStateFromWindow', '_scheduleStateBroadcast',
+            '_wrapLifecycleMethods', '_setupServerMethodProxies',
+            'confirmNavigation', '_checkPreventNavigation',
+            'clientInit' // Client-only initialization method
+        ]);
+
+        for (const name of propertyNames) {
+            if (builtInMethods.has(name)) continue;
+            if (clientSafeMethods.has(name)) continue;
+            if (name.startsWith('_')) continue; // Skip private properties
+
+            const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+            if (descriptor && typeof descriptor.value === 'function') {
+                // Check if this method is already in the server methods list
+                if (!serverMethods.some(m => m.name === name)) {
+                    serverMethods.push({
+                        name,
+                        channel: 'global',
+                        provider: 'page',
+                    });
+                }
+            }
         }
 
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
@@ -1506,7 +1610,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     
     // Override performUpdate to wrap template with devtools markers for client-side rendering
     protected async performUpdate() {
+        // Skip if component is destroyed
+        if (this._phase === LifecyclePhase.Destroyed) {
+            return false;
+        }
+
         await Promise.resolve();
+
+        // Check again after async boundary (component may have been destroyed during await)
+        // Use type assertion to avoid TS narrowing issue
+        if ((this._phase as LifecyclePhase) === LifecyclePhase.Destroyed) {
+            return false;
+        }
+
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
         const changedProperties = elementInternal.__changedProperties;
@@ -1594,73 +1710,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             },
         };
 
-        // Add server methods metadata
-        let serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-
-        // On server side, automatically detect methods without decorators as server-only
-        if (this.isServer) {
-            const clientSafeMethods = new Set(
-                Object.keys(Reflect.getMetadata('cossack:client-methods', this.constructor) || {})
-            );
-            const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
-            const computedMethods = Reflect.getMetadata('computed', this.constructor) || {};
-
-            // Add client-safe methods to the set
-            Object.values(optimisticHandlers).forEach((handler: any) => clientSafeMethods.add(handler));
-            Object.keys(computedMethods).forEach(key => clientSafeMethods.add(key));
-
-            // Add @PreventNavigation() decorated methods as client-safe
-            const preventNavigationMethod = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
-            if (preventNavigationMethod) {
-                clientSafeMethods.add(preventNavigationMethod);
-            }
-
-            // Scan for methods without decorators (server-only by default)
-            const proto = Object.getPrototypeOf(this);
-            const propertyNames = Object.getOwnPropertyNames(proto);
-
-            const builtInMethods = new Set([
-                'constructor', 'render', 'head', 'onMount', 'onCleanup', 'escapeHtml',
-                'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
-                'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
-                'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
-                'initializeState', 'initializeProviders', 'connectWebSocket',
-                'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
-                'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
-                'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
-                'redirect', 'requestUpdate', 'validateChannels', 'willUpdate',
-                'connectedCallback', 'disconnectedCallback', 'shouldUpdate',
-                'performUpdate', 'updated', '_render', 'getInitialHtml',
-                '_getWrappedTemplate', 'autoBindMethods', 'setupEventListeners',
-                'setupVisibleTasks', 'runTasks', 'consume', 'provide',
-                '_transitionToPhase', '_restorePhase', 'isInPhase', 'isInAnyPhase',
-                'getPhase', 'getParentComponent', 'getElementInternal',
-                'getInitialStateFromWindow', '_scheduleStateBroadcast',
-                '_wrapLifecycleMethods', '_setupServerMethodProxies',
-                'confirmNavigation', '_checkPreventNavigation',
-                'clientInit' // Client-only initialization method
-            ]);
-
-            for (const name of propertyNames) {
-                if (builtInMethods.has(name)) continue;
-                if (clientSafeMethods.has(name)) continue;
-                if (name.startsWith('_')) continue; // Skip private properties
-
-                const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-                if (descriptor && typeof descriptor.value === 'function') {
-                    // This is a method without any client-safe decorator - mark as server-only
-                    if (!serverMethodsMetadata[name]) {
-                        serverMethodsMetadata[name] = { channel: 'global', provider: 'page', __serverOnly: true };
-                    }
-                }
-            }
-        }
-
-        serializedState.serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
-            name,
-            channel: options.channel || 'global',
-            provider: options.provider || 'page',
-        }));
+        // Note: serverMethods is no longer included in serialized state for security.
+        // Client-side proxies are set up using Reflect metadata directly in _setupServerMethodProxies.
 
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
         if (pageOptions?.transport === 'http') {

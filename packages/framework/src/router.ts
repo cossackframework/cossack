@@ -13,6 +13,17 @@ import { CossackElement } from '@cossackframework/renderer';
 
 const { pages, layouts, components, loadings } = registry;
 
+/**
+ * Convert a file path to a simplified route path.
+ * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
+ */
+function filePathToRoutePath(filePath: string): string {
+    return filePath
+        .replace('/src/pages/', '/')
+        .replace('/index.ts', '')
+        .replace('/index.mdx', '');
+}
+
 // Register Components
 for (const path in components) {
     const module = components[path];
@@ -29,11 +40,15 @@ for (const path in components) {
 // Generate secure IDs for components
 const routeIdMap = new Map<string, string>();
 const routePathToIdMap = new Map<string, string>();
+const routePathToFilePathMap = new Map<string, string>();
 
 [...Object.keys(pages), ...Object.keys(layouts)].sort().forEach((path, index) => {
     const id = `cmp_${index.toString(36)}`;
     routeIdMap.set(id, path);
     routePathToIdMap.set(path, id);
+    // Map route path to file path for WebSocket connections
+    const routePath = filePathToRoutePath(path);
+    routePathToFilePathMap.set(routePath, path);
 });
 
 export type PageModule = {
@@ -205,7 +220,7 @@ export function createApp() {
                 const pageInitialState = pageInstance.getInitialState();
 
                 // For durable-object transport, add the DO ID to providerTargets
-                // Also add componentPath to metadata for client WebSocket connections
+                // Also add routePath to metadata for client WebSocket connections
                 if (pageOptions?.transport === 'durable-object') {
                     const doBinding = c.env.COSSACK_OBJECT;
                     // Use the full URL for DO ID so query params create separate DOs
@@ -215,20 +230,20 @@ export function createApp() {
                         ...(pageInitialState.providerTargets || {}),
                         page: doId.toString()
                     };
-                    // Add componentPath to metadata for client WebSocket connections
+                    // Add routePath to metadata for client WebSocket connections
                     if (pageInitialState.metadata) {
-                        pageInitialState.metadata.componentPath = path;
+                        pageInitialState.metadata.routePath = filePathToRoutePath(path);
                     }
                 }
 
                 const finalInitialState = {
                     ...pageInitialState,
-                    componentPath: path,  // Keep at top level for backward compatibility
+                    routePath: filePathToRoutePath(path),  // Simplified route path (no /src/pages prefix)
                     componentRouteId: routePathToIdMap.get(path),
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
                     _app_state: appInstance.getInitialState(),
-                    _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] }))
+                    _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] })) // Keep file paths for layouts
                 };
 
                 c.header('Content-Type', 'text/html');
@@ -249,8 +264,14 @@ export function createApp() {
         const user = c.get('user');
         if (!user) return new Response('Unauthorized', { status: 401 });
         const { provider, id: durableObjectId } = c.req.param();
-        const componentPath = c.req.query('componentPath');
-        if (!componentPath) return new Response('componentPath query parameter is required', { status: 400 });
+        const routePath = c.req.query('routePath');
+        // Support both routePath (new) and componentPath (legacy) for backward compatibility
+        const componentPathQuery = routePath || c.req.query('componentPath');
+        if (!componentPathQuery) return new Response('routePath or componentPath query parameter is required', { status: 400 });
+
+        // Convert route path to file path if needed
+        const componentPath = routePathToFilePathMap.get(componentPathQuery) || componentPathQuery;
+
         const doBinding = c.env.COSSACK_OBJECT;
         const id = doBinding.idFromString(durableObjectId);
         const stub = doBinding.get(id);
