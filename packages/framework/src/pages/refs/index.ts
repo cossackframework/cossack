@@ -2,7 +2,7 @@ import { Cossack, Page, Ref, State, html, type RefObject } from '@cossackframewo
 
 @Page()
 export default class RefPage extends Cossack {
-    
+
     @Ref()
     declare inputRef: RefObject<HTMLInputElement>;
 
@@ -15,17 +15,19 @@ export default class RefPage extends Cossack {
     onMount() {
         // Slight delay to ensure browser is ready for focus
         setTimeout(() => {
-            console.log('Focusing input via ref:', this.inputRef.value);
             this.inputRef.value?.focus();
             this.status = 'Input focused via Ref!';
         }, 50);
-        
-        if (this.boxRef.value) {
-            this.boxRef.value.style.border = '2px solid green';
-        }
+
+        // Refs are set after render completes, so check in a timeout
+        setTimeout(() => {
+            if (this.boxRef.value) {
+                this.boxRef.value.style.border = '2px solid green';
+            }
+        }, 100);
     }
 
-    animateBox() {
+    animateBox = () => {
         if (this.boxRef.value) {
             this.boxRef.value.animate([
                 { transform: 'scale(1)' },
@@ -34,12 +36,9 @@ export default class RefPage extends Cossack {
             ], {
                 duration: 500
             });
-            // Update status only if it changes to avoid unnecessary re-renders
-            if (this.status !== 'Box animated via direct DOM access!') {
-                this.status = 'Box animated via direct DOM access!';
-            }
+            this.status = 'Box animated via direct DOM access!';
         }
-    }
+    };
 
     render() {
         return html`
@@ -50,28 +49,28 @@ export default class RefPage extends Cossack {
                 .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
                 .input { border: 1px solid #ccc; padding: 8px; border-radius: 4px; }
                 .btn { background-color: #3b82f6; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
-                .target-box { 
-                    width: 128px; height: 128px; 
-                    background-color: #dbeafe; 
-                    border-radius: 4px; 
-                    display: flex; align-items: center; justify-content: center; 
+                .target-box {
+                    width: 128px; height: 128px;
+                    background-color: #dbeafe;
+                    border-radius: 4px;
+                    display: flex; align-items: center; justify-content: center;
                     transition: background-color 0.3s;
                 }
             </style>
             <div class="container">
                 <h1 class="title">Refs Demo</h1>
-                
+
                 <p class="status">${this.status}</p>
 
                 <div class="controls">
-                    <input 
-                        type="text" 
-                        ref=${this.inputRef} 
+                    <input
+                        type="text"
+                        ref=${this.inputRef}
                         class="input"
                         placeholder="I was focused automatically"
                     />
-                    
-                    <button 
+
+                    <button
                         @click=${this.animateBox}
                         class="btn"
                     >
@@ -79,7 +78,7 @@ export default class RefPage extends Cossack {
                     </button>
                 </div>
 
-                <div 
+                <div
                     ref=${this.boxRef}
                     class="target-box"
                 >

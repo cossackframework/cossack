@@ -5,41 +5,41 @@ test.describe('Refs Page', () => {
     await page.goto('/refs');
   });
 
-  test('should focus input via @Ref', async ({ page }) => {
-    const focusButton = page.locator('button:has-text("Focus")');
+  test('should focus input on mount via @Ref', async ({ page }) => {
+    const input = page.locator('input').first();
+    await expect(input).toBeVisible();
 
-    if (await focusButton.isVisible()) {
-      await focusButton.click();
+    // Wait for hydration and onMount to run
+    await page.waitForTimeout(100);
 
-      const input = page.locator('input').first();
-      await expect(input).toBeFocused();
-    }
+    // The input should be focused on mount
+    await expect(input).toBeFocused();
   });
 
-  test('should animate element via @Ref', async ({ page }) => {
-    const animateButton = page.locator('button:has-text("Animate")');
+  test('should animate element via @Ref when button clicked', async ({ page }) => {
+    const animateButton = page.locator('button:has-text("Animate Box")');
+    const targetBox = page.locator('.target-box');
 
-    if (await animateButton.isVisible()) {
-      await animateButton.click();
-      await page.waitForTimeout(300);
-    }
+    await expect(animateButton).toBeVisible();
+    await expect(targetBox).toBeVisible();
+
+    // Click the animate button
+    await animateButton.click();
+
+    // Wait for animation to complete
+    await page.waitForTimeout(600);
+
+    // Check that the status text updated (meaning the ref worked)
+    const statusText = await page.locator('.status').textContent();
+    expect(statusText).toContain('animated');
   });
 
-  test('should access DOM element properties', async ({ page }) => {
-    const body = await page.locator('body').textContent();
+  test('should have working refs that allow direct DOM access', async ({ page }) => {
+    // Wait for refs to be set
+    await page.waitForTimeout(200);
 
-    expect(body).toBeDefined();
-  });
-
-  test('should manipulate DOM directly', async ({ page }) => {
-    const actionButtons = page.locator('button');
-    const count = await actionButtons.count();
-
-    if (count > 0) {
-      for (let i = 0; i < Math.min(count, 3); i++) {
-        await actionButtons.nth(i).click();
-        await page.waitForTimeout(100);
-      }
-    }
+    // The refs should be working - status should be updated
+    const statusText = await page.locator('.status').textContent();
+    expect(statusText).not.toBe('Waiting for input...');
   });
 });
