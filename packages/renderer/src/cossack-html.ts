@@ -101,6 +101,10 @@ const valueToString = (value: unknown): string => {
   if (typeof value === 'function') {
       return '';
   }
+  // Handle RefObject (object with .value property used for refs)
+  if (typeof value === 'object' && value !== null && 'value' in value) {
+      return '';
+  }
   return escapeHtml(value);
 };
 
@@ -507,8 +511,14 @@ class AttributePart implements Part {
             isLive = true;
             value = value.value;
         }
-        if (this.name === 'ref' && typeof value === 'function') {
-            (value as (...args: any[]) => void)(this.element);
+        if (this.name === 'ref') {
+            if (typeof value === 'function') {
+                // Function ref: call the function with the element
+                (value as (...args: any[]) => void)(this.element);
+            } else if (value && typeof value === 'object' && 'value' in value) {
+                // RefObject: assign the element to ref.value
+                (value as { value: unknown }).value = this.element;
+            }
             if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
             return;
         }

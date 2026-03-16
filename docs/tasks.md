@@ -61,9 +61,76 @@ export default class MyComponent extends Cossack {
 }
 ```
 
-## Event Decorators
+## Event Handling
 
-Cossack provides decorators to declaratively attach event listeners to DOM elements without manually managing `addEventListener` and `removeEventListener`. These listeners are automatically cleaned up when the component is destroyed.
+Cossack provides two ways to handle events: decorator-based and template-based (Lit-like syntax).
+
+### Template-Based Events (Recommended)
+
+The recommended approach is to use the Lit-like event syntax directly in your templates. This is more explicit and aligns with modern web component patterns.
+
+```typescript
+import { Cossack, Page, ClientState } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'http' })
+export default class MyComponent extends Cossack {
+    @ClientState()
+    clickCount = 0;
+
+    render() {
+        return html`
+            <button @click=${() => this.clickCount++}>
+                Clicks: ${this.clickCount}
+            </button>
+        `;
+    }
+}
+```
+
+For element events, use the `@eventName` syntax in your template. For document and window events, use `onMount`/`onCleanup` to manually add/remove listeners.
+
+```typescript
+import { Cossack, Page, ClientState } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'http' })
+export default class MyComponent extends Cossack {
+    @ClientState()
+    windowSize = 'Unknown';
+
+    private handleKeydown = (event: KeyboardEvent) => {
+        console.log('Key pressed:', event.key);
+    };
+
+    private handleResize = () => {
+        this.windowSize = `${window.innerWidth}x${window.innerHeight}`;
+    };
+
+    onMount() {
+        // Document and window events need manual listeners
+        document.addEventListener('keydown', this.handleKeydown);
+        window.addEventListener('resize', this.handleResize);
+    }
+
+    onCleanup() {
+        document.removeEventListener('keydown', this.handleKeydown);
+        window.removeEventListener('resize', this.handleResize);
+    }
+
+    render() {
+        return html`
+            <div @click=${() => console.log('Clicked!')}>
+                Window Size: ${this.windowSize}
+            </div>
+        `;
+    }
+}
+```
+
+### Event Decorators (Legacy)
+
+Cossack also provides decorators to declaratively attach event listeners to DOM elements without manually managing `addEventListener` and `removeEventListener`. These listeners are automatically cleaned up when the component is destroyed.
 
 ### @On
 
