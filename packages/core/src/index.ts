@@ -8,6 +8,7 @@ export * from './shared/head';
 export * from './shared/runtime';
 export * from './shared/image';
 export * from './shared/ref';
+export * from './shared/validation';
 export * from './shared/runtimes/durable-object';
 
 export * from './client/navigation';

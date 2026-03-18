@@ -5,6 +5,7 @@ import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
+import { ValidationRule, ValidationConfig, ValidationRulesStore, setValidationRules } from './validation';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http';
@@ -149,6 +150,59 @@ export function ClientState(): PropertyDecorator {
  */
 export function Prop(): PropertyDecorator {
   return ClientState();
+}
+
+export interface ValidateDecoratorOptions {
+  rules?: ValidationRule;
+  config?: ValidationConfig;
+}
+
+/**
+ * Decorator for validating form fields.
+ * Works with @State and @ClientState decorated properties.
+ *
+ * @example
+ * ```typescript
+ * @State()
+ * @Validate({ required: true, email: true, message: 'Please enter a valid email' })
+ * email = '';
+ * ```
+ */
+export function Validate(options: ValidateDecoratorOptions = {}): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const propertyName = String(propertyKey);
+
+    // Get existing validation rules or create new store
+    const existingRules = Reflect.hasOwnMetadata('cossack:validation', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:validation', target.constructor)
+      : {};
+
+    // Merge with existing rules for this property (allows chaining with @Validate on same property)
+    const existingPropertyRules = existingRules[propertyName]?.rules || {};
+    const mergedRules = { ...existingPropertyRules, ...options.rules };
+
+    // Store validation rules
+    existingRules[propertyName] = {
+      rules: mergedRules,
+      config: {
+        trigger: 'all',
+        runOn: 'both',
+        errorProperty: 'errors',
+        debounce: 0,
+        ...options.config,
+      },
+    };
+
+    Reflect.defineMetadata('cossack:validation', existingRules, target.constructor);
+
+    // Also mark this property as validated for the security plugin
+    const validatedProperties = Reflect.hasOwnMetadata('cossack:validated-properties', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:validated-properties', target.constructor)
+      : new Set<string>();
+
+    (validatedProperties as Set<string>).add(propertyName);
+    Reflect.defineMetadata('cossack:validated-properties', validatedProperties, target.constructor);
+  };
 }
 
 export function Ref(): PropertyDecorator {

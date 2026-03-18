@@ -11,12 +11,13 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions } from './decorators';
+import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions, Validate } from './decorators';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { HeadTag, HeadContext, HeadValue } from './head';
 import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
+import { validateValue, validateValueAsync, getValidationRules, ValidationRulesStore } from './validation';
 
 export const RootContext = createContext<Cossack | null>(null);
 
@@ -1495,6 +1496,154 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 throw new Error(`[Cossack] Server method '${method}' uses channel '${channel}', which is not defined in the @Page decorator for ${this.constructor.name}.`);
             }
         }
+    }
+
+    // ========== Validation Methods ==========
+
+    /**
+     * Get the error message for a specific property.
+     * @param propertyName - The name of the property to get error for
+     */
+    public getError(propertyName: string): string | undefined {
+        const errorProperty = this.getValidationErrorProperty();
+        const errors = this.getProperty(errorProperty) as Record<string, string> | undefined;
+        return errors?.[propertyName];
+    }
+
+    /**
+     * Check if a property has validation errors.
+     * @param propertyName - The name of the property to check
+     */
+    public hasError(propertyName: string): boolean {
+        const error = this.getError(propertyName);
+        return error !== undefined && error !== '';
+    }
+
+    /**
+     * Validate a single property against its validation rules.
+     * @param propertyName - The name of the property to validate
+     * @returns The validation result
+     */
+    public async validateProperty(propertyName: string): Promise<boolean> {
+        const rules = getValidationRules(this);
+        const propertyRules = rules[propertyName];
+
+        if (!propertyRules) {
+            return true;
+        }
+
+        const value = this.getProperty(propertyName);
+        const { rules: validationRules, config } = propertyRules;
+
+        // Determine where to run validation
+        const shouldRunOnClient = config.runOn === 'client' || config.runOn === 'both';
+        const shouldRunOnServer = config.runOn === 'server' || config.runOn === 'both';
+
+        let isValid = true;
+
+        // Run client-side validation (sync and async)
+        if (!this.isServer && shouldRunOnClient) {
+            // Run sync validation first
+            const syncResult = validateValue(value, validationRules);
+            isValid = syncResult.valid;
+            if (!isValid) {
+                this.setValidationError(propertyName, syncResult.message || 'Validation failed');
+            } else if (validationRules.customAsync) {
+                // Run async validation if sync passes and there's a customAsync rule
+                try {
+                    const asyncResult = await validateValueAsync(value, validationRules, this);
+                    isValid = asyncResult.valid;
+                    if (!asyncResult.valid) {
+                        this.setValidationError(propertyName, asyncResult.message || 'Validation failed');
+                    }
+                } catch (e) {
+                    isValid = false;
+                    this.setValidationError(propertyName, 'Validation failed');
+                }
+            }
+        }
+
+        // Run server-side validation
+        if (this.isServer && shouldRunOnServer) {
+            const result = await validateValueAsync(value, validationRules, this);
+            isValid = isValid && result.valid;
+            if (!result.valid) {
+                this.setValidationError(propertyName, result.message || 'Validation failed');
+            }
+        }
+
+        // If valid, clear any existing error
+        if (isValid) {
+            this.clearValidationError(propertyName);
+        }
+
+        return isValid;
+    }
+
+    /**
+     * Validate all properties with validation rules.
+     * @returns Whether all validations passed
+     */
+    public async validateAll(): Promise<boolean> {
+        const rules = getValidationRules(this);
+        const propertyNames = Object.keys(rules);
+
+        const results = await Promise.all(
+            propertyNames.map(name => this.validateProperty(name))
+        );
+
+        return results.every(result => result);
+    }
+
+    /**
+     * Clear all validation errors.
+     */
+    public clearErrors(): void {
+        const errorProperty = this.getValidationErrorProperty();
+        const errors = this.getProperty(errorProperty);
+        if (errors && typeof errors === 'object') {
+            this.setProperty(errorProperty, {});
+            if (!this.isServer) {
+                this.requestUpdate();
+            }
+        }
+    }
+
+    /**
+     * Clear validation error for a specific property.
+     */
+    private clearValidationError(propertyName: string): void {
+        const errorProperty = this.getValidationErrorProperty();
+        const errors = this.getProperty(errorProperty) as Record<string, string> || {};
+        if (errors[propertyName]) {
+            delete errors[propertyName];
+            this.setProperty(errorProperty, { ...errors });
+            if (!this.isServer) {
+                this.requestUpdate();
+            }
+        }
+    }
+
+    /**
+     * Set validation error for a specific property.
+     */
+    private setValidationError(propertyName: string, message: string): void {
+        const errorProperty = this.getValidationErrorProperty();
+        const errors = this.getProperty(errorProperty) as Record<string, string> || {};
+        errors[propertyName] = message;
+        this.setProperty(errorProperty, { ...errors });
+        if (!this.isServer) {
+            this.requestUpdate();
+        }
+    }
+
+    /**
+     * Get the error property name from validation config.
+     */
+    private getValidationErrorProperty(): string {
+        const rules = getValidationRules(this);
+        const firstRule = Object.values(rules)[0];
+        return firstRule?.config?.errorProperty || 'errors';
     }
 
     public render(): TemplateResult | null { return null; }

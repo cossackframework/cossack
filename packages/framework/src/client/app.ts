@@ -1,4 +1,4 @@
-import { Cossack, enableClientNavigation } from '@cossackframework/core';
+import { Cossack, enableClientNavigation, LifecyclePhase } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 // @ts-expect-error - this is a virtual module created by the vite plugin
@@ -322,10 +322,10 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
 
           // Hook reactivity for loading component too
           const originalRequestUpdate = loadingInstance.requestUpdate.bind(loadingInstance);
-          loadingInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+          loadingInstance.requestUpdate = async (name?: string, oldValue?: unknown): Promise<boolean> => {
               // Skip update if component is already destroyed
-              if (loadingInstance._phase === LifecyclePhase.Destroyed) {
-                  return;
+              if ((loadingInstance as any)._phase === LifecyclePhase.Destroyed) {
+                  return false;
               }
               const p = originalRequestUpdate(name, oldValue);
               await p;

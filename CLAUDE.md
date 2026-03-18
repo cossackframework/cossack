@@ -94,6 +94,7 @@ These decorators mark code that only runs on the client:
 - **`@ClientState()`**: Marks a property as client-only state (triggers re-renders, no server sync).
 - **`@Prop()`**: Semantic equivalent to `@ClientState()` for component inputs.
 - **`@Optimistic()`**: Marks an optimistic UI handler that runs immediately on the client while the server processes the action.
+- **`@Validate()`**: Adds validation rules to a property. Works with `@State` and `@ClientState`. Supports built-in validators (required, minLength, maxLength, min, max, pattern, email, url) and custom validators (sync and async).
 
 ### Shared Decorators
 - **`@Shared()`**: Marks a method as safe to run on both client and server. The full implementation is retained in both bundles. Use for pure functions, validation logic, and data transformation utilities.
@@ -104,6 +105,7 @@ These decorators mark code that only runs on the client:
 ### Built-in Methods (Always Kept in Client)
 The following lifecycle methods are never stripped from the client bundle:
 - `render()`, `head()`, `onMount()`, `onCleanup()`, `escapeHtml()`, `get()`, `init()`, `loadingTemplate()`
+- Validation methods: `getError()`, `hasError()`, `validateProperty()`, `validateAll()`, `clearErrors()`
 
 ## Security: Code Stripping
 

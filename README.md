@@ -1,3 +1,5 @@
+[![E2E Tests](https://github.com/cossackframework/core/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/core/actions/workflows/e2e-tests.yml)
+
 # Cossack Framework
 
 Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. It enables developers to write code once that runs on both the server (Cloudflare Workers) and the client, simplifying the complexities of client-server interaction.
