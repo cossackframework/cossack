@@ -76,6 +76,8 @@ export interface SerializedComponentState {
     children?: Record<string, SerializedComponentState>;
     /** Component route ID for HTTP transport */
     componentRouteId?: string;
+    /** App component route ID for HTTP transport (used for global App methods) */
+    appRouteId?: string;
     /** Route path at top level for easier access */
     routePath?: string;
 }
@@ -864,7 +866,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @Client()
     private proxyHttpMethods(serverMethods: { name: string }[]) {
         const initialState = this.getInitialStateFromWindow();
-        const componentRouteId = initialState?.componentRouteId;
+
+        // For App component (global component), use appRouteId
+        // Check constructor name - App component will have name 'App'
+        const isAppComponent = this.constructor.name === 'App';
+        const componentRouteId = isAppComponent
+            ? initialState?.appRouteId
+            : initialState?.componentRouteId;
+
         if (!componentRouteId) {
             console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
             return;

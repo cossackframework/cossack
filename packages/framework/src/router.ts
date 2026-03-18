@@ -42,6 +42,10 @@ const routeIdMap = new Map<string, string>();
 const routePathToIdMap = new Map<string, string>();
 const routePathToFilePathMap = new Map<string, string>();
 
+// Register the App component (global component) with a special ID
+const APP_ID = 'cossack_app';
+routeIdMap.set(APP_ID, '/src/App');
+
 [...Object.keys(pages), ...Object.keys(layouts)].sort().forEach((path, index) => {
     const id = `cmp_${index.toString(36)}`;
     routeIdMap.set(id, path);
@@ -240,6 +244,7 @@ export function createApp() {
                     ...pageInitialState,
                     routePath: filePathToRoutePath(path),  // Simplified route path (no /src/pages prefix)
                     componentRouteId: routePathToIdMap.get(path),
+                    appRouteId: 'cossack_app',  // Route ID for the App component (root)
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
                     _app_state: appInstance.getInitialState(),
@@ -362,15 +367,23 @@ export function createApp() {
         const componentPath = routeIdMap.get(componentRouteId);
         if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
 
-        const module = pages[componentPath] || layouts[componentPath];
-        if (!module) return c.json({ error: 'Component not found' }, 404);
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-        if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-        const componentInstance = new PageComponent() as any;
-        await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+        // Handle App component (global component) specially
+        let componentInstance: any;
+        if (componentPath === '/src/App') {
+            componentInstance = new App();
+            await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+            componentInstance._render();
+        } else {
+            const module = pages[componentPath] || layouts[componentPath];
+            if (!module) return c.json({ error: 'Component not found' }, 404);
+            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+            if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
+            componentInstance = new PageComponent() as any;
+            await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
 
-        // Rebuild component tree
-        componentInstance._render();
+            // Rebuild component tree
+            componentInstance._render();
+        }
 
         let targetInstance = componentInstance;
         if (target && target !== targetInstance._id) {
