@@ -5,6 +5,19 @@
 - Create/run tests for new features and bug fixes.
 - Check `/docs/architecture.md` for architectural guidelines before making significant changes.
 
+## Running Tests
+
+### Unit Tests
+- **Core package:** `cd packages/core && pnpm vitest --run`
+- **Framework package:** `cd packages/framework && pnpm vitest --run tests/`
+
+### End-to-End Tests
+- **Run all e2e tests:** `cd packages/framework && pnpm exec playwright test`
+- **Run specific test file:** `cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.ts`
+- **Run with UI:** `cd packages/framework && pnpm exec playwright test --ui`
+
+Note: Avoid using `pnpm test` in the framework package as it has a configuration issue that runs both vitest and playwright together.
+
 ## 1. High-Level Project Goal
 
 Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. It is heavily inspired by Phoenix Liveview and .NET Blazor. The core goal is to enable developers to write stateful, real-time web applications with a unified syntax that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.

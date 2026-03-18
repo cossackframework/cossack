@@ -80,9 +80,17 @@ const valueToString = (value: unknown): string => {
       }
       instance.children = value.children;
       instance.__parent = CossackElement.currentRenderingInstance;
-      
+
+      // Set up _id for nested components (same logic as updateComponent)
+      if (instance.__parent) {
+          instance._id = `${instance.__parent._id}:${(instance.__parent as any)._childCounter++}`;
+      }
+
+      // Call connectedCallback to register the component (needed for activeComponents)
+      instance.connectedCallback();
+
       pushCurrentInstance(instance);
-      (instance as any).willUpdate(new Map()); 
+      (instance as any).willUpdate(new Map());
       const template = instance.render();
       let res = '';
       if (template) {
@@ -271,7 +279,7 @@ class NodePart implements Part {
               this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
           }
           this.renderListener = (template) => {
-              this.updateNode(template); 
+              this.updateNode(template);
           };
           this.componentInstance.addRenderListener(this.renderListener);
           this.componentInstance.connectedCallback();

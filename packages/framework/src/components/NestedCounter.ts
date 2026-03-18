@@ -1,7 +1,9 @@
 import { Cossack, Component, State, Server } from "@cossackframework/core";
 import { html } from "@cossackframework/renderer";
 
-@Component()
+@Component({
+    transport: 'http'
+})
 export class NestedCounter extends Cossack {
     @State() count = 0;
 

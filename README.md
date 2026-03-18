@@ -43,6 +43,41 @@ The development workflow requires building the library dependencies before start
     pnpm --filter @cossackframework/framework run dev
     ```
 
+## Testing
+
+This project uses both unit tests (vitest) and end-to-end tests (Playwright).
+
+### Unit Tests
+
+Run unit tests for the core package:
+```sh
+cd packages/core && pnpm vitest --run
+```
+
+Run unit tests for the framework package:
+```sh
+cd packages/framework && pnpm vitest --run tests/
+```
+
+### End-to-End Tests
+
+Run e2e tests using Playwright:
+```sh
+cd packages/framework && pnpm exec playwright test
+```
+
+Run e2e tests for a specific file:
+```sh
+cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.ts
+```
+
+Run e2e tests with UI mode:
+```sh
+cd packages/framework && pnpm exec playwright test --ui
+```
+
+Note: The `pnpm test` command in the framework package has a configuration issue where it attempts to run both vitest and playwright tests together. Use the specific commands above instead.
+
 ## Deployment
 
 To deploy the application to Cloudflare Workers, run the deploy script from the `framework` package.
