@@ -44,7 +44,8 @@ export default class PreventNavigationDemo extends Cossack {
             <p>Try typing in the box below and then clicking a link to navigate away.</p>
 
             ${this.isDirty ? html`<div class="dirty-indicator">âš ï¸ You have unsaved changes</div>` : ''}
-
+            ${this.inputValue ? html`<div>Current Input: <strong>${this.inputValue}</strong></div>` : ''}
+            
             <input 
                 type="text" 
                 value="${this.inputValue}" 

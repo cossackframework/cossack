@@ -188,3 +188,33 @@ Error: [Cossack] Method MyPage.init is server-only. The proxy has not been set u
 ```
 
 In production, the stub is minimal to reduce bundle size while still checking for the proxy before execution.
+
+## Testing
+
+The framework uses vitest for unit tests and Playwright for end-to-end tests.
+
+### Unit Tests
+
+Run core package tests:
+```sh
+cd packages/core && pnpm vitest --run
+```
+
+Run framework package unit tests:
+```sh
+cd packages/framework && pnpm vitest --run tests/
+```
+
+### End-to-End Tests
+
+Run all e2e tests:
+```sh
+cd packages/framework && pnpm exec playwright test
+```
+
+Run a specific test file:
+```sh
+cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.ts
+```
+
+Note: Each nested component instance maintains its own isolated state on the server, enabling true component isolation in stateful applications.
