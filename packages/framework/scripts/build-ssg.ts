@@ -27,8 +27,8 @@ import { generateSitemapFromUrls } from '../src/sitemap-generator.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/ssg');
-const STATIC_DIR = path.resolve(PROJECT_ROOT, 'dist/worker/static');
+// SSG files go to dist/ssg-static (separate from dist/client which Vite may overwrite)
+const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/ssg-static');
 
 async function main() {
   console.log('Starting SSG build...');
@@ -109,6 +109,12 @@ async function main() {
   }
 
   collectFiles(pagesDir);
+
+  // Check for root layout at src/pages/layout.ts
+  const rootLayoutPath = path.join(pagesDir, 'layout.ts');
+  if (fs.existsSync(rootLayoutPath)) {
+    layouts['/src/pages/layout.ts'] = { default: null };
+  }
 
   // Load actual modules using dynamic import with file:// URL
   const loadedPages: Record<string, unknown> = {};
@@ -228,16 +234,11 @@ async function main() {
   console.log('\nGenerated SSG files:');
   listFiles(DIST_DIR, '');
 
-  // Copy SSG files to worker static directory for serving
-  console.log('\nCopying SSG files to worker static directory...');
-  copyDirectory(DIST_DIR, STATIC_DIR);
-  console.log(`Copied to: ${STATIC_DIR}`);
-
-  // Copy client assets (JS/CSS) to static directory for hydration
+  // Copy client assets to SSG static directory for hydration
   const CLIENT_DIR = path.resolve(PROJECT_ROOT, 'dist/client');
   if (fs.existsSync(CLIENT_DIR)) {
-    console.log('\nCopying client assets to static directory...');
-    copyDirectory(CLIENT_DIR, STATIC_DIR);
+    console.log('\nCopying client assets to SSG static directory...');
+    copyDirectory(CLIENT_DIR, DIST_DIR);
     console.log('Client assets copied.');
   }
 
