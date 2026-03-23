@@ -5,6 +5,7 @@ import type { Cossack } from '@cossackframework/core';
 import { URL } from 'url';
 
 export * from './runtime';
+export { serveStatic, type StaticServeOptions } from './static-serve';
 
 export class CossackNodeAdapter {
     private wss: WebSocketServer;

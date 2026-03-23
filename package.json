@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "pnpm --filter @cossackframework/framework run dev",
     "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build",
-    "test": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run test"
+    "test:unit": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run test",
+    "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e"
   },
   "devDependencies": {
     "typescript": "^5.0.4"
