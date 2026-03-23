@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Cossack, PageOptions, AuthenticatedUser } from '@cossackframework/core';
 import { App } from './App';
 import type { Context } from 'hono';
@@ -268,9 +270,28 @@ function replaceParams(path: string, params: Record<string, string>): string {
 }
 
 /**
+ * Read the Vite manifest to get asset file names.
+ */
+function getManifest(): Record<string, any> {
+  try {
+    const manifestPath = path.join(process.cwd(), 'dist/client/.vite/manifest.json');
+    const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+    return JSON.parse(manifestContent);
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Generate a full HTML document with head tags.
  */
 function generateHtmlDocument(body: string, headTags: any[]): string {
+  const manifest = getManifest();
+  const entryClient = manifest['src/client/entry-client.ts'];
+  const cssLink = entryClient?.css?.[0]
+    ? `<link rel="stylesheet" href="/${entryClient.css[0]}">`
+    : '';
+
   const headHtml = headTags
     .map((tag) => {
       if (tag.tag === 'title') {
@@ -292,6 +313,7 @@ function generateHtmlDocument(body: string, headTags: any[]): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     ${headHtml}
+    ${cssLink}
 </head>
 <body>
     ${body}
