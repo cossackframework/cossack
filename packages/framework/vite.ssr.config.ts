@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => {
         '~': path.resolve(__dirname, './dist/client'),
       },
     },
-    // Removed hardcoded 'import.meta.env.DEV': 'false' to allow mode to control it
     build: {
       ssr: true,
       outDir: 'dist/worker',

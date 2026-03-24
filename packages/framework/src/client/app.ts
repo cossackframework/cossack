@@ -1,7 +1,6 @@
 import { Cossack, enableClientNavigation, LifecyclePhase } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
-// @ts-expect-error - this is a virtual module created by the vite plugin
 import registry from 'virtual:cossack-pages';
 
 const { pages, layouts, loadings, components } = registry;
@@ -248,8 +247,9 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
       return;
     }
 
-    // Load the page module asynchronously
-    const module = await pageModuleLoader();
+    // Load the page module asynchronously (cast to function type since import.meta.glob returns a loader for lazy builds)
+    const loader = pageModuleLoader as () => Promise<any>;
+    const module = await loader();
     if (!module) {
       console.error(`Failed to load module for path: ${componentPath}`);
       return;

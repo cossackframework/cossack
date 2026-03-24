@@ -16,6 +16,12 @@ export interface PageOptions {
   providers?: { [key: string]: StateProvider };
   transport?: CossackTransport;
   route?: string;
+  ssg?: boolean | SsgOptions;
+}
+
+export interface SsgOptions {
+  enabled?: boolean;
+  generateStaticParams?: () => Promise<Record<string, string>[]>;
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {

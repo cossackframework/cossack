@@ -21,7 +21,7 @@
     }
   ],
   "assets": {
-    "directory": "./dist/client",
+    "directory": "./dist/ssg-static",
     "binding": "ASSETS"
   },
   "vars": {
