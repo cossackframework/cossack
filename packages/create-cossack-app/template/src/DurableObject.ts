@@ -1,14 +1,21 @@
 import { CossackDurableObject, Cossack } from '@cossackframework/core';
-import { IndexPage } from './pages';
 
 export class AppDurableObject extends CossackDurableObject {
-  async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
-    const registry = new Map<string, new () => Cossack>();
-    // Map component classes by their file path
-    // Adjust these paths to match your actual page structure
-    registry.set('/src/pages/index.ts', IndexPage);
-    // Add more pages here as needed:
-    // registry.set('/src/pages/about/index.ts', AboutPage);
-    return registry;
-  }
+    constructor(state: DurableObjectState, env: any) {
+        super(state, env);
+    }
+
+    async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {
+        const registry = new Map<string, new () => Cossack>();
+        const eagerPages = import.meta.glob('./pages/**/index.ts', { eager: true });
+        for (const path in eagerPages) {
+            const module = eagerPages[path] as any;
+            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+            if (PageComponent) {
+                const registryKey = path.replace('./', '/src/');
+                registry.set(registryKey, PageComponent);
+            }
+        }
+        return registry;
+    }
 }

@@ -1,4 +1,4 @@
-[![E2E Tests](https://github.com/cossackframework/core/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/core/actions/workflows/e2e-tests.yml)
+[![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
 
 # Cossack
 

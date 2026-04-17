@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
-import { createApp } from '@cossackframework/framework';
+import 'reflect-metadata';
+import { createApp } from './router';
 import { AppDurableObject } from './DurableObject';
 
 const app = createApp();

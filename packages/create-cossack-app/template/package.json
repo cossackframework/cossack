@@ -3,19 +3,24 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "build": "vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr",
+    "build:ssg": "tsx scripts/build-ssg.ts",
+    "build:all": "pnpm run build && pnpm run build:ssg",
+    "deploy": "pnpm run build:all && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/core": "latest",
-    "@cossackframework/renderer": "latest",
-    "@cossackframework/framework": "latest",
+    "@cossackframework/core": "^0.1.0",
+    "@cossackframework/renderer": "^0.1.0",
+    "gray-matter": "^4.0.3",
     "hono": "^4.9.5",
+    "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240725.0",
-    "wrangler": "^4.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0",
     "vite": "^5.0.0",
-    "typescript": "^5.0.0"
+    "wrangler": "^4.0.0"
   }
 }

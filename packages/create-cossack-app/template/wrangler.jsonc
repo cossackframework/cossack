@@ -19,11 +19,11 @@
       ]
     }
   ],
-  "build": {
-    "command": "vite build && vite build --ssr",
-    "watch_dir": "src"
-  },
   "assets": {
     "directory": "./dist/client"
+  },
+  "build": {
+    "command": "vite build --config vite.client.config.ts && vite build --config vite.ssr.config.ts --mode ssr --ssr",
+    "watch_dir": "src"
   }
 }

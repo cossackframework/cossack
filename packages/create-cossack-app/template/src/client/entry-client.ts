@@ -1,4 +1,4 @@
 import '../style.css';
-import { createClientApp } from '@cossackframework/framework/client';
+import { createClientApp } from './app';
 
 createClientApp({ container: '#root' });

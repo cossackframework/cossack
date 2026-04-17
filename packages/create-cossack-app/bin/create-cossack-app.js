@@ -11,6 +11,7 @@ async function main() {
   const projectName = process.argv[2];
   if (!projectName) {
     console.error('Please provide a project name.');
+    console.error('Usage: create-cossack-app <project-name>');
     process.exit(1);
   }
 
@@ -34,56 +35,37 @@ async function main() {
 
     if (adapter === 'node') {
       console.log('Configuring for Node.js...');
-      
-      // 1. Update package.json
+
       const packageJsonPath = path.join(projectDir, 'package.json');
       const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
-      
+
       delete packageJson.devDependencies['wrangler'];
       delete packageJson.devDependencies['@cloudflare/workers-types'];
-      
-      packageJson.dependencies['@cossackframework/node-adapter'] = 'workspace:*'; // Use latest or workspace
+
+      packageJson.dependencies['@cossackframework/node-adapter'] = '^0.1.0';
       packageJson.dependencies['@hono/node-server'] = '^1.0.0';
       packageJson.dependencies['ws'] = '^8.16.0';
-      
+
       packageJson.devDependencies['@types/ws'] = '^8.5.10';
       packageJson.devDependencies['@types/node'] = '^20.0.0';
 
-      packageJson.scripts['dev'] = 'node --loader ts-node/esm ./src/index.ts'; // Simplified dev for now, or use vite-node? 
-      // Actually, standard vite dev is fine for frontend, but backend?
-      // For Node, we usually build and run.
-      // Let's keep it simple: build && node dist/server/index.js
+      packageJson.scripts['dev'] = 'node scripts/dev.js';
       packageJson.scripts['start'] = 'node dist/server/index.js';
-      packageJson.scripts['build'] = 'vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr';
-      
+
       await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
-      // 2. Remove wrangler.jsonc
-      await fs.rm(path.join(projectDir, 'wrangler.jsonc'));
+      await fs.rm(path.join(projectDir, 'wrangler.jsonc'), { force: true });
 
-      // 3. Update tsconfig.json
       const tsconfigPath = path.join(projectDir, 'tsconfig.json');
       const tsconfig = JSON.parse(await fs.readFile(tsconfigPath, 'utf-8'));
-      tsconfig.compilerOptions.types = ["vite/client", "node"];
+      tsconfig.compilerOptions.types = ['vite/client', 'node'];
       await fs.writeFile(tsconfigPath, JSON.stringify(tsconfig, null, 2));
 
-      // 4. Overwrite src/index.ts
       const indexTsContent = `import { serve } from '@hono/node-server';
 import { CossackNodeAdapter } from '@cossackframework/node-adapter';
 import { createApp } from './router';
-// @ts-expect-error - virtual module
-import pages from 'virtual:cossack-pages';
 
 const app = createApp();
-
-const componentRegistry = new Map();
-for (const path in pages) {
-    const module = pages[path] as any;
-    const Component = Object.values(module)[0] as any;
-    if (Component) {
-        componentRegistry.set(Component.name, Component);
-    }
-}
 
 const server = serve({
     fetch: app.fetch,
@@ -91,32 +73,25 @@ const server = serve({
 }, (info) => {
     console.log(\`Listening on http://localhost:\${info.port}\`);
 });
-
-new CossackNodeAdapter({
-    server: server as any,
-    componentRegistry,
-});
 `;
       await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
 
-      // 5. Update vite.ssr.config.ts for Node output
       const viteConfigPath = path.join(projectDir, 'vite.ssr.config.ts');
       let viteConfig = await fs.readFile(viteConfigPath, 'utf-8');
       viteConfig = viteConfig.replace("outDir: 'dist/worker'", "outDir: 'dist/server'");
       await fs.writeFile(viteConfigPath, viteConfig);
     }
 
-    console.log(`Cossack app created in ${projectDir}`);
+    console.log(`\nCossack app created in ${projectDir}\n`);
     console.log('Next steps:');
     console.log(`  cd ${projectName}`);
     console.log('  pnpm install');
     if (adapter === 'node') {
-        console.log('  pnpm run build');
-        console.log('  pnpm start');
+      console.log('  pnpm run build');
+      console.log('  pnpm start');
     } else {
-        console.log('  pnpm run dev');
+      console.log('  pnpm run dev');
     }
-
   } catch (error) {
     console.error('Error creating Cossack app:', error);
     process.exit(1);

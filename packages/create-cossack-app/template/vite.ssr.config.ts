@@ -1,23 +1,28 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
-import { cossackPages } from '@cossackframework/framework/vite-plugin';
+import path from 'path';
+import { cossackPages } from './src/vite-plugin';
 
-export default defineConfig({
-  plugins: [cossackPages()],
-  build: {
-    ssr: true,
-    lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      name: 'worker',
-      fileName: 'index',
-      formats: ['es'],
-    },
-    rollupOptions: {
-      output: {
-        dir: 'dist/worker',
+export default defineConfig(({ mode }) => {
+  return {
+    mode,
+    plugins: [cossackPages({ mode })],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+        '~': path.resolve(__dirname, './dist/client'),
       },
     },
-    minify: false,
-    sourcemap: true,
-  },
+    build: {
+      ssr: true,
+      outDir: 'dist/worker',
+      target: 'esnext',
+      rollupOptions: {
+        input: 'src/index.ts',
+        output: {
+          entryFileNames: 'index.js',
+          format: 'esm',
+        },
+      },
+    },
+  };
 });

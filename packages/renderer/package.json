@@ -1,7 +1,14 @@
 {
   "name": "@cossackframework/renderer",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "type": "module",
+  "description": "Light DOM rendering engine for the Cossack Framework",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/renderer"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
@@ -16,6 +23,9 @@
       "import": "./dist/server.js",
       "types": "./dist/server.d.ts"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "vite build",

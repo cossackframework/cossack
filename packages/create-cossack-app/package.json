@@ -1,8 +1,24 @@
 {
   "name": "create-cossack-app",
-  "version": "0.0.1",
+  "version": "0.2.2",
   "type": "module",
-  "bin": "./bin/create-cossack-app.js",
+  "description": "CLI to scaffold a new Cossack Framework project",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/create-cossack-app"
+  },
+  "bin": {
+    "create-cossack-app": "./bin/create-cossack-app.js"
+  },
+  "files": [
+    "bin",
+    "template"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "start": "node ./bin/create-cossack-app.js"
   },
