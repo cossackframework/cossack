@@ -225,7 +225,7 @@ export const ThemeContext = createContext('light'); // Default value
 class App extends CossackElement {
   render() {
     this.provide(ThemeContext, 'dark');
-    return html`<c:Child></c:Child>`;
+    return html`${component(Child)}`;
   }
 }
 ```
@@ -286,10 +286,10 @@ CRP supports passing children to components.
 **Parent:**
 ```typescript
 html`
-  <c:Card>
+  ${component(Card, {}, html`
     <h1>Title</h1>
     <p>Content</p>
-  </c:Card>
+  `)}
 `
 ```
 

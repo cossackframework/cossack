@@ -1,4 +1,4 @@
-import { CossackElement, html, repeat, live, ref } from 'cossack-renderer';
+import { CossackElement, html, repeat, live, ref, component } from 'cossack-renderer';
 
 interface Employee {
     id: number;
@@ -141,8 +141,6 @@ export class App extends CossackElement {
         formOpen: { state: true },
         confirmOpen: { state: true }
     };
-    
-    static components = { EmployeeFormDialog, ConfirmDialog };
 
     declare employees: Employee[];
     declare formOpen: boolean;
@@ -227,20 +225,20 @@ export class App extends CossackElement {
                     </tbody>
                 </table>
 
-                <c:EmployeeFormDialog
-                    .open="${this.formOpen}"
-                    .employee="${editingEmployee}"
-                    .onsave="${(data: any) => this.handleSave(data)}"
-                    .oncancel="${() => this.formOpen = false}"
-                ></c:EmployeeFormDialog>
+                ${component(EmployeeFormDialog, {
+                    open: this.formOpen,
+                    employee: editingEmployee,
+                    onsave: (data: any) => this.handleSave(data),
+                    oncancel: () => this.formOpen = false,
+                })}
 
-                <c:ConfirmDialog
-                    .open="${this.confirmOpen}"
-                    title="Delete Employee"
-                    message="Are you sure you want to delete this employee?"
-                    .onconfirm="${() => this.handleDelete()}"
-                    .oncancel="${() => this.confirmOpen = false}"
-                ></c:ConfirmDialog>
+                ${component(ConfirmDialog, {
+                    open: this.confirmOpen,
+                    title: "Delete Employee",
+                    message: "Are you sure you want to delete this employee?",
+                    onconfirm: () => this.handleDelete(),
+                    oncancel: () => this.confirmOpen = false,
+                })}
             </div>
         `;
     }

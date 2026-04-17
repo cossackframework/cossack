@@ -17,7 +17,7 @@ import type { CossackServerRuntime } from './runtime';
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { HeadTag, HeadContext, HeadValue } from './head';
 import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
-import { validateValue, validateValueAsync, getValidationRules, ValidationRulesStore } from './validation';
+import { validateValue, validateValueAsync, getValidationRules } from './validation';
 
 export const RootContext = createContext<Cossack | null>(null);
 
@@ -884,19 +884,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         for (const method of serverMethods) {
             const { name } = method;
             const proxy = async (...args: any[]) => {
-                // Optimistic UI Handler
-                if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = this.getMethod(optimisticHandlers[name]);
-                        (optimisticMethod as any)(...args);
-                        this.requestUpdate();
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
-
-                this.loading[name] = (this.loading[name] || 0) + 1;
-                this.requestUpdate();
                 // Optimistic UI Handler
                 if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                     try {

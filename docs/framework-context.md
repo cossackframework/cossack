@@ -265,7 +265,7 @@ ${component(Child, {})}
 You can create your own context providers using the `createContext` API:
 
 ```typescript
-import { createContext } from "@cossackframework/core";
+import { createContext } from "@cossackframework/renderer";
 
 // Create a context
 interface ThemeContext {

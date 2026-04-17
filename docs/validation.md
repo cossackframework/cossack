@@ -183,6 +183,7 @@ export class RegistrationForm extends Cossack {
         this.validateProperty(field);
     }
 
+    @Client()
     async handleSubmit(event: Event) {
         event.preventDefault();
         const isValid = await this.validateAll();

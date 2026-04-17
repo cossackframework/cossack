@@ -19,7 +19,8 @@ src/pages/dashboard/
 
 `loading.ts`:
 ```typescript
-import { Cossack, html } from '@cossackframework/core';
+import { Cossack } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 
 export default class DashboardSkeleton extends Cossack {
   render() {
@@ -37,7 +38,8 @@ When a component is being initialized (via `init()` or `get()` methods), Cossack
 If you define a `loadingTemplate()` method in your component, Cossack will automatically render it while `this.loading.init` is true. This is useful for component-level loading states or when triggering a refresh.
 
 ```typescript
-import { Cossack, Page, html } from '@cossackframework/core';
+import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 
 @Page()
 export default class UserProfile extends Cossack {

@@ -55,7 +55,7 @@ export class App extends Cossack {
     *   Only the `children` (the page content) are swapped out.
     *   This preserves any state stored in the `App` component (like the `theme` variable in the example above).
 
-## styling
+## Styling
 
 Since the App component wraps everything, it's the perfect place to apply global CSS classes or manage themes dynamically.
 

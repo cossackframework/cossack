@@ -60,7 +60,7 @@ src/
 ```
 
 **Creating a Layout:**
-A layout is a Cossack component that accepts children in its `template` method and can provide metadata via its `head` method.
+A layout is a Cossack component that accepts children in its `render` method and can provide metadata via its `head` method.
 
 ```typescript
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
