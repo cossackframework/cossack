@@ -179,8 +179,8 @@ export class Dashboard extends Cossack {
     render() {
         return html`
             <div>
-                <c:Counter />
-                <c:Counter />
+                ${component(Counter)}
+                ${component(Counter)}
             </div>
         `;
     }

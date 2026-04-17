@@ -23,8 +23,7 @@ this.c.req.param('name')
 **Example:**
 
 ```typescript
-import { Cossack } from '@/shared/cossack';
-import { Page, Server } from '@/shared/decorators';
+import { Cossack, Page, Server, State } from '@cossackframework/core';
 
 @Page()
 export class Greeting extends Cossack {

@@ -1,4 +1,4 @@
-// src/lib.ts
+// src/index.ts
 export * from './shared/cossack';
 export * from './shared/decorators';
 export * from './shared/environment';

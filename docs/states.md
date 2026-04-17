@@ -32,7 +32,8 @@ This is the simplest and most direct way to manage state. It's perfect for UI-sp
 #### Example: A Simple Counter
 
 ```typescript
-import { Page, Server, State } from '@cossackframework/core';
+import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 
 @Page({ transport: 'durable-object' })
 export class Counter extends Cossack {
@@ -391,9 +392,9 @@ export class Dashboard extends Cossack {
         return html`
             <div>
                 <h1>Dashboard</h1>
-                <c:Counter />
-                <c:Counter />
-                <c:Counter />
+                ${component(Counter)}
+                ${component(Counter)}
+                ${component(Counter)}
             </div>
         `;
     }

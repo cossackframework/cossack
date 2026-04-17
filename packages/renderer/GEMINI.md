@@ -21,7 +21,7 @@ This library replaces the legacy `lit-html` clone. It provides a robust, class-b
 - **Security**: HTML escaping by default, with `unsafeHTML` directive for raw content.
 - **Composability**: Support for nested components and `children` projection.
 - **Context API**: Share state deeply through the component tree without prop drilling.
-- **JSX-like Syntax**: Support `<c:Component>` syntax in templates.
+- **Component Helper**: Compose components via the `component(Class, props, children)` helper function.
 - **Lit Syntax**: Support `@event`, `.property`, and `?boolean` binding.
 - **Reactive Controllers**: Support for reusable stateful logic via controllers.
 
@@ -31,8 +31,8 @@ This library replaces the legacy `lit-html` clone. It provides a robust, class-b
     - `NodePart`: Handles dynamic content (text, templates, arrays).
     - `AttributePart`: Handles attribute binding, properties (`.`), booleans (`?`), and events (`@`).
     - `SpreadPart`: Handles spread syntax `...=${vars}`.
-    - `ComponentPropPart`: Handles property binding for `<c:Component>`.
-- **SSR**: `renderToString` performs a single-pass string generation with **Tag Scanning** for `<c:Component>` and spread syntax support.
+    - `ComponentPropPart`: Handles property binding for component instances.
+- **SSR**: `renderToString` performs a single-pass string generation with spread syntax support.
 - **Hydration**: Client-side `render` replaces content or updates existing parts (smart diffing).
 - **Components**: `LitElement` (aliased as `CossackElement` in core) is a standalone class that implements the standard reactive update cycle (`properties`, `shouldUpdate`, `willUpdate`, `render`, `updated`), `children` projection, Context (`provide`, `consume`), and Reactive Controllers.
     - `static components`: Registry for local component resolution.
@@ -48,7 +48,7 @@ This library replaces the legacy `lit-html` clone. It provides a robust, class-b
 - [x] Implement `children` projection support.
 - [x] Implement **Context API** (`createContext`, `provide`, `consume`).
 - [x] Implement standard directives: `ref`, `live`, `repeat`, `classMap`, `styleMap`.
-- [x] Implement **`<c:Component>`** syntax support.
+- [x] Implement **`component()` helper** for composing nested components.
 - [x] Implement spread syntax `...=${vars}`.
 - [x] Implement Lit-style bindings (`@`, `.`, `?`).
 - [x] Implement Reactive Controllers support.

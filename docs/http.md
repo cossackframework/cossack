@@ -146,9 +146,9 @@ By default, all components use the `http` transport. You only need to specify th
 
 Routes are mapped directly from the file system. The router is flexible, supporting both named files and `index.ts` files.
 
--   `src/pages/api/users.ts` -> `/api/users`
+-   `src/pages/api/users/index.ts` -> `/api/users`
 -   `src/pages/api/tasks/index.ts` -> `/api/tasks`
--   `src/pages/api/tasks/[id].ts` -> `/api/tasks/:id`
+-   `src/pages/api/tasks/[id]/index.ts` -> `/api/tasks/:id`
 
 ### 3. HTTP Method Mapping
 

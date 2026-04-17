@@ -19,7 +19,8 @@ To resolve the pending navigation, call `this.confirmNavigation(boolean)`:
 ## Example
 
 ```typescript
-import { Cossack, Page, State, PreventNavigation, html } from '@cossackframework/core';
+import { Cossack, Page, State, PreventNavigation } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 
 @Page()
 export default class UnsavedForm extends Cossack {
