@@ -1,12 +1,8 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
+import type { AuthenticatedUser } from './user';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import 'reflect-metadata';
-
-type AuthenticatedUser = {
-    id: string;
-    [key: string]: any;
-};
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
@@ -123,8 +119,9 @@ export abstract class CossackDurableObject {
 
         const userId = request.headers.get('X-User-ID');
         const userData = request.headers.get('X-User-Data');
-        if (!userId) return new Response('Header X-User-ID is required', { status: 400 });
-        const user: AuthenticatedUser = userData ? JSON.parse(userData) : { id: userId };
+        const user: AuthenticatedUser = userId
+            ? (userData ? JSON.parse(userData) : { id: userId })
+            : { id: 'anonymous' };
 
         const { 0: client, 1: server } = new WebSocketPair();
         const channel = url.pathname.split('/').pop() || 'global';

@@ -38,6 +38,7 @@ export const popCurrentInstance = () => instanceStack.pop();
 export class CossackElement implements ReactiveControllerHost {
   static properties: PropertyDeclarations = {};
   static readonly _isCossackElement = true;
+  static components: Record<string, typeof CossackElement> = {};
 
   // Holds content projected from the parent
   public children: unknown = null;

@@ -103,7 +103,8 @@ export function createApp() {
 
     // Authentication middleware
     app.use('*', (c, next) => {
-        c.set('user', { id: 'user-123', name: 'Alice' });
+        // @todo: Implement real authentication logic here (e.g., check cookies, headers, etc.)
+        // c.set('user', { id: 'user-123', name: 'Alice' });
         return next();
     });
 
@@ -266,7 +267,6 @@ export function createApp() {
 
     app.get('/ws/:provider/:id', async (c) => {
         const user = c.get('user');
-        if (!user) return new Response('Unauthorized', { status: 401 });
         const { provider, id: durableObjectId } = c.req.param();
         const routePath = c.req.query('routePath');
         // Support both routePath (new) and componentPath (legacy) for backward compatibility
@@ -280,10 +280,14 @@ export function createApp() {
         const id = doBinding.idFromString(durableObjectId);
         const stub = doBinding.get(id);
         const request = new Request(c.req.raw);
-        request.headers.set('X-User-ID', user.id);
+        
         request.headers.set('X-Component-Path', componentPath);
         request.headers.set('X-Provider-Name', provider);
-        request.headers.set('X-User-Data', JSON.stringify(user));
+        if (user) {
+            request.headers.set('X-User-ID', user.id);
+            request.headers.set('X-User-Data', JSON.stringify(user));
+        }
+
         return await stub.fetch(request);
     });
 

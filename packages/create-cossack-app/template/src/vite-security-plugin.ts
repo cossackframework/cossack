@@ -101,6 +101,54 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 }
 
 /**
+ * Build a set of character ranges that are inside strings or template literals.
+ * Used to skip regex matches that fall within string/template literal regions.
+ */
+function buildStringRanges(code: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let i = 0;
+  const len = code.length;
+
+  while (i < len) {
+    const char = code[i];
+    if (char === '"' || char === "'" || char === '`') {
+      const start = i;
+      const end = findStringEnd(code, i, char);
+      if (end === -1) break;
+      ranges.push([start, end]);
+      i = end + 1;
+    } else if (char === '/' && i + 1 < len) {
+      const next = code[i + 1];
+      if (next === '/') {
+        i = code.indexOf('\n', i + 2);
+        if (i === -1) i = len;
+      } else if (next === '*') {
+        const end = code.indexOf('*/', i + 2);
+        if (end === -1) break;
+        i = end + 2;
+      } else {
+        i++;
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return ranges;
+}
+
+/**
+ * Check if a position falls within any of the given ranges.
+ */
+function isInRange(ranges: Array<[number, number]>, pos: number): boolean {
+  for (const [start, end] of ranges) {
+    if (pos >= start && pos <= end) return true;
+    if (start > pos) break;
+  }
+  return false;
+}
+
+/**
  * Transform a Cossack class by stubbing server-only methods.
  * Uses brace depth tracking to ensure only top-level methods are processed.
  */
@@ -111,6 +159,9 @@ export function transformCossackClass(
   builtinMethods: Set<string>,
   devWarning: boolean
 ): string {
+  // Build string ranges to skip false matches inside template literals
+  const stringRanges = buildStringRanges(code);
+
   // Find class definitions extending Cossack or CossackElement
   const classRegex =
     /(?:export\s+(?:default\s+)?)?class\s+(\w+)\s+(?:extends\s+(?:Cossack(?:<[^>]+>)?|CossackElement))\s*\{/g;
@@ -123,6 +174,11 @@ export function transformCossackClass(
     const className = match[1];
     const classStart = match.index;
     const classEnd = match.index + match[0].length;
+
+    // Skip matches that are inside strings or template literals
+    if (isInRange(stringRanges, classStart)) {
+      continue;
+    }
 
     // Find the matching closing brace for the class
     const classBody = extractClassBody(code, classEnd);
@@ -773,6 +829,7 @@ function extractClassBody(
 
 /**
  * Find the end of a string literal starting at position pos.
+ * For template literals (backticks), handles ${...} expressions recursively.
  */
 function findStringEnd(code: string, pos: number, quote: string): number {
   let i = pos + 1;
@@ -783,6 +840,43 @@ function findStringEnd(code: string, pos: number, quote: string): number {
     if (char === '\\') {
       // Skip escaped character
       i += 2;
+      continue;
+    }
+    if (quote === '`' && char === '$' && i + 1 < len && code[i + 1] === '{') {
+      // Template literal expression ${...}
+      i += 2; // Skip ${
+      let exprDepth = 1;
+      while (i < len && exprDepth > 0) {
+        const exprChar = code[i];
+        if (exprChar === '{') {
+          exprDepth++;
+          i++;
+        } else if (exprChar === '}') {
+          exprDepth--;
+          if (exprDepth === 0) break;
+          i++;
+        } else if (exprChar === '"' || exprChar === "'" || exprChar === '`') {
+          // Nested string/template literal inside expression
+          const nestedEnd = findStringEnd(code, i, exprChar);
+          if (nestedEnd === -1) return -1;
+          i = nestedEnd + 1;
+        } else if (exprChar === '/' && i + 1 < len) {
+          // Skip comments inside expressions
+          const next = code[i + 1];
+          if (next === '/') {
+            i = code.indexOf('\n', i + 2);
+            if (i === -1) i = len;
+          } else if (next === '*') {
+            i = code.indexOf('*/', i + 2);
+            if (i === -1) return -1;
+            i += 2;
+          } else {
+            i++;
+          }
+        } else {
+          i++;
+        }
+      }
       continue;
     }
     if (char === quote) {
@@ -796,6 +890,7 @@ function findStringEnd(code: string, pos: number, quote: string): number {
 
 /**
  * Find the end of a string literal in a substring (for use with classBody).
+ * For template literals (backticks), handles ${...} expressions recursively.
  */
 function findStringEndInString(code: string, pos: number, quote: string): number {
   let i = pos + 1;
@@ -806,6 +901,30 @@ function findStringEndInString(code: string, pos: number, quote: string): number
     if (char === '\\') {
       // Skip escaped character
       i += 2;
+      continue;
+    }
+    if (quote === '`' && char === '$' && i + 1 < len && code[i + 1] === '{') {
+      // Template literal expression ${...}
+      i += 2; // Skip ${
+      let exprDepth = 1;
+      while (i < len && exprDepth > 0) {
+        const exprChar = code[i];
+        if (exprChar === '{') {
+          exprDepth++;
+          i++;
+        } else if (exprChar === '}') {
+          exprDepth--;
+          if (exprDepth === 0) break;
+          i++;
+        } else if (exprChar === '"' || exprChar === "'" || exprChar === '`') {
+          // Nested string/template literal inside expression
+          const nestedEnd = findStringEndInString(code, i, exprChar);
+          if (nestedEnd === -1) return -1;
+          i = nestedEnd + 1;
+        } else {
+          i++;
+        }
+      }
       continue;
     }
     if (char === quote) {
