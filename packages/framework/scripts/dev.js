@@ -1,16 +1,8 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..');
-
-// Ensure the SSG static directory exists (wrangler requires it even in dev)
-const ssgStaticDir = path.join(PROJECT_ROOT, 'dist/ssg-static');
-if (!fs.existsSync(ssgStaticDir)) {
-    fs.mkdirSync(ssgStaticDir, { recursive: true });
-}
 
 // Start the DevTools server
 const devTools = spawn('node', [path.join(__dirname, 'dev-tools.js')], {
