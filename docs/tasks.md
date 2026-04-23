@@ -107,12 +107,14 @@ export default class MyComponent extends Cossack {
         this.windowSize = `${window.innerWidth}x${window.innerHeight}`;
     };
 
+    @Client()
     onMount() {
         // Document and window events need manual listeners
         document.addEventListener('keydown', this.handleKeydown);
         window.addEventListener('resize', this.handleResize);
     }
 
+    @Client()
     onCleanup() {
         document.removeEventListener('keydown', this.handleKeydown);
         window.removeEventListener('resize', this.handleResize);

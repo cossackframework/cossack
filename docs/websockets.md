@@ -34,7 +34,6 @@ export class LiveCounter extends Cossack {
     @State() // Uses the 'global' channel within the 'page' provider.
     private count: number = 0;
 
-    @Server() // Action is sent over the 'page' provider's connection.
     private increment() {
         this.count++;
     }

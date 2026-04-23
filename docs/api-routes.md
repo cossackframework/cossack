@@ -44,7 +44,7 @@ If you need to share state between the client and server (via WebSockets) or pre
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
 
-@Page({ transport: 'http' })
+@Page()
 export default class MyApi extends Cossack {
     async get() {
         return this.c.json({ message: 'Hello from class!' });

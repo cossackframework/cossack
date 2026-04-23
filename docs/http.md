@@ -24,12 +24,10 @@ export default class extends Cossack {
     @State()
     private count: number = 0;
 
-    @Server()
     private increment() {
         this.count++;
     }
 
-    @Server()
     private decrement() {
         this.count--;
     }

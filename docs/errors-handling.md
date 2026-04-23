@@ -12,7 +12,7 @@ The framework's router will automatically render this page whenever a request do
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' })
+@Page()
 export default class NotFoundPage extends Cossack {
     public head(context: HeadContext): HeadValue {
         return { title: 'Page Not Found' };
@@ -43,7 +43,7 @@ When an error is caught:
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' })
+@Page()
 export default class ErrorPage extends Cossack {
     public head(context: HeadContext): HeadValue {
         return { title: 'Server Error' };

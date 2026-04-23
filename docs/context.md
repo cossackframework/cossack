@@ -31,7 +31,6 @@ export class Greeting extends Cossack {
     @State()
     private greeting: string = '';
 
-    @Server()
     async init() {
         // Access the 'name' parameter from the URL
         const name = this.c.req.param('name');

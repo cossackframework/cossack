@@ -31,8 +31,8 @@ import { html } from '@cossackframework/renderer';
 export default class CounterPage extends Cossack {
     @State() count = 0;
 
-    @Server()
     increment() {
+        // This runs on the server. The updated state is sent back to the client automatically.
         this.count++;
     }
 

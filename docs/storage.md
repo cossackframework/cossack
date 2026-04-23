@@ -118,7 +118,6 @@ import { html } from "@cossackframework/renderer";
 @Page({ transport: 'http' })
 export class SimpleUploadPage extends Cossack {
     
-    @Server()
     async saveFile(id: string, file: File) {
         console.log(`Receiving file for ID: ${id}`);
         console.log(`File Name: ${file.name}, Size: ${file.size}`);

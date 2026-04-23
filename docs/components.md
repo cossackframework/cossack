@@ -145,7 +145,6 @@ import { html } from "@cossackframework/renderer";
 export class Counter extends Cossack {
     @State() count = 0;
 
-    @Server()
     increment() {
         this.count++;
     }
@@ -199,7 +198,6 @@ export class LikeButton extends Cossack {
     @State() liked = false;
     @State() count = 0;
 
-    @Server()
     async toggleLike() {
         // Access database bindings
         const stmt = this.env.DB.prepare(

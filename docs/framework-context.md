@@ -39,7 +39,6 @@ export class DatabaseViewer extends Cossack {
     @State()
     users: any[] = [];
 
-    @Server()
     async loadUsers() {
         // Access D1 database directly
         const stmt = this.env.DB.prepare("SELECT * FROM users");
@@ -141,7 +140,6 @@ export class UserProfilePage extends Cossack {
     @State()
     profile: any = null;
 
-    @Server()
     async loadProfile() {
         // Get route parameter
         const username = this.c.req.param('username');
@@ -229,24 +227,7 @@ interface CloudflareBindings {
 interface Env extends CloudflareBindings {}
 ```
 
-### 2. Defensive Coding
-
-Always check for `undefined` on client:
-
-```typescript
-@Component()
-export class MyComponent extends Cossack {
-    @Server()
-    async serverAction() {
-        // Safe to use this.env here
-        if (this.env.DB) {
-            // ... database operations
-        }
-    }
-}
-```
-
-### 3. No Prop Drilling
+### 2. No Prop Drilling
 
 Never pass `env`, `user`, or `c` as props—they're automatically available:
 

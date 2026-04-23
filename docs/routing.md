@@ -66,7 +66,7 @@ A layout is a Cossack component that accepts children in its `render` method and
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' })
+@Page()
 export default class MyLayout extends Cossack {
   public head(context: HeadContext): HeadValue {
     return {

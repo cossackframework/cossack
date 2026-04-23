@@ -174,7 +174,6 @@ export class OptimisticCounter extends Cossack {
         return (this.loading['increment'] > 0) ? this.optCount : this.count;
     }
 
-    @Server()
     async increment() {
         await new Promise(r => setTimeout(r, 500));
         this.count++;
@@ -233,7 +232,7 @@ export class ToggleDemo extends Cossack {
         `;
     }
 }
-
+```
 ---
 
 ### 5. Computed State (@Computed)
@@ -305,6 +304,7 @@ export class MyComponent extends Cossack {
     @ClientState() isVisible = false;
 
     // Arrow function - also works!
+    @ClientState()
     toggle = () => {
         this.isVisible = !this.isVisible;
     }
@@ -371,7 +371,6 @@ When a nested component's `@Server` method is called:
 export class Counter extends Cossack {
     @State() count = 0;
 
-    @Server()
     increment() {
         this.count++;
     }

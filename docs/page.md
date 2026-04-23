@@ -99,11 +99,11 @@ export default class Dashboard extends Cossack {
 
 ## Transport Modes
 
-### `durable-object` (Default for real-time)
+### `http` (Default)
+Stateless request/response mode. Good for traditional forms, APIs, or pages that don't need real-time synchronization. Server actions are called via HTTP POST.
+
+### `durable-object`
 Uses Cloudflare Durable Objects to maintain state. State is persisted automatically and shared between all users on the same channel (if configured).
 
 ### `websocket`
 Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.
-
-### `http`
-Stateless request/response mode. Good for traditional forms, APIs, or pages that don't need real-time synchronization. Server actions are called via HTTP POST.

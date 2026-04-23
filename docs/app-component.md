@@ -17,7 +17,7 @@ The App component is a standard Cossack component defined in `packages/framework
 import { Cossack, Page, State } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
-@Page({ transport: 'http' })
+@Page()
 export class App extends Cossack {
     @State() theme: 'light' | 'dark' = 'light';
 
