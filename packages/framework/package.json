@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/framework",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "type": "module",
   "description": "Meta framework package for the Cossack Framework",
   "license": "MIT",
@@ -11,57 +11,54 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js"
     },
     "./client": {
-      "types": "./dist/types/client/index.d.ts",
-      "import": "./src/client/index.ts"
+      "types": "./dist/esm/client/index.d.ts",
+      "import": "./dist/esm/client/index.js"
     },
     "./client/app": {
-      "types": "./dist/types/client/app.d.ts",
-      "import": "./src/client/app.ts"
+      "types": "./dist/esm/client/app.d.ts",
+      "import": "./dist/esm/client/app.js"
     },
     "./vite-plugin": {
-      "types": "./dist/types/vite-plugin.d.ts",
-      "import": "./dist/plugins/vite-plugin.js"
+      "types": "./dist/esm/vite-plugin.d.ts",
+      "import": "./dist/esm/vite-plugin.js"
     },
     "./vite-security-plugin": {
-      "types": "./dist/types/vite-security-plugin.d.ts",
-      "import": "./dist/plugins/vite-security-plugin.js"
+      "types": "./dist/esm/vite-security-plugin.d.ts",
+      "import": "./dist/esm/vite-security-plugin.js"
     },
     "./router": {
-      "types": "./dist/types/router.d.ts",
-      "import": "./src/router.ts"
+      "types": "./dist/esm/router.d.ts",
+      "import": "./dist/esm/router.js"
     },
     "./root": {
-      "types": "./dist/types/root.d.ts",
-      "import": "./src/root.ts"
+      "types": "./dist/esm/root.d.ts",
+      "import": "./dist/esm/root.js"
     },
     "./api-handler": {
-      "types": "./dist/types/api-handler.d.ts",
-      "import": "./src/api-handler.ts"
+      "types": "./dist/esm/api-handler.d.ts",
+      "import": "./dist/esm/api-handler.js"
     },
     "./ssg-renderer": {
-      "types": "./dist/types/ssg-renderer.d.ts",
-      "import": "./src/ssg-renderer.ts"
+      "types": "./dist/esm/ssg-renderer.d.ts",
+      "import": "./dist/esm/ssg-renderer.js"
     },
     "./sitemap-generator": {
-      "types": "./dist/types/sitemap-generator.d.ts",
-      "import": "./src/sitemap-generator.ts"
+      "types": "./dist/esm/sitemap-generator.d.ts",
+      "import": "./dist/esm/sitemap-generator.js"
     },
     "./DurableObject": {
-      "types": "./dist/types/DurableObject.d.ts",
-      "import": "./src/DurableObject.ts"
+      "types": "./dist/esm/DurableObject.d.ts",
+      "import": "./dist/esm/DurableObject.js"
     },
     "./vite-env": "./src/vite-env.d.ts"
   },
   "files": [
-    "src",
-    "!src/pages",
-    "!src/components",
-    "dist/types",
-    "dist/plugins"
+    "dist/esm",
+    "src/vite-env.d.ts"
   ],
   "publishConfig": {
     "access": "public"
@@ -70,7 +67,7 @@
     "dev": "node scripts/dev.js",
     "build": "vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr",
     "build:ssg": "vite build --config vite.client.config.ts && tsx scripts/build-ssg.ts",
-    "build:types": "tsc -p tsconfig.declarations.json && tsc -p tsconfig.plugins.json",
+    "build:types": "tsc -p tsconfig.declarations.json",
     "build:all": "pnpm run build && pnpm run build:ssg",
     "serve": "wrangler dev --local",
     "deploy": "pnpm run build && wrangler deploy",

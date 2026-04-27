@@ -2,10 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
+    "allowImportingTsExtensions": false,
     "declaration": true,
-    "emitDeclarationOnly": true,
-    "outDir": "dist/types",
+    "outDir": "dist/esm",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "worker-configuration.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "worker-configuration.d.ts"],
+  "exclude": ["src/pages/**", "src/components/**"]
 }
