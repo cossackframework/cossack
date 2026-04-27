@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240725.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "tailwindcss": "^4.1.0",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0",
     "vite": "^5.0.0",

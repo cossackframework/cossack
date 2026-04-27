@@ -1,4 +1,1 @@
-body {
-  font-family: sans-serif;
-  margin: 2em;
-}
+@import "tailwindcss";

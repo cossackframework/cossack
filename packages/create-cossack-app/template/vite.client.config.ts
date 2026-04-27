@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import path from 'path';
+import tailwindcss from '@tailwindcss/vite';
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 
@@ -7,6 +8,7 @@ export default defineConfig(({ mode }) => {
   return {
     mode,
     plugins: [
+      tailwindcss(),
       cossackSecurityPlugin({ mode: 'client', devWarning: true }),
       cossackPages({ mode }),
     ],
