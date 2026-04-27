@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/framework",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "description": "Meta framework package for the Cossack Framework",
   "license": "MIT",
@@ -24,11 +24,11 @@
     },
     "./vite-plugin": {
       "types": "./dist/types/vite-plugin.d.ts",
-      "import": "./src/vite-plugin.ts"
+      "import": "./dist/plugins/vite-plugin.js"
     },
     "./vite-security-plugin": {
       "types": "./dist/types/vite-security-plugin.d.ts",
-      "import": "./src/vite-security-plugin.ts"
+      "import": "./dist/plugins/vite-security-plugin.js"
     },
     "./router": {
       "types": "./dist/types/router.d.ts",
@@ -58,7 +58,8 @@
   },
   "files": [
     "src",
-    "dist/types"
+    "dist/types",
+    "dist/plugins"
   ],
   "publishConfig": {
     "access": "public"
@@ -67,7 +68,7 @@
     "dev": "node scripts/dev.js",
     "build": "vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr",
     "build:ssg": "vite build --config vite.client.config.ts && tsx scripts/build-ssg.ts",
-    "build:types": "tsc -p tsconfig.declarations.json",
+    "build:types": "tsc -p tsconfig.declarations.json && tsc -p tsconfig.plugins.json",
     "build:all": "pnpm run build && pnpm run build:ssg",
     "serve": "wrangler dev --local",
     "deploy": "pnpm run build && wrangler deploy",

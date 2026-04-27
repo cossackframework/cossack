@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "outDir": "dist/plugins",
+    "rootDir": "src"
+  },
+  "include": ["src/vite-plugin.ts", "src/vite-security-plugin.ts"]
+}
