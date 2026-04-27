@@ -4,25 +4,31 @@ Cossack uses a simple and intuitive file-based routing system. You don't need to
 
 ## How it Works
 
-The framework scans for any file named `index.ts` or `index.mdx` within the `src/pages` directory and its subdirectories. The path to that file directly maps to a URL route.
+The framework scans for `.ts` and `.mdx` files within the `src/pages` directory and its subdirectories. The path to that file directly maps to a URL route.
 
 ### Basic Routing
 
-A page component at `src/pages/about/index.ts` will be served at the `/about` URL. A component at `src/pages/index/index.ts` (or `src/pages/index.ts`) will be the root page, served at `/`.
+A page can be defined in two ways:
+- **Directory-based**: `src/pages/about/index.ts` → `/about`
+- **Flat file**: `src/pages/about.ts` → `/about`
+
+Both produce the same route. Flat files are more concise for simple pages.
 
 **Example File Structure:**
 
 ```
 src/
 └── pages/
-    ├── index/
-    │   └── index.ts     // Serves the "/" route
+    ├── index.ts            // Serves the "/" route
+    ├── hello.ts            // Serves the "/hello" route
+    ├── hello.mdx           // Serves the "/hello" route (Markdown)
     ├── about/
-    │   └── index.ts     // Serves the "/about" route
+    │   └── index.ts        // Also serves the "/about" route
     ├── docs/
-    │   └── index.mdx    // Serves the "/docs" route (Markdown support!)
+    │   ├── index.mdx       // Serves the "/docs" route
+    │   └── getting-started.mdx  // Serves the "/docs/getting-started" route
     └── contact/
-        └── index.ts     // Serves the "/contact" route
+        └── index.ts        // Serves the "/contact" route
 ```
 
 ### Dynamic Routes
@@ -107,7 +113,7 @@ For those curious about the underlying mechanics, the "magic" of file-based rout
 
 ### 1. The `cossackPages` Vite Plugin
 
-The core of the system is a Vite plugin named `cossackPages`, which is automatically included when you use the Cossack framework. During the build process, this plugin scans your project for `index.ts` (pages) and `layout.ts` (layouts).
+The core of the system is a Vite plugin named `cossackPages`, which is automatically included when you use the Cossack framework. During the build process, this plugin scans your project for all `.ts` and `.mdx` files in `src/pages` (excluding `layout.ts` and `loading.ts`) and `layout.ts` files for layouts.
 
 ### 2. The `virtual:cossack-pages` Module
 

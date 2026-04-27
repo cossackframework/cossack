@@ -13,7 +13,8 @@ function filePathToRoutePath(filePath: string): string {
     return filePath
         .replace('/src/pages/', '/')
         .replace('/index.ts', '')
-        .replace('/index.mdx', '');
+        .replace('/index.mdx', '')
+        .replace(/\.(ts|tsx|mdx)$/, '');
 }
 
 // Create mapping from route paths to file paths for component loading

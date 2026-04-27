@@ -42,7 +42,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         // SSR build: eager loading (synchronous access needed for server routes)
         // Client build: lazy loading (code splitting for performance)
         return `
-          const pages = import.meta.glob(['/src/pages/**/index.ts', '/src/pages/**/index.mdx']${finalIsSsr ? ', { eager: true }' : ''});
+          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${finalIsSsr ? ', { eager: true }' : ''});
 
           // Layouts: always eager (small, shared, needed immediately)
           const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });

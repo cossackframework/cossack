@@ -20,7 +20,8 @@ function filePathToRoutePath(filePath: string): string {
     return filePath
         .replace('/src/pages/', '/')
         .replace('/index.ts', '')
-        .replace('/index.mdx', '');
+        .replace('/index.mdx', '')
+        .replace(/\.(ts|tsx|mdx)$/, '');
 }
 
 // Register Components
@@ -120,7 +121,8 @@ export function createApp() {
                 // Check if component has a loading template (method or file convention)
                 // If so, skip init() during SSR to show loading UI immediately
                 const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
-                const loadingFilePath = path.replace(/\/index\.(ts|tsx|js|jsx|mdx)$/, '/loading.ts');
+                const lastSlash = path.lastIndexOf('/');
+                const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
                 const hasLoadingFile = loadings[loadingFilePath] !== undefined;
                 const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
