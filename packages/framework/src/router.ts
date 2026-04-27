@@ -17,11 +17,17 @@ const { pages, layouts, components, loadings } = registry;
  * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
  */
 function filePathToRoutePath(filePath: string): string {
-    return filePath
+    const route = filePath
         .replace('/src/pages/', '/')
         .replace('/index.ts', '')
         .replace('/index.mdx', '')
         .replace(/\.(ts|tsx|mdx)$/, '');
+
+    // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
+    if (route === '/index' || route === '') {
+        return '/';
+    }
+    return route;
 }
 
 // Register Components

@@ -34,13 +34,8 @@ export function filePathToRoutePath(filePath: string): string {
     .replace('/index.ts', '')
     .replace('/index.mdx', '');
 
-  // Handle root path: /index -> /
-  if (route === '/index') {
-    return '/';
-  }
-
-  // Handle root.ts case: /src/pages/index.ts -> /
-  if (route === '' && filePath.includes('/src/pages/index.ts')) {
+  // Handle root path: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
+  if (route === '/index' || route === '') {
     return '/';
   }
 
