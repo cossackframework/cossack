@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
         '~': path.resolve(__dirname, './dist/client'),
       },
     },
+    ssr: {
+      noExternal: ['@cossackframework/framework'],
+    },
     build: {
       ssr: true,
       outDir: 'dist/worker',
