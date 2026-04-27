@@ -99,13 +99,18 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
     return null;
 }
 
-export function createApp() {
+export interface CreateAppOptions {
+  authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
+}
+
+export function createApp(options: CreateAppOptions = {}) {
     const app = new Hono<{ Bindings: CloudflareBindings, Variables: { user?: AuthenticatedUser } }>();
 
-    // Authentication middleware
+    // Authentication middleware - use custom or default (no-op)
     app.use('*', (c, next) => {
-        // @todo: Implement real authentication logic here (e.g., check cookies, headers, etc.)
-        // c.set('user', { id: 'user-123', name: 'Alice' });
+        if (options.authMiddleware) {
+            return options.authMiddleware(c, next);
+        }
         return next();
     });
 

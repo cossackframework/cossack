@@ -1,1 +1,1 @@
-export * from './app';
+export * from '@cossackframework/framework/client';

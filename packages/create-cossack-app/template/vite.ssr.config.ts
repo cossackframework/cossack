@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import path from 'path';
-import { cossackPages } from './src/vite-plugin';
+import { cossackPages } from '@cossackframework/framework/vite-plugin';
 
 export default defineConfig(({ mode }) => {
   return {

@@ -63,7 +63,7 @@ async function main() {
 
       const indexTsContent = `import { serve } from '@hono/node-server';
 import { CossackNodeAdapter } from '@cossackframework/node-adapter';
-import { createApp } from './router';
+import { createApp } from '@cossackframework/framework/router';
 
 const app = createApp();
 
