@@ -2,11 +2,32 @@
   "name": "@cossackframework/framework",
   "version": "0.0.1",
   "type": "module",
+  "description": "Full-stack framework for the Cossack Framework",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/framework"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client/index.ts",
+    "./client/app": "./src/client/app.ts",
     "./vite-plugin": "./src/vite-plugin.ts",
-    "./vite-security-plugin": "./src/vite-security-plugin.ts"
+    "./vite-security-plugin": "./src/vite-security-plugin.ts",
+    "./router": "./src/router.ts",
+    "./root": "./src/root.ts",
+    "./api-handler": "./src/api-handler.ts",
+    "./ssg-renderer": "./src/ssg-renderer.ts",
+    "./sitemap-generator": "./src/sitemap-generator.ts",
+    "./DurableObject": "./src/DurableObject.ts",
+    "./vite-env": "./src/vite-env.d.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "node scripts/dev.js",

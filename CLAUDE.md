@@ -20,7 +20,7 @@ Note: Avoid using `pnpm test` in the framework package as it has a configuration
 
 ## 1. High-Level Project Goal
 
-Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. It is heavily inspired by Phoenix Liveview and .NET Blazor. The core goal is to enable developers to write stateful, real-time web applications with a unified syntax that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
+Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. The core goal is to enable developers to write stateful, real-time web applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
 
 ## 2. Core Principles
 
@@ -75,22 +75,6 @@ The project is a `pnpm` workspace.
 -   **Lifecycle Hooks**: Components can implement `onMount()` (runs once after first client-render) and `onCleanup()` (runs before component destruction).
 -   **SPA Redirects**: `this.redirect()` on the client is automatically intercepted and handled as a soft navigation.
 -   **Hierarchical Error Boundaries**: The router searches for the nearest `error/index.ts` or `404/index.ts` up the directory tree relative to the current route.
-
-## 7. Key Features
-
-- **Instant App**: Soft navigation with pre-fetching on hover and a client-side page cache.
-- **Light DOM Components**: Class-based `CossackElement` components (Lit-compatible) that render directly to Light DOM for easy global styling.
-- **Progress Bar**: Automatic visual feedback for background page loads and redirects.
-- **Nested Layouts & Route Groups**: Standardized file-based organization with inheritance.
-- **Qwik-like Metadata**: Intelligent merging of titles and meta tags from Page -> Layouts -> App.
-- **Optimistic UI**: Built-in support for instant feedback on actions.
-- **Client-Only State**: `@ClientState` decorator for local UI state that triggers re-renders without server sync.
-- **Universal Loading State**: Built-in `this.loading[methodName]` support for all transport modes.
-- **Hierarchical Error Pages**: Folder-level `404` and `error` pages for localized error handling.
-- **MDX Support**: Zero-configuration support for `.mdx` files as endpoints, allowing markdown-based content with full layout support.
-- **Runtime Adapters**: Support for Cloudflare Workers (default) and Node.js.
-- **Image Optimization**: `Image` component for responsive, edge-optimized assets.
-- **Code Splitting & Security**: Automatic server-only code stripping from client bundles via `@Server`, `@Client`, `@Shared`, `@Optimistic`, and `@Computed` decorators.
 
 ## Decorators Reference
 

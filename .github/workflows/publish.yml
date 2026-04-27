@@ -1,0 +1,72 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages with dist output
+        run: |
+          pnpm --filter @cossackframework/renderer build
+          pnpm --filter @cossackframework/core build
+          pnpm --filter @cossackframework/node-adapter build
+
+      - name: Run tests
+        run: |
+          pnpm --filter @cossackframework/core test -- --run
+          pnpm --filter @cossackframework/renderer test -- --run
+          pnpm --filter @cossackframework/framework vitest --run tests/
+
+      - name: Publish @cossackframework/renderer
+        run: pnpm publish --filter @cossackframework/renderer --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/core
+        run: pnpm publish --filter @cossackframework/core --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/node-adapter
+        run: pnpm publish --filter @cossackframework/node-adapter --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/auth
+        run: pnpm publish --filter @cossackframework/auth --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/framework
+        run: pnpm publish --filter @cossackframework/framework --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish create-cossack-app
+        run: pnpm publish --filter create-cossack-app --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

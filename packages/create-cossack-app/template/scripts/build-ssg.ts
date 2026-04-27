@@ -20,9 +20,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import SSG utilities using relative paths (tsx will handle TypeScript)
-import { collectSsgRoutes, getStaticParams, renderSsgPage } from '../src/ssg-renderer.ts';
-import { generateSitemapFromUrls } from '../src/sitemap-generator.ts';
+// Import SSG utilities from framework package
+import { collectSsgRoutes, getStaticParams, renderSsgPage } from '@cossackframework/framework/ssg-renderer';
+import { generateSitemapFromUrls } from '@cossackframework/framework/sitemap-generator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
