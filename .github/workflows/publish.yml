@@ -35,6 +35,9 @@ jobs:
           pnpm --filter @cossackframework/core build
           pnpm --filter @cossackframework/node-adapter build
 
+      - name: Build framework types
+        run: pnpm --filter @cossackframework/framework build:types
+
       - name: Run tests
         run: |
           pnpm --filter @cossackframework/core test -- --run
