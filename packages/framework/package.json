@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/framework",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "description": "Meta framework package for the Cossack Framework",
   "license": "MIT",
@@ -58,6 +58,8 @@
   },
   "files": [
     "src",
+    "!src/pages",
+    "!src/components",
     "dist/types",
     "dist/plugins"
   ],
