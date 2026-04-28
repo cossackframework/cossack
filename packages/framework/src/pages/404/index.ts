@@ -9,10 +9,10 @@ export default class NotFoundPage extends Cossack {
 
     render() {
         return html`
-            <div style="text-align: center; padding: 5rem 2rem;">
-                <h1 style="font-size: 4rem; margin-bottom: 1rem;">404</h1>
-                <p style="font-size: 1.5rem; color: #666; margin-bottom: 2rem;">Oops! The page you're looking for doesn't exist.</p>
-                <a href="/" style="color: #0070f3; text-decoration: none; font-weight: bold;">&larr; Go back home</a>
+            <div class="text-center py-20 px-8">
+                <h1 class="text-[4rem] mb-4">404</h1>
+                <p class="text-2xl text-gray-500 mb-8">Oops! The page you're looking for doesn't exist.</p>
+                <a href="/" class="text-blue-600 no-underline font-bold">&larr; Go back home</a>
             </div>
         `;
     }

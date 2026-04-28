@@ -5,18 +5,18 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 export default class DocsLayout extends Cossack {
   render() {
     return html`
-      <div class="docs-container" style="display: flex; min-height: 100vh;">
-        <aside style="width: 250px; background: #f9f9f9; padding: 2rem; border-right: 1px solid #eee;">
+      <div class="docs-container flex min-h-screen">
+        <aside class="w-[250px] bg-gray-50 p-8 border-r border-gray-200">
           <nav>
-            <h3 style="margin-top: 0;">Docs</h3>
-            <ul style="list-style: none; padding: 0;">
+            <h3 class="mt-0">Docs</h3>
+            <ul class="list-none p-0">
               <li><a href="/docs">Introduction</a></li>
               <li><a href="/docs/routing">Routing</a></li>
               <li><a href="/docs/state">State Management</a></li>
             </ul>
           </nav>
         </aside>
-        <main style="flex: 1; padding: 3rem; max-width: 800px;">
+        <main class="flex-1 p-12 max-w-[800px]">
           ${this.children}
         </main>
       </div>

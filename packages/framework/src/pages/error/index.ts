@@ -9,14 +9,14 @@ export default class ErrorPage extends Cossack {
 
     render() {
         return html`
-            <div style="text-align: center; padding: 5rem 2rem; color: #d32f2f;">
-                <h1 style="font-size: 3rem; margin-bottom: 1rem;">Something went wrong</h1>
-                <p style="font-size: 1.2rem; margin-bottom: 2rem;">An unexpected error occurred while rendering this page.</p>
-                <div style="text-align: left; background: #ffebee; padding: 1rem; border-radius: 4px; display: inline-block; max-width: 100%; overflow: auto;">
+            <div class="text-center py-20 px-8 text-red-700">
+                <h1 class="text-[3rem] mb-4">Something went wrong</h1>
+                <p class="text-xl mb-8">An unexpected error occurred while rendering this page.</p>
+                <div class="text-left bg-red-50 p-4 rounded inline-block max-w-full overflow-auto">
                     <p>Please try again later or contact support if the problem persists.</p>
                 </div>
-                <div style="margin-top: 2rem;">
-                    <a href="/" style="color: #d32f2f; text-decoration: underline;">Return Home</a>
+                <div class="mt-8">
+                    <a href="/" class="text-red-700 underline">Return Home</a>
                 </div>
             </div>
         `;

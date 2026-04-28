@@ -23,35 +23,18 @@ export default class PreventNavigationDemo extends Cossack {
 
     render() {
         return html`
-            <style>
-                .modal-overlay {
-                    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                    background: rgba(0,0,0,0.5); display: flex;
-                    align-items: center; justify-content: center; z-index: 1000;
-                }
-                .modal {
-                    background: white; padding: 20px; border-radius: 8px;
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px;
-                }
-                .actions { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; }
-                .btn { padding: 8px 16px; border-radius: 4px; cursor: pointer; border: none; }
-                .btn-danger { background: #ef4444; color: white; }
-                .btn-secondary { background: #e5e7eb; color: black; }
-                .dirty-indicator { color: #f59e0b; font-weight: bold; margin-bottom: 10px; }
-            </style>
-
             <h1>Prevent Navigation Demo</h1>
             <p>Try typing in the box below and then clicking a link to navigate away.</p>
 
-            ${this.isDirty ? html`<div class="dirty-indicator">âš ï¸ You have unsaved changes</div>` : ''}
+            ${this.isDirty ? html`<div class="text-amber-500 font-bold mb-2.5">You have unsaved changes</div>` : ''}
             ${this.inputValue ? html`<div>Current Input: <strong>${this.inputValue}</strong></div>` : ''}
-            
-            <input 
-                type="text" 
-                value="${this.inputValue}" 
+
+            <input
+                type="text"
+                value="${this.inputValue}"
                 @input="${this.onInput}"
                 placeholder="Type something..."
-                style="padding: 8px; width: 100%; box-sizing: border-box; margin-bottom: 20px;"
+                class="p-2 w-full box-border mb-5"
             />
 
             <p>
@@ -60,15 +43,15 @@ export default class PreventNavigationDemo extends Cossack {
 
             <!-- Custom Prompt UI -->
             ${this._pendingNavigation ? html`
-                <div class="modal-overlay">
-                    <div class="modal">
+                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
+                    <div class="bg-white p-5 rounded-lg shadow-lg max-w-[400px]">
                         <h3>Unsaved Changes</h3>
                         <p>You have unsaved text in the input field. Are you sure you want to leave?</p>
-                        <div class="actions">
-                            <button class="btn btn-secondary" @click="${() => this.confirmNavigation(false)}">
+                        <div class="mt-4 flex gap-2.5 justify-end">
+                            <button class="py-2 px-4 rounded cursor-pointer border-none bg-gray-200 text-black" @click="${() => this.confirmNavigation(false)}">
                                 Stay
                             </button>
-                            <button class="btn btn-danger" @click="${() => this.confirmNavigation(true)}">
+                            <button class="py-2 px-4 rounded cursor-pointer border-none bg-red-500 text-white" @click="${() => this.confirmNavigation(true)}">
                                 Leave without saving
                             </button>
                         </div>

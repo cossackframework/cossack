@@ -66,12 +66,12 @@ export class Greeting extends Cossack {
                 <div>
                     <h1>${this.greeting}</h1>
                     
-                    <div class="counters" style="margin: 20px 0;">
+                    <div class="counters my-5">
                         <p>Feeds Count: <strong>${this.feedCount}</strong></p>
                         <p>Notifications Count: <strong>${this.notificationCount}</strong></p>
                     </div>
 
-                    <div class="buttons" style="display: flex; gap: 10px;">
+                    <div class="buttons flex gap-2.5">
                         ${component(Button, {
                             '@click': this.incrementFeed,
                             disabled: !!isFeedLoading,

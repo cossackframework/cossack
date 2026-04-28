@@ -6,7 +6,7 @@ import { ContextCard } from "@/components/ContextCard";
 export class ContextDemoPage extends Cossack {
     render() {
         return html`
-            <div style="padding: 20px;">
+            <div class="p-5">
                 <h1>Context API Demo</h1>
                 <p>This page demonstrates how nested components access global context.</p>
                 ${component(ContextCard)}

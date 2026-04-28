@@ -56,15 +56,11 @@ export default class LifecycleDemo extends Cossack {
      */
     loadingTemplate() {
         return html`
-            <style>
-                .skeleton { background: #eee; height: 24px; margin-bottom: 12px; border-radius: 4px; animation: pulse 1.5s infinite; }
-                @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-            </style>
             <h1>Loading Data...</h1>
-            <div class="skeleton" style="width: 60%"></div>
-            <div class="skeleton" style="width: 80%"></div>
-            <div class="skeleton" style="width: 40%"></div>
-            <div class="skeleton" style="width: 70%"></div>
+            <div class="bg-gray-200 h-6 mb-3 rounded animate-pulse" style="width: 60%"></div>
+            <div class="bg-gray-200 h-6 mb-3 rounded animate-pulse" style="width: 80%"></div>
+            <div class="bg-gray-200 h-6 mb-3 rounded animate-pulse" style="width: 40%"></div>
+            <div class="bg-gray-200 h-6 mb-3 rounded animate-pulse" style="width: 70%"></div>
         `;
     }
 
@@ -82,7 +78,7 @@ export default class LifecycleDemo extends Cossack {
             </ul>
             <button
                 @click="${() => this.reload()}"
-                style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                class="py-2 px-4 bg-blue-500 text-white border-none rounded cursor-pointer"
             >
                 Refresh Data (Show Loading UI)
             </button>

@@ -5,12 +5,12 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 export default class AuthLayout extends Cossack {
   render() {
     return html`
-      <div class="auth-layout" style="display: flex; justify-content: center; align-items: center; min-height: 80vh; background: #f0f2f5;">
-        <div style="background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px;">
-          <h2 style="text-align: center; color: #333; margin-bottom: 1.5rem;">Cossack Auth</h2>
+      <div class="auth-layout flex justify-center items-center min-h-[80vh] bg-gray-100">
+        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-[400px]">
+          <h2 class="text-center text-gray-800 mb-6">Cossack Auth</h2>
           ${this.children}
-          <div style="margin-top: 1.5rem; text-align: center; font-size: 0.9rem;">
-             <a href="/" style="color: #666;">&larr; Back to Home</a>
+          <div class="mt-6 text-center text-sm">
+             <a href="/" class="text-gray-500">&larr; Back to Home</a>
           </div>
         </div>
       </div>
