@@ -51,6 +51,7 @@ declare global {
 
 export interface CreateClientAppOptions {
   container: HTMLElement | string;
+  AppComponent?: new () => Cossack;
 }
 
 const pageCache = new Map<string, { html: string; state: any }>();
@@ -122,7 +123,7 @@ async function fetchPage(url: string) {
   throw new Error('Failed to load page state');
 }
 
-export async function createClientApp({ container }: CreateClientAppOptions) {
+export async function createClientApp({ container, AppComponent }: CreateClientAppOptions) {
   const containerEl =
     typeof container === 'string'
       ? document.querySelector(container)
@@ -133,7 +134,7 @@ export async function createClientApp({ container }: CreateClientAppOptions) {
     return;
   }
 
-  const appInstance = new App();
+  const appInstance = new (AppComponent ?? App)();
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];

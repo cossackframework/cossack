@@ -3,8 +3,9 @@
 import 'reflect-metadata';
 import { createApp } from '@cossackframework/framework/router';
 import { AppDurableObject } from '@cossackframework/framework/DurableObject';
+import { App } from './App';
 
-const app = createApp();
+const app = createApp({ AppComponent: App });
 
 export { AppDurableObject };
 export default {

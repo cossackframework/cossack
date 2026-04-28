@@ -107,6 +107,7 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
 
 export interface CreateAppOptions {
   authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
+  AppComponent?: new () => Cossack;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -124,7 +125,7 @@ export function createApp(options: CreateAppOptions = {}) {
         return async (c: Context) => {
             try {
                 const user = c.get('user');
-                const appInstance = new App();
+                const appInstance = new (options.AppComponent ?? App)();
                 const layoutInstances: any[] = [];
                 const pageInstance = new PageComponent();
                 const layoutPaths = getLayoutStack(path);
@@ -386,7 +387,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Handle App component (global component) specially
         let componentInstance: any;
         if (componentPath === '/src/App') {
-            componentInstance = new App();
+            componentInstance = new (options.AppComponent ?? App)();
             await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
             componentInstance._render();
         } else {

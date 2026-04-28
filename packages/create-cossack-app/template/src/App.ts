@@ -16,7 +16,7 @@ export class App extends Cossack {
 
     render() {
         return html`
-            <div id="app-wrapper" class="${this.theme}">
+            <div id="app-wrapper" class="${this.theme} min-h-screen bg-gray-50 text-gray-900 antialiased">
                 ${this.children}
             </div>
         `;
