@@ -1,6 +1,6 @@
 {
   "name": "create-cossack-app",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "type": "module",
   "description": "CLI to scaffold a new Cossack Framework project",
   "license": "MIT",
