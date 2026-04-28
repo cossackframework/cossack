@@ -125,84 +125,84 @@ export class ValidationDemo extends Cossack {
 
     render(): TemplateResult {
         return html`
-            <div style="max-width: 600px; margin: 0 auto; padding: 2rem;">
+            <div class="max-w-[600px] mx-auto p-8">
                 <h1>Validation Demo</h1>
                 <p>This page demonstrates the @Validate decorator with various validation rules.</p>
 
                 <form @submit="${(e: Event) => this.handleSubmit(e)}">
                     <!-- Email Field -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="email" style="display: block; margin-bottom: 0.5rem;">Email (required, email)</label>
+                    <div class="mb-4">
+                        <label for="email" class="block mb-2">Email (required, email)</label>
                         <input
                             type="email"
                             id="email"
                             .value="${this.email}"
                             @input="${(e: Event) => this.handleInput('email', e)}"
                             @blur="${(e: Event) => this.handleBlur('email', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('email') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('email') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('email') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('email')}</span>` : ''}
+                        ${this.hasError('email') ? html`<span class="text-red-500 text-sm">${this.getError('email')}</span>` : ''}
                     </div>
 
                     <!-- Password Field -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="password" style="display: block; margin-bottom: 0.5rem;">Password (required, minLength: 8)</label>
+                    <div class="mb-4">
+                        <label for="password" class="block mb-2">Password (required, minLength: 8)</label>
                         <input
                             type="password"
                             id="password"
                             .value="${this.password}"
                             @input="${(e: Event) => this.handleInput('password', e)}"
                             @blur="${(e: Event) => this.handleBlur('password', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('password') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('password') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('password') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('password')}</span>` : ''}
+                        ${this.hasError('password') ? html`<span class="text-red-500 text-sm">${this.getError('password')}</span>` : ''}
                     </div>
 
                     <!-- Username Field -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="username" style="display: block; margin-bottom: 0.5rem;">Username (required, pattern: alphanumeric + underscore)</label>
+                    <div class="mb-4">
+                        <label for="username" class="block mb-2">Username (required, pattern: alphanumeric + underscore)</label>
                         <input
                             type="text"
                             id="username"
                             .value="${this.username}"
                             @input="${(e: Event) => this.handleInput('username', e)}"
                             @blur="${(e: Event) => this.handleBlur('username', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('username') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('username') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('username') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('username')}</span>` : ''}
+                        ${this.hasError('username') ? html`<span class="text-red-500 text-sm">${this.getError('username')}</span>` : ''}
                     </div>
 
                     <!-- Age Field -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="age" style="display: block; margin-bottom: 0.5rem;">Age (required, min: 18, max: 120)</label>
+                    <div class="mb-4">
+                        <label for="age" class="block mb-2">Age (required, min: 18, max: 120)</label>
                         <input
                             type="number"
                             id="age"
                             .value="${this.age}"
                             @input="${(e: Event) => this.handleInput('age', e)}"
                             @blur="${(e: Event) => this.handleBlur('age', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('age') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('age') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('age') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('age')}</span>` : ''}
+                        ${this.hasError('age') ? html`<span class="text-red-500 text-sm">${this.getError('age')}</span>` : ''}
                     </div>
 
                     <!-- Website Field -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="website" style="display: block; margin-bottom: 0.5rem;">Website (url)</label>
+                    <div class="mb-4">
+                        <label for="website" class="block mb-2">Website (url)</label>
                         <input
                             type="url"
                             id="website"
                             .value="${this.website}"
                             @input="${(e: Event) => this.handleInput('website', e)}"
                             @blur="${(e: Event) => this.handleBlur('website', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('website') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('website') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('website') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('website')}</span>` : ''}
+                        ${this.hasError('website') ? html`<span class="text-red-500 text-sm">${this.getError('website')}</span>` : ''}
                     </div>
 
                     <!-- Discount Code Field (customAsync validation) -->
-                    <div style="margin-bottom: 1rem;">
-                        <label for="discountCode" style="display: block; margin-bottom: 0.5rem;">Discount Code (optional, async server validation)</label>
+                    <div class="mb-4">
+                        <label for="discountCode" class="block mb-2">Discount Code (optional, async server validation)</label>
                         <input
                             type="text"
                             id="discountCode"
@@ -210,21 +210,21 @@ export class ValidationDemo extends Cossack {
                             .value="${this.discountCode}"
                             @input="${(e: Event) => this.handleInput('discountCode', e)}"
                             @blur="${(e: Event) => this.handleBlur('discountCode', e)}"
-                            style="width: 100%; padding: 0.5rem; border: 1px solid ${this.hasError('discountCode') ? 'red' : '#ccc'}; border-radius: 4px;"
+                            class="w-full p-2 border rounded ${this.hasError('discountCode') ? 'border-red-500' : 'border-gray-300'}"
                         />
-                        ${this.hasError('discountCode') ? html`<span style="color: red; font-size: 0.875rem;">${this.getError('discountCode')}</span>` : ''}
-                        <small style="color: #666; font-size: 0.75rem;">Valid codes: SAVE10, SAVE20, WELCOME, VIP50</small>
+                        ${this.hasError('discountCode') ? html`<span class="text-red-500 text-sm">${this.getError('discountCode')}</span>` : ''}
+                        <small class="text-gray-500 text-xs">Valid codes: SAVE10, SAVE20, WELCOME, VIP50</small>
                     </div>
 
-                    <button type="submit" style="padding: 0.75rem 1.5rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    <button type="submit" class="py-3 px-6 bg-blue-500 text-white border-none rounded cursor-pointer">
                         Submit
                     </button>
                 </form>
 
                 ${this.submitted ? html`
-                    <div style="margin-top: 2rem; padding: 1rem; background: #d4edda; border-radius: 4px;">
-                        <h3 style="margin-top: 0; color: #155724;">Form submitted successfully!</h3>
-                        <pre style="background: #fff; padding: 1rem; border-radius: 4px; overflow-x: auto;">${JSON.stringify(this.formData, null, 2)}</pre>
+                    <div class="mt-8 p-4 bg-green-100 rounded">
+                        <h3 class="mt-0 text-green-800">Form submitted successfully!</h3>
+                        <pre class="bg-white p-4 rounded overflow-x-auto">${JSON.stringify(this.formData, null, 2)}</pre>
                     </div>
                 ` : ''}
             </div>

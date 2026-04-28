@@ -78,9 +78,9 @@ export class Tasks extends Cossack {
         }, html`
             <div>
                 <h1>Tasks</h1>
-                <ul style="list-style: none; padding: 0;">
+                <ul class="list-none p-0">
                     ${this.tasks.map(task => html`
-                        <li style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <li class="flex items-center gap-2.5 mb-2.5">
                             <span>${task.text}</span>
                             ${component(Button, {
             '@click': () => this.confirmDelete(task.id),

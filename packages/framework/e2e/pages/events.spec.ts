@@ -47,7 +47,7 @@ test.describe('Events Page', () => {
 
   test('should display event counts', async ({ page }) => {
     // Click to increment the click counter
-    const clickArea = page.locator('div[style*="dashed"]');
+    const clickArea = page.locator('div.border-dashed');
     await clickArea.click();
     await page.waitForTimeout(100);
 

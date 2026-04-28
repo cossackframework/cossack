@@ -14,10 +14,10 @@ export class NestedCounter extends Cossack {
 
     render() {
         return html`
-            <div style="border: 1px solid blue; padding: 10px; margin: 10px 0; display: inline-block;">
+            <div class="border border-blue-500 p-2.5 my-2.5 inline-block">
                 <h4>Nested Counter</h4>
                 <p>Count: ${this.count}</p>
-                <button @click="${this.increment}">Increment</button>
+                <button @click="${this.increment}" class="border border-gray-300 px-3 py-1 cursor-pointer">Increment</button>
             </div>
         `;
     }

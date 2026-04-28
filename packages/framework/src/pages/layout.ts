@@ -5,25 +5,21 @@ import { html, type TemplateResult } from '@cossackframework/renderer';
 export default class RootLayout extends Cossack {
   render() {
     return html`
-      <style>
-        .nav-link { text-decoration: none; color: inherit; }
-        .nav-link.active { font-weight: bold; color: #3b82f6; text-decoration: underline; }
-      </style>
       <div class="root-layout">
-        <header style="padding: 1rem; border-bottom: 1px solid #ccc;">
+        <header class="p-4 border-b border-gray-300">
           <strong>Cossack Framework</strong>
-          <nav style="display: inline-block; margin-left: 2rem;">
-            <a href="/" class="nav-link ${this.isActive('/', true) ? 'active' : ''}">Home</a> | 
-            <a href="/contact" class="nav-link ${this.isActive('/contact') ? 'active' : ''}">Contact</a> | 
-            <a href="/optimistic-counter" class="nav-link ${this.isActive('/optimistic-counter') ? 'active' : ''}">Optimistic</a> |
-            <a href="/prevent-navigation" class="nav-link ${this.isActive('/prevent-navigation') ? 'active' : ''}">Prevent Nav</a> |
-            <a href="/lifecycle" class="nav-link ${this.isActive('/lifecycle') ? 'active' : ''}">Loading UI</a>
+          <nav class="inline-block ml-8">
+            <a href="/" class="no-underline text-inherit ${this.isActive('/', true) ? 'font-bold text-blue-500 underline' : ''}">Home</a> |
+            <a href="/contact" class="no-underline text-inherit ${this.isActive('/contact') ? 'font-bold text-blue-500 underline' : ''}">Contact</a> |
+            <a href="/optimistic-counter" class="no-underline text-inherit ${this.isActive('/optimistic-counter') ? 'font-bold text-blue-500 underline' : ''}">Optimistic</a> |
+            <a href="/prevent-navigation" class="no-underline text-inherit ${this.isActive('/prevent-navigation') ? 'font-bold text-blue-500 underline' : ''}">Prevent Nav</a> |
+            <a href="/lifecycle" class="no-underline text-inherit ${this.isActive('/lifecycle') ? 'font-bold text-blue-500 underline' : ''}">Loading UI</a>
           </nav>
         </header>
-        <div style="padding: 2rem;">
+        <div class="p-8">
           ${this.children}
         </div>
-        <footer style="padding: 1rem; border-top: 1px solid #ccc; margin-top: 2rem; font-size: 0.8rem;">
+        <footer class="p-4 border-t border-gray-300 mt-8 text-xs">
           Built with Cossack
         </footer>
       </div>

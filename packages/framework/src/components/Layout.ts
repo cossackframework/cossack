@@ -8,8 +8,8 @@ export class Layout extends Cossack {
 
     render() {
         return html`
-            <main dir="${this.dir}">
-                <aside>
+            <main dir="${this.dir}" class="flex">
+                <aside class="w-[200px] bg-gray-100 p-2.5 m-2.5">
                     <nav>
                         <ul>
                             <li><a href="/">Home</a></li>
@@ -18,7 +18,7 @@ export class Layout extends Cossack {
                         </ul>
                     </nav>
                 </aside>
-                <div>
+                <div class="m-2.5">
                     ${this.children}
                 </div>
             </main>

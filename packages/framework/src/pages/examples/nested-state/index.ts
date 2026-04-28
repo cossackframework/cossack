@@ -8,7 +8,7 @@ import { NestedCounter } from "@/components/NestedCounter";
 export class NestedStatePage extends Cossack {
     render() {
         return html`
-            <div style="padding: 20px;">
+            <div class="p-5">
                 <h1>Nested Stateful Components</h1>
                 <p>These counters maintain their own state on the server.</p>
 

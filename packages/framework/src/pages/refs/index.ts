@@ -42,37 +42,22 @@ export default class RefPage extends Cossack {
 
     render() {
         return html`
-            <style>
-                .container { padding: 16px; font-family: sans-serif; }
-                .title { font-size: 24px; font-weight: bold; margin-bottom: 16px; }
-                .status { color: #666; margin-bottom: 16px; }
-                .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
-                .input { border: 1px solid #ccc; padding: 8px; border-radius: 4px; }
-                .btn { background-color: #3b82f6; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; }
-                .target-box {
-                    width: 128px; height: 128px;
-                    background-color: #dbeafe;
-                    border-radius: 4px;
-                    display: flex; align-items: center; justify-content: center;
-                    transition: background-color 0.3s;
-                }
-            </style>
-            <div class="container">
-                <h1 class="title">Refs Demo</h1>
+            <div class="p-4 font-sans">
+                <h1 class="text-2xl font-bold mb-4">Refs Demo</h1>
 
-                <p class="status">${this.status}</p>
+                <p class="status text-gray-500 mb-4">${this.status}</p>
 
-                <div class="controls">
+                <div class="flex gap-4 items-center mb-4">
                     <input
                         type="text"
                         ref=${this.inputRef}
-                        class="input"
+                        class="border border-gray-300 p-2 rounded"
                         placeholder="I was focused automatically"
                     />
 
                     <button
                         @click=${this.animateBox}
-                        class="btn"
+                        class="bg-blue-500 text-white px-4 py-2 border-none rounded cursor-pointer"
                     >
                         Animate Box
                     </button>
@@ -80,7 +65,7 @@ export default class RefPage extends Cossack {
 
                 <div
                     ref=${this.boxRef}
-                    class="target-box"
+                    class="target-box w-32 h-32 bg-blue-100 rounded flex items-center justify-center transition-colors duration-300"
                 >
                     Target Box
                 </div>

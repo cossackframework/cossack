@@ -1,11 +1,15 @@
 import { defineConfig } from 'vite';
 import path from 'path';
+import tailwindcss from '@tailwindcss/vite';
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
 
 export default defineConfig(({ mode }) => {
   return {
     mode,
-    plugins: [cossackPages({ mode })],
+    plugins: [
+      tailwindcss(),
+      cossackPages({ mode }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
