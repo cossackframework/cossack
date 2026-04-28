@@ -1,83 +1,11 @@
-# Cossack Renderer Project (CRP) Usage Guide
+# Cossack Template
 
-CRP is a Lit-compatible rendering engine designed for **Light DOM** and **SSR**. It provides a familiar API for building components but focuses on returning HTML strings directly for SSR and managing DOM updates without Shadow DOM isolation.
+Cossack provides a powerful template syntax for building dynamic UIs inspired by Lit. This guide covers the basics of using templates in your components.
 
-## Installation
-
-```bash
-pnpm add cossack-renderer
-```
-
-## Defining Components
-
-Components are classes that extend `CossackElement`. They manage their own state and render template results.
-
-```typescript
-import { CossackElement, html } from 'cossack-renderer';
-
-export class MyCounter extends CossackElement {
-  // Define reactive properties
-  static properties = {
-    count: { state: true },
-    label: { state: true }
-  };
-
-  // Declare fields for TypeScript
-  declare count: number;
-  declare label: string;
-
-  constructor() {
-    super();
-    this.count = 0;
-    this.label = 'Count';
-  }
-
-  increment() {
-    this.count++;
-  }
-
-  render() {
-    return html`
-      <div>
-        <span>${this.label}: ${this.count}</span>
-        <button @click="${() => this.increment()}">+</button>
-      </div>
-    `;
-  }
-}
-```
-
-## Rendering
-
-### Client-Side Rendering (Hydration/Mounting)
-
-To mount a component to the DOM:
-
-```typescript
-import { MyCounter } from './MyCounter';
-
-const container = document.getElementById('app');
-const app = new MyCounter();
-app.mount(container); // Mounts and renders to the container
-```
-
-### Server-Side Rendering (SSR)
-
-To render a component to an HTML string:
-
-```typescript
-import { renderToString } from 'cossack-renderer';
-import { MyCounter } from './MyCounter';
-
-const app = new MyCounter();
-// Optional: Wait for async data or updates
-const htmlString = renderToString(app.render());
-console.log(htmlString);
-```
 
 ## Template Syntax
 
-CRP uses tagged template literals via `html`.
+Cossack uses tagged template literals via `html`.
 
 ### Basic Expressions
 
@@ -123,7 +51,7 @@ html`<button ...=${props}>Click</button>`
 To render raw HTML strings (careful!):
 
 ```typescript
-import { unsafeHTML } from 'cossack-renderer';
+import { unsafeHTML } from '@cossackframework/renderer';
 html`<div>${unsafeHTML('<script>...</script>')}</div>`
 ```
 
@@ -132,7 +60,7 @@ html`<div>${unsafeHTML('<script>...</script>')}</div>`
 Use the `component` helper function to include child components in your templates.
 
 ```typescript
-import { component } from 'cossack-renderer';
+import { component } from '@cossackframework/renderer';
 import { ChildComponent } from './ChildComponent';
 
 html`
@@ -156,14 +84,14 @@ html`
 
 ## Directives
 
-CRP includes standard Lit directives.
+Cossack includes standard Lit directives.
 
 ### `repeat` (Keyed Lists)
 
 Efficiently renders lists by key.
 
 ```typescript
-import { repeat } from 'cossack-renderer';
+import { repeat } from '@cossackframework/renderer';
 
 html`
   <ul>
@@ -179,7 +107,7 @@ html`
 Dynamic classes and styles.
 
 ```typescript
-import { classMap, styleMap } from 'cossack-renderer';
+import { classMap, styleMap } from '@cossackframework/renderer';
 
 const classes = { active: isActive, error: hasError };
 const styles = { color: 'red', display: isVisible ? 'block' : 'none' };
@@ -192,7 +120,7 @@ html`<div class="${classMap(classes)}" style="${styleMap(styles)}">...</div>`
 Get a reference to the DOM element.
 
 ```typescript
-import { ref } from 'cossack-renderer';
+import { ref } from '@cossackframework/renderer';
 
 html`<input ref="${(el) => console.log(el)}" />`
 ```
@@ -202,7 +130,7 @@ html`<input ref="${(el) => console.log(el)}" />`
 Check against the live DOM value (useful for inputs).
 
 ```typescript
-import { live } from 'cossack-renderer';
+import { live } from '@cossackframework/renderer';
 
 html`<input .value="${live(inputValue)}" />`
 ```
@@ -214,7 +142,7 @@ Share state deep in the tree.
 ### 1. Create Context
 
 ```typescript
-import { createContext } from 'cossack-renderer';
+import { createContext } from '@cossackframework/renderer';
 
 export const ThemeContext = createContext('light'); // Default value
 ```
@@ -246,7 +174,7 @@ class Child extends CossackElement {
 Reuse logic across components using controllers.
 
 ```typescript
-import { ReactiveController, ReactiveControllerHost } from 'cossack-renderer';
+import { ReactiveController, ReactiveControllerHost } from '@cossackframework/renderer';
 
 class ClockController implements ReactiveController {
   host: ReactiveControllerHost;
@@ -281,7 +209,7 @@ class ClockElement extends CossackElement {
 
 ## Children Projection (Slots)
 
-CRP supports passing children to components.
+Cossack supports passing children to components.
 
 **Parent:**
 ```typescript
@@ -304,4 +232,81 @@ class Card extends CossackElement {
     `;
   }
 }
+```
+
+## Using Cossack Renderer with Other Frameworks
+
+This package is intended to use with the Cossack Framework via `create-cossack-app`, but can also be used standalone in any project that needs a lightweight rendering solution.
+
+### Installation
+
+```bash
+pnpm add @cossackframework/renderer
+```
+
+### Defining Components
+
+Components are classes that extend `CossackElement`. They manage their own state and render template results.
+
+```typescript
+import { CossackElement, html } from '@cossackframework/renderer';
+
+export class MyCounter extends CossackElement {
+  // Define reactive properties
+  static properties = {
+    count: { state: true },
+    label: { state: true }
+  };
+
+  // Declare fields for TypeScript
+  declare count: number;
+  declare label: string;
+
+  constructor() {
+    super();
+    this.count = 0;
+    this.label = 'Count';
+  }
+
+  increment() {
+    this.count++;
+  }
+
+  render() {
+    return html`
+      <div>
+        <span>${this.label}: ${this.count}</span>
+        <button @click="${() => this.increment()}">+</button>
+      </div>
+    `;
+  }
+}
+```
+
+### Rendering
+
+#### Client-Side Rendering (Hydration/Mounting)
+
+To mount a component to the DOM:
+
+```typescript
+import { MyCounter } from './MyCounter';
+
+const container = document.getElementById('app');
+const app = new MyCounter();
+app.mount(container); // Mounts and renders to the container
+```
+
+#### Server-Side Rendering (SSR)
+
+To render a component to an HTML string:
+
+```typescript
+import { renderToString } from '@cossackframework/renderer';
+import { MyCounter } from './MyCounter';
+
+const app = new MyCounter();
+// Optional: Wait for async data or updates
+const htmlString = renderToString(app.render());
+console.log(htmlString);
 ```
