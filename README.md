@@ -2,7 +2,7 @@
 
 # Cossack
 
-A full-stack TypeScript framework for building stateful, real-time web applications with server-side rendering. Inspired by Phoenix LiveView and .NET Blazor.
+A full-stack TypeScript framework for building stateful, real-time web applications with server-side rendering.
 
 Write your UI and server logic in a single class — Cossack handles the rest.
 
@@ -32,7 +32,8 @@ export default class CounterPage extends Cossack {
     @State() count = 0;
 
     increment() {
-        // This runs on the server. The updated state is sent back to the client automatically.
+        // This runs secured on the server. 
+        // The updated state is sent back to the client automatically.
         this.count++;
     }
 
@@ -45,7 +46,7 @@ export default class CounterPage extends Cossack {
 }
 ```
 
-When the button is clicked, `increment()` runs **on the server**. The framework sends the updated state back to the client and re-renders automatically. The button is disabled while the request is in flight via `this.loading.increment`.
+When the button is clicked, `increment()` runs secured **on the server**. The framework sends the updated state back to the client and re-renders automatically. The button is disabled while the request is in flight via `this.loading.increment`.
 
 **Key features:**
 

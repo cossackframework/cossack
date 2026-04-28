@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@cossackframework/core": "^0.1.0",
-    "@cossackframework/framework": "^0.3.7",
+    "@cossackframework/framework": "^0.3.8",
     "@cossackframework/renderer": "^0.1.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.9.5",
