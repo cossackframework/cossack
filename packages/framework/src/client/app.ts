@@ -51,7 +51,7 @@ declare global {
 
 export interface CreateClientAppOptions {
   container: HTMLElement | string;
-  AppComponent?: new () => Cossack;
+  AppComponent?: new (...args: any[]) => Cossack;
 }
 
 const pageCache = new Map<string, { html: string; state: any }>();

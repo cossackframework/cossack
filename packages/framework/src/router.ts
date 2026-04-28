@@ -107,7 +107,7 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
 
 export interface CreateAppOptions {
   authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
-  AppComponent?: new () => Cossack;
+  AppComponent?: new (...args: any[]) => Cossack;
 }
 
 export function createApp(options: CreateAppOptions = {}) {

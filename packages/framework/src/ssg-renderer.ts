@@ -132,7 +132,7 @@ export async function renderSsgPage(
   staticParams?: Record<string, string>,
   layouts: Record<string, LayoutModule> = {},
   baseUrl: string = 'https://example.com',
-  AppComponent?: new () => Cossack
+  AppComponent?: new (...args: any[]) => Cossack
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
