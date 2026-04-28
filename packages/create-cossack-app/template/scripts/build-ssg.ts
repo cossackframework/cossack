@@ -24,6 +24,9 @@ import { fileURLToPath } from 'url';
 import { collectSsgRoutes, getStaticParams, renderSsgPage } from '@cossackframework/framework/ssg-renderer';
 import { generateSitemapFromUrls } from '@cossackframework/framework/sitemap-generator';
 
+// Import local App component
+import { App } from '../src/App.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -187,7 +190,8 @@ async function main() {
           routePath,
           staticParams,
           loadedLayouts as Record<string, { default: new () => any }>,
-          baseUrl
+          baseUrl,
+          App
         );
 
         // Determine output file path

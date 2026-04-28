@@ -131,7 +131,8 @@ export async function renderSsgPage(
   routePath: string,
   staticParams?: Record<string, string>,
   layouts: Record<string, LayoutModule> = {},
-  baseUrl: string = 'https://example.com'
+  baseUrl: string = 'https://example.com',
+  AppComponent?: new () => Cossack
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
@@ -146,7 +147,7 @@ export async function renderSsgPage(
   const env = {};
 
   // Bootstrap App
-  const appInstance = new App();
+  const appInstance = new (AppComponent ?? App)();
   await appInstance.bootstrap({ context: mockContext, user, env, page: routePath });
 
   // Bootstrap Layouts
