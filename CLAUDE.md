@@ -20,7 +20,7 @@ Note: Avoid using `pnpm test` in the framework package as it has a configuration
 
 ## 1. High-Level Project Goal
 
-Cossack is a modern, full-stack TypeScript framework designed for the edge computing and AI era. The core goal is to enable developers to write stateful, real-time web applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
+Cossack is a modern, full-stack TypeScript framework. The core goal is to enable developers to write applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
 
 ## 2. Core Principles
 

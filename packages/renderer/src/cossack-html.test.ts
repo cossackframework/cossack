@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { html, renderToString, unsafeHTML } from './cossack-html';
+import { html, renderToString, render, unsafeHTML } from './cossack-html';
 import { CossackElement } from './cossack-element';
 
 describe('SSR renderToString', () => {
@@ -50,5 +50,70 @@ describe('Component Logic (SSR)', () => {
         const el = new MyElement();
         const template = el.render();
         expect(renderToString(template!)).toBe('<p>Inner Content</p>');
+    });
+});
+
+describe('Attribute interpolation', () => {
+    describe('SSR', () => {
+        it('renders class with static prefix and dynamic suffix', () => {
+            const backgroundClass = 'bg-red-500';
+            const template = html`<div class="h-[100px] w-[100px] ${backgroundClass}"></div>`;
+            expect(renderToString(template)).toBe('<div class="h-[100px] w-[100px] bg-red-500"></div>');
+        });
+
+        it('renders class with dynamic value only', () => {
+            const cls = 'active';
+            const template = html`<div class="${cls}"></div>`;
+            expect(renderToString(template)).toBe('<div class="active"></div>');
+        });
+
+        it('renders class with static prefix, dynamic middle, and static suffix', () => {
+            const color = 'blue';
+            const template = html`<div class="btn ${color}-text large"></div>`;
+            expect(renderToString(template)).toBe('<div class="btn blue-text large"></div>');
+        });
+    });
+
+    describe('Client-side render', () => {
+        it('renders class with static prefix and dynamic suffix', () => {
+            const container = document.createElement('div');
+            const backgroundClass = 'bg-red-500';
+            render(html`<div class="h-[100px] w-[100px] ${backgroundClass}"></div>`, container);
+            const div = container.querySelector('div');
+            expect(div).not.toBeNull();
+            expect(div!.getAttribute('class')).toBe('h-[100px] w-[100px] bg-red-500');
+        });
+
+        it('preserves static prefix when updating dynamic value', () => {
+            const container = document.createElement('div');
+            // Use a helper to ensure the same strings array reference is used
+            // (tagged template literals cache the strings array)
+            function renderTemplate(val: string) {
+                return html`<div class="h-[100px] w-[100px] ${val}"></div>`;
+            }
+            render(renderTemplate('bg-red-500'), container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('class')).toBe('h-[100px] w-[100px] bg-red-500');
+
+            // Update with same template (tagged template literals reuse the same strings object)
+            render(renderTemplate('bg-blue-500'), container);
+            expect(div!.getAttribute('class')).toBe('h-[100px] w-[100px] bg-blue-500');
+        });
+
+        it('renders class with dynamic value only', () => {
+            const container = document.createElement('div');
+            const cls = 'active';
+            render(html`<div class="${cls}"></div>`, container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('class')).toBe('active');
+        });
+
+        it('renders class with multiple static and dynamic segments', () => {
+            const container = document.createElement('div');
+            const color = 'blue';
+            render(html`<div class="btn ${color}-text large"></div>`, container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('class')).toBe('btn blue-text large');
+        });
     });
 });

@@ -512,7 +512,22 @@ class SpreadPart implements Part {
 }
 
 class AttributePart implements Part {
-    constructor(public element: Element, public name: string) {}
+    private prefix: string;
+    private suffix: string;
+
+    constructor(public element: Element, public name: string, originalValue: string) {
+        const idx = originalValue.indexOf('__CRP_');
+        if (idx !== -1) {
+            // Marker format: __CRP_<digits>__
+            const digitsStart = idx + 6; // after "__CRP_"
+            const secondUnderscorePair = originalValue.indexOf('__', digitsStart);
+            this.prefix = originalValue.substring(0, idx);
+            this.suffix = originalValue.substring(secondUnderscorePair + 2);
+        } else {
+            this.prefix = '';
+            this.suffix = '';
+        }
+    }
     update(value: unknown) {
         let isLive = false;
         if (value instanceof LiveResult) {
@@ -564,7 +579,7 @@ class AttributePart implements Part {
             if (value) this.element.setAttribute(this.name, '');
             else this.element.removeAttribute(this.name);
         } else {
-            this.element.setAttribute(this.name, String(value));
+            this.element.setAttribute(this.name, this.prefix + String(value) + this.suffix);
         }
     }
 }
@@ -585,35 +600,53 @@ export const render = (result: TemplateResult, container: Node) => {
 
     let htmlString = '';
     let isInsideTag = false;
-
-    const updateState = (str: string) => {
-        for (let i = 0; i < str.length; i++) {
-            if (str[i] === '<' && str[i+1] !== '!' && str[i+1] !== '/') {
-                isInsideTag = true;
-            } else if (str[i] === '>') {
-                isInsideTag = false;
-            }
-        }
-    };
+    let insideAttrQuote: string | null = null; // tracks open quote char ('"' or "'")
 
     const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
 
     for (let i = 0; i < result.strings.length - 1; i++) {
         const str = result.strings[i];
-        updateState(str);
+
+        // Track whether we're inside a tag and inside an attribute quote
+        for (let j = 0; j < str.length; j++) {
+            if (insideAttrQuote) {
+                if (str[j] === insideAttrQuote) insideAttrQuote = null;
+            } else if (str[j] === '"' || str[j] === "'") {
+                if (j > 0 && str[j - 1] === '=') {
+                    insideAttrQuote = str[j];
+                }
+            } else if (str[j] === '<' && str[j + 1] !== '!' && str[j + 1] !== '/') {
+                isInsideTag = true;
+            } else if (str[j] === '>') {
+                isInsideTag = false;
+            }
+        }
 
         htmlString += str;
 
         const match = str.match(attrMatch);
-        if (isInsideTag && match) {
+        if (isInsideTag && (match || insideAttrQuote)) {
             htmlString += `__CRP_${i}__`;
+            // Track quote state from the regex match
+            if (match && !insideAttrQuote) {
+                const quote = match[0].endsWith('"') ? '"' : match[0].endsWith("'") ? "'" : null;
+                if (quote) insideAttrQuote = quote;
+            }
         } else {
             htmlString += `<!--CRP_${i}-->`;
         }
     }
 
     const lastStr = result.strings[result.strings.length - 1];
-    updateState(lastStr);
+    for (let j = 0; j < lastStr.length; j++) {
+        if (insideAttrQuote) {
+            if (lastStr[j] === insideAttrQuote) insideAttrQuote = null;
+        } else if (lastStr[j] === '<' && lastStr[j + 1] !== '!' && lastStr[j + 1] !== '/') {
+            isInsideTag = true;
+        } else if (lastStr[j] === '>') {
+            isInsideTag = false;
+        }
+    }
     htmlString += lastStr;
 
     const template = document.createElement('template');
@@ -651,7 +684,7 @@ export const render = (result: TemplateResult, container: Node) => {
                              parts[index] = part;
                              el.removeAttribute('...');
                          } else {
-                             const part = new AttributePart(el, attr.name);
+                             const part = new AttributePart(el, attr.name, attr.value);
                              parts[index] = part;
                          }
                     }
