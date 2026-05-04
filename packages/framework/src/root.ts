@@ -1,11 +1,14 @@
 import { HeadTag } from '@cossackframework/core';
 import { escapeHtml } from '@cossackframework/renderer';
+import { minifyHtml } from '@cossackframework/renderer/server';
 
 type RenderRootProps = {
     body: string;
     initialState?: Record<string, any>;
     manifest: Record<string, any>;
     headTags?: HeadTag[];
+    inlineCss?: string;
+    modulePreloads?: string[];
 }
 
 const renderTag = (tag: HeadTag) => {
@@ -39,13 +42,19 @@ export const renderRoot = (props: RenderRootProps) => {
 
     const headTagsHtml = (props.headTags || []).map(renderTag).join('\n');
 
-    return `
+    const cssLink = props.inlineCss
+        ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${css}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${css}"></noscript>`
+        : `<link rel="stylesheet" href="${css}">`;
+
+    const raw = `
         <!DOCTYPE html>
         <html lang="en">
             <head>
+                <meta charset="utf-8">
                 ${headTagsHtml}
-                <link rel="stylesheet" href="${css}">
+                ${cssLink}
                 ${initialStateScript}
+                ${(props.modulePreloads || []).map(href => `<link rel="modulepreload" href="${href}">`).join('\n                ')}
                 <script type="module" src="${clientScript}"></script>
             </head>
             <body>
@@ -53,4 +62,9 @@ export const renderRoot = (props: RenderRootProps) => {
             </body>
         </html>
     `;
+
+    if (import.meta.env.PROD) {
+        return minifyHtml(raw);
+    }
+    return raw;
 }

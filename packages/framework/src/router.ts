@@ -12,6 +12,62 @@ import { CossackElement } from '@cossackframework/renderer';
 
 const { pages, layouts, components, loadings } = registry;
 
+/** Maximum byte size for inlining CSS (20 KiB). */
+const CSS_INLINE_THRESHOLD = 25600;
+
+/** Cached CSS content after first read. */
+let cachedInlineCss: string | undefined | null = null;
+
+/**
+ * Read the entry-client CSS file and return its content if below the inline threshold.
+ * Returns `undefined` in dev mode or if the CSS exceeds the threshold.
+ * Results are cached after the first successful read.
+ */
+async function getInlineCss(env: any): Promise<string | undefined> {
+    if (cachedInlineCss !== null) return cachedInlineCss || undefined;
+
+    const entry = manifest['src/client/entry-client.ts'];
+    if (!entry?.css?.[0]) {
+        cachedInlineCss = null;
+        return undefined;
+    }
+
+    const cssPath = `/${entry.css[0]}`;
+
+    try {
+        let cssText: string;
+
+        // Cloudflare Workers: use ASSETS binding
+        if (env?.ASSETS?.fetch) {
+            const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
+            if (!res.ok) {
+                cachedInlineCss = null;
+                return undefined;
+            }
+            cssText = await res.text();
+        } else {
+            // Node.js: read from dist/client
+            const { readFileSync } = await import('fs');
+            const { resolve, dirname } = await import('path');
+            // SSR output is in dist/worker, CSS is in dist/client
+            const clientDir = resolve(dirname(import.meta.url), '..', 'client');
+            cssText = readFileSync(resolve(clientDir, cssPath.replace(/^\//, '')), 'utf-8');
+        }
+
+        if (new TextEncoder().encode(cssText).length <= CSS_INLINE_THRESHOLD) {
+            cachedInlineCss = cssText;
+            return cssText;
+        }
+
+        // CSS too large — don't inline, but cache the decision
+        cachedInlineCss = null;
+        return undefined;
+    } catch {
+        cachedInlineCss = null;
+        return undefined;
+    }
+}
+
 /**
  * Convert a file path to a simplified route path.
  * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
@@ -87,6 +143,63 @@ function getLayoutStack(pagePath: string) {
     return stack;
 }
 
+/**
+ * Collect modulepreload hrefs for the current page.
+ * Returns an empty array in dev mode (Vite handles module loading natively).
+ * In production, collects the page chunk and all its transitive JS imports.
+ */
+function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
+    if (import.meta.env.DEV) return [];
+
+    // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
+    const normalizedPath = pagePath.replace(/^\//, '');
+    const collected = new Set<string>();
+
+    const collect = (key: string) => {
+        const entry = mfest[key];
+        if (!entry) return;
+        if (entry.file && !collected.has(entry.file)) {
+            collected.add(entry.file);
+        }
+        if (entry.imports) {
+            for (const imp of entry.imports) {
+                if (!collected.has(imp)) {
+                    collect(imp);
+                }
+            }
+        }
+    };
+
+    // Collect the page chunk and its transitive imports
+    collect(normalizedPath);
+
+    // Also collect entry-client's transitive imports (entry-client itself
+    // is already discovered via the <script> tag, so no preload needed)
+    const entryClient = mfest['src/client/entry-client.ts'];
+    if (entryClient?.imports) {
+        for (const imp of entryClient.imports) {
+            collect(imp);
+        }
+    }
+
+    // Exclude entry-client itself (already discovered via <script> tag)
+    const entryClientFile = entryClient?.file;
+
+    // Map collected file keys/paths to hrefs
+    const hrefs: string[] = [];
+    for (const key of collected) {
+        // If the key looks like a manifest key (no '/'), look up its file
+        const entry = mfest[key];
+        if (entry?.file) {
+            if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
+        } else if (key.startsWith('assets/')) {
+            // Already a file path
+            if (key !== entryClientFile) hrefs.push(`/${key}`);
+        }
+    }
+    return hrefs;
+}
+
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
     const relativePath = pagePath.replace('/src/pages/', '');
     const parts = relativePath.split('/');
@@ -123,6 +236,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
     const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
         return async (c: Context) => {
+            const inlineCss = await getInlineCss(c.env);
+
             try {
                 const user = c.get('user');
                 const appInstance = new (options.AppComponent ?? App)();
@@ -266,7 +381,8 @@ export function createApp(options: CreateAppOptions = {}) {
                 };
 
                 c.header('Content-Type', 'text/html');
-                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags }));
+                const modulePreloads = getModulePreloads(manifest, path);
+                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags, inlineCss, modulePreloads }));
             } catch (err) {
                 console.error('[Cossack SSR Error]:', err);
                 const errorPage = findNearestSpecialPage(path, 'error');
