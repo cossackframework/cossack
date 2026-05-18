@@ -33,11 +33,11 @@ If you prefer to set up a project manually or integrate Cossack into an existing
     ```
 
 2.  **Install Adapter:**
-    *   For Cloudflare: `pnpm add -D wrangler @cloudflare/workers-types`
+    *   For Cloudflare: `pnpm add -D @cloudflare/vite-plugin wrangler @cloudflare/workers-types`
     *   For Node.js: `pnpm add @cossackframework/node-adapter ws @hono/node-server` and `pnpm add -D @types/ws @types/node`
 
 3.  **Configure Vite:**
-    Cossack uses Vite for building both the client and server bundles. You will need separate configurations (`vite.client.config.ts` and `vite.ssr.config.ts`) to handle the dual-build process.
+    Cossack uses a single `vite.config.ts` with `@cloudflare/vite-plugin` for Cloudflare deployments. The plugin handles building both client and server bundles via Vite's Environment API.
 
 4.  **Create Entry Points:**
     *   `src/client/entry-client.ts`: Handles client-side hydration.

@@ -4,7 +4,7 @@ Cossack ships with Tailwind CSS 4.x as the default styling solution. It is pre-c
 
 ## How It Works
 
-Tailwind is integrated via the `@tailwindcss/vite` plugin in `vite.client.config.ts`. The CSS entry point is `src/style.css`:
+Tailwind is integrated via the `@tailwindcss/vite` plugin in `vite.config.ts`. The CSS entry point is `src/style.css`:
 
 ```css
 @import "tailwindcss";

@@ -5,30 +5,10 @@ import matter from 'gray-matter';
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
-export interface CossackPagesOptions {
-  mode?: string;
-  ssr?: boolean;
-}
-
-export function cossackPages(options: CossackPagesOptions = {}): Plugin {
-  // Check for SSR in multiple ways since mode can be overridden
-  const isSsr = options.ssr === true || options.mode === 'ssr' ||
-                 (typeof process !== 'undefined' && process.env?.VITE_BUILD_SSR === 'true');
-
-  // Use a closure variable to store SSR detection from config hook
-  let detectedSsr = false;
-
+export function cossackPages(): Plugin {
   return {
     name: 'cossack-pages',
     enforce: 'pre',
-    config(config, { command }) {
-      // Detect SSR build from config (build.ssr: true)
-      const isSsrBuild = config.build?.ssr === true;
-      if (isSsrBuild) {
-        detectedSsr = true;
-      }
-      return undefined;
-    },
     resolveId(id) {
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
@@ -36,13 +16,13 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     load(id) {
       if (id === resolvedVirtualModuleId) {
-        // Check if SSR was detected in config hook
-        const finalIsSsr = isSsr || detectedSsr;
+        // Detect environment via the Vite 6 Environment API
+        // SSR/worker environment: eager loading (synchronous access needed for server routes)
+        // Client environment: lazy loading (code splitting for performance)
+        const isSsrEnvironment = this.environment?.name !== 'client';
 
-        // SSR build: eager loading (synchronous access needed for server routes)
-        // Client build: lazy loading (code splitting for performance)
         return `
-          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${finalIsSsr ? ', { eager: true }' : ''});
+          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Layouts: always eager (small, shared, needed immediately)
           const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
@@ -58,9 +38,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       }
     },
     async transform(code, id) {
-      const isDev = options.mode === 'development' || process.env.NODE_ENV === 'development';
-
-      // Inject source metadata for DevTools
+      // Inject source metadata for DevTools (only in dev mode for client environment)
+      const isDev = this.environment?.mode === 'dev';
       if (isDev && id.endsWith('.ts') && code.includes('extends Cossack')) {
         const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
         const match = code.match(regex);
@@ -75,7 +54,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       if (id.endsWith('.mdx')) {
         const { data, content } = matter(code);
         const htmlContent = await marked(content);
-        
+
         // Escape backticks and ${} to avoid breaking the template string
         const escapedHtml = htmlContent.replace(/\`/g, '\\`').replace(/\$\{/g, '\\${');
 
@@ -98,7 +77,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               }
             }
 
-            // Manually define metadata since decorators require extra build steps 
+            // Manually define metadata since decorators require extra build steps
             // when generated from a plugin transform hook
             Reflect.defineMetadata('page:options', { transport: 'http' }, MdxPage);
 
@@ -107,7 +86,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           map: null
         };
       }
-      
+
       return { code, map: null };
     }
   };

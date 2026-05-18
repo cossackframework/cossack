@@ -178,7 +178,7 @@ For methods detected as server-only (without explicit `@Server` decorator), the 
 
 ### Build Configuration
 
-The security plugin is automatically applied in client builds (`vite.client.config.ts`). It does **not** affect SSR builds (`vite.ssr.config.ts`), ensuring server code remains intact.
+The security plugin is automatically applied in the `client` environment of the unified `vite.config.ts`. It does **not** affect the SSR/worker environment, ensuring server code remains intact.
 
 ### Development vs Production
 
