@@ -10,6 +10,13 @@
   "devDependencies": {
     "typescript": "^5.0.4"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  },
   "workspaces": [
     "packages/*"
   ]

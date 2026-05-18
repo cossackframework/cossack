@@ -2,11 +2,12 @@
   "name": "my-cossack-app",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "build": "vite build --config vite.client.config.ts --mode production && vite build --config vite.ssr.config.ts --mode ssr --ssr",
-    "build:ssg": "tsx scripts/build-ssg.ts",
+    "dev": "vite dev",
+    "build": "vite build",
+    "build:ssg": "vite build && tsx scripts/build-ssg.ts",
     "build:all": "pnpm run build && pnpm run build:ssg",
-    "deploy": "pnpm run build:all && wrangler deploy"
+    "preview": "vite build && vite preview",
+    "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
     "@cossackframework/core": "^0.1.0",
@@ -18,12 +19,13 @@
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240725.0",
+    "@cloudflare/vite-plugin": "^1.37.1",
+    "@cloudflare/workers-types": "^4.20260515.1",
     "@tailwindcss/vite": "^4.1.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "wrangler": "^4.0.0"
+    "vite": "^6.0.0",
+    "wrangler": "^4.92.0"
   }
 }

@@ -1,7 +1,6 @@
 import type { Plugin } from 'vite';
 
 export interface CossackSecurityPluginOptions {
-  mode?: 'client' | 'ssr';
   devWarning?: boolean;
 }
 
@@ -16,24 +15,14 @@ export interface CossackSecurityPluginOptions {
  *
  * The goal is to ensure server-only code (database queries, API keys, business logic)
  * is not exposed in the client bundle.
+ *
+ * Uses the Vite 6 Environment API to detect the current environment automatically.
+ * Only applies stripping in the 'client' environment.
  */
 export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}): Plugin {
   const {
-    mode = 'client',
     devWarning = true,
   } = options;
-
-  // Only apply security in client mode
-  if (mode !== 'client') {
-    return {
-      name: 'cossack-security',
-      enforce: 'pre',
-      transform(code, id) {
-        // In SSR mode, pass through without changes
-        return { code, map: null };
-      },
-    };
-  }
 
   // Built-in methods that should always be kept in client bundles
   // Note: init() and get() are intentionally NOT included - they are server-only by default
@@ -77,6 +66,12 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     enforce: 'pre', // Run before other plugins to ensure we process raw source
 
     transform(code, id) {
+      // Only strip in client environment
+      const isClientEnvironment = this.environment?.name === 'client';
+      if (!isClientEnvironment) {
+        return { code, map: null };
+      }
+
       if (!shouldProcessFile(id)) {
         return { code, map: null };
       }

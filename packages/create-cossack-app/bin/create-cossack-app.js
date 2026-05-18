@@ -41,6 +41,7 @@ async function main() {
 
       delete packageJson.devDependencies['wrangler'];
       delete packageJson.devDependencies['@cloudflare/workers-types'];
+      delete packageJson.devDependencies['@cloudflare/vite-plugin'];
 
       packageJson.dependencies['@cossackframework/node-adapter'] = '^0.1.0';
       packageJson.dependencies['@hono/node-server'] = '^1.0.0';
@@ -76,9 +77,12 @@ const server = serve({
 `;
       await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
 
-      const viteConfigPath = path.join(projectDir, 'vite.ssr.config.ts');
+      // Update vite.config.ts for Node.js output
+      const viteConfigPath = path.join(projectDir, 'vite.config.ts');
       let viteConfig = await fs.readFile(viteConfigPath, 'utf-8');
-      viteConfig = viteConfig.replace("outDir: 'dist/worker'", "outDir: 'dist/server'");
+      // Remove the cloudflare plugin import and usage for Node.js
+      viteConfig = viteConfig.replace("import { cloudflare } from '@cloudflare/vite-plugin';\n", '');
+      viteConfig = viteConfig.replace(/\s*cloudflare\(\{[^}]*\}\),\n/, '\n');
       await fs.writeFile(viteConfigPath, viteConfig);
     }
 

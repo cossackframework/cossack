@@ -3,19 +3,18 @@
 /**
  * SSG Build Script
  *
- * This script runs the SSG (Static Site Generation) build process.
- * It:
- * 1. Builds the SSR bundle with SSG mode
- * 2. Collects all pages marked with ssg: true
- * 3. Renders each page to static HTML
- * 4. Generates a sitemap.xml
+ * This script runs the SSG (Static Site Generation) rendering process.
+ * It should be run after `vite build` which produces the client assets.
+ * The script:
+ * 1. Collects all pages marked with ssg: true
+ * 2. Renders each page to static HTML
+ * 3. Generates a sitemap.xml
  *
  * Usage:
- *   tsx scripts/build-ssg.js
- *   VITE_SSG_BASE_URL=https://my-site.com tsx scripts/build-ssg.js
+ *   vite build && tsx scripts/build-ssg.ts
+ *   VITE_SSG_BASE_URL=https://my-site.com tsx scripts/build-ssg.ts
  */
 
-import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,47 +33,11 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/ssg-static');
 
 async function main() {
-  console.log('Starting SSG build...');
+  console.log('Starting SSG rendering...');
 
   // Get base URL from environment or use default
   const baseUrl = process.env.VITE_SSG_BASE_URL || 'https://example.com';
   console.log(`Using base URL: ${baseUrl}`);
-
-  // Step 1: Run the SSR build
-  console.log('\nRunning SSR build...');
-
-  const env = {
-    ...process.env,
-    VITE_BUILD_SSG: 'true',
-    VITE_BUILD_SSR: 'true',
-    VITE_SSG_BASE_URL: baseUrl,
-  };
-
-  await new Promise((resolve, reject) => {
-    const buildProcess = spawn('pnpm', ['exec', 'vite', 'build', '--config', 'vite.ssr.config.ts', '--mode', 'ssg'], {
-      cwd: PROJECT_ROOT,
-      env,
-      shell: true,
-      stdio: 'inherit',
-    });
-
-    buildProcess.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`SSR build failed with code ${code}`));
-      }
-    });
-
-    buildProcess.on('error', (err) => {
-      reject(err);
-    });
-  });
-
-  console.log('\nSSR build complete!');
-
-  // Step 2: Run SSG rendering
-  console.log('\nRunning SSG rendering...');
 
   // Collect pages and layouts using Node.js fs
   const pagesDir = path.resolve(PROJECT_ROOT, 'src/pages');
