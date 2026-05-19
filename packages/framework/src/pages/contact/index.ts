@@ -29,7 +29,7 @@ export class Contact extends Cossack {
 
     render(): TemplateResult {
         return html`
-            <h1>Contact Page</h1>
+            <h1 class="text-3xl text-red-500">Contact Page</h1>
             <div>Hello ${this.greeting}</div>
             <form method="post" action="/contact">
                 <label for="name">Name:</label>
