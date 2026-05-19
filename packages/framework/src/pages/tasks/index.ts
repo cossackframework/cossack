@@ -85,9 +85,9 @@ export class Tasks extends Cossack {
                         <li class="flex items-center gap-2.5 mb-2.5">
                             <span>${task.text}</span>
                             ${component(Button, {
-            '@click': () => this.confirmDelete(task.id),
-            '?disabled': !!this.loading[`deleteTask_${task.id}`],
-        }, 'Delete')}
+                                '@click': () => this.confirmDelete(task.id),
+                                '?disabled': !!this.loading[`deleteTask_${task.id}`],
+                            }, 'Delete')}
                         </li>
                     `)}
                 </ul>

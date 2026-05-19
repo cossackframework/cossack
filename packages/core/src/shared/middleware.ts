@@ -1,16 +1,12 @@
 import type { MiddlewareHandler } from 'hono';
-import { isServer } from './environment';
 
 /**
- * Creates a middleware that only executes on the server.
- * On the client, it passes through without running the callback.
+ * Creates a server-only middleware.
+ *
+ * Middlewares passed to `@Page` are only ever invoked by the Hono router
+ * (server-side), so this is a semantic wrapper that documents intent.
+ * The handler runs directly without any runtime guard.
  */
 export function defineServerMiddleware(handler: MiddlewareHandler): MiddlewareHandler {
-    return async (c, next) => {
-        if (isServer) {
-            await handler(c, next);
-        } else {
-            await next();
-        }
-    };
+    return handler;
 }

@@ -52,22 +52,19 @@ export default class Dashboard extends Cossack {
 
 ## `defineServerMiddleware()`
 
-Middleware in Cossack runs on both server and client bundles (since the same component code is shipped to both). When middleware contains server-only logic — such as reading headers, checking cookies, or logging — you need to ensure it only executes on the server.
-
-`defineServerMiddleware()` wraps a Hono middleware handler so it only runs on the server and is a no-op on the client:
+Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a semantic wrapper that documents this intent — it makes it clear that the middleware is server-only:
 
 ```typescript
 import { defineServerMiddleware } from '@cossackframework/core';
 
 export const myMiddleware = defineServerMiddleware(async (c, next) => {
-    // This only runs on the server
     const token = c.req.header('Authorization');
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
     await next();
 });
 ```
 
-Without the helper, you would need to manually check `isServer`:
+Without the helper, you would need to manually guard with `isServer`:
 
 ```typescript
 import { isServer } from '@cossackframework/core';
