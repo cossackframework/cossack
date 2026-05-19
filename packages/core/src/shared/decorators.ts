@@ -376,3 +376,35 @@ export function createTypedDecorators<T extends CossackOptions>() {
     Server: (options: ServerOptions & { channel?: T['Channels'] | 'global' } = {}) => Server(options),
   };
 }
+
+/**
+ * Options for the @Service decorator.
+ */
+export interface ServiceOptions {
+  scope?: 'singleton' | 'transient';
+}
+
+/**
+ * Decorator for service classes that can be injected via dependency injection.
+ * Marks the class as injectable so the DI container can resolve it.
+ *
+ * @example
+ * ```typescript
+ * @Service()
+ * export class PaymentService {
+ *   @State() status: string = 'idle';
+ *
+ *   @Server()
+ *   async processPayment(amount: number) {
+ *     this.status = 'processing';
+ *   }
+ * }
+ * ```
+ */
+export function Service(options: ServiceOptions = {}): ClassDecorator {
+  return (target: object) => {
+    Reflect.defineMetadata('cossack:service', {
+      scope: options.scope || 'singleton',
+    }, target);
+  };
+}

@@ -97,6 +97,8 @@ export default class Dashboard extends Cossack {
 }
 ```
 
+For server-only middleware (e.g., logging, auth checks), use [`defineServerMiddleware()`](./middleware.md#define-servermiddleware) to avoid running the logic on the client. See the [middleware documentation](./middleware.md) for full details on colocated middleware, reusable middleware files, and layout middleware ordering.
+
 ## Transport Modes
 
 ### `http` (Default)

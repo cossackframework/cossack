@@ -2,6 +2,7 @@ import { html, type TemplateResult, component } from '@cossackframework/renderer
 import { Cossack, Client, Page, Server, State, OnEvent, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 import { Layout } from '../../components/Layout';
 import { Button } from '../../components/Button';
+import { loggingMiddleware } from '@/middlewares/logging';
 
 interface Task {
     id: number;
@@ -11,6 +12,7 @@ interface Task {
 @Page({
     transport: 'durable-object',
     channels: ['tasks'],
+    middlewares: [loggingMiddleware],
 })
 export class Tasks extends Cossack {
     @State({ channel: 'tasks' })
@@ -83,9 +85,9 @@ export class Tasks extends Cossack {
                         <li class="flex items-center gap-2.5 mb-2.5">
                             <span>${task.text}</span>
                             ${component(Button, {
-            '@click': () => this.confirmDelete(task.id),
-            '?disabled': !!this.loading[`deleteTask_${task.id}`],
-        }, 'Delete')}
+                                '@click': () => this.confirmDelete(task.id),
+                                '?disabled': !!this.loading[`deleteTask_${task.id}`],
+                            }, 'Delete')}
                         </li>
                     `)}
                 </ul>

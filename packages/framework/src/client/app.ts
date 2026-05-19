@@ -1,4 +1,4 @@
-import { Cossack, enableClientNavigation, LifecyclePhase } from '@cossackframework/core';
+import { Cossack, enableClientNavigation, LifecyclePhase, createInstance } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import registry from 'virtual:cossack-pages';
@@ -134,7 +134,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
     return;
   }
 
-  const appInstance = new (AppComponent ?? App)();
+  const appInstance = createInstance(AppComponent ?? App);
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
@@ -229,7 +229,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
                 continue;
             }
             const LComp = Object.values(layoutModule)[0] as new () => Cossack;
-            instance = new LComp();
+            instance = createInstance(LComp);
             instance.updateHead = syncHead;
 
             // Hook reactivity
@@ -269,7 +269,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
       if (currentPage) {
         currentPage.destroy();
       }
-      const componentInstance = new PageComponent();
+      const componentInstance = createInstance(PageComponent);
       currentPage = componentInstance;
 
       // Register the page with the app instance for child component state restoration
@@ -323,7 +323,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
 
       if (LoadingCompClass && !isDisplayingLoadingState) {
           isDisplayingLoadingState = true;
-          const loadingInstance = new LoadingCompClass();
+          const loadingInstance = createInstance(LoadingCompClass);
           // We swap current page with loading component temporarily
           if (currentPage) currentPage.destroy();
           currentPage = loadingInstance;
