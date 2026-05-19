@@ -10,6 +10,8 @@ export * from './shared/image';
 export * from './shared/ref';
 export * from './shared/validation';
 export * from './shared/runtimes/durable-object';
+export * from './shared/container';
+export * from './shared/service-bootstrap';
 
 export * from './client/navigation';
 

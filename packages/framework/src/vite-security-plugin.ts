@@ -76,8 +76,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         return { code, map: null };
       }
 
-      // Check if this file contains a Cossack class
-      if (!code.includes('extends Cossack') && !code.includes('extends CossackElement')) {
+      // Check if this file contains a Cossack class or a @Service decorated class
+      if (!code.includes('extends Cossack') && !code.includes('extends CossackElement') && !code.includes('@Service')) {
         return { code, map: null };
       }
 
@@ -157,14 +157,14 @@ export function transformCossackClass(
   // Build string ranges to skip false matches inside template literals
   const stringRanges = buildStringRanges(code);
 
+  // Collect all class ranges to process (both Cossack-extended and @Service-decorated)
+  const classRanges: Array<{ classEnd: number; bodyEnd: number; closingBrace: number; className: string; hasExtends: boolean }> = [];
+
   // Find class definitions extending Cossack or CossackElement
   const classRegex =
     /(?:export\s+(?:default\s+)?)?class\s+(\w+)\s+(?:extends\s+(?:Cossack(?:<[^>]+>)?|CossackElement))\s*\{/g;
 
   let match;
-  let result = code;
-  let replacements: Array<{ start: number; end: number; replacement: string }> = [];
-
   while ((match = classRegex.exec(code)) !== null) {
     const className = match[1];
     const classStart = match.index;
@@ -182,13 +182,65 @@ export function transformCossackClass(
       continue;
     }
 
-    const { body: classBodyText, bodyEnd, closingBrace } = classBody;
+    classRanges.push({
+      classEnd,
+      bodyEnd: classEnd + classBody.body.length,
+      closingBrace: classBody.closingBrace,
+      className,
+      hasExtends: true, // Cossack/CossackElement always extends
+    });
+  }
+
+  // Also find @Service decorated classes (may not extend Cossack)
+  const serviceClassRegex =
+    /@Service(?:\([^)]*\))?\s*\n\s*(?:export\s+(?:default\s+)?)?class\s+(\w+)\s*(?:extends\s+(\w+(?:<[^>]+>)?))?\s*\{/g;
+
+  while ((match = serviceClassRegex.exec(code)) !== null) {
+    const className = match[1];
+    const classStart = match.index;
+    const extendsClause = match[2]; // undefined if no extends
+
+    // Skip matches inside strings
+    if (isInRange(stringRanges, classStart)) {
+      continue;
+    }
+
+    // Find the opening brace of the class
+    const openBrace = match[0].lastIndexOf('{');
+    const classEnd = match.index + openBrace + 1;
+
+    const classBody = extractClassBody(code, classEnd);
+    if (!classBody) {
+      console.warn(`[Cossack Security] Could not extract class body for @Service class ${className} in ${id}`);
+      continue;
+    }
+
+    // Skip if this class was already found by the Cossack regex
+    const alreadyFound = classRanges.some(
+      r => r.classEnd === classEnd
+    );
+    if (alreadyFound) continue;
+
+    classRanges.push({
+      classEnd,
+      bodyEnd: classEnd + classBody.body.length,
+      closingBrace: classBody.closingBrace,
+      className,
+      hasExtends: extendsClause !== undefined,
+    });
+  }
+
+  let result = code;
+  let replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const { classEnd, bodyEnd, closingBrace, className, hasExtends } of classRanges) {
+    const classBodyText = code.slice(classEnd, bodyEnd);
 
     // Transform method definitions using depth tracking
     const transformedBody = transformMethodsWithDepthTracking(
       code,
       classEnd,
-      classEnd + classBodyText.length,
+      bodyEnd,
       className,
       id,
       isClientSafeMethod,
@@ -200,7 +252,7 @@ export function transformCossackClass(
     const serverOnlyMethods = extractServerOnlyMethodNames(
       code,
       classEnd,
-      classEnd + classBodyText.length,
+      bodyEnd,
       isClientSafeMethod,
       builtinMethods
     );
@@ -209,7 +261,7 @@ export function transformCossackClass(
 
     // Inject metadata registration at the end of the class for server-only methods
     if (serverOnlyMethods.length > 0) {
-      const metadataInjection = createMetadataInjection(serverOnlyMethods);
+      const metadataInjection = createMetadataInjection(serverOnlyMethods, hasExtends);
       finalBody = transformedBody + metadataInjection;
     }
 
@@ -326,8 +378,9 @@ function extractServerOnlyMethodNames(
  * Create metadata injection code that registers server-only methods.
  * This is injected at the end of the class body.
  */
-function createMetadataInjection(methodNames: string[]): string {
+function createMetadataInjection(methodNames: string[], hasExtends: boolean): string {
   const methodList = JSON.stringify(methodNames);
+  const superCall = hasExtends ? '      super();\n' : '';
   return `
     // Register server-only methods for RPC proxying
     static __registerServerOnlyMethods() {
@@ -342,8 +395,7 @@ function createMetadataInjection(methodNames: string[]): string {
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
     }
     constructor() {
-      super();
-      (this.constructor as any).__registerServerOnlyMethods?.();
+${superCall}      (this.constructor as any).__registerServerOnlyMethods?.();
     }
   `;
 }

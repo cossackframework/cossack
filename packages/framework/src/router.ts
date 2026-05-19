@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot } from './root';
 import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
+import { createInstance } from '@cossackframework/core';
 import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
@@ -250,9 +251,9 @@ export function createApp(options: CreateAppOptions = {}) {
 
             try {
                 const user = c.get('user');
-                const appInstance = new (options.AppComponent ?? App)();
+                const appInstance = createInstance(options.AppComponent ?? App);
                 const layoutInstances: any[] = [];
-                const pageInstance = new PageComponent();
+                const pageInstance = createInstance(PageComponent);
                 const layoutPaths = getLayoutStack(path);
 
                 // Check if component has a loading template (method or file convention)
@@ -312,7 +313,7 @@ export function createApp(options: CreateAppOptions = {}) {
                 const layoutStates: Record<string, any> = {};
                 for (const lPath of layoutPaths) {
                     const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-                    const lInst = new LComp();
+                    const lInst = createInstance(LComp);
                     await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
                     layoutInstances.push(lInst);
                     layoutStates[lPath] = lInst.getInitialState();
@@ -463,7 +464,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
 
-        const componentInstance = new PageComponent() as any;
+        const componentInstance = createInstance(PageComponent) as any;
         await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
 
         // Rebuild component tree to find target
@@ -513,7 +514,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Handle App component (global component) specially
         let componentInstance: any;
         if (componentPath === '/src/App') {
-            componentInstance = new (options.AppComponent ?? App)();
+            componentInstance = createInstance(options.AppComponent ?? App);
             await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
             componentInstance._render();
         } else {
@@ -521,7 +522,7 @@ export function createApp(options: CreateAppOptions = {}) {
             if (!module) return c.json({ error: 'Component not found' }, 404);
             const PageComponent = Object.values(module as object)[0] as new () => Cossack;
             if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-            componentInstance = new PageComponent() as any;
+            componentInstance = createInstance(PageComponent) as any;
             await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
 
             // Rebuild component tree
