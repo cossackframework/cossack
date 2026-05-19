@@ -53,11 +53,12 @@ export const renderRoot = (props: RenderRootProps) => {
 
     const headTagsHtml = (props.headTags || []).map(renderTag).join('\n');
 
-    // In dev mode, Vite handles CSS injection via the module client script.
-    // In production, we include the CSS link explicitly.
+    // In dev mode, include a CSS link to /src/style.css which Vite's dev server
+    // transforms and serves. In production, use the manifest-hashed filename
+    // with optional inline CSS for faster initial paint.
     let cssHtml = '';
     if (isDev) {
-        // No CSS link needed in dev - Vite handles it via the entry module
+        cssHtml = `<link rel="stylesheet" href="${css}">`;
     } else if (css) {
         cssHtml = props.inlineCss
             ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${css}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${css}"></noscript>`
