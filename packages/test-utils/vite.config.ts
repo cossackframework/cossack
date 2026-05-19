@@ -15,7 +15,7 @@ export default defineConfig({
       fileName: 'index',
       formats: ['es', 'cjs'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: [
         '@cossackframework/core',
         '@cossackframework/renderer',

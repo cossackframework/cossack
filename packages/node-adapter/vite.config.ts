@@ -18,7 +18,7 @@ export default defineConfig({
       formats: ['es'],
     },
     outDir: 'dist',
-    rollupOptions: {
+    rolldownOptions: {
         external: ['ws', 'http', 'url', '@cossackframework/core']
     }
   },

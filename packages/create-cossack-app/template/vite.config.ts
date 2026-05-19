@@ -26,7 +26,7 @@ export default defineConfig({
         outDir: 'dist/client',
         target: 'esnext',
         manifest: true,
-        rollupOptions: {
+        rolldownOptions: {
           input: 'src/client/entry-client.ts',
           output: {
             entryFileNames: 'assets/[name].[hash].js',
