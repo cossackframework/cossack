@@ -12,6 +12,7 @@ export * from './shared/validation';
 export * from './shared/runtimes/durable-object';
 export * from './shared/container';
 export * from './shared/service-bootstrap';
+export * from './shared/middleware';
 
 export * from './client/navigation';
 
