@@ -19,7 +19,7 @@ export default defineConfig({
       formats: ['es'],
     },
     outDir: 'dist',
-    rollupOptions: {
+    rolldownOptions: {
       external: [
         '@cossackframework/renderer',
         'hono',

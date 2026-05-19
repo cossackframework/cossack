@@ -180,7 +180,7 @@ export interface CossackOptions {
 }
 
 import type { AuthenticatedUser } from './user';
-import { RedirectStatusCode } from 'hono/utils/http-status';
+import type { RedirectStatusCode } from 'hono/utils/http-status';
 
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     // Standard Properties

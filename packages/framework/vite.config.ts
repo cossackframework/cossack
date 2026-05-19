@@ -79,23 +79,29 @@ export default defineConfig({
         outDir: 'dist/client',
         target: 'esnext',
         manifest: true,
-        rollupOptions: {
+        rolldownOptions: {
           input: 'src/client/entry-client.ts',
           output: {
             entryFileNames: 'assets/[name].[hash].js',
             chunkFileNames: 'assets/[name].[hash].js',
             assetFileNames: 'assets/[name].[hash][extname]',
             format: 'esm',
-            manualChunks(id) {
-              if (id.includes('@cossackframework/core') || id.includes('@cossackframework/renderer')) {
-                return 'cossack-framework';
-              }
-              if (id.includes('node_modules')) {
-                if (id.includes('marked') || id.includes('gray-matter')) return 'vendor-markdown';
-                return 'vendor';
-              }
-              return undefined;
-            }
+            codeSplitting: {
+              groups: [
+                {
+                  test: /@cossackframework\/(core|renderer)/,
+                  name: 'cossack-framework',
+                },
+                {
+                  test: /node_modules[\/\\](marked|gray-matter)/,
+                  name: 'vendor-markdown',
+                },
+                {
+                  test: /node_modules/,
+                  name: 'vendor',
+                },
+              ],
+            },
           }
         },
       },

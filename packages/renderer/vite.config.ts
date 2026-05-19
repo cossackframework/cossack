@@ -12,7 +12,7 @@ export default defineConfig({
       },
       formats: ['es'],
     },
-    rollupOptions: {
+    rolldownOptions: {
       // Ensure we don't bundle dependencies if we had any
       external: [],
     },
