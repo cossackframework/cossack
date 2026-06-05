@@ -3,20 +3,8 @@
 ## Rules
 - Run type checks after code changes: `pnpm tsc --noEmit`
 - Create/run tests for new features and bug fixes.
-- Check `/docs/architecture.md` for architectural guidelines before making significant changes.
-
-## Running Tests
-
-### Unit Tests
-- **Core package:** `cd packages/core && pnpm vitest --run`
-- **Framework package:** `cd packages/framework && pnpm vitest --run tests/`
-
-### End-to-End Tests
-- **Run all e2e tests:** `cd packages/framework && pnpm exec playwright test`
-- **Run specific test file:** `cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.ts`
-- **Run with UI:** `cd packages/framework && pnpm exec playwright test --ui`
-
-Note: Avoid using `pnpm test` in the framework package as it has a configuration issue that runs both vitest and playwright together.
+- This project is the monorepo using pnpm, all packages located at `packages` directory.
+- Check `/specs/architecture.md` for architectural guidelines before making significant changes.
 
 ## 1. High-Level Project Goal
 
@@ -137,3 +125,16 @@ class MyPage extends Cossack {
   }
 }
 ```
+
+## Running Tests
+
+### Unit Tests
+- **Core package:** `cd packages/core && pnpm vitest --run`
+- **Framework package:** `cd packages/framework && pnpm vitest --run tests/`
+
+### End-to-End Tests
+- **Run all e2e tests:** `cd packages/framework && pnpm exec playwright test`
+- **Run specific test file:** `cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.ts`
+- **Run with UI:** `cd packages/framework && pnpm exec playwright test --ui`
+
+Note: Avoid using `pnpm test` in the framework package as it has a configuration issue that runs both vitest and playwright together.
