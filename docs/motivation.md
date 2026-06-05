@@ -6,7 +6,7 @@ I started my career as PHP developer, I've been working with Laravel for quite a
 
 This led me to move to NestJS + Angular so I can write both the frontend and backend in the same language. This approach is good. However, I still need to write two separate applications, one for the frontend and one for the backend, and handle the communication between them is time-consuming.
 
-One important thing to consider in modern web development nowadays is the performance. Yes, we might say: "tweak our code and server to make it faster",  however, we still hit the limits of "centralized" servers, where all the requests are handled by a single server. This is where the concept of "edge" comes in. We can deploy our application to multiple locations around the world, close to every users. This is where I found out about Next.js and Qwik, they are both great frameworks that allow us to write both the frontend and backend in the same application, then deploy it to the edge.
+One important thing to consider in modern web development nowadays is the performance. Yes, we might say: "tweak our code and server to make it faster", however, we still hit the limits of "centralized" servers, where all the requests are handled by a single server. This is where the concept of "edge" comes in. We can deploy our application to multiple locations around the world, close to every users. This is where I found out about Next.js and Qwik, they are both great frameworks that allow us to write both the frontend and backend in the same application, then deploy it to the edge.
 
 However, they still have a few limitations, either vendor-locked, not fully compatibility with modern platform like Cloudflare Workers.
 

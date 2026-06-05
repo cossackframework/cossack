@@ -1,0 +1,5 @@
+{
+  "name": "cossack",
+  "version": "0.1.0",
+  "description": "Cossack Framework skills for Claude Code - pages, layouts, components, state, auth, websockets, and more"
+}

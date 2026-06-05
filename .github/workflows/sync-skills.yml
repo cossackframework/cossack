@@ -1,0 +1,30 @@
+name: Sync Skills Plugin
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'skills/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+
+      - name: Sync skills to plugin repo
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.SKILLS_REPO_TOKEN }}
+        with:
+          source-directory: skills
+          destination-github-username: cossackframework
+          destination-repository-name: skills
+          user-email: github-actions[bot]@users.noreply.github.com
+          user-name: github-actions[bot]
+          commit-message: "sync skills from cossackframework/cossack@${{ github.sha }}"
+          target-branch: main
