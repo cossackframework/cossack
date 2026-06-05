@@ -6,8 +6,11 @@
 </p>
 
 <br>
+
 <p align="center">
+
 [![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
+
 </p>
 
 <br>
