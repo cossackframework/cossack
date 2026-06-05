@@ -1,3 +1,10 @@
+<div align="center">
+  <a href="https://cossack.dev">
+    <img src="https://raw.githubusercontent.com/cossackframework/cossack/main/docs/images/cossack-cover.png" width="580" height="auto" alt="Cossack framework"/>
+  </a>
+</div>
+
+
 [![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
 
 # Cossack
@@ -113,7 +120,7 @@ src/
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](./docs/) directory:
+Full documentation is available in the [`docs/`](./docs/index.md):
 
 - [Routing](./docs/routing.md) — File-based routing, dynamic routes, layouts
 - [State Management](./docs/states.md) — `@State`, `@ClientState`, real-time sync
