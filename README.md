@@ -1,16 +1,16 @@
 <br>
 <p align="center">
   <a target="_blank" href="https://cossack.dev">
-    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%" />
+    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%">
   </a>
 </p>
 
 <br>
 
 <p align="center">
-
-[![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
-
+    <a href="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml">
+        <img src="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg">
+    </a>
 </p>
 
 <br>
