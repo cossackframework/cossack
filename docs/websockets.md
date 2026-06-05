@@ -1,18 +1,116 @@
-# Real-Time Functionality with WebSockets
+# States with Websockets
 
-The Cossack framework provides a powerful, declarative API for adding real-time, stateful functionality to your components. This is achieved by leveraging **Cloudflare Durable Objects** and the modern **Hibernatable WebSockets API**.
+The true power of state management in Cossack is that is not only limited to HTTP based state but can be synced with any transport layer. For example, websocket, so you can write a truly real time application just as the same 
 
-**Important:** To use any of the real-time features described in this document, you must explicitly enable the WebSocket transport by decorating your component with `@Page({ transport: 'durable-object' })`. The default transport is `'http'`.
+Cossack's primary goal is to unify client and server state management. For real-time applications, it provides a flexible, powerful architecture that allows you to choose the right pattern for the job, from simple, automatic UI updates to robust, secure, event-driven workflows.
 
-### Powered by Hibernatable WebSockets
+**Note:** The patterns described here—Automatic State Synchronization and Event-Driven Re-fetch—are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
 
-Cossack's backend is built on a "serverless" model. This means:
+This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
 
--   **Efficiency:** The Durable Object that manages your component's state can be "hibernated" (removed from memory) when it's not actively processing messages.
--   **Persistence:** Even when hibernated, the WebSocket connections remain open. When a new message arrives, the Cloudflare runtime instantly wakes up the correct Durable Object, preserving its state and ensuring no messages are lost.
--   **Reliability:** A built-in, low-level heartbeat mechanism (`ping-pong`) is automatically managed by the framework, preventing connections from being dropped due to network timeouts.
+-   **`StateProvider` (The "Where"):** A State Provider determines *which* stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. However, you can create custom providers to connect to other contexts, such as a `UserSessionProvider` for state shared across all pages for a logged-in user, or a `GlobalProvider` for a singleton state shared by all users.
 
-This architecture allows for thousands of concurrent, stateful connections with minimal resource overhead.
+-   **`Channel` (The "What"):** A Channel is a logical partition *within* a provider. It allows you to group related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel, making updates efficient.
+
+-   **`Event` (The "When" & "How"):** An Event is a simple, stateless message broadcasted by the server. Components can listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern, which is the most secure way to handle complex state changes.
+
+---
+
+## Two Core Patterns for Real-Time State
+
+Cossack offers two primary patterns for managing real-time state. You can use either—or both—within the same component.
+
+### 1. Automatic State Synchronization (The "Blazor" Way)
+
+This is the simplest and most direct way to manage state. It's perfect for UI-specific state that isn't persisted in a database or doesn't have complex security requirements.
+
+**How it works:**
+1.  You decorate a property with `@State`.
+2.  You decorate a server-side method with `@Server`.
+3.  When the `@Server` method changes the value of the `@State` property, the framework **automatically** detects the change.
+4.  It then broadcasts a **partial state update** containing only the properties for the affected channel to all clients connected to that page.
+5.  The client-side component receives the update and automatically re-renders.
+
+#### Example: A Simple Counter
+
+```typescript
+import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'durable-object' })
+export class Counter extends Cossack {
+    
+    @State() // Uses the default 'global' channel
+    private count: number = 0;
+
+    @Server()
+    private increment() {
+        // This one line is enough to trigger a UI update for all clients.
+        this.count++;
+    }
+
+    protected render() {
+        return html`
+            <p>Count: ${this.count}</p>
+            <button @click=${this.increment}>Increment</button>
+        `;
+    }
+}
+```
+
+In this example, calling `this.count++` is all that's needed. The framework handles detecting the change, serializing the new value, broadcasting it, and re-rendering the component on all connected clients.
+
+---
+
+### 2. Event-Driven Re-fetch (The "Liveview" Way)
+
+This is the most robust and secure pattern. It is the **recommended approach** for any action that modifies a shared source of truth (like a database) or requires permission checks.
+
+**How it works:**
+1.  A `@Server` method performs an action, such as writing to a database.
+2.  Instead of changing the component's state directly, it calls `this.broadcastEvent('event-name')`.
+3.  The server broadcasts this simple, stateless event message to all connected clients.
+4.  A method on the component decorated with `@OnEvent('event-name')` is triggered on every client.
+5.  This handler's primary job is to call `this.init()`, which re-runs the component's initial data-loading logic. This ensures that each client re-fetches the data *within its own permission context*.
+
+This pattern is secure by default and prevents race conditions or accidental data leaks.
+
+#### Example: Deleting a Task
+
+```typescript
+import { Page, Server, State, OnEvent } from '@cossackframework/core';
+
+@Page({ transport: 'durable-object' })
+export class Tasks extends Cossack {
+    @State()
+    private tasks: Task[] = [];
+
+    async init() {
+        // In a real app, this would fetch tasks from a database,
+        // applying user-specific permissions.
+        // e.g., this.tasks = await db.getTasksForUser(this.user);
+        if (this.tasks.length === 0) {
+             this.tasks = [/* ... initial tasks ... */];
+        }
+    }
+
+    private async deleteTask(taskId: number) {
+        // 1. Modify the source of truth (the in-memory array here)
+        this.tasks = this.tasks.filter(task => task.id !== taskId);
+        
+        // 2. Broadcast a simple event, NOT the new state
+        this.broadcastEvent('tasks:changed');
+    }
+
+    // 3. The event handler triggers a re-fetch on all clients
+    @OnEvent('tasks:changed')
+    private async onTasksChanged() {
+        await this.init();
+    }
+
+    //...
+}
+```
 
 ---
 

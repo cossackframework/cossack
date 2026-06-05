@@ -8,9 +8,9 @@ When running in development mode, you can inspect any Cossack component on the p
 
 ### How to Use
 
-1.  **Enter Inspection Mode**: Hold the `Alt` (or `Option` on Mac) key while your browser window is focused.
+1.  **Enter Inspection Mode**: Hold the `Ctrl` (or `Command` on Mac) key while your browser window is focused.
 2.  **Hover**: Move your mouse over the page. A blue overlay will highlight the component currently under your cursor and display its filename.
-3.  **Click**: While holding `Alt`, click on the highlighted component. Cossack will automatically open that file in your configured code editor and scroll to the class definition.
+3.  **Click**: While holding `Command`, click on the highlighted component. Cossack will automatically open that file in your configured code editor and scroll to the class definition.
 
 ## Setup & Requirements
 

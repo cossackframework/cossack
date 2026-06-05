@@ -1,4 +1,4 @@
-# File-Based Routing in Cossack
+# Routing in Cossack
 
 Cossack uses a simple and intuitive file-based routing system. You don't need to configure a central routing file; instead, the framework automatically creates routes based on the structure of your `src/pages` directory.
 
@@ -104,25 +104,3 @@ Cossack enables "soft navigation" by default. This means that when a user clicks
 *   **Smart Pre-fetching**: Data is fetched when you hover over a link.
 *   **Caching**: Visited pages are stored in memory for instant back/forward navigation.
 *   **Persistent Layouts**: If you navigate between pages that share a layout (e.g., `/login` to `/register`), the shared `AuthLayout` instance is **preserved**, maintaining its state and scroll position.
-
----
-
-## Advanced: The Magic Behind the Scenes
-
-For those curious about the underlying mechanics, the "magic" of file-based routing is handled by a custom Vite plugin at build time. This approach ensures zero-runtime overhead and keeps the user's application code clean and free of boilerplate.
-
-### 1. The `cossackPages` Vite Plugin
-
-The core of the system is a Vite plugin named `cossackPages`, which is automatically included when you use the Cossack framework. During the build process, this plugin scans your project for all `.ts` and `.mdx` files in `src/pages` (excluding `layout.ts` and `loading.ts`) and `layout.ts` files for layouts.
-
-### 2. The `virtual:cossack-pages` Module
-
-Once the plugin has found all the files, it creates a **virtual module** named `virtual:cossack-pages` containing a map of all pages and layouts.
-
-### 3. The Router
-
-The framework's `createApp()` function consumes this map. It constructs the route tree, identifying the stack of layouts for each page. It registers Hono routes that automatically:
-1.  Bootstrap the Global App.
-2.  Bootstrap the entire stack of Layouts (Root -> ... -> Parent).
-3.  Bootstrap the Page.
-4.  Render them nested inside each other.

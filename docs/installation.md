@@ -1,5 +1,14 @@
 # Installation & Setup
 
+Cossack is a new kind of framework that is borderless, build for the edge and minimal syntax.
+
+## Prerequisites
+
+To get started with Cossack locally, you need:
+
+- Node.js v22+
+- An editor (VS Code preferred)
+
 ## Creating a New Project
 
 The easiest way to start a new Cossack project is by using the `create-cossack-app` CLI tool.
