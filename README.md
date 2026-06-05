@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://cossack.dev">
-    <img src="https://raw.githubusercontent.com/cossackframework/cossack/main/docs/images/cossack-cover.png" width="580" height="auto" alt="Cossack framework"/>
+    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/cossack-cover.png" width="580" height="auto" alt="Cossack framework"/>
   </a>
 </div>
 
