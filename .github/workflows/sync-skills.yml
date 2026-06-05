@@ -28,3 +28,4 @@ jobs:
           user-name: github-actions[bot]
           commit-message: "sync skills from cossackframework/cossack@${{ github.sha }}"
           target-branch: main
+          create-target-branch-if-needed: true
