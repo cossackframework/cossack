@@ -7,7 +7,7 @@ user-invocable: true
 
 # Set Up Real-Time WebSocket Features
 
-You are setting up real-time features for a Cossack Framework application using Durable Objects and WebSocket state synchronization.
+You are setting up real-time features for a Cossack application using Durable Objects and WebSocket state synchronization.
 
 ## Prerequisites
 
