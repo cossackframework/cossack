@@ -1,12 +1,19 @@
-<div align="center">
+<br>
+<p align="center">
   <a target="_blank" href="https://cossack.dev">
     <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%" />
   </a>
-</div>
+</p>
 
+<br>
+<p align="center">
 [![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
+</p>
 
-# Cossack
+<br>
+<br>
+
+<h1 align="center">The Borderless TypeScript Framework</h1>
 
 A full-stack TypeScript framework for building stateful, real-time web applications with server-side rendering.
 
