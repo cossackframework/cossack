@@ -50,4 +50,3 @@
 ## Optimizations
 - [Optimizations](/docs/optimizations.md)
 - [Static Site Generation](/docs/static-site-generation.md)
-
