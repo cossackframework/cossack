@@ -1,9 +1,8 @@
 <div align="center">
-  <a href="https://cossack.dev">
-    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/cossack-cover.png" width="580" height="auto" alt="Cossack framework"/>
+  <a target="_blank" href="https://cossack.dev">
+    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%" />
   </a>
 </div>
-
 
 [![E2E Tests](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml)
 
