@@ -9,10 +9,10 @@ The easiest way to start a new Cossack project is by using the `create-cossack-a
 Run the following command in your terminal:
 
 ```sh
-npx create-cossack-app@latest my-cossack-app
+npx create-cossack-app@latest my-app
 ```
 
-Replace `my-cossack-app` with your desired project name.
+Replace `my-app` with your desired project name.
 
 ### Adapter Selection
 
@@ -22,25 +22,3 @@ During the setup process, you will be prompted to choose a server adapter:
 2.  **Node.js:** Best for traditional server deployments (Docker, VPS) or local development without Cloudflare dependencies. Note that component state is memory-only in this mode.
 
 The CLI will automatically configure your `package.json`, `tsconfig.json`, and entry points based on your selection.
-
-## Manual Installation
-
-If you prefer to set up a project manually or integrate Cossack into an existing monorepo, follow these steps:
-
-1.  **Install Core Dependencies:**
-    ```sh
-    pnpm add @cossackframework/core @cossackframework/renderer hono reflect-metadata
-    ```
-
-2.  **Install Adapter:**
-    *   For Cloudflare: `pnpm add -D @cloudflare/vite-plugin wrangler @cloudflare/workers-types`
-    *   For Node.js: `pnpm add @cossackframework/node-adapter ws @hono/node-server` and `pnpm add -D @types/ws @types/node`
-
-3.  **Configure Vite:**
-    Cossack uses a single `vite.config.ts` with `@cloudflare/vite-plugin` for Cloudflare deployments. The plugin handles building both client and server bundles via Vite's Environment API.
-
-4.  **Create Entry Points:**
-    *   `src/client/entry-client.ts`: Handles client-side hydration.
-    *   `src/index.ts`: The server-side entry point (Worker or Node server).
-
-Refer to the `packages/create-cossack-app/template` directory in the repository for a reference implementation.
