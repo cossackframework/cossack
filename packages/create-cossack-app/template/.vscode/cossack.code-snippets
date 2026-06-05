@@ -1,0 +1,322 @@
+{
+  "Cossack Page": {
+    "prefix": "cpage",
+    "scope": "typescript",
+    "body": [
+      "import { Cossack, Page } from '@cossackframework/core';",
+      "import { html } from '@cossackframework/renderer';",
+      "",
+      "@Page({ transport: '${1|http,durable-object,websocket|}' })",
+      "export default class ${2:PageName} extends Cossack {",
+      "  ${3:// Optional: @State() properties, @Server() methods}",
+      "",
+      "  render() {",
+      "    return html`",
+      "      <div>",
+      "        <h1>${4:Page Title}</h1>",
+      "        <p>${5:Page content}</p>",
+      "      </div>",
+      "    `;",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a new Cossack page"
+  },
+  "Cossack Page with Layout": {
+    "prefix": "cpagelayout",
+    "scope": "typescript",
+    "body": [
+      "import { Cossack, Page } from '@cossackframework/core';",
+      "import { html, component } from '@cossackframework/renderer';",
+      "import { Layout } from '@/components/Layout';",
+      "",
+      "@Page({ transport: '${1|http,durable-object,websocket|}' })",
+      "export default class ${2:PageName} extends Cossack {",
+      "  render() {",
+      "    return component(Layout, { dir: 'ltr' }, html`",
+      "      <div>",
+      "        <h1>${3:Page Title}</h1>",
+      "        <p>${4:Page content}</p>",
+      "      </div>",
+      "    `);",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a new Cossack page wrapped in a Layout"
+  },
+  "Cossack Layout": {
+    "prefix": "clayout",
+    "scope": "typescript",
+    "body": [
+      "import { Cossack, Page } from '@cossackframework/core';",
+      "import { html } from '@cossackframework/renderer';",
+      "",
+      "@Page({ transport: 'http' })",
+      "export default class ${1:Section}Layout extends Cossack {",
+      "  render() {",
+      "    return html`",
+      "      <div class=\"${2:section-layout}\">",
+      "        <h2>${3:Section Title}</h2>",
+      "        \${this.children}",
+      "      </div>",
+      "    `;",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a new Cossack layout (layout.ts)"
+  },
+  "Cossack Component": {
+    "prefix": "ccomponent",
+    "scope": "typescript",
+    "body": [
+      "import { Cossack, Component, Prop } from '@cossackframework/core';",
+      "import { html } from '@cossackframework/renderer';",
+      "",
+      "@Component()",
+      "export class ${1:ComponentName} extends Cossack {",
+      "  @Prop() ${2:propName}: ${3:string};",
+      "",
+      "  render() {",
+      "    const { ${4:$2}, ...rest } = this.props;",
+      "",
+      "    return html`",
+      "      <div ...=\\${rest}>",
+      "        \${this.children}",
+      "      </div>",
+      "    `;",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a new Cossack component"
+  },
+  "Cossack Middleware": {
+    "prefix": "cmiddleware",
+    "scope": "typescript",
+    "body": [
+      "import { defineServerMiddleware } from '@cossackframework/core';",
+      "",
+      "export const ${1:middlewareName} = defineServerMiddleware(async (c, next) => {",
+      "  ${2:// Middleware logic here}",
+      "  await next();",
+      "});",
+      ""
+    ],
+    "description": "Create a new Cossack server middleware"
+  },
+  "Cossack Service": {
+    "prefix": "cservice",
+    "scope": "typescript",
+    "body": [
+      "import { Service, State, Server, Shared } from '@cossackframework/core';",
+      "",
+      "@Service()",
+      "export class ${1:ServiceName} {",
+      "  @State() ${2:stateName}: ${3:number} = ${4:0};",
+      "",
+      "  @Server()",
+      "  ${5:methodName}() {",
+      "    ${6:// Server logic here}",
+      "  }",
+      "",
+      "  @Shared()",
+      "  ${7:helperMethod}(): ${8:string} {",
+      "    return \`\${this.$2}\`;",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a new Cossack service"
+  },
+  "Cossack State": {
+    "prefix": "cstate",
+    "scope": "typescript",
+    "body": ["@State() ${1:stateName}: ${2:string} = ${3:''};"],
+    "description": "Add a @State property (server-synced)"
+  },
+  "Cossack State with Channel": {
+    "prefix": "cstatechannel",
+    "scope": "typescript",
+    "body": ["@State({ channel: '${1:channelName}' }) ${2:stateName}: ${3:number} = ${4:0};"],
+    "description": "Add a @State property with a specific channel"
+  },
+  "Cossack ClientState": {
+    "prefix": "cclientstate",
+    "scope": "typescript",
+    "body": ["@ClientState() ${1:stateName}: ${2:string} = ${3:''};"],
+    "description": "Add a @ClientState property (client-only)"
+  },
+  "Cossack Server Method": {
+    "prefix": "cserver",
+    "scope": "typescript",
+    "body": [
+      "@Server()",
+      "${1:async} ${2:methodName}(${3}) {",
+      "  ${4:// Server logic here}",
+      "}"
+    ],
+    "description": "Add a @Server method"
+  },
+  "Cossack Client Method": {
+    "prefix": "cclient",
+    "scope": "typescript",
+    "body": [
+      "@Client()",
+      "${1:methodName}() {",
+      "  ${2:// Client-only logic here}",
+      "}"
+    ],
+    "description": "Add a @Client method"
+  },
+  "Cossack Shared Method": {
+    "prefix": "cshared",
+    "scope": "typescript",
+    "body": [
+      "@Shared()",
+      "${1:methodName}(${2}): ${3:void} {",
+      "  ${4:// Runs on both client and server}",
+      "}"
+    ],
+    "description": "Add a @Shared method"
+  },
+  "Cossack Computed Property": {
+    "prefix": "ccomputed",
+    "scope": "typescript",
+    "body": [
+      "@Computed()",
+      "get ${1:computedName}(): ${2:string} {",
+      "  return ${3:// computed value};",
+      "}"
+    ],
+    "description": "Add a @Computed getter"
+  },
+  "Cossack Optimistic Method": {
+    "prefix": "coptimistic",
+    "scope": "typescript",
+    "body": [
+      "@Optimistic('${1:serverMethodName}')",
+      "${2:optimisticHandler}(${3}) {",
+      "  ${4:// Instant client feedback}",
+      "}"
+    ],
+    "description": "Add an @Optimistic handler"
+  },
+  "Cossack Prop": {
+    "prefix": "cprop",
+    "scope": "typescript",
+    "body": ["@Prop() ${1:propName}: ${2:string};"],
+    "description": "Add a @Prop (component input)"
+  },
+  "Cossack Validate": {
+    "prefix": "cvalidate",
+    "scope": "typescript",
+    "body": [
+      "@State()",
+      "@Validate({ required: true, ${1:minLength: ${2:2}} })",
+      "${3:fieldName}: ${4:string} = '';"
+    ],
+    "description": "Add a validated @State property"
+  },
+  "Cossack Head": {
+    "prefix": "chead",
+    "scope": "typescript",
+    "body": [
+      "public head(context: HeadContext): HeadValue {",
+      "  return {",
+      "    title: '${1:Page Title}',",
+      "    ${2:description: '${3:Page description}',}",
+      "  };",
+      "}"
+    ],
+    "description": "Add a head() method for metadata"
+  },
+  "Cossack Init Method": {
+    "prefix": "cinit",
+    "scope": "typescript",
+    "body": [
+      "@Server()",
+      "async init() {",
+      "  ${1:// Data loading on server}",
+      "}"
+    ],
+    "description": "Add an async init() method"
+  },
+  "Cossack OnMount Hook": {
+    "prefix": "conmount",
+    "scope": "typescript",
+    "body": [
+      "onMount() {",
+      "  ${1:// Runs once after first client render}",
+      "}"
+    ],
+    "description": "Add an onMount() lifecycle hook"
+  },
+  "Cossack OnCleanup Hook": {
+    "prefix": "concleanup",
+    "scope": "typescript",
+    "body": [
+      "onCleanup() {",
+      "  ${1:// Runs before component destruction}",
+      "}"
+    ],
+    "description": "Add an onCleanup() lifecycle hook"
+  },
+  "Cossack Dynamic Route Page": {
+    "prefix": "cpagedynamic",
+    "scope": "typescript",
+    "body": [
+      "import { Cossack, Page, Server, HeadContext, HeadValue } from '@cossackframework/core';",
+      "import { html } from '@cossackframework/renderer';",
+      "",
+      "@Page({ transport: '${1|http,durable-object,websocket|}' })",
+      "export default class ${2:PageName} extends Cossack {",
+      "  @Server()",
+      "  async init() {",
+      "    const ${3:param} = this.c.req.param('${4:paramName}');",
+      "    ${5:// Load data using param}",
+      "  }",
+      "",
+      "  public head(context: HeadContext): HeadValue {",
+      "    return { title: \`${6:Title} - \${this.c.req.param('$4')}\` };",
+      "  }",
+      "",
+      "  render() {",
+      "    return html`",
+      "      <div>",
+      "        <h1>${7:Content}</h1>",
+      "      </div>",
+      "    `;",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Create a Cossack page with dynamic route params"
+  },
+  "Cossack Component Usage": {
+    "prefix": "ccompose",
+    "scope": "typescript",
+    "body": [
+      "\${component(${1:ComponentName}, { ${2:propName}: ${3:value}${4:, '@click': this.${5:handler}} }, \${6:html`<span>slot content</span>`\\})"
+    ],
+    "description": "Insert a component() call to compose a child component"
+  },
+  "Cossack Auth Guard Middleware": {
+    "prefix": "cauthguard",
+    "scope": "typescript",
+    "body": [
+      "import { defineServerMiddleware } from '@cossackframework/core';",
+      "",
+      "export const authGuard = defineServerMiddleware(async (c, next) => {",
+      "  if (!c.user) {",
+      "    return c.redirect('/login');",
+      "  }",
+      "  await next();",
+      "});",
+      ""
+    ],
+    "description": "Create an auth guard middleware"
+  }
+}

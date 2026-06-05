@@ -29,7 +29,6 @@ Thumbs.db
 
 # IDEs and editors
 .idea
-.vscode/
 *.swp
 *.swo
 test-results

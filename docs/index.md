@@ -39,6 +39,7 @@
 - [Prevent Navigation](/docs/prevent-navigation.md)
 - [Errors Handling](/docs/errors-handling.md)
 - [Dev Tools](/docs/dev-tools.md)
+- [Snippets](/docs/vscode-snippets.md)
 - [Adapters](/docs/adapters.md)
 - [Deployment](/docs/deployment.md)
 - [Helpers](/docs/helpers.md)
