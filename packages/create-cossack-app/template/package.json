@@ -11,9 +11,9 @@
     "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/core": "^0.4.0",
-    "@cossackframework/framework": "^0.4.0",
-    "@cossackframework/renderer": "^0.4.0",
+    "@cossackframework/core": "^0.4.1",
+    "@cossackframework/framework": "^0.4.1",
+    "@cossackframework/renderer": "^0.4.1",
     "gray-matter": "^4.0.3",
     "hono": "^4.9.5",
     "marked": "^17.0.1",
