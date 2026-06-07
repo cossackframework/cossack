@@ -6,7 +6,7 @@ import { AppDurableObject } from '@cossackframework/framework/DurableObject';
 import { App } from './App';
 import { template } from './root';
 
-const app = createApp({ AppComponent: App, template });
+const app = createApp({ AppComponent: App, htmlTemplate: template });
 
 export { AppDurableObject };
 export default {
