@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/node-adapter",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "type": "module",
   "description": "Node.js runtime adapter for the Cossack Framework",
   "license": "MIT",
