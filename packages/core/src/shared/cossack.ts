@@ -241,6 +241,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public loading: Record<string, number> = {};
 
+    // Tracks @State keys modified by optimistic handlers per action
+    private _optimisticLockedKeys: Record<string, Set<string>> = {};
+    // Buffers server state updates for locked keys
+    private _optimisticPendingState: Record<string, any> = {};
+
+    private _isOptimisticLocked(key: string): boolean {
+        for (const action of Object.keys(this._optimisticLockedKeys)) {
+            if (this.loading[action] && this._optimisticLockedKeys[action]?.has(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Server()
     private _runtime?: CossackServerRuntime;
 
@@ -632,7 +646,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     // Sync updated state back to the service instance
                     for (const key in data) {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        serviceInstance[key] = data[key];
+                        if (this._isOptimisticLocked(key)) {
+                            this._optimisticPendingState[key] = data[key];
+                        } else {
+                            serviceInstance[key] = data[key];
+                        }
                     }
 
                     this.requestUpdate();
@@ -640,7 +658,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } catch (error) {
                     console.error(`Error calling service action '${methodName}':`, error);
                 } finally {
-                    delete this.loading[methodName];
+                    if (this.loading[methodName] > 0) {
+                        this.loading[methodName]--;
+                    }
+                    if (!this.loading[methodName] || this.loading[methodName] <= 0) {
+                        delete this.loading[methodName];
+                    }
                     this.requestUpdate();
                 }
             };
@@ -1072,7 +1095,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     const stateUpdate = data.state || {};
                     for (const key in stateUpdate) {
                         if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        this.setProperty(key, stateUpdate[key]);
+                        if (this._isOptimisticLocked(key)) {
+                            this._optimisticPendingState[key] = stateUpdate[key];
+                        } else {
+                            this.setProperty(key, stateUpdate[key]);
+                        }
                     }
                 } else if (data.type === 'action-complete') {
                     const { action } = data;
@@ -1080,6 +1107,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         this.loading[action]--;
                         if (this.loading[action] <= 0) {
                             delete this.loading[action];
+                            // Release the lock but don't flush buffered state.
+                            // The state-update for the final action arrives shortly
+                            // after (or before) this action-complete. By releasing
+                            // the lock, that state-update will apply the correct
+                            // final server value directly via setProperty.
+                            delete this._optimisticLockedKeys[action];
+                            // Discard stale buffered state
+                            const lockedKeys = this._optimisticLockedKeys[action];
+                            if (lockedKeys) {
+                                for (const key of lockedKeys) {
+                                    delete this._optimisticPendingState[key];
+                                }
+                            }
                         }
                     }
                     this.requestUpdate();
@@ -1129,6 +1169,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+        const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
 
         for (const method of serverMethods) {
             const { name } = method;
@@ -1137,7 +1178,25 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                     try {
                         const optimisticMethod = this.getMethod(optimisticHandlers[name]);
+
+                        // Auto-detect: snapshot @State values before handler
+                        const snapshot: Record<string, any> = {};
+                        for (const key of stateKeys) {
+                            snapshot[key] = (this as any)[key];
+                        }
+
                         (optimisticMethod as any)(...args);
+
+                        // Auto-detect: find which @State keys changed
+                        if (!this._optimisticLockedKeys[name]) {
+                            this._optimisticLockedKeys[name] = new Set();
+                        }
+                        for (const key of stateKeys) {
+                            if ((this as any)[key] !== snapshot[key]) {
+                                this._optimisticLockedKeys[name].add(key);
+                            }
+                        }
+
                         this.requestUpdate();
                     } catch (e) {
                         console.error(`Error in optimistic handler for '${name}':`, e);
@@ -1236,7 +1295,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
                                         for (const key in data) {
                                             if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                                            this.setProperty(key, data[key]);
+                                            if (this._isOptimisticLocked(key)) {
+                                                this._optimisticPendingState[key] = data[key];
+                                            } else {
+                                                this.setProperty(key, data[key]);
+                                            }
                                         }
                                         resolve(returnValue);
                                     } catch (e) {
@@ -1285,14 +1348,34 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
                         for (const key in data) {
                             if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                            this.setProperty(key, data[key]);
+                            if (this._isOptimisticLocked(key)) {
+                                this._optimisticPendingState[key] = data[key];
+                            } else {
+                                this.setProperty(key, data[key]);
+                            }
                         }
                         return returnValue;
                     }
                 } catch (error) {
                     console.error(`Error calling server action '${name}':`, error);
                 } finally {
-                    delete this.loading[name];
+                    // Decrement loading counter (don't wipe — other calls may be pending)
+                    if (this.loading[name] > 0) {
+                        this.loading[name]--;
+                    }
+                    if (!this.loading[name] || this.loading[name] <= 0) {
+                        delete this.loading[name];
+                        // Release the lock and discard stale buffered state.
+                        // The HTTP response already contains the final server state
+                        // (processed above in the try block), so no flush is needed.
+                        const lockedKeys = this._optimisticLockedKeys[name];
+                        if (lockedKeys) {
+                            for (const key of lockedKeys) {
+                                delete this._optimisticPendingState[key];
+                            }
+                            delete this._optimisticLockedKeys[name];
+                        }
+                    }
                     this.requestUpdate();
                 }
             };
@@ -1308,6 +1391,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @Client()
     private proxyServerMethods(serverMethods: { name: string, channel: string, provider: string }[]) {
         const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
+        const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
 
         for (const method of serverMethods) {
             const { name, channel, provider } = method;
@@ -1326,7 +1410,25 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
                         try {
                             const optimisticMethod = this.getMethod(optimisticHandlers[name]);
+
+                            // Auto-detect: snapshot @State values before handler
+                            const snapshot: Record<string, any> = {};
+                            for (const key of stateKeys) {
+                                snapshot[key] = (this as any)[key];
+                            }
+
                             (optimisticMethod as any)(...args);
+
+                            // Auto-detect: find which @State keys changed
+                            if (!this._optimisticLockedKeys[name]) {
+                                this._optimisticLockedKeys[name] = new Set();
+                            }
+                            for (const key of stateKeys) {
+                                if ((this as any)[key] !== snapshot[key]) {
+                                    this._optimisticLockedKeys[name].add(key);
+                                }
+                            }
+
                             this.requestUpdate(); // Render immediately after optimistic update
                         } catch (e) {
                             console.error(`Error in optimistic handler for '${name}':`, e);

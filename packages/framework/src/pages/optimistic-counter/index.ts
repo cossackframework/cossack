@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, ClientState, Optimistic, Computed, Client } from '@cossackframework/core';
+import { Cossack, Page, Server, State, ClientState, Optimistic, Client } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Button } from '@/components/Button';
 
@@ -12,37 +12,20 @@ export class OptimisticCounter extends Cossack {
     @ClientState()
     private showDetails: boolean = false;
 
-    @ClientState()
-    private optimisticCount: number = 0;
-
     public head() {
         return { title: 'Optimistic Counter' };
-    }
-
-    @Computed()
-    get displayCount() {
-        return (this.loading['increment'] > 0) ? this.optimisticCount : this.count;
-    }
-
-    @Computed()
-    get doubleCount() {
-        return this.displayCount * 2;
     }
 
     @Server()
     async increment() {
         // Simulate a slow network/DB write (500ms)
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         this.count++;
     }
 
     @Optimistic('increment')
     applyOptimisticIncrement() {
-        // If this is the first pending action, we start our optimistic divergence from the current known server state.
-        if (!this.loading['increment']) {
-            this.optimisticCount = this.count;
-        }
-        this.optimisticCount++;
+        this.count++;
     }
 
     @Client()
@@ -60,7 +43,7 @@ export class OptimisticCounter extends Cossack {
                 </p>
 
                 <div class="text-[2rem] my-5">
-                    Count: ${this.displayCount} (+${this.doubleCount} doubled)
+                    Count: ${this.count}
                 </div>
 
                 <div class="flex gap-2.5 items-center">
@@ -71,10 +54,9 @@ export class OptimisticCounter extends Cossack {
                 ${this.showDetails ? html`
                     <div class="mt-5 p-4 bg-gray-100 rounded-lg border border-gray-300">
                         <h3>Debug Information</h3>
-                        <p>This box is toggled via <strong>@ClientState</strong>.</p>
-                        <p>Changing this value <strong>does not</strong> sync with other users or round-trip to the server.</p>
-                        <p>Server-side count: ${this.count}</p>
-                        <p>Optimistic count: ${this.optimisticCount}</p>
+                        <p>This counter uses the <strong>auto-stable optimistic</strong> pattern.</p>
+                        <p>The framework automatically detects which @State properties the optimistic handler modifies and buffers server updates until the chain completes.</p>
+                        <p>Count: ${this.count}</p>
                         <p>Loading count: ${this.loading['increment'] || 0}</p>
                     </div>
                 ` : ''}
