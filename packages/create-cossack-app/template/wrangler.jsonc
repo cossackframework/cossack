@@ -1,7 +1,10 @@
 {
-  "$schema": "https://schema.cloudflare.com/workers-wrangler-v3.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "my-cossack-app",
-  "compatibility_date": "2024-01-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
   // "durable_objects": {
   //   "bindings": [

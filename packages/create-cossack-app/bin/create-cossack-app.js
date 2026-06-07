@@ -33,6 +33,18 @@ async function main() {
     await fs.mkdir(projectDir, { recursive: true });
     await fs.cp(templateDir, projectDir, { recursive: true });
 
+    // Update compatibility_date to today
+    const wranglerPath = path.join(projectDir, 'wrangler.jsonc');
+    if (await fs.access(wranglerPath).then(() => true).catch(() => false)) {
+      let wranglerContent = await fs.readFile(wranglerPath, 'utf-8');
+      const today = new Date().toISOString().split('T')[0];
+      wranglerContent = wranglerContent.replace(
+        /"compatibility_date"\s*:\s*"\d{4}-\d{2}-\d{2}"/,
+        `"compatibility_date": "${today}"`
+      );
+      await fs.writeFile(wranglerPath, wranglerContent);
+    }
+
     if (adapter === 'node') {
       console.log('Configuring for Node.js...');
 
