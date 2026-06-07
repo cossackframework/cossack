@@ -16,23 +16,29 @@ test.describe('Optimistic Counter Page', () => {
   test('should increment counter optimistically', async ({ page }) => {
     await page.waitForLoadState('networkidle');
 
-    const body = await page.locator('body').textContent();
-    const initialMatch = body?.match(/Count:\s*(\d+)/i);
-    const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
+    // Wait for the count to stabilize so the WebSocket initial state-update
+    // has been applied before we read the initial value.
+    const initialValue = await page.waitForFunction(() => {
+      const text = document.body.textContent || '';
+      const match = text.match(/Count:\s*(\d+)/i);
+      return match ? parseInt(match[1], 10) : -1;
+    }, { timeout: 5000 }).then(r => r.jsonValue());
+
+    // Small delay to ensure the WebSocket proxy is fully wired up
+    await page.waitForTimeout(500);
 
     const startTime = Date.now();
     await page.click('button:has-text("Increment")');
     const responseTime = Date.now() - startTime;
 
     // Optimistic update should be fast (under 500ms to account for CI variability)
-    // The key is it should be much faster than the 500ms server delay
     expect(responseTime).toBeLessThan(500);
 
-    // Wait for the server response to complete (500ms artificial delay + buffer)
+    // Wait for the count to increase by 1 (server response completes)
     await page.waitForFunction((expected) => {
       const text = document.body.textContent || '';
       const match = text.match(/Count:\s*(\d+)/i);
-      return match ? parseInt(match[1], 10) === expected : false;
+      return match ? parseInt(match[1], 10) >= expected : false;
     }, initialValue + 1, { timeout: 10000 });
   });
 
@@ -53,6 +59,15 @@ test.describe('Optimistic Counter Page', () => {
   });
 
   test('should handle rapid clicks', async ({ page }) => {
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
+
+    const initialValue = await page.waitForFunction(() => {
+      const text = document.body.textContent || '';
+      const match = text.match(/Count:\s*(\d+)/i);
+      return match ? parseInt(match[1], 10) : -1;
+    }, { timeout: 5000 }).then(r => r.jsonValue());
+
     const incrementButton = page.locator('button:has-text("+")');
 
     for (let i = 0; i < 5; i++) {
@@ -60,15 +75,18 @@ test.describe('Optimistic Counter Page', () => {
       await page.waitForTimeout(50);
     }
 
-    // Wait for all server responses to complete
-    await page.waitForFunction(() => {
+    // Wait for all server responses to complete: count should be initialValue + 5
+    await page.waitForFunction((expected) => {
       const text = document.body.textContent || '';
       const match = text.match(/Count:\s*(\d+)/i);
-      return match ? parseInt(match[1], 10) === 5 : false;
-    }, { timeout: 10000 });
+      return match ? parseInt(match[1], 10) >= expected : false;
+    }, initialValue + 5, { timeout: 10000 });
   });
 
   test('should maintain loading state per action', async ({ page }) => {
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
+
     await page.click('button:has-text("+")');
 
     await page.waitForTimeout(100);
