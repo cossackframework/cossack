@@ -9,7 +9,7 @@ test.describe('Optimistic Counter Page', () => {
     await page.waitForLoadState('networkidle');
 
     const body = await page.locator('body').textContent();
-    // The page shows "Count: 0 (+0 doubled)" or similar
+    // The page shows "Count: 0" or similar
     expect(body).toContain('Count:');
   });
 
@@ -60,7 +60,12 @@ test.describe('Optimistic Counter Page', () => {
       await page.waitForTimeout(50);
     }
 
-    await page.waitForTimeout(500);
+    // Wait for all server responses to complete
+    await page.waitForFunction(() => {
+      const text = document.body.textContent || '';
+      const match = text.match(/Count:\s*(\d+)/i);
+      return match ? parseInt(match[1], 10) === 5 : false;
+    }, { timeout: 10000 });
   });
 
   test('should maintain loading state per action', async ({ page }) => {

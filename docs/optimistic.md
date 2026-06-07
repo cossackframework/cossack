@@ -7,8 +7,8 @@ For interactions where latency matters (like "liking" a post or incrementing a c
 2.  You decorate it with `@Optimistic('serverActionName')`.
 3.  When the client calls `this.serverActionName()`, the framework *immediately* runs the optimistic handler.
 4.  The request is sent to the server.
-5.  If the server responds with a state update (Scenario 1), the "true" server state overwrites your optimistic guess.
-6.  If the server throws an error (Scenario 2), the state remains (for now) unless you handle the rollback or re-fetch manually.
+5.  The framework automatically detects which `@State` properties the optimistic handler modifies and **buffers** incoming server state updates for those properties while the action is pending.
+6.  When the action completes, the buffered server state is applied — no UI flapping.
 
 **Example:**
 
@@ -27,25 +27,28 @@ class Counter extends Cossack {
     }
 
     // This runs immediately on the client when this.increment() is called
-    @Optimistic('increment') 
+    @Optimistic('increment')
     applyOptimisticIncrement() {
-        this.count++; 
+        this.count++;
     }
 }
 ```
 
-## Advanced: Stable Optimistic UI Pattern
+The simple pattern above is automatically stable even under rapid clicks — no extra boilerplate needed. The framework detects that `count` is modified by the optimistic handler and buffers the server's `count` updates until the entire chain of pending actions completes.
 
-When users perform actions rapidly (e.g., clicking a button multiple times), naive optimistic updates can cause "flapping" in the UI. This happens because the server processes requests sequentially, sending state updates in between your local optimistic changes.
+## How Auto-Stable Works
 
-**The Problem (Flapping):**
-1. User clicks twice. Local count: 0 -> 1 -> 2.
-2. Server processes 1st click. Returns count: 1. UI resets to 1.
-3. Server processes 2nd click. Returns count: 2. UI jumps to 2.
-   Result: 0 -> 1 -> 2 -> 1 -> 2.
+When you write an optimistic handler that modifies `@State` properties directly:
 
-**The Solution:**
-Use `this.loading[methodName]` (which is a counter of pending requests) combined with a separate `@ClientState` for the optimistic value and a `@Computed` property for the display value.
+1. **Auto-detect**: Before running the optimistic handler, the framework snapshots all `@State` values. After the handler runs, it diffs to find which keys changed.
+2. **Buffer**: While the action is pending, any server state updates for those locked keys are buffered instead of applied immediately.
+3. **Apply**: When the action chain completes (all pending requests for that action finish), the final buffered server state is applied in one step.
+
+This means rapid clicks produce a smooth progression: `0 → 1 → 2 → 3 → 4 → 5` instead of flapping like `0 → 1 → 2 → 1 → 2 → 3 → 2 → 3`.
+
+## Advanced: Separate Optimistic State
+
+In some cases you may want full manual control over the optimistic display — for example, showing a different value while pending than what the server will return. In that case, use `@ClientState` for the display value and a `@Computed` property:
 
 ```typescript
 @Page({ transport: 'durable-object' })
@@ -55,11 +58,10 @@ export class OptimisticCounter extends Cossack {
 
     @Computed()
     get displayCount() {
-        // If we have pending requests, show our local guess.
-        // Otherwise, show the authoritative server state.
         return (this.loading['increment'] > 0) ? this.optCount : this.count;
     }
 
+    @Server()
     async increment() {
         await new Promise(r => setTimeout(r, 500));
         this.count++;
@@ -67,7 +69,6 @@ export class OptimisticCounter extends Cossack {
 
     @Optimistic('increment')
     applyOptimistic() {
-        // If starting a new chain of requests, sync with server state first
         if (!this.loading['increment']) {
             this.optCount = this.count;
         }
