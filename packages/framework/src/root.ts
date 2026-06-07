@@ -2,6 +2,11 @@ import { HeadTag } from '@cossackframework/core';
 import { escapeHtml } from '@cossackframework/renderer';
 import { minifyHtml } from '@cossackframework/renderer/server';
 
+export interface TemplateHelpers {
+    cossackScripts: () => string;
+    cossackBody: () => string;
+}
+
 type RenderRootProps = {
     body: string;
     initialState?: Record<string, any>;
@@ -9,6 +14,7 @@ type RenderRootProps = {
     headTags?: HeadTag[];
     inlineCss?: string;
     modulePreloads?: string[];
+    htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
 }
 
 const renderTag = (tag: HeadTag) => {
@@ -65,22 +71,37 @@ export const renderRoot = (props: RenderRootProps) => {
             : `<link rel="stylesheet" href="${css}">`;
     }
 
-    const raw = `
+    const modulePreloadHtml = (props.modulePreloads || [])
+        .map(href => `<link rel="modulepreload" href="${href}">`)
+        .join('\n');
+
+    const cossackScripts = () =>
+        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n<script type="module" src="${clientScript}"></script>`;
+
+    const cossackBody = () => `<div id="root">${props.body}</div>`;
+
+    let raw: string;
+
+    if (typeof props.htmlTemplate === 'function') {
+        raw = props.htmlTemplate({ cossackScripts, cossackBody });
+    } else if (typeof props.htmlTemplate === 'string') {
+        raw = props.htmlTemplate
+            .replace('{{ cossackScripts }}', cossackScripts())
+            .replace('{{ cossackBody }}', cossackBody());
+    } else {
+        raw = `
         <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="utf-8">
-                ${headTagsHtml}
-                ${cssHtml}
-                ${initialStateScript}
-                ${(props.modulePreloads || []).map(href => `<link rel="modulepreload" href="${href}">`).join('\n                ')}
-                <script type="module" src="${clientScript}"></script>
+                ${cossackScripts()}
             </head>
             <body>
-                <div id="root">${props.body}</div>
+                ${cossackBody()}
             </body>
         </html>
     `;
+    }
 
     if (import.meta.env.PROD) {
         return minifyHtml(raw);

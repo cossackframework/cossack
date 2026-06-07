@@ -22,7 +22,7 @@
 - [Backend Context](/docs/context.md)
 - [API Routes](/docs/api-routes.md)
 - [Images](/docs/images.md)
-- [Link](/docs/link.md)
+- [Links](/docs/links.md)
 
 ## Security
 - [Authentication](/docs/authentication.md)

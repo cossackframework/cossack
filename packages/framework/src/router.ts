@@ -1,7 +1,7 @@
 // src/router.ts
 import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
-import { renderRoot } from './root';
+import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
 import { createInstance } from '@cossackframework/core';
 import { App } from './App';
@@ -232,6 +232,7 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
 export interface CreateAppOptions {
   authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
   AppComponent?: new (...args: any[]) => any;
+  htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -393,7 +394,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
                 c.header('Content-Type', 'text/html');
                 const modulePreloads = getModulePreloads(manifest, path);
-                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags, inlineCss, modulePreloads }));
+                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags, inlineCss, modulePreloads, htmlTemplate: options.htmlTemplate }));
             } catch (err) {
                 console.error('[Cossack SSR Error]:', err);
                 const errorPage = findNearestSpecialPage(path, 'error');
