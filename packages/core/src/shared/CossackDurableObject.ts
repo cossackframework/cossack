@@ -116,6 +116,16 @@ export abstract class CossackDurableObject {
             return new Response('pathname query parameter is required for WebSocket connection', { status: 400 });
         }
 
+        // For stateless DOs, discard the in-memory component when the DO is idle
+        // (no other clients connected). This prevents stale in-memory state from
+        // leaking into a new session. Cloudflare keeps idle DOs in memory for
+        // several seconds after the last request, so the old componentInstance
+        // would otherwise persist and serve mutated state to new clients.
+        if (this.componentInstance && !this.runtime?.stateful && this.state.getWebSockets().length === 0) {
+            this.componentInstance = undefined;
+            this.runtime = undefined;
+        }
+
         if (!this.componentInstance) {
             const componentInstance = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
             if (!componentInstance) {

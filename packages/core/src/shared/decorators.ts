@@ -8,7 +8,7 @@ import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, setValidationRules } from './validation';
 
 export type Middleware = MiddlewareHandler;
-export type CossackTransport = 'durable-object' | 'websocket' | 'http';
+export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
 
 export interface PageOptions {
   middlewares?: Middleware[];

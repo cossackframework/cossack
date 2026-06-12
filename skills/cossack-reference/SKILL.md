@@ -36,7 +36,7 @@ See `references/decorators.md` for the full API table.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `transport` | `'http' \| 'durable-object' \| 'websocket'` | `'http'` | Transport mechanism for server communication |
+| `transport` | `'http' \| 'durable-object' \| 'websocket' \| 'sse'` | `'http'` | Transport mechanism for server communication |
 | `stateful` | `boolean` | `false` | Persist state in DO storage (only with `durable-object` transport) |
 | `middlewares` | `MiddlewareHandler[]` | `[]` | Hono middleware handlers for this page's route |
 | `channels` | `string[]` | `['global']` | State synchronization channels |

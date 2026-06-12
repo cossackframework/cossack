@@ -26,6 +26,7 @@ Ask or infer the transport mode:
 | `http` (default) | Standard request/response pages. No real-time sync. |
 | `durable-object` | Real-time pages with WebSocket state sync. Stateless by default — state is ephemeral. Add `stateful: true` to persist state in DO storage. |
 | `websocket` | WebSocket-based without Durable Object persistence. |
+| `sse` | Real-time server push via Server-Sent Events without Durable Objects. Actions via HTTP POST, state updates via SSE stream. Multi-tab sync. |
 
 If the page needs real-time collaboration or live state sync across users, use `durable-object`. Otherwise, use `http`.
 

@@ -21,7 +21,7 @@ The `@Page` decorator accepts an optional configuration object with the followin
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
-| `transport` | `'durable-object' \| 'http' \| 'websocket'` | The transport mechanism for server communication. Default is `'http'`. |
+| `transport` | `'durable-object' \| 'http' \| 'websocket' \| 'sse'` | The transport mechanism for server communication. Default is `'http'`. |
 | `middlewares` | `MiddlewareHandler[]` | An array of Hono middleware handlers to apply to this page's route. |
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
@@ -61,3 +61,10 @@ Uses Cloudflare Durable Objects as a WebSocket hub. By default, the DO is **stat
 
 ### `websocket`
 Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.
+
+### `sse`
+Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. Works on plain Workers — no DO binding required. Multi-tab sync is supported via SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
+
+```typescript
+@Page({ transport: 'sse' })
+```
