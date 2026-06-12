@@ -84,6 +84,8 @@ export interface SerializedComponentState {
     routePath?: string;
     /** Transport mode for this page (set by router) */
     transport?: string;
+    /** Scope key for SSE/DO transport (computed once during SSR) */
+    scopeKey?: string;
 }
 
 /**
@@ -605,6 +607,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const componentRouteId = isAppComponent
             ? initialState?.appRouteId
             : initialState?.componentRouteId;
+        const scopeKey = initialState?.scopeKey;
 
         if (!componentRouteId) return;
 
@@ -629,6 +632,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             action: methodName,
                             state,
                             payload: args,
+                            scopeKey,
                         }),
                     });
 
@@ -1165,14 +1169,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private connectSSE() {
         const initialState = this.getInitialStateFromWindow();
         const componentRouteId = initialState?.componentRouteId;
-        const pathname = window.location.pathname;
+        const scopeKey = initialState?.scopeKey;
 
         if (!componentRouteId) {
             console.error('[Cossack] Cannot connect SSE: componentRouteId not found in initial state.');
             return;
         }
 
-        const params = new URLSearchParams({ pathname });
+        if (!scopeKey) {
+            console.error('[Cossack] Cannot connect SSE: scopeKey not found in initial state.');
+            return;
+        }
+
+        const params = new URLSearchParams({ scopeKey });
         const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
         this._sseConnection = es;
 
@@ -1273,6 +1282,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
 
+        const scopeKey = initialState?.scopeKey;
         const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
         const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
 
@@ -1444,6 +1454,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                     state: self.getPublicState(),
                                     payload: processedArgs,
                                     _cossack_stream: true,
+                                    scopeKey,
                                 }),
                             });
 
@@ -1497,6 +1508,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 state: self.getPublicState(),
                                 payload: processedArgs,
                                 _cossack_stream: true,
+                                scopeKey,
                             }),
                         });
 
@@ -1805,7 +1817,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 target: this._id,
                                 action: name,
                                 state: this.getPublicState(),
-                                payload: processedArgs, // Note: We use processedArgs for JSON RPC
+                                payload: processedArgs,
+                                scopeKey,
                             }),
                         });
 

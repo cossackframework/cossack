@@ -1,5 +1,5 @@
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
 
 /** Active async generator being iterated by the SSE endpoint. */
@@ -22,11 +22,11 @@ interface SseStoreEntry {
     stateVersion: number;
 }
 
-/** In-memory state store for SSE transport pages. */
+/** In-memory state store for SSE transport pages. Keyed by componentRouteId:scopeKey. */
 const sseStateStore = new Map<string, SseStoreEntry>();
 
-function sseStoreKey(componentRouteId: string, pathname: string): string {
-    return `${componentRouteId}:${pathname}`;
+function sseStoreKey(componentRouteId: string, scopeKey: string): string {
+    return `${componentRouteId}:${scopeKey}`;
 }
 
 export interface RouterContext {
@@ -38,20 +38,34 @@ export interface RouterContext {
 }
 
 /**
+ * Evaluate the scope function from PageOptions, or return the default SSE scope.
+ * Default: per-user (`user:${user?.id || 'anonymous'}`).
+ */
+export async function resolveSseScopeKey(
+    c: Context,
+    pageOptions: PageOptions | undefined,
+): Promise<string> {
+    if (pageOptions?.scope) {
+        return pageOptions.scope(c);
+    }
+    const user = c.get('user');
+    return `user:${user?.id || 'anonymous'}`;
+}
+
+/**
  * Register or reset an SSE store entry during SSR.
- * The first tab creates the entry; subsequent SSR visits (refreshes) replace
- * the component instance with a fresh one so that state is re-initialized
- * via init() instead of reusing stale in-memory state.
+ * The fresh component instance replaces any existing entry so that state is
+ * re-initialized via init() instead of reusing stale in-memory state.
  */
 export function registerSseStoreEntry(
     ctx: RouterContext,
     path: string,
-    pathname: string,
+    scopeKey: string,
     pageInstance: any,
 ): void {
     const componentRouteId = ctx.routePathToIdMap.get(path);
     if (componentRouteId) {
-        const storeKey = sseStoreKey(componentRouteId, pathname);
+        const storeKey = sseStoreKey(componentRouteId, scopeKey);
         const runtime = new SseRuntime(pageInstance);
         sseStateStore.set(storeKey, {
             componentInstance: pageInstance,
@@ -66,12 +80,13 @@ export function registerSseStoreEntry(
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
         const { componentRouteId } = c.req.param();
-        const pathname = c.req.query('pathname') || '/';
+        const scopeKey = c.req.query('scopeKey');
+        if (!scopeKey) return new Response('scopeKey query parameter is required', { status: 400 });
         const componentPath = ctx.routeIdMap.get(componentRouteId);
         if (!componentPath) return new Response('Invalid component ID', { status: 400 });
 
         // Look up or create SSE state store entry
-        const storeKey = sseStoreKey(componentRouteId, pathname);
+        const storeKey = sseStoreKey(componentRouteId, scopeKey);
         let entry = sseStateStore.get(storeKey);
 
         if (!entry) {
@@ -91,7 +106,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
             sseStateStore.set(storeKey, entry);
         }
 
-        const { componentInstance, runtime } = entry;
+        const { componentInstance } = entry;
 
         // Use TransformStream — the writable end accepts SSE frames,
         // the readable end is returned as the HTTP response body.
@@ -183,9 +198,13 @@ export function handleSseEndpoint(ctx: RouterContext) {
     };
 }
 
-/** Handle SSE-specific logic in the /crpc handler — streaming detection and state sync. */
+/**
+ * Handle SSE-specific logic in the /crpc handler — streaming detection and state sync.
+ * Uses the pre-computed scopeKey for targeted store entry lookup.
+ */
 export function handleSseCrpc(
     componentRouteId: string,
+    scopeKey: string,
     actionResult: any,
     responseData: Record<string, any>,
     targetInstance: any,
@@ -194,33 +213,28 @@ export function handleSseCrpc(
         return obj != null && typeof obj[Symbol.asyncIterator] === 'function';
     }
 
+    const storeKey = sseStoreKey(componentRouteId, scopeKey);
+
     // If the action returned an async iterable, set up streaming
     if (isAsyncIterable(actionResult)) {
         const streamId = `stream_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const entry = sseStateStore.get(storeKey);
 
-        // Signal SSE clients that state changed so far (e.g. isStreaming = true)
-        for (const [key, sseEntry] of sseStateStore) {
-            if (key.startsWith(componentRouteId + ':')) {
-                for (const k in responseData) {
-                    sseEntry.componentInstance[k] = responseData[k];
-                }
-                sseEntry.stateVersion++;
+        if (entry) {
+            // Signal SSE client that state changed so far (e.g. isStreaming = true)
+            for (const k in responseData) {
+                entry.componentInstance[k] = responseData[k];
             }
-        }
+            entry.stateVersion++;
 
-        // Register the generator on the SSE store entry.
-        // The SSE endpoint's interval will pull values from it.
-        for (const [key, sseEntry] of sseStateStore) {
-            if (key.startsWith(componentRouteId + ':')) {
-                sseEntry.pendingGenerator = {
-                    iterator: actionResult[Symbol.asyncIterator](),
-                    streamId,
-                    done: false,
-                    sourceInstance: targetInstance,
-                    pulling: false,
-                };
-                break;
-            }
+            // Register the generator on the SSE store entry.
+            entry.pendingGenerator = {
+                iterator: actionResult[Symbol.asyncIterator](),
+                streamId,
+                done: false,
+                sourceInstance: targetInstance,
+                pulling: false,
+            };
         }
 
         return {
@@ -233,25 +247,23 @@ export function handleSseCrpc(
     }
 
     // Non-streaming: sync SSE state
-    syncSseState(componentRouteId, responseData);
+    syncSseState(storeKey, responseData);
 
     return { handled: false };
 }
 
-/** Sync state changes to all SSE clients for a given component route. */
+/** Sync state changes to the SSE store entry identified by storeKey. */
 export function syncSseState(
-    componentRouteId: string,
+    storeKey: string,
     responseData: Record<string, any>,
 ): void {
-    for (const [key, sseEntry] of sseStateStore) {
-        if (key.startsWith(componentRouteId + ':')) {
-            // Sync state onto the SSE store entry's component instance
-            for (const k in responseData) {
-                if (k !== '_cossack_return') {
-                    sseEntry.componentInstance[k] = responseData[k];
-                }
+    const entry = sseStateStore.get(storeKey);
+    if (entry) {
+        for (const k in responseData) {
+            if (k !== '_cossack_return') {
+                entry.componentInstance[k] = responseData[k];
             }
-            sseEntry.stateVersion++;
         }
+        entry.stateVersion++;
     }
 }

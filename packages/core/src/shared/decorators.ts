@@ -1,6 +1,6 @@
 // src/shared/decorators.ts
 import 'reflect-metadata';
-import type { MiddlewareHandler } from 'hono';
+import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
@@ -18,6 +18,23 @@ export interface PageOptions {
   route?: string;
   ssg?: boolean | SsgOptions;
   stateful?: boolean;
+  /**
+   * Determines which state backend (SSE store entry or Durable Object instance)
+   * a request connects to. Receives the Hono Context and returns a scope key string.
+   *
+   * - SSE default: per-user (`user:${user?.id || 'anonymous'}`)
+   * - DO default: per-URL (current behavior, no change)
+   *
+   * @example
+   * ```typescript
+   * // Per-team
+   * @Page({ transport: 'sse', scope: (c) => `team:${c.get('user').teamId}` })
+   *
+   * // Shared broadcast
+   * @Page({ transport: 'sse', scope: () => 'shared' })
+   * ```
+   */
+  scope?: (c: Context) => string | Promise<string>;
 }
 
 export interface SsgOptions {

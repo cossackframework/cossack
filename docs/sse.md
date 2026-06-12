@@ -12,7 +12,7 @@ Decorate your page component with `@Page({ transport: 'sse' })`:
 import { Page, State, Server, Cossack } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page({ transport: 'sse' })
+@Page({ transport: 'sse' }) // Per-user by default
 export class LiveCounter extends Cossack {
     @State()
     private count: number = 0;
@@ -39,6 +39,60 @@ export class LiveCounter extends Cossack {
 4. The server processes the action, mutates state, and bumps a version counter on the shared SSE store entry.
 5. The SSE endpoint's polling loop detects the version change and pushes a `state-update` event to every connected client.
 6. Each client receives the new state and re-renders.
+
+---
+
+## Scope
+
+By default, SSE state is scoped **per-user**. Each authenticated user gets their own isolated state — user A's actions and state never leak to user B. Unauthenticated users share a single `anonymous` scope.
+
+The `scope` option controls which users share the same state. It receives the Hono `Context` (with access to the user, route params, query params, env bindings) and returns a scope key string.
+
+### Default: Per-User
+
+```typescript
+// No scope needed — each user gets isolated state
+@Page({ transport: 'sse' })
+```
+
+### Per-Team
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: (c) => `team:${c.get('user').teamId}`
+})
+```
+
+All users with the same `teamId` share the same SSE state. When any team member triggers an action, all team members see the update.
+
+### Per-Room
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: (c) => `room:${c.req.query('room') || 'lobby'}`
+})
+```
+
+### Shared (Broadcast to All Users)
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: () => 'shared'
+})
+```
+
+Every user on this page shares the same state — identical to the pre-scope behavior.
+
+### How scope works
+
+The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the `/sse` endpoint and `/crpc` handler. This ensures all three contexts use the same scope — even when scope depends on query params that aren't present in `/sse` or `/crpc` requests.
+
+1. **SSR** — evaluates `scope(c)`, registers the SSE store entry with the scoped key, includes `scopeKey` in the initial state sent to the client
+2. **`/sse` endpoint** — receives `scopeKey` as a query param from the client, looks up the store entry
+3. **`/crpc`** — receives `scopeKey` in the request body, syncs state to the correct scoped entry
 
 ---
 
@@ -183,6 +237,6 @@ The SSE connection uses the following event types:
 
 - **Server-to-client only**: SSE is a one-directional protocol. Client actions are sent via separate HTTP POST requests, not through the SSE connection itself.
 - **Plain Workers**: No Durable Object binding required. State lives in-memory within the Worker's global scope. State is **not persisted** across Worker restarts.
-- **Per-URL state**: The SSE store is keyed by `componentRouteId:pathname`. Different URLs have independent state.
+- **Per-scope state**: The SSE store is keyed by `componentRouteId:scopeKey`. Default scope is per-user. Use `scope` to customize (per-team, per-room, shared, etc.).
 - **Cold starts**: If the SSE endpoint receives a connection before SSR has registered the store entry (e.g., direct navigation), it creates a component instance on demand with `skipInit: true`.
 - **Not for Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication, persistent state, or multi-user coordination beyond simple broadcast.

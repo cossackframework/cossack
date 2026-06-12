@@ -8,7 +8,7 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { CossackElement } from '@cossackframework/renderer';
-import { handleSseEndpoint, handleSseCrpc, syncSseState, registerSseStoreEntry, type RouterContext } from './transports/sse';
+import { handleSseEndpoint, handleSseCrpc, syncSseState, registerSseStoreEntry, resolveSseScopeKey, type RouterContext } from './transports/sse';
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';
 
@@ -277,17 +277,20 @@ export function createApp(options: CreateAppOptions = {}) {
                 const hasLoadingFile = loadings[loadingFilePath] !== undefined;
                 const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
+                // Compute scopeKey once — used for SSE store, DO ID, and client initial state.
+                const scopeKey = await resolveSseScopeKey(c, pageOptions);
+
                 // For durable-object transport, query the DO for existing state before SSR
                 // Only for stateful pages — stateless DOs don't persist state
                 let doInitialState: any = undefined;
+                let doIdName: string = c.req.url; // Default: per-URL
+                if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
+                    doIdName = scopeKey;
+                }
                 if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
                     try {
                         const doBinding = c.env.COSSACK_OBJECT;
-                        // Use the full URL (path + query string) for DO ID
-                        // This ensures different states for:
-                        // - /hello/tan vs /hello/trang (dynamic routes)
-                        // - /items?page=1 vs /items?page=2 (query params)
-                        const id = doBinding.idFromName(c.req.url);
+                        const id = doBinding.idFromName(doIdName);
                         const stub = doBinding.get(id);
 
                         // Build query params for on-demand DO initialization
@@ -354,10 +357,8 @@ export function createApp(options: CreateAppOptions = {}) {
                 pageInstance._render();
 
                 // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
-                // Only the first tab creates the entry — subsequent tabs reuse it so all connections
-                // share the same state and don't overwrite each other.
                 if (pageOptions?.transport === 'sse') {
-                    registerSseStoreEntry(routerContext, path, c.req.path, pageInstance);
+                    registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
                 }
 
                 // Wrap rendering
@@ -388,8 +389,8 @@ export function createApp(options: CreateAppOptions = {}) {
                 // Also add routePath to metadata for client WebSocket connections
                 if (pageOptions?.transport === 'durable-object') {
                     const doBinding = c.env.COSSACK_OBJECT;
-                    // Use the full URL for DO ID so query params create separate DOs
-                    const doId = doBinding.idFromName(c.req.url);
+                    // Use scoped ID (from scope function) or URL-based ID (default)
+                    const doId = doBinding.idFromName(doIdName);
                     // Convert DurableObjectId to string for client-side use
                     pageInitialState.providerTargets = {
                         ...(pageInitialState.providerTargets || {}),
@@ -409,6 +410,7 @@ export function createApp(options: CreateAppOptions = {}) {
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
                     transport: pageOptions?.transport || 'http',
+                    scopeKey,
                     _app_state: appInstance.getInitialState(),
                     _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] })) // Keep file paths for layouts
                 };
@@ -435,7 +437,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
     app.post('/crpc', async (c) => {
         const body = await c.req.json();
-        const { componentRouteId, action, state, payload, target } = body;
+        const { componentRouteId, action, state, payload, target, scopeKey } = body;
         const isStreamRequest = !!body._cossack_stream;
         const user = c.get('user');
 
@@ -494,7 +496,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const responseData = targetInstance.getPublicState();
 
         // Handle SSE streaming detection and state sync
-        const sseResult = handleSseCrpc(componentRouteId, actionResult, responseData, targetInstance);
+        const sseResult = handleSseCrpc(componentRouteId, scopeKey, actionResult, responseData, targetInstance);
         if (sseResult.handled) {
             return c.json(sseResult.response);
         }

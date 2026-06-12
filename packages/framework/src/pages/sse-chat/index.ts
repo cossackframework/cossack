@@ -7,7 +7,10 @@ interface ChatMessage {
 }
 
 @Page({
-    transport: 'sse'
+    transport: 'sse',
+    scope: (c) => {
+        return `room:${c.req.query('room')}`
+    }
 })
 export class SseChat extends Cossack {
     @State()
