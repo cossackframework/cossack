@@ -8,7 +8,7 @@
 
 ## 1. High-Level Project Goal
 
-Cossack is a modern, full-stack TypeScript framework. The core goal is to enable developers to write applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client, abstracting away the complexity of client-server communication.
+Cossack is a modern, full-stack TypeScript framework. The core goal is to enable developers to write applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client. Client and server methods can call each other directly without complex `fetch()`, instead, the framework setups proxy between them.
 
 ## 2. Core Principles
 
@@ -20,24 +20,14 @@ Cossack is a modern, full-stack TypeScript framework. The core goal is to enable
 
 The project is a `pnpm` workspace.
 
--   **`@cossackframework/core`**: The essential library.
-    -   **Purpose**: Provides the `Cossack` base class, decorators (`@Page`, `@State`, `@ClientState`, `@Server`, `@Client`, `@Optimistic`), the `CossackServerRuntime` interface, and other shared utilities.
-    -   **Entrypoint**: `packages/core/src/index.ts`
-    -   **Key Detail**: This is a pure library. It contains no application-specific logic.
-
--   **`@cossackframework/renderer`**: The rendering engine.
-    -   **Purpose**: A custom, Lit-compatible rendering engine designed for Light DOM and SSR. It provides the `CossackElement` base class for components, `html` template tag, and `TemplateResult`.
-    -   **Server Entrypoint**: `packages/renderer/src/server.ts` (exports `renderToString`, `escapeHtml`).
-    -   **Client Entrypoint**: `packages/renderer/src/index.ts` (exports `render`, `CossackElement`, `html`).
-
+-   **`@cossackframework/core`**: The core library.
+-   **`@cossackframework/renderer`**: The rendering engine. Inspired by Lit.
 -   **`@cossackframework/node-adapter`**: The Node.js runtime adapter.
-    -   **Purpose**: Provides the runtime implementation for Node.js environments using `ws` for WebSockets.
-    -   **Entrypoint**: `packages/node-adapter/src/index.ts`
+-   **`@cossackframework/framework`**: The meta framework package
+-   **`@cossackframework/auth`**: Auth package
+-   **`@cossackframework/test-utils`**: Test helpers
+-   **`@cossackframework/create-cossack-app`**: `create-cossack-app` CLI.
 
--   **`@cossackframework/framework`**: The runnable application and primary example.
-    -   **Purpose**: This is the deployable Cloudflare Worker (or Node.js app). It contains the Hono router, all page components, the application-specific `AppDurableObject` (if on CF), and the client-side entrypoint.
-    -   **Worker Entrypoint**: `packages/framework/src/index.ts`
-    -   **Client Entrypoint**: `packages/framework/src/client/entry-client.ts`
 
 ## 4. Request & Interactivity Lifecycle
 
@@ -52,7 +42,7 @@ The project is a `pnpm` workspace.
 ## 5. Development Workflow
 
 1.  **Build Dependencies**: Build `core`, `renderer`, and `node-adapter` first.
-2.  **Run Application**: Use `pnpm --filter @cossackframework/framework run dev`.
+2.  **Run Application**: Use `pnpm run dev`.
 
 ## 6. Key Architectural Decisions & "Gotchas"
 
@@ -60,7 +50,8 @@ The project is a `pnpm` workspace.
 -   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation and auto-expands SEO shortcuts (`description`, `image`) into OG/Twitter tags.
 -   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
 -   **Auto-Binding**: All component methods are automatically bound to the instance during `bootstrap`. Standard class methods can be used as event handlers without manual binding or arrow functions.
--   **Lifecycle Hooks**: Components can implement `onMount()` (runs once after first client-render) and `onCleanup()` (runs before component destruction).
+-   **Lifecycle Hooks**: Components can implement `onMount()` (runs once after first client-render), `onCleanup()` (runs before component destruction), and `onNavigateComplete(pathname)` (runs on the App component after every navigation).
+-   **Navigation Events**: The framework dispatches `cossack:ready` (after navigation) and `cossack:before-navigate` (before SPA navigation) custom events on `document`.
 -   **SPA Redirects**: `this.redirect()` on the client is automatically intercepted and handled as a soft navigation.
 -   **Hierarchical Error Boundaries**: The router searches for the nearest `error/index.ts` or `404/index.ts` up the directory tree relative to the current route.
 
@@ -80,6 +71,8 @@ These decorators mark code that only runs on the client:
 - **`@Prop()`**: Semantic equivalent to `@ClientState()` for component inputs.
 - **`@Optimistic()`**: Marks an optimistic UI handler that runs immediately on the client while the server processes the action.
 - **`@Validate()`**: Adds validation rules to a property. Works with `@State` and `@ClientState`. Supports built-in validators (required, minLength, maxLength, min, max, pattern, email, url) and custom validators (sync and async).
+- **`@OnWindow(eventName, options?)`**: Listens for window events. Accepts `{ throttle?: number, debounce?: number }`.
+- **`@OnDocument(eventName, options?)`**: Listens for document events. Accepts `{ throttle?: number, debounce?: number }`.
 
 ### Shared Decorators
 - **`@Shared()`**: Marks a method as safe to run on both client and server. The full implementation is retained in both bundles. Use for pure functions, validation logic, and data transformation utilities.
@@ -89,7 +82,8 @@ These decorators mark code that only runs on the client:
 
 ### Built-in Methods (Always Kept in Client)
 The following lifecycle methods are never stripped from the client bundle:
-- `render()`, `head()`, `onMount()`, `onCleanup()`, `escapeHtml()`, `get()`, `init()`, `loadingTemplate()`
+- `render()`, `head()`, `onMount()`, `onCleanup()`, `onNavigateComplete()`, `escapeHtml()`, `get()`, `init()`, `loadingTemplate()`
+- `clientInit()` — Client-only initialization method
 - Validation methods: `getError()`, `hasError()`, `validateProperty()`, `validateAll()`, `clearErrors()`
 
 ## Security: Code Stripping
@@ -103,28 +97,6 @@ The framework includes a Vite security plugin (`cossackSecurityPlugin`) that aut
 **Method Classification:**
 - **Server-Only** (stubs in client): `@Server` decorated methods, methods without decorators
 - **Client-Safe** (full implementation): `@Client`, `@Optimistic`, `@Computed`, `@Shared`, built-in lifecycle methods
-
-**Example:**
-```typescript
-class MyPage extends Cossack {
-  @Server()
-  async queryDatabase() {
-    // This code is stripped from client bundle
-    return await db.select().from(users);
-  }
-
-  @Shared()
-  validateEmail(email: string): boolean {
-    // This runs on both client and server
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  }
-
-  @Client()
-  updateUI() {
-    // Client-only, stubbed on server
-  }
-}
-```
 
 ## Running Tests
 

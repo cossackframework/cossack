@@ -252,19 +252,24 @@ export function On(eventName: string): MethodDecorator {
   };
 }
 
-export function OnDocument(eventName: string): MethodDecorator {
+export interface EventListenerOptions {
+  throttle?: number;
+  debounce?: number;
+}
+
+export function OnDocument(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const documentEvents = Reflect.getOwnMetadata('cossack:document-events', target.constructor) || [];
-    documentEvents.push({ eventName, propertyKey });
+    documentEvents.push({ eventName, propertyKey, options });
     Reflect.defineMetadata('cossack:document-events', documentEvents, target.constructor);
     return descriptor;
   };
 }
 
-export function OnWindow(eventName: string): MethodDecorator {
+export function OnWindow(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const windowEvents = Reflect.getOwnMetadata('cossack:window-events', target.constructor) || [];
-    windowEvents.push({ eventName, propertyKey });
+    windowEvents.push({ eventName, propertyKey, options });
     Reflect.defineMetadata('cossack:window-events', windowEvents, target.constructor);
     return descriptor;
   };

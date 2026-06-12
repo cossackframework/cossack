@@ -224,6 +224,13 @@ async clientInit() {
 }
 ```
 
+In development mode, state changes are automatically logged to the browser console:
+```
+[Cossack] State change: count 0 -> 5
+[Cossack] State change suppressed (same value): theme light
+```
+This helps debug reactivity issues. These logs are stripped from production builds.
+
 ## Step 6: Verify
 
 1. Import the correct decorators from `@cossackframework/core`

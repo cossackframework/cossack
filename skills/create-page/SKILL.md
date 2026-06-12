@@ -147,6 +147,39 @@ export class ContactPage extends Cossack {
 }
 ```
 
+### With Client-Side Loading Pattern
+
+For pages that should show a loading skeleton immediately instead of waiting for server-side `init()`:
+
+```typescript
+@Page()
+export default class DataPage extends Cossack {
+    @State() data: string[] = [];
+
+    async init() {
+        // Runs on server when called via RPC
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.data = ['Item 1', 'Item 2'];
+    }
+
+    async clientInit() {
+        // Runs on client after hydration — calls init() via RPC
+        await this.init();
+    }
+
+    loadingTemplate() {
+        return html`<div class="skeleton">Loading...</div>`;
+    }
+
+    render() {
+        if (this.loading.init) {
+            return this.loadingTemplate();
+        }
+        return html`<ul>${this.data.map(item => html`<li>${item}</li>`)}</ul>`;
+    }
+}
+```
+
 ## Step 5: Verify
 
 1. Ensure the file is in the correct location under `src/pages/`

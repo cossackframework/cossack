@@ -246,6 +246,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     // Buffers server state updates for locked keys
     private _optimisticPendingState: Record<string, any> = {};
 
+    // Track observed elements per visible task for auto-refresh on navigation
+    private _visibleTaskObservers: Map<string | symbol, { observer: IntersectionObserver, observed: Set<Element> }> = new Map();
+
     private _isOptimisticLocked(key: string): boolean {
         for (const action of Object.keys(this._optimisticLockedKeys)) {
             if (this.loading[action] && this._optimisticLockedKeys[action]?.has(key)) {
@@ -841,7 +844,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit, deferMount }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean, deferMount?: boolean } = {}) {
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -957,7 +960,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
-        if (!this.isServer && !this.isMounted) {
+        if (!this.isServer && !this.isMounted && !deferMount) {
             this.isMounted = true;
             this.onMount();
 
@@ -994,7 +997,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } finally {
                     this.loading.init--;
                     if (this.loading.init <= 0) delete this.loading.init;
-                    if (!this.isServer && this.container) {
+                    if (!this.isServer) {
                         this.requestUpdate();
                     }
                 }
@@ -1492,11 +1495,37 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private setupEventListeners() {
         if (this.isServer) return;
 
-        // Helper to attach and track events
-        const attach = (target: EventTarget, eventName: string, method: Function) => {
-            const handler = method.bind(this);
-            target.addEventListener(eventName, handler);
-            this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler));
+        // Throttle helper
+        const throttle = (fn: Function, ms: number) => {
+            let lastCall = 0;
+            return (...args: any[]) => {
+                const now = Date.now();
+                if (now - lastCall >= ms) {
+                    lastCall = now;
+                    fn(...args);
+                }
+            };
+        };
+
+        // Debounce helper
+        const debounce = (fn: Function, ms: number) => {
+            let timer: ReturnType<typeof setTimeout> | null = null;
+            return (...args: any[]) => {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), ms);
+            };
+        };
+
+        // Helper to attach and track events, with optional throttle/debounce
+        const attach = (target: EventTarget, eventName: string, method: Function, options?: { throttle?: number; debounce?: number }) => {
+            let handler = method.bind(this);
+            if (options?.throttle) {
+                handler = throttle(handler, options.throttle);
+            } else if (options?.debounce) {
+                handler = debounce(handler, options.debounce);
+            }
+            target.addEventListener(eventName, handler as EventListener);
+            this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler as EventListener));
         };
 
         // 1. @On (Component/Container Events)
@@ -1513,10 +1542,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // 2. @OnDocument
         if (typeof document !== 'undefined') {
             const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
-            for (const { eventName, propertyKey } of documentEvents) {
+            for (const { eventName, propertyKey, options } of documentEvents) {
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(document, eventName, method as any);
+                    attach(document, eventName, method as any, options);
                 }
             }
         }
@@ -1524,10 +1553,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // 3. @OnWindow
         if (typeof window !== 'undefined') {
             const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
-            for (const { eventName, propertyKey } of windowEvents) {
+            for (const { eventName, propertyKey, options } of windowEvents) {
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(window, eventName, method as any);
+                    attach(window, eventName, method as any, options);
                 }
             }
         }
@@ -1575,8 +1604,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         observer.disconnect(); // Run once
                     }
                 }, { threshold: options.threshold || 0 });
-                
+
                 observer.observe(targetElement);
+
+                // Track observer and observed elements for refreshVisibleTasks()
+                const observed = new Set<Element>();
+                observed.add(targetElement);
+                this._visibleTaskObservers.set(propertyKey, { observer, observed });
             }
         }
     }
@@ -1643,6 +1677,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             this._stateContainer.setInternal(key, newValue);
                         }
 
+                        if (import.meta.env.DEV) {
+                            console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
+                        }
+
                         // Handle reactivity based on state type
                         if (isPublic) {
                             // Public state: sync to server and trigger re-render
@@ -1655,8 +1693,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             // Client-only state: just trigger re-render on client
                             if (!this.isServer && !this.isBootstrapping) {
                                 this.requestUpdate(key, oldValue);
+                            } else if (import.meta.env.DEV && this.isBootstrapping) {
+                                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
                             }
                         }
+                    } else if (import.meta.env.DEV) {
+                        console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
                     }
                 },
                 enumerable: true,
@@ -1769,7 +1811,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             'getInitialStateFromWindow', '_scheduleStateBroadcast',
             '_wrapLifecycleMethods', '_setupServerMethodProxies',
             'confirmNavigation', '_checkPreventNavigation',
-            'clientInit' // Client-only initialization method
+            'clientInit', // Client-only initialization method
+            'onNavigateComplete'
         ]);
 
         for (const name of propertyNames) {
@@ -2163,6 +2206,29 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.setupEventListeners();
     }
     public onCleanup(): void {}
+
+    public onNavigateComplete(pathname: string): void {
+        // Override in subclass. Fires after SPA navigation completes.
+        this.refreshVisibleTasks();
+    }
+
+    private refreshVisibleTasks() {
+        const visibleTasks = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
+        for (const { propertyKey, options } of visibleTasks) {
+            const observerInfo = this._visibleTaskObservers?.get(propertyKey);
+            if (!observerInfo) continue;
+            const { observer, observed } = observerInfo;
+            const selector = options.selector;
+            if (!selector || !this.container) continue;
+            const elements = Array.from(this.container.querySelectorAll(selector));
+            for (const el of elements) {
+                if (!observed.has(el as Element)) {
+                    observer.observe(el as Element);
+                    (observed as Set<Element>).add(el as Element);
+                }
+            }
+        }
+    }
 
     public static _onNavigate?: (url: string) => Promise<void>;
 
