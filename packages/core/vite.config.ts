@@ -1,3 +1,4 @@
+// @ts-expect-error - vite types require bundler module resolution
 import { defineConfig } from 'vite'
 import path from 'path'
 import dts from 'vite-plugin-dts'

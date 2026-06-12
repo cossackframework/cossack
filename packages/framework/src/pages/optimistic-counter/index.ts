@@ -4,6 +4,7 @@ import { Button } from '@/components/Button';
 
 @Page({
     transport: 'durable-object',
+    stateful: true,
 })
 export class OptimisticCounter extends Cossack {
     @State()

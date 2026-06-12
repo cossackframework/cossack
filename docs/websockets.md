@@ -6,6 +6,25 @@ Cossack's primary goal is to unify client and server state management. For real-
 
 **Note:** The patterns described here—Automatic State Synchronization and Event-Driven Re-fetch—are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
 
+## Stateless vs Stateful Durable Objects
+
+By default, `transport: 'durable-object'` creates a **stateless** DO that acts as a WebSocket hub only. State is ephemeral — it lives in-memory during the session but is not persisted to DO storage. This is ideal for applications that use a database (D1, R2, etc.) as the source of truth.
+
+To persist state in DO storage (survives reconnections and DO eviction), add `stateful: true`:
+
+```typescript
+// Stateless (default) — recommended for DB-backed apps
+@Page({ transport: 'durable-object' })
+
+// Stateful — state persists in DO storage
+@Page({ transport: 'durable-object', stateful: true })
+```
+
+### When to use `stateful: true`
+- In-memory state that needs to persist across connections (e.g., counters, shared whiteboards)
+- No external database — the DO itself is the source of truth
+- State should survive DO eviction and reactivation
+
 This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
 
 -   **`StateProvider` (The "Where"):** A State Provider determines *which* stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. However, you can create custom providers to connect to other contexts, such as a `UserSessionProvider` for state shared across all pages for a logged-in user, or a `GlobalProvider` for a singleton state shared by all users.

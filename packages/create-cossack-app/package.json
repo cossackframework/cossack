@@ -14,7 +14,8 @@
   },
   "files": [
     "bin",
-    "template"
+    "template",
+    "tsconfig.template.json"
   ],
   "publishConfig": {
     "access": "public"

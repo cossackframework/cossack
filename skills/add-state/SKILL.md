@@ -162,6 +162,8 @@ export class Dashboard extends Cossack {
 
 When `incrementFeeds` runs, only `feedCount` is broadcast to clients — not `notificationCount`.
 
+**Note:** By default, Durable Object transport is stateless — state is ephemeral. Add `stateful: true` to `@Page()` if state needs to persist in DO storage across connections and evictions.
+
 ## Step 4: Optimistic UI
 
 For instant client feedback while a server action is processing:

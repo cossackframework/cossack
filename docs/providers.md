@@ -2,7 +2,7 @@
 
 A **State Provider** is the core architectural concept in Cossack that answers the question: *"Where does my state live?"*
 
-**Note:** State Providers are a feature of the real-time transport and are only used when a component has `@Page({ transport: 'durable-object' })`.
+**Note:** State Providers are a feature of the real-time transport and are only used when a component has `@Page({ transport: 'durable-object' })`. Add `stateful: true` if the provider's state needs to persist in DO storage.
 
 It is a class that decouples your component from the underlying stateful backend (the Durable Object). Its single most important job is to provide the logic for determining **which** Durable Object a component should connect to for a specific piece of state or a server action.
 

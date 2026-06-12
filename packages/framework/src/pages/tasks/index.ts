@@ -11,6 +11,7 @@ interface Task {
 
 @Page({
     transport: 'durable-object',
+    stateful: true,
     channels: ['tasks'],
     middlewares: [loggingMiddleware],
 })

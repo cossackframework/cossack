@@ -26,6 +26,7 @@ The `@Page` decorator accepts an optional configuration object with the followin
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `route` | `string` | (Optional) Explicitly define the route. If omitted, the file-system-based route is used. |
+| `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
 
 ## Layouts and Nested Pages
 
@@ -48,7 +49,15 @@ Cossack integrates directly with Hono's middleware system. Refer to the [Middlew
 Stateless request/response mode. Good for traditional forms, APIs, or pages that don't need real-time synchronization. Server actions are called via HTTP POST.
 
 ### `durable-object`
-Uses Cloudflare Durable Objects to maintain state. State is persisted automatically and shared between all users on the same channel (if configured).
+Uses Cloudflare Durable Objects as a WebSocket hub. By default, the DO is **stateless** — it acts as a real-time message broker without persisting state to DO storage. State is ephemeral and resets when the DO is evicted. Add `stateful: true` to persist state across connections and DO evictions.
+
+```typescript
+// Stateless (default) — state is ephemeral, ideal for DB-backed apps
+@Page({ transport: 'durable-object' })
+
+// Stateful — state persists in DO storage
+@Page({ transport: 'durable-object', stateful: true })
+```
 
 ### `websocket`
 Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.

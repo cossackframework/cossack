@@ -33,6 +33,10 @@ async function main() {
     await fs.mkdir(projectDir, { recursive: true });
     await fs.cp(templateDir, projectDir, { recursive: true });
 
+    // Write tsconfig.json (kept outside template/ to avoid IDE errors in the monorepo)
+    const tsconfigSource = path.resolve(__dirname, '../tsconfig.template.json');
+    await fs.copyFile(tsconfigSource, path.join(projectDir, 'tsconfig.json'));
+
     // Update compatibility_date to today
     const wranglerPath = path.join(projectDir, 'wrangler.jsonc');
     if (await fs.access(wranglerPath).then(() => true).catch(() => false)) {

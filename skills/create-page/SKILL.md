@@ -24,10 +24,15 @@ Ask or infer the transport mode:
 | Transport | Use Case |
 |-----------|----------|
 | `http` (default) | Standard request/response pages. No real-time sync. |
-| `durable-object` | Real-time pages with WebSocket state sync. Multi-user, live updates. |
+| `durable-object` | Real-time pages with WebSocket state sync. Stateless by default — state is ephemeral. Add `stateful: true` to persist state in DO storage. |
 | `websocket` | WebSocket-based without Durable Object persistence. |
 
 If the page needs real-time collaboration or live state sync across users, use `durable-object`. Otherwise, use `http`.
+
+### Stateless vs Stateful Durable Objects
+
+- **Stateless** (default): `@Page({ transport: 'durable-object' })` — DO acts as a WebSocket hub. State is ephemeral. Ideal for DB-backed apps.
+- **Stateful**: `@Page({ transport: 'durable-object', stateful: true })` — State persists in DO storage. Use when the DO itself is the source of truth.
 
 ## Step 3: Create the File
 

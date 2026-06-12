@@ -4,10 +4,12 @@ import type { Cossack } from '../cossack';
 export class DurableObjectRuntime implements CossackServerRuntime {
     private component: Cossack;
     private state: DurableObjectState;
+    private isStateful: boolean;
 
-    constructor(component: Cossack, state: DurableObjectState) {
+    constructor(component: Cossack, state: DurableObjectState, stateful: boolean = false) {
         this.component = component;
         this.state = state;
+        this.isStateful = stateful;
         (this.component as any)._runtime = this;
     }
 
@@ -55,7 +57,12 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         }
     }
 
+    get stateful(): boolean {
+        return this.isStateful;
+    }
+
     async persistState(): Promise<void> {
+        if (!this.isStateful) return;
         const stateToPersist = this.component.getInitialState();
         await this.state.storage.put('componentState', stateToPersist);
     }

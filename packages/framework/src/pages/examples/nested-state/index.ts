@@ -3,7 +3,8 @@ import { html, component } from "@cossackframework/renderer";
 import { NestedCounter } from "@/components/NestedCounter";
 
 @Page({
-    transport: 'durable-object' // Required for stateful components
+    transport: 'durable-object',
+    stateful: true,
 })
 export class NestedStatePage extends Cossack {
     render() {

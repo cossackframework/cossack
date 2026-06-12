@@ -266,8 +266,9 @@ export function createApp(options: CreateAppOptions = {}) {
                 const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
                 // For durable-object transport, query the DO for existing state before SSR
+                // Only for stateful pages — stateless DOs don't persist state
                 let doInitialState: any = undefined;
-                if (pageOptions?.transport === 'durable-object') {
+                if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
                     try {
                         const doBinding = c.env.COSSACK_OBJECT;
                         // Use the full URL (path + query string) for DO ID

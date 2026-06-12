@@ -17,6 +17,7 @@ export interface PageOptions {
   transport?: CossackTransport;
   route?: string;
   ssg?: boolean | SsgOptions;
+  stateful?: boolean;
 }
 
 export interface SsgOptions {

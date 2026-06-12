@@ -32,6 +32,17 @@ Cossack is a full-stack TypeScript framework where components run on both server
 
 See `references/decorators.md` for the full API table.
 
+### @Page Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `transport` | `'http' \| 'durable-object' \| 'websocket'` | `'http'` | Transport mechanism for server communication |
+| `stateful` | `boolean` | `false` | Persist state in DO storage (only with `durable-object` transport) |
+| `middlewares` | `MiddlewareHandler[]` | `[]` | Hono middleware handlers for this page's route |
+| `channels` | `string[]` | `['global']` | State synchronization channels |
+| `providers` | `{ [key: string]: StateProvider }` | `{}` | Custom state providers |
+| `route` | `string` | file-based | Explicit route override |
+
 ## Template Syntax
 
 The `html` tagged template literal from `@cossackframework/renderer`:
