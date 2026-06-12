@@ -105,19 +105,7 @@ export default class PageName extends Cossack {
 
 ### With Layout Wrapping
 
-If the page should use a specific layout component:
-
-```typescript
-import { Layout } from '@/components/Layout';
-
-render(): TemplateResult {
-    return html`
-        ${component(Layout, { dir: 'ltr' }, html`
-            <h1>Page Content</h1>
-        `)}
-    `;
-}
-```
+If the page should use a specific layout component, refer to the create-layout skill
 
 ### With Dynamic Params
 

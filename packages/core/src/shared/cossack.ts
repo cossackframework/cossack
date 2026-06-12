@@ -245,6 +245,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _sseConnection?: EventSource;
 
     public loading: Record<string, number> = {};
+    private _lastHeadTags?: string;
 
     // Tracks @State keys modified by optimistic handlers per action
     private _optimisticLockedKeys: Record<string, Set<string>> = {};
@@ -458,6 +459,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         headElement.querySelectorAll('[data-cossack]').forEach(el => el.remove());
 
         for (const tag of tags) {
+            if (tag.tag === 'title') {
+                if (tag.children) document.title = tag.children;
+                continue;
+            }
             const el = document.createElement(tag.tag);
             el.setAttribute('data-cossack', '');
             if (tag.attributes) {
@@ -466,11 +471,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             }
             if (tag.children) {
-                if (tag.tag === 'title') {
-                    document.title = tag.children;
-                } else {
-                    el.textContent = tag.children;
-                }
+                el.textContent = tag.children;
             }
             headElement.appendChild(el);
         }
@@ -2550,6 +2551,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const emptyCtx: HeadContext = { title: '', description: '', image: '', meta: [], links: [], scripts: [], tags: [] };
         const value = this.head(emptyCtx);
         const tags = Cossack.mergeHead(emptyCtx, value);
+        const serialized = JSON.stringify(tags);
+        if (serialized === this._lastHeadTags) return;
+        this._lastHeadTags = serialized;
         Cossack.applyHeadTags(tags);
     }
 
