@@ -3,10 +3,10 @@ import { test, expect } from '../fixtures';
 test.describe('Validation Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/validation');
+    await page.waitForSelector('text=Validation Demo');
   });
 
   test('should display validation form', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
     // Check that the form is visible
     const form = page.locator('form');
@@ -27,9 +27,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on empty required field blur', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const emailInput = page.locator('input#email');
+const emailInput = page.locator('input#email');
 
     // Click and blur without entering anything
     await emailInput.focus();
@@ -41,9 +40,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on invalid email format', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const emailInput = page.locator('input#email');
+const emailInput = page.locator('input#email');
 
     // Enter invalid email
     await emailInput.fill('notanemail');
@@ -55,9 +53,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should clear error on valid email input', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const emailInput = page.locator('input#email');
+const emailInput = page.locator('input#email');
 
     // First enter invalid email to trigger error
     await emailInput.fill('notanemail');
@@ -76,9 +73,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on short password', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const passwordInput = page.locator('input#password');
+const passwordInput = page.locator('input#password');
 
     // Enter short password
     await passwordInput.fill('123');
@@ -90,9 +86,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on invalid username pattern', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const usernameInput = page.locator('input#username');
+const usernameInput = page.locator('input#username');
 
     // Enter username with special characters
     await usernameInput.fill('user@name');
@@ -104,9 +99,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on invalid age', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const ageInput = page.locator('input#age');
+const ageInput = page.locator('input#age');
 
     // Enter age below minimum
     await ageInput.fill('10');
@@ -118,9 +112,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should show error on invalid website URL', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const websiteInput = page.locator('input#website');
+const websiteInput = page.locator('input#website');
 
     // Enter invalid URL
     await websiteInput.fill('not-a-url');
@@ -132,9 +125,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should submit form when all fields are valid', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    // Fill in all valid data (without optional discount code)
+// Fill in all valid data (without optional discount code)
     await page.locator('input#email').fill('test@example.com');
     await page.locator('input#password').fill('password123');
     await page.locator('input#username').fill('testuser');
@@ -154,9 +146,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should not submit form with validation errors', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    // Leave fields empty and try to submit
+// Leave fields empty and try to submit
     await page.locator('button[type="submit"]').click();
 
     await page.waitForTimeout(500);
@@ -167,9 +158,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should validate on input event', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const emailInput = page.locator('input#email');
+const emailInput = page.locator('input#email');
 
     // Enter invalid email (should trigger validation on input)
     await emailInput.fill('notanemail');
@@ -183,9 +173,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should validate discount code with customAsync (server call)', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const discountInput = page.locator('input#discountCode');
+const discountInput = page.locator('input#discountCode');
 
     // Enter an invalid discount code
     await discountInput.fill('INVALID');
@@ -200,9 +189,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should accept valid discount code with customAsync', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const discountInput = page.locator('input#discountCode');
+const discountInput = page.locator('input#discountCode');
 
     // Enter a valid discount code
     await discountInput.fill('SAVE10');
@@ -217,9 +205,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should accept different valid discount codes', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const discountInput = page.locator('input#discountCode');
+const discountInput = page.locator('input#discountCode');
     const errorMessage = page.locator('text=Invalid discount code');
 
     // Test SAVE20
@@ -242,9 +229,8 @@ test.describe('Validation Page', () => {
   });
 
   test('should allow empty optional discount code', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
 
-    const discountInput = page.locator('input#discountCode');
+const discountInput = page.locator('input#discountCode');
 
     // Leave empty (field is not required)
     await discountInput.fill('');
@@ -259,7 +245,7 @@ test.describe('Validation Page', () => {
   });
 
   test('should submit form with valid discount code', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await page.waitForSelector('text=Validation Demo');
 
     // Fill in all valid data including discount code
     await page.locator('input#email').fill('test@example.com');
@@ -269,17 +255,15 @@ test.describe('Validation Page', () => {
     await page.locator('input#website').fill('https://example.com');
     await page.locator('input#discountCode').fill('SAVE10');
 
-    // Submit the form directly
+    // Blur the discount code field to trigger its async server validation,
+    // then wait for it to complete before submitting.
+    await page.locator('input#discountCode').blur();
+    await expect(page.locator('text=Invalid discount code')).not.toBeVisible({ timeout: 5000 });
+
     await page.locator('button[type="submit"]').click();
 
-    // Wait for form submission and async validation
-    await page.waitForTimeout(1000);
+    await expect(page.locator('text=Form submitted successfully!')).toBeVisible({ timeout: 10000 });
 
-    // Should show success message with discount code
-    const successMessage = page.locator('text=Form submitted successfully!');
-    await expect(successMessage).toBeVisible();
-
-    // Verify discount code appears in submitted data
     const submittedData = page.locator('pre');
     await expect(submittedData).toContainText('SAVE10');
   });
