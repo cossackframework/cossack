@@ -1,12 +1,15 @@
 import { test, expect } from '../fixtures';
 
 test.describe('SSE Chat Page', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/sse-chat');
-  });
+  // Each test navigates to its own unique room to avoid SSE state leaking
+  // between tests or from previous runs. SSE state persists server-side per
+  // scope key (room), so shared rooms cause cross-test interference.
+  let roomCounter = 0;
+  const nextRoom = () => `e2e-chat-${Date.now()}-${++roomCounter}`;
 
   test('should render chat UI', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await page.goto(`/sse-chat?room=${nextRoom()}`);
+    await page.waitForSelector('.sse-chat h1');
 
     await expect(page.locator('h1')).toHaveText('SSE Chat');
     await expect(page.locator('input[type="text"]')).toBeVisible();
@@ -14,19 +17,21 @@ test.describe('SSE Chat Page', () => {
   });
 
   test('should send a message and show user bubble', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await page.goto(`/sse-chat?room=${nextRoom()}`);
+    await page.waitForSelector('.sse-chat h1');
 
     await page.fill('input[type="text"]', 'Hello SSE!');
     await page.click('button[type="submit"]');
 
-    // User message should appear immediately
-    await expect(page.locator('.msg.user .bubble')).toHaveText('Hello SSE!');
+    // User message should appear
+    await expect(page.locator('.msg.user .bubble').last()).toContainText('Hello SSE!');
     // Input should be cleared
     await expect(page.locator('input[type="text"]')).toHaveValue('');
   });
 
   test('should stream bot response via SSE', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await page.goto(`/sse-chat?room=${nextRoom()}`);
+    await page.waitForSelector('.sse-chat h1');
 
     await page.fill('input[type="text"]', 'Hello');
     await page.click('button[type="submit"]');
@@ -34,7 +39,7 @@ test.describe('SSE Chat Page', () => {
     // Streaming indicator should appear (blinking cursor)
     await expect(page.locator('.msg.assistant.streaming')).toBeVisible({ timeout: 5000 });
 
-    // Wait for streaming to complete (5 sentences × 1s + margin)
+    // Wait for streaming to complete (5 sentences × 200ms + margin)
     await expect(page.locator('.msg.assistant.streaming')).toBeHidden({ timeout: 15000 });
 
     // Final assistant message should be visible as a complete bubble
@@ -47,7 +52,8 @@ test.describe('SSE Chat Page', () => {
   });
 
   test('should disable input while streaming', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await page.goto(`/sse-chat?room=${nextRoom()}`);
+    await page.waitForSelector('.sse-chat h1');
 
     await page.fill('input[type="text"]', 'Hello');
     await page.click('button[type="submit"]');

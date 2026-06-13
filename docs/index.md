@@ -6,7 +6,6 @@
 - [Installation](/docs/installation.md)
 - [Project Structure](/docs/project-structure.md)
 - [Routing](/docs/routing.md)
-- [API Routes](/docs/api-routes.md)
 - [Pages](/docs/pages.md)
 - [Markdown Pages](/docs/mdx.md)
 - [Header](/docs/header.md)
@@ -35,6 +34,7 @@
 - [Sitemap](/docs/sitemap.md)
 - [Static Site Generation](/docs/static-site-generation.md)
 - [Websockets](/docs/websockets.md)
+- [Server-Sent Events](/docs/sse.md)
 - [Storage](/docs/storage.md)
 - [Prevent Navigation](/docs/prevent-navigation.md)
 - [Errors Handling](/docs/errors-handling.md)
@@ -42,6 +42,7 @@
 - [Snippets](/docs/vscode-snippets.md)
 - [Adapters](/docs/adapters.md)
 - [Deployment](/docs/deployment.md)
+- [Framework Context](/docs/framework-context.md)
 - [Helpers](/docs/helpers.md)
 
 ## Scaling

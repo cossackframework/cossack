@@ -27,6 +27,51 @@ The `@Page` decorator accepts an optional configuration object with the followin
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `route` | `string` | (Optional) Explicitly define the route. If omitted, the file-system-based route is used. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
+| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry or DO instance) a request connects to. Default is per-user for SSE, per-URL for DO. |
+
+## Scope
+
+The `scope` option controls which state backend (SSE store entry or Durable Object instance) a request connects to. It receives the Hono `Context` (with access to the user, route params, query params, and env bindings) and returns a scope key string.
+
+### Default Behavior
+
+- **SSE**: Per-user (`user:${user?.id || 'anonymous'}`). Each user gets isolated state.
+- **Durable Object**: Per-URL. Each URL gets its own DO instance (unchanged from existing behavior).
+
+### Per-Team
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: (c) => `team:${c.get('user').teamId}`
+})
+```
+
+All users with the same `teamId` share the same state.
+
+### Per-Room
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: (c) => `room:${c.req.query('room') || 'lobby'}`
+})
+```
+
+### Shared (Broadcast to All Users)
+
+```typescript
+@Page({
+    transport: 'sse',
+    scope: () => 'shared'
+})
+```
+
+Every user on this page shares the same state.
+
+### How scope works
+
+The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This ensures all three contexts use the same scope — even when scope depends on query params that aren't present in SSE or `/crpc` requests.
 
 ## Layouts and Nested Pages
 
