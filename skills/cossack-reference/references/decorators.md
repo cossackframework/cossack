@@ -232,25 +232,48 @@ handleRootClick(event: MouseEvent) {
 }
 ```
 
-### `@OnDocument(eventName)`
+### `@OnDocument(eventName, options?)`
 
 Registers a method as a handler for a document-level event. Automatically cleaned up on component destruction.
+
+Options:
+- `throttle?: number` — Minimum interval (ms) between handler calls
+- `debounce?: number` — Delay (ms) before handler fires after last event
 
 ```typescript
 @OnDocument('keydown')
 handleGlobalKeydown(event: KeyboardEvent) {
     // ...
 }
+
+@OnDocument('mousemove', { throttle: 100 })
+handleMouseThrottled(event: MouseEvent) {
+    // Fires at most once every 100ms
+}
 ```
 
-### `@OnWindow(eventName)`
+### `@OnWindow(eventName, options?)`
 
 Registers a method as a handler for a window-level event. Automatically cleaned up on component destruction.
+
+Options:
+- `throttle?: number` — Minimum interval (ms) between handler calls
+- `debounce?: number` — Delay (ms) before handler fires after last event
 
 ```typescript
 @OnWindow('resize')
 handleResize() {
     this.windowSize = `${window.innerWidth}x${window.innerHeight}`;
+}
+
+@OnWindow('scroll', { throttle: 200 })
+handleScrollThrottled() {
+    // Fires at most once every 200ms
+}
+
+@OnWindow('resize', { debounce: 150 })
+handleResizeDebounced() {
+    // Fires 150ms after the user stops resizing
 }
 ```
 

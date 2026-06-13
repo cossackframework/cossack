@@ -14,7 +14,7 @@ test.describe('State Synchronization', () => {
       await page.goto('/counter-http');
 
       // Wait for the page to load
-      await page.waitForLoadState('networkidle');
+      await page.waitForSelector('text=/Count:\\s*\\d+/');
 
       const counterText = await page.locator('body').textContent();
       // The counter page shows "Count: 0" or similar
@@ -26,7 +26,7 @@ test.describe('State Synchronization', () => {
     test('should update state via HTTP call', async ({ page }) => {
       await page.goto('/counter-http');
 
-      await page.waitForLoadState('networkidle');
+      await page.waitForSelector('text=/Count:\\s*\\d+/');
 
       const initialCounter = await page.locator('body').textContent();
       const initialMatch = initialCounter?.match(/Count:\s*(\d+)/);
@@ -34,11 +34,11 @@ test.describe('State Synchronization', () => {
 
       await page.click('button:has-text("+")');
 
-      await page.waitForFunction((expected) => {
-        const body = document.body.textContent || '';
-        const match = body.match(/Count:\s*(\d+)/);
-        return match ? parseInt(match[1], 10) === expected : false;
-      }, initialValue + 1, { timeout: 10000 });
+      await expect.poll(async () => {
+        const text = await page.locator('body').textContent({ timeout: 5000 });
+        const m = text?.match(/Count:\s*(\d+)/);
+        return m ? parseInt(m[1], 10) : -1;
+      }, { timeout: 10000, interval: 200 }).toBe(initialValue + 1);
     });
   });
 
@@ -46,7 +46,7 @@ test.describe('State Synchronization', () => {
     test('should load tasks page successfully', async ({ page }) => {
       await page.goto('/tasks');
 
-      await page.waitForLoadState('networkidle');
+      await page.waitForSelector('body');
 
       // Just verify the page loads
       const body = await page.locator('body').textContent();

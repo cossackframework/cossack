@@ -1,3 +1,4 @@
+// @ts-expect-error - vite types require bundler module resolution
 import { defineConfig } from 'vite'
 import path from 'path'
 import dts from 'vite-plugin-dts'
@@ -12,6 +13,7 @@ export default defineConfig({
     tsconfigPaths(),
   ],
   build: {
+    sourcemap: true,
     lib: {
       entry: path.resolve(__dirname, 'src/index.ts'),
       name: '@cossackframework/core',

@@ -83,5 +83,63 @@ render() {
 ## How it Works
 
 1.  **File Convention**: The Vite plugin discovers `loading.ts` files and registers them. During navigation, the client router swaps the current page with the nearest matching loading component before starting the network request.
-2.  **Automatic Tracking**: The `Cossack` base class wraps `init()` and `get()` calls. It increments `this.loading.init` before the call and decrements it after.
+2.  **Automatic Tracking**: The `Cossack` base class wraps `init()`, `get()`, and `clientInit()` calls. It increments `this.loading.init` before the call and decrements it after.
 3.  **SSR Behavior**: During Server-Side Rendering, Cossack waits for `init()` to complete before sending the final HTML. Therefore, the loading state is typically only visible during client-side interactions.
+
+## Client-Only Initialization (`clientInit`)
+
+For pages that should show a loading skeleton on the initial page load (instead of waiting for server-side `init()`), define a `clientInit()` method alongside `loadingTemplate()`:
+
+```typescript
+import { Cossack, Page, State, html } from '@cossackframework/core';
+
+@Page()
+export default class DataPage extends Cossack {
+    @State() data: string[] = [];
+
+    // Runs on server during SSR and when called via RPC
+    async init() {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.data = ['Item 1', 'Item 2', 'Item 3'];
+    }
+
+    // Runs on client after hydration — calls init() via RPC
+    async clientInit() {
+        await this.init();
+    }
+
+    loadingTemplate() {
+        return html`
+            <div class="skeleton">Loading...</div>
+        `;
+    }
+
+    render() {
+        if (this.loading.init) {
+            return this.loadingTemplate();
+        }
+        return html`
+            <ul>
+                ${this.data.map(item => html`<li>${item}</li>`)}
+            </ul>
+        `;
+    }
+}
+```
+
+The flow:
+1. **SSR**: The server renders `loadingTemplate()` immediately (skipping `init()` when `loadingTemplate()` exists).
+2. **Client hydration**: The client hydrates with the loading UI visible.
+3. **`clientInit()`**: Calls `init()` via RPC, which fetches data from the server.
+4. **Data loaded**: Loading state clears and the component re-renders with the actual content.
+
+## Dev-Mode State Logging
+
+In development mode, Cossack automatically logs state changes to the browser console:
+
+```
+[Cossack] State change: count 0 -> 5
+[Cossack] State change suppressed (same value): theme light
+```
+
+This helps debug reactivity issues. These logs are stripped from production builds.

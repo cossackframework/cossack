@@ -149,3 +149,5 @@ Now, `notificationCount` can be accessed and modified consistently from any page
 ## Advanced: Realtime State with WebSockets
 
 Refer to [Websockets](/docs/websockets.md) documentation about how to make realtime application with websockets.
+
+By default, Durable Object transport is **stateless** — state is ephemeral and not persisted to DO storage. Add `stateful: true` to `@Page()` if state needs to persist across connections and DO evictions.

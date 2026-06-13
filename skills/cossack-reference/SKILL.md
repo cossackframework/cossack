@@ -32,6 +32,17 @@ Cossack is a full-stack TypeScript framework where components run on both server
 
 See `references/decorators.md` for the full API table.
 
+### @Page Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `transport` | `'http' \| 'durable-object' \| 'websocket' \| 'sse'` | `'http'` | Transport mechanism for server communication |
+| `stateful` | `boolean` | `false` | Persist state in DO storage (only with `durable-object` transport) |
+| `middlewares` | `MiddlewareHandler[]` | `[]` | Hono middleware handlers for this page's route |
+| `channels` | `string[]` | `['global']` | State synchronization channels |
+| `providers` | `{ [key: string]: StateProvider }` | `{}` | Custom state providers |
+| `route` | `string` | file-based | Explicit route override |
+
 ## Template Syntax
 
 The `html` tagged template literal from `@cossackframework/renderer`:
@@ -131,8 +142,9 @@ Available on all Cossack component instances:
 | `head(context: HeadContext): HeadValue` | No | Returns metadata for `<head>`. Optional. |
 | `init()` | `@Server()` | Server-side initialization. Runs during SSR and on demand. |
 | `get()` | No | Alternative to `init()` for data loading (returns state). |
-| `onMount()` | No | Runs once after first client render. |
+| `onMount()` | No | Runs once after first client render. Sets up `@VisibleTask` observers and event listeners. |
 | `onCleanup()` | No | Runs before component destruction. |
+| `onNavigateComplete(pathname)` | No | Runs on the App component after every navigation (initial load + SPA). Override to react to route changes. |
 | `clientInit()` | No | Runs after hydration on client. Calls init() via RPC for loading pattern. |
 | `loadingTemplate()` | No | Returns loading UI. If present, SSR skips init() and shows loading UI. |
 | `redirect(url, status?)` | No | Redirect. On client, intercepted as soft navigation. |
@@ -144,6 +156,36 @@ Available on all Cossack component instances:
 | `getError(name)` | No | Get the validation error message for a property. |
 | `hasError(name)` | No | Check if a property has a validation error. |
 | `clearErrors()` | No | Clear all validation errors. |
+
+## Navigation Events
+
+The framework dispatches custom DOM events during navigation:
+
+| Event | When | Detail |
+|-------|------|--------|
+| `cossack:ready` | After initial load and after each SPA navigation | `{ pathname, navigationType: 'initial' \| 'spa' }` |
+| `cossack:before-navigate` | Before SPA navigation begins | `{ fromPathname, toPathname }` |
+
+Listen with `document.addEventListener('cossack:ready', handler)`.
+
+## DevTools
+
+- **Click-to-Source**: Hold `Ctrl`, hover to highlight, click to open in editor.
+- **State Inspector**: Hold `Ctrl` + double-click a component to log its state in the browser console.
+- State changes are logged to console in dev mode: `[Cossack] State change: key old -> new`.
+
+## Event Decorator Options
+
+`@OnWindow` and `@OnDocument` accept an optional second argument:
+
+```typescript
+@OnWindow('resize', { debounce: 150 })
+@OnWindow('scroll', { throttle: 200 })
+@OnDocument('mousemove', { throttle: 100 })
+```
+
+- `throttle`: fires at most once every N ms
+- `debounce`: fires N ms after the last event
 
 ## Build & Dev Commands
 

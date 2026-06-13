@@ -82,6 +82,10 @@ export interface SerializedComponentState {
     appRouteId?: string;
     /** Route path at top level for easier access */
     routePath?: string;
+    /** Transport mode for this page (set by router) */
+    transport?: string;
+    /** Scope key for SSE/DO transport (computed once during SSR) */
+    scopeKey?: string;
 }
 
 /**
@@ -238,13 +242,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     @Client()
     private websockets: Map<string, WebSocket> = new Map();
+    private _sseConnection?: EventSource;
 
     public loading: Record<string, number> = {};
+    private _lastHeadTags?: string;
 
     // Tracks @State keys modified by optimistic handlers per action
     private _optimisticLockedKeys: Record<string, Set<string>> = {};
     // Buffers server state updates for locked keys
     private _optimisticPendingState: Record<string, any> = {};
+
+    // Track observed elements per visible task for auto-refresh on navigation
+    private _visibleTaskObservers: Map<string | symbol, { observer: IntersectionObserver, observed: Set<Element> }> = new Map();
 
     private _isOptimisticLocked(key: string): boolean {
         for (const action of Object.keys(this._optimisticLockedKeys)) {
@@ -450,6 +459,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         headElement.querySelectorAll('[data-cossack]').forEach(el => el.remove());
 
         for (const tag of tags) {
+            if (tag.tag === 'title') {
+                if (tag.children) document.title = tag.children;
+                continue;
+            }
             const el = document.createElement(tag.tag);
             el.setAttribute('data-cossack', '');
             if (tag.attributes) {
@@ -458,11 +471,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             }
             if (tag.children) {
-                if (tag.tag === 'title') {
-                    document.title = tag.children;
-                } else {
-                    el.textContent = tag.children;
-                }
+                el.textContent = tag.children;
             }
             headElement.appendChild(el);
         }
@@ -599,6 +608,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const componentRouteId = isAppComponent
             ? initialState?.appRouteId
             : initialState?.componentRouteId;
+        const scopeKey = initialState?.scopeKey;
 
         if (!componentRouteId) return;
 
@@ -623,6 +633,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             action: methodName,
                             state,
                             payload: args,
+                            scopeKey,
                         }),
                     });
 
@@ -841,7 +852,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean } = {}) {
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit, deferMount }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean, deferMount?: boolean } = {}) {
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -934,6 +945,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             if (pageOptions?.transport === 'http') {
                 this.proxyHttpMethods(serverMethods);
+            } else if (pageOptions?.transport === 'sse') {
+                this.connectSSE();
+                this.proxyHttpMethods(serverMethods);
             } else {
                 this.connectWebSocket();
                 this.proxyServerMethods(serverMethods);
@@ -957,7 +971,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
-        if (!this.isServer && !this.isMounted) {
+        if (!this.isServer && !this.isMounted && !deferMount) {
             this.isMounted = true;
             this.onMount();
 
@@ -994,7 +1008,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 } finally {
                     this.loading.init--;
                     if (this.loading.init <= 0) delete this.loading.init;
-                    if (!this.isServer && this.container) {
+                    if (!this.isServer) {
                         this.requestUpdate();
                     }
                 }
@@ -1153,6 +1167,107 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     @Client()
+    private connectSSE() {
+        const initialState = this.getInitialStateFromWindow();
+        const componentRouteId = initialState?.componentRouteId;
+        const scopeKey = initialState?.scopeKey;
+
+        if (!componentRouteId) {
+            console.error('[Cossack] Cannot connect SSE: componentRouteId not found in initial state.');
+            return;
+        }
+
+        if (!scopeKey) {
+            console.error('[Cossack] Cannot connect SSE: scopeKey not found in initial state.');
+            return;
+        }
+
+        const params = new URLSearchParams({ scopeKey });
+        const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
+        this._sseConnection = es;
+
+        es.addEventListener('state-update', (event) => {
+            try {
+                const stateUpdate = JSON.parse(event.data);
+                for (const key in stateUpdate) {
+                    if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                    if (this._isOptimisticLocked(key)) {
+                        this._optimisticPendingState[key] = stateUpdate[key];
+                    } else {
+                        this.setProperty(key, stateUpdate[key]);
+                    }
+                }
+                this.requestUpdate();
+            } catch (e) {
+                console.error('[Cossack] Error parsing SSE state-update:', e);
+            }
+        });
+
+        es.addEventListener('action-complete', (event) => {
+            try {
+                const { action } = JSON.parse(event.data);
+                if (this.loading[action]) {
+                    this.loading[action]--;
+                    if (this.loading[action] <= 0) {
+                        delete this.loading[action];
+                        delete this._optimisticLockedKeys[action];
+                        const lockedKeys = this._optimisticLockedKeys[action];
+                        if (lockedKeys) {
+                            for (const key of lockedKeys) {
+                                delete this._optimisticPendingState[key];
+                            }
+                        }
+                    }
+                }
+                this.requestUpdate();
+            } catch (e) {
+                console.error('[Cossack] Error parsing SSE action-complete:', e);
+            }
+        });
+
+        es.addEventListener('event', (event) => {
+            try {
+                const { eventName, payload } = JSON.parse(event.data);
+                const eventHandlers = Reflect.getMetadata('cossack:event-handlers', this.constructor) || {};
+                if (eventHandlers[eventName]) {
+                    for (const handlerMethod of eventHandlers[eventName]) {
+                        if (this.hasMethod(handlerMethod)) {
+                            const method = this.getMethod(handlerMethod);
+                            (method as any)(...payload);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('[Cossack] Error parsing SSE event:', e);
+            }
+        });
+
+        es.addEventListener('client-action', (event) => {
+            try {
+                const { action, payload } = JSON.parse(event.data);
+                const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
+                if (clientMethods[action] && this.hasMethod(action)) {
+                    const method = this.getMethod(action);
+                    (method as any)(...payload);
+                }
+            } catch (e) {
+                console.error('[Cossack] Error parsing SSE client-action:', e);
+            }
+        });
+
+        es.addEventListener('connected', () => {
+            // Connection confirmed by server
+        });
+
+        // Streaming events — passive listeners; stream proxy instances attach/detach their own
+        // listeners dynamically via addEventListener/removeEventListener on this EventSource.
+
+        es.onerror = () => {
+            // EventSource auto-reconnects per spec
+        };
+    }
+
+    @Client()
     private proxyHttpMethods(serverMethods: { name: string }[]) {
         const initialState = this.getInitialStateFromWindow();
 
@@ -1168,11 +1283,389 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
 
+        const scopeKey = initialState?.scopeKey;
         const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
         const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
 
+        // SSE transport: server methods may be async generators, so the proxy must
+        // support both `await` (thenable) and `for await...of` (async iterable).
+        const isSse = initialState?.transport === 'sse';
+
         for (const method of serverMethods) {
             const { name } = method;
+
+            if (isSse) {
+                // SSE hybrid proxy — works with both `await` and `for await...of`
+                const self = this;
+                const sseProxy = (...args: any[]) => {
+                    // === Optimistic handler (sync) ===
+                    if (optimisticHandlers[name] && self.hasMethod(optimisticHandlers[name])) {
+                        try {
+                            const optimisticMethod = self.getMethod(optimisticHandlers[name]);
+                            const snapshot: Record<string, any> = {};
+                            for (const key of stateKeys) {
+                                snapshot[key] = (self as any)[key];
+                            }
+                            (optimisticMethod as any)(...args);
+                            if (!self._optimisticLockedKeys[name]) {
+                                self._optimisticLockedKeys[name] = new Set();
+                            }
+                            for (const key of stateKeys) {
+                                if ((self as any)[key] !== snapshot[key]) {
+                                    self._optimisticLockedKeys[name].add(key);
+                                }
+                            }
+                            self.requestUpdate();
+                        } catch (e) {
+                            console.error(`Error in optimistic handler for '${name}':`, e);
+                        }
+                    }
+
+                    self.loading[name] = (self.loading[name] || 0) + 1;
+                    self.requestUpdate();
+
+                    // === Shared cleanup ===
+                    const cleanup = () => {
+                        if (self.loading[name] > 0) {
+                            self.loading[name]--;
+                        }
+                        if (!self.loading[name] || self.loading[name] <= 0) {
+                            delete self.loading[name];
+                            const lockedKeys = self._optimisticLockedKeys[name];
+                            if (lockedKeys) {
+                                for (const key of lockedKeys) delete self._optimisticPendingState[key];
+                                delete self._optimisticLockedKeys[name];
+                            }
+                        }
+                        self.requestUpdate();
+                    };
+
+                    // === File extraction (shared) ===
+                    const files = new Map<string, File>();
+                    const extractFiles = (arg: any): any => {
+                        if (arg && (
+                            arg instanceof Node ||
+                            arg instanceof Event ||
+                            arg instanceof Window ||
+                            (arg.constructor && arg.constructor.name && (
+                                arg.constructor.name.endsWith('Event') ||
+                                arg.constructor.name === 'Window' ||
+                                arg.constructor.name === 'Document'
+                            ))
+                        )) {
+                            return null;
+                        }
+                        if (arg instanceof File) {
+                            const id = `file_${files.size}`;
+                            files.set(id, arg);
+                            return { _cossack_file_id: id };
+                        }
+                        if (arg instanceof FileList) {
+                            return Array.from(arg).map(file => extractFiles(file));
+                        }
+                        if (Array.isArray(arg)) {
+                            return arg.map(item => extractFiles(item));
+                        }
+                        if (arg && typeof arg === 'object' && arg !== null) {
+                            const newObj: any = {};
+                            for (const key in arg) {
+                                newObj[key] = extractFiles(arg[key]);
+                            }
+                            return newObj;
+                        }
+                        return arg;
+                    };
+                    const processedArgs = args.map(arg => extractFiles(arg));
+
+                    // === Shared apply-state helper ===
+                    const applyState = (data: Record<string, any>) => {
+                        for (const key in data) {
+                            if (key.startsWith('_cossack_')) continue;
+                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                            if (self._isOptimisticLocked(key)) {
+                                self._optimisticPendingState[key] = data[key];
+                            } else {
+                                self.setProperty(key, data[key]);
+                            }
+                        }
+                        self.requestUpdate();
+                    };
+
+                    // === Path A: thenable (for `await proxy()`) ===
+                    // Makes the fetch, handles both streaming and non-streaming responses.
+                    const promiseOperation = async (): Promise<any> => {
+                        try {
+                            if (files.size > 0) {
+                                // File upload via XHR — no streaming
+                                const formData = new FormData();
+                                formData.append('componentRouteId', componentRouteId);
+                                if (self._id) formData.append('target', self._id);
+                                formData.append('action', name);
+                                formData.append('state', JSON.stringify(self.getPublicState()));
+                                formData.append('payload', JSON.stringify(processedArgs));
+                                files.forEach((file, id) => { formData.append(id, file); });
+
+                                return await new Promise<any>((resolve, reject) => {
+                                    const xhr = new XMLHttpRequest();
+                                    xhr.open('POST', '/upload', true);
+                                    xhr.upload.onprogress = (e) => {
+                                        if (e.lengthComputable) {
+                                            const percentComplete = (e.loaded / e.total) * 100;
+                                            const progressProp = `${name}Progress`;
+                                            const progressValue = self.getProperty(progressProp);
+                                            if (typeof progressValue === 'number') {
+                                                self.setProperty(progressProp, percentComplete);
+                                                self.requestUpdate();
+                                            }
+                                        }
+                                    };
+                                    xhr.onload = () => {
+                                        if (xhr.status >= 200 && xhr.status < 300) {
+                                            try {
+                                                const data = JSON.parse(xhr.responseText);
+                                                if (data._cossack_redirect) {
+                                                    window.location.href = data._cossack_redirect;
+                                                    resolve(undefined);
+                                                    return;
+                                                }
+                                                let returnValue;
+                                                if ('_cossack_return' in data) {
+                                                    returnValue = data._cossack_return;
+                                                    delete data._cossack_return;
+                                                }
+                                                applyState(data);
+                                                resolve(returnValue);
+                                            } catch (e) { reject(e); }
+                                        } else {
+                                            reject(new Error(`HTTP error! status: ${xhr.status}`));
+                                        }
+                                    };
+                                    xhr.onerror = () => reject(new Error('Network error'));
+                                    xhr.send(formData);
+                                });
+                            }
+
+                            const response = await fetch('/crpc', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    componentRouteId,
+                                    target: self._id,
+                                    action: name,
+                                    state: self.getPublicState(),
+                                    payload: processedArgs,
+                                    _cossack_stream: true,
+                                    scopeKey,
+                                }),
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+
+                            const data = await response.json() as Record<string, any>;
+
+                            if (data._cossack_redirect) {
+                                window.location.href = data._cossack_redirect;
+                                return;
+                            }
+
+                            // Apply initial state from response
+                            applyState(data);
+
+                            // If server started a stream, wait for it to complete
+                            if (data._cossack_stream_id) {
+                                // Streaming: don't wait for completion here.
+                                // SSE state sync drives the UI — when isStreaming flips
+                                // to false via SSE, the client recovers automatically.
+                                return undefined;
+                            }
+
+                            // Non-streaming return
+                            let returnValue;
+                            if ('_cossack_return' in data) {
+                                returnValue = data._cossack_return;
+                            }
+                            return returnValue;
+                        } catch (error) {
+                            console.error(`Error calling server action '${name}':`, error);
+                        } finally {
+                            cleanup();
+                        }
+                    };
+
+                    const promise = promiseOperation();
+
+                    // === Path B: async iterator (for `for await...of proxy()`) ===
+                    // Makes its own fetch so it can consume SSE yield events independently.
+                    const createStreamIterator = () => {
+                        const fetchPromise = fetch('/crpc', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                componentRouteId,
+                                target: self._id,
+                                action: name,
+                                state: self.getPublicState(),
+                                payload: processedArgs,
+                                _cossack_stream: true,
+                                scopeKey,
+                            }),
+                        });
+
+                        let resolveYield: ((result: IteratorResult<any>) => void) | null = null;
+                        let streamId: string | null = null;
+                        let pendingValues: any[] = [];
+                        let streamDone = false;
+                        let initComplete = false;
+
+                        const yieldHandler = (event: MessageEvent) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.streamId !== streamId) return;
+                                if (!initComplete) return;
+
+                                if (resolveYield) {
+                                    resolveYield({ value: data.value, done: false });
+                                    resolveYield = null;
+                                } else {
+                                    pendingValues.push(data.value);
+                                }
+                            } catch (e) {
+                                console.error('[Cossack] Error parsing SSE yield event:', e);
+                            }
+                        };
+
+                        const doneHandler = (event: MessageEvent) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.streamId !== streamId) return;
+                                streamDone = true;
+                                if (resolveYield) {
+                                    resolveYield({ value: undefined, done: true });
+                                    resolveYield = null;
+                                }
+                            } catch (e) {
+                                console.error('[Cossack] Error parsing SSE stream-done event:', e);
+                            }
+                        };
+
+                        const errorEventHandler = (event: MessageEvent) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.streamId !== streamId) return;
+                                streamDone = true;
+                                if (resolveYield) {
+                                    resolveYield({ value: undefined, done: true });
+                                    resolveYield = null;
+                                }
+                                console.error('[Cossack] Stream error:', data.error);
+                            } catch (e) {
+                                console.error('[Cossack] Error parsing SSE stream-error event:', e);
+                            }
+                        };
+
+                        const sse = self._sseConnection;
+                        if (sse) {
+                            sse.addEventListener('yield', yieldHandler as any);
+                            sse.addEventListener('stream-done', doneHandler as any);
+                            sse.addEventListener('stream-error', errorEventHandler as any);
+                        }
+
+                        const iterator: AsyncIterator<any> & { [Symbol.asyncIterator](): AsyncIterator<any> } = {
+                            async next() {
+                                if (!initComplete) {
+                                    const response = await fetchPromise;
+                                    if (!response.ok) {
+                                        throw new Error(`HTTP error! status: ${response.status}`);
+                                    }
+                                    const data = await response.json() as Record<string, any>;
+
+                                    if (data._cossack_redirect) {
+                                        window.location.href = data._cossack_redirect;
+                                        return { value: undefined, done: true };
+                                    }
+
+                                    streamId = data._cossack_stream_id;
+                                    initComplete = true;
+
+                                    // Apply initial state from the response
+                                    applyState(data);
+
+                                    // Check if there are already queued values
+                                    if (pendingValues.length > 0) {
+                                        return { value: pendingValues.shift(), done: false };
+                                    }
+
+                                    // Stream may already be done (fast completion)
+                                    if (streamDone) {
+                                        return { value: undefined, done: true };
+                                    }
+
+                                    // If server didn't start a stream, this is a non-streaming method
+                                    // called with for-await-of. Yield the return value once, then done.
+                                    if (!data._cossack_stream_id) {
+                                        let returnValue;
+                                        if ('_cossack_return' in data) {
+                                            returnValue = data._cossack_return;
+                                        }
+                                        if (returnValue !== undefined) {
+                                            return { value: returnValue, done: false };
+                                        }
+                                        return { value: undefined, done: true };
+                                    }
+                                }
+
+                                if (streamDone && pendingValues.length === 0) {
+                                    return { value: undefined, done: true };
+                                }
+
+                                if (pendingValues.length > 0) {
+                                    return { value: pendingValues.shift(), done: false };
+                                }
+
+                                // Wait for next SSE event
+                                return new Promise<IteratorResult<any>>((resolve) => {
+                                    resolveYield = resolve;
+                                });
+                            },
+
+                            return() {
+                                const sse = self._sseConnection;
+                                if (sse) {
+                                    sse.removeEventListener('yield', yieldHandler as any);
+                                    sse.removeEventListener('stream-done', doneHandler as any);
+                                    sse.removeEventListener('stream-error', errorEventHandler as any);
+                                }
+                                return Promise.resolve({ value: undefined, done: true });
+                            },
+
+                            [Symbol.asyncIterator]() { return this; },
+                        };
+
+                        return iterator;
+                    };
+
+                    // === Return hybrid object ===
+                    return {
+                        then(onFulfilled: any, onRejected: any) {
+                            return promise.then(onFulfilled, onRejected);
+                        },
+                        catch(onRejected: any) {
+                            return promise.catch(onRejected);
+                        },
+                        [Symbol.asyncIterator]() {
+                            return createStreamIterator();
+                        },
+                    };
+                };
+
+                this.__cossack_proxies.set(name, sseProxy);
+                this.setProperty(name, sseProxy);
+                continue;
+            }
+
+            // HTTP transport: standard async proxy
             const proxy = async (...args: any[]) => {
                 // Optimistic UI Handler
                 if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
@@ -1325,7 +1818,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 target: this._id,
                                 action: name,
                                 state: this.getPublicState(),
-                                payload: processedArgs, // Note: We use processedArgs for JSON RPC
+                                payload: processedArgs,
+                                scopeKey,
                             }),
                         });
 
@@ -1492,11 +1986,37 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private setupEventListeners() {
         if (this.isServer) return;
 
-        // Helper to attach and track events
-        const attach = (target: EventTarget, eventName: string, method: Function) => {
-            const handler = method.bind(this);
-            target.addEventListener(eventName, handler);
-            this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler));
+        // Throttle helper
+        const throttle = (fn: Function, ms: number) => {
+            let lastCall = 0;
+            return (...args: any[]) => {
+                const now = Date.now();
+                if (now - lastCall >= ms) {
+                    lastCall = now;
+                    fn(...args);
+                }
+            };
+        };
+
+        // Debounce helper
+        const debounce = (fn: Function, ms: number) => {
+            let timer: ReturnType<typeof setTimeout> | null = null;
+            return (...args: any[]) => {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), ms);
+            };
+        };
+
+        // Helper to attach and track events, with optional throttle/debounce
+        const attach = (target: EventTarget, eventName: string, method: Function, options?: { throttle?: number; debounce?: number }) => {
+            let handler = method.bind(this);
+            if (options?.throttle) {
+                handler = throttle(handler, options.throttle);
+            } else if (options?.debounce) {
+                handler = debounce(handler, options.debounce);
+            }
+            target.addEventListener(eventName, handler as EventListener);
+            this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler as EventListener));
         };
 
         // 1. @On (Component/Container Events)
@@ -1513,10 +2033,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // 2. @OnDocument
         if (typeof document !== 'undefined') {
             const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
-            for (const { eventName, propertyKey } of documentEvents) {
+            for (const { eventName, propertyKey, options } of documentEvents) {
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(document, eventName, method as any);
+                    attach(document, eventName, method as any, options);
                 }
             }
         }
@@ -1524,10 +2044,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // 3. @OnWindow
         if (typeof window !== 'undefined') {
             const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
-            for (const { eventName, propertyKey } of windowEvents) {
+            for (const { eventName, propertyKey, options } of windowEvents) {
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(window, eventName, method as any);
+                    attach(window, eventName, method as any, options);
                 }
             }
         }
@@ -1575,8 +2095,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         observer.disconnect(); // Run once
                     }
                 }, { threshold: options.threshold || 0 });
-                
+
                 observer.observe(targetElement);
+
+                // Track observer and observed elements for refreshVisibleTasks()
+                const observed = new Set<Element>();
+                observed.add(targetElement);
+                this._visibleTaskObservers.set(propertyKey, { observer, observed });
             }
         }
     }
@@ -1643,6 +2168,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             this._stateContainer.setInternal(key, newValue);
                         }
 
+                        if (import.meta.env.DEV) {
+                            console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
+                        }
+
                         // Handle reactivity based on state type
                         if (isPublic) {
                             // Public state: sync to server and trigger re-render
@@ -1655,8 +2184,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             // Client-only state: just trigger re-render on client
                             if (!this.isServer && !this.isBootstrapping) {
                                 this.requestUpdate(key, oldValue);
+                            } else if (import.meta.env.DEV && this.isBootstrapping) {
+                                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
                             }
                         }
+                    } else if (import.meta.env.DEV) {
+                        console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
                     }
                 },
                 enumerable: true,
@@ -1755,7 +2288,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
             'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
             'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
-            'initializeState', 'initializeProviders', 'connectWebSocket',
+            'initializeState', 'initializeProviders', 'connectWebSocket', 'connectSSE',
             'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
             'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
             'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
@@ -1769,7 +2302,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             'getInitialStateFromWindow', '_scheduleStateBroadcast',
             '_wrapLifecycleMethods', '_setupServerMethodProxies',
             'confirmNavigation', '_checkPreventNavigation',
-            'clientInit' // Client-only initialization method
+            'clientInit', // Client-only initialization method
+            'onNavigateComplete',
         ]);
 
         for (const name of propertyNames) {
@@ -1792,7 +2326,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
 
-        if (pageOptions?.transport === 'http') {
+        if (pageOptions?.transport === 'http' || pageOptions?.transport === 'sse') {
             this.proxyHttpMethods(serverMethods);
         } else {
             this.proxyServerMethods(serverMethods);
@@ -2017,6 +2551,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const emptyCtx: HeadContext = { title: '', description: '', image: '', meta: [], links: [], scripts: [], tags: [] };
         const value = this.head(emptyCtx);
         const tags = Cossack.mergeHead(emptyCtx, value);
+        const serialized = JSON.stringify(tags);
+        if (serialized === this._lastHeadTags) return;
+        this._lastHeadTags = serialized;
         Cossack.applyHeadTags(tags);
     }
 
@@ -2164,6 +2701,29 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
     public onCleanup(): void {}
 
+    public onNavigateComplete(pathname: string): void {
+        // Override in subclass. Fires after SPA navigation completes.
+        this.refreshVisibleTasks();
+    }
+
+    private refreshVisibleTasks() {
+        const visibleTasks = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
+        for (const { propertyKey, options } of visibleTasks) {
+            const observerInfo = this._visibleTaskObservers?.get(propertyKey);
+            if (!observerInfo) continue;
+            const { observer, observed } = observerInfo;
+            const selector = options.selector;
+            if (!selector || !this.container) continue;
+            const elements = Array.from(this.container.querySelectorAll(selector));
+            for (const el of elements) {
+                if (!observed.has(el as Element)) {
+                    observer.observe(el as Element);
+                    (observed as Set<Element>).add(el as Element);
+                }
+            }
+        }
+    }
+
     public static _onNavigate?: (url: string) => Promise<void>;
 
     @Server()
@@ -2210,7 +2770,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Client-side proxies are set up using Reflect metadata directly in _setupServerMethodProxies.
 
         const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
-        if (pageOptions?.transport === 'http') {
+        if (pageOptions?.transport === 'http' || pageOptions?.transport === 'sse') {
             return serializedState;
         }
 
@@ -2260,6 +2820,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     ws.close();
                 });
                 this.websockets.clear();
+
+                if (this._sseConnection) {
+                    this._sseConnection.close();
+                    this._sseConnection = undefined;
+                }
 
                 // Clean up event listeners
                 this.eventCleanupFns.forEach(cleanup => cleanup());

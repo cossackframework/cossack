@@ -24,10 +24,16 @@ Ask or infer the transport mode:
 | Transport | Use Case |
 |-----------|----------|
 | `http` (default) | Standard request/response pages. No real-time sync. |
-| `durable-object` | Real-time pages with WebSocket state sync. Multi-user, live updates. |
+| `durable-object` | Real-time pages with WebSocket state sync. Stateless by default — state is ephemeral. Add `stateful: true` to persist state in DO storage. |
 | `websocket` | WebSocket-based without Durable Object persistence. |
+| `sse` | Real-time server push via Server-Sent Events without Durable Objects. Actions via HTTP POST, state updates via SSE stream. Multi-tab sync. |
 
 If the page needs real-time collaboration or live state sync across users, use `durable-object`. Otherwise, use `http`.
+
+### Stateless vs Stateful Durable Objects
+
+- **Stateless** (default): `@Page({ transport: 'durable-object' })` — DO acts as a WebSocket hub. State is ephemeral. Ideal for DB-backed apps.
+- **Stateful**: `@Page({ transport: 'durable-object', stateful: true })` — State persists in DO storage. Use when the DO itself is the source of truth.
 
 ## Step 3: Create the File
 
@@ -99,19 +105,7 @@ export default class PageName extends Cossack {
 
 ### With Layout Wrapping
 
-If the page should use a specific layout component:
-
-```typescript
-import { Layout } from '@/components/Layout';
-
-render(): TemplateResult {
-    return html`
-        ${component(Layout, { dir: 'ltr' }, html`
-            <h1>Page Content</h1>
-        `)}
-    `;
-}
-```
+If the page should use a specific layout component, refer to the create-layout skill
 
 ### With Dynamic Params
 
@@ -143,6 +137,39 @@ export class ContactPage extends Cossack {
                 <button type="submit">Submit</button>
             </form>
         `;
+    }
+}
+```
+
+### With Client-Side Loading Pattern
+
+For pages that should show a loading skeleton immediately instead of waiting for server-side `init()`:
+
+```typescript
+@Page()
+export default class DataPage extends Cossack {
+    @State() data: string[] = [];
+
+    async init() {
+        // Runs on server when called via RPC
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.data = ['Item 1', 'Item 2'];
+    }
+
+    async clientInit() {
+        // Runs on client after hydration — calls init() via RPC
+        await this.init();
+    }
+
+    loadingTemplate() {
+        return html`<div class="skeleton">Loading...</div>`;
+    }
+
+    render() {
+        if (this.loading.init) {
+            return this.loadingTemplate();
+        }
+        return html`<ul>${this.data.map(item => html`<li>${item}</li>`)}</ul>`;
     }
 }
 ```

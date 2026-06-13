@@ -1,6 +1,6 @@
 // src/shared/decorators.ts
 import 'reflect-metadata';
-import type { MiddlewareHandler } from 'hono';
+import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
@@ -8,7 +8,7 @@ import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, setValidationRules } from './validation';
 
 export type Middleware = MiddlewareHandler;
-export type CossackTransport = 'durable-object' | 'websocket' | 'http';
+export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
 
 export interface PageOptions {
   middlewares?: Middleware[];
@@ -17,6 +17,24 @@ export interface PageOptions {
   transport?: CossackTransport;
   route?: string;
   ssg?: boolean | SsgOptions;
+  stateful?: boolean;
+  /**
+   * Determines which state backend (SSE store entry or Durable Object instance)
+   * a request connects to. Receives the Hono Context and returns a scope key string.
+   *
+   * - SSE default: per-user (`user:${user?.id || 'anonymous'}`)
+   * - DO default: per-URL (current behavior, no change)
+   *
+   * @example
+   * ```typescript
+   * // Per-team
+   * @Page({ transport: 'sse', scope: (c) => `team:${c.get('user').teamId}` })
+   *
+   * // Shared broadcast
+   * @Page({ transport: 'sse', scope: () => 'shared' })
+   * ```
+   */
+  scope?: (c: Context) => string | Promise<string>;
 }
 
 export interface SsgOptions {
@@ -252,19 +270,24 @@ export function On(eventName: string): MethodDecorator {
   };
 }
 
-export function OnDocument(eventName: string): MethodDecorator {
+export interface EventListenerOptions {
+  throttle?: number;
+  debounce?: number;
+}
+
+export function OnDocument(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const documentEvents = Reflect.getOwnMetadata('cossack:document-events', target.constructor) || [];
-    documentEvents.push({ eventName, propertyKey });
+    documentEvents.push({ eventName, propertyKey, options });
     Reflect.defineMetadata('cossack:document-events', documentEvents, target.constructor);
     return descriptor;
   };
 }
 
-export function OnWindow(eventName: string): MethodDecorator {
+export function OnWindow(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const windowEvents = Reflect.getOwnMetadata('cossack:window-events', target.constructor) || [];
-    windowEvents.push({ eventName, propertyKey });
+    windowEvents.push({ eventName, propertyKey, options });
     Reflect.defineMetadata('cossack:window-events', windowEvents, target.constructor);
     return descriptor;
   };

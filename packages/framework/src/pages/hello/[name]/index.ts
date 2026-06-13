@@ -14,6 +14,7 @@ const loggingMiddleware: MiddlewareHandler = async (c, next) => {
 
 @Page({
     transport: 'durable-object',
+    stateful: true,
     middlewares: [loggingMiddleware],
     channels: ['feeds', 'notifications'],
 })

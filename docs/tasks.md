@@ -35,6 +35,10 @@ The `@VisibleTask` decorator marks a method to run **only on the client** when t
 - `threshold`: A number between 0 and 1 indicating the percentage of visibility required to trigger the task (default: 0).
 - `selector`: An optional CSS selector string to target a specific element within the component. If omitted, the component's root container is observed.
 
+### Auto-Refresh on Navigation
+
+When using a `selector`, `@VisibleTask` automatically observes **new elements** that match the selector after each SPA navigation. This means if your component renders new elements matching the selector when navigating to a new page, the visible task will fire for those new elements without any extra configuration.
+
 ### Usage
 
 Use `@VisibleTask` for expensive operations that should be deferred until the user actually sees the content, such as fetching data, starting animations, or initializing heavy third-party libraries.
@@ -153,6 +157,8 @@ export default class MyComponent extends Cossack {
 
 Listens for events on the global `document` object. Useful for global keyboard shortcuts or clicking outside logic.
 
+Accepts an optional second argument with `throttle` or `debounce` options (in milliseconds):
+
 ```typescript
 import { Cossack, OnDocument } from '@cossackframework/core';
 
@@ -163,12 +169,20 @@ export default class MyComponent extends Cossack {
             this.closeModal();
         }
     }
+
+    @OnDocument('mousemove', { throttle: 100 })
+    handleMouseThrottled(event: MouseEvent) {
+        // Fires at most once every 100ms
+        console.log('Mouse at:', event.clientX, event.clientY);
+    }
 }
 ```
 
 ### @OnWindow
 
 Listens for events on the global `window` object. Useful for resize or scroll events.
+
+Accepts an optional second argument with `throttle` or `debounce` options (in milliseconds):
 
 ```typescript
 import { Cossack, OnWindow } from '@cossackframework/core';
@@ -177,6 +191,18 @@ export default class MyComponent extends Cossack {
     @OnWindow('resize')
     handleResize() {
         console.log('Window resized:', window.innerWidth, window.innerHeight);
+    }
+
+    @OnWindow('resize', { debounce: 150 })
+    handleResizeDebounced() {
+        // Fires 150ms after the user stops resizing
+        this.windowSize = `${window.innerWidth}x${window.innerHeight}`;
+    }
+
+    @OnWindow('scroll', { throttle: 200 })
+    handleScrollThrottled() {
+        // Fires at most once every 200ms during scroll
+        this.scrollY = window.scrollY;
     }
 }
 ```

@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "lib": ["ESNext", "DOM"],
     "strict": true,
     "esModuleInterop": true,
@@ -11,5 +11,8 @@
     "paths": {
       "@cossackframework/*": ["./packages/*/src"]
     }
-  }
+  },
+  "exclude": [
+    "packages/create-cossack-app/template"
+  ]
 }

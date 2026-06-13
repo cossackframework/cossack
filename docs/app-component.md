@@ -54,6 +54,56 @@ export class App extends Cossack {
     *   When the user navigates to a new page (e.g., via a link), the `App` instance **remains active**.
     *   Only the `children` (the page content) are swapped out.
     *   This preserves any state stored in the `App` component (like the `theme` variable in the example above).
+    *   After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance.
+
+## Navigation Lifecycle Hooks
+
+### `onNavigateComplete(pathname)`
+
+Called on the `App` component after every navigation completes — both the initial page load and subsequent SPA navigations. Override this method to react to route changes.
+
+```typescript
+import { Cossack, Page, State } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page()
+export class App extends Cossack {
+    @State() currentPath: string = '/';
+
+    onNavigateComplete(pathname: string) {
+        this.currentPath = pathname;
+        console.log('Navigated to:', pathname);
+    }
+
+    render() {
+        return html`
+            <nav class="${this.currentPath === '/' ? 'active' : ''}">
+                ${this.children}
+            </nav>
+        `;
+    }
+}
+```
+
+### Custom Navigation Events
+
+The framework dispatches custom DOM events during the navigation lifecycle. You can listen for these in any client-side code:
+
+- **`cossack:ready`** — Fired after the initial page load and after each SPA navigation completes.
+- **`cossack:before-navigate`** — Fired before an SPA navigation begins.
+
+```typescript
+// Listen for navigation completion
+document.addEventListener('cossack:ready', (e) => {
+    console.log('Navigation complete:', e.detail);
+    // detail: { pathname: '/about', navigationType: 'initial' | 'spa' }
+});
+
+// Listen for navigation start
+document.addEventListener('cossack:before-navigate', (e) => {
+    console.log('Navigating from', e.detail.fromPathname, 'to', e.detail.toPathname);
+});
+```
 
 ## Styling
 

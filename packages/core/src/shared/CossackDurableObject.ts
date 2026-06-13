@@ -1,6 +1,7 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
 import type { AuthenticatedUser } from './user';
+import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import 'reflect-metadata';
 
@@ -19,18 +20,22 @@ export abstract class CossackDurableObject {
     private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string, providerName: string): Promise<Cossack | undefined> {
         const componentRegistry = await this.getComponentRegistry();
         const PageComponent = componentRegistry.get(componentName);
-    
+
         if (PageComponent) {
             const componentInstance = new PageComponent();
-            
+
             const hydratedContext = {
                 req: { param: (key?: string) => key ? params?.[key] : params }
             } as any;
-    
+
             await componentInstance.bootstrap({ context: hydratedContext, env: this.env, page, providerName, skipInit: true });
-            
-            this.runtime = new DurableObjectRuntime(componentInstance, this.state);
-            
+
+            // Get stateful option from component metadata
+            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
+            const isStateful = pageOptions?.stateful === true;
+
+            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful);
+
             return componentInstance;
         } else {
             console.error(`[DO] Component '${componentName}' not found in registry.`);
@@ -43,12 +48,21 @@ export abstract class CossackDurableObject {
         if (this.componentInstance) {
             return;
         }
-        const storedData = await this.state.storage.get(['componentPath', 'url', 'params', 'componentState', 'providerName']);
-        const componentPath = storedData.get('componentPath') as string | undefined;
-        const url = storedData.get('url') as string | undefined;
-        const params = storedData.get('params') as Record<string, string> | undefined;
-        const componentState = storedData.get('componentState') as Record<string, any> | undefined;
-        const providerName = storedData.get('providerName') as string | undefined;
+
+        // Check if this DO is stateful
+        const storedConfig = await this.state.storage.get(['stateful', 'componentPath', 'url', 'params', 'componentState', 'providerName']);
+        const isStateful = storedConfig.get('stateful') === true;
+
+        if (!isStateful) {
+            // Stateless DOs don't restore from storage
+            return;
+        }
+
+        const componentPath = storedConfig.get('componentPath') as string | undefined;
+        const url = storedConfig.get('url') as string | undefined;
+        const params = storedConfig.get('params') as Record<string, string> | undefined;
+        const componentState = storedConfig.get('componentState') as Record<string, any> | undefined;
+        const providerName = storedConfig.get('providerName') as string | undefined;
 
         if (!componentPath || !url || !providerName) {
             return;
@@ -102,6 +116,16 @@ export abstract class CossackDurableObject {
             return new Response('pathname query parameter is required for WebSocket connection', { status: 400 });
         }
 
+        // For stateless DOs, discard the in-memory component when the DO is idle
+        // (no other clients connected). This prevents stale in-memory state from
+        // leaking into a new session. Cloudflare keeps idle DOs in memory for
+        // several seconds after the last request, so the old componentInstance
+        // would otherwise persist and serve mutated state to new clients.
+        if (this.componentInstance && !this.runtime?.stateful && this.state.getWebSockets().length === 0) {
+            this.componentInstance = undefined;
+            this.runtime = undefined;
+        }
+
         if (!this.componentInstance) {
             const componentInstance = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
             if (!componentInstance) {
@@ -111,10 +135,15 @@ export abstract class CossackDurableObject {
             // For a brand new DO, run init() to seed the initial state (skipInit was used in bootstrap)
             await this.componentInstance.init();
 
-            const initialState = componentInstance.getInitialState();
-            // Store the full URL for consistent DO ID generation
-            const fullUrl = `${page}${url.search}`;
-            await this.state.storage.put({ componentPath, url: fullUrl, params, componentState: initialState, providerName });
+            // Only persist to DO storage if stateful
+            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', componentInstance.constructor);
+            const isStateful = pageOptions?.stateful === true;
+
+            if (isStateful) {
+                const initialState = componentInstance.getInitialState();
+                const fullUrl = `${page}${url.search}`;
+                await this.state.storage.put({ componentPath, url: fullUrl, params, componentState: initialState, providerName, stateful: true });
+            }
         }
 
         const userId = request.headers.get('X-User-ID');
@@ -128,9 +157,13 @@ export abstract class CossackDurableObject {
         server.serializeAttachment({ channel, user });
         this.state.acceptWebSocket(server);
 
-        // Send only the public state to the client (not the entire SerializedComponentState)
-        const currentState = this.componentInstance.getInitialState();
-        server.send(JSON.stringify({ type: 'state-update', state: currentState.public }));
+        // For stateful DOs, send the current in-memory state so the client syncs immediately.
+        // For stateless DOs, skip this — the client uses SSR-provided defaults and only
+        // receives state updates from real-time broadcasts.
+        if (this.runtime?.stateful) {
+            const currentState = this.componentInstance.getInitialState();
+            server.send(JSON.stringify({ type: 'state-update', state: currentState.public }));
+        }
 
         return new Response(null, { status: 101, webSocket: client });
     }
@@ -143,6 +176,14 @@ export abstract class CossackDurableObject {
      */
     async handleStateRequest(request: Request): Promise<Response> {
         const url = new URL(request.url);
+
+        // For stateless mode, return empty state so SSR uses defaults
+        const storedStateful = await this.state.storage.get('stateful');
+        if (storedStateful !== true) {
+            return new Response(JSON.stringify({ public: {} }), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
 
         // Extract component context from query params for on-demand initialization
         const componentPath = url.searchParams.get('componentPath');

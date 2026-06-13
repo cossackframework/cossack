@@ -17,6 +17,20 @@ You are setting up real-time features for a Cossack application using Durable Ob
 
 ## Step 1: Understand the Two Patterns
 
+### Stateless vs Stateful
+
+By default, `transport: 'durable-object'` creates a **stateless** DO — it acts as a WebSocket hub without persisting state to DO storage. State is ephemeral and resets when the DO is evicted. This is ideal for DB-backed apps.
+
+Add `stateful: true` to persist state in DO storage (survives reconnections and eviction):
+
+```typescript
+// Stateless (default) — ephemeral state
+@Page({ transport: 'durable-object' })
+
+// Stateful — state persists in DO storage
+@Page({ transport: 'durable-object', stateful: true })
+```
+
 Cossack supports two patterns for real-time state. Choose based on the use case:
 
 ### Pattern 1: Automatic State Synchronization
@@ -237,9 +251,10 @@ export default { fetch: app.fetch };
 ## Step 6: Verify
 
 1. Page uses `@Page({ transport: 'durable-object' })`
-2. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
-3. `AppDurableObject` is exported from `src/index.ts`
-4. For multi-channel: channels are declared in `@Page({ channels: [...] })`
-5. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
-6. `@Client()` methods are used for client-side-only logic
-7. Run type checks: `pnpm tsc --noEmit`
+2. Add `stateful: true` if state must persist in DO storage
+3. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
+4. `AppDurableObject` is exported from `src/index.ts`
+5. For multi-channel: channels are declared in `@Page({ channels: [...] })`
+6. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
+7. `@Client()` methods are used for client-side-only logic
+8. Run type checks: `pnpm tsc --noEmit`

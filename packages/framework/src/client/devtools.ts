@@ -1,5 +1,12 @@
 console.log('[Cossack] DevTools module loaded');
 
+// Component instance registry for state inspection
+const devToolsInstances = new Map<string, any>();
+
+export function registerDevToolsInstance(sourceFilePath: string, instance: any) {
+  devToolsInstances.set(sourceFilePath, instance);
+}
+
 export function enableDevTools() {
   if (!import.meta.env.DEV) {
       console.log('[Cossack] DevTools disabled (not in DEV mode)');
@@ -178,4 +185,33 @@ export function enableDevTools() {
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('click', onClick, true); // Capture phase
+
+  // Double-click state inspector (Ctrl + double-click)
+  document.addEventListener('dblclick', (e: MouseEvent) => {
+      if (!e.ctrlKey) return;
+
+      const startNode = findComponent(e.target as Node);
+      if (!startNode) return;
+
+      const data = getMarkerData(startNode);
+      if (!data?.file) return;
+
+      const instance = devToolsInstances.get(data.file);
+      if (!instance) {
+          console.warn(`[Cossack DevTools] No registered instance for: ${data.file}`);
+          return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Log component state
+      const publicState = (instance as any)._stateContainer?.getPublicState?.() || {};
+      console.group(`%c[Cossack DevTools] State: ${data.file}`, 'color: #3b82f6; font-weight: bold;');
+      console.log('Instance:', instance);
+      console.log('Public State:', publicState);
+      console.log('Path:', (instance as any)._cossack_path || 'N/A');
+      console.log('Mounted:', (instance as any).isMounted);
+      console.groupEnd();
+  }, true); // Capture phase
 }

@@ -1,6 +1,7 @@
 import { Cossack, enableClientNavigation, LifecyclePhase, createInstance } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
+import { registerDevToolsInstance } from './devtools';
 import registry from 'virtual:cossack-pages';
 
 const { pages, layouts, loadings, components } = registry;
@@ -157,33 +158,39 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
       syncHead();
   };
 
+  let _lastHeadTagsJson: string | undefined;
+
   const syncHead = () => {
     if (!currentPage) return;
     const emptyCtx = Cossack.buildHeadContext([]);
     const pageHeadValue = currentPage.head(emptyCtx);
-    
+
     let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-    
+
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
         const headContext = Cossack.buildHeadContext(tags);
         const headValue = currentLayoutInstances[i].head(headContext);
         tags = Cossack.mergeHead(headContext, headValue);
     }
-    
+
     const finalHeadContext = Cossack.buildHeadContext(tags);
     const appHeadValue = appInstance.head(finalHeadContext);
     const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
-    
+
+    const serialized = JSON.stringify(headTags);
+    if (serialized === _lastHeadTagsJson) return;
+    _lastHeadTagsJson = serialized;
     Cossack.applyHeadTags(headTags);
   };
 
   appInstance.updateHead = syncHead;
 
   // Initial bootstrap without render logic override
-  await appInstance.bootstrap({ 
-    container: containerEl as Element, 
+  await appInstance.bootstrap({
+    container: containerEl as Element,
     initialState: window.__INITIAL_STATE__._app_state,
     skipInit: true,
+    deferMount: true,
   });
 
   const currentLayoutsMap = new Map<string, Cossack>();
@@ -289,6 +296,12 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
       await componentInstance.bootstrap({ initialState, skipInit: true });
       componentInstance.updatePath(pathname);
 
+      // Register with DevTools for state inspection (use absolute path from Vite injection)
+      const sourceFile = (componentInstance.constructor as any).__source?.file;
+      if (sourceFile) {
+        registerDevToolsInstance(sourceFile, componentInstance);
+      }
+
       // Perform initial composition and render
       await triggerAppUpdate();
     }
@@ -296,6 +309,14 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
   };
 
   await loadComponent(window.__INITIAL_STATE__);
+  appInstance.isMounted = true;
+  appInstance.onMount();
+  appInstance.onNavigateComplete(window.location.pathname);
+
+  document.dispatchEvent(new CustomEvent('cossack:ready', {
+    bubbles: true,
+    detail: { pathname: window.location.pathname, navigationType: 'initial' }
+  }));
 
   const navigate = async (url: string, force = false): Promise<boolean> => {
     if (!force && currentPage && !isDisplayingLoadingState) {
@@ -313,6 +334,11 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
     }
 
     try {
+      document.dispatchEvent(new CustomEvent('cossack:before-navigate', {
+        bubbles: true,
+        detail: { fromPathname: window.location.pathname, toPathname: url }
+      }));
+
       setProgress(30);
 
       // Check for loading.ts convention
@@ -350,6 +376,12 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
 
       window.__INITIAL_STATE__ = state;
       await loadComponent(state);
+      appInstance.onNavigateComplete(state.pathname);
+
+      document.dispatchEvent(new CustomEvent('cossack:ready', {
+        bubbles: true,
+        detail: { pathname: state.pathname, navigationType: 'spa' }
+      }));
       return true;
     } catch (error) {
       console.error('Navigation failed:', error);

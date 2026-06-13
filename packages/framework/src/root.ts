@@ -89,8 +89,7 @@ export const renderRoot = (props: RenderRootProps) => {
             .replace('{{ cossackScripts }}', cossackScripts())
             .replace('{{ cossackBody }}', cossackBody());
     } else {
-        raw = `
-        <!DOCTYPE html>
+        raw = `<!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="utf-8">

@@ -1,6 +1,6 @@
 {
   "name": "create-cossack-app",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "description": "CLI to scaffold a new Cossack Framework project",
   "license": "MIT",
@@ -14,7 +14,8 @@
   },
   "files": [
     "bin",
-    "template"
+    "template",
+    "tsconfig.template.json"
   ],
   "publishConfig": {
     "access": "public"

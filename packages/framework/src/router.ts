@@ -8,6 +8,9 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { CossackElement } from '@cossackframework/renderer';
+import { handleSseEndpoint, handleSseCrpc, syncSseState, registerSseStoreEntry, resolveSseScopeKey, type RouterContext } from './transports/sse';
+import { handleWebSocketProxy } from './transports/websocket';
+import { handleUpload } from './transports/http';
 
 // In production builds, the manifest is available at build time.
 // In dev mode with the Cloudflare Vite plugin, there is no manifest on disk,
@@ -136,13 +139,13 @@ function getLayoutStack(pagePath: string) {
     const stack: string[] = [];
     const relativePath = pagePath.replace('/src/pages/', '');
     const parts = relativePath.split('/');
-    
+
     let currentPath = '/src/pages';
-    
+
     if (layouts[`${currentPath}/layout.ts`]) {
         stack.push(`${currentPath}/layout.ts`);
     }
-    
+
     for (let i = 0; i < parts.length - 1; i++) {
         currentPath += `/${parts[i]}`;
         const layoutPath = `${currentPath}/layout.ts`;
@@ -150,7 +153,7 @@ function getLayoutStack(pagePath: string) {
             stack.push(layoutPath);
         }
     }
-    
+
     return stack;
 }
 
@@ -214,18 +217,18 @@ function getModulePreloads(mfest: Record<string, any>, pagePath: string): string
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
     const relativePath = pagePath.replace('/src/pages/', '');
     const parts = relativePath.split('/');
-    
+
     for (let i = parts.length - 1; i >= 0; i--) {
         const dir = parts.slice(0, i).join('/');
-        const searchPath = dir 
+        const searchPath = dir
             ? `/src/pages/${dir}/${type}/index.ts`
             : `/src/pages/${type}/index.ts`;
-            
+
         if (pages[searchPath]) {
             return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
         }
     }
-    
+
     return null;
 }
 
@@ -237,6 +240,15 @@ export interface CreateAppOptions {
 
 export function createApp(options: CreateAppOptions = {}) {
     const app = new Hono<{ Bindings: CloudflareBindings, Variables: { user?: AuthenticatedUser } }>();
+
+    // Shared context passed to transport handlers
+    const routerContext: RouterContext = {
+        routeIdMap,
+        routePathToIdMap,
+        routePathToFilePathMap,
+        pages,
+        layouts,
+    };
 
     // Authentication middleware - use custom or default (no-op)
     app.use('*', (c, next) => {
@@ -265,16 +277,20 @@ export function createApp(options: CreateAppOptions = {}) {
                 const hasLoadingFile = loadings[loadingFilePath] !== undefined;
                 const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
+                // Compute scopeKey once — used for SSE store, DO ID, and client initial state.
+                const scopeKey = await resolveSseScopeKey(c, pageOptions);
+
                 // For durable-object transport, query the DO for existing state before SSR
+                // Only for stateful pages — stateless DOs don't persist state
                 let doInitialState: any = undefined;
-                if (pageOptions?.transport === 'durable-object') {
+                let doIdName: string = c.req.url; // Default: per-URL
+                if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
+                    doIdName = scopeKey;
+                }
+                if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
                     try {
                         const doBinding = c.env.COSSACK_OBJECT;
-                        // Use the full URL (path + query string) for DO ID
-                        // This ensures different states for:
-                        // - /hello/tan vs /hello/trang (dynamic routes)
-                        // - /items?page=1 vs /items?page=2 (query params)
-                        const id = doBinding.idFromName(c.req.url);
+                        const id = doBinding.idFromName(doIdName);
                         const stub = doBinding.get(id);
 
                         // Build query params for on-demand DO initialization
@@ -336,10 +352,15 @@ export function createApp(options: CreateAppOptions = {}) {
                 if (shouldSkipInit) {
                     (pageInstance as any).loading.init = 1;
                 }
-                
+
                 // Force render to populate registry
                 pageInstance._render();
-                
+
+                // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
+                if (pageOptions?.transport === 'sse') {
+                    registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+                }
+
                 // Wrap rendering
                 let body = (pageInstance as any)._getWrappedTemplate();
                 for (let i = layoutInstances.length - 1; i >= 0; i--) {
@@ -368,8 +389,8 @@ export function createApp(options: CreateAppOptions = {}) {
                 // Also add routePath to metadata for client WebSocket connections
                 if (pageOptions?.transport === 'durable-object') {
                     const doBinding = c.env.COSSACK_OBJECT;
-                    // Use the full URL for DO ID so query params create separate DOs
-                    const doId = doBinding.idFromName(c.req.url);
+                    // Use scoped ID (from scope function) or URL-based ID (default)
+                    const doId = doBinding.idFromName(doIdName);
                     // Convert DurableObjectId to string for client-side use
                     pageInitialState.providerTargets = {
                         ...(pageInitialState.providerTargets || {}),
@@ -388,6 +409,8 @@ export function createApp(options: CreateAppOptions = {}) {
                     appRouteId: 'cossack_app',  // Route ID for the App component (root)
                     pathname: c.req.path,
                     channels: pageOptions?.channels || ['global'],
+                    transport: pageOptions?.transport || 'http',
+                    scopeKey,
                     _app_state: appInstance.getInitialState(),
                     _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] })) // Keep file paths for layouts
                 };
@@ -407,106 +430,15 @@ export function createApp(options: CreateAppOptions = {}) {
         };
     };
 
-    app.get('/ws/:provider/:id', async (c) => {
-        const user = c.get('user');
-        const { provider, id: durableObjectId } = c.req.param();
-        const routePath = c.req.query('routePath');
-        // Support both routePath (new) and componentPath (legacy) for backward compatibility
-        const componentPathQuery = routePath || c.req.query('componentPath');
-        if (!componentPathQuery) return new Response('routePath or componentPath query parameter is required', { status: 400 });
-
-        // Convert route path to file path if needed
-        const componentPath = routePathToFilePathMap.get(componentPathQuery) || componentPathQuery;
-
-        const doBinding = c.env.COSSACK_OBJECT;
-        const id = doBinding.idFromString(durableObjectId);
-        const stub = doBinding.get(id);
-        const request = new Request(c.req.raw);
-        
-        request.headers.set('X-Component-Path', componentPath);
-        request.headers.set('X-Provider-Name', provider);
-        if (user) {
-            request.headers.set('X-User-ID', user.id);
-            request.headers.set('X-User-Data', JSON.stringify(user));
-        }
-
-        return await stub.fetch(request);
-    });
-
-    app.post('/upload', async (c) => {
-        const body = await c.req.parseBody({ all: true });
-        const componentRouteId = body.componentRouteId as string;
-        const action = body.action as string;
-        const target = body.target as string;
-        const stateStr = body.state as string;
-        const payloadStr = body.payload as string;
-
-        if (!componentRouteId || !action) return c.json({ error: 'Missing componentRouteId or action' }, 400);
-
-        const componentPath = routeIdMap.get(componentRouteId);
-        if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
-
-        const state = stateStr ? JSON.parse(stateStr) : {};
-        const payload = payloadStr ? JSON.parse(payloadStr) : [];
-
-        // Reconstruct arguments with files
-        const args = payload.map((arg: any) => {
-            if (arg && typeof arg === 'object' && arg._cossack_file_id) {
-                const fileId = arg._cossack_file_id;
-                const file = body[fileId];
-                return file;
-            }
-            return arg;
-        });
-
-        const user = c.get('user');
-        const module = pages[componentPath] || layouts[componentPath];
-        if (!module) return c.json({ error: 'Component not found' }, 404);
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-        if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-
-        const componentInstance = createInstance(PageComponent) as any;
-        await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
-
-        // Rebuild component tree to find target
-        componentInstance._render();
-
-        let targetInstance = componentInstance;
-        if (target && target !== targetInstance._id) {
-            if (targetInstance.activeComponents.has(target)) {
-                targetInstance = targetInstance.activeComponents.get(target);
-            } else {
-                // Warning only, fall back to root or error?
-                // For HTTP, if target missing, action likely fails.
-                return c.json({ error: `Target component '${target}' not found` }, 404);
-            }
-        }
-
-        // Apply the received state directly to the target component
-        // The state sent from client is the target component's public state
-        for (const key in state) {
-            (targetInstance as any)[key] = state[key];
-        }
-
-        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-
-        const actionResult = await targetInstance[action](...args);
-
-        const location = c.res.headers.get('Location');
-        if (location) return c.json({ _cossack_redirect: location });
-        if (actionResult instanceof Response) return actionResult;
-
-        // Get the state of the component that was actually modified
-        const responseData = targetInstance.getPublicState();
-        if (actionResult !== undefined) {
-            (responseData as any)._cossack_return = actionResult;
-        }
-
-        return c.json(responseData);
-    });
+    // Transport routes
+    app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+    app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
+    app.post('/upload', handleUpload(routerContext));
 
     app.post('/crpc', async (c) => {
-        const { componentRouteId, action, state, payload, target } = await c.req.json();
+        const body = await c.req.json();
+        const { componentRouteId, action, state, payload, target, scopeKey } = body;
+        const isStreamRequest = !!body._cossack_stream;
         const user = c.get('user');
 
         const componentPath = routeIdMap.get(componentRouteId);
@@ -546,16 +478,34 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-        const actionResult = await targetInstance[action](...(payload || []));
+
+        // Call the method. For streaming requests, don't await — the result may
+        // be an async iterable that the SSE driver will pull values from.
+        let actionResult: any;
+        if (isStreamRequest) {
+            actionResult = targetInstance[action](...(payload || []));
+        } else {
+            actionResult = await targetInstance[action](...(payload || []));
+        }
+
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });
         if (actionResult instanceof Response) return actionResult;
 
         // Get the state of the component that was actually modified
         const responseData = targetInstance.getPublicState();
+
+        // Handle SSE streaming detection and state sync
+        const sseResult = handleSseCrpc(componentRouteId, scopeKey, actionResult, responseData, targetInstance);
+        if (sseResult.handled) {
+            return c.json(sseResult.response);
+        }
+
+        // Non-streaming path: regular method return
         if (actionResult !== undefined) {
             (responseData as any)._cossack_return = actionResult;
         }
+
         return c.json(responseData);
     });
 
@@ -588,7 +538,7 @@ export function createApp(options: CreateAppOptions = {}) {
             if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
 
             const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
-            if (pageOptions?.transport !== 'http') {
+            if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
                 Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
             }
             app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
@@ -603,13 +553,13 @@ export function createApp(options: CreateAppOptions = {}) {
                     }
                 }
             }
-        } 
+        }
         // 2. Check if it's a functional API Route
         else if (path.includes('/src/pages/api/')) {
             // Handle default export as a generic handler
             if (typeof module.default === 'function') {
                 app.all(httpRoute, module.default);
-            } 
+            }
             // Handle named exports for HTTP methods (Nuxt/Next style)
             const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
             for (const m of methods) {
