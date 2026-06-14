@@ -10,19 +10,20 @@ Marks a class as a page component. Applied to route pages and layouts.
 
 ```typescript
 @Page({
-    transport: 'http',          // 'http' | 'durable-object' | 'websocket'
-    middlewares: [],             // MiddlewareHandler[] — server middleware
+    transport: 'http',          // 'http' | 'durable-object' | 'websocket' | 'sse'
+    stateful: false,            // boolean — persist state in DO storage (only with 'durable-object')
+    middlewares: [],            // MiddlewareHandler[] — server middleware
     channels: ['global'],       // string[] — state channels for real-time
-    providers: {},               // { [key: string]: StateProvider }
-    route?: '',                  // Override the file-based route
-    ssg?: false,                 // boolean | SsgOptions — static generation
+    providers: {},              // { [key: string]: StateProvider }
+    route?: '',                 // Override the file-based route
+    ssg?: false,                // boolean | SsgOptions — static generation
 })
 export class MyPage extends Cossack { ... }
 ```
 
 ### `@Component(options?)`
 
-Marks a class as a reusable component. Currently behaves like `@Page` but is semantically distinct for future tooling. Same options as `@Page`.
+Marks a class as a reusable component. Semantically distinct from `@Page` for future tooling; same options.
 
 ```typescript
 @Component({ transport: 'http' })
@@ -79,7 +80,7 @@ variant: 'primary' | 'secondary' = 'primary';
 
 ### `@Validate(options?)`
 
-Adds validation rules to a `@State` or `@ClientState` property. Must be stacked on top of the state decorator.
+Adds validation rules to a `@State` or `@ClientState` property. Must be stacked on top of the state decorator. See `validation.md` for the full guide.
 
 ```typescript
 @State()
@@ -242,14 +243,10 @@ Options:
 
 ```typescript
 @OnDocument('keydown')
-handleGlobalKeydown(event: KeyboardEvent) {
-    // ...
-}
+handleGlobalKeydown(event: KeyboardEvent) { /* ... */ }
 
 @OnDocument('mousemove', { throttle: 100 })
-handleMouseThrottled(event: MouseEvent) {
-    // Fires at most once every 100ms
-}
+handleMouseThrottled(event: MouseEvent) { /* fires at most once every 100ms */ }
 ```
 
 ### `@OnWindow(eventName, options?)`
@@ -267,14 +264,10 @@ handleResize() {
 }
 
 @OnWindow('scroll', { throttle: 200 })
-handleScrollThrottled() {
-    // Fires at most once every 200ms
-}
+handleScrollThrottled() { /* at most once every 200ms */ }
 
 @OnWindow('resize', { debounce: 150 })
-handleResizeDebounced() {
-    // Fires 150ms after the user stops resizing
-}
+handleResizeDebounced() { /* 150ms after user stops resizing */ }
 ```
 
 ### `@Task()`

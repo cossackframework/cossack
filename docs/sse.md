@@ -48,6 +48,8 @@ By default, SSE state is scoped **per-user**. Each authenticated user gets their
 
 The `scope` option controls which users share the same state. It receives the Hono `Context` (with access to the user, route params, query params, env bindings) and returns a scope key string.
 
+> **Note:** `scope` is a shared `@Page` option that also applies to the `durable-object` transport, where it controls **which Durable Object instance** a page connects to (default: per-URL). The two transports differ only in their defaults. See [WebSockets — Scope](./websockets.md#scope--controlling-which-durable-object-instance-a-page-connects-to).
+
 ### Default: Per-User
 
 ```typescript
