@@ -8,11 +8,11 @@ import { transformCossackClass, isClientSafeMethod } from '../src/vite-security-
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     // Create a local version for testing
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -39,11 +39,31 @@ describe('vite-security-plugin', () => {
       expect(isClientSafeMethod(['@OnEvent("test")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
     });
 
+    it('should mark @On decorated methods as client-safe', () => {
+      expect(isClientSafeMethod(['@On("click")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
+      expect(isClientSafeMethod(["@On('mount')"], 'myMethod', BUILTIN_METHODS)).toBe(true);
+    });
+
+    it('should mark @OnDocument decorated methods as client-safe', () => {
+      expect(isClientSafeMethod(['@OnDocument("keydown")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
+    });
+
+    it('should mark @OnWindow decorated methods as client-safe', () => {
+      expect(isClientSafeMethod(['@OnWindow("resize")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
+    });
+
+    it('should not confuse @On with @OnEvent (word boundary)', () => {
+      // The regex must match @On but should also still match @OnEvent via the alternation
+      expect(isClientSafeMethod(['@OnEvent("foo")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
+      expect(isClientSafeMethod(['@On("foo")'], 'myMethod', BUILTIN_METHODS)).toBe(true);
+    });
+
     it('should mark built-in methods as client-safe', () => {
       expect(isClientSafeMethod([], 'render', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'head', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'onMount', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'onCleanup', BUILTIN_METHODS)).toBe(true);
+      expect(isClientSafeMethod([], 'onNavigateComplete', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'escapeHtml', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'loadingTemplate', BUILTIN_METHODS)).toBe(true);
     });
@@ -60,10 +80,10 @@ describe('vite-security-plugin', () => {
   });
 
   describe('Transform Methods', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -83,6 +103,66 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).toContain('clientMethod() {');
       expect(result).toContain("return 'client'");
+    });
+
+    it('should keep @On decorated methods (regression: previously stripped)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @On('click')
+    handleClick() {
+      this.count++;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('handleClick() {');
+      expect(result).toContain('this.count++');
+      expect(result).not.toContain('__cossack_proxies');
+    });
+
+    it('should keep @OnDocument decorated methods (regression: previously stripped)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @OnDocument('keydown')
+    handleKeydown(event) {
+      console.log(event.key);
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('handleKeydown(event) {');
+      expect(result).toContain('console.log(event.key)');
+    });
+
+    it('should keep @OnWindow decorated methods (regression: previously stripped)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @OnWindow('resize')
+    handleResize() {
+      this.width = window.innerWidth;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('handleResize() {');
+      expect(result).toContain('this.width = window.innerWidth');
+    });
+
+    it('should keep onNavigateComplete overrides (regression: previously stripped)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    onNavigateComplete(pathname) {
+      console.log('navigated to', pathname);
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('onNavigateComplete(pathname) {');
+      expect(result).toContain("console.log('navigated to'");
     });
 
     it('should keep @Optimistic decorated methods', () => {
@@ -295,10 +375,10 @@ export class TestPage extends Cossack {
   });
 
   describe('Edge Cases', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -451,10 +531,10 @@ export class TestPage extends Cossack {
   });
 
   describe('Security Tests', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -526,10 +606,10 @@ export class TestPage extends Cossack {
   });
 
   describe('Real-world Patterns', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|OnEvent)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;

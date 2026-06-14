@@ -1,9 +1,20 @@
-import { Cossack, Page, State, HeadContext, HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, HeadContext, HeadValue, ClientState, On } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export class App extends Cossack {
     @State() theme: 'light' | 'dark' = 'light';
+
+    @ClientState()
+    lastNavigatedPath: string = '/';
+
+    @On('navigate-complete')
+    logNavigation(pathname: string) {
+        // @On('navigate-complete') only fires on the App component, mirroring
+        // the onNavigateComplete() hook. Multiple handlers are supported.
+        this.lastNavigatedPath = pathname;
+        console.log('[App] @On("navigate-complete")', pathname);
+    }
 
     public head(context: HeadContext): HeadValue {
         return {

@@ -249,6 +249,84 @@ export function Ref(): PropertyDecorator {
   };
 }
 
+/**
+ * Cossack lifecycle events that can be used with the `@On` decorator as
+ * decorator-based alternatives to the `onMount()` / `onNavigateComplete()`
+ * lifecycle hooks. Useful when you need multiple handlers for the same phase.
+ */
+export type CossackLifecycleEvent = 'mount' | 'navigate-complete';
+
+/**
+ * Common DOM events fired on HTMLElement targets. Provided for IDE
+ * autocompletion when using `@On`. Any other string is also accepted.
+ */
+export type HTMLElementEventName =
+  | 'click'
+  | 'dblclick'
+  | 'mousedown'
+  | 'mouseup'
+  | 'mouseover'
+  | 'mouseenter'
+  | 'mouseleave'
+  | 'mousemove'
+  | 'keydown'
+  | 'keyup'
+  | 'keypress'
+  | 'input'
+  | 'change'
+  | 'submit'
+  | 'reset'
+  | 'focus'
+  | 'blur'
+  | 'scroll'
+  | 'wheel'
+  | 'contextmenu'
+  | 'drag'
+  | 'dragstart'
+  | 'dragend'
+  | 'drop'
+  | 'touchstart'
+  | 'touchmove'
+  | 'touchend';
+
+/**
+ * Common events fired on the global `document` object. Provided for IDE
+ * autocompletion when using `@OnDocument`. Any other string is also accepted.
+ */
+export type DocumentEventName =
+  | 'keydown'
+  | 'keyup'
+  | 'keypress'
+  | 'click'
+  | 'mousedown'
+  | 'mouseup'
+  | 'mousemove'
+  | 'DOMContentLoaded'
+  | 'visibilitychange'
+  | 'selectionchange'
+  | 'scroll'
+  | 'fullscreenchange';
+
+/**
+ * Common events fired on the global `window` object. Provided for IDE
+ * autocompletion when using `@OnWindow`. Any other string is also accepted.
+ */
+export type WindowEventName =
+  | 'resize'
+  | 'scroll'
+  | 'load'
+  | 'beforeunload'
+  | 'unload'
+  | 'hashchange'
+  | 'popstate'
+  | 'online'
+  | 'offline'
+  | 'storage'
+  | 'focus'
+  | 'blur'
+  | 'error'
+  | 'message';
+
 export function OnEvent(eventName: string): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const eventHandlers = Reflect.getOwnMetadata('cossack:event-handlers', target.constructor) || {};
@@ -261,7 +339,21 @@ export function OnEvent(eventName: string): MethodDecorator {
   };
 }
 
-export function On(eventName: string): MethodDecorator {
+/**
+ * Attaches a handler to the component's root element (`this.container`) for the
+ * given DOM event (e.g. `'click'`).
+ *
+ * Also supports the Cossack lifecycle events `'mount'` and `'navigate-complete'`
+ * as decorator-based alternatives to the `onMount()` / `onNavigateComplete()`
+ * hooks. Unlike the hooks, multiple `@On('mount')` / `@On('navigate-complete')`
+ * methods are supported on a single component.
+ *
+ * Note: `'navigate-complete'` only fires on the App component, mirroring the
+ * `onNavigateComplete()` hook.
+ */
+export function On(
+  eventName: CossackLifecycleEvent | HTMLElementEventName | (string & {}),
+): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const domEvents = Reflect.getOwnMetadata('cossack:dom-events', target.constructor) || [];
     domEvents.push({ eventName, propertyKey });
@@ -275,7 +367,10 @@ export interface EventListenerOptions {
   debounce?: number;
 }
 
-export function OnDocument(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
+export function OnDocument(
+  eventName: DocumentEventName | (string & {}),
+  options: EventListenerOptions = {},
+): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const documentEvents = Reflect.getOwnMetadata('cossack:document-events', target.constructor) || [];
     documentEvents.push({ eventName, propertyKey, options });
@@ -284,7 +379,10 @@ export function OnDocument(eventName: string, options: EventListenerOptions = {}
   };
 }
 
-export function OnWindow(eventName: string, options: EventListenerOptions = {}): MethodDecorator {
+export function OnWindow(
+  eventName: WindowEventName | (string & {}),
+  options: EventListenerOptions = {},
+): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const windowEvents = Reflect.getOwnMetadata('cossack:window-events', target.constructor) || [];
     windowEvents.push({ eventName, propertyKey, options });
