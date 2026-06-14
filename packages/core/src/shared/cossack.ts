@@ -274,6 +274,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isRunningTasks: boolean = false;
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
+    /**
+     * Method keys registered via `@On('navigate-complete')`. Stored so the
+     * framework can invoke them whenever `onNavigateComplete()` runs.
+     */
+    private _navigateCompleteHandlers: (string | symbol)[] = [];
 
     // Lifecycle phase management
     protected _phase: LifecyclePhase = LifecyclePhase.Creating;
@@ -1983,6 +1988,35 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
+    /**
+     * Processes `@On('mount')` and `@On('navigate-complete')` lifecycle event
+     * handlers registered via the `@On` decorator.
+     *
+     * - `'mount'` handlers run immediately (called once during `onMount()`).
+     * - `'navigate-complete'` handlers are stored in `_navigateCompleteHandlers`
+     *   and replayed every time `onNavigateComplete()` runs.
+     *
+     * This is a client-only feature; it is a no-op on the server.
+     */
+    private setupLifecycleEventHandlers() {
+        if (this.isServer) return;
+
+        const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+        for (const { eventName, propertyKey } of domEvents) {
+            if (eventName === 'mount') {
+                if (this.hasMethod(propertyKey)) {
+                    try {
+                        (this.getMethod(propertyKey) as any).call(this);
+                    } catch (e) {
+                        console.error(`[Cossack] Error in @On('mount') handler '${String(propertyKey)}':`, e);
+                    }
+                }
+            } else if (eventName === 'navigate-complete') {
+                this._navigateCompleteHandlers.push(propertyKey);
+            }
+        }
+    }
+
     private setupEventListeners() {
         if (this.isServer) return;
 
@@ -2023,6 +2057,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.container) {
             const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
             for (const { eventName, propertyKey } of domEvents) {
+                // Lifecycle events are handled by setupLifecycleEventHandlers()
+                if (eventName === 'mount' || eventName === 'navigate-complete') continue;
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
                     attach(this.container, eventName, method as any);
@@ -2697,6 +2733,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     // Lifecycle hooks
     public onMount(): void {
         this.setupVisibleTasks();
+        this.setupLifecycleEventHandlers();
         this.setupEventListeners();
     }
     public onCleanup(): void {}
@@ -2704,6 +2741,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public onNavigateComplete(pathname: string): void {
         // Override in subclass. Fires after SPA navigation completes.
         this.refreshVisibleTasks();
+        // Invoke @On('navigate-complete') handlers (App-only in practice, since
+        // the framework only calls this on the App instance).
+        for (const propertyKey of this._navigateCompleteHandlers) {
+            const key = String(propertyKey);
+            if (this.hasMethod(key)) {
+                try {
+                    (this.getMethod(key) as any).call(this, pathname);
+                } catch (e) {
+                    console.error(`[Cossack] Error in @On('navigate-complete') handler '${String(propertyKey)}':`, e);
+                }
+            }
+        }
     }
 
     private refreshVisibleTasks() {

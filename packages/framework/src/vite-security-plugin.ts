@@ -42,6 +42,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     'validateProperty',
     'validateAll',
     'clearErrors',
+    'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
   ]);
 
   /**
@@ -1027,7 +1028,7 @@ export function isClientSafeMethod(
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>
-    /@(?:Client|Optimistic|Computed|Shared|OnEvent|PreventNavigation|Validate)\b/.test(d)
+    /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d)
   );
   if (hasClientDecorator) return true;
 

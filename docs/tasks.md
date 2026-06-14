@@ -1,6 +1,6 @@
 # Lifecycle Tasks & Events
 
-Cossack provides a set of decorators to handle component lifecycle tasks and DOM events in a declarative way, similar to frameworks like Qwik. These tools allow you to run logic on mount, updates, visibility changes, and handle user interactions efficiently.
+Cossack provides a set of decorators and lifecycle hooks to handle component lifecycle tasks and DOM events in a declarative way, similar to frameworks like Qwik. These tools allow you to run logic on mount, updates, visibility changes, and handle user interactions efficiently.
 
 ## @Task
 
@@ -56,7 +56,7 @@ export default class MyComponent extends Cossack {
         console.log('Component is visible, loading data...');
         this.data = await fetch('/api/data').then(res => res.json());
     }
-    
+
     @VisibleTask({ selector: '#chart-container' })
     initChart() {
         // Runs when #chart-container inside the component becomes visible
@@ -65,13 +65,127 @@ export default class MyComponent extends Cossack {
 }
 ```
 
+## Lifecycle Methods
+
+Cossack components have three lifecycle hooks you can override. They run **only on the client**.
+
+### `onMount()`
+
+Runs once after the component's first client render. Use it to initialize client-only state, attach listeners via decorators (handled automatically by the base implementation), or kick off side effects.
+
+> **Important:** Always call `super.onMount()` when overriding. The base implementation sets up `@VisibleTask` observers, fires `@On('mount')` handlers, and wires up `@On`/`@OnDocument`/`@OnWindow` listeners. Skipping `super` disables all of these.
+
+```typescript
+import { Cossack, Page, ClientState } from '@cossackframework/core';
+
+@Page()
+export default class MyComponent extends Cossack {
+    @ClientState() ready = false;
+
+    onMount() {
+        super.onMount(); // Required
+        this.ready = true;
+    }
+}
+```
+
+### `onNavigateComplete(pathname)`
+
+Runs after every SPA navigation completes. **Only called on the App component** — page/layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
+
+> **Important:** Always call `super.onNavigateComplete(pathname)` when overriding. The base implementation refreshes `@VisibleTask` observers and fires `@On('navigate-complete')` handlers.
+
+```typescript
+import { Cossack, Page } from '@cossackframework/core';
+
+@Page()
+export class App extends Cossack {
+    onNavigateComplete(pathname: string) {
+        super.onNavigateComplete(pathname); // Required
+        analytics.track('pageview', { path: pathname });
+    }
+}
+```
+
+### `onCleanup()`
+
+Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework — you do not need to clean those up here.
+
+> **Important:** Always call `super.onCleanup()` when overriding.
+
+```typescript
+import { Cossack, Page } from '@cossackframework/core';
+
+@Page()
+export default class MyComponent extends Cossack {
+    private timer?: ReturnType<typeof setInterval>;
+
+    onMount() {
+        super.onMount();
+        this.timer = setInterval(() => console.log('tick'), 1000);
+    }
+
+    onCleanup() {
+        super.onCleanup();
+        if (this.timer) clearInterval(this.timer);
+    }
+}
+```
+
+### Lifecycle Event Shortcuts
+
+The `@On` decorator also accepts the lifecycle event names `'mount'` and `'navigate-complete'` as decorator-based alternatives to the lifecycle hooks above. They have two advantages over the hooks:
+
+- **Multiple handlers:** You can register several `@On('mount')` or `@On('navigate-complete')` methods on the same component. Only one `onMount()` / `onNavigateComplete()` override is possible.
+- **No `super()` bookkeeping:** The handlers run independently of the hook overrides.
+
+| Decorator                | Equivalent hook        | Fires on                | Multiple allowed |
+| ------------------------ | ---------------------- | ----------------------- | ---------------- |
+| `@On('mount')`           | `onMount()`            | Any component (client)  | Yes              |
+| `@On('navigate-complete')` | `onNavigateComplete()` | **App component only**  | Yes              |
+
+```typescript
+import { Cossack, Page, ClientState, On } from '@cossackframework/core';
+
+@Page()
+export default class MyComponent extends Cossack {
+    @ClientState() ready = false;
+
+    @On('mount')
+    initAnalytics() {
+        analytics.setup();
+    }
+
+    @On('mount')
+    prefetchAssets() {
+        // Multiple @On('mount') handlers are supported.
+        preloadImages();
+    }
+}
+```
+
+For the App component:
+
+```typescript
+import { Cossack, Page, On } from '@cossackframework/core';
+
+@Page()
+export class App extends Cossack {
+    @On('navigate-complete')
+    trackPageview(pathname: string) {
+        // Fires after every SPA navigation. App-only.
+        analytics.track('pageview', { path: pathname });
+    }
+}
+```
+
 ## Event Handling
 
-Cossack provides two ways to handle events: decorator-based and template-based (Lit-like syntax).
+Cossack provides two ways to handle events: template-based (Lit-like syntax) and decorator-based.
 
-### Template-Based Events (Recommended)
+### Template-Based Events (Recommended for element events)
 
-The recommended approach is to use the Lit-like event syntax directly in your templates. This is more explicit and aligns with modern web component patterns.
+The recommended approach for **element-level** events is to use the Lit-like event syntax directly in your templates. This is the most explicit and aligns with modern web component patterns.
 
 ```typescript
 import { Cossack, Page, ClientState } from '@cossackframework/core';
@@ -92,55 +206,15 @@ export default class MyComponent extends Cossack {
 }
 ```
 
-For element events, use the `@eventName` syntax in your template. For document and window events, use `onMount`/`onCleanup` to manually add/remove listeners.
+For `document` and `window` events, prefer the `@OnDocument` and `@OnWindow` decorators below — they handle cleanup automatically.
 
-```typescript
-import { Cossack, Page, ClientState } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+### Event Decorators
 
-@Page({ transport: 'http' })
-export default class MyComponent extends Cossack {
-    @ClientState()
-    windowSize = 'Unknown';
-
-    private handleKeydown = (event: KeyboardEvent) => {
-        console.log('Key pressed:', event.key);
-    };
-
-    private handleResize = () => {
-        this.windowSize = `${window.innerWidth}x${window.innerHeight}`;
-    };
-
-    @Client()
-    onMount() {
-        // Document and window events need manual listeners
-        document.addEventListener('keydown', this.handleKeydown);
-        window.addEventListener('resize', this.handleResize);
-    }
-
-    @Client()
-    onCleanup() {
-        document.removeEventListener('keydown', this.handleKeydown);
-        window.removeEventListener('resize', this.handleResize);
-    }
-
-    render() {
-        return html`
-            <div @click=${() => console.log('Clicked!')}>
-                Window Size: ${this.windowSize}
-            </div>
-        `;
-    }
-}
-```
-
-### Event Decorators (Legacy)
-
-Cossack also provides decorators to declaratively attach event listeners to DOM elements without manually managing `addEventListener` and `removeEventListener`. These listeners are automatically cleaned up when the component is destroyed.
+Cossack provides decorators to declaratively attach event listeners to DOM elements without manually managing `addEventListener` and `removeEventListener`. These listeners are automatically cleaned up when the component is destroyed, and (as of this release) they are correctly preserved in client bundles by the security plugin.
 
 ### @On
 
-Listens for events on the component's **root element** (`this.container`).
+Listens for events on the component's **root element** (`this.container`). Also accepts the Cossack lifecycle events `'mount'` and `'navigate-complete'` (see [Lifecycle Event Shortcuts](#lifecycle-event-shortcuts) above).
 
 ```typescript
 import { Cossack, On } from '@cossackframework/core';
