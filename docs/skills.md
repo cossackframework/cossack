@@ -6,16 +6,11 @@ Cossack Skills are instruction packs that teach AI coding assistants (Claude Cod
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| `/create-page` | Task | Generate a new Cossack page with correct routing, transport, and patterns |
-| `/create-layout` | Task | Create a layout component that wraps page content |
-| `/create-component` | Task | Create a reusable component with props, events, and server actions |
-| `/add-state` | Task | Add state management (`@State`, `@ClientState`, `@Computed`, `@Validate`, `@Optimistic`) |
-| `/add-middleware` | Task | Add server middleware to pages and layouts |
-| `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` |
-| `/setup-websocket` | Task | Set up real-time WebSocket features with Durable Objects |
-| `cossack-reference` | Reference | Auto-loaded background knowledge (decorators, syntax, routing, conventions) |
+| `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` (multi-file workflow) |
+| `/setup-websocket` | Task | Set up real-time features — pick SSE or Durable Object transport |
+| `cossack-best-practices` | Background | Auto-loaded guardrails: use built-in features (`@Validate`, `Image()`, `this.loading`, `@Ref()`, etc.) instead of reinventing them. Includes deep-dive references for validation, loading, realtime, auth, and error handling |
 
-The `cossack-reference` skill is not user-invocable. It auto-loads when you work on Cossack-specific files (`src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, `src/root.ts`).
+The `cossack-best-practices` skill is not user-invocable. It auto-loads when you work on Cossack-specific files (`src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, `src/root.ts`) and steers the AI toward framework built-ins.
 
 ## Installation
 
@@ -43,7 +38,7 @@ cp -r /path/to/cossack/skills .claude/skills/cossack
 ln -s /path/to/cossack/skills .claude/skills/cossack
 ```
 
-After this, the plugin loads as `cossack@skills-dir` on the next Claude Code session. All skills (`/create-page`, `/add-state`, etc.) are immediately available.
+After this, the plugin loads as `cossack@skills-dir` on the next Claude Code session. All skills (`/setup-auth`, `/setup-websocket`, and the `cossack-best-practices` background skill) are immediately available.
 
 **Global (all projects):**
 
@@ -71,12 +66,12 @@ Copy individual skill folders to `.claude/skills/` in your project or globally:
 
 ```bash
 # Per-project — copy only the skills you need
-cp -r skills/cossack-reference .claude/skills/
-cp -r skills/create-page .claude/skills/
+cp -r skills/cossack-best-practices .claude/skills/
+cp -r skills/setup-auth .claude/skills/
 
 # Global
-cp -r skills/cossack-reference ~/.claude/skills/
-cp -r skills/create-page ~/.claude/skills/
+cp -r skills/cossack-best-practices ~/.claude/skills/
+cp -r skills/setup-auth ~/.claude/skills/
 ```
 
 Individual skill folders (without a `.claude-plugin/plugin.json`) register as plain skills, not as a plugin. They still work but don't get the namespaced `cossack@skills-dir` identity.
@@ -88,22 +83,17 @@ Individual skill folders (without a `.claude-plugin/plugin.json`) register as pl
 Use the slash command syntax in your AI tool:
 
 ```
-/create-page
-/create-layout
-/create-component
-/add-state
-/add-middleware
 /setup-auth
 /setup-websocket
 ```
 
-The skill will guide the AI through the correct patterns, asking questions as needed.
+The skill will guide the AI through the correct patterns, asking questions as needed. For all other tasks (creating pages, layouts, components, adding state, middleware), the `cossack-best-practices` background skill provides the AI with everything it needs — just ask in plain language.
 
-### Auto-Loading Reference
+### Auto-Loading Best Practices
 
-The `cossack-reference` skill activates automatically when you open or edit Cossack files. You don't need to invoke it. It provides the AI with background knowledge about decorators, template syntax, routing conventions, and build commands.
+The `cossack-best-practices` skill activates automatically when you open or edit Cossack files. You don't need to invoke it. It provides the AI with a directive checklist of framework built-ins (decorators, validation, loading, images, refs, routing conventions) so it uses them instead of reinventing them.
 
-Example: Open `src/pages/about/index.ts` and ask "How do I add a @State property?" — the AI will use the reference skill knowledge to give an accurate answer.
+Example: Open `src/pages/about/index.ts` and ask "add an email field with validation" — the AI will reach for `@Validate()` rather than writing a custom validator.
 
 ## Compatible Tools
 

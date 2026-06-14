@@ -25,6 +25,30 @@ To persist state in DO storage (survives reconnections and DO eviction), add `st
 - No external database — the DO itself is the source of truth
 - State should survive DO eviction and reactivation
 
+## Scope — controlling which Durable Object instance a page connects to
+
+By default, each URL gets its own Durable Object instance (per-URL scope). The `scope` option on `@Page` overrides this: it receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object **ID name**. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state — this is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
+
+```typescript
+// All members of a team share one DO instance for this page
+@Page({
+    transport: 'durable-object',
+    stateful: true,
+    scope: (c) => `team:${c.get('user').teamId}`,
+})
+
+// One DO instance per room (URL param)
+@Page({
+    transport: 'durable-object',
+    stateful: true,
+    scope: (c) => `room:${c.req.param('roomId')}`,
+})
+```
+
+The scope function is evaluated **once during SSR** with the full request context (including params and query). The resulting `scopeKey` is embedded in the page's initial state and reused as the DO ID name, so SSR, the WebSocket connection, and `/crpc` all agree on the same instance — even when scope depends on params not present in later requests.
+
+The same `scope` option also applies to the `sse` transport (where the default is per-user instead of per-URL). Without `scope`, the default per-URL behavior is unchanged.
+
 This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
 
 -   **`StateProvider` (The "Where"):** A State Provider determines *which* stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. However, you can create custom providers to connect to other contexts, such as a `UserSessionProvider` for state shared across all pages for a logged-in user, or a `GlobalProvider` for a singleton state shared by all users.

@@ -10,12 +10,9 @@ In this section, we will go through the project structure of our framework. We w
 │   ├── pages
 │   ├── services
 │   ├── middlewares
-│   └── api-handler.ts
 │   └── App.ts
-│   └── DurableObject.ts
 │   └── index.ts
 │   └── root.ts
-│   └── router.ts
 │   └── style.css
 ├── public
 ├── scripts
@@ -40,4 +37,3 @@ The `src` folder contains all the source code of our application. This is where 
 - `root.ts`: This file contains the root component of our application. This is where we can define the global layout and structure of our application.
 - `index.ts`: This is the entry point of our application. This is where we will initialize our application and start the server.
 - `App.ts`: A special component that can be used to wrap all the pages. This is useful for defining global layouts and structures that are shared across all pages.
-- `router.ts`: Export the router instance that we can use to define our routes and handle navigation in our application. In most cases, we don't need to interact with this file directly, as we can define our routes using the file system-based routing in the `pages` folder. 

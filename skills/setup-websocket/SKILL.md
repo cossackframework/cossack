@@ -1,21 +1,50 @@
 ---
 name: setup-websocket
-description: Set up real-time WebSocket features in a Cossack page
+description: Set up real-time features in a Cossack page (Durable Object/WebSocket or SSE)
 disable-model-invocation: true
 user-invocable: true
 ---
 
-# Set Up Real-Time WebSocket Features
+# Set Up Real-Time Features
 
-You are setting up real-time features for a Cossack application using Durable Objects and WebSocket state synchronization.
+You are setting up real-time features for a Cossack application. First, pick the right transport with the user.
 
-## Prerequisites
+## Step 1: Choose a Transport
+
+| Transport | When | Persistent state | Setup |
+|---|---|---|---|
+| `sse` | Default choice. Live counters, chat, streaming text, multi-tab sync on **plain Workers**. | No (in-memory) | None — no binding required |
+| `durable-object` | Multi-user coordination across users, persistent state in the DO itself, or full bidirectional comms. | Optional (`stateful: true`) | Requires `COSSACK_OBJECT` binding + `AppDurableObject` export |
+
+**Default to `sse`** unless the user needs cross-user coordination or DO-persisted state. If they only want real-time updates of their own data, multi-tab sync, or streaming, SSE is simpler.
+
+> Full details for both: the `cossack-best-practices` skill's `references/realtime.md`.
+
+### If the user chose `sse`
+
+```typescript
+@Page({ transport: 'sse' }) // per-user scope by default
+export class LiveCounter extends Cossack {
+    @State() private count: number = 0;
+
+    @Server()
+    private increment() { this.count++; } // auto-synced to all the user's tabs
+}
+```
+
+SSE supports per-user / per-team / per-room / shared scoping via `scope: (c) => '...'`, and async-generator streaming methods (`async *`). No wrangler binding or DO export needed. Skip to Step 8 (Verify).
+
+### If the user chose `durable-object`
+
+Continue with the steps below.
+
+## Step 2: Prerequisites (Durable Object only)
 
 - The page must use `transport: 'durable-object'`
 - A `COSSACK_OBJECT` Durable Object binding must be configured in `wrangler.jsonc`
 - The `AppDurableObject` must be exported from `src/index.ts`
 
-## Step 1: Understand the Two Patterns
+## Step 3: Understand the Two Patterns
 
 ### Stateless vs Stateful
 
@@ -29,6 +58,13 @@ Add `stateful: true` to persist state in DO storage (survives reconnections and 
 
 // Stateful — state persists in DO storage
 @Page({ transport: 'durable-object', stateful: true })
+```
+
+By default each URL gets its own DO instance. To make multiple users (or rooms) share the **same** DO instance — the mechanism for multiplayer, chat rooms, shared whiteboards — add the `scope` option. It works for both DO and SSE; only the default differs (DO defaults to per-URL, SSE to per-user).
+
+```typescript
+// All team members share one DO instance
+@Page({ transport: 'durable-object', stateful: true, scope: (c) => `team:${c.get('user').teamId}` })
 ```
 
 Cossack supports two patterns for real-time state. Choose based on the use case:
@@ -45,7 +81,7 @@ Best for: Database mutations, permission-sensitive data, complex state changes.
 
 A `@Server()` method broadcasts a simple event. Clients listen with `@OnEvent()` and re-fetch data within their own security context.
 
-## Step 2: Implement Pattern 1 — Automatic Sync
+## Step 4: Implement Pattern 1 — Automatic Sync
 
 ```typescript
 import { Cossack, Page, Server, State } from '@cossackframework/core';
@@ -114,7 +150,7 @@ export class Dashboard extends Cossack {
 }
 ```
 
-## Step 3: Implement Pattern 2 — Event-Driven Re-fetch
+## Step 5: Implement Pattern 2 — Event-Driven Re-fetch
 
 ```typescript
 import { Cossack, Page, Server, State, OnEvent, Client } from '@cossackframework/core';
@@ -196,7 +232,7 @@ export class Tasks extends Cossack {
 }
 ```
 
-## Step 4: Server-to-Client Method Calls
+## Step 6: Server-to-Client Method Calls
 
 From a `@Server()` method, you can directly invoke `@Client()` methods:
 
@@ -216,7 +252,7 @@ private showNotification(message: string) {
 }
 ```
 
-## Step 5: Configure Durable Object Binding
+## Step 7: Configure Durable Object Binding
 
 Ensure `wrangler.jsonc` has the binding:
 
@@ -248,13 +284,21 @@ export { AppDurableObject };
 export default { fetch: app.fetch };
 ```
 
-## Step 6: Verify
+## Step 8: Verify
 
+**For SSE transport:**
+1. Page uses `@Page({ transport: 'sse' })`
+2. `scope` option set if a non-default scope (per-team/per-room/shared) is needed
+3. For streaming, `@Server()` methods use `async *` generators and `yield`
+4. Run type checks: `pnpm tsc --noEmit`
+
+**For Durable Object transport:**
 1. Page uses `@Page({ transport: 'durable-object' })`
 2. Add `stateful: true` if state must persist in DO storage
-3. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
-4. `AppDurableObject` is exported from `src/index.ts`
-5. For multi-channel: channels are declared in `@Page({ channels: [...] })`
-6. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
-7. `@Client()` methods are used for client-side-only logic
-8. Run type checks: `pnpm tsc --noEmit`
+3. Add `scope: (c) => '...'` if multiple users/rooms should share one DO instance
+4. `COSSACK_OBJECT` binding exists in `wrangler.jsonc`
+5. `AppDurableObject` is exported from `src/index.ts`
+6. For multi-channel: channels are declared in `@Page({ channels: [...] })`
+7. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
+8. `@Client()` methods are used for client-side-only logic
+9. Run type checks: `pnpm tsc --noEmit`
