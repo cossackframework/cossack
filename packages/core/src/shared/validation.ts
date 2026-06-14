@@ -303,3 +303,134 @@ export function setValidationRules(
 ): void {
   Reflect.defineMetadata('cossack:validation', rules, target.constructor);
 }
+
+// ========== Component validation helpers ==========
+// These functions are extracted from the Cossack class body and accept the
+// component instance as the first argument. They use the component's public
+// getProperty/setProperty helpers and requestUpdate to remain UI-agnostic.
+
+/** Get the error property name from validation config. */
+export function getValidationErrorProperty(component: any): string {
+    const rules = getValidationRules(component);
+    const firstRule = Object.values(rules)[0];
+    return firstRule?.config?.errorProperty || 'errors';
+}
+
+/** Get the error message for a specific property. */
+export function getError(component: any, propertyName: string): string | undefined {
+    const errorProperty = getValidationErrorProperty(component);
+    const errors = component.getProperty(errorProperty) as Record<string, string> | undefined;
+    return errors?.[propertyName];
+}
+
+/** Check if a property has validation errors. */
+export function hasError(component: any, propertyName: string): boolean {
+    const error = getError(component, propertyName);
+    return error !== undefined && error !== '';
+}
+
+/** Set validation error for a specific property. */
+export function setValidationError(component: any, propertyName: string, message: string): void {
+    const errorProperty = getValidationErrorProperty(component);
+    const errors = component.getProperty(errorProperty) as Record<string, string> || {};
+    errors[propertyName] = message;
+    component.setProperty(errorProperty, { ...errors });
+    if (!component.isServer) {
+        component.requestUpdate();
+    }
+}
+
+/** Clear validation error for a specific property. */
+export function clearValidationError(component: any, propertyName: string): void {
+    const errorProperty = getValidationErrorProperty(component);
+    const errors = component.getProperty(errorProperty) as Record<string, string> || {};
+    if (errors[propertyName]) {
+        delete errors[propertyName];
+        component.setProperty(errorProperty, { ...errors });
+        if (!component.isServer) {
+            component.requestUpdate();
+        }
+    }
+}
+
+/** Validate a single property against its validation rules. */
+export async function validateProperty(component: any, propertyName: string): Promise<boolean> {
+    const rules = getValidationRules(component);
+    const propertyRules = rules[propertyName];
+
+    if (!propertyRules) {
+        return true;
+    }
+
+    const value = component.getProperty(propertyName);
+    const { rules: validationRules, config } = propertyRules;
+
+    // Determine where to run validation
+    const shouldRunOnClient = config.runOn === 'client' || config.runOn === 'both';
+    const shouldRunOnServer = config.runOn === 'server' || config.runOn === 'both';
+
+    let isValid = true;
+
+    // Run client-side validation (sync and async)
+    if (!component.isServer && shouldRunOnClient) {
+        // Run sync validation first
+        const syncResult = validateValue(value, validationRules);
+        isValid = syncResult.valid;
+        if (!isValid) {
+            setValidationError(component, propertyName, syncResult.message || 'Validation failed');
+        } else if (validationRules.customAsync) {
+            // Run async validation if sync passes and there's a customAsync rule
+            try {
+                const asyncResult = await validateValueAsync(value, validationRules, component);
+                isValid = asyncResult.valid;
+                if (!asyncResult.valid) {
+                    setValidationError(component, propertyName, asyncResult.message || 'Validation failed');
+                }
+            } catch (e) {
+                isValid = false;
+                setValidationError(component, propertyName, 'Validation failed');
+            }
+        }
+    }
+
+    // Run server-side validation
+    if (component.isServer && shouldRunOnServer) {
+        const result = await validateValueAsync(value, validationRules, component);
+        isValid = isValid && result.valid;
+        if (!result.valid) {
+            setValidationError(component, propertyName, result.message || 'Validation failed');
+        }
+    }
+
+    // If valid, clear any existing error
+    if (isValid) {
+        clearValidationError(component, propertyName);
+    }
+
+    return isValid;
+}
+
+/** Validate all properties with validation rules. */
+export async function validateAll(component: any): Promise<boolean> {
+    const rules = getValidationRules(component);
+    const propertyNames = Object.keys(rules);
+
+    const results = await Promise.all(
+        propertyNames.map(name => validateProperty(component, name))
+    );
+
+    return results.every(result => result);
+}
+
+/** Clear all validation errors. */
+export function clearErrors(component: any): void {
+    const errorProperty = getValidationErrorProperty(component);
+    const errors = component.getProperty(errorProperty);
+    if (errors && typeof errors === 'object') {
+        component.setProperty(errorProperty, {});
+        if (!component.isServer) {
+            component.requestUpdate();
+        }
+    }
+}
+

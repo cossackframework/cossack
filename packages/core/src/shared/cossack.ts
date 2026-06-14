@@ -11,182 +11,72 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, PageOptions, Server, State, ClientState, VisibleTaskOptions, Validate } from './decorators';
+import { Client, PageOptions, Server, ClientState } from './decorators';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
-import { PageStateProvider, StateProvider } from './StateProvider';
+import { StateProvider } from './StateProvider';
+import {
+    initializeProviders as initializeProvidersFn,
+    connectWebSocket as connectWebSocketFn,
+    connectSSE as connectSSEFn,
+} from './transport-connections';
+import {
+    proxyHttpMethods as proxyHttpMethodsFn,
+    proxyServerMethods as proxyServerMethodsFn,
+    setupServerMethodProxies as setupServerMethodProxiesFn,
+} from './method-proxy';
 import { HeadTag, HeadContext, HeadValue } from './head';
+import {
+    buildHeadContext as buildHeadContextFn,
+    mergeHead as mergeHeadFn,
+    applyHeadTags as applyHeadTagsFn,
+} from './head';
 import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
-import { validateValue, validateValueAsync, getValidationRules } from './validation';
-import { isService } from './container';
-import { bootstrapService } from './service-bootstrap';
-
-export const RootContext = createContext<Cossack | null>(null);
-
-/**
- * Lifecycle phases for explicit state management and preventing invalid transitions.
- */
-export enum LifecyclePhase {
-    /** Component is being constructed */
-    Creating = 'Creating',
-    /** bootstrap() is being called (not yet connected to DOM) */
-    Bootstrapping = 'Bootstrapping',
-    /** Component is connected to DOM and ready */
-    Mounted = 'Mounted',
-    /** An update is in progress (willUpdate) */
-    Updating = 'Updating',
-    /** Component has been destroyed */
-    Destroyed = 'Destroyed',
-}
-
-/**
- * Unified state management interface.
- * Separates concerns between public/shared state, internal/private state, and children state.
- */
-export interface ComponentState {
-    /** Public state that is synced between server and client (decorated with @State()) */
-    public: Record<string, unknown>;
-    /** Internal state that lives only on the client (decorated with @ClientState()) */
-    internal: Record<string, unknown>;
-    /** Nested children component states */
-    children: Record<string, SerializedComponentState>;
-}
-
-/**
- * Serialized state format for transmission between server and client.
- * Contains both the state values and metadata needed for hydration.
- */
-export interface SerializedComponentState {
-    /** Public state values */
-    public: Record<string, unknown>;
-    /** Internal state values (only present for client-side restoration) */
-    internal?: Record<string, unknown>;
-    /** Metadata needed for initialization */
-    metadata?: {
-        componentId: string;
-        /** @deprecated Use routePath instead - kept for backward compatibility */
-        componentPath?: string;
-        /** Simplified route path (e.g., /hello/[name] instead of /src/pages/hello/[name]/index.ts) */
-        routePath?: string;
-        pathname?: string;
-        params?: Record<string, string>;
-        user?: unknown;
-    };
-    /** Provider targets for WebSocket connections */
-    providerTargets?: Record<string, string>;
-    /** Nested children states */
-    children?: Record<string, SerializedComponentState>;
-    /** Component route ID for HTTP transport */
-    componentRouteId?: string;
-    /** App component route ID for HTTP transport (used for global App methods) */
-    appRouteId?: string;
-    /** Route path at top level for easier access */
-    routePath?: string;
-    /** Transport mode for this page (set by router) */
-    transport?: string;
-    /** Scope key for SSE/DO transport (computed once during SSR) */
-    scopeKey?: string;
-}
-
-/**
- * Internal state container for a component.
- * This is the single source of truth for all component state.
- */
-class StateContainer {
-    private _publicState = new Map<string, unknown>();
-    private _internalState = new Map<string, unknown>();
-    private _initializedKeys = new Set<string>();
-
-    /** Get all public state as a plain object */
-    getPublicState(): Record<string, unknown> {
-        return Object.fromEntries(this._publicState);
-    }
-
-    /** Get all internal state as a plain object */
-    getInternalState(): Record<string, unknown> {
-        return Object.fromEntries(this._internalState);
-    }
-
-    /** Get a public state value */
-    getPublic(key: string): unknown {
-        return this._publicState.get(key);
-    }
-
-    /** Get an internal state value */
-    getInternal(key: string): unknown {
-        return this._internalState.get(key);
-    }
-
-    /** Set a public state value */
-    setPublic(key: string, value: unknown): void {
-        this._publicState.set(key, value);
-        this._initializedKeys.add(key);
-    }
-
-    /** Set an internal state value */
-    setInternal(key: string, value: unknown): void {
-        this._internalState.set(key, value);
-        this._initializedKeys.add(key);
-    }
-
-    /** Check if a key has been initialized */
-    isInitialized(key: string): boolean {
-        return this._initializedKeys.has(key);
-    }
-
-    /** Check if this container has any public state */
-    hasPublicState(): boolean {
-        return this._publicState.size > 0;
-    }
-
-    /** Check if this container has any internal state */
-    hasInternalState(): boolean {
-        return this._internalState.size > 0;
-    }
-}
-
-/**
- * Internal interfaces for type-safe property access.
- * These define the shape of internal properties and methods that were previously accessed via `as any`.
- */
-
-/** Dynamic method/function type that can be called with any arguments */
-type DynamicFunction = (...args: unknown[]) => unknown;
-
-/** Map of component methods by name */
-type ComponentMethods = Record<string, DynamicFunction>;
-
-/** Internal properties from CossackElement that need to be accessed */
-interface CossackElementInternal {
-    /** Parent component in the render tree */
-    __parent?: CossackElement & { registerComponent?(comp: Cossack): void };
-    /** Changed properties pending update */
-    __changedProperties: Map<string | number | symbol, unknown>;
-    /** Update promise for concurrent updates */
-    __updatePromise: Promise<boolean> | null;
-    /** Controllers attached to this element */
-    __controllers: unknown[];
-    /** Notify listeners of template changes */
-    __notifyListeners(template: TemplateResult | null): void;
-}
-
-/** Internal state properties that exist on component instances */
-interface CossackInternalState {
-    /** Initial state loaded from window for hydration */
-    __INITIAL_STATE__?: SerializedComponentState;
-}
-
-/** Dynamic property access interface for state properties */
-interface DynamicPropertyAccess {
-    [key: string]: unknown;
-}
-
-export interface CossackOptions {
-  Channels?: string;
-}
-
+import {
+    getError as getErrorFn,
+    hasError as hasErrorFn,
+    validateProperty as validatePropertyFn,
+    validateAll as validateAllFn,
+    clearErrors as clearErrorsFn,
+    clearValidationError as clearValidationErrorFn,
+    setValidationError as setValidationErrorFn,
+    getValidationErrorProperty as getValidationErrorPropertyFn,
+} from './validation';
+import {
+    bootstrapServices as bootstrapServicesFn,
+    registerServiceState as registerServiceStateFn,
+    forwardServiceMethods as forwardServiceMethodsFn,
+    proxyServiceMethods as proxyServiceMethodsFn,
+    findServiceInstance as findServiceInstanceFn,
+    getConstructorParamNames as getConstructorParamNamesFn,
+} from './service-bootstrap';
+import { StateContainer } from './state-container';
+import { LifecyclePhase } from './component-types';
+import type {
+    ComponentState,
+    SerializedComponentState,
+    CossackOptions,
+    BootstrapOptions,
+    DynamicFunction,
+    CossackElementInternal,
+    CossackInternalState,
+    DynamicPropertyAccess,
+} from './component-types';
 import type { AuthenticatedUser } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
+
+// Re-export public types so `export * from './shared/cossack'` in index.ts
+// continues to surface them to consumers. Split runtime vs type-only so
+// bundlers with isolatedModules don't try to resolve types as values.
+export { LifecyclePhase };
+export type {
+    ComponentState,
+    SerializedComponentState,
+    CossackOptions,
+    BootstrapOptions,
+};
+
+export const RootContext = createContext<Cossack | null>(null);
 
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     // Standard Properties
@@ -388,98 +278,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public static buildHeadContext(tags: HeadTag[]): HeadContext {
-        const context: HeadContext = {
-            title: '',
-            description: '',
-            image: '',
-            meta: [],
-            links: [],
-            scripts: [],
-            tags: []
-        };
-
-        for (const tag of tags) {
-            switch (tag.tag) {
-                case 'title':
-                    context.title = tag.children || '';
-                    break;
-                case 'meta':
-                    const name = tag.attributes?.name || tag.attributes?.property;
-                    if (name === 'description' || name === 'og:description') {
-                        context.description = String(tag.attributes?.content || '');
-                    } else if (name === 'og:image' || name === 'twitter:image') {
-                        context.image = String(tag.attributes?.content || '');
-                    }
-                    context.meta.push(tag);
-                    break;
-                case 'link':
-                    context.links.push(tag);
-                    break;
-                case 'script':
-                    context.scripts.push(tag);
-                    break;
-                default:
-                    context.tags.push(tag);
-                    break;
-            }
-        }
-
-        return context;
+        return buildHeadContextFn(tags);
     }
 
     public static mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
-        const title = value.title ?? context.title;
-        const description = value.description ?? context.description;
-        const image = value.image ?? context.image;
-        
-        let meta = value.meta ?? context.meta;
-        const links = value.links ?? context.links;
-        const scripts = value.scripts ?? context.scripts;
-        const tags = value.tags ?? context.tags;
-
-        const result: HeadTag[] = [];
-        if (title) result.push({ tag: 'title', children: title });
-        
-        // Auto-expand SEO shortcuts
-        if (description) {
-            result.push({ tag: 'meta', attributes: { name: 'description', content: description } });
-            result.push({ tag: 'meta', attributes: { property: 'og:description', content: description } });
-        }
-        if (image) {
-            result.push({ tag: 'meta', attributes: { property: 'og:image', content: image } });
-            result.push({ tag: 'meta', attributes: { name: 'twitter:image', content: image } });
-        }
-
-        result.push(...meta);
-        result.push(...links);
-        result.push(...scripts);
-        result.push(...tags);
-        return result;
+        return mergeHeadFn(context, value);
     }
 
     public static applyHeadTags(tags: HeadTag[]) {
-        const headElement = document.head;
-
-        // Clear existing managed tags
-        headElement.querySelectorAll('[data-cossack]').forEach(el => el.remove());
-
-        for (const tag of tags) {
-            if (tag.tag === 'title') {
-                if (tag.children) document.title = tag.children;
-                continue;
-            }
-            const el = document.createElement(tag.tag);
-            el.setAttribute('data-cossack', '');
-            if (tag.attributes) {
-                for (const [key, value] of Object.entries(tag.attributes)) {
-                    el.setAttribute(key, String(value));
-                }
-            }
-            if (tag.children) {
-                el.textContent = tag.children;
-            }
-            headElement.appendChild(el);
-        }
+        applyHeadTagsFn(tags);
     }
 
     private autoBindMethods() {
@@ -495,257 +302,30 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Bootstrap services injected via constructor parameters.
-     * - Initializes @State reactive properties on services
-     * - Registers service state on the component so RPC round-trips work
-     * - Server: creates forwarding methods so `this.increment()` delegates to the service
-     * - Client: creates HTTP fetch proxies for service @Server methods
+     * Delegates to bootstrapServices() in service-bootstrap.ts.
      */
     private _bootstrapServices(): void {
-        const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', this.constructor) || [];
-
-        for (const dep of paramTypes) {
-            if (isService(dep)) {
-                const serviceInstance = this._findServiceInstance(dep);
-                if (serviceInstance) {
-                    // Set up @State getters/setters on the service
-                    bootstrapService(serviceInstance);
-
-                    // Register service @State properties on the component so the
-                    // RPC mechanism (apply state → call action → getPublicState)
-                    // works transparently for service state.
-                    this._registerServiceState(serviceInstance);
-
-                    if (this.isServer) {
-                        this._forwardServiceMethods(serviceInstance);
-                    } else {
-                        this._proxyServiceMethods(serviceInstance);
-                    }
-                }
-            }
-        }
+        bootstrapServicesFn(this);
     }
 
-    /**
-     * Register service @State properties on the component's state container
-     * and create pass-through getters/setters. This makes the RPC mechanism
-     * work: the router applies state to the component, the forwarding method
-     * syncs it to the service, and getPublicState() returns the service's values.
-     */
     private _registerServiceState(serviceInstance: any): void {
-        const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
-        const stateContainer = (this as any)._stateContainer;
-
-        for (const key of Object.keys(serviceStateMeta)) {
-            // Register in component's state container so getPublicState() includes it
-            stateContainer.setPublic(key, serviceInstance[key]);
-
-            // Create pass-through property: component.key ↔ service.key
-            Object.defineProperty(this, key, {
-                get: () => serviceInstance[key],
-                set: (newValue: any) => {
-                    serviceInstance[key] = newValue;
-                    // Keep state container in sync for getPublicState()
-                    stateContainer.setPublic(key, newValue);
-
-                    if (this.isServer) {
-                        (this as any)._scheduleStateBroadcast(key);
-                    } else if (!(this as any).isBootstrapping) {
-                        this.requestUpdate(key, newValue);
-                    }
-                },
-                enumerable: true,
-                configurable: true,
-            });
-        }
+        registerServiceStateFn(this, serviceInstance);
     }
 
-    /**
-     * Server-side: create forwarding methods on the component instance
-     * that delegate to the corresponding service method, and sync state
-     * back to the component's state container after execution.
-     */
     private _forwardServiceMethods(serviceInstance: any): void {
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
-        const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-        const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
-        const serviceStateKeys = Object.keys(serviceStateMeta);
-        const stateContainer = (this as any)._stateContainer;
-
-        for (const methodName of Object.keys(serverMethods)) {
-            // Skip @Shared/@Client methods — they run locally
-            if (clientMethods[methodName]) continue;
-            // Only forward if component doesn't already have this method
-            if (this.hasMethod(methodName)) continue;
-
-            const original = serviceInstance[methodName];
-            if (typeof original === 'function') {
-                (this as any)[methodName] = async (...args: any[]) => {
-                    const result = await original.apply(serviceInstance, args);
-                    // Sync service state back to component's state container
-                    // so getPublicState() returns updated values
-                    for (const key of serviceStateKeys) {
-                        stateContainer.setPublic(key, serviceInstance[key]);
-                    }
-                    return result;
-                };
-            }
-        }
+        forwardServiceMethodsFn(this, serviceInstance);
     }
 
-    /**
-     * Client-side: create HTTP fetch proxies for service @Server-only methods.
-     * Uses the same /crpc endpoint as the component's own proxies.
-     */
     private _proxyServiceMethods(serviceInstance: any): void {
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
-        const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-        const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
-        const serviceStateKeys = Object.keys(serviceStateMeta);
-
-        // Only proxy methods that are @Server-only (not @Shared, not @Client)
-        const serverOnlyMethods = Object.keys(serverMethods).filter(name => !clientMethods[name]);
-
-        if (serverOnlyMethods.length === 0) return;
-
-        // Get componentRouteId the same way proxyHttpMethods does
-        const initialState = this.getInitialStateFromWindow();
-        const isAppComponent = this.constructor.name === 'App';
-        const componentRouteId = isAppComponent
-            ? initialState?.appRouteId
-            : initialState?.componentRouteId;
-        const scopeKey = initialState?.scopeKey;
-
-        if (!componentRouteId) return;
-
-        for (const methodName of serverOnlyMethods) {
-            const proxy = async (...args: any[]) => {
-                // Build state from the service's @State properties
-                const state: Record<string, any> = {};
-                for (const key of serviceStateKeys) {
-                    state[key] = serviceInstance[key];
-                }
-
-                this.loading[methodName] = (this.loading[methodName] || 0) + 1;
-                this.requestUpdate();
-
-                try {
-                    const response = await fetch('/crpc', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            componentRouteId,
-                            target: this._id,
-                            action: methodName,
-                            state,
-                            payload: args,
-                            scopeKey,
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const data = await response.json() as Record<string, any>;
-
-                    if (data._cossack_redirect) {
-                        window.location.href = data._cossack_redirect;
-                        return;
-                    }
-
-                    let returnValue;
-                    if ('_cossack_return' in data) {
-                        returnValue = data._cossack_return;
-                        delete data._cossack_return;
-                    }
-
-                    // Sync updated state back to the service instance
-                    for (const key in data) {
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (this._isOptimisticLocked(key)) {
-                            this._optimisticPendingState[key] = data[key];
-                        } else {
-                            serviceInstance[key] = data[key];
-                        }
-                    }
-
-                    this.requestUpdate();
-                    return returnValue;
-                } catch (error) {
-                    console.error(`Error calling service action '${methodName}':`, error);
-                } finally {
-                    if (this.loading[methodName] > 0) {
-                        this.loading[methodName]--;
-                    }
-                    if (!this.loading[methodName] || this.loading[methodName] <= 0) {
-                        delete this.loading[methodName];
-                    }
-                    this.requestUpdate();
-                }
-            };
-
-            serviceInstance[methodName] = proxy;
-        }
+        proxyServiceMethodsFn(this, serviceInstance);
     }
 
-    /**
-     * Find a service instance of the given type among the component's properties.
-     * Scans own properties for instances matching the service class.
-     */
     private _findServiceInstance(serviceClass: new (...args: any[]) => any): any | null {
-        // Check all own properties for an instance of the service class
-        for (const key of Object.keys(this)) {
-            const value = (this as any)[key];
-            if (value instanceof serviceClass) {
-                return value;
-            }
-        }
-        // Also check prototype chain properties that might have been set via constructor
-        const proto = Object.getPrototypeOf(this);
-        const descriptors = Object.getOwnPropertyDescriptors(proto);
-        // Check TypeScript "parameter properties" (constructor(private x: X))
-        // These are stored as own properties on the instance, so Object.keys should find them
-        // But also try accessing known metadata
-        const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', this.constructor) || [];
-        const paramNames = this._getConstructorParamNames();
-        for (let i = 0; i < paramTypes.length; i++) {
-            if (paramTypes[i] === serviceClass && paramNames[i]) {
-                const val = (this as any)[paramNames[i]];
-                if (val instanceof serviceClass) {
-                    return val;
-                }
-            }
-        }
-        return null;
+        return findServiceInstanceFn(this, serviceClass);
     }
 
-    /**
-     * Get constructor parameter names by parsing the constructor source.
-     * This is needed to match reflect-metadata param types to actual property names.
-     */
     private _getConstructorParamNames(): string[] {
-        const proto = Object.getPrototypeOf(this);
-        const constructorStr = proto.constructor.toString();
-        const match = constructorStr.match(/constructor\s*\(([^)]*)\)/);
-        if (!match) return [];
-
-        return match[1]
-            .split(',')
-            .map((param: string) => {
-                // Handle TypeScript parameter properties: "private x: Type" or "public x: Type"
-                const parts = param.trim().split(/\s+/);
-                if (parts.length < 2) return '';
-                // Check if it has an access modifier (private/protected/public/readonly)
-                const modifiers = ['private', 'protected', 'public', 'readonly'];
-                let nameIdx = 0;
-                while (nameIdx < parts.length && modifiers.includes(parts[nameIdx])) {
-                    nameIdx++;
-                }
-                if (nameIdx >= parts.length) return '';
-                const nameWithColon = parts[nameIdx];
-                return nameWithColon.split(':')[0].trim();
-            })
-            .filter(Boolean);
+        return getConstructorParamNamesFn(this);
     }
 
     /**
@@ -857,7 +437,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit, deferMount }: { container?: Element | string, initialState?: any, context?: Context | HydratedContext, user?: AuthenticatedUser, env?: any, page?: string, providerName?: string, skipInit?: boolean, deferMount?: boolean } = {}) {
+    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit, deferMount }: BootstrapOptions = {}) {
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -1059,910 +639,27 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     @Server()
     private initializeProviders() {
-        if (!this.isServer) return;
-
-        this.providers = new Map<string, StateProvider>();
-        const pageOptions = Reflect.getMetadata('page:options', this.constructor) || {};
-        let componentProviders = pageOptions.providers || {};
-
-        if (Object.keys(componentProviders).length === 0) {
-            componentProviders = { page: new PageStateProvider() };
-        } else if (!componentProviders.page) {
-            componentProviders.page = new PageStateProvider();
-        }
-
-        for (const [name, provider] of Object.entries(componentProviders)) {
-            (provider as StateProvider).setContext(this, this.env);
-            this.providers.set(name, provider as StateProvider);
-        }
+        initializeProvidersFn(this);
     }
 
     @Client()
     private connectWebSocket() {
-        const initialState = this.getInitialStateFromWindow();
-        const providerTargets = initialState?.providerTargets || {};
-
-        for (const providerName in providerTargets) {
-            const target = providerTargets[providerName];
-
-            // Access metadata - support both routePath (new) and componentPath (legacy)
-            const routePath = initialState?.routePath || initialState?.metadata?.routePath || initialState?.metadata?.componentPath;
-            if (!routePath) {
-                console.error('[Cossack] Cannot connect WebSocket: routePath not found in initial state.');
-                continue;
-            }
-
-            const pathname = initialState?.metadata?.pathname;
-            const params = new URLSearchParams({
-                routePath,
-                pathname: pathname || '',
-                ...(initialState?.metadata?.params || {}),
-            }).toString();
-
-            const wsUrl = `/ws/${providerName}/${target}?${params}`;
-            const fullWsUrl = `ws://${window.location.host}${wsUrl}`;
-            const ws = new WebSocket(fullWsUrl);
-            this.websockets.set(providerName, ws);
-
-            ws.onmessage = (event) => {
-                if (event.data === 'pong') {
-                    return; // Server heartbeat response, ignore.
-                }
-                const data = JSON.parse(event.data);
-                if (data.type === 'state-update') {
-                    // Update public state from the new structure
-                    const stateUpdate = data.state || {};
-                    for (const key in stateUpdate) {
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (this._isOptimisticLocked(key)) {
-                            this._optimisticPendingState[key] = stateUpdate[key];
-                        } else {
-                            this.setProperty(key, stateUpdate[key]);
-                        }
-                    }
-                } else if (data.type === 'action-complete') {
-                    const { action } = data;
-                    if (this.loading[action]) {
-                        this.loading[action]--;
-                        if (this.loading[action] <= 0) {
-                            delete this.loading[action];
-                            // Release the lock but don't flush buffered state.
-                            // The state-update for the final action arrives shortly
-                            // after (or before) this action-complete. By releasing
-                            // the lock, that state-update will apply the correct
-                            // final server value directly via setProperty.
-                            delete this._optimisticLockedKeys[action];
-                            // Discard stale buffered state
-                            const lockedKeys = this._optimisticLockedKeys[action];
-                            if (lockedKeys) {
-                                for (const key of lockedKeys) {
-                                    delete this._optimisticPendingState[key];
-                                }
-                            }
-                        }
-                    }
-                    this.requestUpdate();
-                } else if (data.type === 'client-action') {
-                    const { action, payload } = data;
-                    const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
-                    if (clientMethods[action] && this.hasMethod(action)) {
-                        const method = this.getMethod(action);
-                        (method as any)(...payload);
-                    }
-                } else if (data.type === 'event') {
-                    const { eventName, payload } = data;
-                    const eventHandlers = Reflect.getMetadata('cossack:event-handlers', this.constructor) || {};
-                    if (eventHandlers[eventName]) {
-                        for (const handlerMethod of eventHandlers[eventName]) {
-                            if (this.hasMethod(handlerMethod)) {
-                                const method = this.getMethod(handlerMethod);
-                                (method as any)(...payload);
-                            }
-                        }
-                    }
-                }
-            };
-
-            setInterval(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send('ping');
-                }
-            }, 25000);
-        }
+        connectWebSocketFn(this);
     }
 
     @Client()
     private connectSSE() {
-        const initialState = this.getInitialStateFromWindow();
-        const componentRouteId = initialState?.componentRouteId;
-        const scopeKey = initialState?.scopeKey;
-
-        if (!componentRouteId) {
-            console.error('[Cossack] Cannot connect SSE: componentRouteId not found in initial state.');
-            return;
-        }
-
-        if (!scopeKey) {
-            console.error('[Cossack] Cannot connect SSE: scopeKey not found in initial state.');
-            return;
-        }
-
-        const params = new URLSearchParams({ scopeKey });
-        const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
-        this._sseConnection = es;
-
-        es.addEventListener('state-update', (event) => {
-            try {
-                const stateUpdate = JSON.parse(event.data);
-                for (const key in stateUpdate) {
-                    if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                    if (this._isOptimisticLocked(key)) {
-                        this._optimisticPendingState[key] = stateUpdate[key];
-                    } else {
-                        this.setProperty(key, stateUpdate[key]);
-                    }
-                }
-                this.requestUpdate();
-            } catch (e) {
-                console.error('[Cossack] Error parsing SSE state-update:', e);
-            }
-        });
-
-        es.addEventListener('action-complete', (event) => {
-            try {
-                const { action } = JSON.parse(event.data);
-                if (this.loading[action]) {
-                    this.loading[action]--;
-                    if (this.loading[action] <= 0) {
-                        delete this.loading[action];
-                        delete this._optimisticLockedKeys[action];
-                        const lockedKeys = this._optimisticLockedKeys[action];
-                        if (lockedKeys) {
-                            for (const key of lockedKeys) {
-                                delete this._optimisticPendingState[key];
-                            }
-                        }
-                    }
-                }
-                this.requestUpdate();
-            } catch (e) {
-                console.error('[Cossack] Error parsing SSE action-complete:', e);
-            }
-        });
-
-        es.addEventListener('event', (event) => {
-            try {
-                const { eventName, payload } = JSON.parse(event.data);
-                const eventHandlers = Reflect.getMetadata('cossack:event-handlers', this.constructor) || {};
-                if (eventHandlers[eventName]) {
-                    for (const handlerMethod of eventHandlers[eventName]) {
-                        if (this.hasMethod(handlerMethod)) {
-                            const method = this.getMethod(handlerMethod);
-                            (method as any)(...payload);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('[Cossack] Error parsing SSE event:', e);
-            }
-        });
-
-        es.addEventListener('client-action', (event) => {
-            try {
-                const { action, payload } = JSON.parse(event.data);
-                const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
-                if (clientMethods[action] && this.hasMethod(action)) {
-                    const method = this.getMethod(action);
-                    (method as any)(...payload);
-                }
-            } catch (e) {
-                console.error('[Cossack] Error parsing SSE client-action:', e);
-            }
-        });
-
-        es.addEventListener('connected', () => {
-            // Connection confirmed by server
-        });
-
-        // Streaming events — passive listeners; stream proxy instances attach/detach their own
-        // listeners dynamically via addEventListener/removeEventListener on this EventSource.
-
-        es.onerror = () => {
-            // EventSource auto-reconnects per spec
-        };
+        connectSSEFn(this);
     }
 
     @Client()
     private proxyHttpMethods(serverMethods: { name: string }[]) {
-        const initialState = this.getInitialStateFromWindow();
-
-        // For App component (global component), use appRouteId
-        // Check constructor name - App component will have name 'App'
-        const isAppComponent = this.constructor.name === 'App';
-        const componentRouteId = isAppComponent
-            ? initialState?.appRouteId
-            : initialState?.componentRouteId;
-
-        if (!componentRouteId) {
-            console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
-            return;
-        }
-
-        const scopeKey = initialState?.scopeKey;
-        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
-        const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
-
-        // SSE transport: server methods may be async generators, so the proxy must
-        // support both `await` (thenable) and `for await...of` (async iterable).
-        const isSse = initialState?.transport === 'sse';
-
-        for (const method of serverMethods) {
-            const { name } = method;
-
-            if (isSse) {
-                // SSE hybrid proxy — works with both `await` and `for await...of`
-                const self = this;
-                const sseProxy = (...args: any[]) => {
-                    // === Optimistic handler (sync) ===
-                    if (optimisticHandlers[name] && self.hasMethod(optimisticHandlers[name])) {
-                        try {
-                            const optimisticMethod = self.getMethod(optimisticHandlers[name]);
-                            const snapshot: Record<string, any> = {};
-                            for (const key of stateKeys) {
-                                snapshot[key] = (self as any)[key];
-                            }
-                            (optimisticMethod as any)(...args);
-                            if (!self._optimisticLockedKeys[name]) {
-                                self._optimisticLockedKeys[name] = new Set();
-                            }
-                            for (const key of stateKeys) {
-                                if ((self as any)[key] !== snapshot[key]) {
-                                    self._optimisticLockedKeys[name].add(key);
-                                }
-                            }
-                            self.requestUpdate();
-                        } catch (e) {
-                            console.error(`Error in optimistic handler for '${name}':`, e);
-                        }
-                    }
-
-                    self.loading[name] = (self.loading[name] || 0) + 1;
-                    self.requestUpdate();
-
-                    // === Shared cleanup ===
-                    const cleanup = () => {
-                        if (self.loading[name] > 0) {
-                            self.loading[name]--;
-                        }
-                        if (!self.loading[name] || self.loading[name] <= 0) {
-                            delete self.loading[name];
-                            const lockedKeys = self._optimisticLockedKeys[name];
-                            if (lockedKeys) {
-                                for (const key of lockedKeys) delete self._optimisticPendingState[key];
-                                delete self._optimisticLockedKeys[name];
-                            }
-                        }
-                        self.requestUpdate();
-                    };
-
-                    // === File extraction (shared) ===
-                    const files = new Map<string, File>();
-                    const extractFiles = (arg: any): any => {
-                        if (arg && (
-                            arg instanceof Node ||
-                            arg instanceof Event ||
-                            arg instanceof Window ||
-                            (arg.constructor && arg.constructor.name && (
-                                arg.constructor.name.endsWith('Event') ||
-                                arg.constructor.name === 'Window' ||
-                                arg.constructor.name === 'Document'
-                            ))
-                        )) {
-                            return null;
-                        }
-                        if (arg instanceof File) {
-                            const id = `file_${files.size}`;
-                            files.set(id, arg);
-                            return { _cossack_file_id: id };
-                        }
-                        if (arg instanceof FileList) {
-                            return Array.from(arg).map(file => extractFiles(file));
-                        }
-                        if (Array.isArray(arg)) {
-                            return arg.map(item => extractFiles(item));
-                        }
-                        if (arg && typeof arg === 'object' && arg !== null) {
-                            const newObj: any = {};
-                            for (const key in arg) {
-                                newObj[key] = extractFiles(arg[key]);
-                            }
-                            return newObj;
-                        }
-                        return arg;
-                    };
-                    const processedArgs = args.map(arg => extractFiles(arg));
-
-                    // === Shared apply-state helper ===
-                    const applyState = (data: Record<string, any>) => {
-                        for (const key in data) {
-                            if (key.startsWith('_cossack_')) continue;
-                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                            if (self._isOptimisticLocked(key)) {
-                                self._optimisticPendingState[key] = data[key];
-                            } else {
-                                self.setProperty(key, data[key]);
-                            }
-                        }
-                        self.requestUpdate();
-                    };
-
-                    // === Path A: thenable (for `await proxy()`) ===
-                    // Makes the fetch, handles both streaming and non-streaming responses.
-                    const promiseOperation = async (): Promise<any> => {
-                        try {
-                            if (files.size > 0) {
-                                // File upload via XHR — no streaming
-                                const formData = new FormData();
-                                formData.append('componentRouteId', componentRouteId);
-                                if (self._id) formData.append('target', self._id);
-                                formData.append('action', name);
-                                formData.append('state', JSON.stringify(self.getPublicState()));
-                                formData.append('payload', JSON.stringify(processedArgs));
-                                files.forEach((file, id) => { formData.append(id, file); });
-
-                                return await new Promise<any>((resolve, reject) => {
-                                    const xhr = new XMLHttpRequest();
-                                    xhr.open('POST', '/upload', true);
-                                    xhr.upload.onprogress = (e) => {
-                                        if (e.lengthComputable) {
-                                            const percentComplete = (e.loaded / e.total) * 100;
-                                            const progressProp = `${name}Progress`;
-                                            const progressValue = self.getProperty(progressProp);
-                                            if (typeof progressValue === 'number') {
-                                                self.setProperty(progressProp, percentComplete);
-                                                self.requestUpdate();
-                                            }
-                                        }
-                                    };
-                                    xhr.onload = () => {
-                                        if (xhr.status >= 200 && xhr.status < 300) {
-                                            try {
-                                                const data = JSON.parse(xhr.responseText);
-                                                if (data._cossack_redirect) {
-                                                    window.location.href = data._cossack_redirect;
-                                                    resolve(undefined);
-                                                    return;
-                                                }
-                                                let returnValue;
-                                                if ('_cossack_return' in data) {
-                                                    returnValue = data._cossack_return;
-                                                    delete data._cossack_return;
-                                                }
-                                                applyState(data);
-                                                resolve(returnValue);
-                                            } catch (e) { reject(e); }
-                                        } else {
-                                            reject(new Error(`HTTP error! status: ${xhr.status}`));
-                                        }
-                                    };
-                                    xhr.onerror = () => reject(new Error('Network error'));
-                                    xhr.send(formData);
-                                });
-                            }
-
-                            const response = await fetch('/crpc', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    componentRouteId,
-                                    target: self._id,
-                                    action: name,
-                                    state: self.getPublicState(),
-                                    payload: processedArgs,
-                                    _cossack_stream: true,
-                                    scopeKey,
-                                }),
-                            });
-
-                            if (!response.ok) {
-                                throw new Error(`HTTP error! status: ${response.status}`);
-                            }
-
-                            const data = await response.json() as Record<string, any>;
-
-                            if (data._cossack_redirect) {
-                                window.location.href = data._cossack_redirect;
-                                return;
-                            }
-
-                            // Apply initial state from response
-                            applyState(data);
-
-                            // If server started a stream, wait for it to complete
-                            if (data._cossack_stream_id) {
-                                // Streaming: don't wait for completion here.
-                                // SSE state sync drives the UI — when isStreaming flips
-                                // to false via SSE, the client recovers automatically.
-                                return undefined;
-                            }
-
-                            // Non-streaming return
-                            let returnValue;
-                            if ('_cossack_return' in data) {
-                                returnValue = data._cossack_return;
-                            }
-                            return returnValue;
-                        } catch (error) {
-                            console.error(`Error calling server action '${name}':`, error);
-                        } finally {
-                            cleanup();
-                        }
-                    };
-
-                    const promise = promiseOperation();
-
-                    // === Path B: async iterator (for `for await...of proxy()`) ===
-                    // Makes its own fetch so it can consume SSE yield events independently.
-                    const createStreamIterator = () => {
-                        const fetchPromise = fetch('/crpc', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                componentRouteId,
-                                target: self._id,
-                                action: name,
-                                state: self.getPublicState(),
-                                payload: processedArgs,
-                                _cossack_stream: true,
-                                scopeKey,
-                            }),
-                        });
-
-                        let resolveYield: ((result: IteratorResult<any>) => void) | null = null;
-                        let streamId: string | null = null;
-                        let pendingValues: any[] = [];
-                        let streamDone = false;
-                        let initComplete = false;
-
-                        const yieldHandler = (event: MessageEvent) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                if (data.streamId !== streamId) return;
-                                if (!initComplete) return;
-
-                                if (resolveYield) {
-                                    resolveYield({ value: data.value, done: false });
-                                    resolveYield = null;
-                                } else {
-                                    pendingValues.push(data.value);
-                                }
-                            } catch (e) {
-                                console.error('[Cossack] Error parsing SSE yield event:', e);
-                            }
-                        };
-
-                        const doneHandler = (event: MessageEvent) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                if (data.streamId !== streamId) return;
-                                streamDone = true;
-                                if (resolveYield) {
-                                    resolveYield({ value: undefined, done: true });
-                                    resolveYield = null;
-                                }
-                            } catch (e) {
-                                console.error('[Cossack] Error parsing SSE stream-done event:', e);
-                            }
-                        };
-
-                        const errorEventHandler = (event: MessageEvent) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                if (data.streamId !== streamId) return;
-                                streamDone = true;
-                                if (resolveYield) {
-                                    resolveYield({ value: undefined, done: true });
-                                    resolveYield = null;
-                                }
-                                console.error('[Cossack] Stream error:', data.error);
-                            } catch (e) {
-                                console.error('[Cossack] Error parsing SSE stream-error event:', e);
-                            }
-                        };
-
-                        const sse = self._sseConnection;
-                        if (sse) {
-                            sse.addEventListener('yield', yieldHandler as any);
-                            sse.addEventListener('stream-done', doneHandler as any);
-                            sse.addEventListener('stream-error', errorEventHandler as any);
-                        }
-
-                        const iterator: AsyncIterator<any> & { [Symbol.asyncIterator](): AsyncIterator<any> } = {
-                            async next() {
-                                if (!initComplete) {
-                                    const response = await fetchPromise;
-                                    if (!response.ok) {
-                                        throw new Error(`HTTP error! status: ${response.status}`);
-                                    }
-                                    const data = await response.json() as Record<string, any>;
-
-                                    if (data._cossack_redirect) {
-                                        window.location.href = data._cossack_redirect;
-                                        return { value: undefined, done: true };
-                                    }
-
-                                    streamId = data._cossack_stream_id;
-                                    initComplete = true;
-
-                                    // Apply initial state from the response
-                                    applyState(data);
-
-                                    // Check if there are already queued values
-                                    if (pendingValues.length > 0) {
-                                        return { value: pendingValues.shift(), done: false };
-                                    }
-
-                                    // Stream may already be done (fast completion)
-                                    if (streamDone) {
-                                        return { value: undefined, done: true };
-                                    }
-
-                                    // If server didn't start a stream, this is a non-streaming method
-                                    // called with for-await-of. Yield the return value once, then done.
-                                    if (!data._cossack_stream_id) {
-                                        let returnValue;
-                                        if ('_cossack_return' in data) {
-                                            returnValue = data._cossack_return;
-                                        }
-                                        if (returnValue !== undefined) {
-                                            return { value: returnValue, done: false };
-                                        }
-                                        return { value: undefined, done: true };
-                                    }
-                                }
-
-                                if (streamDone && pendingValues.length === 0) {
-                                    return { value: undefined, done: true };
-                                }
-
-                                if (pendingValues.length > 0) {
-                                    return { value: pendingValues.shift(), done: false };
-                                }
-
-                                // Wait for next SSE event
-                                return new Promise<IteratorResult<any>>((resolve) => {
-                                    resolveYield = resolve;
-                                });
-                            },
-
-                            return() {
-                                const sse = self._sseConnection;
-                                if (sse) {
-                                    sse.removeEventListener('yield', yieldHandler as any);
-                                    sse.removeEventListener('stream-done', doneHandler as any);
-                                    sse.removeEventListener('stream-error', errorEventHandler as any);
-                                }
-                                return Promise.resolve({ value: undefined, done: true });
-                            },
-
-                            [Symbol.asyncIterator]() { return this; },
-                        };
-
-                        return iterator;
-                    };
-
-                    // === Return hybrid object ===
-                    return {
-                        then(onFulfilled: any, onRejected: any) {
-                            return promise.then(onFulfilled, onRejected);
-                        },
-                        catch(onRejected: any) {
-                            return promise.catch(onRejected);
-                        },
-                        [Symbol.asyncIterator]() {
-                            return createStreamIterator();
-                        },
-                    };
-                };
-
-                this.__cossack_proxies.set(name, sseProxy);
-                this.setProperty(name, sseProxy);
-                continue;
-            }
-
-            // HTTP transport: standard async proxy
-            const proxy = async (...args: any[]) => {
-                // Optimistic UI Handler
-                if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = this.getMethod(optimisticHandlers[name]);
-
-                        // Auto-detect: snapshot @State values before handler
-                        const snapshot: Record<string, any> = {};
-                        for (const key of stateKeys) {
-                            snapshot[key] = (this as any)[key];
-                        }
-
-                        (optimisticMethod as any)(...args);
-
-                        // Auto-detect: find which @State keys changed
-                        if (!this._optimisticLockedKeys[name]) {
-                            this._optimisticLockedKeys[name] = new Set();
-                        }
-                        for (const key of stateKeys) {
-                            if ((this as any)[key] !== snapshot[key]) {
-                                this._optimisticLockedKeys[name].add(key);
-                            }
-                        }
-
-                        this.requestUpdate();
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
-
-                this.loading[name] = (this.loading[name] || 0) + 1;
-                this.requestUpdate();
-
-                try {
-                    // Check for files in arguments
-                    const files = new Map<string, File>();
-
-                    const extractFiles = (arg: any): any => {
-                        // Skip recursion for DOM nodes, Events, Window, etc.
-                        if (arg && (
-                            arg instanceof Node ||
-                            arg instanceof Event ||
-                            arg instanceof Window ||
-                            (arg.constructor && arg.constructor.name && (
-                                arg.constructor.name.endsWith('Event') ||
-                                arg.constructor.name === 'Window' ||
-                                arg.constructor.name === 'Document'
-                            ))
-                        )) {
-                            return null;
-                        }
-
-                        if (arg instanceof File) {
-                            const id = `file_${files.size}`;
-                            files.set(id, arg);
-                            return { _cossack_file_id: id };
-                        }
-                        if (arg instanceof FileList) {
-                             return Array.from(arg).map(file => extractFiles(file));
-                        }
-                        if (Array.isArray(arg)) {
-                            return arg.map(item => extractFiles(item));
-                        }
-                        if (arg && typeof arg === 'object' && arg !== null) {
-                            const newObj: any = {};
-                            for (const key in arg) {
-                                newObj[key] = extractFiles(arg[key]);
-                            }
-                            return newObj;
-                        }
-                        return arg;
-                    };
-
-                    const processedArgs = args.map(arg => extractFiles(arg));
-
-                    if (files.size > 0) {
-                        const formData = new FormData();
-                        formData.append('componentRouteId', componentRouteId);
-                        if (this._id) formData.append('target', this._id);
-                        formData.append('action', name);
-                        formData.append('state', JSON.stringify(this.getPublicState()));
-                        formData.append('payload', JSON.stringify(processedArgs));
-
-                        files.forEach((file, id) => {
-                            formData.append(id, file);
-                        });
-
-                        return await new Promise<any>((resolve, reject) => {
-                            const xhr = new XMLHttpRequest();
-                            xhr.open('POST', '/upload', true);
-
-                            // Upload Progress
-                            xhr.upload.onprogress = (e) => {
-                                if (e.lengthComputable) {
-                                    const percentComplete = (e.loaded / e.total) * 100;
-                                    const progressProp = `${name}Progress`;
-                                    const progressValue = this.getProperty(progressProp);
-                                    if (typeof progressValue === 'number') {
-                                        this.setProperty(progressProp, percentComplete);
-                                        this.requestUpdate();
-                                    }
-                                }
-                            };
-
-                            xhr.onload = () => {
-                                if (xhr.status >= 200 && xhr.status < 300) {
-                                    try {
-                                        const data = JSON.parse(xhr.responseText);
-                                        if (data._cossack_redirect) {
-                                            window.location.href = data._cossack_redirect;
-                                            resolve(undefined);
-                                            return;
-                                        }
-
-                                        let returnValue;
-                                        if ('_cossack_return' in data) {
-                                            returnValue = data._cossack_return;
-                                            delete data._cossack_return;
-                                        }
-
-                                        for (const key in data) {
-                                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                                            if (this._isOptimisticLocked(key)) {
-                                                this._optimisticPendingState[key] = data[key];
-                                            } else {
-                                                this.setProperty(key, data[key]);
-                                            }
-                                        }
-                                        resolve(returnValue);
-                                    } catch (e) {
-                                        reject(e);
-                                    }
-                                } else {
-                                    reject(new Error(`HTTP error! status: ${xhr.status}`));
-                                }
-                            };
-
-                            xhr.onerror = () => reject(new Error('Network error'));
-                            xhr.send(formData);
-                        });
-
-                    } else {
-                        const response = await fetch('/crpc', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                componentRouteId,
-                                target: this._id,
-                                action: name,
-                                state: this.getPublicState(),
-                                payload: processedArgs,
-                                scopeKey,
-                            }),
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-
-                        const data = await response.json() as Record<string, any>;
-
-                        if (data._cossack_redirect) {
-                            window.location.href = data._cossack_redirect;
-                            return;
-                        }
-
-                        let returnValue;
-                        if ('_cossack_return' in data) {
-                            returnValue = data._cossack_return;
-                            delete data._cossack_return;
-                        }
-
-                        for (const key in data) {
-                            if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                            if (this._isOptimisticLocked(key)) {
-                                this._optimisticPendingState[key] = data[key];
-                            } else {
-                                this.setProperty(key, data[key]);
-                            }
-                        }
-                        return returnValue;
-                    }
-                } catch (error) {
-                    console.error(`Error calling server action '${name}':`, error);
-                } finally {
-                    // Decrement loading counter (don't wipe — other calls may be pending)
-                    if (this.loading[name] > 0) {
-                        this.loading[name]--;
-                    }
-                    if (!this.loading[name] || this.loading[name] <= 0) {
-                        delete this.loading[name];
-                        // Release the lock and discard stale buffered state.
-                        // The HTTP response already contains the final server state
-                        // (processed above in the try block), so no flush is needed.
-                        const lockedKeys = this._optimisticLockedKeys[name];
-                        if (lockedKeys) {
-                            for (const key of lockedKeys) {
-                                delete this._optimisticPendingState[key];
-                            }
-                            delete this._optimisticLockedKeys[name];
-                        }
-                    }
-                    this.requestUpdate();
-                }
-            };
-
-            // Store proxy in the map so stubbed methods can find it
-            this.__cossack_proxies.set(name, proxy);
-
-            // Set the method on the instance
-            this.setProperty(name, proxy);
-        }
+        proxyHttpMethodsFn(this, serverMethods);
     }
 
     @Client()
     private proxyServerMethods(serverMethods: { name: string, channel: string, provider: string }[]) {
-        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
-        const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', this.constructor) || {});
-
-        for (const method of serverMethods) {
-            const { name, channel, provider } = method;
-            const originalMethod = this.getMethod(name);
-            const proxy = (...args: any[]) => {
-                let ws = this.websockets.get(provider);
-                if (!ws) {
-                    const root = this.consume(RootContext);
-                    if (root) {
-                        ws = (root as any).websockets.get(provider);
-                    }
-                }
-
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    // Optimistic UI Handler
-                    if (optimisticHandlers[name] && this.hasMethod(optimisticHandlers[name])) {
-                        try {
-                            const optimisticMethod = this.getMethod(optimisticHandlers[name]);
-
-                            // Auto-detect: snapshot @State values before handler
-                            const snapshot: Record<string, any> = {};
-                            for (const key of stateKeys) {
-                                snapshot[key] = (this as any)[key];
-                            }
-
-                            (optimisticMethod as any)(...args);
-
-                            // Auto-detect: find which @State keys changed
-                            if (!this._optimisticLockedKeys[name]) {
-                                this._optimisticLockedKeys[name] = new Set();
-                            }
-                            for (const key of stateKeys) {
-                                if ((this as any)[key] !== snapshot[key]) {
-                                    this._optimisticLockedKeys[name].add(key);
-                                }
-                            }
-
-                            this.requestUpdate(); // Render immediately after optimistic update
-                        } catch (e) {
-                            console.error(`Error in optimistic handler for '${name}':`, e);
-                        }
-                    }
-
-                    this.loading[name] = (this.loading[name] || 0) + 1;
-                    this.requestUpdate();
-
-                    // Filter out Event objects and DOM nodes, keep only serializable values
-                    const payload = args.filter(arg => {
-                        const type = typeof arg;
-                        // Keep primitives (string, number, boolean, undefined)
-                        if (type !== 'object') return true;
-                        // Filter out null, objects (including Events, DOM nodes, etc.)
-                        return false;
-                    });
-                    ws.send(JSON.stringify({
-                        type: 'action',
-                        action: name,
-                        payload: payload,
-                        channel: channel,
-                        target: this._id,
-                    }));
-                } else {
-                    console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
-                }
-            };
-
-            // Store proxy in the map so stubbed methods can find it
-            this.__cossack_proxies.set(name, proxy);
-
-            // Set the method on the instance
-            this.setProperty(name, proxy);
-        }
+        proxyServerMethodsFn(this, serverMethods);
     }
 
     private async runTasks() {
@@ -2262,112 +959,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    /**
-     * Setup server method proxies for nested components.
-     * Uses Reflect metadata directly instead of serialized state for security.
-     * Skips re-proxying if methods have already been proxied.
-     */
     private _setupServerMethodProxies() {
-        if (this._serverMethodsProxied) {
-            return; // Already proxied
-        }
-
-        // Get server methods directly from Reflect metadata
-        const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-
-        // Build the server methods list from metadata
-        const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
-            name,
-            channel: options.channel || 'global',
-            provider: options.provider || 'page',
-        }));
-
-        // Also detect methods without decorators (server-only by default)
-        const clientSafeMethods = new Set(
-            Object.keys(Reflect.getMetadata('cossack:client-methods', this.constructor) || {})
-        );
-        const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', this.constructor) || {};
-        const computedMethods = Reflect.getMetadata('computed', this.constructor) || {};
-
-        // Add client-safe methods to the set
-        Object.values(optimisticHandlers || {}).forEach((handler: any) => clientSafeMethods.add(handler));
-        Object.keys(computedMethods || {}).forEach(key => clientSafeMethods.add(key));
-
-        // Add @PreventNavigation() decorated methods as client-safe
-        const preventNavigationMethod = Reflect.getMetadata('cossack:prevent-navigation', this.constructor);
-        if (preventNavigationMethod) {
-            clientSafeMethods.add(preventNavigationMethod);
-        }
-
-        // Add @Task decorated methods as client-safe
-        const taskMethods = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
-        taskMethods.forEach((method: string) => clientSafeMethods.add(method));
-
-        // Add @VisibleTask decorated methods as client-safe
-        const visibleTaskMethods = Reflect.getMetadata('cossack:visible-tasks', this.constructor) || [];
-        visibleTaskMethods.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
-
-        // Add @On, @OnDocument, @OnWindow decorated methods as client-safe
-        const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
-        domEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
-        const documentEvents = Reflect.getMetadata('cossack:document-events', this.constructor) || [];
-        documentEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
-        const windowEvents = Reflect.getMetadata('cossack:window-events', this.constructor) || [];
-        windowEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
-
-        // Scan for methods without decorators (server-only by default)
-        const proto = Object.getPrototypeOf(this);
-        const propertyNames = Object.getOwnPropertyNames(proto);
-
-        const builtInMethods = new Set([
-            'constructor', 'render', 'head', 'onMount', 'onCleanup', 'escapeHtml',
-            'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
-            'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
-            'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
-            'initializeState', 'initializeProviders', 'connectWebSocket', 'connectSSE',
-            'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
-            'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
-            'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
-            'redirect', 'requestUpdate', 'validateChannels', 'willUpdate',
-            'connectedCallback', 'disconnectedCallback', 'shouldUpdate',
-            'performUpdate', 'updated', '_render', 'getInitialHtml',
-            '_getWrappedTemplate', 'autoBindMethods', 'setupEventListeners',
-            'setupVisibleTasks', 'runTasks', 'consume', 'provide',
-            '_transitionToPhase', '_restorePhase', 'isInPhase', 'isInAnyPhase',
-            'getPhase', 'getParentComponent', 'getElementInternal',
-            'getInitialStateFromWindow', '_scheduleStateBroadcast',
-            '_wrapLifecycleMethods', '_setupServerMethodProxies',
-            'confirmNavigation', '_checkPreventNavigation',
-            'clientInit', // Client-only initialization method
-            'onNavigateComplete',
-        ]);
-
-        for (const name of propertyNames) {
-            if (builtInMethods.has(name)) continue;
-            if (clientSafeMethods.has(name)) continue;
-            if (name.startsWith('_')) continue; // Skip private properties
-
-            const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-            if (descriptor && typeof descriptor.value === 'function') {
-                // Check if this method is already in the server methods list
-                if (!serverMethods.some(m => m.name === name)) {
-                    serverMethods.push({
-                        name,
-                        channel: 'global',
-                        provider: 'page',
-                    });
-                }
-            }
-        }
-
-        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
-
-        if (pageOptions?.transport === 'http' || pageOptions?.transport === 'sse') {
-            this.proxyHttpMethods(serverMethods);
-        } else {
-            this.proxyServerMethods(serverMethods);
-        }
-        this._serverMethodsProxied = true;
+        setupServerMethodProxiesFn(this);
     }
 
     @Server()
@@ -2417,150 +1010,36 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     // ========== Validation Methods ==========
 
-    /**
-     * Get the error message for a specific property.
-     * @param propertyName - The name of the property to get error for
-     */
     public getError(propertyName: string): string | undefined {
-        const errorProperty = this.getValidationErrorProperty();
-        const errors = this.getProperty(errorProperty) as Record<string, string> | undefined;
-        return errors?.[propertyName];
+        return getErrorFn(this, propertyName);
     }
 
-    /**
-     * Check if a property has validation errors.
-     * @param propertyName - The name of the property to check
-     */
     public hasError(propertyName: string): boolean {
-        const error = this.getError(propertyName);
-        return error !== undefined && error !== '';
+        return hasErrorFn(this, propertyName);
     }
 
-    /**
-     * Validate a single property against its validation rules.
-     * @param propertyName - The name of the property to validate
-     * @returns The validation result
-     */
     public async validateProperty(propertyName: string): Promise<boolean> {
-        const rules = getValidationRules(this);
-        const propertyRules = rules[propertyName];
-
-        if (!propertyRules) {
-            return true;
-        }
-
-        const value = this.getProperty(propertyName);
-        const { rules: validationRules, config } = propertyRules;
-
-        // Determine where to run validation
-        const shouldRunOnClient = config.runOn === 'client' || config.runOn === 'both';
-        const shouldRunOnServer = config.runOn === 'server' || config.runOn === 'both';
-
-        let isValid = true;
-
-        // Run client-side validation (sync and async)
-        if (!this.isServer && shouldRunOnClient) {
-            // Run sync validation first
-            const syncResult = validateValue(value, validationRules);
-            isValid = syncResult.valid;
-            if (!isValid) {
-                this.setValidationError(propertyName, syncResult.message || 'Validation failed');
-            } else if (validationRules.customAsync) {
-                // Run async validation if sync passes and there's a customAsync rule
-                try {
-                    const asyncResult = await validateValueAsync(value, validationRules, this);
-                    isValid = asyncResult.valid;
-                    if (!asyncResult.valid) {
-                        this.setValidationError(propertyName, asyncResult.message || 'Validation failed');
-                    }
-                } catch (e) {
-                    isValid = false;
-                    this.setValidationError(propertyName, 'Validation failed');
-                }
-            }
-        }
-
-        // Run server-side validation
-        if (this.isServer && shouldRunOnServer) {
-            const result = await validateValueAsync(value, validationRules, this);
-            isValid = isValid && result.valid;
-            if (!result.valid) {
-                this.setValidationError(propertyName, result.message || 'Validation failed');
-            }
-        }
-
-        // If valid, clear any existing error
-        if (isValid) {
-            this.clearValidationError(propertyName);
-        }
-
-        return isValid;
+        return validatePropertyFn(this, propertyName);
     }
 
-    /**
-     * Validate all properties with validation rules.
-     * @returns Whether all validations passed
-     */
     public async validateAll(): Promise<boolean> {
-        const rules = getValidationRules(this);
-        const propertyNames = Object.keys(rules);
-
-        const results = await Promise.all(
-            propertyNames.map(name => this.validateProperty(name))
-        );
-
-        return results.every(result => result);
+        return validateAllFn(this);
     }
 
-    /**
-     * Clear all validation errors.
-     */
     public clearErrors(): void {
-        const errorProperty = this.getValidationErrorProperty();
-        const errors = this.getProperty(errorProperty);
-        if (errors && typeof errors === 'object') {
-            this.setProperty(errorProperty, {});
-            if (!this.isServer) {
-                this.requestUpdate();
-            }
-        }
+        clearErrorsFn(this);
     }
 
-    /**
-     * Clear validation error for a specific property.
-     */
     private clearValidationError(propertyName: string): void {
-        const errorProperty = this.getValidationErrorProperty();
-        const errors = this.getProperty(errorProperty) as Record<string, string> || {};
-        if (errors[propertyName]) {
-            delete errors[propertyName];
-            this.setProperty(errorProperty, { ...errors });
-            if (!this.isServer) {
-                this.requestUpdate();
-            }
-        }
+        clearValidationErrorFn(this, propertyName);
     }
 
-    /**
-     * Set validation error for a specific property.
-     */
     private setValidationError(propertyName: string, message: string): void {
-        const errorProperty = this.getValidationErrorProperty();
-        const errors = this.getProperty(errorProperty) as Record<string, string> || {};
-        errors[propertyName] = message;
-        this.setProperty(errorProperty, { ...errors });
-        if (!this.isServer) {
-            this.requestUpdate();
-        }
+        setValidationErrorFn(this, propertyName, message);
     }
 
-    /**
-     * Get the error property name from validation config.
-     */
     private getValidationErrorProperty(): string {
-        const rules = getValidationRules(this);
-        const firstRule = Object.values(rules)[0];
-        return firstRule?.config?.errorProperty || 'errors';
+        return getValidationErrorPropertyFn(this);
     }
 
     public render(): TemplateResult | null { return null; }
