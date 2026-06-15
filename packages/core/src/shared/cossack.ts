@@ -558,7 +558,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Page components don't have containers, but they still need their lifecycle hooks
         if (!this.isServer && !this.isMounted && !deferMount) {
             this.isMounted = true;
-            this.onMount();
+            this._frameworkMount();
 
             // Run clientInit() if it exists - for client-only initialization
             // that should show loading state on initial page load
@@ -795,45 +795,57 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             if (!this.hasMethod(propertyKey)) continue;
 
-            const execute = () => {
-                 try {
-                     const method = this.getMethod(propertyKey);
-                     const cleanup = (method as any)();
-                     // TODO: Handle cleanup if needed, possibly store it in a map to call on component destroy
-                 } catch (e) {
-                     console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
-                 }
-            };
-
             if (strategy === 'document-ready') {
-                execute();
-            } else if (strategy === 'intersection-observer') {
+                try {
+                    const method = this.getMethod(propertyKey);
+                    (method as any).call(this, null, null);
+                } catch (e) {
+                    console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
+                }
+                continue;
+            }
+
+            if (strategy === 'intersection-observer') {
                 if (!this.container) {
                      console.warn(`[Cossack] Cannot setup intersection observer for '${String(propertyKey)}': container not found.`);
                      continue;
                 }
 
-                let targetElement: Element | null = this.container;
+                // Collect initial target elements. When a selector is provided we
+                // observe every match; otherwise we observe the container itself.
+                let initialTargets: Element[] = [];
                 if (options.selector) {
-                    targetElement = this.container.querySelector(options.selector);
-                    if (!targetElement) {
-                        console.warn(`[Cossack] VisibleTask '${String(propertyKey)}' specifies selector '${options.selector}', but element was not found in the component container.`);
-                        continue;
+                    initialTargets = Array.from(this.container.querySelectorAll(options.selector));
+                    if (initialTargets.length === 0) {
+                        console.warn(`[Cossack] VisibleTask '${String(propertyKey)}' specifies selector '${options.selector}', but no elements were found in the component container.`);
+                        // Fall through: refreshVisibleTasks() may add targets later.
                     }
+                } else {
+                    initialTargets = this.container ? [this.container] : [];
                 }
 
+                const observed = new Set<Element>(initialTargets);
+
                 const observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting) {
-                        execute();
-                        observer.disconnect(); // Run once
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        try {
+                            const method = this.getMethod(propertyKey);
+                            (method as any).call(this, entry.target, entry);
+                        } catch (e) {
+                            console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
+                        }
+                        // Run once per element: unobserve THIS element only so
+                        // selector-matched siblings can still fire independently.
+                        observer.unobserve(entry.target);
+                        observed.delete(entry.target);
                     }
                 }, { threshold: options.threshold || 0 });
 
-                observer.observe(targetElement);
+                for (const el of initialTargets) {
+                    observer.observe(el);
+                }
 
-                // Track observer and observed elements for refreshVisibleTasks()
-                const observed = new Set<Element>();
-                observed.add(targetElement);
                 this._visibleTaskObservers.set(propertyKey, { observer, observed });
             }
         }
@@ -1209,19 +1221,55 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return shouldUpdate;
     }
 
-    // Lifecycle hooks
-    public onMount(): void {
+    // ========== Lifecycle hooks ==========
+    //
+    // These are user-facing hooks. The base implementations are intentionally
+    // empty — the framework runs its own lifecycle setup (@VisibleTask observers,
+    // event listeners, @On('mount') / @On('navigate-complete') handlers) via
+    // _frameworkMount() and _frameworkNavigateComplete(), which are called by
+    // the framework at the appropriate times. Override these hooks freely;
+    // no super call is needed.
+
+    /**
+     * Called once after the component's first client render. Override to
+     * initialize client-only state, start timers, or kick off side effects.
+     * No need to call `super.onMount()`.
+     */
+    public onMount(): void {}
+
+    /**
+     * Called immediately before the component is destroyed. Override to
+     * release resources, close connections, or cancel timers. No need to
+     * call `super.onCleanup()`.
+     */
+    public onCleanup(): void {}
+
+    /**
+     * Called after every SPA navigation completes. Only fires on the App
+     * component. Override to react to navigation. No need to call
+     * `super.onNavigateComplete()`.
+     */
+    public onNavigateComplete(pathname: string): void {}
+
+    /**
+     * @internal Called by the framework during bootstrap and client init.
+     * Runs the internal lifecycle setup (visible-task observers, @On('mount')
+     * handlers, DOM event listeners), then calls the user's `onMount()` hook.
+     */
+    public _frameworkMount(): void {
         this.setupVisibleTasks();
         this.setupLifecycleEventHandlers();
         this.setupEventListeners();
+        this.onMount();
     }
-    public onCleanup(): void {}
 
-    public onNavigateComplete(pathname: string): void {
-        // Override in subclass. Fires after SPA navigation completes.
+    /**
+     * @internal Called by the framework after SPA navigation. Refreshes
+     * visible-task observers, fires @On('navigate-complete') handlers, then
+     * calls the user's `onNavigateComplete()` hook.
+     */
+    public _frameworkNavigateComplete(pathname: string): void {
         this.refreshVisibleTasks();
-        // Invoke @On('navigate-complete') handlers (App-only in practice, since
-        // the framework only calls this on the App instance).
         for (const propertyKey of this._navigateCompleteHandlers) {
             const key = String(propertyKey);
             if (this.hasMethod(key)) {
@@ -1232,6 +1280,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             }
         }
+        this.onNavigateComplete(pathname);
     }
 
     private refreshVisibleTasks() {

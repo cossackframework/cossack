@@ -260,9 +260,11 @@ export function transformCossackClass(
 
     let finalBody = transformedBody;
 
-    // Inject metadata registration at the end of the class for server-only methods
-    if (serverOnlyMethods.length > 0) {
-      const metadataInjection = createMetadataInjection(serverOnlyMethods, hasExtends);
+    // Inject metadata registration at the end of the class for server-only methods.
+    // createMetadataInjection returns '' when no @Server methods qualify, so no
+    // constructor is injected for classes that only strip undecorated helpers.
+    const metadataInjection = createMetadataInjection(serverOnlyMethods, hasExtends);
+    if (metadataInjection) {
       finalBody = transformedBody + metadataInjection;
     }
 
@@ -289,17 +291,33 @@ export function transformCossackClass(
 }
 
 /**
- * Extract the names of server-only methods that will be stubbed.
+ * Description of a single method definition in a class body, used by the
+ * collect/transitive-closure/stub passes.
  */
-function extractServerOnlyMethodNames(
-  fullCode: string,
-  classBodyStart: number,
-  classBodyEnd: number,
+interface CollectedMethod {
+  name: string;
+  decorators: string[];
+  hasServerDecorator: boolean;
+  /** Start offset (relative to `classBody`) of the method's `{` body opening. */
+  bodyStart: number;
+  /** End offset (relative to `classBody`) just past the method's closing `}`. */
+  bodyEnd: number;
+}
+
+/**
+ * Walk the class body once (collect-only) and return every top-level method
+ * definition with its decorators and body offsets. Offsets are relative to
+ * `classBody` (the slice of source between the class's opening `{` and its
+ * closing `}`), so the same offsets can be used both for body-text scanning
+ * (transitive preservation) and for range replacement (stubbing).
+ */
+function collectMethods(
+  classBody: string,
   isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
   builtinMethods: Set<string>
-): string[] {
-  const serverOnlyMethods: string[] = [];
-  const classBody = fullCode.slice(classBodyStart, classBodyEnd);
+): CollectedMethod[] {
+  const methods: CollectedMethod[] = [];
+  const stringRanges = buildStringRanges(classBody);
 
   let i = 0;
   const len = classBody.length;
@@ -354,13 +372,19 @@ function extractServerOnlyMethodNames(
       continue;
     }
 
-    if (braceDepth === 0 && /[a-zA-Z_$]/.test(char)) {
+    if (braceDepth === 0 && /[a-zA-Z_$]/.test(char) && !isInRange(stringRanges, i)) {
       const methodMatch = findMethodDefinition(classBody, i);
       if (methodMatch) {
-        const { methodName, bodyEnd } = methodMatch;
+        const { methodName, bodyStart, bodyEnd } = methodMatch;
 
-        if (methodName !== 'constructor' && !isClientSafeMethod(pendingDecorators, methodName, builtinMethods)) {
-          serverOnlyMethods.push(methodName);
+        if (methodName !== 'constructor' && methodName !== 'get' && methodName !== 'set') {
+          methods.push({
+            name: methodName,
+            decorators: pendingDecorators.slice(),
+            hasServerDecorator: pendingDecorators.some((d) => /@Server\b/.test(d)),
+            bodyStart,
+            bodyEnd,
+          });
         }
 
         pendingDecorators = [];
@@ -372,15 +396,110 @@ function extractServerOnlyMethodNames(
     i++;
   }
 
-  return serverOnlyMethods;
+  // Suppress unused-parameter warning for isClientSafeMethod when no methods are
+  // collected — the callback is still consulted by the transitive-closure pass.
+  void isClientSafeMethod;
+  void builtinMethods;
+  return methods;
 }
 
 /**
- * Create metadata injection code that registers server-only methods.
- * This is injected at the end of the class body.
+ * Compute the preserved set: methods that must retain their full implementation
+ * in the client bundle. Seeds with client-safe methods (by decorator or builtin
+ * name) and then iterates a transitive closure to a fixed point (capped at 3
+ * rounds) — any `this.foo(...)` call from a preserved method to another method
+ * on the same class preserves `foo` as well.
  */
-function createMetadataInjection(methodNames: string[], hasExtends: boolean): string {
-  const methodList = JSON.stringify(methodNames);
+function computePreservedSet(
+  classBody: string,
+  methods: CollectedMethod[],
+  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>
+): Set<string> {
+  const byName = new Map<string, CollectedMethod>();
+  for (const m of methods) {
+    if (!byName.has(m.name)) byName.set(m.name, m);
+  }
+
+  const preserved = new Set<string>();
+  for (const m of methods) {
+    if (isClientSafeMethod(m.decorators, m.name, builtinMethods)) {
+      preserved.add(m.name);
+    }
+  }
+
+  const stringRanges = buildStringRanges(classBody);
+  const callRe = /\bthis\s*\.\s*([a-zA-Z_$][\w$]*)\s*\(/g;
+
+  // Fixed-point iteration, capped at 3 rounds. Depth 3 covers the common
+  // onMount -> setupReveal -> wireObserver -> addListener chain.
+  for (let round = 0; round < 3; round++) {
+    const before = preserved.size;
+    for (const m of methods) {
+      if (!preserved.has(m.name)) continue;
+      const body = classBody.slice(m.bodyStart, m.bodyEnd);
+      let match: RegExpExecArray | null;
+      callRe.lastIndex = 0;
+      while ((match = callRe.exec(body)) !== null) {
+        const calleeName = match[1];
+        const absolutePos = m.bodyStart + match.index;
+        if (isInRange(stringRanges, absolutePos)) continue;
+        if (byName.has(calleeName) && !preserved.has(calleeName)) {
+          preserved.add(calleeName);
+        }
+      }
+    }
+    if (preserved.size === before) break;
+  }
+
+  return preserved;
+}
+
+/**
+ * Extract the names of server-only methods that will be stubbed, along with
+ * whether each one carries an explicit `@Server` decorator. Only `@Server`
+ * methods are eligible for RPC metadata injection — undecorated helpers that
+ * get stripped must NOT be auto-registered as RPC endpoints.
+ */
+function extractServerOnlyMethodNames(
+  fullCode: string,
+  classBodyStart: number,
+  classBodyEnd: number,
+  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>
+): Array<{ name: string; hasServerDecorator: boolean }> {
+  const classBody = fullCode.slice(classBodyStart, classBodyEnd);
+  const methods = collectMethods(classBody, isClientSafeMethod, builtinMethods);
+  const preserved = computePreservedSet(classBody, methods, isClientSafeMethod, builtinMethods);
+
+  const result: Array<{ name: string; hasServerDecorator: boolean }> = [];
+  for (const m of methods) {
+    if (!preserved.has(m.name)) {
+      result.push({ name: m.name, hasServerDecorator: m.hasServerDecorator });
+    }
+  }
+  return result;
+}
+
+/**
+ * Create metadata injection code that registers server-only methods for RPC
+ * proxying. Only methods that carry an explicit `@Server` decorator are
+ * registered — undecorated helpers that get stripped must never receive an RPC
+ * proxy, so their stubs throw loudly instead of silently no-op'ing.
+ *
+ * Returns an empty string when no method qualifies, so no constructor is
+ * injected. This is injected at the end of the class body.
+ */
+function createMetadataInjection(
+  methods: Array<{ name: string; hasServerDecorator: boolean }>,
+  hasExtends: boolean
+): string {
+  const serverMethodNames = methods
+    .filter((m) => m.hasServerDecorator)
+    .map((m) => m.name);
+  if (serverMethodNames.length === 0) return '';
+
+  const methodList = JSON.stringify(serverMethodNames);
   const superCall = hasExtends ? '      super();\n' : '';
   return `
     // Register server-only methods for RPC proxying
@@ -402,8 +521,14 @@ ${superCall}      (this.constructor as any).__registerServerOnlyMethods?.();
 }
 
 /**
- * Transform methods using brace depth tracking to ensure only top-level methods are processed.
- * This prevents false matches inside method bodies, template literals, and nested blocks.
+ * Transform methods using a collect/transitive-closure/stub pipeline.
+ *
+ * 1. Collect every top-level method in the class body.
+ * 2. Compute the preserved set (client-safe + transitively reachable helpers).
+ * 3. Replace the body of every non-preserved method with a stub.
+ *
+ * Only top-level methods are processed; nested functions, template literals,
+ * and braces inside strings/comments are skipped.
  */
 function transformMethodsWithDepthTracking(
   fullCode: string,
@@ -415,127 +540,23 @@ function transformMethodsWithDepthTracking(
   builtinMethods: Set<string>,
   devWarning: boolean
 ): string {
-  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+  void id;
   const classBody = fullCode.slice(classBodyStart, classBodyEnd);
+  const methods = collectMethods(classBody, isClientSafeMethod, builtinMethods);
+  const preserved = computePreservedSet(classBody, methods, isClientSafeMethod, builtinMethods);
 
-  let i = 0;
-  const len = classBody.length;
-  let braceDepth = 0; // Depth of braces inside the class body (0 = at class level)
-  let parenDepth = 0; // Depth of parentheses (for detecting method signatures)
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+  for (const m of methods) {
+    if (preserved.has(m.name)) continue;
 
-  // Track accumulated decorators before a method
-  let pendingDecorators: string[] = [];
-
-  while (i < len) {
-    const char = classBody[i];
-
-    // Skip strings and template literals
-    if (char === '"' || char === "'" || char === '`') {
-      const stringEnd = findStringEndInString(classBody, i, char);
-      if (stringEnd === -1) break;
-      i = stringEnd + 1;
-      continue;
-    }
-
-    // Skip comments
-    if (char === '/' && i + 1 < len) {
-      const next = classBody[i + 1];
-      if (next === '/') {
-        i = classBody.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-        continue;
-      } else if (next === '*') {
-        i = classBody.indexOf('*/', i + 2);
-        if (i === -1) break;
-        i += 2;
-        continue;
-      }
-    }
-
-    // Track decorators at class level (braceDepth === 0)
-    if (braceDepth === 0 && char === '@') {
-      const decoratorEnd = findDecoratorEnd(classBody, i);
-      if (decoratorEnd > i) {
-        const decorator = classBody.slice(i, decoratorEnd);
-        pendingDecorators.push(decorator);
-        i = decoratorEnd;
-        // Skip to next line
-        while (i < len && classBody[i] !== '\n') i++;
-        continue;
-      }
-    }
-
-    // Track braces - only class-level methods are at braceDepth === 0
-    if (char === '{') {
-      braceDepth++;
-      i++;
-      continue;
-    }
-    if (char === '}') {
-      braceDepth--;
-      if (braceDepth < 0) {
-        // End of class body
-        break;
-      }
-      // If we're back to class level, clear pending decorators
-      if (braceDepth === 0) {
-        pendingDecorators = [];
-      }
-      i++;
-      continue;
-    }
-
-    // Only process potential method definitions at class level (braceDepth === 0)
-    if (braceDepth === 0) {
-      // Look for method pattern: async? methodName(...) or methodName(...)
-      // We need to find the opening paren and then the opening brace
-      if (/[a-zA-Z_$]/.test(char)) {
-        // Potential method start - scan ahead to find the pattern
-        const methodMatch = findMethodDefinition(classBody, i);
-        if (methodMatch) {
-          const { nameStart, nameEnd, methodName, paramsStart, paramsEnd, bodyStart, bodyEnd } = methodMatch;
-
-          // Skip constructor
-          if (methodName === 'constructor') {
-            pendingDecorators = [];
-            i = bodyEnd;
-            continue;
-          }
-
-          // Skip getters/setters (property accessors)
-          if (methodName === 'get' || methodName === 'set') {
-            pendingDecorators = [];
-            i = bodyEnd;
-            continue;
-          }
-
-          // Check if this method is client-safe
-          if (isClientSafeMethod(pendingDecorators, methodName, builtinMethods)) {
-            pendingDecorators = [];
-            i = bodyEnd;
-            continue;
-          }
-
-          // This is a server-only method - stub it
-          const stub = createStub(methodName, className, devWarning);
-
-          replacements.push({
-            start: bodyStart + 1, // After the opening brace
-            end: bodyEnd - 1, // Before the closing brace
-            replacement: stub.slice(1, -1), // Remove outer braces from stub
-          });
-
-          pendingDecorators = [];
-          i = bodyEnd;
-          continue;
-        }
-      }
-    }
-
-    i++;
+    const stub = createStub(m.name, className, devWarning);
+    replacements.push({
+      start: m.bodyStart + 1, // After the opening brace
+      end: m.bodyEnd - 1, // Before the closing brace
+      replacement: stub.slice(1, -1), // Remove outer braces from stub
+    });
   }
 
-  // Apply replacements in reverse order to maintain positions
   if (replacements.length === 0) return classBody;
 
   let result = classBody;
@@ -987,8 +1008,10 @@ function findStringEndInString(code: string, pos: number, quote: string): number
 /**
  * Create a stub function for a server-only method.
  *
- * The stub checks if a runtime proxy exists and calls it.
- * This allows client methods to seamlessly call server-only methods via RPC.
+ * The stub checks if a runtime proxy exists and calls it. `@Server` methods
+ * receive an RPC proxy at bootstrap, so the stub transparently forwards.
+ * Undecorated helpers that were stripped (no `@Server`, not reachable from a
+ * client-safe method) have no proxy and therefore throw with guidance.
  */
 function createStub(
   methodName: string,
@@ -1002,10 +1025,14 @@ function createStub(
       if (proxy) {
         return proxy.apply(this, arguments);
       }
-      // No proxy yet - throw an error
+      // No proxy - this method was stripped because it has no client-safe
+      // decorator and is not reachable from a client-safe method.
       throw new Error(
-        '[Cossack] Method ' + '${className}.${methodName}' + ' is server-only. ' +
-        'The proxy has not been set up yet. Make sure this method is called after bootstrap.'
+        '[Cossack] ${className}.${methodName} was stripped from the client bundle ' +
+        'because it has no client-safe decorator and is not reachable from a ' +
+        'client-safe method. Add @Client, @On, @OnWindow, @OnDocument, @Computed, ' +
+        '@Shared, @Task, or @VisibleTask; ensure it is called (directly or ' +
+        'transitively) from a preserved method; or avoid calling it from client code.'
       );
     }`;
   }
@@ -1013,7 +1040,7 @@ function createStub(
   return `{
     const proxy = this.__cossack_proxies?.get('${methodName}');
     if (proxy) return proxy.apply(this, arguments);
-    throw new Error('[Cossack] Method ${className}.${methodName} is server-only.');
+    throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
   }`;
 }
 
@@ -1028,7 +1055,7 @@ export function isClientSafeMethod(
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>
-    /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d)
+    /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d)
   );
   if (hasClientDecorator) return true;
 

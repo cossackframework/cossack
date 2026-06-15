@@ -12,7 +12,7 @@ describe('vite-security-plugin', () => {
 
     // Create a local version for testing
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -83,7 +83,7 @@ describe('vite-security-plugin', () => {
     const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -378,7 +378,7 @@ export class TestPage extends Cossack {
     const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -513,7 +513,32 @@ export class TestPage extends Cossack {
     });
 
 
-    it('should register server-only methods in metadata', () => {
+    it('should register @Server methods in metadata, but NOT undecorated helpers', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @Server()
+    async loadData() {
+      return 'server-only';
+    }
+
+    async init() {
+      return 'also server-only, but no @Server decorator';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // @Server method should be registered for RPC proxying
+      expect(result).toContain('__registerServerOnlyMethods()');
+      expect(result).toContain('["loadData"]');
+      expect(result).toContain("channel: 'global'");
+      // Undecorated init must NOT be registered — its stub should throw, not RPC.
+      expect(result).not.toContain('init"');
+    });
+
+    it('should NOT inject metadata registration when no @Server methods exist', () => {
+      // A class with only undecorated helpers (no @Server) should not get a
+      // __registerServerOnlyMethods constructor — those helpers fail loudly.
       const code = `
 @Page()
 export class TestPage extends Cossack {
@@ -523,10 +548,7 @@ export class TestPage extends Cossack {
 }`;
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-      // Should inject __registerServerOnlyMethods
-      expect(result).toContain('__registerServerOnlyMethods()');
-      expect(result).toContain('["init"]');
-      expect(result).toContain("channel: 'global'");
+      expect(result).not.toContain('__registerServerOnlyMethods()');
     });
   });
 
@@ -534,7 +556,7 @@ export class TestPage extends Cossack {
     const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -609,7 +631,7 @@ export class TestPage extends Cossack {
     const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
     function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate)\b/.test(d));
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
       if (hasClientDecorator) return true;
       if (builtinMethods.has(methodName)) return true;
       if (decorators.some((d) => /@Server\b/.test(d))) return false;
@@ -737,7 +759,7 @@ export class OptimisticCounter extends Cossack {
       expect(result).not.toContain('this.count++');
     });
 
-    it('should handle the lifecycle demo pattern', () => {
+    it('should handle the lifecycle demo pattern (transitive preservation)', () => {
       const code = `
 import { Client, Cossack, Page, State, html } from '@cossackframework/core';
 
@@ -763,10 +785,11 @@ export default class LifecycleDemo extends Cossack {
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
 
-      // init should be stubbed
+      // init is called from @Client reload(), so it is transitively preserved
+      // (full body kept) — not stubbed.
       expect(result).toContain('init() {');
-      expect(result).toContain("__cossack_proxies?.get('init')");
-      expect(result).not.toContain('setTimeout');
+      expect(result).toContain('setTimeout');
+      expect(result).not.toContain("__cossack_proxies?.get('init')");
 
       // reload should be preserved
       expect(result).toContain('reload() {');
@@ -775,6 +798,153 @@ export default class LifecycleDemo extends Cossack {
       // render should be preserved
       expect(result).toContain('render() {');
       expect(result).toContain('html`');
+    });
+  });
+
+  describe('transitive preservation / loud failure', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    it('preserves a helper called from onMount (transitive, depth 1)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    onMount() {
+        this.setupReveal();
+    }
+
+    private setupReveal() {
+        const observer = new IntersectionObserver(() => {});
+        return observer;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // setupReveal body must be preserved (no stub, no proxy lookup)
+      expect(result).toContain('setupReveal() {');
+      expect(result).toContain('new IntersectionObserver');
+      expect(result).not.toContain("__cossack_proxies?.get('setupReveal')");
+    });
+
+    it('preserves helpers called transitively to depth 3 (A -> B -> C, from onMount)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    onMount() {
+        this.a();
+    }
+
+    private a() {
+        this.b();
+    }
+    private b() {
+        this.c();
+    }
+    private c() {
+        return 'deep';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain("return 'deep'");
+      expect(result).not.toContain("__cossack_proxies?.get('a')");
+      expect(result).not.toContain("__cossack_proxies?.get('b')");
+      expect(result).not.toContain("__cossack_proxies?.get('c')");
+    });
+
+    it('still stubs genuine @Server methods even when other helpers are preserved', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    onMount() {
+        this.helper();
+    }
+
+    private helper() {
+        return 'kept';
+    }
+
+    @Server()
+    fetchData() {
+        const apiKey = 'SECRET';
+        return apiKey;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // helper is preserved
+      expect(result).toContain("return 'kept'");
+      // @Server method is stubbed and secret is stripped
+      expect(result).toContain("__cossack_proxies?.get('fetchData')");
+      expect(result).not.toContain('SECRET');
+    });
+
+    it('does NOT register a stripped undecorated helper in cossack:server-methods metadata', () => {
+      // An undecorated, unreachable helper is stubbed, but it must not be
+      // registered as an RPC method — so its stub throws loudly.
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    render() {
+        return null;
+    }
+
+    private unreachableHelper() {
+        return 'never called from client-safe code';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // No metadata injection at all (no @Server methods).
+      expect(result).not.toContain('__registerServerOnlyMethods');
+      // The helper is stubbed.
+      expect(result).toContain("__cossack_proxies?.get('unreachableHelper')");
+    });
+
+    it('preserves a @Client-decorated method used as an escape hatch (body kept, no stub)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @Client()
+    private draw() {
+        return 'client plumbing';
+    }
+
+    render() {
+        return null;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('draw() {');
+      expect(result).toContain("return 'client plumbing'");
+      expect(result).not.toContain("__cossack_proxies?.get('draw')");
+    });
+
+    it('a stripped, unreachable helper throws (stub contains throw, not just proxy.apply)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    render() {
+        return null;
+    }
+
+    private unreachableHelper() {
+        return 'stripped';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // The dev stub must contain a throw with guidance text.
+      expect(result).toContain('throw new Error');
+      expect(result).toContain('stripped from the client bundle');
     });
   });
 });

@@ -470,6 +470,20 @@ export interface VisibleTaskOptions {
     selector?: string;
 }
 
+/**
+ * Signature for a `@VisibleTask` method. The first argument is the element that
+ * intersected (or `null` for the `document-ready` strategy), and the second is
+ * the matching `IntersectionObserverEntry` (or `null` for `document-ready`).
+ * May optionally return a cleanup function.
+ *
+ * Methods declaring zero parameters still work — extra arguments are ignored
+ * by the runtime, so this change is backward compatible.
+ */
+export type VisibleTaskMethod = (
+    target: Element | null,
+    entry: IntersectionObserverEntry | null,
+) => void | (() => void);
+
 export function VisibleTask(options: VisibleTaskOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     const visibleTasks = Reflect.getOwnMetadata('cossack:visible-tasks', target.constructor) || [];

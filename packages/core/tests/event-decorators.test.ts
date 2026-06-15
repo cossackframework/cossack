@@ -257,7 +257,7 @@ describe('Lifecycle Event Decorators (@On mount / navigate-complete)', () => {
     it('should fire @On("navigate-complete") handler with pathname when onNavigateComplete is called', async () => {
         await component.bootstrap({ container: container as any });
 
-        component.onNavigateComplete('/about');
+        component._frameworkNavigateComplete('/about');
 
         expect(component.navigateCalls).toEqual(['/about']);
     });
@@ -265,8 +265,8 @@ describe('Lifecycle Event Decorators (@On mount / navigate-complete)', () => {
     it('should fire @On("navigate-complete") handler on every navigation', async () => {
         await component.bootstrap({ container: container as any });
 
-        component.onNavigateComplete('/about');
-        component.onNavigateComplete('/contact');
+        component._frameworkNavigateComplete('/about');
+        component._frameworkNavigateComplete('/contact');
 
         expect(component.navigateCalls).toEqual(['/about', '/contact']);
     });

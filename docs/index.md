@@ -25,6 +25,7 @@
 
 ## Security
 - [Authentication](/docs/authentication.md)
+- [Client Bundle & Method Stripping](/docs/client-bundle.md)
 - [Middlewares](/docs/middlewares.md)
 - [Vite Plugin](/docs/vite-plugins.md)
 

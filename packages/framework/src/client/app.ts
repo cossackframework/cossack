@@ -310,8 +310,8 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
 
   await loadComponent(window.__INITIAL_STATE__);
   appInstance.isMounted = true;
-  appInstance.onMount();
-  appInstance.onNavigateComplete(window.location.pathname);
+  appInstance._frameworkMount();
+  appInstance._frameworkNavigateComplete(window.location.pathname);
 
   document.dispatchEvent(new CustomEvent('cossack:ready', {
     bubbles: true,
@@ -376,7 +376,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
 
       window.__INITIAL_STATE__ = state;
       await loadComponent(state);
-      appInstance.onNavigateComplete(state.pathname);
+      appInstance._frameworkNavigateComplete(state.pathname);
 
       document.dispatchEvent(new CustomEvent('cossack:ready', {
         bubbles: true,

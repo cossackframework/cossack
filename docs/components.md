@@ -2,6 +2,12 @@
 
 In Cossack, reusable components are built using the same `Cossack` base class as pages, but they are used differently within the template. This guide explains how to create, use, and manage state in reusable components.
 
+> **Method stripping:** methods on `Cossack` subclasses that are not needed in
+> the browser are automatically stripped from the client bundle. See
+> [Client Bundle & Method Stripping](./client-bundle.md) for the rule, the
+> built-in allowlist, using `@Client` as the escape hatch, and transitive
+> preservation of helpers called from lifecycle hooks.
+
 ## Creating a Component
 
 To create a component, extend the `Cossack` class. You can use standard decorators like `@Prop`, `@State`, and `@ClientState`.
