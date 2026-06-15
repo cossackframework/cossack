@@ -327,3 +327,74 @@ export default class FeatureDemo extends Cossack {
     }
 }
 ```
+
+## Best Practices: Choosing the Right Tool
+
+With `@Task`, `@VisibleTask`, `@On`, and the `onMount()` / `onNavigateComplete()` / `onCleanup()` lifecycle hooks all available, it's not always obvious which one fits a given situation. This section gives concrete guidance.
+
+### Quick Reference
+
+| You need to... | Use | Fires |
+| --- | --- | --- |
+| React to state changes on **both server and client** | `@Task` | Mount + every state update (SSR-safe) |
+| Run setup logic **once on the client** | `onMount()` or `@On('mount')` | Once after first client render |
+| Defer work until an element **enters the viewport** | `@VisibleTask` | Client-only, on intersection |
+| React to **SPA navigation** globally | `onNavigateComplete()` or `@On('navigate-complete')` | App component only, after each route change |
+| Release resources before destroy | `onCleanup()` | Once, before destruction |
+| Handle a **click/input** on a specific element | Template `@click` | On the element event |
+| Handle **document-wide** events (keyboard shortcuts) | `@OnDocument` | On the document event (auto-cleaned) |
+| Handle **window-wide** events (resize, scroll) | `@OnWindow` | On the window event (auto-cleaned) |
+
+### `@Task` vs `onMount()`
+
+The most common source of confusion. The rule of thumb:
+
+- **`@Task`** runs on **both server and client**, and re-runs on **every state update**. Use it for derived state, logging, or side effects that must stay in sync with component state across SSR and hydration.
+- **`onMount()`** runs **once, client-only**. Use it for one-time setup: starting timers, initializing client-only libraries, reading `window`/`document`.
+
+If your logic touches `window`, `document`, or the DOM directly, it almost certainly belongs in `onMount()` (or `@On('mount')`), not `@Task` — otherwise it will crash during SSR where those globals don't exist.
+
+```typescript
+// Wrong — crashes on the server because `window` is undefined
+@Task()
+trackSize() {
+    this.width = window.innerWidth;
+}
+
+// Right — client-only, runs once
+@On('mount')
+trackSize() {
+    this.width = window.innerWidth;
+}
+```
+
+### `onMount()` vs `@On('mount')`
+
+Both fire at the same point in the lifecycle. Choose based on structure:
+
+- Use **`onMount()`** for a single, cohesive block of setup logic. The override is clear and discoverable.
+- Use **`@On('mount')`** when you want **multiple independent handlers**, or when you want to avoid `super()` bookkeeping across a deep inheritance chain.
+
+You can mix both on the same component. `@On('mount')` handlers fire during the base `onMount()` call, before any custom logic you add in an `onMount()` override after `super.onMount()`.
+
+### `onMount()` on a Page vs `onNavigateComplete()` on the App
+
+This distinction trips up many newcomers:
+
+- **`onMount()`** fires on **every** component (App, layouts, pages) when it first renders on the client. Page components are destroyed and re-created on each SPA navigation, so a Page's `onMount()` effectively fires on every navigation **to** that page.
+- **`onNavigateComplete(pathname)`** fires **only on the App component**, after the new page has loaded. Use it for **global** concerns: analytics, scroll restoration, closing flyout menus, progress indicators.
+
+Use `@On('mount')` on a page for "this page just became active" logic. Use `@On('navigate-complete')` on the App for "a navigation just finished, regardless of which page" logic. Do **not** put `@On('navigate-complete')` on a Page component — it will never fire there.
+
+### Template `@click` vs `@On('click')`
+
+- Prefer **template syntax** (`<button @click=${...}>`) for element-level events. It is co-located with the element, explicit, and doesn't depend on the component having a `container`.
+- Use **`@On('click')`** when you want a handler bound to the component's root element as a whole, or when you want the method auto-bound, independently testable, and reusable.
+
+### Common Pitfalls
+
+- **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `onMount()` or `@On('mount')` instead.
+- **Don't** forget `super.onMount()` / `super.onCleanup()` / `super.onNavigateComplete()` when overriding. The base implementations wire up `@VisibleTask` observers, `@On` listeners, and lifecycle-event handlers — skipping `super` silently disables all of them.
+- **Don't** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
+- **Don't** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` — they handle cleanup automatically.
+- **Don't** reach for `@VisibleTask` when `@Task` would do. `@VisibleTask` defers work until the element is scrolled into view; if the work is cheap or needed immediately, `@Task` (or `onMount()`) is simpler.
