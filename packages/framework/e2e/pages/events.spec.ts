@@ -23,8 +23,11 @@ test.describe('Events Page', () => {
     await page.keyboard.press('b');
     await page.waitForTimeout(100);
 
-    // The last key pressed should be visible.
-    await expect(page.locator('text=b')).toBeVisible({ timeout: 2000 });
+    // The last key pressed should be visible. Scope to the green key display
+    // so the selector doesn't match other elements containing 'b' (About link,
+    // paragraph text, footer, etc.).
+    const keyDisplay = page.locator('strong.text-green-800');
+    await expect(keyDisplay).toHaveText('b', { timeout: 2000 });
   });
 
   test('should track window resize events via @OnWindow', async ({ page }) => {
@@ -60,15 +63,19 @@ test.describe('App @On("navigate-complete")', () => {
   test('should fire navigate-complete handler after SPA navigation', async ({ page }) => {
     await page.goto('/');
 
-    // Spy on console.log to observe the App's @On('navigate-complete') handler
-    const logs: string[] = [];
-    page.on('console', (msg) => logs.push(msg.text()));
+    // Trigger SPA navigation via link click. page.goto() would be a full page
+    // reload (not SPA) and would also leak buffered console messages from the
+    // prior load.
+    await page.click('a[href="/contact"]');
 
-    await page.goto('/events');
-    await page.waitForTimeout(200);
+    // Wait for the App's @On('navigate-complete') handler to log the new path.
+    const navMessage = await page.waitForEvent('console', {
+      predicate: (msg) =>
+        msg.text().includes('@On("navigate-complete")') &&
+        msg.text().includes('/contact'),
+      timeout: 5000,
+    });
 
-    const navLog = logs.find((l) => l.includes('@On("navigate-complete")'));
-    expect(navLog).toBeDefined();
-    expect(navLog).toContain('/events');
+    expect(navMessage.text()).toContain('/contact');
   });
 });
