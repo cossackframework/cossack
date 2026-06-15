@@ -244,6 +244,29 @@ const discountInput = page.locator('input#discountCode');
     await expect(errorMessage).not.toBeVisible();
   });
 
+  test('should not validate discount code on input', async ({ page }) => {
+
+const discountInput = page.locator('input#discountCode');
+
+    // Type an invalid discount code character-by-character (input events).
+    // The field is configured with trigger: 'blur', so async validation
+    // should NOT fire on each keystroke.
+    await discountInput.click();
+    await discountInput.type('INVALID', { delay: 20 });
+
+    // Wait long enough that any (incorrectly triggered) async validation
+    // would have completed. Server-side customAsync sleeps ~100ms.
+    await page.waitForTimeout(400);
+
+    // No error should be visible yet — validation only fires on blur.
+    const errorMessage = page.locator('text=Invalid discount code');
+    await expect(errorMessage).not.toBeVisible();
+
+    // Blurring should now trigger validation and reveal the error.
+    await discountInput.blur();
+    await expect(errorMessage).toBeVisible({ timeout: 2000 });
+  });
+
   test('should submit form with valid discount code', async ({ page }) => {
     await page.waitForSelector('text=Validation Demo');
 

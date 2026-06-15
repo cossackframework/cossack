@@ -353,12 +353,54 @@ export function clearValidationError(component: any, propertyName: string): void
     }
 }
 
-/** Validate a single property against its validation rules. */
-export async function validateProperty(component: any, propertyName: string): Promise<boolean> {
+/**
+ * Tracks the latest validation request ID per property per component instance.
+ * Used to discard stale async validation results when a newer validation for
+ * the same property has started before the previous one finished.
+ */
+const validationRequestIds = new WeakMap<any, Record<string, number>>();
+
+function getLatestRequestId(component: any, propertyName: string): number {
+    const ids = validationRequestIds.get(component);
+    return ids?.[propertyName] ?? 0;
+}
+
+function bumpRequestId(component: any, propertyName: string): number {
+    let ids = validationRequestIds.get(component);
+    if (!ids) {
+        ids = {};
+        validationRequestIds.set(component, ids);
+    }
+    const next = (ids[propertyName] ?? 0) + 1;
+    ids[propertyName] = next;
+    return next;
+}
+
+/**
+ * Validate a single property against its validation rules.
+ *
+ * @param trigger Optional hint describing what initiated this validation
+ *   ('input' | 'blur' | 'submit'). When provided, validation is skipped unless
+ *   the rule's configured trigger matches (or is 'all'). Omit to always
+ *   validate regardless of config (used by `validateAll` on submit).
+ */
+export async function validateProperty(
+    component: any,
+    propertyName: string,
+    trigger?: 'input' | 'blur' | 'submit'
+): Promise<boolean> {
     const rules = getValidationRules(component);
     const propertyRules = rules[propertyName];
 
     if (!propertyRules) {
+        return true;
+    }
+
+    const configTrigger = propertyRules.config.trigger || 'all';
+
+    // If a trigger hint is provided, only validate when it matches the config
+    // (or when the config is 'all'). No trigger hint = always validate.
+    if (trigger && configTrigger !== 'all' && trigger !== configTrigger) {
         return true;
     }
 
@@ -369,6 +411,10 @@ export async function validateProperty(component: any, propertyName: string): Pr
     const shouldRunOnClient = config.runOn === 'client' || config.runOn === 'both';
     const shouldRunOnServer = config.runOn === 'server' || config.runOn === 'both';
 
+    // Reserve a request ID for this async sequence. Any stale async result
+    // (from a previous call whose ID is no longer the latest) will be ignored.
+    const requestId = bumpRequestId(component, propertyName);
+
     let isValid = true;
 
     // Run client-side validation (sync and async)
@@ -377,16 +423,26 @@ export async function validateProperty(component: any, propertyName: string): Pr
         const syncResult = validateValue(value, validationRules);
         isValid = syncResult.valid;
         if (!isValid) {
+            // Sync errors are applied immediately; they reflect the current
+            // value, so no staleness concern.
             setValidationError(component, propertyName, syncResult.message || 'Validation failed');
         } else if (validationRules.customAsync) {
             // Run async validation if sync passes and there's a customAsync rule
             try {
                 const asyncResult = await validateValueAsync(value, validationRules, component);
+                // Discard stale result: a newer validation for this property
+                // has already started. Do NOT mutate error state or re-render.
+                if (getLatestRequestId(component, propertyName) !== requestId) {
+                    return isValid;
+                }
                 isValid = asyncResult.valid;
                 if (!asyncResult.valid) {
                     setValidationError(component, propertyName, asyncResult.message || 'Validation failed');
                 }
             } catch (e) {
+                if (getLatestRequestId(component, propertyName) !== requestId) {
+                    return isValid;
+                }
                 isValid = false;
                 setValidationError(component, propertyName, 'Validation failed');
             }
@@ -396,27 +452,41 @@ export async function validateProperty(component: any, propertyName: string): Pr
     // Run server-side validation
     if (component.isServer && shouldRunOnServer) {
         const result = await validateValueAsync(value, validationRules, component);
+        if (getLatestRequestId(component, propertyName) !== requestId) {
+            return isValid;
+        }
         isValid = isValid && result.valid;
         if (!result.valid) {
             setValidationError(component, propertyName, result.message || 'Validation failed');
         }
     }
 
-    // If valid, clear any existing error
+    // If valid, clear any existing error (guard against staleness here too)
     if (isValid) {
-        clearValidationError(component, propertyName);
+        if (getLatestRequestId(component, propertyName) === requestId) {
+            clearValidationError(component, propertyName);
+        }
     }
 
     return isValid;
 }
 
-/** Validate all properties with validation rules. */
-export async function validateAll(component: any): Promise<boolean> {
+/**
+ * Validate all properties with validation rules.
+ *
+ * @param trigger Optional trigger hint forwarded to each `validateProperty`
+ *   call. Omit to validate every field regardless of its configured trigger
+ *   (used by form submit handlers).
+ */
+export async function validateAll(
+    component: any,
+    trigger?: 'input' | 'blur' | 'submit'
+): Promise<boolean> {
     const rules = getValidationRules(component);
     const propertyNames = Object.keys(rules);
 
     const results = await Promise.all(
-        propertyNames.map(name => validateProperty(component, name))
+        propertyNames.map(name => validateProperty(component, name, trigger))
     );
 
     return results.every(result => result);

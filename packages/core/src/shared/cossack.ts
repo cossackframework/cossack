@@ -1030,12 +1030,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return hasErrorFn(this, propertyName);
     }
 
-    public async validateProperty(propertyName: string): Promise<boolean> {
-        return validatePropertyFn(this, propertyName);
+    public async validateProperty(propertyName: string, trigger?: 'input' | 'blur' | 'submit'): Promise<boolean> {
+        return validatePropertyFn(this, propertyName, trigger);
     }
 
-    public async validateAll(): Promise<boolean> {
-        return validateAllFn(this);
+    public async validateAll(trigger?: 'input' | 'blur' | 'submit'): Promise<boolean> {
+        return validateAllFn(this, trigger);
     }
 
     public clearErrors(): void {
