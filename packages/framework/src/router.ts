@@ -456,6 +456,7 @@ export function createApp(options: CreateAppOptions = {}) {
                 console.error('[Cossack SSR Error]:', err);
                 const errorPage = findNearestSpecialPage(path, 'error');
                 if (errorPage && path !== errorPage.path) {
+                    c.status(500);
                     const handler = createSsrHandler(errorPage.component, errorPage.path);
                     return handler(c);
                 }
@@ -607,7 +608,10 @@ export function createApp(options: CreateAppOptions = {}) {
     app.notFound(async (c) => {
         const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
         const notFoundPage = findNearestSpecialPage(virtualPath, '404');
-        if (notFoundPage) return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
+        if (notFoundPage) {
+            c.status(404);
+            return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
+        }
         return c.text('404 Not Found', 404);
     });
 
