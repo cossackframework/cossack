@@ -3,10 +3,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Cossack, PageOptions, AuthenticatedUser } from '@cossackframework/core';
 import { App } from './App';
+import { renderRoot, TemplateHelpers } from './root';
 import type { Context } from 'hono';
 
 // Re-export the PageOptions and SsgOptions for convenience
 export type { PageOptions, SsgOptions } from '@cossackframework/core';
+
+export type HtmlTemplate = string | ((helpers: TemplateHelpers) => string);
 
 interface LayoutModule {
   default: new () => Cossack;
@@ -125,6 +128,11 @@ export function collectSsgRoutes(
 
 /**
  * Render a single SSG page to HTML.
+ *
+ * The output is a fully hydration-ready HTML document produced by the same
+ * `renderRoot` function used by the SSR runtime, ensuring SSG and SSR output
+ * stay structurally identical (client script tag, window.__INITIAL_STATE__,
+ * module preloads, CSS, head tags, optional htmlTemplate).
  */
 export async function renderSsgPage(
   PageComponent: new () => Cossack,
@@ -132,7 +140,10 @@ export async function renderSsgPage(
   staticParams?: Record<string, string>,
   layouts: Record<string, LayoutModule> = {},
   baseUrl: string = 'https://example.com',
-  AppComponent?: new (...args: any[]) => any
+  AppComponent?: new (...args: any[]) => any,
+  htmlTemplate?: HtmlTemplate,
+  pageFilePath?: string,
+  componentRouteId?: string
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
@@ -207,8 +218,39 @@ export async function renderSsgPage(
   const appHeadValue = appInstance.head(finalHeadContext);
   const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
 
-  // Generate the full HTML document
-  const html = generateHtmlDocument(finalHtml, headTags);
+  // Build the initial state payload, mirroring the SSR handler in router.ts
+  // so the client hydration code receives the same shape it expects.
+  // Key: routePath must be the ROUTE PATTERN (e.g. "/ssg-demo/users/[username]"),
+  // not the concrete URL — the client uses it to look up the page module loader
+  // via routeToFilePath, which maps patterns (with [param] brackets) to files.
+  const pageInitialState = pageInstance.getInitialState();
+
+  const finalInitialState = {
+    ...pageInitialState,
+    routePath: pageFilePath ? filePathToRoutePath(pageFilePath) : routePath,
+    componentRouteId: componentRouteId ?? routePath,
+    appRouteId: 'cossack_app',
+    pathname: mockContext.req.path,
+    channels: pageOptions?.channels || ['global'],
+    transport: pageOptions?.transport || 'http',
+    _app_state: appInstance.getInitialState(),
+    _layout_stack: layoutPaths.map((item: LayoutStackItem) => ({
+      path: item.path,
+      state: layoutStates[item.path],
+    })),
+  };
+
+  const manifest = readManifestFile();
+  const modulePreloads = getModulePreloads(manifest, pageFilePath ?? '');
+
+  const html = renderRoot({
+    body: finalHtml,
+    initialState: finalInitialState,
+    manifest,
+    headTags,
+    modulePreloads,
+    htmlTemplate,
+  });
 
   return html;
 }
@@ -267,8 +309,9 @@ function replaceParams(path: string, params: Record<string, string>): string {
 
 /**
  * Read the Vite manifest to get asset file names.
+ * Renamed from getManifest to avoid clashing with router.ts's runtime version.
  */
-function getManifest(): Record<string, any> {
+function readManifestFile(): Record<string, any> {
   try {
     const manifestPath = path.join(process.cwd(), 'dist/client/.vite/manifest.json');
     const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
@@ -279,42 +322,51 @@ function getManifest(): Record<string, any> {
 }
 
 /**
- * Generate a full HTML document with head tags.
+ * Collect modulepreload hrefs for the current page.
+ * Mirrors the implementation in router.ts so SSG output matches SSR output.
  */
-function generateHtmlDocument(body: string, headTags: any[]): string {
-  const manifest = getManifest();
-  const entryClient = manifest['src/client/entry-client.ts'];
-  const cssLink = entryClient?.css?.[0]
-    ? `<link rel="stylesheet" href="/${entryClient.css[0]}">`
-    : '';
+function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
+  if (!pagePath) return [];
 
-  const headHtml = headTags
-    .map((tag) => {
-      if (tag.tag === 'title') {
-        return `<title>${tag.children || ''}</title>`;
+  // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
+  const normalizedPath = pagePath.replace(/^\//, '');
+  const collected = new Set<string>();
+
+  const collect = (key: string) => {
+    const entry = mfest[key];
+    if (!entry) return;
+    if (entry.file && !collected.has(entry.file)) {
+      collected.add(entry.file);
+    }
+    if (entry.imports) {
+      for (const imp of entry.imports) {
+        if (!collected.has(imp)) {
+          collect(imp);
+        }
       }
-      const attrs = tag.attributes
-        ? Object.entries(tag.attributes)
-            .map(([k, v]) => `${k}="${v}"`)
-            .join(' ')
-        : '';
-      const children = tag.children ? tag.children : '';
-      return `<${tag.tag} ${attrs}>${children}</${tag.tag}>`;
-    })
-    .join('\n    ');
+    }
+  };
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    ${headHtml}
-    ${cssLink}
-</head>
-<body>
-    ${body}
-</body>
-</html>`;
+  collect(normalizedPath);
+
+  const entryClient = mfest['src/client/entry-client.ts'];
+  if (entryClient?.imports) {
+    for (const imp of entryClient.imports) {
+      collect(imp);
+    }
+  }
+
+  const entryClientFile = entryClient?.file;
+  const hrefs: string[] = [];
+  for (const key of collected) {
+    const entry = mfest[key];
+    if (entry?.file) {
+      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
+    } else if (key.startsWith('assets/')) {
+      if (key !== entryClientFile) hrefs.push(`/${key}`);
+    }
+  }
+  return hrefs;
 }
 
 /**

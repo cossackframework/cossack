@@ -39,8 +39,12 @@ const renderTag = (tag: HeadTag) => {
 export const renderRoot = (props: RenderRootProps) => {
     // In development, Vite serves assets directly without a manifest.
     // In production, we use the manifest to resolve hashed filenames.
-    const isDev = import.meta.env.DEV;
-    const hasManifest = props.manifest && props.manifest['src/client/entry-client.ts'];
+    // Note: We deliberately do NOT rely on import.meta.env.DEV/PROD here
+    // because renderRoot is also invoked from the SSG build script (tsx),
+    // where those Vite-defined globals are undefined. The manifest is the
+    // authoritative signal: dev mode never has one, production always does.
+    const hasManifest = !!(props.manifest && props.manifest['src/client/entry-client.ts']);
+    const isDev = !hasManifest;
     const clientScript = isDev
         ? '/src/client/entry-client.ts'
         : hasManifest
@@ -102,7 +106,7 @@ export const renderRoot = (props: RenderRootProps) => {
     `;
     }
 
-    if (import.meta.env.PROD) {
+    if (!isDev) {
         return minifyHtml(raw);
     }
     return raw;

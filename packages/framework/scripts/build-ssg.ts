@@ -20,14 +20,38 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 // Import SSG utilities using relative paths (tsx will handle TypeScript)
-import { collectSsgRoutes, getStaticParams, renderSsgPage } from '../src/ssg-renderer.ts';
+import { collectSsgRoutes, getStaticParams, renderSsgPage, HtmlTemplate } from '../src/ssg-renderer.ts';
 import { generateSitemapFromUrls } from '../src/sitemap-generator.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-// SSG files go to dist/ssg-static (separate from dist/client which Vite may overwrite)
-const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/ssg-static');
+// SSG HTML and sitemap.xml are written directly into the Cloudflare ASSETS
+// directory (dist/client), so they are served as static assets before the
+// Worker is ever invoked. This eliminates the previous dist/ssg-static/
+// superset directory and the redundant copy-back step.
+const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/client');
+
+/**
+ * Optionally load a custom htmlTemplate module. Set COSSACK_HTML_TEMPLATE to a
+ * module path (absolute or relative to the project root) that default-exports
+ * a string or a (helpers) => string function. If not set or load fails, SSG
+ * falls back to renderRoot's built-in template.
+ */
+async function loadHtmlTemplate(): Promise<HtmlTemplate | undefined> {
+  const templatePath = process.env.COSSACK_HTML_TEMPLATE;
+  if (!templatePath) return undefined;
+  const resolved = path.isAbsolute(templatePath)
+    ? templatePath
+    : path.resolve(PROJECT_ROOT, templatePath);
+  try {
+    const mod = await import(`file://${resolved}`);
+    return mod.default as HtmlTemplate;
+  } catch (e) {
+    console.warn(`[build-ssg] Could not load htmlTemplate from ${resolved}: ${e}`);
+    return undefined;
+  }
+}
 
 async function main() {
   console.log('Starting SSG rendering...');
@@ -36,61 +60,65 @@ async function main() {
   const baseUrl = process.env.VITE_SSG_BASE_URL || 'https://example.com';
   console.log(`Using base URL: ${baseUrl}`);
 
-  // Collect pages and layouts using Node.js fs
+  // Optional custom htmlTemplate
+  const htmlTemplate = await loadHtmlTemplate();
+  if (htmlTemplate) {
+    console.log('Using custom htmlTemplate.');
+  }
+
+  // Collect pages and layouts using Node.js fs.
+  // The key format MUST match the vite plugin's `import.meta.glob` keys
+  // (e.g. "/src/pages/ssg-demo/index.ts") because the router assigns
+  // deterministic componentRouteIds by sorting these keys — if the set
+  // differs, the IDs will be wrong and client-side RPC will break.
   const pagesDir = path.resolve(PROJECT_ROOT, 'src/pages');
-  const pages: Record<string, unknown> = {};
-  const layouts: Record<string, unknown> = {};
+  const pageKeys = new Set<string>();
+  const layoutKeys = new Set<string>();
 
-  function collectFiles(dir: string, baseRoute: string = '') {
+  function scanFiles(dir: string) {
     if (!fs.existsSync(dir)) return;
-
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
 
       if (entry.isDirectory()) {
-        const indexPath = path.join(fullPath, 'index.ts');
-        const layoutPath = path.join(fullPath, 'layout.ts');
-        const routePart = entry.name;
+        scanFiles(fullPath);
+      } else if (entry.isFile()) {
+        const relPath = path.relative(pagesDir, fullPath).split(path.sep).join('/');
+        const key = `/src/pages/${relPath}`;
 
-        if (fs.existsSync(indexPath)) {
-          const route = `${baseRoute}/${routePart}/index.ts`;
-          const key = `/src/pages${route}`;
-          pages[key] = { default: null };
+        if (entry.name === 'layout.ts') {
+          layoutKeys.add(key);
+        } else if (entry.name === 'loading.ts') {
+          // loading.ts files are not pages or layouts — skip (matches the
+          // vite plugin's glob exclusions).
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx')) {
+          pageKeys.add(key);
         }
-
-        if (fs.existsSync(layoutPath)) {
-          const route = `${baseRoute}/${routePart}/layout.ts`;
-          const key = `/src/pages${route}`;
-          layouts[key] = { default: null };
-        }
-
-        collectFiles(fullPath, `${baseRoute}/${routePart}`);
       }
     }
   }
 
-  collectFiles(pagesDir);
+  scanFiles(pagesDir);
 
-  // Check for root layout at src/pages/layout.ts
-  const rootLayoutPath = path.join(pagesDir, 'layout.ts');
-  if (fs.existsSync(rootLayoutPath)) {
-    layouts['/src/pages/layout.ts'] = { default: null };
-  }
+  // Compute the componentRouteId map using the same logic as router.ts:
+  //   [...pageKeys, ...layoutKeys].sort() → cmp_0, cmp_1, ...
+  const sortedKeys = [...pageKeys, ...layoutKeys].sort();
+  const routeIdMap = new Map<string, string>();
+  sortedKeys.forEach((p, i) => {
+    routeIdMap.set(p, `cmp_${i.toString(36)}`);
+  });
 
-  // Load actual modules using dynamic import with file:// URL
+  // Load actual modules using dynamic import with file:// URL.
+  // Only .ts files can be loaded by tsx; .mdx files require the vite plugin's
+  // transform and are skipped (they can't be SSG pages anyway).
   const loadedPages: Record<string, unknown> = {};
-  for (const key of Object.keys(pages)) {
-    // Remove leading slash and /src/pages prefix
-    let filePath = key.replace('/src/pages', '').replace(/^\//, '');
-    let fullPath: string;
+  for (const key of pageKeys) {
+    if (!key.endsWith('.ts')) continue;
 
-    if (filePath.endsWith('/index.ts')) {
-      fullPath = path.join(pagesDir, filePath);
-    } else {
-      fullPath = path.join(pagesDir, filePath, 'index.ts');
-    }
+    const relFile = key.replace('/src/pages/', '').replace(/^\//, '');
+    const fullPath = path.join(pagesDir, relFile);
 
     try {
       const module = await import(`file://${fullPath}`);
@@ -101,10 +129,9 @@ async function main() {
   }
 
   const loadedLayouts: Record<string, unknown> = {};
-  for (const key of Object.keys(layouts)) {
-    // Remove leading slash and /src/pages prefix
-    let filePath = key.replace('/src/pages', '').replace(/^\//, '');
-    const fullPath = path.join(pagesDir, filePath);
+  for (const key of layoutKeys) {
+    const relFile = key.replace('/src/pages/', '').replace(/^\//, '');
+    const fullPath = path.join(pagesDir, relFile);
     try {
       const module = await import(`file://${fullPath}`);
       loadedLayouts[key] = module;
@@ -150,7 +177,11 @@ async function main() {
           routePath,
           staticParams,
           loadedLayouts as Record<string, { default: new () => any }>,
-          baseUrl
+          baseUrl,
+          undefined,
+          htmlTemplate,
+          route.filePath,
+          routeIdMap.get(route.filePath)
         );
 
         // Determine output file path
@@ -197,29 +228,6 @@ async function main() {
   console.log('\nGenerated SSG files:');
   listFiles(DIST_DIR, '');
 
-  // Copy client assets to SSG static directory for hydration
-  const CLIENT_DIR = path.resolve(PROJECT_ROOT, 'dist/client');
-  if (fs.existsSync(CLIENT_DIR)) {
-    console.log('\nCopying client assets to SSG static directory...');
-    copyDirectory(CLIENT_DIR, DIST_DIR);
-    console.log('Client assets copied.');
-  }
-
-  // Copy sitemap.xml and SSG pages to dist/client so they are served at the root URL
-  if (fs.existsSync(CLIENT_DIR)) {
-    console.log('\nCopying SSG files to dist/client for serving...');
-    const sitemapSrc = path.join(DIST_DIR, 'sitemap.xml');
-    if (fs.existsSync(sitemapSrc)) {
-      fs.copyFileSync(sitemapSrc, path.join(CLIENT_DIR, 'sitemap.xml'));
-      console.log('Copied sitemap.xml to dist/client/');
-    }
-    const routesJsonSrc = path.join(DIST_DIR, 'routes.json');
-    if (fs.existsSync(routesJsonSrc)) {
-      fs.copyFileSync(routesJsonSrc, path.join(CLIENT_DIR, 'routes.json'));
-      console.log('Copied routes.json to dist/client/');
-    }
-  }
-
   console.log('\nSSG build complete!');
 }
 
@@ -258,27 +266,6 @@ function listFiles(dir: string, prefix: string) {
       const stats = fs.statSync(entryPath);
       const size = formatSize(stats.size);
       console.log(`${prefix}${entry.name} (${size})`);
-    }
-  }
-}
-
-function copyDirectory(src: string, dest: string): void {
-  if (!fs.existsSync(src)) return;
-
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDirectory(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
     }
   }
 }
