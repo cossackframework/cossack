@@ -35,7 +35,9 @@ export function filePathToRoutePath(filePath: string): string {
   let route = filePath
     .replace('/src/pages/', '/')
     .replace('/index.ts', '')
-    .replace('/index.mdx', '');
+    .replace('/index.mdx', '')
+    .replace('/index.md', '')
+    .replace(/\.(ts|tsx|md|mdx)$/, '');
 
   // Handle root path: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
   if (route === '/index' || route === '') {

@@ -63,7 +63,7 @@ export function cossackPages(): Plugin {
         }
       }
 
-      if (id.endsWith('.mdx')) {
+      if (id.endsWith('.mdx') || id.endsWith('.md')) {
         const { data, content } = matter(code);
         const htmlContent = await marked(content);
 

@@ -123,8 +123,9 @@ function filePathToRoutePath(filePath: string): string {
     const route = filePath
         .replace('/src/pages/', '/')
         .replace('/index.ts', '')
+        .replace('/index.md', '')
         .replace('/index.mdx', '')
-        .replace(/\.(ts|tsx|mdx)$/, '');
+        .replace(/\.(ts|tsx|md|mdx)$/, '');
 
     // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
     if (route === '/index' || route === '') {
