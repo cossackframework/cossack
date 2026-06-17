@@ -30,8 +30,11 @@ test.describe('View Transitions', () => {
     // Click the first card
     await page.locator('a[data-transition-types="nav-forward"]').first().click();
 
-    // Wait for detail page to render
-    await expect(page.locator('body')).toContainText('Mountain Sunset', { timeout: 5000 });
+    // Wait for detail page to render. The "Back to list" link only exists on
+    // the detail page, so this actually waits for SPA navigation to complete
+    // (the list page also contains "Mountain Sunset" text in its cards, so
+    // matching that text alone would return before navigation finishes).
+    await expect(page.locator('a[data-transition-types="nav-back"]')).toBeVisible({ timeout: 5000 });
 
     // Verify startViewTransition was called at least once
     const calls = await page.evaluate(() => (window as any).__vtCalls);

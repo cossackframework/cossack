@@ -23,6 +23,13 @@ test.describe('Refs Page', () => {
     await expect(animateButton).toBeVisible();
     await expect(targetBox).toBeVisible();
 
+    // Wait for hydration + onMount to complete. onMount sets a 2px solid green
+    // border on the target box via boxRef after a 100ms timer, which is a
+    // reliable signal that the client bundle has hydrated, the @click listener
+    // is attached, and boxRef.value is populated. Clicking before this runs
+    // risks firing on an un-hydrated button (no listener) and flakes the test.
+    await expect(targetBox).toHaveCSS('border-color', 'rgb(0, 128, 0)', { timeout: 5000 });
+
     // Click the animate button
     await animateButton.click();
 
