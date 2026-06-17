@@ -12,6 +12,16 @@ createClientApp({ container: '#root', viewTransitions: true });
 
 When enabled and the browser supports the API (`document.startViewTransition`), SPA navigations automatically wrap their DOM commit phase in a view transition. On unsupported browsers (e.g., Firefox at the time of writing), navigation still works — just without animation.
 
+## Navigation Progress Bar
+
+Enable a slim progress bar at the top of the page that fills during SPA navigations — the same UX pattern popularized by NProgress and Next.js:
+
+```typescript
+createClientApp({ container: '#root', viewTransitions: true, progressBar: true });
+```
+
+The bar appears at 30% when a navigation starts and completes to 100% when the new page is ready. No additional configuration or CSS is needed — the framework injects everything automatically. Both `viewTransitions` and `progressBar` are independent options; use either or both.
+
 ## How It Works
 
 When a user clicks a link and navigates between pages:

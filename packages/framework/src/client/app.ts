@@ -61,32 +61,29 @@ export interface CreateClientAppOptions {
    * Default: false (zero behavior change for existing apps).
    */
   viewTransitions?: boolean;
+  /**
+   * Show a top-of-page progress bar during SPA navigations.
+   * Default: false.
+   */
+  progressBar?: boolean;
 }
 
 const pageCache = new Map<string, { html: string; state: any }>();
 
-// Simple Progress Bar
-const style = document.createElement('style');
-style.textContent = `
-  #cossack-progress {
-    position: fixed; top: 0; left: 0; width: 0%; height: 2px;
-    background: #3b82f6; z-index: 9999;
-    transition: width 0.3s ease, opacity 0.4s ease;
-    pointer-events: none; opacity: 0;
-  }
-`;
-document.head.appendChild(style);
-const progressBar = document.createElement('div');
-progressBar.id = 'cossack-progress';
-document.body.appendChild(progressBar);
+// Progress bar element. Only created when the `progressBar` option is enabled
+// in createClientApp(). setProgress() is a no-op when this is null, so
+// navigate() can call it unconditionally.
+let progressBar: HTMLDivElement | null = null;
 
 function setProgress(percent: number) {
-  progressBar.style.opacity = percent > 0 && percent < 100 ? '1' : progressBar.style.opacity;
-  progressBar.style.width = percent + '%';
+  const bar = progressBar;
+  if (!bar) return;
+  bar.style.opacity = percent > 0 && percent < 100 ? '1' : bar.style.opacity;
+  bar.style.width = percent + '%';
   if (percent >= 100) {
     setTimeout(() => {
-      progressBar.style.opacity = '0';
-      setTimeout(() => { progressBar.style.width = '0%'; }, 400);
+      bar.style.opacity = '0';
+      setTimeout(() => { bar.style.width = '0%'; }, 400);
     }, 200);
   }
 }
@@ -132,7 +129,7 @@ async function fetchPage(url: string) {
   throw new Error('Failed to load page state');
 }
 
-export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false }: CreateClientAppOptions) {
+export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false, progressBar: progressBarEnabled = false }: CreateClientAppOptions) {
   const containerEl =
     typeof container === 'string'
       ? document.querySelector(container)
@@ -141,6 +138,23 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   if (!containerEl) {
     console.error('Could not find root container');
     return;
+  }
+
+  // Create the progress bar once when enabled.
+  if (progressBarEnabled && !progressBar) {
+    const style = document.createElement('style');
+    style.textContent = `
+      #cossack-progress {
+        position: fixed; top: 0; left: 0; width: 0%; height: 2px;
+        background: #3b82f6; z-index: 9999;
+        transition: width 0.3s ease, opacity 0.4s ease;
+        pointer-events: none; opacity: 0;
+      }
+    `;
+    document.head.appendChild(style);
+    progressBar = document.createElement('div');
+    progressBar.id = 'cossack-progress';
+    document.body.appendChild(progressBar);
   }
 
   // Inject reduced-motion guard once. When view transitions are enabled,

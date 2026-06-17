@@ -6,4 +6,4 @@ if (import.meta.env.DEV) {
   enableDevTools();
 }
 
-createClientApp({ container: '#root', viewTransitions: true });
+createClientApp({ container: '#root', viewTransitions: true, progressBar: true });
