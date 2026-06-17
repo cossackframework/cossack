@@ -752,14 +752,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
 
         // 1. @On (Component/Container Events)
-        if (this.container) {
+        // Regular components delegate through their container element. Page and
+        // layout components don't have one (their content is composed into the
+        // App), so fall back to document-level delegation — a page-level @On
+        // handler is expected to observe events across the whole page.
+        const onTarget: EventTarget | undefined = this.container || (typeof document !== 'undefined' ? document : undefined);
+        if (onTarget) {
             const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
             for (const { eventName, propertyKey } of domEvents) {
                 // Lifecycle events are handled by setupLifecycleEventHandlers()
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(this.container, eventName, method as any);
+                    attach(onTarget, eventName, method as any);
                 }
             }
         }

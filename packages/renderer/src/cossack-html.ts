@@ -414,6 +414,12 @@ class NodePart implements Part {
                this._cachedParts = cached.parts;
            }
        }
+    } else if (isUnsafeHTML(value)) {
+       this._clearTemplateCache();
+       this.clear();
+       const temp = document.createElement('template');
+       temp.innerHTML = value.value;
+       this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
     } else if (isComponentResult(value) || (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))) {
         // Handle ComponentResult or other objects by wrapping in template
        this._clearTemplateCache();
@@ -421,12 +427,6 @@ class NodePart implements Part {
        const container = document.createDocumentFragment();
        render(html`${value}`, container);
        this.startNode.parentNode!.insertBefore(container, this.endNode);
-    } else if (isUnsafeHTML(value)) {
-       this._clearTemplateCache();
-       this.clear();
-       const temp = document.createElement('template');
-       temp.innerHTML = value.value;
-       this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
     } else if (value instanceof Node) {
        this._clearTemplateCache();
        this.clear();

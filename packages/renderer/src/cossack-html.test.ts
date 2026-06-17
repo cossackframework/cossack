@@ -173,4 +173,31 @@ describe('Attribute interpolation', () => {
             expect(div!.getAttribute('style')).toBe('p:A; q:undefined;');
         });
     });
+
+    describe('unsafeHTML (client-side render)', () => {
+        it('renders raw HTML without recursion', () => {
+            // Regression: UnsafeHTMLResult is an object, so the generic
+            // object branch in updateNode used to catch it before the
+            // isUnsafeHTML branch — causing infinite recursion via
+            // render(html`${value}`) -> NodePart.update -> updateNode -> ...
+            const container = document.createElement('div');
+            render(html`<div>${unsafeHTML('<span>raw</span>')}</div>`, container);
+            const span = container.querySelector('span');
+            expect(span).not.toBeNull();
+            expect(span!.textContent).toBe('raw');
+        });
+
+        it('updates unsafeHTML without recursion', () => {
+            const container = document.createElement('div');
+            function tpl(html2: string) {
+                return html`<div>${unsafeHTML(html2)}</div>`;
+            }
+            render(tpl('<b>one</b>'), container);
+            expect(container.querySelector('b')!.textContent).toBe('one');
+
+            // Re-render with same strings array (cached path).
+            render(tpl('<i>two</i>'), container);
+            expect(container.querySelector('i')!.textContent).toBe('two');
+        });
+    });
 });
