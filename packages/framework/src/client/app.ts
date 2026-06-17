@@ -1,4 +1,4 @@
-import { Cossack, enableClientNavigation, LifecyclePhase, createInstance } from '@cossackframework/core';
+import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, type NavigateOptions } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
@@ -54,6 +54,13 @@ declare global {
 export interface CreateClientAppOptions {
   container: HTMLElement | string;
   AppComponent?: new (...args: any[]) => any;
+  /**
+   * Enable browser View Transitions API for SPA navigations.
+   * When true AND the browser supports `document.startViewTransition`,
+   * the DOM commit phase of each navigation is wrapped in a view transition.
+   * Default: false (zero behavior change for existing apps).
+   */
+  viewTransitions?: boolean;
 }
 
 const pageCache = new Map<string, { html: string; state: any }>();
@@ -125,7 +132,7 @@ async function fetchPage(url: string) {
   throw new Error('Failed to load page state');
 }
 
-export async function createClientApp({ container, AppComponent }: CreateClientAppOptions) {
+export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false }: CreateClientAppOptions) {
   const containerEl =
     typeof container === 'string'
       ? document.querySelector(container)
@@ -134,6 +141,27 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
   if (!containerEl) {
     console.error('Could not find root container');
     return;
+  }
+
+  // Inject reduced-motion guard once. When view transitions are enabled,
+  // disable all transition animations under prefers-reduced-motion: reduce.
+  // Users who want partial motion can override in their own CSS.
+  if (viewTransitionsEnabled) {
+    const reducedMotionStyle = document.createElement('style');
+    reducedMotionStyle.id = 'cossack-view-transitions-reduced-motion';
+    if (!document.getElementById(reducedMotionStyle.id)) {
+      reducedMotionStyle.textContent = `
+        @media (prefers-reduced-motion: reduce) {
+          ::view-transition-old(*),
+          ::view-transition-new(*),
+          ::view-transition-group(*) {
+            animation-duration: 0s !important;
+            animation-delay: 0s !important;
+          }
+        }
+      `;
+      document.head.appendChild(reducedMotionStyle);
+    }
   }
 
   const appInstance = createInstance(AppComponent ?? App);
@@ -319,12 +347,12 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
     detail: { pathname: window.location.pathname, navigationType: 'initial' }
   }));
 
-  const navigate = async (url: string, force = false): Promise<boolean> => {
+  const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<boolean> => {
     if (!force && currentPage && !isDisplayingLoadingState) {
         const prevented = await currentPage._checkPreventNavigation();
         if (prevented) {
             currentPage._pendingNavigation = async () => {
-                if (await navigate(url, true)) {
+                if (await navigate(url, true, options)) {
                     window.history.pushState({}, '', url);
                 }
             };
@@ -337,7 +365,7 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
     try {
       document.dispatchEvent(new CustomEvent('cossack:before-navigate', {
         bubbles: true,
-        detail: { fromPathname: window.location.pathname, toPathname: url }
+        detail: { fromPathname: window.location.pathname, toPathname: url, types: options?.types }
       }));
 
       setProgress(30);
@@ -375,13 +403,33 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
       const { state } = await fetchPage(url);
       setProgress(100);
 
-      window.__INITIAL_STATE__ = state;
-      await loadComponent(state);
-      appInstance._frameworkNavigateComplete(state.pathname);
+      // DOM commit: destroy old page, instantiate new page, trigger re-render.
+      // When view transitions are enabled and supported, wrap this in
+      // document.startViewTransition() so the browser snapshots before/after.
+      // The loading.ts swap (if any) happened above, BEFORE fetchPage — its DOM
+      // mutation is already committed by the time startViewTransition snapshots,
+      // so the transition animates from loading.ts → real content.
+      const commit = async () => {
+        window.__INITIAL_STATE__ = state;
+        await loadComponent(state);
+        appInstance._frameworkNavigateComplete(state.pathname);
+      };
+
+      if (viewTransitionsEnabled && supportsViewTransitions()) {
+        const transition = options?.types?.length
+          ? (document as any).startViewTransition({ update: commit, types: options.types })
+          : (document as any).startViewTransition(commit);
+        // transition.updateReady rejects if the transition is skipped (e.g.
+        // user navigates again mid-transition). The outer try/catch falls back
+        // to window.location.reload() on error — same fallback as today.
+        await transition.updateReady;
+      } else {
+        await commit();
+      }
 
       document.dispatchEvent(new CustomEvent('cossack:ready', {
         bubbles: true,
-        detail: { pathname: state.pathname, navigationType: 'spa' }
+        detail: { pathname: state.pathname, navigationType: 'spa', types: options?.types }
       }));
       return true;
     } catch (error) {
@@ -391,15 +439,15 @@ export async function createClientApp({ container, AppComponent }: CreateClientA
     }
   };
 
-  Cossack._onNavigate = async (url) => {
-      const accepted = await navigate(url);
+  Cossack._onNavigate = async (url, options) => {
+      const accepted = await navigate(url, false, options);
       if (accepted) {
           window.history.pushState({}, '', url);
       }
   };
 
   enableClientNavigation(
-    navigate,
+    (url, options) => navigate(url, false, options),
     async (url) => {
       if (!pageCache.has(url)) {
         fetchPage(url).catch(() => {});

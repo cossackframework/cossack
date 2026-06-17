@@ -38,6 +38,7 @@
 - [Server-Sent Events](/docs/sse.md)
 - [Storage](/docs/storage.md)
 - [Prevent Navigation](/docs/prevent-navigation.md)
+- [View Transitions](/docs/view-transitions.md)
 - [Errors Handling](/docs/errors-handling.md)
 - [Dev Tools](/docs/dev-tools.md)
 - [Snippets](/docs/vscode-snippets.md)

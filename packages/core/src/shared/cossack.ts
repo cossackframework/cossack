@@ -52,6 +52,7 @@ import {
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
 import { LifecyclePhase } from './component-types';
+import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -1301,20 +1302,66 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    public static _onNavigate?: (url: string) => Promise<void>;
+    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<void>;
 
+    public redirect(url: string, status?: RedirectStatusCode): void;
+    public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): void;
     @Server()
-    public redirect(url: string, status: RedirectStatusCode = 302) {
+    public redirect(
+        url: string,
+        statusOrOptions: RedirectStatusCode | { status?: RedirectStatusCode; types?: string[] } = 302,
+    ): void {
         if (!this.isServer) {
+            const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
+            const types = opts.types;
             if (Cossack._onNavigate) {
                 window.history.pushState({}, '', url);
-                Cossack._onNavigate(url);
+                Cossack._onNavigate(url, types ? { types } : undefined);
             } else {
                 window.location.href = url;
             }
             return;
         }
-        return this.c.redirect(url, status);
+        const status = typeof statusOrOptions === 'object' ? (statusOrOptions.status ?? 302) : statusOrOptions;
+        this.c.redirect(url, status);
+    }
+
+    /**
+     * Wrap a DOM-mutating callback in a same-route View Transition.
+     *
+     * Use this to animate state changes that don't involve a navigation —
+     * tab switches, list reordering, expanding a panel, etc. On the server,
+     * or when the browser lacks View Transitions support, the callback runs
+     * directly with no transition.
+     *
+     * `types` correspond to `::view-transition-group(.<type>)` CSS selectors
+     * and let authors apply different animations per call site.
+     *
+     * The returned promise resolves with the callback's result once the
+     * transition's snapshot is ready (i.e. after the reactive re-render
+     * triggered by the callback has committed). If the browser skips the
+     * transition (e.g. a subsequent transition supersedes it), the promise
+     * still resolves with the callback's result.
+     */
+    public async startViewTransition<T>(
+        callback: () => T | Promise<T>,
+        types?: string[],
+    ): Promise<T | void> {
+        if (this.isServer || !supportsViewTransitions()) {
+            return await callback();
+        }
+        let result: T | undefined;
+        const update = async () => {
+            result = await callback();
+            // Ensure the reactive re-render commits before the browser
+            // snapshots the new state.
+            await this.requestUpdate();
+        };
+        const transition = types && types.length
+            ? (document as any).startViewTransition({ update, types })
+            : (document as any).startViewTransition(update);
+        await transition.updateReady;
+        return result;
     }
 
     public broadcastEvent(eventName: string, ...payload: any[]) {

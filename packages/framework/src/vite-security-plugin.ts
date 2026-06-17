@@ -43,6 +43,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     'validateAll',
     'clearErrors',
     'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
+    'startViewTransition', // View Transitions API wrapper (runs on client)
   ]);
 
   /**

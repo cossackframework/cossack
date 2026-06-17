@@ -6,4 +6,4 @@ if (import.meta.env.DEV) {
   enableDevTools();
 }
 
-createClientApp({ container: '#root' });
+createClientApp({ container: '#root', viewTransitions: true });
