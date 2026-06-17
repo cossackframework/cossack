@@ -46,7 +46,7 @@ export default class ViewTransitionsDetail extends Cossack {
                 </a>
                 <h1>${this.title}</h1>
                 <div class="vt-detail-header mt-4"
-                     style=${`background:${this.color}; view-transition-name: item-${this.itemId}`}>
+                     style="background:${this.color}; view-transition-name: item-${this.itemId};">
                 </div>
                 <p class="mt-4 text-gray-700">This is the detail page for item #${this.itemId}. The colored header morphed from the card you clicked, thanks to <code>view-transition-name</code> matching between the list and detail pages.</p>
             </div>

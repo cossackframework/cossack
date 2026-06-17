@@ -13,7 +13,6 @@ export class App extends Cossack {
         // @On('navigate-complete') only fires on the App component, mirroring
         // the onNavigateComplete() hook. Multiple handlers are supported.
         this.lastNavigatedPath = pathname;
-        console.log('[App] @On("navigate-complete")', pathname);
     }
 
     public head(context: HeadContext): HeadValue {

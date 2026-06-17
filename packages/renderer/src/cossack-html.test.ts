@@ -72,6 +72,21 @@ describe('Attribute interpolation', () => {
             const template = html`<div class="btn ${color}-text large"></div>`;
             expect(renderToString(template)).toBe('<div class="btn blue-text large"></div>');
         });
+
+        it('renders two markers in one attribute', () => {
+            const x = 'X';
+            const y = 'Y';
+            const template = html`<div class="a ${x} b ${y} c"></div>`;
+            expect(renderToString(template)).toBe('<div class="a X b Y c"></div>');
+        });
+
+        it('renders three markers in one attribute', () => {
+            const a = 'A';
+            const b = 'B';
+            const c = 'C';
+            const template = html`<div style="p:${a}; q:${b}; r:${c};"></div>`;
+            expect(renderToString(template)).toBe('<div style="p:A; q:B; r:C;"></div>');
+        });
     });
 
     describe('Client-side render', () => {
@@ -114,6 +129,48 @@ describe('Attribute interpolation', () => {
             render(html`<div class="btn ${color}-text large"></div>`, container);
             const div = container.querySelector('div');
             expect(div!.getAttribute('class')).toBe('btn blue-text large');
+        });
+
+        it('renders two markers in one attribute', () => {
+            const container = document.createElement('div');
+            const x = 'X';
+            const y = 'Y';
+            render(html`<div class="a ${x} b ${y} c"></div>`, container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('class')).toBe('a X b Y c');
+        });
+
+        it('updates both markers on re-render', () => {
+            const container = document.createElement('div');
+            function renderTemplate(x: string, y: string) {
+                return html`<div class="a ${x} b ${y} c"></div>`;
+            }
+            render(renderTemplate('X', 'Y'), container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('class')).toBe('a X b Y c');
+
+            render(renderTemplate('X2', 'Y2'), container);
+            expect(div!.getAttribute('class')).toBe('a X2 b Y2 c');
+        });
+
+        it('renders three markers in one attribute', () => {
+            const container = document.createElement('div');
+            const a = 'A';
+            const b = 'B';
+            const c = 'C';
+            render(html`<div style="p:${a}; q:${b}; r:${c};"></div>`, container);
+            const div = container.querySelector('div');
+            expect(div!.getAttribute('style')).toBe('p:A; q:B; r:C;');
+        });
+
+        it('handles undefined initial value in a multi-marker attribute', () => {
+            const container = document.createElement('div');
+            const a = 'A';
+            const b: string | undefined = undefined;
+            render(html`<div style="p:${a}; q:${b};"></div>`, container);
+            const div = container.querySelector('div');
+            // undefined renders as "undefined" via String(); no crash.
+            expect(div!.getAttribute('style')).toBe('p:A; q:undefined;');
         });
     });
 });

@@ -67,7 +67,7 @@ export default class ViewTransitionsList extends Cossack {
                            data-transition-types="nav-forward"
                            class="vt-card">
                             <div class="vt-card-image"
-                                 style=${`background:${item.color}; view-transition-name: item-${item.id}`}>
+                                 style="background:${item.color}; view-transition-name: item-${item.id};">
                             </div>
                             <p class="mt-1.5 font-medium">${item.title}</p>
                         </a>

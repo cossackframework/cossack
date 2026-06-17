@@ -511,22 +511,39 @@ class SpreadPart implements Part {
     }
 }
 
-class AttributePart implements Part {
-    private prefix: string;
-    private suffix: string;
+interface MultiMarkerState {
+    // Shared between all AttributeParts of the same attribute.
+    // One slot per marker, holding the latest value passed to each part.
+    currentValues: unknown[];
+    // Which slot this part owns.
+    position: number;
+}
 
-    constructor(public element: Element, public name: string, originalValue: string) {
-        const idx = originalValue.indexOf('__CRP_');
-        if (idx !== -1) {
-            // Marker format: __CRP_<digits>__
-            const digitsStart = idx + 6; // after "__CRP_"
-            const secondUnderscorePair = originalValue.indexOf('__', digitsStart);
-            this.prefix = originalValue.substring(0, idx);
-            this.suffix = originalValue.substring(secondUnderscorePair + 2);
-        } else {
-            this.prefix = '';
-            this.suffix = '';
+class AttributePart implements Part {
+    // N+1 static segments for N markers. For single-marker (N=1),
+    // segments is [prefix, suffix].
+    private segments: string[];
+    private isMulti: boolean;
+    private multiState: MultiMarkerState | null;
+
+    constructor(
+        public element: Element,
+        public name: string,
+        originalValue: string,
+        multiState?: MultiMarkerState
+    ) {
+        // Parse all markers into segments (works for N=1 and N>1).
+        const matches = [...originalValue.matchAll(/__CRP_(\d+)__/g)];
+        this.segments = [];
+        let lastEnd = 0;
+        for (const m of matches) {
+            const start = m.index!;
+            this.segments.push(originalValue.substring(lastEnd, start));
+            lastEnd = start + m[0].length;
         }
+        this.segments.push(originalValue.substring(lastEnd));
+        this.isMulti = matches.length > 1;
+        this.multiState = multiState ?? null;
     }
     update(value: unknown) {
         let isLive = false;
@@ -545,7 +562,20 @@ class AttributePart implements Part {
             if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
             return;
         }
-        
+
+        if (this.isMulti && this.multiState) {
+            // Multi-marker attribute: store our slot, then re-interpolate the
+            // full string using every part's latest value and set once.
+            const { currentValues, position } = this.multiState;
+            currentValues[position] = value;
+            let result = this.segments[0];
+            for (let i = 0; i < currentValues.length; i++) {
+                result += String(currentValues[i]) + this.segments[i + 1];
+            }
+            this.element.setAttribute(this.name, result);
+            return;
+        }
+
         if (this.name.startsWith('@') && typeof value === 'function') {
             const eventName = this.name.slice(1);
             const propName = `__crp_handler_${eventName}`;
@@ -579,7 +609,7 @@ class AttributePart implements Part {
             if (value) this.element.setAttribute(this.name, '');
             else this.element.removeAttribute(this.name);
         } else {
-            this.element.setAttribute(this.name, this.prefix + String(value) + this.suffix);
+            this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
         }
     }
 }
@@ -675,18 +705,44 @@ export const render = (result: TemplateResult, container: Node) => {
              const el = node as Element;
 
              Array.from(el.attributes).forEach(attr => {
-                const match = attr.value.match(/__CRP_(\d+)__/);
-                if (match) {
-                    const index = parseInt(match[1]);
+                const allMatches = [...attr.value.matchAll(/__CRP_(\d+)__/g)];
+                if (allMatches.length === 0) return;
+
+                if (allMatches.length === 1) {
+                    // Single-marker attribute: existing behavior preserved.
+                    const index = parseInt(allMatches[0][1]);
                     if (!parts[index]) {
-                         if (attr.name === '...') {
-                             const part = new SpreadPart(el);
-                             parts[index] = part;
-                             el.removeAttribute('...');
-                         } else {
-                             const part = new AttributePart(el, attr.name, attr.value);
-                             parts[index] = part;
-                         }
+                        if (attr.name === '...') {
+                            const part = new SpreadPart(el);
+                            parts[index] = part;
+                            el.removeAttribute('...');
+                        } else {
+                            const part = new AttributePart(el, attr.name, attr.value);
+                            parts[index] = part;
+                        }
+                    }
+                    return;
+                }
+
+                // Multi-marker attribute: create one AttributePart per marker,
+                // all sharing the same currentValues array so the final
+                // interpolation is correct once every part has been updated.
+                if (attr.name === '...') {
+                    // Spread with multiple markers in one attribute is not supported.
+                    return;
+                }
+                const indices = allMatches.map(m => parseInt(m[1]));
+                const currentValues = new Array(allMatches.length).fill(undefined);
+                for (let pos = 0; pos < indices.length; pos++) {
+                    const index = indices[pos];
+                    if (!parts[index]) {
+                        const part = new AttributePart(
+                            el,
+                            attr.name,
+                            attr.value,
+                            { currentValues, position: pos }
+                        );
+                        parts[index] = part;
                     }
                 }
             });
