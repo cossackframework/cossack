@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { transformCossackClass, isClientSafeMethod } from '../src/vite-security-plugin';
+import { transformCossackClass, isClientSafeMethod, stripSsgGenerateStaticParams } from '../src/vite-security-plugin';
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
@@ -946,5 +946,221 @@ export class TestPage extends Cossack {
       expect(result).toContain('throw new Error');
       expect(result).toContain('stripped from the client bundle');
     });
+  });
+});
+
+describe('SSG generateStaticParams stripping', () => {
+  it('strips a block-body arrow function', () => {
+    const code = `@Page({
+  ssg: {
+    generateStaticParams: async () => {
+      const apiKey = 'SECRET_KEY';
+      const rows = await db.select().from('users');
+      return rows;
+    }
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('SECRET_KEY');
+    expect(result).not.toContain('db.select');
+    expect(result).not.toContain("from('users')");
+  });
+
+  it('strips a concise-body arrow function', () => {
+    const code = `@Page({
+  ssg: {
+    generateStaticParams: async () => [{ id: '1' }, { id: '2' }]
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain("{ id: '1' }");
+  });
+
+  it('strips an identifier reference', () => {
+    const code = `@Page({
+  ssg: {
+    generateStaticParams: myDbHelper
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('myDbHelper');
+  });
+
+  it('preserves the `enabled` flag alongside generateStaticParams', () => {
+    const code = `@Page({
+  ssg: {
+    enabled: true,
+    generateStaticParams: async () => {
+      return db.query('SELECT ...');
+    }
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain('enabled: true');
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('db.query');
+  });
+
+  it('preserves other @Page options', () => {
+    const code = `@Page({
+  transport: 'http',
+  ssg: {
+    generateStaticParams: async () => {
+      return fetch('/secret');
+    }
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain("transport: 'http'");
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('fetch(');
+  });
+
+  it('boolean `ssg: true` is a no-op', () => {
+    const code = `@Page({ ssg: true })
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toBe(code);
+  });
+
+  it('`ssg: { enabled: true }` with no generateStaticParams is a no-op', () => {
+    const code = `@Page({ ssg: { enabled: true } })
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toBe(code);
+  });
+
+  it('`@Page()` with no ssg at all is a no-op', () => {
+    const code = `@Page()
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toBe(code);
+  });
+
+  it('strips @Component just like @Page (alias coverage)', () => {
+    const code = `@Component({
+  ssg: {
+    generateStaticParams: async () => {
+      return db.list();
+    }
+  }
+})
+export class P extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('db.list');
+  });
+
+  it('does not touch string/template-literal occurrences of generateStaticParams', () => {
+    const code = `@Page({
+  ssg: {
+    generateStaticParams: async () => []
+  }
+})
+export class P extends Cossack {
+  render() {
+    return html\`<pre>generateStaticParams: async () => { return SECRET; }</pre>\`;
+  }
+}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    // Decorator value was stripped...
+    expect(result).toContain('generateStaticParams: async () => []');
+    // ...but the template-literal copy is preserved verbatim.
+    expect(result).toContain('generateStaticParams: async () => { return SECRET; }');
+  });
+
+  it('processes multiple @Page decorators in the same file independently', () => {
+    const code = `@Page({
+  ssg: { generateStaticParams: async () => db.a() }
+})
+export class A extends Cossack {}
+
+@Page({
+  ssg: { generateStaticParams: async () => db.b() }
+})
+export class B extends Cossack {}`;
+
+    const result = stripSsgGenerateStaticParams(code);
+    expect(result).not.toContain('db.a');
+    expect(result).not.toContain('db.b');
+    expect((result.match(/generateStaticParams: async \(\) => \[\]/g) || []).length).toBe(2);
+  });
+
+  it('integration: real ssg-demo/users/[username] shape — class methods stripped AND generateStaticParams stripped', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    const code = `
+import { Cossack, Page, State } from '@cossackframework/core';
+import { html, component } from '@cossackframework/renderer';
+import { Layout } from '@/components/Layout';
+
+@Page({
+  ssg: {
+    enabled: true,
+    generateStaticParams: async () => {
+      const apiKey = process.env.SECRET_DB_KEY;
+      const users = await db.select().from('users');
+      return users.map(u => ({ username: u.name }));
+    }
+  },
+  transport: 'http'
+})
+export class UserProfile extends Cossack {
+  @State() username: string = '';
+
+  head() {
+    return { title: 'User Profile' };
+  }
+
+  async init() {
+    const secret = 'SHOULD_BE_STRIPPED';
+    this.username = 'default';
+  }
+
+  render() {
+    return html\`<h1>User Profile</h1>\`;
+  }
+}`;
+
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+
+    // generateStaticParams body stripped
+    expect(result).toContain('generateStaticParams: async () => []');
+    expect(result).not.toContain('SECRET_DB_KEY');
+    expect(result).not.toContain('db.select');
+    // Other decorator options preserved
+    expect(result).toContain('enabled: true');
+    expect(result).toContain("transport: 'http'");
+    // Class-body stripping still works (init stubbed)
+    expect(result).toContain("__cossack_proxies?.get('init')");
+    expect(result).not.toContain('SHOULD_BE_STRIPPED');
+    // render preserved
+    expect(result).toContain('render() {');
+    expect(result).toContain('User Profile');
   });
 });

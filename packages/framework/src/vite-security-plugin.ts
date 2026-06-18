@@ -149,6 +149,263 @@ function isInRange(ranges: Array<[number, number]>, pos: number): boolean {
   return false;
 }
 
+/**
+ * Strip the body of `generateStaticParams` from `@Page(...)` / `@Component(...)`
+ * decorator arguments. The function is only ever invoked at SSG build time
+ * (see `getStaticParams` in ssg-renderer.ts) — never on the client — so its
+ * body is pure leak risk in the client bundle (database queries, API keys,
+ * business logic). Each occurrence is replaced with `async () => []`, which
+ * preserves the declared type and acts as a defensive no-op.
+ *
+ * Reuses buildStringRanges / isInRange so matches inside strings, comments,
+ * and template literals are skipped.
+ */
+export function stripSsgGenerateStaticParams(code: string): string {
+  const stringRanges = buildStringRanges(code);
+
+  // Locate every @Page( / @Component( occurrence (the two are the same function).
+  // We match the decorator name + opening paren manually, then depth-track.
+  const decoratorOpeners: Array<{ decoratorNameStart: number; openParenIdx: number }> = [];
+  const decoratorNameRe = /@(Page|Component)\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = decoratorNameRe.exec(code)) !== null) {
+    const decoratorNameStart = m.index;
+    if (isInRange(stringRanges, decoratorNameStart)) continue;
+    const openParenIdx = m.index + m[0].length - 1; // index of '('
+    decoratorOpeners.push({ decoratorNameStart, openParenIdx });
+  }
+
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const { openParenIdx } of decoratorOpeners) {
+    const closeParenIdx = findMatchingParen(code, openParenIdx, stringRanges);
+    if (closeParenIdx === -1) continue;
+
+    const ssgObj = findSsgObjectLiteral(code, openParenIdx + 1, closeParenIdx, stringRanges);
+    if (!ssgObj) continue;
+
+    const valueRange = findGenerateStaticParamsValue(code, ssgObj.bodyStart, ssgObj.bodyEnd, stringRanges);
+    if (!valueRange) continue;
+
+    replacements.push({
+      start: valueRange.valueStart,
+      end: valueRange.valueEnd,
+      replacement: 'async () => []',
+    });
+  }
+
+  if (replacements.length === 0) return code;
+
+  let result = code;
+  for (const r of [...replacements].reverse()) {
+    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
+  }
+  return result;
+}
+
+/**
+ * Given the index of an opening `(`, return the index of the matching `)`.
+ * Tracks nested `()`, `[]`, and `{}` and skips strings / comments / template
+ * literals. Returns -1 if unbalanced.
+ */
+function findMatchingParen(
+  code: string,
+  openParenIdx: number,
+  stringRanges: Array<[number, number]>
+): number {
+  let depth = 0;
+  let i = openParenIdx;
+  const len = code.length;
+  while (i < len) {
+    const char = code[i];
+
+    if (char === '"' || char === "'" || char === '`') {
+      const end = findStringEnd(code, i, char);
+      if (end === -1) return -1;
+      i = end + 1;
+      continue;
+    }
+
+    if (char === '/' && i + 1 < len) {
+      const next = code[i + 1];
+      if (next === '/') {
+        i = code.indexOf('\n', i + 2);
+        if (i === -1) i = len;
+        continue;
+      } else if (next === '*') {
+        const end = code.indexOf('*/', i + 2);
+        if (end === -1) return -1;
+        i = end + 2;
+        continue;
+      }
+    }
+
+    if (isInRange(stringRanges, i)) {
+      i++;
+      continue;
+    }
+
+    if (char === '(') depth++;
+    else if (char === ')') {
+      depth--;
+      if (depth === 0) return i;
+    } else if (char === '[' || char === '{') {
+      depth++;
+    } else if (char === ']' || char === '}') {
+      depth--;
+      if (depth < 0) return -1;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * Inside the span [start, end) of a decorator argument list, find the
+ * `ssg: { ... }` object literal. Returns the half-open body range
+ * `{ bodyStart, bodyEnd }` covering the interior of the `{ ... }`, or null
+ * if there is no `ssg` option or it is the boolean form (`ssg: true|false`).
+ */
+function findSsgObjectLiteral(
+  code: string,
+  start: number,
+  end: number,
+  stringRanges: Array<[number, number]>
+): { bodyStart: number; bodyEnd: number } | null {
+  const ssgKeyRe = /\bssg\s*:\s*/g;
+  ssgKeyRe.lastIndex = start;
+  let m: RegExpExecArray | null;
+  while ((m = ssgKeyRe.exec(code)) !== null) {
+    if (m.index >= end) break;
+    if (isInRange(stringRanges, m.index)) continue;
+
+    let i = m.index + m[0].length;
+    // Skip whitespace just in case
+    while (i < end && /\s/.test(code[i])) i++;
+
+    if (code[i] !== '{') {
+      // Boolean form (or anything else) — no generateStaticParams to strip.
+      return null;
+    }
+
+    // Depth-track to the matching `}`.
+    let depth = 1;
+    i++;
+    while (i < end && depth > 0) {
+      const char = code[i];
+
+      if (char === '"' || char === "'" || char === '`') {
+        const strEnd = findStringEnd(code, i, char);
+        if (strEnd === -1) return null;
+        i = strEnd + 1;
+        continue;
+      }
+
+      if (char === '/' && i + 1 < code.length) {
+        const next = code[i + 1];
+        if (next === '/') {
+          i = code.indexOf('\n', i + 2);
+          if (i === -1) i = code.length;
+          continue;
+        } else if (next === '*') {
+          const cend = code.indexOf('*/', i + 2);
+          if (cend === -1) return null;
+          i = cend + 2;
+          continue;
+        }
+      }
+
+      if (isInRange(stringRanges, i)) {
+        i++;
+        continue;
+      }
+
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          return { bodyStart: m.index + m[0].length + 1, bodyEnd: i };
+        }
+      }
+      i++;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Inside the span [start, end) of an `ssg: { ... }` object body, find the
+ * value of the `generateStaticParams` property. Returns the half-open range
+ * of the value expression (the text to replace), or null if the property is
+ * absent.
+ */
+function findGenerateStaticParamsValue(
+  code: string,
+  start: number,
+  end: number,
+  stringRanges: Array<[number, number]>
+): { valueStart: number; valueEnd: number } | null {
+  const keyRe = /\bgenerateStaticParams\s*:\s*/g;
+  keyRe.lastIndex = start;
+  let m: RegExpExecArray | null;
+  while ((m = keyRe.exec(code)) !== null) {
+    if (m.index >= end) break;
+    if (isInRange(stringRanges, m.index)) continue;
+
+    const valueStart = m.index + m[0].length;
+
+    // Depth-track the value expression until a `,` or `}` at depth 0.
+    let i = valueStart;
+    let depth = 0;
+    while (i < end) {
+      const char = code[i];
+
+      if (char === '"' || char === "'" || char === '`') {
+        const strEnd = findStringEnd(code, i, char);
+        if (strEnd === -1) return null;
+        i = strEnd + 1;
+        continue;
+      }
+
+      if (char === '/' && i + 1 < code.length) {
+        const next = code[i + 1];
+        if (next === '/') {
+          i = code.indexOf('\n', i + 2);
+          if (i === -1) i = code.length;
+          continue;
+        } else if (next === '*') {
+          const cend = code.indexOf('*/', i + 2);
+          if (cend === -1) return null;
+          i = cend + 2;
+          continue;
+        }
+      }
+
+      if (isInRange(stringRanges, i)) {
+        i++;
+        continue;
+      }
+
+      if (char === '(' || char === '[' || char === '{') {
+        depth++;
+      } else if (char === ')' || char === ']' || char === '}') {
+        if (depth === 0) {
+          // Closed the enclosing object before seeing a separator — value ends here.
+          return { valueStart, valueEnd: i };
+        }
+        depth--;
+      } else if (depth === 0 && (char === ',' || char === '}')) {
+        return { valueStart, valueEnd: i };
+      }
+      i++;
+    }
+    // Reached end of enclosing span.
+    return { valueStart, valueEnd: i };
+  }
+  return null;
+}
+
 export function transformCossackClass(
   code: string,
   id: string,
@@ -156,6 +413,11 @@ export function transformCossackClass(
   builtinMethods: Set<string>,
   devWarning: boolean
 ): string {
+  // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...) decorator
+  // arguments first. This runs before any class-body transformation so the existing
+  // method-stripping logic operates on already-sanitized source.
+  code = stripSsgGenerateStaticParams(code);
+
   // Build string ranges to skip false matches inside template literals
   const stringRanges = buildStringRanges(code);
 

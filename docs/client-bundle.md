@@ -153,3 +153,33 @@ If you hit the "stripped from the client bundle" error, pick one:
 Do **not** work around this by adding `@Server` to the helper — that turns it
 into an RPC method, which is rarely what you want for a pure client-side helper
 and will execute the body on the server instead of the client.
+
+## SSG `generateStaticParams`
+
+The same secure-by-default treatment applies to the SSG helper
+`generateStaticParams` passed inside `@Page(...)` / `@Component(...)`:
+
+```typescript
+@Page({
+  ssg: {
+    enabled: true,
+    generateStaticParams: async () => {
+      // This body is stripped from the client bundle.
+      const users = await db.select().from('users');
+      return users.map((u) => ({ username: u.name }));
+    },
+  },
+})
+export class UserProfile extends Cossack { /* ... */ }
+```
+
+`generateStaticParams` is only ever invoked at **SSG build time** (see
+`getStaticParams` in `ssg-renderer.ts`) — never on the client — so its body
+is pure leak risk in the client bundle. The security plugin replaces each
+occurrence with `async () => []`, preserving the declared type and acting as
+a defensive no-op. The `enabled` flag and any other `@Page` options are
+preserved.
+
+Matches inside string literals, comments, and template literals (e.g. a
+`<pre>` code sample that quotes the function) are not touched.
+
