@@ -1,5 +1,25 @@
+/**
+ * Known HTML tag names that can appear in the document `<head>`.
+ *
+ * The `(string & {})` term lets developers write `head()` overrides without
+ * an explicit `: HeadValue` return type annotation: TypeScript widens
+ * `{ tag: 'meta' }` to `{ tag: string }` during inference, which would fail
+ * against the literal union alone. Intersecting with `{}` preserves
+ * autocomplete for the known names while accepting any string. The runtime
+ * switch in {@link buildHeadContext} routes only the recognized tags;
+ * anything else falls to the `default` branch.
+ */
+export type HeadTagName =
+    | 'title'
+    | 'meta'
+    | 'link'
+    | 'script'
+    | 'style'
+    | 'base'
+    | (string & {});
+
 export interface HeadTag {
-    tag: 'title' | 'meta' | 'link' | 'script' | 'style' | 'base';
+    tag: HeadTagName;
     attributes?: Record<string, string | boolean | number>;
     children?: string;
 }
