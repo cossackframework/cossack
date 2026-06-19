@@ -91,14 +91,16 @@ export class ValidationDemo extends Cossack {
     handleInput(field: string, event: Event) {
         const target = event.target as HTMLInputElement;
         this.setProperty(field, target.value);
-        // Validate on input
-        this.validateProperty(field);
+        // Validate on input — fields configured with trigger 'blur' or 'submit'
+        // will be skipped here (returns true without running validators).
+        this.validateProperty(field, 'input');
     }
 
     @Client()
     handleBlur(field: string, event: Event) {
-        // Validate on blur
-        this.validateProperty(field);
+        // Validate on blur — fields configured with trigger 'input' or 'submit'
+        // will be skipped here.
+        this.validateProperty(field, 'blur');
     }
 
     @Client()

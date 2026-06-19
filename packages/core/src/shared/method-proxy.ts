@@ -767,51 +767,10 @@ export function setupServerMethodProxies(component: any): void {
     const windowEvents = Reflect.getMetadata('cossack:window-events', component.constructor) || [];
     windowEvents.forEach((item: { propertyKey: string }) => clientSafeMethods.add(item.propertyKey));
 
-    // Scan for methods without decorators (server-only by default)
-    const proto = Object.getPrototypeOf(component);
-    const propertyNames = Object.getOwnPropertyNames(proto);
-
-    const builtInMethods = new Set([
-        'constructor', 'render', 'head', 'onMount', 'onCleanup', 'escapeHtml',
-        'loadingTemplate', 'toString', 'valueOf', 'getProperty', 'setProperty',
-        'hasMethod', 'getMethod', 'getInitialState', 'getPublicState',
-        'registerComponent', 'setCurrentPage', 'bootstrap', 'destroy',
-        'initializeState', 'initializeProviders', 'connectWebSocket', 'connectSSE',
-        'proxyHttpMethods', 'proxyServerMethods', 'proxyClientMethods',
-        'updateHead', 'applyHeadTags', 'buildHeadContext', 'mergeHead',
-        'updatePath', 'isActive', 'executeAction', 'broadcastEvent',
-        'redirect', 'requestUpdate', 'validateChannels', 'willUpdate',
-        'connectedCallback', 'disconnectedCallback', 'shouldUpdate',
-        'performUpdate', 'updated', '_render', 'getInitialHtml',
-        '_getWrappedTemplate', 'autoBindMethods', 'setupEventListeners',
-        'setupVisibleTasks', 'runTasks', 'consume', 'provide',
-        '_transitionToPhase', '_restorePhase', 'isInPhase', 'isInAnyPhase',
-        'getPhase', 'getParentComponent', 'getElementInternal',
-        'getInitialStateFromWindow', '_scheduleStateBroadcast',
-        '_wrapLifecycleMethods', '_setupServerMethodProxies',
-        'confirmNavigation', '_checkPreventNavigation',
-        'clientInit', // Client-only initialization method
-        'onNavigateComplete',
-    ]);
-
-    for (const name of propertyNames) {
-        if (builtInMethods.has(name)) continue;
-        if (clientSafeMethods.has(name)) continue;
-        if (name.startsWith('_')) continue; // Skip private properties
-
-        const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-        if (descriptor && typeof descriptor.value === 'function') {
-            // Check if this method is already in the server methods list
-            if (!serverMethods.some((m: ServerMethodWs) => m.name === name)) {
-                serverMethods.push({
-                    name,
-                    channel: 'global',
-                    provider: 'page',
-                });
-            }
-        }
-    }
-
+    // Only methods explicitly registered via @Server metadata (or the
+    // compile-time __serverOnly injection for @Server) become RPC methods.
+    // Undecorated helpers are NOT auto-registered — they fail loudly if called
+    // from the client, matching the compile-time security plugin behavior.
     const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
 
     if (pageOptions?.transport === 'http' || pageOptions?.transport === 'sse') {

@@ -1,5 +1,5 @@
 import { Cossack, Page, ClientState, On, OnDocument, OnWindow } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
+import { html, component, unsafeHTML } from '@cossackframework/renderer';
 import { Layout } from '@/components/Layout';
 
 @Page({
@@ -80,6 +80,7 @@ export default class EventsDemo extends Cossack {
 
                 <p class="mt-5 italic text-gray-500">
                     Note: These listeners are attached with decorators and cleaned up automatically. No manual addEventListener/removeEventListener needed.
+                    ${unsafeHTML('Test <b>Unsafe HTML</b>')}
                 </p>
             </div>
         `);

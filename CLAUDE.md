@@ -82,9 +82,11 @@ These decorators mark code that only runs on the client:
 
 ### Built-in Methods (Always Kept in Client)
 The following lifecycle methods are never stripped from the client bundle:
-- `render()`, `head()`, `onMount()`, `onCleanup()`, `onNavigateComplete()`, `escapeHtml()`, `get()`, `init()`, `loadingTemplate()`
+- `render()`, `head()`, `onMount()`, `onCleanup()`, `onNavigateComplete()`, `escapeHtml()`, `loadingTemplate()`
 - `clientInit()` — Client-only initialization method
 - Validation methods: `getError()`, `hasError()`, `validateProperty()`, `validateAll()`, `clearErrors()`
+
+Note: `init()` and `get()` are intentionally NOT in this list — they are server-only by default (they typically fetch data).
 
 ## Security: Code Stripping
 
@@ -94,9 +96,13 @@ The framework includes a Vite security plugin (`cossackSecurityPlugin`) that aut
 2. Methods without any decorator are treated as server-only by default (secure by default)
 3. Only explicitly marked client-safe code reaches the browser
 
+**Transitive preservation:** helpers called (directly or transitively, up to 3 levels) from a client-safe method via `this.method(...)` are kept automatically — you don't need to decorate every helper. See `docs/client-bundle.md` for the full rule.
+
 **Method Classification:**
-- **Server-Only** (stubs in client): `@Server` decorated methods, methods without decorators
-- **Client-Safe** (full implementation): `@Client`, `@Optimistic`, `@Computed`, `@Shared`, built-in lifecycle methods
+- **Server-Only** (stubs in client): `@Server` decorated methods, methods without decorators that are not reachable from a client-safe method
+- **Client-Safe** (full implementation): `@Client`, `@Optimistic`, `@Computed`, `@Shared`, `@Task`, `@VisibleTask`, built-in lifecycle methods, and any method transitively reachable from them
+
+**Failure mode:** calling a stripped method that has no RPC proxy throws a descriptive error (no silent RPC). Only `@Server` methods are registered for RPC proxying.
 
 ## Running Tests
 

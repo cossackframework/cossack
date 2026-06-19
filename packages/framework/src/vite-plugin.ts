@@ -1,9 +1,21 @@
 import type { Plugin } from 'vite';
 import { marked } from 'marked';
 import matter from 'gray-matter';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { resolve, dirname } from 'path';
 
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
+
+/**
+ * Public path the SSR runtime uses to fetch the Vite manifest via the
+ * Cloudflare ASSETS binding. The Cloudflare Vite plugin generates a
+ * `.assetsignore` that excludes the `.vite` directory from the ASSETS
+ * binding, so the manifest cannot be served from its default location.
+ * The `writeBundle` hook below copies it to this non-ignored path after
+ * the client build so `env.ASSETS.fetch` can reach it in production.
+ */
+export const SSR_MANIFEST_ASSET_PATH = '/cossack-manifest.json';
 
 export function cossackPages(): Plugin {
   return {
@@ -51,7 +63,7 @@ export function cossackPages(): Plugin {
         }
       }
 
-      if (id.endsWith('.mdx')) {
+      if (id.endsWith('.mdx') || id.endsWith('.md')) {
         const { data, content } = matter(code);
         const htmlContent = await marked(content);
 
@@ -88,6 +100,31 @@ export function cossackPages(): Plugin {
       }
 
       return { code, map: null };
+    },
+    writeBundle() {
+      // After the CLIENT environment build, the Vite manifest exists at
+      // dist/client/.vite/manifest.json. The Cloudflare plugin's generated
+      // `.assetsignore` excludes the `.vite` directory from the ASSETS
+      // binding, so copy the manifest to a non-ignored path the SSR runtime
+      // can fetch via env.ASSETS.fetch(SSR_MANIFEST_ASSET_PATH).
+      //
+      // This hook fires once per environment build; only act on the client
+      // environment where the manifest has just been emitted.
+      if (this.environment?.name !== 'client') return;
+
+      const clientOutDir = resolve(process.cwd(), 'dist', 'client');
+      const src = resolve(clientOutDir, '.vite', 'manifest.json');
+      if (!existsSync(src)) return;
+
+      try {
+        const data = readFileSync(src, 'utf-8');
+        const destDir = clientOutDir;
+        if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+        const dest = resolve(destDir, 'cossack-manifest.json');
+        writeFileSync(dest, data);
+      } catch {
+        // Non-fatal: SSR will fall back to empty manifest.
+      }
     }
   };
 }

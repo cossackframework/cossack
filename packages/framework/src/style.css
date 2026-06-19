@@ -1,1 +1,71 @@
 @import "tailwindcss";
+
+/*
+ * View Transition animations.
+ *
+ * These MUST live in a global stylesheet (not component-scoped <style> tags)
+ * because the old page component is destroyed before the transition animation
+ * plays. The pseudo-elements ::view-transition-old/new exist at the document
+ * root during animation playback, so the CSS needs to be present regardless
+ * of which page is currently mounted.
+ */
+@media (prefers-reduced-motion: no-preference) {
+    /* Forward navigation: old slides left, new slides in from right */
+    ::view-transition-old(.nav-forward) {
+        animation-name: vt-slide-out-left;
+        animation-duration: 0.4s;
+        animation-timing-function: ease-in;
+        animation-fill-mode: both;
+    }
+    ::view-transition-new(.nav-forward) {
+        animation-name: vt-slide-in-right;
+        animation-duration: 0.4s;
+        animation-timing-function: ease-out;
+        animation-fill-mode: both;
+    }
+
+    /* Back navigation: reverse direction */
+    ::view-transition-old(.nav-back) {
+        animation-name: vt-slide-out-right;
+        animation-duration: 0.4s;
+        animation-timing-function: ease-in;
+        animation-fill-mode: both;
+    }
+    ::view-transition-new(.nav-back) {
+        animation-name: vt-slide-in-left;
+        animation-duration: 0.4s;
+        animation-timing-function: ease-out;
+        animation-fill-mode: both;
+    }
+
+    /* Same-route tab switch: crossfade */
+    ::view-transition-old(.tab-switch) {
+        animation-name: vt-fade-out;
+        animation-duration: 0.25s;
+        animation-fill-mode: both;
+    }
+    ::view-transition-new(.tab-switch) {
+        animation-name: vt-fade-in;
+        animation-duration: 0.25s;
+        animation-fill-mode: both;
+    }
+}
+
+@keyframes vt-slide-out-left {
+    to { transform: translateX(-100%); }
+}
+@keyframes vt-slide-in-right {
+    from { transform: translateX(100%); }
+}
+@keyframes vt-slide-out-right {
+    to { transform: translateX(100%); }
+}
+@keyframes vt-slide-in-left {
+    from { transform: translateX(-100%); }
+}
+@keyframes vt-fade-out {
+    to { opacity: 0; }
+}
+@keyframes vt-fade-in {
+    from { opacity: 0; }
+}

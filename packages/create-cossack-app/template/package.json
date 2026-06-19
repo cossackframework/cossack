@@ -6,9 +6,10 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:ssg": "vite build && tsx scripts/build-ssg.ts",
-    "build:all": "pnpm run build && pnpm run build:ssg",
-    "preview": "vite build && vite preview",
-    "deploy": "vite build && wrangler deploy"
+    "build:types": "tsc -p tsconfig.declarations.json",
+    "build:all": "pnpm run build && tsx scripts/build-ssg.ts",
+    "preview": "pnpm run build:ssg && vite preview",
+    "deploy": "vite build && tsx scripts/build-ssg.ts && wrangler deploy"
   },
   "dependencies": {
     "@cossackframework/core": "^0.5.1",

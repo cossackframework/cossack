@@ -94,6 +94,7 @@ describe('Lifecycle Hooks', () => {
 
         observerMock = {
             observe: vi.fn(),
+            unobserve: vi.fn(),
             disconnect: vi.fn(),
         };
 
@@ -141,20 +142,20 @@ describe('Lifecycle Hooks', () => {
 
         it('should setup intersection observer with selector', async () => {
             const mockElement = { id: 'target' };
-            const container = { 
+            const container = {
                 innerHTML: '',
-                querySelector: vi.fn().mockReturnValue(mockElement)
+                querySelectorAll: vi.fn().mockReturnValue([mockElement])
             };
-            
+
             class SelectorComponent extends Cossack {
                 @VisibleTask({ selector: '.my-target' })
                 run() {}
             }
             const selComponent = new SelectorComponent();
-            
+
             await selComponent.bootstrap({ container: container as any });
-            
-            expect(container.querySelector).toHaveBeenCalledWith('.my-target');
+
+            expect(container.querySelectorAll).toHaveBeenCalledWith('.my-target');
             expect(global.IntersectionObserver).toHaveBeenCalled();
             expect(observerMock.observe).toHaveBeenCalledWith(mockElement);
         });
@@ -176,9 +177,12 @@ describe('Lifecycle Hooks', () => {
             };
 
             observerCallback([entry], observerMock);
-            
+
             expect(component.visibleTaskRunCount).toBe(1);
-            expect(observerMock.disconnect).toHaveBeenCalled();
+            // The new implementation unobserves the element after firing (so
+            // selector-matched siblings can fire independently), rather than
+            // disconnecting the whole observer.
+            expect(observerMock.unobserve).toHaveBeenCalledWith(container);
         });
 
         it('should NOT execute visible task when NOT intersecting', async () => {
@@ -196,9 +200,10 @@ describe('Lifecycle Hooks', () => {
             };
 
             observerCallback([entry], observerMock);
-            
+
             expect(component.visibleTaskRunCount).toBe(0);
             expect(observerMock.disconnect).not.toHaveBeenCalled();
+            expect(observerMock.unobserve).not.toHaveBeenCalled();
         });
     });
 });

@@ -25,6 +25,7 @@
 
 ## Security
 - [Authentication](/docs/authentication.md)
+- [Client Bundle & Method Stripping](/docs/client-bundle.md)
 - [Middlewares](/docs/middlewares.md)
 - [Vite Plugin](/docs/vite-plugins.md)
 
@@ -37,6 +38,7 @@
 - [Server-Sent Events](/docs/sse.md)
 - [Storage](/docs/storage.md)
 - [Prevent Navigation](/docs/prevent-navigation.md)
+- [View Transitions](/docs/view-transitions.md)
 - [Errors Handling](/docs/errors-handling.md)
 - [Dev Tools](/docs/dev-tools.md)
 - [Snippets](/docs/vscode-snippets.md)

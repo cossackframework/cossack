@@ -52,6 +52,7 @@ import {
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
 import { LifecyclePhase } from './component-types';
+import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -558,7 +559,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Page components don't have containers, but they still need their lifecycle hooks
         if (!this.isServer && !this.isMounted && !deferMount) {
             this.isMounted = true;
-            this.onMount();
+            this._frameworkMount();
 
             // Run clientInit() if it exists - for client-only initialization
             // that should show loading state on initial page load
@@ -751,14 +752,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
 
         // 1. @On (Component/Container Events)
-        if (this.container) {
+        // Regular components delegate through their container element. Page and
+        // layout components don't have one (their content is composed into the
+        // App), so fall back to document-level delegation — a page-level @On
+        // handler is expected to observe events across the whole page.
+        const onTarget: EventTarget | undefined = this.container || (typeof document !== 'undefined' ? document : undefined);
+        if (onTarget) {
             const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
             for (const { eventName, propertyKey } of domEvents) {
                 // Lifecycle events are handled by setupLifecycleEventHandlers()
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
                 if (this.hasMethod(propertyKey)) {
                     const method = this.getMethod(propertyKey);
-                    attach(this.container, eventName, method as any);
+                    attach(onTarget, eventName, method as any);
                 }
             }
         }
@@ -795,45 +801,57 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             if (!this.hasMethod(propertyKey)) continue;
 
-            const execute = () => {
-                 try {
-                     const method = this.getMethod(propertyKey);
-                     const cleanup = (method as any)();
-                     // TODO: Handle cleanup if needed, possibly store it in a map to call on component destroy
-                 } catch (e) {
-                     console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
-                 }
-            };
-
             if (strategy === 'document-ready') {
-                execute();
-            } else if (strategy === 'intersection-observer') {
+                try {
+                    const method = this.getMethod(propertyKey);
+                    (method as any).call(this, null, null);
+                } catch (e) {
+                    console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
+                }
+                continue;
+            }
+
+            if (strategy === 'intersection-observer') {
                 if (!this.container) {
                      console.warn(`[Cossack] Cannot setup intersection observer for '${String(propertyKey)}': container not found.`);
                      continue;
                 }
 
-                let targetElement: Element | null = this.container;
+                // Collect initial target elements. When a selector is provided we
+                // observe every match; otherwise we observe the container itself.
+                let initialTargets: Element[] = [];
                 if (options.selector) {
-                    targetElement = this.container.querySelector(options.selector);
-                    if (!targetElement) {
-                        console.warn(`[Cossack] VisibleTask '${String(propertyKey)}' specifies selector '${options.selector}', but element was not found in the component container.`);
-                        continue;
+                    initialTargets = Array.from(this.container.querySelectorAll(options.selector));
+                    if (initialTargets.length === 0) {
+                        console.warn(`[Cossack] VisibleTask '${String(propertyKey)}' specifies selector '${options.selector}', but no elements were found in the component container.`);
+                        // Fall through: refreshVisibleTasks() may add targets later.
                     }
+                } else {
+                    initialTargets = this.container ? [this.container] : [];
                 }
 
+                const observed = new Set<Element>(initialTargets);
+
                 const observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting) {
-                        execute();
-                        observer.disconnect(); // Run once
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        try {
+                            const method = this.getMethod(propertyKey);
+                            (method as any).call(this, entry.target, entry);
+                        } catch (e) {
+                            console.error(`[Cossack] Error in visible task '${String(propertyKey)}':`, e);
+                        }
+                        // Run once per element: unobserve THIS element only so
+                        // selector-matched siblings can still fire independently.
+                        observer.unobserve(entry.target);
+                        observed.delete(entry.target);
                     }
                 }, { threshold: options.threshold || 0 });
 
-                observer.observe(targetElement);
+                for (const el of initialTargets) {
+                    observer.observe(el);
+                }
 
-                // Track observer and observed elements for refreshVisibleTasks()
-                const observed = new Set<Element>();
-                observed.add(targetElement);
                 this._visibleTaskObservers.set(propertyKey, { observer, observed });
             }
         }
@@ -1018,12 +1036,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return hasErrorFn(this, propertyName);
     }
 
-    public async validateProperty(propertyName: string): Promise<boolean> {
-        return validatePropertyFn(this, propertyName);
+    public async validateProperty(propertyName: string, trigger?: 'input' | 'blur' | 'submit'): Promise<boolean> {
+        return validatePropertyFn(this, propertyName, trigger);
     }
 
-    public async validateAll(): Promise<boolean> {
-        return validateAllFn(this);
+    public async validateAll(trigger?: 'input' | 'blur' | 'submit'): Promise<boolean> {
+        return validateAllFn(this, trigger);
     }
 
     public clearErrors(): void {
@@ -1209,19 +1227,55 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return shouldUpdate;
     }
 
-    // Lifecycle hooks
-    public onMount(): void {
+    // ========== Lifecycle hooks ==========
+    //
+    // These are user-facing hooks. The base implementations are intentionally
+    // empty — the framework runs its own lifecycle setup (@VisibleTask observers,
+    // event listeners, @On('mount') / @On('navigate-complete') handlers) via
+    // _frameworkMount() and _frameworkNavigateComplete(), which are called by
+    // the framework at the appropriate times. Override these hooks freely;
+    // no super call is needed.
+
+    /**
+     * Called once after the component's first client render. Override to
+     * initialize client-only state, start timers, or kick off side effects.
+     * No need to call `super.onMount()`.
+     */
+    public onMount(): void {}
+
+    /**
+     * Called immediately before the component is destroyed. Override to
+     * release resources, close connections, or cancel timers. No need to
+     * call `super.onCleanup()`.
+     */
+    public onCleanup(): void {}
+
+    /**
+     * Called after every SPA navigation completes. Only fires on the App
+     * component. Override to react to navigation. No need to call
+     * `super.onNavigateComplete()`.
+     */
+    public onNavigateComplete(pathname: string): void {}
+
+    /**
+     * @internal Called by the framework during bootstrap and client init.
+     * Runs the internal lifecycle setup (visible-task observers, @On('mount')
+     * handlers, DOM event listeners), then calls the user's `onMount()` hook.
+     */
+    public _frameworkMount(): void {
         this.setupVisibleTasks();
         this.setupLifecycleEventHandlers();
         this.setupEventListeners();
+        this.onMount();
     }
-    public onCleanup(): void {}
 
-    public onNavigateComplete(pathname: string): void {
-        // Override in subclass. Fires after SPA navigation completes.
+    /**
+     * @internal Called by the framework after SPA navigation. Refreshes
+     * visible-task observers, fires @On('navigate-complete') handlers, then
+     * calls the user's `onNavigateComplete()` hook.
+     */
+    public _frameworkNavigateComplete(pathname: string): void {
         this.refreshVisibleTasks();
-        // Invoke @On('navigate-complete') handlers (App-only in practice, since
-        // the framework only calls this on the App instance).
         for (const propertyKey of this._navigateCompleteHandlers) {
             const key = String(propertyKey);
             if (this.hasMethod(key)) {
@@ -1232,6 +1286,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             }
         }
+        this.onNavigateComplete(pathname);
     }
 
     private refreshVisibleTasks() {
@@ -1252,20 +1307,66 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    public static _onNavigate?: (url: string) => Promise<void>;
+    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<void>;
 
+    public redirect(url: string, status?: RedirectStatusCode): void;
+    public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): void;
     @Server()
-    public redirect(url: string, status: RedirectStatusCode = 302) {
+    public redirect(
+        url: string,
+        statusOrOptions: RedirectStatusCode | { status?: RedirectStatusCode; types?: string[] } = 302,
+    ): void {
         if (!this.isServer) {
+            const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
+            const types = opts.types;
             if (Cossack._onNavigate) {
                 window.history.pushState({}, '', url);
-                Cossack._onNavigate(url);
+                Cossack._onNavigate(url, types ? { types } : undefined);
             } else {
                 window.location.href = url;
             }
             return;
         }
-        return this.c.redirect(url, status);
+        const status = typeof statusOrOptions === 'object' ? (statusOrOptions.status ?? 302) : statusOrOptions;
+        this.c.redirect(url, status);
+    }
+
+    /**
+     * Wrap a DOM-mutating callback in a same-route View Transition.
+     *
+     * Use this to animate state changes that don't involve a navigation —
+     * tab switches, list reordering, expanding a panel, etc. On the server,
+     * or when the browser lacks View Transitions support, the callback runs
+     * directly with no transition.
+     *
+     * `types` correspond to `::view-transition-group(.<type>)` CSS selectors
+     * and let authors apply different animations per call site.
+     *
+     * The returned promise resolves with the callback's result once the
+     * transition's snapshot is ready (i.e. after the reactive re-render
+     * triggered by the callback has committed). If the browser skips the
+     * transition (e.g. a subsequent transition supersedes it), the promise
+     * still resolves with the callback's result.
+     */
+    public async startViewTransition<T>(
+        callback: () => T | Promise<T>,
+        types?: string[],
+    ): Promise<T | void> {
+        if (this.isServer || !supportsViewTransitions()) {
+            return await callback();
+        }
+        let result: T | undefined;
+        const update = async () => {
+            result = await callback();
+            // Ensure the reactive re-render commits before the browser
+            // snapshots the new state.
+            await this.requestUpdate();
+        };
+        const transition = types && types.length
+            ? (document as any).startViewTransition({ update, types })
+            : (document as any).startViewTransition(update);
+        await transition.updateReady;
+        return result;
     }
 
     public broadcastEvent(eventName: string, ...payload: any[]) {

@@ -2,6 +2,12 @@
 
 Cossack provides a set of decorators and lifecycle hooks to handle component lifecycle tasks and DOM events in a declarative way, similar to frameworks like Qwik. These tools allow you to run logic on mount, updates, visibility changes, and handle user interactions efficiently.
 
+> **Note on client bundles:** `onMount`, `render`, and other lifecycle methods
+> are preserved in the client bundle, and so are any helpers they call via
+> `this.method(...)`. If a helper is called through a dynamic callback that the
+> static analysis can't see, mark it with `@Client()`. See
+> [Client Bundle & Method Stripping](./client-bundle.md).
+
 ## @Task
 
 The `@Task` decorator marks a method to run on component mount and every time the component's state updates. This method runs on **both the server and the client**.
@@ -71,9 +77,9 @@ Cossack components have three lifecycle hooks you can override. They run **only 
 
 ### `onMount()`
 
-Runs once after the component's first client render. Use it to initialize client-only state, attach listeners via decorators (handled automatically by the base implementation), or kick off side effects.
+Runs once after the component's first client render. Use it to initialize client-only state or kick off side effects.
 
-> **Important:** Always call `super.onMount()` when overriding. The base implementation sets up `@VisibleTask` observers, fires `@On('mount')` handlers, and wires up `@On`/`@OnDocument`/`@OnWindow` listeners. Skipping `super` disables all of these.
+No `super` call is needed — the framework performs its own setup (`@VisibleTask` observers, `@On('mount')` handlers, `@On`/`@OnDocument`/`@OnWindow` listeners) in a separate internal hook before your `onMount()` runs.
 
 ```typescript
 import { Cossack, Page, ClientState } from '@cossackframework/core';
@@ -83,7 +89,6 @@ export default class MyComponent extends Cossack {
     @ClientState() ready = false;
 
     onMount() {
-        super.onMount(); // Required
         this.ready = true;
     }
 }
@@ -93,7 +98,7 @@ export default class MyComponent extends Cossack {
 
 Runs after every SPA navigation completes. **Only called on the App component** — page/layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
 
-> **Important:** Always call `super.onNavigateComplete(pathname)` when overriding. The base implementation refreshes `@VisibleTask` observers and fires `@On('navigate-complete')` handlers.
+No `super` call is needed — the framework refreshes `@VisibleTask` observers and fires `@On('navigate-complete')` handlers in a separate internal hook before your `onNavigateComplete()` runs.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -101,7 +106,6 @@ import { Cossack, Page } from '@cossackframework/core';
 @Page()
 export class App extends Cossack {
     onNavigateComplete(pathname: string) {
-        super.onNavigateComplete(pathname); // Required
         analytics.track('pageview', { path: pathname });
     }
 }
@@ -111,7 +115,7 @@ export class App extends Cossack {
 
 Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework — you do not need to clean those up here.
 
-> **Important:** Always call `super.onCleanup()` when overriding.
+No `super` call is needed.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -121,12 +125,10 @@ export default class MyComponent extends Cossack {
     private timer?: ReturnType<typeof setInterval>;
 
     onMount() {
-        super.onMount();
         this.timer = setInterval(() => console.log('tick'), 1000);
     }
 
     onCleanup() {
-        super.onCleanup();
         if (this.timer) clearInterval(this.timer);
     }
 }
@@ -134,10 +136,7 @@ export default class MyComponent extends Cossack {
 
 ### Lifecycle Event Shortcuts
 
-The `@On` decorator also accepts the lifecycle event names `'mount'` and `'navigate-complete'` as decorator-based alternatives to the lifecycle hooks above. They have two advantages over the hooks:
-
-- **Multiple handlers:** You can register several `@On('mount')` or `@On('navigate-complete')` methods on the same component. Only one `onMount()` / `onNavigateComplete()` override is possible.
-- **No `super()` bookkeeping:** The handlers run independently of the hook overrides.
+The `@On` decorator also accepts the lifecycle event names `'mount'` and `'navigate-complete'` as decorator-based alternatives to the lifecycle hooks above. Their main advantage is **multiple handlers**: you can register several `@On('mount')` or `@On('navigate-complete')` methods on the same component, whereas only one `onMount()` / `onNavigateComplete()` override is possible.
 
 | Decorator                | Equivalent hook        | Fires on                | Multiple allowed |
 | ------------------------ | ---------------------- | ----------------------- | ---------------- |
@@ -373,9 +372,9 @@ trackSize() {
 Both fire at the same point in the lifecycle. Choose based on structure:
 
 - Use **`onMount()`** for a single, cohesive block of setup logic. The override is clear and discoverable.
-- Use **`@On('mount')`** when you want **multiple independent handlers**, or when you want to avoid `super()` bookkeeping across a deep inheritance chain.
+- Use **`@On('mount')`** when you want **multiple independent handlers** on the same component.
 
-You can mix both on the same component. `@On('mount')` handlers fire during the base `onMount()` call, before any custom logic you add in an `onMount()` override after `super.onMount()`.
+You can mix both on the same component. `@On('mount')` handlers fire before your `onMount()` override runs.
 
 ### `onMount()` on a Page vs `onNavigateComplete()` on the App
 
@@ -394,7 +393,7 @@ Use `@On('mount')` on a page for "this page just became active" logic. Use `@On(
 ### Common Pitfalls
 
 - **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `onMount()` or `@On('mount')` instead.
-- **Don't** forget `super.onMount()` / `super.onCleanup()` / `super.onNavigateComplete()` when overriding. The base implementations wire up `@VisibleTask` observers, `@On` listeners, and lifecycle-event handlers — skipping `super` silently disables all of them.
+- **Don't** worry about `super` in lifecycle hooks. The framework wires up `@VisibleTask` observers, `@On` listeners, and lifecycle-event handlers in separate internal hooks — your `onMount()` / `onCleanup()` / `onNavigateComplete()` overrides are purely for your own logic.
 - **Don't** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
 - **Don't** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` — they handle cleanup automatically.
 - **Don't** reach for `@VisibleTask` when `@Task` would do. `@VisibleTask` defers work until the element is scrolled into view; if the work is cheap or needed immediately, `@Task` (or `onMount()`) is simpler.

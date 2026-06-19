@@ -3,8 +3,9 @@ import { test, expect } from '../fixtures';
 test.describe('Error Pages', () => {
   test.describe('404 Not Found Page', () => {
     test('should display 404 page for non-existent routes', async ({ page }) => {
-      await page.goto('/non-existent-route-xyz');
+      const response = await page.goto('/non-existent-route-xyz');
 
+      expect(response?.status()).toBe(404);
       await expect(page.locator('body')).toContainText(/404|not found/i);
     });
 

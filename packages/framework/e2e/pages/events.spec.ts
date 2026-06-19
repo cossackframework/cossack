@@ -8,12 +8,16 @@ test.describe('Events Page', () => {
   test('should track click events via @On', async ({ page }) => {
     // The @On('click') handler is attached to the dashed-border container.
     const clickTarget = page.locator('div.border-dashed');
+    const counter = page.locator('div.border-dashed strong.text-blue-800');
+
+    // Initially the counter reads 0.
+    await expect(counter).toHaveText('0');
 
     await clickTarget.click();
     await page.waitForTimeout(100);
 
     // The click counter should now reflect the click.
-    await expect(page.locator('text=1')).toBeVisible({ timeout: 2000 });
+    await expect(counter).toHaveText('1', { timeout: 2000 });
   });
 
   test('should track keyboard events via @OnDocument', async ({ page }) => {
