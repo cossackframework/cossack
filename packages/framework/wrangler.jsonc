@@ -26,6 +26,7 @@
     "R2_SECRET_ACCESS_KEY": "010788461c2d64eb921d631ac4c69414ddbb852821e016d853ec87f8714f1e9d",
     "R2_ACCOUNT_API_TOKEN": "kr62M5tudIRqs8jIU3Z2BU4vc6OMVq273W4BbAiV",
     "R2_BUCKET_NAME": "serverdash",
-    "R2_PUBLIC_URL": "https://data.serverdash.org"
+    "R2_PUBLIC_URL": "https://data.serverdash.org",
+    "BASE_URL": "https://cossack.dev",
   }
 }

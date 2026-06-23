@@ -41,13 +41,29 @@ The sitemap is automatically generated during SSG build and includes:
 
 ### Base URL
 
-Set the base URL used in the sitemap via environment variable:
+The base URL is resolved in the following order (first match wins):
 
-```bash
-VITE_SSG_BASE_URL=https://my-site.com pnpm run build:ssg
-```
+1. **`BASE_URL` shell env** — explicit override, useful for CI:
+   ```bash
+   BASE_URL=https://my-site.com pnpm run build:ssg
+   ```
+2. **`vars.BASE_URL` in `wrangler.jsonc`** (or `BASE_URL` in the `[vars]`
+   table of `wrangler.toml`). This is the recommended approach — the value
+   is also available to your Worker at runtime as `env.BASE_URL`:
+   ```jsonc
+   {
+     "vars": {
+       "BASE_URL": "https://my-site.com"
+     }
+   }
+   ```
+3. **`BASE_URL` in `.env`**.
+4. **`VITE_SSG_BASE_URL`** — legacy variable (shell env or `.env`), kept for
+   backward compatibility.
+5. **`https://example.com`** — final default.
 
-Default: `https://example.com`
+Because the SSG build script reads these sources directly, no extra CLI flags
+are required.
 
 ### Sitemap Options
 

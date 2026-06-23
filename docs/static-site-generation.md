@@ -87,10 +87,13 @@ pnpm run build:all
 Runs both standard build and SSG build.
 
 ### Custom Base URL
-```bash
-VITE_SSG_BASE_URL=https://my-site.com pnpm run build:ssg
-```
-Set the base URL used for generating sitemap URLs.
+
+The base URL used for sitemap and canonical URLs is read automatically from
+your project config (`wrangler.jsonc` `vars.BASE_URL`, `.env`, or the `BASE_URL`
+shell env). See [Sitemap → Base URL](./sitemap.md#base-url) for the full
+resolution order.
+
+The legacy `VITE_SSG_BASE_URL` env var is still respected as a fallback.
 
 ## Output Structure
 
