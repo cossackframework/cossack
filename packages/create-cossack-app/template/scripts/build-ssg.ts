@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 // Import SSG utilities from framework package
 import { collectSsgRoutes, getStaticParams, renderSsgPage } from '@cossackframework/framework/ssg-renderer';
 import { generateSitemapFromUrls } from '@cossackframework/framework/sitemap-generator';
+import { getSiteUrl } from '@cossackframework/framework/ssg-config';
 
 // Import local App component
 import { App } from '../src/App.js';
@@ -35,8 +36,8 @@ const DIST_DIR = path.resolve(PROJECT_ROOT, 'dist/ssg-static');
 async function main() {
   console.log('Starting SSG rendering...');
 
-  // Get base URL from environment or use default
-  const baseUrl = process.env.VITE_SSG_BASE_URL || 'https://example.com';
+  // Resolve base URL from project config (wrangler.jsonc/.env/shell env).
+  const baseUrl = getSiteUrl({ projectRoot: PROJECT_ROOT });
   console.log(`Using base URL: ${baseUrl}`);
 
   // Collect pages and layouts using Node.js fs

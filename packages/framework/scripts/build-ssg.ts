@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 // Import SSG utilities using relative paths (tsx will handle TypeScript)
 import { collectSsgRoutes, getStaticParams, renderSsgPage, HtmlTemplate } from '../src/ssg-renderer.ts';
 import { generateSitemapFromUrls } from '../src/sitemap-generator.ts';
+import { getSiteUrl } from '../src/ssg-config.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,8 +57,8 @@ async function loadHtmlTemplate(): Promise<HtmlTemplate | undefined> {
 async function main() {
   console.log('Starting SSG rendering...');
 
-  // Get base URL from environment or use default
-  const baseUrl = process.env.VITE_SSG_BASE_URL || 'https://example.com';
+  // Resolve base URL from project config (wrangler.jsonc/.env/shell env).
+  const baseUrl = getSiteUrl({ projectRoot: PROJECT_ROOT });
   console.log(`Using base URL: ${baseUrl}`);
 
   // Optional custom htmlTemplate

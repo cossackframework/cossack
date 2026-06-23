@@ -24,5 +24,10 @@
   // ],
   "assets": {
     "binding": "ASSETS"
+  },
+  // Replace with your production domain. Used for sitemap generation, canonical
+  // URLs, and OG tags. Also exposed to the Worker at runtime as env.BASE_URL.
+  "vars": {
+    "BASE_URL": "https://example.com"
   }
 }
