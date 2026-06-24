@@ -14,7 +14,6 @@
 </p>
 
 <br>
-<br>
 
 <h1 align="center">The Borderless TypeScript Framework</h1>
 
@@ -86,14 +85,18 @@ When the button is clicked, `increment()` runs secured **on the server**. The fr
 Cossack uses a **decorator-based component model** where each class is both your UI template and your server controller.
 
 ```typescript
-@Page({ transport: 'http' })       // Stateless HTTP (default)
-@Page({ transport: 'durable-object' }) // Stateful WebSocket + Durable Object
+@Page({ transport: 'http' })
+@Page({ transport: 'sse' }) 
+@Page({ transport: 'durable-object' })
+@Page({ transport: 'websocket' })
 ```
 
 ### Transport Modes
 
 - **HTTP** — Each `@Server` call sends state to the server, runs the method, and returns updated state as JSON. Simple, scalable, no persistent connection. Works everywhere.
-- **Durable Object** — Bi-directional WebSocket connection to a Cloudflare Durable Object. Stateful, real-time, all connected clients receive live updates.
+- **SSE** — Server-Sent Events for real-time updates. Stateless, one-way communication from server to client.
+- **Durable Object** — Bi-directional WebSocket connection to a Cloudflare Durable Object. Real-time, all connected clients receive live updates.
+- **Websocket** — Bi-directional WebSocket connection to a Node.js server. Real-time, all connected clients receive live updates.
 
 ### Security Model
 
