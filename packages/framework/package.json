@@ -83,28 +83,28 @@
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.964.0",
-    "@aws-sdk/s3-request-presigner": "^3.964.0",
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@cossackframework/auth": "workspace:*",
     "@cossackframework/core": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@mdx-js/mdx": "^3.1.1",
     "gray-matter": "^4.0.3",
-    "hono": "^4.9.5",
+    "hono": "^4.12.25",
     "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.37.1",
-    "@cloudflare/workers-types": "^4.20260518.1",
+    "@cloudflare/vite-plugin": "^1.42.2",
+    "@cloudflare/workers-types": "^4.20260624.1",
     "@playwright/test": "^1.40.0",
     "@tailwindcss/vite": "^4.1.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.7.0",
-    "vite": "^8.0.0",
-    "vitest": "^3.2.4",
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9",
     "workerd": "^1.20260515.1",
-    "wrangler": "^4.92.0"
+    "wrangler": "^4.104.0"
   },
   "engines": {
     "node": ">=22"

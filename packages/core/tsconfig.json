@@ -12,5 +12,5 @@
     // Let the build script handle output dirs
     "declaration": true
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

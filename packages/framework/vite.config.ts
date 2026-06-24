@@ -56,9 +56,13 @@ function cossackDevTools(): Plugin {
 export default defineConfig({
   plugins: [
     tailwindcss(),
-    cloudflare({
-      viteEnvironment: { name: 'ssr' },
-    }),
+    // Cloudflare plugin is incompatible with Vitest 4's resolve.external defaults.
+    // Skip it during testing; unit tests don't need the Workers runtime.
+    ...(process.env.VITEST ? [] : [
+      cloudflare({
+        viteEnvironment: { name: 'ssr' },
+      }),
+    ]),
     // Security plugin: strips server-only code from client bundle
     // Must run before cossackPages (enforce: 'pre') to process raw source
     cossackSecurityPlugin({
