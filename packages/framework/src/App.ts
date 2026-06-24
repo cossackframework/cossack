@@ -1,4 +1,4 @@
-import { Cossack, Page, State, HeadContext, HeadValue, ClientState, On } from '@cossackframework/core';
+import { Cossack, Page, State, HeadContext, HeadValue, ClientState, On, Client } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
@@ -27,6 +27,7 @@ export class App extends Cossack {
         };
     }
 
+    @Client()
     toggleTheme() {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
         if (!this.isServer) {

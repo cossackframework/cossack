@@ -95,10 +95,12 @@ describe('Cossack Core: Client-Side', () => {
           __INITIAL_STATE__: mockInitialState,
           location: { host: 'localhost' },
       } as any;
-      global.WebSocket = vi.fn(() => ({
-          send: vi.fn(),
-          close: vi.fn(),
-      })) as any;
+      global.WebSocket = vi.fn(function () {
+          return {
+              send: vi.fn(),
+              close: vi.fn(),
+          };
+      }) as any;
 
       component = new TestComponent();
   });

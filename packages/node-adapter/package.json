@@ -27,13 +27,13 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "hono": "^4.9.5",
-    "ws": "^8.16.0"
+    "hono": "^4.12.25",
+    "ws": ">=8.21.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.10",
+    "@types/ws": "^8.18.0",
     "typescript": "^5.0.0",
-    "vite": "^8.0.0",
+    "vite": "^8.1.0",
     "vite-plugin-dts": "^3.9.1",
     "vite-tsconfig-paths": "^5.1.4"
   }

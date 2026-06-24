@@ -98,7 +98,7 @@ describe('Lifecycle Hooks', () => {
             disconnect: vi.fn(),
         };
 
-        global.IntersectionObserver = vi.fn((cb) => {
+        global.IntersectionObserver = vi.fn(function (cb) {
             observerCallback = cb;
             return observerMock;
         }) as any;

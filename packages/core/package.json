@@ -29,18 +29,18 @@
   },
   "dependencies": {
     "@cossackframework/renderer": "workspace:*",
-    "hono": "^4.9.5",
+    "hono": "^4.12.25",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240725.0",
+    "@cloudflare/workers-types": "^4.20260624.1",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^20.11.17",
-    "jsdom": "^24.0.0",
+    "jsdom": "^29.1.1",
     "typescript": "^5.5.4",
-    "vite": "^8.0.0",
+    "vite": "^8.1.0",
     "vite-plugin-dts": "^3.9.1",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.9"
   }
 }

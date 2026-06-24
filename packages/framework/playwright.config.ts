@@ -35,12 +35,19 @@ export default defineConfig({
     baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // Video recording requires Playwright's ffmpeg binary, which can't be
+    // installed on some platforms (e.g. Ubuntu 26.04). Enable only in CI
+    // where `playwright install` provides it.
+    video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      // Use system Chrome (channel: 'chrome') instead of Playwright's bundled
+      // Chromium. Required on platforms where Playwright doesn't ship browser
+      // binaries (e.g. Ubuntu 26.04). Works on GitHub Actions ubuntu-latest
+      // where Chrome is pre-installed.
+      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
       // In SSG mode, only the SSG suite is relevant; in dev mode, skip the
       // SSG suite (it needs the preview server, not `pnpm dev`).
       testMatch: ssgMode ? '**/e2e/pages/ssg.spec.ts' : '**/e2e/**/*.spec.ts',
