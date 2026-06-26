@@ -1,3 +1,8 @@
+---
+title: "Performance Optimizations"
+description: "Built-in optimizations including instant navigation with smart pre-fetching, client-side caching, and automatic progress bars."
+---
+
 # Performance Optimizations
 
 Cossack is built for speed. Beyond its edge-native architecture, it includes several automatic optimizations to make your application feel instantaneous to the end-user.

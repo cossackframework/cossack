@@ -1,3 +1,8 @@
+---
+title: "Form Validation"
+description: "Form validation using the @Validate decorator that runs on both client and server with seamless @State integration."
+---
+
 # Form Validation
 
 The `@Validate` decorator provides form validation that runs on both client and server. It integrates seamlessly with `@State` and `@ClientState` decorators.

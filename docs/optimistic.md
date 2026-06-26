@@ -1,3 +1,8 @@
+---
+title: "Optimistic UI Updates (Instant Feedback)"
+description: "Instant UI updates using the @Optimistic decorator that runs on the client before the server processes the request."
+---
+
 # Optimistic UI Updates (Instant Feedback)
 
 For interactions where latency matters (like "liking" a post or incrementing a counter), you can use the `@Optimistic` decorator to update the UI *instantly* on the client, before the server has even processed the request.

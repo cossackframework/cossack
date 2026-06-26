@@ -1,3 +1,8 @@
+---
+title: "DevTools"
+description: "Built-in developer tools including Click-to-Source for opening components in your editor and State Inspector for debugging component state."
+---
+
 # DevTools
 
 Cossack includes built-in developer tools to enhance your productivity during development. The primary features are **Click-to-Source** and **State Inspector**.

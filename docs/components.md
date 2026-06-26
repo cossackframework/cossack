@@ -1,3 +1,8 @@
+---
+title: "Components"
+description: "Reusable components in Cossack are built using the same Cossack base class as pages and support state management via decorators."
+---
+
 # Components
 
 In Cossack, reusable components are built using the same `Cossack` base class as pages, but they are used differently within the template. This guide explains how to create, use, and manage state in reusable components.

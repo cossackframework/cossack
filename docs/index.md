@@ -1,3 +1,8 @@
+---
+title: "Index"
+description: "Complete documentation index covering all Cossack framework concepts, getting started guides, and advanced features."
+---
+
 # Index
 ## Concepts
 - [Motivation](/docs/motivation.md)

@@ -1,3 +1,8 @@
+---
+title: "Services & Dependency Injection"
+description: "Reusable classes that hold state and business logic, injected into components via constructor parameters with full decorator support."
+---
+
 # Services & Dependency Injection
 
 Services are reusable classes that hold state and business logic, injected into page and layout components via constructor parameters. They support the same decorators as components (`@State`, `@Server`, `@Client`, `@Shared`, etc.) and share the component's RPC transport automatically.

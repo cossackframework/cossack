@@ -1,3 +1,8 @@
+---
+title: "Pages"
+description: "The @Page decorator marks a class as a Cossack component and configures its routing, behavior, and transport."
+---
+
 # Pages
 
 The `@Page` decorator is used to mark a class as a Cossack component and configure its behavior, routing, and transport.

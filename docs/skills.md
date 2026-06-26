@@ -1,3 +1,8 @@
+---
+title: "Cossack Skills for Claude Code & Open Code"
+description: "Instruction packs that teach AI coding assistants how to work with the Cossack Framework for common development tasks."
+---
+
 # Cossack Skills for Claude Code & Open Code
 
 Cossack Skills are instruction packs that teach AI coding assistants (Claude Code, Open Code, and any Agent Skills-compatible tool) how to work with the Cossack Framework. They provide step-by-step guidance for common tasks like creating pages, adding state, setting up auth, and more.

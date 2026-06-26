@@ -1,3 +1,8 @@
+---
+title: "Cossack Template"
+description: "Powerful template syntax for building dynamic UIs inspired by Lit using tagged template literals via the html function."
+---
+
 # Cossack Template
 
 Cossack provides a powerful template syntax for building dynamic UIs inspired by Lit. This guide covers the basics of using templates in your components.

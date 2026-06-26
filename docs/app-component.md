@@ -1,3 +1,8 @@
+---
+title: "The Global App Component"
+description: "The App component acts as the root wrapper for your entire application and is never destroyed during client-side navigation."
+---
+
 # The Global App Component
 
 In Cossack, `src/App.ts` is a special component that acts as the root wrapper for your entire application. Unlike regular pages or layouts, the App component is **never destroyed** during client-side navigation.

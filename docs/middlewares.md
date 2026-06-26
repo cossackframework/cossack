@@ -1,3 +1,8 @@
+---
+title: "Middleware"
+description: "Integration with Hono's middleware system for executing server-side logic before page rendering or action handling."
+---
+
 # Middleware
 
 Cossack integrates directly with Hono's middleware system. Middleware functions are executed on the server before a page is rendered or a server action is handled.

@@ -1,3 +1,8 @@
+---
+title: "Server-Sent Events (SSE) Transport"
+description: "Lightweight real-time transport using SSE for server-to-client state sync on plain Cloudflare Workers without Durable Objects."
+---
+
 # Server-Sent Events (SSE) Transport
 
 SSE is a lightweight transport that provides real-time server-to-client state sync on **plain Cloudflare Workers** — no Durable Object or WebSocket required. The client sends actions via HTTP POST (`/crpc`), and the server pushes state updates to all connected clients via a long-lived SSE connection.

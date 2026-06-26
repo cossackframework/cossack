@@ -1,3 +1,8 @@
+---
+title: "Prevent Navigation"
+description: "Intercept and block client-side navigation to warn users about unsaved changes using the @PreventNavigation decorator."
+---
+
 # Prevent Navigation
 
 Cossack provides a way to intercept and block client-side navigation, allowing you to warn users about unsaved changes or perform other checks before they leave the current page.

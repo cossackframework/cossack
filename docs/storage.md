@@ -1,3 +1,8 @@
+---
+title: "File Storage & Uploads"
+description: "Flexible file upload strategies including direct-to-cloud uploads for R2/S3 and magic RPC uploads for server proxy handling."
+---
+
 # File Storage & Uploads
 
 Cossack Framework provides powerful and flexible ways to handle file uploads, catering to both serverless environments (like Cloudflare Workers) and traditional Node.js servers.

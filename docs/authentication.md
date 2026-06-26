@@ -1,3 +1,8 @@
+---
+title: "Authentication"
+description: "The auth package provides a minimal, flexible interface for handling authentication with any strategy while protecting routes."
+---
+
 # Authentication
 
 The `@cossackframework/auth` package provides a minimal, flexible, and unopinionated interface for handling authentication in your Cossack application. It is designed to work seamlessly with Hono and allows you to implement any authentication strategy (Session/Cookie, JWT, OAuth, etc.) while providing a standardized way to protect your routes and components.

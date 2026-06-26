@@ -1,3 +1,8 @@
+---
+title: "References (`@Ref`)"
+description: "Direct DOM element references using the @Ref decorator for managing focus, text selection, and third-party library integration."
+---
+
 # References (`@Ref`)
 
 Cossack provides a way to directly reference DOM elements within your components using the `@Ref` decorator, similar to React's `useRef` hook. This is useful for managing focus, text selection, or integrating with third-party DOM libraries.
@@ -15,6 +20,7 @@ export default class RefExample extends Cossack {
     @Ref()
     declare inputRef: RefObject<HTMLInputElement>;
 
+    @Client()
     onMount() {
         // Access the DOM element via .value
         this.inputRef.value?.focus();

@@ -1,3 +1,8 @@
+---
+title: "Error Handling"
+description: "Built-in support for graceful error handling and custom 404 pages via file system conventions in the src/pages directory."
+---
+
 # Error Handling
 
 Cossack provides built-in support for graceful error handling and custom 404 pages via the file system. By following specific naming conventions in your `src/pages` directory, you can provide a polished experience when things go wrong.

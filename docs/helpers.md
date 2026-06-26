@@ -1,3 +1,8 @@
+---
+title: "Component Helpers"
+description: "Built-in helpers and reactive properties for common tasks like navigation and state checking with the isActive method."
+---
+
 # Component Helpers
 
 Cossack provides several built-in helpers and reactive properties to make common tasks, like navigation and state checking, easier to implement.

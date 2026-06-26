@@ -1,3 +1,8 @@
+---
+title: "Routing in Cossack"
+description: "File-based routing system that automatically creates routes based on the structure of the src/pages directory."
+---
+
 # Routing in Cossack
 
 Cossack uses a simple and intuitive file-based routing system. You don't need to configure a central routing file; instead, the framework automatically creates routes based on the structure of your `src/pages` directory.
@@ -25,7 +30,7 @@ src/
     ├── about/
     │   └── index.ts        // Also serves the "/about" route
     ├── docs/
-    │   ├── index.mdx       // Serves the "/docs" route
+    │   ├── index.md       // Serves the "/docs" route
     │   └── getting-started.mdx  // Serves the "/docs/getting-started" route
     └── contact/
         └── index.ts        // Serves the "/contact" route

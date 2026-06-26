@@ -1,3 +1,8 @@
+---
+title: "State Providers: Managing Real-Time State Context"
+description: "State Providers determine which Durable Object a component connects to for real-time state with the durable-object transport."
+---
+
 # State Providers: Managing Real-Time State Context
 
 A **State Provider** is the core architectural concept in Cossack that answers the question: *"Where does my state live?"*

@@ -1,3 +1,8 @@
+---
+title: "Link"
+description: "Cossack uses standard HTML anchor tags with automatic prefetching and optimization, no custom Link component required."
+---
+
 # Link
 
 Unlike Next.js or similar traditional frameworks. In Cossack, there is no need any kind of `<Link>` component. We prefers browser behavior so just use the `<a>` tag normally. We did all prefetching, optimizing automatically for you out of the box.

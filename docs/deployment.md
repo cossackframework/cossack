@@ -1,3 +1,8 @@
+---
+title: "Deployment"
+description: "Deploy Cossack applications to Cloudflare Workers using Wrangler with support for D1, KV, R2, and Durable Objects."
+---
+
 # Deployment
 
 ## Cloudflare Workers (Default)

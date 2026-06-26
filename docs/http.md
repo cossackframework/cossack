@@ -1,3 +1,8 @@
+---
+title: "Building Interactive UIs and APIs with the HTTP Transport"
+description: "Build interactive UIs and JSON APIs using the default HTTP transport with automatic state updates and re-rendering."
+---
+
 # Building Interactive UIs and APIs with the HTTP Transport
 
 Cossack's default transport is a powerful, stateless HTTP layer that allows you to build both traditional server-side applications and modern, AJAX-driven interactive UIs using the exact same component model. This is ideal for three primary use cases:

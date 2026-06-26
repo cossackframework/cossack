@@ -1,3 +1,8 @@
+---
+title: "VSCode Snippets"
+description: "VSCode snippets for common scaffolding tasks including pages, layouts, components, services, middleware, and auth guards."
+---
+
 # VSCode Snippets
 
 Cossack ships with VSCode snippets to speed up common scaffolding tasks. They are scoped to TypeScript files and activate via prefix triggers.

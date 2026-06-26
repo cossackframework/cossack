@@ -1,3 +1,8 @@
+---
+title: "States with Websockets"
+description: "Real-time state management over WebSockets with Durable Object transport for true real-time applications."
+---
+
 # States with Websockets
 
 The true power of state management in Cossack is that is not only limited to HTTP based state but can be synced with any transport layer. For example, websocket, so you can write a truly real time application just as the same 

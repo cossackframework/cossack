@@ -1,3 +1,8 @@
+---
+title: "Static Site Generation (SSG)"
+description: "Pre-render pages at build time for faster page loads, better SEO, and hosting on any static hosting service."
+---
+
 # Static Site Generation (SSG)
 
 Cossack Framework supports Static Site Generation (SSG) to pre-render pages at build time. This enables faster page loads, better SEO, and the ability to host your application on any static hosting service.

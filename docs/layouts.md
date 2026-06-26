@@ -1,3 +1,8 @@
+---
+title: "Layouts"
+description: "Layouts are components decorated with @Page named layout.ts that receive a children argument for wrapping nested page content."
+---
+
 # Layouts
 
 Layouts in Cossack are simply components decorated with `@Page` that are named `layout.ts` in the file system. The key difference is that a layout's `template` method receives a `children` argument, which contains the rendered content of the nested page (or nested layout).

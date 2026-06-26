@@ -1,3 +1,8 @@
+---
+title: "States Management"
+description: "Shared state between client and server using the @State decorator with automatic synchronization and simple property definitions."
+---
+
 # States Management
 
 Managing states in traditional frameworks used to be hard. You'll need to init state, fetch the data from the server, mutate it and synchronize everytime state change on both server and client. However, not anymore with Cossack.
