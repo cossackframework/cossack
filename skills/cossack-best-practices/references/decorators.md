@@ -69,14 +69,28 @@ Client-only reactive state. Triggers re-renders locally. Never sent to the serve
 isOpen: boolean = false;
 ```
 
-### `@Prop()`
+### Component inputs (`this.props`)
 
-Semantic equivalent to `@ClientState()`. Indicates a component input from a parent. Use in reusable components.
+Inputs passed from a parent component are not decorated — they arrive on `this.props`. Declare their shape with an interface plus a type-only `declare props` override so destructuring is typed:
 
 ```typescript
-@Prop()
-variant: 'primary' | 'secondary' = 'primary';
+interface ButtonProps {
+  variant?: 'primary' | 'secondary';
+  [key: string]: any; // allow spreading the rest as HTML attributes
+}
+
+@Component()
+export class Button extends Cossack {
+  declare props: ButtonProps;
+
+  render() {
+    const { variant = 'primary', ...rest } = this.props;
+    // ...
+  }
+}
 ```
+
+> Reactive, component-owned state still uses `@ClientState` (or `@State`). `this.props` is for parent-provided inputs.
 
 ### `@Validate(options?)`
 

@@ -72,12 +72,17 @@
     "prefix": "ccomponent",
     "scope": "typescript",
     "body": [
-      "import { Cossack, Component, Prop } from '@cossackframework/core';",
+      "import { Cossack, Component } from '@cossackframework/core';",
       "import { html } from '@cossackframework/renderer';",
+      "",
+      "interface ${1:ComponentName}Props {",
+      "  ${2:propName}?: ${3:any};",
+      "  [key: string]: any;",
+      "}",
       "",
       "@Component()",
       "export class ${1:ComponentName} extends Cossack {",
-      "  @Prop() ${2:propName}: ${3:string};",
+      "  declare props: ${1:ComponentName}Props;",
       "",
       "  render() {",
       "    const { ${4:$2}, ...rest } = this.props;",
@@ -204,11 +209,18 @@
     ],
     "description": "Add an @Optimistic handler"
   },
-  "Cossack Prop": {
-    "prefix": "cprop",
+  "Cossack Props": {
+    "prefix": "cprops",
     "scope": "typescript",
-    "body": ["@Prop() ${1:propName}: ${2:string};"],
-    "description": "Add a @Prop (component input)"
+    "body": [
+      "interface ${1:Component}Props {",
+      "  ${2:propName}?: ${3:any};",
+      "  [key: string]: any;",
+      "}",
+      "",
+      "declare props: ${1:Component}Props;"
+    ],
+    "description": "Add typed component inputs via declare props"
   },
   "Cossack Validate": {
     "prefix": "cvalidate",
