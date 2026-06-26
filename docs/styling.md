@@ -77,12 +77,17 @@ Reusable components receive their styling through `class` props passed by the pa
 
 ```typescript
 // Button.ts
+interface ButtonProps {
+    variant?: 'primary' | 'secondary';
+    [key: string]: any;
+}
+
 @Component()
 export class Button extends Cossack {
-    @Prop() variant: 'primary' | 'secondary' = 'primary';
+    declare props: ButtonProps;
 
     render() {
-        const { variant, ...rest } = this.props;
+        const { variant = 'primary', ...rest } = this.props;
         return html`
             <button class="bg-blue-500 hover:bg-blue-700 text-white py-2.5 px-5 cursor-pointer" ...=${rest}>
                 ${this.children}

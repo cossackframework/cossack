@@ -19,7 +19,7 @@ These generate complete file structures.
 | `cpagelayout` | Page wrapped in a Layout component |
 | `cpagedynamic` | Page with dynamic route params, `init()`, and `head()` |
 | `clayout` | Layout file (`layout.ts`) with `this.children` slot |
-| `ccomponent` | Reusable component with `@Prop`, attribute spread, and content projection |
+| `ccomponent` | Reusable component with `declare props`, attribute spread, and content projection |
 | `cmiddleware` | Server middleware using `defineServerMiddleware()` |
 | `cservice` | `@Service` class with `@State`, `@Server`, and `@Shared` methods |
 | `cauthguard` | Auth guard middleware that redirects unauthenticated users to `/login` |
@@ -38,7 +38,7 @@ These insert individual decorators or methods into an existing class.
 | `cshared` | `@Shared()` method (runs on both client and server) |
 | `ccomputed` | `@Computed()` getter |
 | `coptimistic` | `@Optimistic()` handler |
-| `cprop` | `@Prop()` component input |
+| `cprops` | Typed component inputs via `interface Props` + `declare props` |
 | `cvalidate` | Validated `@State` property with rules |
 
 ## Lifecycle & Metadata Snippets

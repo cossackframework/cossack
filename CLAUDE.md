@@ -68,7 +68,6 @@ These decorators mark code that should only run on the server:
 These decorators mark code that only runs on the client:
 
 - **`@ClientState()`**: Marks a property as client-only state (triggers re-renders, no server sync).
-- **`@Prop()`**: Semantic equivalent to `@ClientState()` for component inputs.
 - **`@Optimistic()`**: Marks an optimistic UI handler that runs immediately on the client while the server processes the action.
 - **`@Validate()`**: Adds validation rules to a property. Works with `@State` and `@ClientState`. Supports built-in validators (required, minLength, maxLength, min, max, pattern, email, url) and custom validators (sync and async).
 - **`@OnWindow(eventName, options?)`**: Listens for window events. Accepts `{ throttle?: number, debounce?: number }`.

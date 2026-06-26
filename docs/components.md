@@ -15,32 +15,36 @@ In Cossack, reusable components are built using the same `Cossack` base class as
 
 ## Creating a Component
 
-To create a component, extend the `Cossack` class. You can use standard decorators like `@Prop`, `@State`, and `@ClientState`.
+To create a component, extend the `Cossack` class. Inputs are passed from a parent component through `this.props`; use `@State` for server-synchronized state and `@ClientState` for reactive client-only state.
+
+> **Inputs vs. state:** Anything a parent passes in (data, callbacks) is an input and lives on `this.props`. Anything the component owns and mutates itself (and that should trigger a re-render) is state and uses `@ClientState` or `@State`. Declare the shape of your inputs with an interface and a `declare props` override so `this.props` is typed.
 
 ### Basic Example: Button
 
 ```typescript
 import { html } from "@cossackframework/renderer";
-import { Cossack, Component, Prop } from "@cossackframework/core";
+import { Cossack, Component } from "@cossackframework/core";
+
+interface ButtonProps {
+    variant?: 'primary' | 'secondary';
+    disabled?: boolean;
+    // Allow arbitrary HTML attributes (class, style, onClick, ...) to spread
+    [key: string]: any;
+}
 
 @Component()
 export class Button extends Cossack {
-    // 1. Define inputs using @Prop
-    @Prop()
-    variant: 'primary' | 'secondary' = 'primary';
-
-    @Prop()
-    disabled: boolean = false;
+    // Declare the typed shape of this.props (type-only; no runtime field)
+    declare props: ButtonProps;
 
     render() {
-        // 2. Access props via `this.props` to spread "rest" attributes (like class, style, onClick)
-        // Note: We extract known props to avoid spreading them as attributes if they are already handled.
-        const { variant, disabled, ...rest } = this.props;
+        // Destructure known props (with defaults) and spread the rest as attributes
+        const { variant = 'primary', disabled = false, ...rest } = this.props;
 
         return html`
             <button 
-                data-variant="${this.variant}" 
-                ?disabled="${this.disabled}" 
+                data-variant="${variant}" 
+                ?disabled="${disabled}" 
                 ...=${rest}
             >
                 ${this.children}
@@ -52,39 +56,39 @@ export class Button extends Cossack {
 
 ### Components with Internal State: FileUploader
 
-Components can have their own internal state using `@ClientState` (for UI state) or `@State` (if connected to a provider, though typically reusable components use client state or props).
+Components can have their own internal state using `@ClientState` (for UI state) or `@State` (if connected to a provider). Inputs from a parent arrive via `this.props`.
 
 ```typescript
 import { html } from "@cossackframework/renderer";
-import { Cossack, Component, Prop, ClientState } from "@cossackframework/core";
+import { Cossack, Component, ClientState } from "@cossackframework/core";
+
+interface FileUploaderProps {
+    uploading?: boolean;
+    progress?: number;
+    onUpload?: (file: File) => void;
+    [key: string]: any;
+}
 
 @Component()
 export class FileUploader extends Cossack {
-    // Inputs from parent
-    @Prop()
-    uploading: boolean = false;
+    declare props: FileUploaderProps;
 
-    @Prop()
-    progress: number = 0;
-
-    // Callback for parent action
-    @Prop()
-    onUpload?: (file: File) => void;
-
-    // Internal UI state
+    // Internal UI state (reactive)
     @ClientState()
     selectedFile: File | null = null;
 
     render() {
+        const { uploading = false, progress = 0, onUpload } = this.props;
+
         return html`
             <div class="file-uploader">
                 <input type="file" @change="${(e: any) => this.selectedFile = e.target.files[0]}" />
                 
                 <button 
-                    ?disabled="${!this.selectedFile || this.uploading}"
-                    @click="${() => this.onUpload?.(this.selectedFile!)}"
+                    ?disabled="${!this.selectedFile || uploading}"
+                    @click="${() => onUpload?.(this.selectedFile!)}"
                 >
-                    ${this.uploading ? `Uploading ${this.progress}%` : 'Upload'}
+                    ${uploading ? `Uploading ${progress}%` : 'Upload'}
                 </button>
             </div>
         `;
@@ -204,8 +208,15 @@ Each `Counter` instance maintains its own independent state, managed through uni
 Server actions in components can access `this.env`, `this.user`, and `this.c` directly:
 
 ```typescript
+interface LikeButtonProps {
+    postId: string;
+    [key: string]: any;
+}
+
 @Component()
 export class LikeButton extends Cossack {
+    declare props: LikeButtonProps;
+
     @State() liked = false;
     @State() count = 0;
 
@@ -214,13 +225,11 @@ export class LikeButton extends Cossack {
         const stmt = this.env.DB.prepare(
             "INSERT INTO likes (user_id, post_id) VALUES (?, ?)"
         );
-        await stmt.bind(this.user?.id, this.postId).run();
+        await stmt.bind(this.user?.id, this.props.postId).run();
 
         this.liked = !this.liked;
         this.count += this.liked ? 1 : -1;
     }
-
-    @Prop() postId!: string;
 
     render() {
         return html`

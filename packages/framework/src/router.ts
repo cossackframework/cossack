@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
-import { PageOptions, Cossack, AuthenticatedUser } from '@cossackframework/core';
+import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
 import { createInstance } from '@cossackframework/core';
 import { App } from './App';
 import { createApiHandler } from './api-handler';
@@ -549,7 +549,7 @@ export function createApp(options: CreateAppOptions = {}) {
     for (const path in pages) {
         let httpRoute = path
             .replace('/src/pages', '')
-            .replace(/\.(ts|tsx|js|jsx|mdx)$/, '')
+            .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
             .replace(/\/index$/, '')
             .replace(/\/\([^)]+\)/g, '')
             .replace(/\[([^\]]+)\]/g, ':$1') || '/';
@@ -565,7 +565,7 @@ export function createApp(options: CreateAppOptions = {}) {
             const PageComponent = mainExport as new () => Cossack;
             const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
             const layoutPaths = getLayoutStack(path);
-            const combinedMiddlewares = [];
+            const combinedMiddlewares: Middleware[] = [];
             for (const lPath of layoutPaths) {
                 const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
                 const lOpts = Reflect.getMetadata('page:options', LComp);
@@ -577,7 +577,14 @@ export function createApp(options: CreateAppOptions = {}) {
             if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
                 Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
             }
-            app.get(httpRoute, ...combinedMiddlewares, ssrHandler);
+            // Register path-scoped middleware once so it runs ahead of every method handler
+            // on this route. Hono types route handlers as a fixed-length tuple, so a
+            // variable-length middleware spread can't be type-checked — `app.use` avoids that
+            // and lets the handlers below be registered as plain single-handler routes.
+            for (const middleware of combinedMiddlewares) {
+                app.use(httpRoute, middleware);
+            }
+            app.get(httpRoute, ssrHandler);
 
             // Handle class-based HTTP method handlers for hybrid pages
             // This allows pages to both render HTML AND handle API requests (e.g., form POST)
@@ -585,7 +592,7 @@ export function createApp(options: CreateAppOptions = {}) {
                 const httpMethods = ['post', 'put', 'patch', 'delete'];
                 for (const method of httpMethods) {
                     if (method in PageComponent.prototype) {
-                        (app as any)[method](httpRoute, ...combinedMiddlewares, createApiHandler(PageComponent, method));
+                        (app as any)[method](httpRoute, createApiHandler(PageComponent, method));
                     }
                 }
             }
