@@ -1,3 +1,8 @@
+---
+title: "Environment Bindings"
+description: "Direct, type-safe access to Cloudflare environment bindings including D1, KV, R2, and secrets through the this.env property."
+---
+
 # Environment Bindings
 
 Cossack provides direct, type-safe access to your Cloudflare environment bindings (D1, KV, R2, Secrets, etc.) through the `this.env` property within any component.

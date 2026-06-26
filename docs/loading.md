@@ -1,3 +1,8 @@
+---
+title: "Loading UI"
+description: "Built-in support for handling asynchronous operations with spinners or skeleton screens using the file-based loading.ts convention."
+---
+
 # Loading UI
 
 Cossack provides built-in support for handling asynchronous operations, allowing you to easily show spinners or skeleton screens while data is being fetched or actions are processing.

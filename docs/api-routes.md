@@ -1,3 +1,8 @@
+---
+title: "API Routes"
+description: "Build backend endpoints directly in your project using functional or class-based API routes placed in the src/pages/api/ directory."
+---
+
 # API Routes
 
 Cossack makes it easy to build backend endpoints directly within your project. You can choose between two styles: **Functional API Routes** for simplicity, or **Class-based API Routes** for shared state and advanced logic.

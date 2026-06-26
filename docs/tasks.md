@@ -1,3 +1,8 @@
+---
+title: "Lifecycle Tasks & Events"
+description: "Decorators and lifecycle hooks for handling component lifecycle tasks and DOM events in a declarative way similar to Qwik."
+---
+
 # Lifecycle Tasks & Events
 
 Cossack provides a set of decorators and lifecycle hooks to handle component lifecycle tasks and DOM events in a declarative way, similar to frameworks like Qwik. These tools allow you to run logic on mount, updates, visibility changes, and handle user interactions efficiently.
@@ -79,8 +84,6 @@ Cossack components have three lifecycle hooks you can override. They run **only 
 
 Runs once after the component's first client render. Use it to initialize client-only state or kick off side effects.
 
-No `super` call is needed — the framework performs its own setup (`@VisibleTask` observers, `@On('mount')` handlers, `@On`/`@OnDocument`/`@OnWindow` listeners) in a separate internal hook before your `onMount()` runs.
-
 ```typescript
 import { Cossack, Page, ClientState } from '@cossackframework/core';
 
@@ -88,6 +91,7 @@ import { Cossack, Page, ClientState } from '@cossackframework/core';
 export default class MyComponent extends Cossack {
     @ClientState() ready = false;
 
+    @Client()
     onMount() {
         this.ready = true;
     }
@@ -105,6 +109,7 @@ import { Cossack, Page } from '@cossackframework/core';
 
 @Page()
 export class App extends Cossack {
+    @Client()
     onNavigateComplete(pathname: string) {
         analytics.track('pageview', { path: pathname });
     }

@@ -1,3 +1,8 @@
+---
+title: "Installation & Setup"
+description: "Get started with Cossack framework using the create-cossack-app CLI tool with support for Node.js v22 and modern editors."
+---
+
 # Installation & Setup
 
 Cossack is a new kind of framework that is borderless, build for the edge and minimal syntax.

@@ -1,3 +1,8 @@
+---
+title: "Styling"
+description: "Tailwind CSS 4.x integration as the default styling solution with pre-configured Vite plugin and utility class support."
+---
+
 # Styling
 
 Cossack ships with Tailwind CSS 4.x as the default styling solution. It is pre-configured and ready to use — no additional setup required.

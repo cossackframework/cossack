@@ -1,3 +1,8 @@
+---
+title: "Customizing the HTML Template"
+description: "Customize the generated HTML document structure by passing an htmlTemplate option to support RTL, add body attributes, or include scripts."
+---
+
 # Customizing the HTML Template
 
 By default, Cossack generates a standard HTML document for server-side rendered pages. You can customize this document structure — for example, to support RTL languages, add custom `<body>` attributes, or include third-party scripts — by passing an `htmlTemplate` option to `createApp()`.

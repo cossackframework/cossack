@@ -1,3 +1,8 @@
+---
+title: "Project Structure"
+description: "Overview of the Cossack project structure including src directories for pages, components, services, and configuration files."
+---
+
 # Project Structure
 
 In this section, we will go through the project structure of our framework. We will explain the purpose of each folder and file, and how they are organized.

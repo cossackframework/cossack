@@ -1,3 +1,8 @@
+---
+title: "Metadata Management (Head)"
+description: "Control document head tags like title, meta, script, and link dynamically with automatic inheritance from layouts using the head method."
+---
+
 # Metadata Management (Head)
 
 Cossack provides a simple yet powerful API for managing the document's `<head>` section directly from your components. This allows you to control tags like `<title>`, `<meta>`, `<script>`, and `<link>` dynamically with automatic inheritance from layouts.

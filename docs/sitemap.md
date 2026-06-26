@@ -1,3 +1,8 @@
+---
+title: "Sitemap Generation"
+description: "Automatic sitemap.xml generation during SSG builds with proper URL formatting and metadata for search engine discovery."
+---
+
 # Sitemap Generation
 
 Cossack Framework automatically generates a `sitemap.xml` file when building with SSG. The sitemap helps search engines discover and index your pages.

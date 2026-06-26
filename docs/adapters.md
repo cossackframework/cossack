@@ -1,3 +1,8 @@
+---
+title: "Server Adapters"
+description: "Cossack is designed to be runtime-agnostic, with core framework logic decoupled from the server environment via the CossackServerRuntime interface."
+---
+
 # Server Adapters
 
 Cossack is designed to be runtime-agnostic. The core framework logic is decoupled from the underlying server environment using the `CossackServerRuntime` interface.

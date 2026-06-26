@@ -1,3 +1,8 @@
+---
+title: "Markdown Pages"
+description: "Support for .md and .mdx files as first-class page components with automatic transformation and frontmatter metadata support."
+---
+
 # Markdown Pages
 
 Cossack supports `.md` and `.mdx` files as first-class page components. Any markdown file in your `src/pages` directory will be automatically transformed into a Cossack component. Following the same conventions as TypeScript page components, you can use frontmatter for metadata and the markdown content will be rendered as the component's output.

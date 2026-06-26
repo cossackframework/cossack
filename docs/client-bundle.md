@@ -1,3 +1,8 @@
+---
+title: "Client Bundle Security: Method Stripping"
+description: "Cossack strips server-only methods from client bundles to prevent database queries and business logic from leaking to browsers."
+---
+
 # Client Bundle Security: Method Stripping
 
 Cossack is "secure by default" when it comes to the client bundle: any method on

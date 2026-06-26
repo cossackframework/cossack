@@ -1,3 +1,8 @@
+---
+title: "Motivation"
+description: "Why Cossack exists: to solve the limitations of current frameworks by providing a unified syntax for frontend and backend code."
+---
+
 # Motivation
 
 ## Why This Project Exists

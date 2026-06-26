@@ -1,3 +1,8 @@
+---
+title: "Framework Context API"
+description: "Universal access to global resources including env bindings, authenticated user, and request context from any component without prop drilling."
+---
+
 # Framework Context API
 
 The Framework Context API provides universal access to global resources—`env` (environment bindings), `user` (authenticated user), and `c` (request context)—from **any component** without prop drilling. This works for both Pages and reusable Components.

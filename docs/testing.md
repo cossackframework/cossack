@@ -1,3 +1,8 @@
+---
+title: "Testing"
+description: "Run TypeScript type checking and Playwright end-to-end tests with simple commands for validating framework changes."
+---
+
 # Testing
 
 ## Running Tests

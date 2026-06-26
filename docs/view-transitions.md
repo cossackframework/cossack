@@ -1,3 +1,8 @@
+---
+title: "View Transitions"
+description: "Browser View Transitions API support for smooth animated transitions between pages and states with opt-in configuration."
+---
+
 # View Transitions
 
 Cossack supports the browser [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) for smooth, animated transitions between pages and between states within the same page. This feature is **opt-in** — it has zero impact on existing apps unless you enable it.

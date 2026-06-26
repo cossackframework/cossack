@@ -1,3 +1,8 @@
+---
+title: "Accessing Request Context"
+description: "Every page component has access to the underlying request context through the this.c property for route parameters and query strings."
+---
+
 # Accessing Request Context
 
 In Cossack, every page component has access to the underlying request context, which provides information about the incoming HTTP request, such as route parameters, query strings, and headers. This is essential for building dynamic, data-driven pages.

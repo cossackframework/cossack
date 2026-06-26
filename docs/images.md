@@ -1,3 +1,8 @@
+---
+title: "Image Optimization"
+description: "Built-in Image helper for rendering responsive, optimized images that can leverage Cloudflare Image Resizing when deployed."
+---
+
 # Image Optimization
 
 Cossack provides a built-in `Image` helper to easily render responsive, optimized images. When deployed to Cloudflare, it can automatically leverage **Cloudflare Image Resizing** to serve images at the perfect size and format for your user's device.
