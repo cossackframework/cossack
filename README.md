@@ -17,9 +17,9 @@
 
 <h1 align="center">The Borderless TypeScript Framework</h1>
 
-A full-stack TypeScript framework for building stateful, real-time web applications with server-side rendering.
+A full-stack TypeScript framework for building edge first, real-time web applications, LLM friendly.
 
-Write your UI and server logic in a single class — Cossack handles the rest.
+Write client and server logics like no boundaries exist. Cossack automatically handles state synchronization, server-side rendering, and real-time updates. Think of it like Phoenix LiveView, but for TypeScript and the edge.
 
 ## Quick Start
 
@@ -36,14 +36,16 @@ The CLI will prompt you to choose a runtime adapter:
 
 ## Why Cossack?
 
-**No API boilerplate.** Your server methods are directly callable from the client. No REST routes, no fetch wrappers, no loading state plumbing.
+No more `fetch()`, no more query libraries, no more client-server boilerplate, even no more client-server components. Cossack is a **full-stack borderless framework** where your server and client code glues together, with security and performance in mind. 
+
+Your server methods are directly callable from the client, and vice-versa.
 
 ```typescript
-import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { Cossack, Page, State } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
 @Page()
-export default class CounterPage extends Cossack {
+export default class Counter extends Cossack {
     @State() count = 0;
 
     increment() {
@@ -61,89 +63,47 @@ export default class CounterPage extends Cossack {
 }
 ```
 
-When the button is clicked, `increment()` runs secured **on the server**. The framework sends the updated state back to the client and re-renders automatically. The button is disabled while the request is in flight via `this.loading.increment`.
+## Key Features
 
-**Key features:**
+Cossack has a rich set of features that every modern web application needs, plus maximum Developer Experience (DX) and performance optimizations out of the box. 
 
-| Feature | Description |
-|---------|-------------|
-| **File-based routing** | `src/pages/about/index.ts` → `/about` |
-| **Server-side rendering** | First load is fully rendered HTML |
-| **Soft navigation** | Client-side routing with pre-fetching on hover |
-| **Real-time state sync** | WebSocket transport with Durable Objects |
-| **Optimistic UI** | Instant client feedback before server confirms |
-| **Code security** | Server-only code is automatically stripped from client bundles |
-| **Light DOM components** | Easy global styling, no Shadow DOM complexity |
-| **Nested layouts** | File-based layout inheritance |
-| **MDX pages** | `.mdx` files as first-class routes with layout support |
-| **Input validation** | Built-in validators with `@Validate` decorator |
-| **Static site generation** | Pre-render pages at build time |
-| **Runtime adapters** | Cloudflare Workers or Node.js |
+- **Borderless**: Secured client-server, server-client direct method calls
+- **File based routing**: with nested layouts
+- **Server-side rendering (SSR)**: for first load performance and SEO
+- **Soft navigation**: with pre-fetching on hover, View Transitions API support
+- **Real-time support**: out of the box with SSE, WebSockets or Cloudflare Durable Objects
+- **Optimistic UI**: for instant client feedback
+- **Loading UI and error handling**: baked in
+- **Built-in validation**: with decorators
+- **Automatic code security**: server-only code is stripped from client bundles
+- **Smart re-rendering**: only re-render the parts of the page that changed
+- **Markdown pages**: that support layouts and frontmatter
+- **Static site generation (SSG)**: for pre-rendering pages at build time
+- **Runtime adapters**: for Cloudflare Workers, Node.js, or any other serverless platform
+- **Authentication**: built-in with session management
+- **R2 or S3 file storage integration**
+- **Enterprise ready**: using Middleware, Service classes, and Dependency Injection (DI) for complex applications
+- **Dev tools**: Ctrl+Click to jump to component definition, hot reload, and more
+- **Customizing headers, scripts, and meta tags**: for SEO and social sharing
+- **Image optimization**: with automatic resizing and format conversion
+- **Tailwind support**
+- **Latest Vite 8 and Hono version**
+- **First class Cloudflare Workers support**
+- **LLM friendly**: use less tokens, native TypeScript syntax, easy for LLMs to understand, type check, and generate code
+- *and a lot more features to discover in the [documentation](https://cossack.dev/docs).*
 
-## How It Works
+### Per-component Transport Modes
 
-Cossack uses a **decorator-based component model** where each class is both your UI template and your server controller.
+Traditional frameworks rely on a single transport mode, usually HTTP. So in order to write real time applications, you usually to write websockets client and server yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes within the same application:
 
-```typescript
-@Page({ transport: 'http' })
-@Page({ transport: 'sse' }) 
-@Page({ transport: 'durable-object' })
-@Page({ transport: 'websocket' })
-```
+- **HTTP** *(default)* — Traditional HTTP requests for server communication. Stateless, one-way communication from client to server. Best for non-real-time applications or when real-time updates are not required.
+- **SSE** — Server-Sent Events for real-time updates. Real-time, one-way communication from server to all connected clients. Best for applications that require live updates but do not need bi-directional communication.
+- **Durable Object** — Bi-directional WebSocket connection to a Cloudflare Durable Object. Real-time, all connected clients receive live updates. Best for applications that require bi-directional communication with server-rendered state.
+- **Websocket** — Bi-directional WebSocket connection to a Node.js server. Real-time, all connected clients receive live updates. Best for applications that require bi-directional communication with server-rendered state.
 
-### Transport Modes
+## Learning Cossack
 
-- **HTTP** — Each `@Server` call sends state to the server, runs the method, and returns updated state as JSON. Simple, scalable, no persistent connection. Works everywhere.
-- **SSE** — Server-Sent Events for real-time updates. Stateless, one-way communication from server to client.
-- **Durable Object** — Bi-directional WebSocket connection to a Cloudflare Durable Object. Real-time, all connected clients receive live updates.
-- **Websocket** — Bi-directional WebSocket connection to a Node.js server. Real-time, all connected clients receive live updates.
-
-### Security Model
-
-By default, all methods are **server-only**. Only explicitly marked code reaches the browser:
-
-```typescript
-@Server()     // Server-only, stubbed on client
-@Client()     // Client-only, no-op on server
-@Shared()     // Runs on both
-@Optimistic() // Client-side preview before server confirms
-```
-
-Database queries, API keys, and business logic never leave the server.
-
-## Project Structure
-
-```
-src/
-├── App.ts                    # Global app shell (persists across navigation)
-├── pages/
-│   ├── index.ts              # → /
-│   ├── about/index.ts        # → /about
-│   ├── blog/
-│   │   ├── layout.ts         # Layout wrapping all /blog/* routes
-│   │   ├── index.ts          # → /blog
-│   │   ├── [slug]/index.ts   # → /blog/:slug
-│   │   └── index.mdx         # MDX support
-│   └── api/
-│       └── users/index.ts    # JSON API endpoint
-└── client/
-    └── entry-client.ts       # Client-side hydration entry
-```
-
-## Documentation
-
-Full documentation is available in the [`docs/`](./docs/index.md):
-
-- [Routing](./docs/routing.md) — File-based routing, dynamic routes, layouts
-- [State Management](./docs/states.md) — `@State`, `@ClientState`, real-time sync
-- [Components](./docs/components.md) — Reusable class-based components
-- [HTTP Transport](./docs/http.md) — Interactive UIs, APIs, and form handling
-- [Loading UI](./docs/loading.md) — Built-in loading states
-- [Context](./docs/context.md) — Accessing request params, query strings
-- [Framework Context](./docs/framework-context.md) — `this.env`, `this.user`, `this.c`
-- [Validation](./docs/validation.md) — Input validation with decorators
-- [MDX Support](./docs/page.md) — Markdown pages with frontmatter
-- [Static Site Generation](./docs/static-site-generation.md) — Pre-rendering at build time
+Full documentation is available in the [Cossack Documentation](https://cossack.dev/docs).:
 
 ## Contributing
 
@@ -151,25 +111,32 @@ This is a pnpm monorepo. To get started:
 
 ```sh
 pnpm install
-pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter run build
-pnpm --filter @cossackframework/framework run dev
+# Build all packages, use --filter to build a single package
+pnpm run build
+
+# Run the `framework` package, which includes demo pages and a dev server
+pnpm run dev
 ```
 
 ### Running Tests
 
 ```sh
-# Core unit tests
-cd packages/core && pnpm vitest --run
+## Unit tests
+pnpm run test
 
-# Renderer unit tests
-cd packages/renderer && pnpm vitest --run
-
-# Framework unit tests
-cd packages/framework && pnpm vitest --run tests/
-
-# E2E tests
-cd packages/framework && pnpm exec playwright test
+## E2E tests
+pnpm run test:e2e
 ```
+
+## Credits
+
+Cossack cannot exist without the following open source projects:
+
+- [Vite](https://vite.dev/) (For bundling, HMR, and dev server)
+- [Hono](https://hono.dev/) (For routing, middleware)
+- [Lit](https://lit.dev/) (Cossack renderer is heavily inspired by Lit)
+- [TypeScript](https://www.typescriptlang.org/) (For type safety and DX)
+- [Cloudflare Workers](https://workers.cloudflare.com/) (For edge deployment and Durable Objects)
 
 ## License
 
