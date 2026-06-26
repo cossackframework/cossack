@@ -12,9 +12,9 @@
     "deploy": "vite build && tsx scripts/build-ssg.ts && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/core": "^0.5.1",
-    "@cossackframework/framework": "^0.5.1",
-    "@cossackframework/renderer": "^0.5.1",
+    "@cossackframework/core": "^0.5.2",
+    "@cossackframework/framework": "^0.5.2",
+    "@cossackframework/renderer": "^0.5.2",
     "gray-matter": "^4.0.3",
     "hono": "^4.9.5",
     "marked": "^17.0.1",
