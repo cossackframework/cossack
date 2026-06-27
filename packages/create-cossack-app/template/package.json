@@ -1,7 +1,7 @@
 {
   "name": "my-cossack-app",
   "type": "module",
-  "description": "Borderless TypeScript Framework for the Edge",
+  "description": "The Borderless TypeScript Framework",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -16,18 +16,19 @@
     "@cossackframework/framework": "^0.5.2",
     "@cossackframework/renderer": "^0.5.2",
     "gray-matter": "^4.0.3",
-    "hono": "^4.9.5",
+    "hono": "^4.12.25",
     "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.37.1",
-    "@cloudflare/workers-types": "^4.20260515.1",
+    "@cloudflare/vite-plugin": "^1.42.2",
+    "@cloudflare/workers-types": "^4.20260624.1",
     "@tailwindcss/vite": "^4.1.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.0.0",
-    "vite": "^8.0.0",
-    "wrangler": "^4.92.0"
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9",
+    "workerd": "^1.20260515.1",
+    "wrangler": "^4.104.0"
   }
 }
