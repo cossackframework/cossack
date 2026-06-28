@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { NodeWebSocketRuntime } from './runtime';
 import type { Cossack } from '@cossackframework/core';
-import { isOriginAllowed } from '@cossackframework/core';
+import { isOriginAllowed, createInstance } from '@cossackframework/core';
 import { URL } from 'url';
 
 export * from './runtime';
@@ -18,6 +18,16 @@ export interface CossackNodeAdapterOptions {
      * blocks cross-site WebSocket hijacking.
      */
     allowedOrigins?: string[];
+    /**
+     * Authenticate the WebSocket upgrade, returning the user object the
+     * component should run as (e.g. parsed from a cookie/JWT on `request`).
+     * Falls back to `defaultUser` then to `{ id: 'anonymous' }`. Provide this
+     * for any app with per-user state or authorization — otherwise every
+     * connection shares one anonymous identity.
+     */
+    authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
+    /** User used when no `authenticate` hook is provided. Defaults to `{ id: 'anonymous' }`. */
+    defaultUser?: unknown;
 }
 
 export class CossackNodeAdapter {
@@ -26,11 +36,15 @@ export class CossackNodeAdapter {
     private instances: Map<string, NodeWebSocketRuntime> = new Map();
     private componentRegistry: Map<string, new () => Cossack>;
     private allowedOrigins?: string[];
+    private authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
+    private defaultUser: unknown;
 
     constructor(options: CossackNodeAdapterOptions) {
         this.wss = new WebSocketServer({ noServer: true });
         this.componentRegistry = options.componentRegistry;
         this.allowedOrigins = options.allowedOrigins;
+        this.authenticate = options.authenticate;
+        this.defaultUser = options.defaultUser ?? { id: 'anonymous' };
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -73,7 +87,9 @@ export class CossackNodeAdapter {
                     return;
                 }
 
-                const componentInstance = new ComponentClass();
+                // Use the DI container so @Service-injected dependencies are
+                // resolved (new ComponentClass() bypassed the container).
+                const componentInstance = createInstance(ComponentClass) as Cossack;
                 const pathname = params.get('pathname') || '/';
 
                 const context = {
@@ -109,9 +125,19 @@ export class CossackNodeAdapter {
                 this.instances.set(target, runtime);
             }
 
-            // TODO: Extract user from request (cookies, headers) if needed
-            const user = { id: 'guest' }; 
-            
+            // Resolve the connecting user via the authenticate hook (cookies,
+            // JWT, etc.) so per-user state/authorization works. Without a hook,
+            // connections run as the configured defaultUser (anonymous) — never
+            // a forged identity.
+            let user: unknown;
+            try {
+                user = this.authenticate ? await this.authenticate(request) : this.defaultUser;
+            } catch (e) {
+                console.error('[Cossack] Authentication failed, rejecting upgrade:', e);
+                ws.close(1008, 'Authentication failed');
+                return;
+            }
+
             runtime.addClient(ws, user);
             
             // Send initial state to the connecting client

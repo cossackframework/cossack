@@ -51,7 +51,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **4.4** SSG build swallows per-page errors and exits 0 — `ssg-build.ts:119-122`.
 - [x] **4.5** SSE framing breaks on multi-line strings — `core/src/shared/runtimes/sse.ts:57-79`. — _verified safe: no change needed. `JSON.stringify` escapes `\n`/`\r`, so no SSE data frame ever contains a raw line terminator; framing is correct._
 - [x] **4.6** DevTools server: `shell:true` + binds `0.0.0.0` = RCE — `framework/vite.config.ts:17-51`.
-- [ ] **4.7** Node adapter: hardcoded `user={id:'guest'}`, bypasses DI (`new ComponentClass()`), references global `WebSocket` (Node<22 ReferenceError in core).
+- [x] **4.7** Node adapter: hardcoded `user={id:'guest'}`, bypasses DI (`new ComponentClass()`), references global `WebSocket` (Node<22 ReferenceError in core). _(auth `authenticate` hook + `defaultUser`; `createInstance` for DI; global WebSocket fixed in 3.6.)_
 
 ## Phase 5 — Routing & SPA Correctness (MED impact / MED effort)
 
