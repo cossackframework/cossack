@@ -84,6 +84,7 @@ export async function buildSsg(options: BuildSsgOptions = {}): Promise<void> {
 
   // --- Render each route ---
   const renderedRoutes: string[] = [];
+  const failedRoutes: string[] = [];
   for (const route of ssgRoutes) {
     console.log(`Rendering: ${route.routePath}`);
     try {
@@ -118,6 +119,7 @@ export async function buildSsg(options: BuildSsgOptions = {}): Promise<void> {
       }
     } catch (error) {
       console.error(`Error rendering ${route.routePath}:`, error);
+      failedRoutes.push(route.routePath);
     }
   }
 
@@ -131,7 +133,16 @@ export async function buildSsg(options: BuildSsgOptions = {}): Promise<void> {
 
   console.log('\nGenerated SSG files:');
   listFiles(outDir, '');
-  console.log('\nSSG build complete!');
+
+  if (failedRoutes.length > 0) {
+    console.error(`\n[SSG] ${failedRoutes.length} route(s) failed:`);
+    for (const r of failedRoutes) console.error(`  - ${r}`);
+    console.error('[SSG] Build completed with errors.');
+    // Non-zero exit so CI catches partial builds.
+    process.exitCode = 1;
+  } else {
+    console.log('\nSSG build complete!');
+  }
 }
 
 async function loadAppComponent(
