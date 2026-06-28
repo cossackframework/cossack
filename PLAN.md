@@ -49,8 +49,8 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **4.2** `serveStatic` ignores computed `Content-Type` (serves everything as `text/html`) + uses sync I/O — `:108-111, 93`.
 - [x] **4.3** Path traversal in SSG output writing — `framework/src/ssg-build.ts:91-117` — validate param values.
 - [x] **4.4** SSG build swallows per-page errors and exits 0 — `ssg-build.ts:119-122`.
-- [ ] **4.5** SSE framing breaks on multi-line strings — `core/src/shared/runtimes/sse.ts:57-79`.
-- [ ] **4.6** DevTools server: `shell:true` + binds `0.0.0.0` = RCE — `framework/vite.config.ts:17-51`.
+- [x] **4.5** SSE framing breaks on multi-line strings — `core/src/shared/runtimes/sse.ts:57-79`. — _verified safe: no change needed. `JSON.stringify` escapes `\n`/`\r`, so no SSE data frame ever contains a raw line terminator; framing is correct._
+- [x] **4.6** DevTools server: `shell:true` + binds `0.0.0.0` = RCE — `framework/vite.config.ts:17-51`.
 - [ ] **4.7** Node adapter: hardcoded `user={id:'guest'}`, bypasses DI (`new ComponentClass()`), references global `WebSocket` (Node<22 ReferenceError in core).
 
 ## Phase 5 — Routing & SPA Correctness (MED impact / MED effort)
