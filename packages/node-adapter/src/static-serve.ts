@@ -53,6 +53,14 @@ function normalizeUrlPath(urlPath: string): string {
  */
 export function serveStatic(options: StaticServeOptions) {
     const { root, prefix = '/', index = true } = options;
+    // Resolve root once; every served path must resolve to within it.
+    const resolvedRoot = path.resolve(root);
+    const rootPrefix = resolvedRoot + path.sep;
+
+    const containsRoot = (filePath: string): boolean => {
+        const resolved = path.resolve(filePath);
+        return resolved === resolvedRoot || resolved.startsWith(rootPrefix);
+    };
 
     return async (c: Context, next: Next) => {
         // Only handle GET requests
@@ -86,6 +94,13 @@ export function serveStatic(options: StaticServeOptions) {
                     filePath = indexPath;
                 }
             }
+        }
+
+        // SECURITY: refuse any path that escapes the configured root (e.g.
+        // `/../etc/passwd` or encoded variants). Treat as a 404 (next()) rather
+        // than 403 to avoid confirming the existence of files outside root.
+        if (!containsRoot(filePath)) {
+            return next();
         }
 
         // Check if file exists and is not a directory
