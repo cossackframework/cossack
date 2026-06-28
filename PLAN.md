@@ -82,8 +82,8 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 
 **Other:**
 - [x] **6.13** Centralize magic strings (`'cossack_app'`, transport names, reserved keys, `_cossack_*` props). _(Reserved state keys centralized into `RESERVED_STATE_KEYS`; `'cossack_app'` already `APP_ROUTE_ID`. Transport names / `_cossack_*` prefixes left inline — low value, wide refactor.)_
-- [ ] **6.14** Replace pervasive `any` at security boundaries with structural types.
-- [ ] **6.15** Add `console.warn` to bare `catch {}` blocks (silent failures are the dominant debuggability theme).
+- [x] **6.14** Replace pervasive `any` at security boundaries with structural types. _(executeAction `user` now `AuthenticatedUser | undefined`; isRpcCallableAction / sanitizeClientState already use `unknown`/structural types from Phase 1.)_
+- [x] **6.15** Add `console.warn` to bare `catch {}` blocks. _(manifest/CSS/routes-manifest reads in router, ssg-renderer, vite-plugin now warn on failure; ssg-config reads stay silent for optional-config semantics.)_
 
 ## Phase 7 — `create-cossack-app` Template Health (MED impact / LOW effort)
 

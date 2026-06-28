@@ -123,8 +123,9 @@ export function cossackPages(): Plugin {
         if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
         const dest = resolve(destDir, 'cossack-manifest.json');
         writeFileSync(dest, data);
-      } catch {
+      } catch (e) {
         // Non-fatal: SSR will fall back to empty manifest.
+        console.warn('[cossack] Could not emit cossack-manifest.json:', e);
       }
 
       // Emit the routes manifest consumed by the `cossack ssg` CLI. This is the
@@ -133,8 +134,9 @@ export function cossackPages(): Plugin {
       // IDs can never drift from what the SSR router assigns here.
       try {
         emitRoutesManifest(clientOutDir);
-      } catch {
+      } catch (e) {
         // Non-fatal: SSG will surface a clear error if the manifest is missing.
+        console.warn('[cossack] Could not emit routes manifest:', e);
       }
     },
   };

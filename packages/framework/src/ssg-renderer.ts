@@ -288,7 +288,10 @@ function readManifestFile(): Record<string, any> {
     const manifestPath = path.join(process.cwd(), 'dist/client/.vite/manifest.json');
     const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
     return JSON.parse(manifestContent);
-  } catch {
+  } catch (e) {
+    // Non-fatal: SSG surfaces a clear error later if the manifest is missing,
+    // but warn here so a corrupt read isn't silent.
+    console.warn('[cossack/ssg] Could not load client manifest:', e);
     return {};
   }
 }

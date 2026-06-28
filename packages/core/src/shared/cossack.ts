@@ -641,7 +641,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     private _actionQueue: Promise<void> = Promise.resolve();
 
-    public executeAction(action: string, payload: any[], user: any, clientContext: unknown): Promise<void> {
+    public executeAction(action: string, payload: any[], user: AuthenticatedUser | undefined, clientContext: unknown): Promise<void> {
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a

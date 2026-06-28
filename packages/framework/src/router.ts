@@ -55,9 +55,13 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
       text = readFileSync(resolve(clientDir, '.vite', 'manifest.json'), 'utf-8');
     }
     resolved = JSON.parse(text);
-  } catch {
+  } catch (e) {
     // Dev mode or manifest not yet generated: renderRoot falls back to
-    // un-hashed dev paths.
+    // un-hashed dev paths. Warn (not error) so a genuinely broken/corrupt
+    // manifest isn't completely silent.
+    if (!import.meta.env?.DEV) {
+      console.warn('[Cossack] Could not load client manifest; falling back to dev paths:', e);
+    }
   }
   _manifest = resolved;
   return _manifest;
@@ -116,7 +120,10 @@ async function getInlineCss(env: any): Promise<string | undefined> {
     // CSS too large — don't inline, but cache the decision
     cachedInlineCss = null;
     return undefined;
-  } catch {
+  } catch (e) {
+    // Non-fatal: CSS inlining is an optimisation. Warn so a permissions /
+    // read error isn't completely silent.
+    console.warn('[Cossack] Could not read client CSS for inlining:', e);
     cachedInlineCss = null;
     return undefined;
   }
