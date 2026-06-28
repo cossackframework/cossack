@@ -40,7 +40,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **3.6** `_cossack_ws_context` shared-mutable per instance → concurrent WS actions cross-route client calls — `cossack.ts:625-639`. _(fixed via per-instance action-serialization queue.)_
 - [x] **3.7** Unbounded `pageCache` serves stale state after mutations — `framework/src/client/app.ts:71`. _(LRU bound + current-page invalidation on RPC dispatch.)_
 - [x] **3.8** Unbounded `sseStateStore` + 200ms-poll-per-client driver — `framework/src/transports/sse.ts:26,140-182`. _(Store now connection-counted with LRU hard cap; entries deleted on last disconnect.)_
-- [ ] **3.9** `JSON.parse` unguarded in all transport/runtime handlers (cheap DoS) — add try/catch + schema validation.
+- [x] **3.9** `JSON.parse` unguarded in all transport/runtime handlers (cheap DoS) — add try/catch + schema validation.
 - [x] **3.10** `executeAction` has no error boundary → `loading[action]` stuck forever on server throw. — _resolved by 3.6._
 
 ## Phase 4 — Node Adapter & SSG Robustness (HIGH impact / LOW-MED effort)

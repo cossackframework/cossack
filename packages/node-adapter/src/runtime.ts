@@ -23,18 +23,28 @@ export class NodeWebSocketRuntime implements CossackServerRuntime {
         });
         
         ws.on('message', (data) => {
-             this.onClientMessage(ws, data.toString());
+             this.onClientMessage(ws, data.toString()).catch((e) => {
+                 console.error('[Cossack] Error handling Node WebSocket message:', e);
+             });
         });
     }
 
     async onClientMessage(client: unknown, message: string): Promise<void> {
         const ws = client as WebSocket;
-        const data = JSON.parse(message);
-        
-        if (data.type === 'action') {
-            const user = (ws as any).user;
-            await this.component.executeAction(data.action, data.payload, user, client);
+        let data: any;
+        try {
+            data = JSON.parse(message);
+        } catch (e) {
+            console.error('[Cossack] Ignoring malformed WebSocket message:', e);
+            return;
         }
+        if (!data || typeof data !== 'object' || data.type !== 'action' ||
+            typeof data.action !== 'string' || !Array.isArray(data.payload)) {
+            return;
+        }
+
+        const user = (ws as any).user;
+        await this.component.executeAction(data.action, data.payload, user, client);
     }
 
     broadcastState(partialState: Record<string, any>): void {

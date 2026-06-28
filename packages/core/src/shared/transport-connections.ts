@@ -59,7 +59,15 @@ export function connectWebSocket(component: any): void {
             if (event.data === 'pong') {
                 return; // Server heartbeat response, ignore.
             }
-            const data = JSON.parse(event.data);
+            let data: any;
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                // Malformed frame — ignore rather than poisoning the socket.
+                console.error('[Cossack] Ignoring malformed WebSocket message:', e);
+                return;
+            }
+            if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
                 const stateUpdate = data.state || {};
