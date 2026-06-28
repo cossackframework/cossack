@@ -30,6 +30,26 @@ function isWsTransportable(arg: unknown): boolean {
 }
 
 /**
+ * Apply a server-sent state object to a component instance, respecting the
+ * optimistic-lock protocol: locked keys are buffered in _optimisticPendingState
+ * (applied once the action completes); other keys are set directly. Internal
+ * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
+ * call requestUpdate — callers schedule a render as appropriate to their
+ * transport.
+ */
+export function applyStateToComponent(component: any, data: Record<string, any>): void {
+    for (const key in data) {
+        if (key.startsWith('_cossack_')) continue;
+        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+        if (component._isOptimisticLocked(key)) {
+            component._optimisticPendingState[key] = data[key];
+        } else {
+            component.setProperty(key, data[key]);
+        }
+    }
+}
+
+/**
  * Notify the client SPA (if present) that a server action is being dispatched,
  * so it can invalidate the cached initial state for the current page. Without
  * this, navigating away and back after a mutation returns the stale cached
@@ -159,17 +179,9 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 };
                 const processedArgs = args.map(arg => extractFiles(arg));
 
-                // === Shared apply-state helper ===
-                const applyState = (data: Record<string, any>) => {
-                    for (const key in data) {
-                        if (key.startsWith('_cossack_')) continue;
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (self._isOptimisticLocked(key)) {
-                            self._optimisticPendingState[key] = data[key];
-                        } else {
-                            self.setProperty(key, data[key]);
-                        }
-                    }
+                 // === Shared apply-state helper ===
+                 const applyState = (data: Record<string, any>) => {
+                    applyStateToComponent(self, data);
                     self.requestUpdate();
                 };
 
@@ -569,14 +581,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                         delete data._cossack_return;
                                     }
 
-                                    for (const key in data) {
-                                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                                        if (component._isOptimisticLocked(key)) {
-                                            component._optimisticPendingState[key] = data[key];
-                                        } else {
-                                            component.setProperty(key, data[key]);
-                                        }
-                                    }
+                                    applyStateToComponent(component, data);
                                     resolve(returnValue);
                                 } catch (e) {
                                     reject(e);
@@ -623,14 +628,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         delete data._cossack_return;
                     }
 
-                    for (const key in data) {
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (component._isOptimisticLocked(key)) {
-                            component._optimisticPendingState[key] = data[key];
-                        } else {
-                            component.setProperty(key, data[key]);
-                        }
-                    }
+                    applyStateToComponent(component, data);
                     return returnValue;
                 }
             } catch (error) {

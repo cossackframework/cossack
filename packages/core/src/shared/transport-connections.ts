@@ -1,5 +1,6 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
+import { applyStateToComponent } from './method-proxy';
 
 /**
  * Initialize provider map for the component (server-side only).
@@ -70,15 +71,7 @@ export function connectWebSocket(component: any): void {
             if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
-                const stateUpdate = data.state || {};
-                for (const key in stateUpdate) {
-                    if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                    if (component._isOptimisticLocked(key)) {
-                        component._optimisticPendingState[key] = stateUpdate[key];
-                    } else {
-                        component.setProperty(key, stateUpdate[key]);
-                    }
-                }
+                applyStateToComponent(component, data.state || {});
             } else if (data.type === 'action-complete') {
                 const { action } = data;
                 if (component.loading[action]) {
@@ -163,14 +156,7 @@ export function connectSSE(component: any): void {
     es.addEventListener('state-update', (event: MessageEvent) => {
         try {
             const stateUpdate = JSON.parse((event as any).data);
-            for (const key in stateUpdate) {
-                if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                if (component._isOptimisticLocked(key)) {
-                    component._optimisticPendingState[key] = stateUpdate[key];
-                } else {
-                    component.setProperty(key, stateUpdate[key]);
-                }
-            }
+            applyStateToComponent(component, stateUpdate);
             component.requestUpdate();
         } catch (e) {
             console.error('[Cossack] Error parsing SSE state-update:', e);

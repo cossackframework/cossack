@@ -69,7 +69,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **6.2** `filePathToRoutePath` 3× — SSG & client copies already drifted (missing `.tsx`). _(Consolidated onto the canonical `route-ids` version; also fixed a latent `/index.md`-before-`/index.mdx` substring bug it exposed.)_
 - [x] **6.3** `getModulePreloads` 2× (`router.ts` ↔ `ssg-renderer.ts`). — _consolidated into `route-ids.ts`._
 - [x] **6.4** Head-merge sequence 3× (SSR/SSG/client) → `composeHead` helper.
-- [ ] **6.5** Optimistic state-application block 6× — hoist `applyState`.
+- [x] **6.5** Optimistic state-application block 6× — hoist `applyState`. _(Consolidated the 5 component-targeting sites onto `applyStateToComponent`; the service-bootstrap site targets the service instance and stays inline.)_
 - [ ] **6.6** `extractFiles` 2× + optimistic-handler prologue 3× in `method-proxy.ts`.
 - [ ] **6.7** SSR vs SSG render pipeline ~80 lines duplicated → extract `preparePageRender`.
 
