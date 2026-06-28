@@ -14,7 +14,6 @@ export const html = (strings: TemplateStringsArray, ...values: unknown[]) => {
   return new TemplateResult(strings, values);
 };
 
-export const svg = html;
 
 export const component = <T extends CossackElement>(
   clazz: new () => T,

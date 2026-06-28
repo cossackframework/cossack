@@ -77,7 +77,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **6.8** Unused framework deps: `@cossackframework/auth`, `@mdx-js/mdx`, `workerd`, duplicate `tailwindcss` key. _(removed 112 transitive packages.)_
 - [x] **6.9** Unused renderer devDeps: `htmlparser2`, `magic-string`.
 - [x] **6.10** `test-utils` unused `renderer` dep.
-- [ ] **6.11** Dead exports: `generateSitemap`, `generateSitemapIndex`, `svg`, + trim internal helpers re-exported through `core/src/index.ts`.
+- [x] **6.11** Dead exports: `generateSitemap`, `generateSitemapIndex`, `svg`, + trim internal helpers re-exported through `core/src/index.ts`. _(Removed the dead `svg` alias; kept `generateSitemap` (public `virtual:cossack-ssg` API) and the core internal exports — removing published exports is a breaking change deferred to a major version.)_
 - [x] **6.12** Dead post-`delete` lookup in `action-complete` handlers (`transport-connections.ts:85-92,173-178`). — _resolved by 3.2._
 
 **Other:**
