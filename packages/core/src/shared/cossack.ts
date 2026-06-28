@@ -1357,7 +1357,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
             const types = opts.types;
             if (Cossack._onNavigate) {
-                window.history.pushState({}, '', url);
+                // _onNavigate (the SPA entry) performs the navigation AND the
+                // history.pushState on success. Pushing state here too would
+                // create two history entries per redirect (Back needed twice).
                 Cossack._onNavigate(url, types ? { types } : undefined);
             } else {
                 window.location.href = url;
