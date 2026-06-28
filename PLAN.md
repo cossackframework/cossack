@@ -46,7 +46,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 ## Phase 4 — Node Adapter & SSG Robustness (HIGH impact / LOW-MED effort)
 
 - [x] **4.1** Path traversal in `static-serve` — `node-adapter/src/static-serve.ts:79-89` — `path.resolve` + containment check. _(Also fixed: node-adapter build now externalizes Node `path`/`fs`/`os` builtins so the bundle exposes the full path API.)_
-- [ ] **4.2** `serveStatic` ignores computed `Content-Type` (serves everything as `text/html`) + uses sync I/O — `:108-111, 93`.
+- [x] **4.2** `serveStatic` ignores computed `Content-Type` (serves everything as `text/html`) + uses sync I/O — `:108-111, 93`.
 - [ ] **4.3** Path traversal in SSG output writing — `framework/src/ssg-build.ts:91-117` — validate param values.
 - [ ] **4.4** SSG build swallows per-page errors and exits 0 — `ssg-build.ts:119-122`.
 - [ ] **4.5** SSE framing breaks on multi-line strings — `core/src/shared/runtimes/sse.ts:57-79`.
