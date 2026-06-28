@@ -66,7 +66,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 
 **Duplication to consolidate:**
 - [x] **6.1** `RouterContext` interface declared 3× (`transports/{websocket,sse,http}.ts`). — _consolidated into `route-ids.ts`._
-- [ ] **6.2** `filePathToRoutePath` 3× — SSG & client copies already drifted (missing `.tsx`).
+- [x] **6.2** `filePathToRoutePath` 3× — SSG & client copies already drifted (missing `.tsx`). _(Consolidated onto the canonical `route-ids` version; also fixed a latent `/index.md`-before-`/index.mdx` substring bug it exposed.)_
 - [ ] **6.3** `getModulePreloads` 2× (`router.ts` ↔ `ssg-renderer.ts`).
 - [ ] **6.4** Head-merge sequence 3× (SSR/SSG/client) → `composeHead` helper.
 - [ ] **6.5** Optimistic state-application block 6× — hoist `applyState`.

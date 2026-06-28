@@ -2,28 +2,10 @@ import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, suppor
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
+import { filePathToRoutePath } from '../route-ids';
 import registry from 'virtual:cossack-pages';
 
 const { pages, layouts, loadings, components } = registry;
-
-/**
- * Convert a file path to a simplified route path.
- * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
- */
-function filePathToRoutePath(filePath: string): string {
-    const route = filePath
-        .replace('/src/pages/', '/')
-        .replace('/index.ts', '')
-        .replace('/index.md', '')
-        .replace('/index.mdx', '')
-        .replace(/\.(ts|md|mdx)$/, '');
-
-    // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
-    if (route === '/index' || route === '') {
-        return '/';
-    }
-    return route;
-}
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();

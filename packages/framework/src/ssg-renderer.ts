@@ -31,21 +31,11 @@ interface LayoutStackItem {
  * Convert a file path to a simplified route path.
  * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
  */
-export function filePathToRoutePath(filePath: string): string {
-  let route = filePath
-    .replace('/src/pages/', '/')
-    .replace('/index.ts', '')
-    .replace('/index.mdx', '')
-    .replace('/index.md', '')
-    .replace(/\.(ts|tsx|md|mdx)$/, '');
-
-  // Handle root path: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
-  if (route === '/index' || route === '') {
-    return '/';
-  }
-
-  return route;
-}
+// Re-export the canonical route-path helper so callers that historically
+// imported it from ssg-renderer keep working, without maintaining a
+// divergent copy here.
+export { filePathToRoutePath } from './route-ids';
+import { filePathToRoutePath } from './route-ids';
 
 /**
  * Get the layout stack for a given page path.

@@ -24,8 +24,10 @@ export function filePathToRoutePath(filePath: string): string {
   const route = filePath
     .replace('/src/pages/', '/')
     .replace('/index.ts', '')
-    .replace('/index.md', '')
+    // NOTE: /index.mdx MUST be stripped before /index.md, because '/index.md'
+    // is a substring of '/index.mdx' and would otherwise leave a trailing 'x'.
     .replace('/index.mdx', '')
+    .replace('/index.md', '')
     .replace(/\.(ts|tsx|md|mdx)$/, '');
 
   // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
