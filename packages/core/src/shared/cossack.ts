@@ -1463,6 +1463,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     this._sseConnection = undefined;
                 }
 
+                // Disconnect @VisibleTask IntersectionObservers — otherwise they
+                // retain references to the destroyed component and keep firing
+                // callbacks that mutate destroyed state.
+                this._visibleTaskObservers.forEach(({ observer }) => observer.disconnect());
+                this._visibleTaskObservers.clear();
+
                 // Clean up event listeners
                 this.eventCleanupFns.forEach(cleanup => cleanup());
                 this.eventCleanupFns = [];

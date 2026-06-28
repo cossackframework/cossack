@@ -35,7 +35,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **3.1** Renderer never calls `destroy()` on disposed child components → leaks WebSockets, IntersectionObservers, listeners — `renderer/src/cossack-html.ts:279,419`. _(Also fixed: `render()` + `_clearTemplateCache()` now dispose parts on template change, the common leak path.)_
 - [x] **3.2** Optimistic-lock cleanup ordering bug — `_optimisticPendingState` never freed on WS/SSE — `core/src/shared/transport-connections.ts:85-92,172-178`.
 - [x] **3.3** `setInterval(ping, 25000)` handle never captured/cleared — leak per WS provider — `transport-connections.ts:117-121`.
-- [ ] **3.4** `@VisibleTask` IntersectionObservers never `disconnect()`-ed in `destroy()` — `cossack.ts:147,1436-1466`.
+- [x] **3.4** `@VisibleTask` IntersectionObservers never `disconnect()`-ed in `destroy()` — `cossack.ts:147,1436-1466`.
 - [ ] **3.5** WS payload filter drops ALL objects (not just DOM/Event) — breaks `this.updateItem({id:5})` over WS — `method-proxy.ts:689-696`.
 - [ ] **3.6** `_cossack_ws_context` shared-mutable per instance → concurrent WS actions cross-route client calls — `cossack.ts:625-639`.
 - [ ] **3.7** Unbounded `pageCache` serves stale state after mutations — `framework/src/client/app.ts:71`.

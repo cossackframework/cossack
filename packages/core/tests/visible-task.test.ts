@@ -173,6 +173,20 @@ describe('@VisibleTask callback arguments', () => {
         // this internally, so we assert the call directly.)
         expect(observerInstances[0].unobserve).toHaveBeenCalledWith(observedTarget);
     });
+
+    it('disconnects IntersectionObservers on destroy()', async () => {
+        await component.bootstrap({ container: container as any });
+        expect(observerInstances.length).toBe(1);
+
+        // The observer is alive before destroy.
+        expect(observerInstances[0].disconnect).not.toHaveBeenCalled();
+
+        component.destroy();
+
+        // destroy() must disconnect the observer so it stops firing on a
+        // destroyed component and releases its references.
+        expect(observerInstances[0].disconnect).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe('@VisibleTask with selector matching multiple elements', () => {
