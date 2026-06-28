@@ -240,20 +240,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
   const syncHead = () => {
     if (!currentPage) return;
-    const emptyCtx = Cossack.buildHeadContext([]);
-    const pageHeadValue = currentPage.head(emptyCtx);
-
-    let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-
-    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
-        const headContext = Cossack.buildHeadContext(tags);
-        const headValue = currentLayoutInstances[i].head(headContext);
-        tags = Cossack.mergeHead(headContext, headValue);
-    }
-
-    const finalHeadContext = Cossack.buildHeadContext(tags);
-    const appHeadValue = appInstance.head(finalHeadContext);
-    const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+    const headTags = Cossack.composeHead(currentPage, currentLayoutInstances, appInstance);
 
     const serialized = JSON.stringify(headTags);
     if (serialized === _lastHeadTagsJson) return;

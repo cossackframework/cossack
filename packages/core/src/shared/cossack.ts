@@ -26,7 +26,7 @@ import {
     setupServerMethodProxies as setupServerMethodProxiesFn,
     isRpcCallableAction,
 } from './method-proxy';
-import { HeadTag, HeadContext, HeadValue } from './head';
+import { HeadTag, HeadContext, HeadValue, composeHead as composeHeadFn, type Headed } from './head';
 import {
     buildHeadContext as buildHeadContextFn,
     mergeHead as mergeHeadFn,
@@ -285,6 +285,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public static mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
         return mergeHeadFn(context, value);
+    }
+
+    public static composeHead(page: Headed, layouts: Headed[], app: Headed): HeadTag[] {
+        return composeHeadFn(page, layouts, app);
     }
 
     public static applyHeadTags(tags: HeadTag[]) {

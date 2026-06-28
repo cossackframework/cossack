@@ -174,6 +174,31 @@ function warnIfMisplaced(category: string, tags: HeadTag[] | undefined, expected
 }
 
 /**
+ * Compose the final head-tag list for a render: page → innermost layout → … →
+ * outermost layout → global App, feeding each level the accumulated tags as
+ * context (inside-out). Shared by the SSR router, the SSG renderer, and the
+ * client SPA so all three produce identical head output.
+ */
+export interface Headed {
+  head(ctx: HeadContext): HeadValue;
+}
+
+export function composeHead(
+  pageInstance: Headed,
+  layoutInstances: Headed[],
+  appInstance: Headed,
+): HeadTag[] {
+  const emptyCtx = buildHeadContext([]);
+  let tags = mergeHead(emptyCtx, pageInstance.head(emptyCtx));
+  for (let i = layoutInstances.length - 1; i >= 0; i--) {
+    const headContext = buildHeadContext(tags);
+    tags = mergeHead(headContext, layoutInstances[i].head(headContext));
+  }
+  const finalHeadContext = buildHeadContext(tags);
+  return mergeHead(finalHeadContext, appInstance.head(finalHeadContext));
+}
+
+/**
  * Apply a list of HeadTags to document.head (client-side only).
  * Replaces all previously managed tags (marked with `data-cossack`).
  */

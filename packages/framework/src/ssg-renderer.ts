@@ -189,18 +189,8 @@ export async function renderSsgPage(
   appInstance.children = body;
   const finalHtml = appInstance._render();
 
-  // Head Merging
-  const emptyCtx = Cossack.buildHeadContext([]);
-  const pageHeadValue = pageInstance.head(emptyCtx);
-  let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-  for (let i = layoutInstances.length - 1; i >= 0; i--) {
-    const headContext = Cossack.buildHeadContext(tags);
-    const headValue = layoutInstances[i].head(headContext);
-    tags = Cossack.mergeHead(headContext, headValue);
-  }
-  const finalHeadContext = Cossack.buildHeadContext(tags);
-  const appHeadValue = appInstance.head(finalHeadContext);
-  const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+  // Head Merging (page → layouts → app, inside-out)
+  const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
 
   // Build the initial state payload, mirroring the SSR handler in router.ts
   // so the client hydration code receives the same shape it expects.
