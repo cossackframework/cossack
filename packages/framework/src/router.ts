@@ -9,7 +9,7 @@ import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
 import { computeRouteIds, filePathToRoutePath, APP_ROUTE_ID } from './route-ids';
-import { CossackElement } from '@cossackframework/renderer';
+import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
   handleSseCrpc,
@@ -466,7 +466,14 @@ export function createApp(options: CreateAppOptions = {}) {
           const handler = createSsrHandler(errorPage.component, errorPage.path);
           return handler(c);
         }
-        return c.html(`<h1>Internal Server Error</h1><pre>${err instanceof Error ? err.stack : err}</pre>`, 500);
+        // Escape the error to prevent XSS via user-controlled content in the
+        // message/stack, and only expose detailed traces in development. In
+        // production, stack traces leak file paths and library versions.
+        const detail = err instanceof Error ? err.stack : String(err);
+        const body = import.meta.env.DEV
+          ? `<h1>Internal Server Error</h1><pre>${escapeHtml(detail)}</pre>`
+          : '<h1>Internal Server Error</h1>';
+        return c.html(body, 500);
       }
     };
   };
