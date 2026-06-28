@@ -120,14 +120,15 @@ const server = serve({
 `;
   await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
 
-  // Update vite.config.ts for Node.js output
+  // Update vite.config.ts for Node.js output. Remove the Cloudflare-specific
+  // blocks via their structural markers rather than pattern-matching the exact
+  // import/call syntax (which broke if formatting drifted).
   const viteConfigPath = path.join(projectDir, 'vite.config.ts');
   let viteConfig = await fs.readFile(viteConfigPath, 'utf-8');
   viteConfig = viteConfig.replace(
-    "import { cloudflare } from '@cloudflare/vite-plugin';\n",
+    /\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g,
     '',
   );
-  viteConfig = viteConfig.replace(/\s*cloudflare\(\{[^}]*\}\),\n/, '\n');
   await fs.writeFile(viteConfigPath, viteConfig);
 }
 

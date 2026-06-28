@@ -1,16 +1,20 @@
 import { defineConfig } from 'vite';
 import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
+// @cossack:cloudflare-start
 import { cloudflare } from '@cloudflare/vite-plugin';
+// @cossack:cloudflare-end
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 
 export default defineConfig({
   plugins: [
     tailwindcss(),
+    // @cossack:cloudflare-start
     cloudflare({
       viteEnvironment: { name: 'ssr' },
     }),
+    // @cossack:cloudflare-end
     cossackSecurityPlugin({ devWarning: true }),
     cossackPages(),
   ],
