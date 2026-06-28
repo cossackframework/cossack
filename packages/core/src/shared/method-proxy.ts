@@ -11,6 +11,25 @@ interface ServerMethodWs extends ServerMethodBase {
 }
 
 /**
+ * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
+ * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
+ * instances, and functions (none of which are JSON-transportable).
+ */
+function isWsTransportable(arg: unknown): boolean {
+    if (arg === null) return true;
+    const t = typeof arg;
+    if (t === 'function') return false;
+    if (t !== 'object') return true; // primitive (string/number/boolean/undefined/bigint)
+    // Object: reject DOM nodes, Events, Files, Blobs.
+    const obj = arg as { nodeType?: unknown };
+    if (typeof obj.nodeType === 'number') return false; // DOM node
+    if (typeof Event !== 'undefined' && arg instanceof Event) return false;
+    if (typeof File !== 'undefined' && arg instanceof File) return false;
+    if (typeof Blob !== 'undefined' && arg instanceof Blob) return false;
+    return true; // plain object / array / Date — JSON.stringify-able
+}
+
+/**
  * Create HTTP fetch proxies for @Server methods (client-side only).
  *
  * Two variants:
@@ -686,21 +705,26 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 component.loading[name] = (component.loading[name] || 0) + 1;
                 component.requestUpdate();
 
-                // Filter out Event objects and DOM nodes, keep only serializable values
-                const payload = args.filter(arg => {
-                    const type = typeof arg;
-                    // Keep primitives (string, number, boolean, undefined)
-                    if (type !== 'object') return true;
-                    // Filter out null, objects (including Events, DOM nodes, etc.)
-                    return false;
-                });
-                ws.send(JSON.stringify({
-                    type: 'action',
-                    action: name,
-                    payload: payload,
-                    channel: channel,
-                    target: component._id,
-                }));
+                // Keep serializable args (primitives, plain objects, arrays),
+                // drop non-transportable ones (DOM nodes, Event, File, Blob,
+                // functions). The previous implementation dropped ALL objects,
+                // so calling e.g. this.updateItem({ id: 5 }) over WebSocket
+                // sent an empty payload.
+                const payload = args.filter(isWsTransportable);
+                let message;
+                try {
+                    message = JSON.stringify({
+                        type: 'action',
+                        action: name,
+                        payload: payload,
+                        channel: channel,
+                        target: component._id,
+                    });
+                } catch (e) {
+                    console.error(`[Cossack] Failed to serialise WS payload for '${name}':`, e);
+                    return;
+                }
+                ws.send(message);
             } else {
                 console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
             }
