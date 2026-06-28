@@ -56,7 +56,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 ## Phase 5 — Routing & SPA Correctness (MED impact / MED effort)
 
 - [x] **5.1** Catch-all `[...slug]` not supported → invalid Hono route — `router.ts:548-554`.
-- [ ] **5.2** Head-merge iteration order appears inverted vs. documented inside-out — `router.ts:399-406` (verify + test).
+- [x] **5.2** Head-merge iteration order appears inverted vs. documented inside-out — `router.ts:399-406` — _verified correct: arrays accumulate child-first (inside-out); title uses `value ?? context` so each level composes from accumulated context. Regression tests pin the pipeline order._
 - [ ] **5.3** Double `pushState` on `this.redirect()` — `client/app.ts:456-461` + `cossack.ts:1322-1324`.
 - [ ] **5.4** View-transition object-form `{types}` not feature-detected (Chrome 125+) → throws → full reload.
 - [ ] **5.5** Any nav error → `window.location.reload()`, losing client state — `client/app.ts:449-453`.

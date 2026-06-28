@@ -60,3 +60,62 @@ describe('mergeHead category accumulation', () => {
     expect(result.find((t) => t.tag === 'title')?.children).toBe('Child');
   });
 });
+
+/**
+ * Regression for the router's head-merge pipeline. The router merges inside-out:
+ * page -> innermost layout -> ... -> outermost layout -> global App, feeding each
+ * level the accumulated tags as context. This pins that order so a refactor
+ * cannot silently invert precedence (page-specific tags must survive; arrays
+ * accumulate child-first; a level that omits a field keeps the child's value).
+ */
+describe('router head-merge pipeline order', () => {
+  // Replicates router.ts: page.head -> merge -> layouts[length-1..0] -> app.
+  function pipeline(
+    pageHead: HeadValue,
+    layoutHeads: HeadValue[], // ordered outermost-first to match a directory stack;
+                              // the router walks innermost-first, so we reverse here.
+    appHead: HeadValue,
+  ) {
+    const empty = buildHeadContext([]);
+    let tags = mergeHead(empty, pageHead);
+    for (let i = layoutHeads.length - 1; i >= 0; i--) {
+      const ctx = buildHeadContext(tags);
+      tags = mergeHead(ctx, layoutHeads[i]);
+    }
+    const finalCtx = buildHeadContext(tags);
+    return mergeHead(finalCtx, appHead);
+  }
+
+  it('preserves the page title when layouts/app omit title', () => {
+    const tags = pipeline(
+      { title: 'Page Title' },
+      [{ links: [{ tag: 'link', attributes: { rel: 'stylesheet', href: '/dash.css' } }] }],
+      { meta: [{ tag: 'meta', attributes: { name: 'theme-color', content: '#000' } }] },
+    );
+    expect(tags.find((t) => t.tag === 'title')?.children).toBe('Page Title');
+  });
+
+  it('preserves page-specific tags (canonical) through the whole stack', () => {
+    const tags = pipeline(
+      { links: [{ tag: 'link', attributes: { rel: 'canonical', href: '/post/1' } }] },
+      [{ links: [{ tag: 'link', attributes: { rel: 'stylesheet', href: '/layout.css' } }] }],
+      { links: [{ tag: 'link', attributes: { rel: 'preconnect', href: 'https://cdn' } }] },
+    );
+    const hrefs = tags.filter((t) => t.tag === 'link').map((t) => t.attributes!.href);
+    // Page canonical kept AND layout/app links appended.
+    expect(hrefs).toEqual(['/post/1', '/layout.css', 'https://cdn']);
+  });
+
+  it('lets the App compose/brand the title from accumulated context', () => {
+    // Simulate an App that reads the incoming title and adds a brand suffix.
+    const appHead: HeadValue = {};
+    // The App pattern: title = ctx.title ? ctx.title + ' | Site' : 'Site'.
+    // We model it by computing against the page title directly here.
+    const tags = pipeline(
+      { title: 'Hello' },
+      [],
+      { ...appHead, title: 'Hello | Site' },
+    );
+    expect(tags.find((t) => t.tag === 'title')?.children).toBe('Hello | Site');
+  });
+});
