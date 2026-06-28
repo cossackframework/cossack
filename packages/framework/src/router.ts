@@ -8,7 +8,7 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, APP_ROUTE_ID } from './route-ids';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -16,7 +16,6 @@ import {
   syncSseState,
   registerSseStoreEntry,
   resolveSseScopeKey,
-  type RouterContext,
 } from './transports/sse';
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';

@@ -1,15 +1,7 @@
 // src/transports/http.ts
 import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import type { Context } from 'hono';
-
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
-    allowedOrigins?: string[];
-}
+import type { RouterContext } from '../route-ids';
 
 /** Upload handler — processes file uploads via multipart form data. */
 export function handleUpload(ctx: RouterContext) {

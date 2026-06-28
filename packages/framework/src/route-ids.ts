@@ -67,6 +67,22 @@ export interface RouteIdMaps {
 }
 
 /**
+ * Shared context passed to the transport handlers (WebSocket, SSE, upload) and
+ * the SSR router. Declared once here so the three transport modules and the
+ * router agree on its shape (previously each transport redeclared its own
+ * copy, and two of them were unused shadows).
+ */
+export interface RouterContext {
+  routeIdMap: Map<string, string>;
+  routePathToIdMap: Map<string, string>;
+  routePathToFilePathMap: Map<string, string>;
+  pages: Record<string, any>;
+  layouts: Record<string, any>;
+  /** Allowed Origin values for WS/SSE upgrades. Defaults to same-origin. */
+  allowedOrigins?: string[];
+}
+
+/**
  * Compute deterministic component route IDs from the sorted set of page +
  * layout file paths. Keys are sorted lexicographically and assigned
  * `cmp_${index.toString(36)}`. The global App component receives the reserved

@@ -1,6 +1,7 @@
 // src/transports/sse.ts
 import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
+import type { RouterContext } from '../route-ids';
 
 /** Active async generator being iterated by the SSE endpoint. */
 interface PendingGenerator {
@@ -55,14 +56,6 @@ function sseStoreKey(componentRouteId: string, scopeKey: string): string {
     return `${componentRouteId}:${scopeKey}`;
 }
 
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
-    allowedOrigins?: string[];
-}
 
 /**
  * Evaluate the scope function from PageOptions, or return the default SSE scope.

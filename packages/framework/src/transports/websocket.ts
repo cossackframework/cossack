@@ -1,15 +1,7 @@
 // src/transports/websocket.ts
 import type { Context } from 'hono';
 import { isOriginAllowed } from '@cossackframework/core';
-
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
-    allowedOrigins?: string[];
-}
+import type { RouterContext } from '../route-ids';
 
 /** WebSocket proxy handler — forwards WebSocket upgrade requests to the appropriate Durable Object. */
 export function handleWebSocketProxy(ctx: RouterContext) {

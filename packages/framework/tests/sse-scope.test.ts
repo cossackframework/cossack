@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from 'hono';
-import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, __sseStoreSize, type RouterContext } from '../src/transports/sse';
+import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, __sseStoreSize } from '../src/transports/sse';
+import type { RouterContext } from '../src/route-ids';
 
 // A Page component carrying the default scope (no scope() in pageOptions).
 // resolveSseScopeKey will fall back to `user:${user?.id || 'anonymous'}`.
