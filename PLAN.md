@@ -14,7 +14,7 @@ well the client bundle is stripped. These are small fixes with large security up
 
 - [x] **1.1** XSS via unescaped `__INITIAL_STATE__` — `framework/src/root.ts:60-62`. Escape `<>&\u2028\u2029` before embedding in `<script>`.
 - [x] **1.2** No method-name allowlist on RPC — clients can invoke `bootstrap`, `setProperty`, `proxyClientMethods`, etc. Files: `framework/src/router.ts:514`, `transports/http.ts:67`, `core/src/shared/cossack.ts:625` (`executeAction`). Validate `action` against `cossack:server-methods` metadata; reject `_`-prefixed/builtins.
-- [ ] **1.3** Unvalidated state splat → privilege escalation (client sets `user`, `_runtime`). Files: `framework/src/router.ts:510-512`, `transports/http.ts:63-65`, + 5 state-merge sites in core. Only accept keys in `cossack:state` metadata; block `__proto__`/`constructor`/`_`-prefixed.
+- [x] **1.3** Unvalidated state splat → privilege escalation (client sets `user`, `_runtime`). Files: `framework/src/router.ts:510-512`, `transports/http.ts:63-65`, + 5 state-merge sites in core. Only accept keys in `cossack:state` metadata; block `__proto__`/`constructor`/`_`-prefixed.
 - [ ] **1.4** SSE `scopeKey` is client-controlled → cross-user eavesdropping. File: `framework/src/transports/sse.ts:80-107`. Recompute scope server-side from authed user; reject mismatched client values.
 - [ ] **1.5** WebSocket/SSE no Origin validation (CSWSH). Files: `framework/src/transports/websocket.ts:13-38`, `node-adapter/src/index.ts`. Compare `Origin` header to allowlist before upgrade; `verifyClient` in Node.
 

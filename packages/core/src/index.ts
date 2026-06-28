@@ -14,7 +14,7 @@ export * from './shared/runtimes/sse';
 export * from './shared/container';
 export * from './shared/service-bootstrap';
 export * from './shared/middleware';
-export { isRpcCallableAction } from './shared/method-proxy';
+export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy';
 
 export * from './client/navigation';
 

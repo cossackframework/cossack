@@ -1,5 +1,5 @@
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import type { Context } from 'hono';
 
 export interface RouterContext {
@@ -59,9 +59,11 @@ export function handleUpload(ctx: RouterContext) {
             }
         }
 
-        // Apply the received state directly to the target component
-        for (const key in state) {
-            (targetInstance as any)[key] = state[key];
+        // Apply the received state to the target component, restricted to @State
+        // keys only — prevents overwriting internal/security-sensitive props.
+        const safeState = sanitizeClientState(targetInstance.constructor, state);
+        for (const key in safeState) {
+            (targetInstance as any)[key] = safeState[key];
         }
 
         // Authorisation gate: only @Server-registered methods are RPC-callable.

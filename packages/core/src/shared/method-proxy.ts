@@ -826,3 +826,40 @@ export function isRpcCallableAction(constructor: unknown, action: unknown): acti
     }
     return false;
 }
+
+/**
+ * Reduce a client-supplied `state` blob (from `/crpc` or `/upload`) to only the
+ * keys registered as `@State` on the target component. This is the server-side
+ * guard against state-injection / privilege escalation: without it a crafted
+ * request could overwrite framework-internal or security-sensitive properties
+ * such as `user`, `_runtime`, `_cossack_ws_context`, `loading`, etc.
+ *
+ * Prototype-pollution vectors (`__proto__`, `prototype`, `constructor`) are
+ * refused unconditionally even if they somehow appeared in metadata.
+ */
+export function sanitizeClientState(
+    constructor: unknown,
+    state: unknown
+): Record<string, unknown> {
+    const clean: Record<string, unknown> = {};
+    if (!state || typeof state !== 'object') return clean;
+
+    const allowed = new Set<string>();
+    let proto: object | null = typeof constructor === 'function' ? constructor : null;
+    while (proto !== null && proto !== Function.prototype) {
+        const stateMeta = Reflect.getOwnMetadata('cossack:state', proto) as
+            | Record<string, unknown>
+            | undefined;
+        if (stateMeta) {
+            for (const key of Object.keys(stateMeta)) allowed.add(key);
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+
+    const source = state as Record<string, unknown>;
+    for (const key of Object.keys(source)) {
+        if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+        if (allowed.has(key)) clean[key] = source[key];
+    }
+    return clean;
+}

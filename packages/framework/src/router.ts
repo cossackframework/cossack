@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
-import { createInstance, isRpcCallableAction } from '@cossackframework/core';
+import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
@@ -505,10 +505,12 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
-    // Apply the received state directly to the target component
-    // The state sent from client is the target component's public state
-    for (const key in state) {
-      (targetInstance as any)[key] = state[key];
+    // Apply the received state to the target component, restricted to @State
+    // keys only. This prevents a crafted request from overwriting internal or
+    // security-sensitive properties (user, _runtime, _cossack_ws_context, ...).
+    const safeState = sanitizeClientState(targetInstance.constructor, state);
+    for (const key in safeState) {
+      (targetInstance as any)[key] = safeState[key];
     }
 
     // Authorisation gate: only @Server-registered methods are RPC-callable.
