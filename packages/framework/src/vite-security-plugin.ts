@@ -104,6 +104,11 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 /**
  * Build a set of character ranges that are inside strings or template literals.
  * Used to skip regex matches that fall within string/template literal regions.
+ *
+ * Also recognises regular-expression literals: a `/` that begins a regex (rather
+ * than division) is scanned to its closing `/` and added as a skip range. This
+ * prevents `{`, `}`, `(`, `)` inside a regex literal (e.g. `/}/`, `/\d{2}/`)
+ * from corrupting the brace/paren depth tracking used elsewhere in this module.
  */
 function buildStringRanges(code: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
@@ -124,9 +129,20 @@ function buildStringRanges(code: string): Array<[number, number]> {
         i = code.indexOf('\n', i + 2);
         if (i === -1) i = len;
       } else if (next === '*') {
+        const start = i;
         const end = code.indexOf('*/', i + 2);
         if (end === -1) break;
+        ranges.push([start, end + 1]);
         i = end + 2;
+      } else if (isRegexStartPosition(code, i)) {
+        const start = i;
+        const end = findRegexLiteralEnd(code, i);
+        if (end === -1) {
+          i++;
+        } else {
+          ranges.push([start, end - 1]);
+          i = end;
+        }
       } else {
         i++;
       }
@@ -136,6 +152,84 @@ function buildStringRanges(code: string): Array<[number, number]> {
   }
 
   return ranges;
+}
+
+/**
+ * Decide whether the `/` at `pos` begins a regex literal (vs. division).
+ * Uses the standard JS lexing heuristic: a `/` is a regex when the previous
+ * significant token is NOT a value (identifier, number, `)`, `]`, string end,
+ * or a value keyword like `this`/`true`). Otherwise it is division.
+ */
+function isRegexStartPosition(code: string, pos: number): boolean {
+  let i = pos - 1;
+  while (i >= 0 && /\s/.test(code[i])) i--;
+  if (i < 0) return true;
+  const prev = code[i];
+  // After these, '/' is always a regex (statement/argument position).
+  if ('([{,;:!&|=<>+-*/%^~?'.includes(prev)) return true;
+  // After a closing brace we treat '/' as a regex (block end / statement).
+  if (prev === '}') return true;
+  // After a value-ish character, '/' is division — UNLESS the preceding token
+  // is a keyword that precedes expressions (return, typeof, in, ...).
+  if (/[a-zA-Z0-9_$)\]"']/.test(prev)) {
+    if (/[a-zA-Z_$]/.test(prev)) {
+      let j = i;
+      while (j > 0 && /[a-zA-Z0-9_$]/.test(code[j - 1])) j--;
+      const kw = code.slice(j, i + 1);
+      // 'this', 'true', 'false', 'null', 'super' are VALUES → division.
+      if (
+        kw === 'return' || kw === 'typeof' || kw === 'instanceof' ||
+        kw === 'in' || kw === 'of' || kw === 'do' || kw === 'else' ||
+        kw === 'yield' || kw === 'await' || kw === 'case' ||
+        kw === 'delete' || kw === 'void' || kw === 'new' || kw === 'throw'
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Given the index of a regex's opening `/`, return the index just past the
+ * closing `/` (including trailing flags), respecting escaped chars and `[...]`
+ * character classes. Returns -1 if unterminated (or if it spans a newline).
+ */
+function findRegexLiteralEnd(code: string, start: number): number {
+  let i = start + 1;
+  const len = code.length;
+  let inClass = false;
+  while (i < len) {
+    const c = code[i];
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
+    if (c === '[') inClass = true;
+    else if (c === ']') inClass = false;
+    else if (c === '/' && !inClass) {
+      i++;
+      while (i < len && /[a-z]/i.test(code[i])) i++;
+      return i;
+    } else if (c === '\n') {
+      return -1;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * If the `/` at `i` begins a regex literal, return the index just past its
+ * closing `/` (incl. flags); otherwise return -1. Convenience wrapper for the
+ * inline brace/paren scanners.
+ */
+function regexEndIfRegex(code: string, i: number): number {
+  if (i + 1 >= code.length) return -1;
+  const next = code[i + 1];
+  if (next === '/' || next === '*') return -1; // comment, not regex
+  return isRegexStartPosition(code, i) ? findRegexLiteralEnd(code, i) : -1;
 }
 
 /**
@@ -971,6 +1065,9 @@ function findMethodDefinition(
           const stringEnd = findStringEndInString(code, i, code[i]);
           if (stringEnd === -1) return null;
           i = stringEnd;
+        } else if (code[i] === '/') {
+          const re = regexEndIfRegex(code, i);
+          if (re !== -1) i = re - 1;
         }
         i++;
       }
@@ -1019,6 +1116,9 @@ function findMethodDefinition(
         const stringEnd = findStringEndInString(code, i, code[i]);
         if (stringEnd === -1) return null;
         i = stringEnd;
+      } else if (code[i] === '/') {
+        const re = regexEndIfRegex(code, i);
+        if (re !== -1) i = re - 1;
       }
       i++;
     }
@@ -1111,6 +1211,9 @@ function findMethodDefinition(
       const stringEnd = findStringEndInString(code, i, code[i]);
       if (stringEnd === -1) return null;
       i = stringEnd;
+    } else if (code[i] === '/') {
+      const re = regexEndIfRegex(code, i);
+      if (re !== -1) i = re - 1;
     }
     i++;
   }
@@ -1148,6 +1251,9 @@ function findMethodDefinition(
       const stringEnd = findStringEndInString(code, i, code[i]);
       if (stringEnd === -1) return null;
       i = stringEnd;
+    } else if (code[i] === '/') {
+      const re = regexEndIfRegex(code, i);
+      if (re !== -1) i = re - 1;
     }
     i++;
   }
@@ -1225,6 +1331,13 @@ function extractClassBody(
         if (i === -1) return null; // Unclosed comment
         i += 2;
         continue;
+      } else {
+        // Possibly a regex literal — skip it so its braces don't corrupt depth.
+        const re = regexEndIfRegex(code, i);
+        if (re !== -1) {
+          i = re;
+          continue;
+        }
       }
     }
 

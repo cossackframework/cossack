@@ -24,7 +24,7 @@ The plugin is architecturally sound but its hand-rolled parser misses several ES
 
 - [ ] **2.1** Leaks via class-property arrow functions, undecorated getters/setters, generators, async generators, computed-name methods — `vite-security-plugin.ts:643, 840-1070`.
 - [x] **2.2** Duplicate constructor → syntax error breaks the whole client bundle when a class has both `@Server` + `constructor` — `:756-784`.
-- [ ] **2.3** Brace-depth tracking ignores regex literals → premature method close → leaks — `:108-150, 1057-1067, 1115-1160`.
+- [x] **2.3** Brace-depth tracking ignores regex literals → premature method close → leaks — `:108-150, 1057-1067, 1115-1160`.
 - [ ] **2.4** Add regression tests for 2.1–2.3 + static `@Server` methods.
 - [x] **2.5** SSR 500 leaks raw `err.stack` into HTML (XSS + info disclosure) — `framework/src/router.ts:462`.
 

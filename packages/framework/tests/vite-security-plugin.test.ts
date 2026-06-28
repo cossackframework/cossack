@@ -1291,4 +1291,96 @@ export class TestPage extends Cossack {
       expect(result).not.toMatch(/constructor\s*\(/);
     });
   });
+
+  describe('regex literals in method bodies (no brace corruption)', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    it('strips a server method whose body contains a regex with a closing brace', () => {
+      // The `}` inside /}/ previously decremented the method's brace depth,
+      // truncating the body and leaking the rest (incl. the secret + a later method).
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  validate(x) {
+    const closingBrace = /}/;
+    const secret = 'LEAK_ME';
+    return closingBrace.test(x);
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // The secret in the server-only (undecorated) method must be stripped.
+      expect(result).not.toContain('LEAK_ME');
+      // The render() method (after the regex-containing method) must still be intact.
+      expect(result).toContain('render() {');
+      expect(result).toContain('<p>hi</p>');
+      // And validate must have been stubbed (proxied).
+      expect(result).toContain("__cossack_proxies?.get('validate')");
+    });
+
+    it('strips a server method with a quantified regex like /^\\d{3}-\\d{4}$/', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  phone(input) {
+    const re = /^\\d{3}-\\d{4}$/;
+    const apiKey = 'SHOULD_NOT_LEAK';
+    return re.test(input);
+  }
+
+  @Client()
+  handle() { this.x++; }
+
+  render() { return html\`<p>phone</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('SHOULD_NOT_LEAK');
+      // The @Client method after must be preserved (proves the boundary wasn't corrupted).
+      expect(result).toContain('handle() {');
+      expect(result).toContain('this.x++');
+      expect(result).toContain('render() {');
+    });
+
+    it('does not treat a division operator as a regex (preserves client methods)', () => {
+      // Ensure the regex/division heuristic doesn\'t misfire on plain division
+      // inside a preserved (@Client) method.
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Client()
+  compute() {
+    const half = this.total / 2;
+    return half;
+  }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('this.total / 2');
+      expect(result).toContain('return half');
+    });
+
+    it('handles a character class containing a brace in a regex', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  lint(src) {
+    const braceClass = /[}{]/g;
+    const secret = 'SENSITIVE';
+    return braceClass.test(src);
+  }
+  render() { return html\`<p>lint</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('SENSITIVE');
+      expect(result).toContain('render() {');
+      expect(result).toContain("<p>lint</p>");
+    });
+  });
 });
