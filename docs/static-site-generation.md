@@ -70,8 +70,9 @@ This will generate:
 
 ## Build Commands
 
-SSG is driven by the `cossack` CLI (`cossack ssg`), which is installed
-alongside `@cossackframework/framework`. It reads the `cossack-routes.json`
+SSG is driven by the `cossack` CLI (`cossack ssg`), which ships in the
+standalone [`cossack`](https://www.npmjs.com/package/cossack) package (a
+dependency of projects created by `cossack create`). It reads the `cossack-routes.json`
 manifest emitted by the Cossack Vite plugin during `vite build`, and renders
 your pages using **your own `App` and html template** (the same values you pass
 to `createApp()` in `src/index.ts`) — so global `<head>` tags, branding, and

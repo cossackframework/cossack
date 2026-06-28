@@ -7,7 +7,7 @@ description: "Why Cossack exists: to solve the limitations of current frameworks
 
 ## Why This Project Exists
 
-I started my career as PHP developer, I've been working with Laravel for quite a long time and it's been a great experience. However, as the web evolved, I found myself writing a lot of boilerplate code to handle the frontend and backend separately with Laravel and Angular/React/Vue.
+I started my career as PHP developer, I've been working with Laravel for quite a long time and it has been a great experience. However, as the web evolved, I found myself writing a lot of boilerplate to handle the frontend and backend separately with Laravel and Angular/React/Vue. Laravel now just acts as an API server.
 
 This led me to move to NestJS + Angular so I can write both the frontend and backend in the same language. This approach is good. However, I still need to write two separate applications, one for the frontend and one for the backend, and handle the communication between them is time-consuming.
 
@@ -26,6 +26,10 @@ We make it further optimized for DX by providing a simple and intuitive API. All
 ### Performance
 
 Edge-first approach, we can deploy our application to multiple locations around the world, closer to our users, and handle the requests there. This allows us to achieve better performance and lower latency for our users.
+
+### Enterprise Ready
+
+As a developer who has been working at an unicorn startup for a long time, I know how important it is to have a framework that can handle the complexity of enterprise applications. We provide middlewares, dependency injection, and other features that are essential for building enterprise applications.
 
 ### LLM Friendly
 

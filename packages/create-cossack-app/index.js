@@ -1,0 +1,186 @@
+/**
+ * Programmatic entry for scaffolding a new Cossack project.
+ *
+ * Used both by the `create-cossack-app` bin and by `cossack create`, so both
+ * paths produce identical projects (single source of truth) and both write a
+ * `.cossack/scaffold.json` manifest for later drift detection by
+ * `cossack upgrade`.
+ */
+import fs from 'fs/promises';
+import { createHash } from 'node:crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import prompts from 'prompts';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * @param {string} projectName
+ * @param {{ adapter?: 'cloudflare' | 'node' }} [options]
+ * @returns {Promise<{ projectDir: string, adapter: string, manifestPath: string }>}
+ */
+export async function createApp(projectName, options = {}) {
+  if (!projectName) {
+    throw new Error('Please provide a project name. Usage: create-cossack-app <project-name>');
+  }
+
+  const projectDir = path.resolve(process.cwd(), projectName);
+  const templateDir = path.resolve(__dirname, 'template');
+
+  let adapter = options.adapter;
+  if (!adapter) {
+    const response = await prompts({
+      type: 'select',
+      name: 'adapter',
+      message: 'Which adapter would you like to use?',
+      choices: [
+        { title: 'Cloudflare Workers (Default)', value: 'cloudflare' },
+        { title: 'Node.js', value: 'node' },
+      ],
+    });
+    adapter = response.adapter || 'cloudflare';
+  }
+
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.cp(templateDir, projectDir, { recursive: true });
+
+  // Write tsconfig.json (kept outside template/ to avoid IDE errors in the monorepo)
+  const tsconfigSource = path.resolve(__dirname, 'tsconfig.template.json');
+  await fs.copyFile(tsconfigSource, path.join(projectDir, 'tsconfig.json'));
+
+  // Update compatibility_date to today
+  const wranglerPath = path.join(projectDir, 'wrangler.jsonc');
+  if ((await safeAccess(wranglerPath))) {
+    let wranglerContent = await fs.readFile(wranglerPath, 'utf-8');
+    const today = new Date().toISOString().split('T')[0];
+    wranglerContent = wranglerContent.replace(
+      /"compatibility_date"\s*:\s*"\d{4}-\d{2}-\d{2}"/,
+      `"compatibility_date": "${today}"`,
+    );
+    await fs.writeFile(wranglerPath, wranglerContent);
+  }
+
+  if (adapter === 'node') {
+    await configureNodeAdapter(projectDir);
+  }
+
+  // Write the scaffold manifest used by `cossack upgrade` for drift detection.
+  const manifestPath = await writeScaffoldManifest(projectDir, adapter);
+
+  return { projectDir, adapter, manifestPath };
+}
+
+async function configureNodeAdapter(projectDir) {
+  console.log('Configuring for Node.js...');
+
+  const packageJsonPath = path.join(projectDir, 'package.json');
+  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8'));
+
+  delete packageJson.devDependencies['wrangler'];
+  delete packageJson.devDependencies['@cloudflare/workers-types'];
+  delete packageJson.devDependencies['@cloudflare/vite-plugin'];
+
+  packageJson.dependencies['@cossackframework/node-adapter'] = '^0.1.0';
+  packageJson.dependencies['@hono/node-server'] = '^1.0.0';
+  packageJson.dependencies['ws'] = '^8.16.0';
+
+  packageJson.devDependencies['@types/ws'] = '^8.5.10';
+  packageJson.devDependencies['@types/node'] = '^20.0.0';
+
+  packageJson.scripts['dev'] = 'node scripts/dev.js';
+  packageJson.scripts['start'] = 'node dist/server/index.js';
+
+  await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
+
+  await fs.rm(path.join(projectDir, 'wrangler.jsonc'), { force: true });
+
+  const tsconfigPath = path.join(projectDir, 'tsconfig.json');
+  const tsconfig = JSON.parse(await fs.readFile(tsconfigPath, 'utf-8'));
+  tsconfig.compilerOptions.types = ['vite/client', 'node'];
+  await fs.writeFile(tsconfigPath, JSON.stringify(tsconfig, null, 2));
+
+  const indexTsContent = `import { serve } from '@hono/node-server';
+import { CossackNodeAdapter } from '@cossackframework/node-adapter';
+import { createApp } from '@cossackframework/framework/router';
+
+const app = createApp();
+
+const server = serve({
+    fetch: app.fetch,
+    port: Number(process.env.PORT) || 3000,
+}, (info) => {
+    console.log(\`Listening on http://localhost:\${info.port}\`);
+});
+`;
+  await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
+
+  // Update vite.config.ts for Node.js output
+  const viteConfigPath = path.join(projectDir, 'vite.config.ts');
+  let viteConfig = await fs.readFile(viteConfigPath, 'utf-8');
+  viteConfig = viteConfig.replace(
+    "import { cloudflare } from '@cloudflare/vite-plugin';\n",
+    '',
+  );
+  viteConfig = viteConfig.replace(/\s*cloudflare\(\{[^}]*\}\),\n/, '\n');
+  await fs.writeFile(viteConfigPath, viteConfig);
+}
+
+async function safeAccess(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeScaffoldManifest(projectDir, adapter) {
+  const version = await readOwnVersion();
+  const files = {};
+  await walk(projectDir, '', async (abs, rel) => {
+    // skip the manifest itself and version-control dirs
+    if (rel === '.cossack/scaffold.json') return;
+    if (rel.startsWith('.git/') || rel === '.git') return;
+    if (rel === 'node_modules' || rel.startsWith('node_modules/')) return;
+    const buf = await fs.readFile(abs);
+    files[rel] = createHash('sha256').update(buf).digest('hex');
+  });
+  const manifest = {
+    schemaVersion: 1,
+    tool: 'create-cossack-app',
+    templateVersion: version,
+    createdAt: new Date().toISOString(),
+    adapter,
+    files,
+  };
+  const manifestDir = path.join(projectDir, '.cossack');
+  await fs.mkdir(manifestDir, { recursive: true });
+  const manifestPath = path.join(manifestDir, 'scaffold.json');
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  return manifestPath;
+}
+
+async function readOwnVersion() {
+  try {
+    const pkg = JSON.parse(
+      await fs.readFile(path.resolve(__dirname, 'package.json'), 'utf-8'),
+    );
+    return pkg.version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+async function walk(root, prefix, visit) {
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const abs = path.join(root, entry.name);
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      await walk(abs, rel, visit);
+    } else if (entry.isFile()) {
+      await visit(abs, rel);
+    }
+  }
+}

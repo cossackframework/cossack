@@ -62,6 +62,25 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@20.19.19)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.0(@types/node@20.19.19)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.21.0))
 
+  packages/cossack:
+    dependencies:
+      '@cossackframework/framework':
+        specifier: workspace:*
+        version: link:../framework
+      create-cossack-app:
+        specifier: workspace:*
+        version: link:../create-cossack-app
+      prompts:
+        specifier: ^2.4.2
+        version: 2.4.2
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+    devDependencies:
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.0(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.21.0))
+
   packages/create-cossack-app:
     dependencies:
       prompts:
@@ -100,6 +119,9 @@ importers:
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.42.2
@@ -113,12 +135,12 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.2.4(vite@8.1.0(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.21.0))
+      cossack:
+        specifier: workspace:*
+        version: link:../cossack
       tailwindcss:
         specifier: ^4.1.0
         version: 4.2.4
-      tsx:
-        specifier: ^4.7.0
-        version: 4.21.0
       vite:
         specifier: ^8.1.0
         version: 8.1.0(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.21.0)

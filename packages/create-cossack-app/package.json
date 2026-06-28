@@ -12,8 +12,16 @@
   "bin": {
     "create-cossack-app": "./bin/create-cossack-app.js"
   },
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "bin",
+    "index.js",
     "template",
     "tsconfig.template.json"
   ],

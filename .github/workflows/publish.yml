@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
@@ -43,6 +43,7 @@ jobs:
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
           pnpm --filter @cossackframework/framework vitest --run tests/
+          pnpm --filter cossack vitest --run
 
       - name: Publish @cossackframework/renderer
         run: pnpm publish --filter @cossackframework/renderer --access public --no-git-checks
@@ -71,5 +72,13 @@ jobs:
 
       - name: Publish create-cossack-app
         run: pnpm publish --filter create-cossack-app --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # cossack must publish LAST: it depends on @cossackframework/framework and
+      # create-cossack-app, both of which are published above. It is plain JS
+      # (no build step) — ships bin/ and src/ directly.
+      - name: Publish cossack
+        run: pnpm publish --filter cossack --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

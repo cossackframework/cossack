@@ -72,12 +72,8 @@
     },
     "./vite-env": "./src/vite-env.d.ts"
   },
-  "bin": {
-    "cossack": "./bin/cossack.js"
-  },
   "files": [
     "dist/esm",
-    "bin",
     "src/vite-env.d.ts"
   ],
   "publishConfig": {
@@ -87,10 +83,10 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:types": "tsc -p tsconfig.declarations.json",
-    "build:ssg": "pnpm run build:types && vite build && node ./bin/cossack.js ssg",
-    "build:all": "pnpm run build:types && pnpm run build && node ./bin/cossack.js ssg",
+    "build:ssg": "pnpm run build:types && vite build && cossack ssg",
+    "build:all": "pnpm run build:types && pnpm run build && cossack ssg",
     "preview": "pnpm run build:ssg && vite preview",
-    "deploy": "pnpm run build:types && vite build && node ./bin/cossack.js ssg && wrangler deploy",
+    "deploy": "pnpm run build:types && vite build && cossack ssg && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "test": "vitest",
     "test:e2e": "playwright test",
@@ -116,6 +112,8 @@
     "@cloudflare/workers-types": "^4.20260624.1",
     "@playwright/test": "^1.40.0",
     "@tailwindcss/vite": "^4.1.0",
+    "cossack": "workspace:*",
+    "tailwindcss": "^4.1.0",
     "tailwindcss": "^4.1.0",
     "vite": "^8.1.0",
     "vitest": "^4.1.9",
