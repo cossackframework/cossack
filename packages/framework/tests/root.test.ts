@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { serializeInitialState } from '../src/root';
 
 // Mock import.meta.env before importing the module
 vi.mock('@cossackframework/renderer/server', () => ({
@@ -109,5 +110,41 @@ describe('renderRoot htmlTemplate', () => {
         expect(scripts).toContain('window.__INITIAL_STATE__');
         expect(scripts).toContain('modulepreload');
         expect(scripts).toContain('<script type="module"');
+    });
+});
+
+describe('serializeInitialState (XSS hardening)', () => {
+    it('escapes `</script>` sequences so they cannot break out of the script element', () => {
+        const malicious = { comment: '</script><script>alert(1)</script>' };
+        const serialized = serializeInitialState(malicious);
+        // The literal `</script>` / `<script>` must never appear in the output
+        expect(serialized).not.toContain('</script>');
+        expect(serialized).not.toContain('<script>');
+        // The escaped unicode form should be present instead
+        expect(serialized).toContain('\\u003c');
+        expect(serialized).toContain('\\u003e');
+        // And it must still round-trip to the original value
+        expect(JSON.parse(serialized)).toEqual(malicious);
+    });
+
+    it('escapes U+2028 and U+2029 line separators', () => {
+        const state = { a: 'line\u2028sep\u2029here' };
+        const serialized = serializeInitialState(state);
+        expect(serialized).not.toContain('\u2028');
+        expect(serialized).not.toContain('\u2029');
+        expect(JSON.parse(serialized)).toEqual(state);
+    });
+
+    it('escapes ampersands (defense in depth for attribute/URL re-use)', () => {
+        const state = { url: 'https://example.com/?a=1&b=2' };
+        const serialized = serializeInitialState(state);
+        expect(serialized).toContain('\\u0026');
+        expect(JSON.parse(serialized)).toEqual(state);
+    });
+
+    it('round-trips arbitrary nested state unchanged', () => {
+        const state = { n: 1, s: 'hi', arr: [1, 'two', { deep: '</x>' }], nil: null };
+        const serialized = serializeInitialState(state);
+        expect(JSON.parse(serialized)).toEqual(state);
     });
 });
