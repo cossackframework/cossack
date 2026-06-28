@@ -34,8 +34,8 @@ interface LayoutStackItem {
 // Re-export the canonical route-path helper so callers that historically
 // imported it from ssg-renderer keep working, without maintaining a
 // divergent copy here.
-export { filePathToRoutePath } from './route-ids';
-import { filePathToRoutePath } from './route-ids';
+export { filePathToRoutePath, getModulePreloads } from './route-ids';
+import { filePathToRoutePath, getModulePreloads } from './route-ids';
 
 /**
  * Get the layout stack for a given page path.
@@ -307,50 +307,6 @@ function readManifestFile(): Record<string, any> {
  * Collect modulepreload hrefs for the current page.
  * Mirrors the implementation in router.ts so SSG output matches SSR output.
  */
-function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
-  if (!pagePath) return [];
-
-  // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
-  const normalizedPath = pagePath.replace(/^\//, '');
-  const collected = new Set<string>();
-
-  const collect = (key: string) => {
-    const entry = mfest[key];
-    if (!entry) return;
-    if (entry.file && !collected.has(entry.file)) {
-      collected.add(entry.file);
-    }
-    if (entry.imports) {
-      for (const imp of entry.imports) {
-        if (!collected.has(imp)) {
-          collect(imp);
-        }
-      }
-    }
-  };
-
-  collect(normalizedPath);
-
-  const entryClient = mfest['src/client/entry-client.ts'];
-  if (entryClient?.imports) {
-    for (const imp of entryClient.imports) {
-      collect(imp);
-    }
-  }
-
-  const entryClientFile = entryClient?.file;
-  const hrefs: string[] = [];
-  for (const key of collected) {
-    const entry = mfest[key];
-    if (entry?.file) {
-      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
-    } else if (key.startsWith('assets/')) {
-      if (key !== entryClientFile) hrefs.push(`/${key}`);
-    }
-  }
-  return hrefs;
-}
-
 /**
  * Get all static params for a dynamic SSG route.
  */

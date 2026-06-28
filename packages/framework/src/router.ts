@@ -8,7 +8,7 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, APP_ROUTE_ID, type RouterContext } from './route-ids';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -185,58 +185,6 @@ function getLayoutStack(pagePath: string) {
  * Returns an empty array in dev mode (Vite handles module loading natively).
  * In production, collects the page chunk and all its transitive JS imports.
  */
-function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
-  if (import.meta.env.DEV) return [];
-
-  // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
-  const normalizedPath = pagePath.replace(/^\//, '');
-  const collected = new Set<string>();
-
-  const collect = (key: string) => {
-    const entry = mfest[key];
-    if (!entry) return;
-    if (entry.file && !collected.has(entry.file)) {
-      collected.add(entry.file);
-    }
-    if (entry.imports) {
-      for (const imp of entry.imports) {
-        if (!collected.has(imp)) {
-          collect(imp);
-        }
-      }
-    }
-  };
-
-  // Collect the page chunk and its transitive imports
-  collect(normalizedPath);
-
-  // Also collect entry-client's transitive imports (entry-client itself
-  // is already discovered via the <script> tag, so no preload needed)
-  const entryClient = mfest['src/client/entry-client.ts'];
-  if (entryClient?.imports) {
-    for (const imp of entryClient.imports) {
-      collect(imp);
-    }
-  }
-
-  // Exclude entry-client itself (already discovered via <script> tag)
-  const entryClientFile = entryClient?.file;
-
-  // Map collected file keys/paths to hrefs
-  const hrefs: string[] = [];
-  for (const key of collected) {
-    // If the key looks like a manifest key (no '/'), look up its file
-    const entry = mfest[key];
-    if (entry?.file) {
-      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
-    } else if (key.startsWith('assets/')) {
-      // Already a file path
-      if (key !== entryClientFile) hrefs.push(`/${key}`);
-    }
-  }
-  return hrefs;
-}
-
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
   const relativePath = pagePath.replace('/src/pages/', '');
   const parts = relativePath.split('/');

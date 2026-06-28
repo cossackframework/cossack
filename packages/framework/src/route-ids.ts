@@ -85,6 +85,54 @@ export interface RouterContext {
 }
 
 /**
+ * Compute the `<link rel="modulepreload">` hrefs for a page: the page chunk,
+ * its transitive imports, and the entry-client's transitive imports (excluding
+ * entry-client itself, which is already discovered via the `<script>` tag).
+ *
+ * Shared by the SSR router and the SSG renderer so their output matches.
+ * Returns `[]` in dev (Vite serves modules directly) and for empty page paths.
+ */
+export function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
+  if (!pagePath) return [];
+  if (import.meta.env && import.meta.env.DEV) return [];
+
+  const normalizedPath = pagePath.replace(/^\//, '');
+  const collected = new Set<string>();
+
+  const collect = (key: string) => {
+    const entry = mfest[key];
+    if (!entry) return;
+    if (entry.file && !collected.has(entry.file)) {
+      collected.add(entry.file);
+    }
+    if (entry.imports) {
+      for (const imp of entry.imports) {
+        if (!collected.has(imp)) collect(imp);
+      }
+    }
+  };
+
+  collect(normalizedPath);
+
+  const entryClient = mfest['src/client/entry-client.ts'];
+  if (entryClient?.imports) {
+    for (const imp of entryClient.imports) collect(imp);
+  }
+
+  const entryClientFile = entryClient?.file;
+  const hrefs: string[] = [];
+  for (const key of collected) {
+    const entry = mfest[key];
+    if (entry?.file) {
+      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
+    } else if (key.startsWith('assets/')) {
+      if (key !== entryClientFile) hrefs.push(`/${key}`);
+    }
+  }
+  return hrefs;
+}
+
+/**
  * Compute deterministic component route IDs from the sorted set of page +
  * layout file paths. Keys are sorted lexicographically and assigned
  * `cmp_${index.toString(36)}`. The global App component receives the reserved
