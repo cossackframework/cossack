@@ -71,10 +71,10 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **6.4** Head-merge sequence 3× (SSR/SSG/client) → `composeHead` helper.
 - [x] **6.5** Optimistic state-application block 6× — hoist `applyState`. _(Consolidated the 5 component-targeting sites onto `applyStateToComponent`; the service-bootstrap site targets the service instance and stays inline.)_
 - [x] **6.6** `extractFiles` 2× + optimistic-handler prologue 3× in `method-proxy.ts`.
-- [ ] **6.7** SSR vs SSG render pipeline ~80 lines duplicated → extract `preparePageRender`.
+- [~] **6.7** Extract `preparePageRender` (SSR vs SSG) — _deferred. The duplicated parts (head-merge, filePathToRoutePath, getModulePreloads) are already consolidated (6.2–6.4). The remaining bootstrap/render sequence differs materially between SSR (real Hono ctx + Durable Object state + scopeKey) and SSG (mock context + static params, no DO), so a shared helper would need a wide options surface and risks breaking SSR/SSG hydration. Better as a focused follow-up with e2e coverage._
 
 **Dead code to remove:**
-- [ ] **6.8** Unused framework deps: `@cossackframework/auth`, `@mdx-js/mdx`, `workerd`, duplicate `tailwindcss` key.
+- [x] **6.8** Unused framework deps: `@cossackframework/auth`, `@mdx-js/mdx`, `workerd`, duplicate `tailwindcss` key. _(removed 112 transitive packages.)_
 - [ ] **6.9** Unused renderer devDeps: `htmlparser2`, `magic-string`.
 - [ ] **6.10** `test-utils` unused `renderer` dep.
 - [ ] **6.11** Dead exports: `generateSitemap`, `generateSitemapIndex`, `svg`, + trim internal helpers re-exported through `core/src/index.ts`.
