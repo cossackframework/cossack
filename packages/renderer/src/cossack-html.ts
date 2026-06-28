@@ -271,14 +271,28 @@ class NodePart implements Part {
     }
   }
 
+  private teardownComponent(instance: any) {
+    if (this.renderListener) {
+      instance.removeRenderListener(this.renderListener);
+      this.renderListener = null;
+    }
+    instance.disconnectedCallback();
+    // Full Cossack-level cleanup (WebSockets, IntersectionObservers, event
+    // listeners). Without this, child components removed via repeat/key/
+    // conditional rendering leak live connections for the page's lifetime.
+    if (typeof instance.destroy === 'function') {
+      try {
+        instance.destroy();
+      } catch {
+        // Component may already be destroyed (phase guard); ignore.
+      }
+    }
+  }
+
   private disposeComponent() {
     if (this.componentInstance) {
-      if (this.renderListener) {
-        this.componentInstance.removeRenderListener(this.renderListener);
-      }
-      this.componentInstance.disconnectedCallback();
+      this.teardownComponent(this.componentInstance);
       this.componentInstance = null;
-      this.renderListener = null;
       this._clearTemplateCache();
     }
   }
@@ -413,10 +427,8 @@ class NodePart implements Part {
     if (this.startNode.parentNode) this.startNode.parentNode.removeChild(this.startNode);
     if (this.endNode.parentNode) this.endNode.parentNode.removeChild(this.endNode);
     if (this.componentInstance) {
-      if (this.renderListener) {
-        this.componentInstance.removeRenderListener(this.renderListener);
-      }
-      this.componentInstance.disconnectedCallback();
+      this.teardownComponent(this.componentInstance);
+      this.componentInstance = null;
     }
   }
 
@@ -481,6 +493,15 @@ class NodePart implements Part {
   }
 
   private _clearTemplateCache() {
+    // Dispose cached sub-parts before dropping them. Cached parts may hold live
+    // component instances (rendered via nested templates); without disposing
+    // them, re-rendering a part with a different value leaks those components'
+    // WebSockets / observers / listeners for the page's lifetime.
+    if (this._cachedParts) {
+      for (const part of this._cachedParts) {
+        if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+      }
+    }
     this._cachedTemplateStrings = null;
     this._cachedParts = null;
   }
@@ -658,6 +679,15 @@ export const render = (result: TemplateResult, container: Node) => {
       part.update(result.values[i]);
     });
     return;
+  }
+  // Template changed (or first render). Dispose any existing parts so their
+  // component instances (WebSockets, IntersectionObservers, listeners) are
+  // torn down before we wipe the DOM and rebuild — otherwise re-rendering a
+  // container with a different template leaks every old child component.
+  if (existing) {
+    for (const part of existing.parts) {
+      if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+    }
   }
 
   const parts: Part[] = [];

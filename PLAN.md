@@ -32,7 +32,7 @@ The plugin is architecturally sound but its hand-rolled parser misses several ES
 
 Confirmed leaks that compound over SPA sessions and per-navigation.
 
-- [ ] **3.1** Renderer never calls `destroy()` on disposed child components → leaks WebSockets, IntersectionObservers, listeners — `renderer/src/cossack-html.ts:279,419`.
+- [x] **3.1** Renderer never calls `destroy()` on disposed child components → leaks WebSockets, IntersectionObservers, listeners — `renderer/src/cossack-html.ts:279,419`. _(Also fixed: `render()` + `_clearTemplateCache()` now dispose parts on template change, the common leak path.)_
 - [ ] **3.2** Optimistic-lock cleanup ordering bug — `_optimisticPendingState` never freed on WS/SSE — `core/src/shared/transport-connections.ts:85-92,172-178`.
 - [ ] **3.3** `setInterval(ping, 25000)` handle never captured/cleared — leak per WS provider — `transport-connections.ts:117-121`.
 - [ ] **3.4** `@VisibleTask` IntersectionObservers never `disconnect()`-ed in `destroy()` — `cossack.ts:147,1436-1466`.
