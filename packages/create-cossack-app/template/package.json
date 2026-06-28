@@ -6,7 +6,6 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:ssg": "vite build && cossack ssg",
-    "build:types": "tsc -p tsconfig.declarations.json",
     "build:all": "pnpm run build && cossack ssg",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "preview": "pnpm run build:ssg && vite preview",
@@ -30,7 +29,6 @@
     "tsx": "^4.7.0",
     "vite": "^8.1.0",
     "vitest": "^4.1.9",
-    "workerd": "^1.20260515.1",
     "wrangler": "^4.104.0"
   }
 }
