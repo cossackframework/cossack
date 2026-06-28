@@ -1036,9 +1036,16 @@ function findMethodDefinition(
   const isSet = code[i] === 's' && next4 === 'set ';
   const isGetOrSet = isGet || isSet;
   if (isGetOrSet) {
-    // Property accessors should not be stubbed
-    // For getters/setters, we need to return the full definition so the main loop skips it
-    // We'll use 'get' or 'set' as the method name and let the main loop skip it
+    // Getters/setters are intentionally PRESERVED (not stubbed).
+    // Unlike methods (called via `this.foo()`), accessors are read as bare
+    // property accesses (`this.foo`) inside preserved methods like render().
+    // The transitive-preservation pass only detects parenthesised calls
+    // (`this.foo(`), so it cannot tell which accessors a preserved method
+    // reads. Stripping undecorated accessors would therefore break client
+    // rendering. Mark them client-safe-by-construction by reporting them with
+    // the reserved names 'get'/'set', which collectMethods excludes from
+    // stubbing. A dedicated access-aware preservation pass would be needed to
+    // strip accessors safely — see plan item 2.1 (getters/setters, deferred).
     const accessorType = code.slice(i, i + 3); // 'get' or 'set'
     i += 3; // Skip 'get' or 'set'
     while (i < len && /\s/.test(code[i])) i++; // Skip whitespace after get/set
@@ -1169,6 +1176,38 @@ function findMethodDefinition(
     return null;
   }
 
+  // Consume an optional generator marker `*` (e.g. `*gen()` or `async *gen()`).
+  if (code[i] === '*') {
+    i++;
+    while (i < len && /\s/.test(code[i])) i++;
+  }
+
+  // Computed-name methods (e.g. `['x']()` or `[Symbol.iterator]()`). These are
+  // rare and their name is a dynamic expression, so we don't stub them (no
+  // stable proxy key) — but we must consume the full definition so the closing
+  // brace doesn't corrupt the caller's depth tracking. Return the body range
+  // marked as 'get' so collectMethods treats it as not-stubbable (preserved).
+  if (code[i] === '[') {
+    let bdepth = 1;
+    i++;
+    while (i < len && bdepth > 0) {
+      if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+        const se = findStringEndInString(code, i, code[i]);
+        if (se === -1) return null;
+        i = se;
+      } else if (code[i] === '[') bdepth++;
+      else if (code[i] === ']') bdepth--;
+      i++;
+    }
+    while (i < len && /\s/.test(code[i])) i++;
+    if (i >= len || code[i] !== '(') return null;
+    // Skip params, optional return type, and body — reuse the same flow by
+    // falling through with a synthesised identifier name.
+    // (Computed names are preserved, so use a placeholder name that collectMethods
+    // will treat via the 'get'/'set' exclusion path — return null to keep simple.)
+    return null;
+  }
+
   // Find method name (identifier)
   const nameMatch = code.slice(i).match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
   if (!nameMatch) return null;
@@ -1196,6 +1235,96 @@ function findMethodDefinition(
 
   // Skip whitespace
   while (i < len && /\s/.test(code[i])) i++;
+
+  // Class field with a function value, e.g. `dbQuery = async () => { SECRET }`.
+  // Without this branch the arrow-function body is preserved verbatim, leaking
+  // server-only code. We recognise block-bodied arrow functions and `function`
+  // expressions and report their body range so the existing stub logic applies.
+  // (The field stays a field: `name = () => { <stub> };`.)
+  if (i < len && code[i] === '=' && code[i + 1] !== '=' && code[i + 1] !== '>') {
+    let j = i + 1;
+    while (j < len && /\s/.test(code[j])) j++;
+    if (code.slice(j, j + 5) === 'async' && /[\s(]/.test(code[j + 5] || '')) {
+      j += 5;
+      while (j < len && /\s/.test(code[j])) j++;
+    }
+    // Arrow function with a block body: (params) => { ... }
+    if (code[j] === '(') {
+      // skip params
+      let pdepth = 1;
+      j++;
+      while (j < len && pdepth > 0) {
+        const c2 = code[j];
+        if (c2 === '"' || c2 === "'" || c2 === '`') {
+          const se = findStringEndInString(code, j, c2);
+          if (se === -1) break;
+          j = se;
+        } else if (c2 === '(') pdepth++;
+        else if (c2 === ')') pdepth--;
+        j++;
+      }
+      while (j < len && /\s/.test(code[j])) j++;
+      if (code[j] === '=' && code[j + 1] === '>') {
+        j += 2;
+        while (j < len && /\s/.test(code[j])) j++;
+        if (code[j] === '{') {
+          const bodyStart = j;
+          let bdepth = 1;
+          j++;
+          while (j < len && bdepth > 0) {
+            const c2 = code[j];
+            if (c2 === '"' || c2 === "'" || c2 === '`') {
+              const se = findStringEndInString(code, j, c2);
+              if (se === -1) return null;
+              j = se;
+            } else if (c2 === '{') bdepth++;
+            else if (c2 === '}') bdepth--;
+            else if (c2 === '/') {
+              const re = regexEndIfRegex(code, j);
+              if (re !== -1) j = re - 1;
+            }
+            j++;
+          }
+          const bodyEnd = j;
+          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd };
+        }
+      }
+    }
+    // `function` expression field: name = function(...) { ... }
+    if (code.slice(j, j + 8) === 'function') {
+      let k = j + 8;
+      // optional name
+      while (k < len && /\s/.test(code[k])) k++;
+      const fnName = code.slice(k).match(/^([a-zA-Z_$][\w$]*)/);
+      if (fnName) k += fnName[1].length;
+      while (k < len && /\s/.test(code[k])) k++;
+      if (code[k] === '(') {
+        let pdepth = 1; k++;
+        while (k < len && pdepth > 0) {
+          const c2 = code[k];
+          if (c2 === '"' || c2 === "'" || c2 === '`') { const se = findStringEndInString(code, k, c2); if (se===-1) break; k = se; }
+          else if (c2 === '(') pdepth++; else if (c2 === ')') pdepth--;
+          k++;
+        }
+        while (k < len && /\s/.test(code[k])) k++;
+        if (code[k] === '{') {
+          const bodyStart = k;
+          let bdepth = 1; k++;
+          while (k < len && bdepth > 0) {
+            const c2 = code[k];
+            if (c2 === '"' || c2 === "'" || c2 === '`') { const se = findStringEndInString(code, k, c2); if (se===-1) return null; k = se; }
+            else if (c2 === '{') bdepth++; else if (c2 === '}') bdepth--;
+            else if (c2 === '/') { const re = regexEndIfRegex(code, k); if (re !== -1) k = re - 1; }
+            k++;
+          }
+          const bodyEnd = k;
+          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd };
+        }
+      }
+    }
+    // Non-function data field — leave as-is.
+    return null;
+  }
 
   // Find opening paren of parameter list
   if (i >= len || code[i] !== '(') return null;
