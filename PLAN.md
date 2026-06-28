@@ -70,7 +70,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **6.3** `getModulePreloads` 2× (`router.ts` ↔ `ssg-renderer.ts`). — _consolidated into `route-ids.ts`._
 - [x] **6.4** Head-merge sequence 3× (SSR/SSG/client) → `composeHead` helper.
 - [x] **6.5** Optimistic state-application block 6× — hoist `applyState`. _(Consolidated the 5 component-targeting sites onto `applyStateToComponent`; the service-bootstrap site targets the service instance and stays inline.)_
-- [ ] **6.6** `extractFiles` 2× + optimistic-handler prologue 3× in `method-proxy.ts`.
+- [x] **6.6** `extractFiles` 2× + optimistic-handler prologue 3× in `method-proxy.ts`.
 - [ ] **6.7** SSR vs SSG render pipeline ~80 lines duplicated → extract `preparePageRender`.
 
 **Dead code to remove:**

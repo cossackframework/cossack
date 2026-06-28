@@ -30,6 +30,81 @@ function isWsTransportable(arg: unknown): boolean {
 }
 
 /**
+ * Walk an argument tree, replacing DOM nodes / Events / Window with null and
+ * File objects with `{ _cossack_file_id }` references collected into `files`
+ * (so they can be sent as multipart parts alongside the JSON payload). Shared
+ * by the SSE and HTTP upload proxies.
+ */
+function extractFilesFromArg(arg: any, files: Map<string, File>): any {
+    if (arg && (
+        arg instanceof Node ||
+        arg instanceof Event ||
+        arg instanceof Window ||
+        (arg.constructor && arg.constructor.name && (
+            arg.constructor.name.endsWith('Event') ||
+            arg.constructor.name === 'Window' ||
+            arg.constructor.name === 'Document'
+        ))
+    )) {
+        return null;
+    }
+    if (arg instanceof File) {
+        const id = `file_${files.size}`;
+        files.set(id, arg);
+        return { _cossack_file_id: id };
+    }
+    if (arg instanceof FileList) {
+        return Array.from(arg).map(file => extractFilesFromArg(file, files));
+    }
+    if (Array.isArray(arg)) {
+        return arg.map(item => extractFilesFromArg(item, files));
+    }
+    if (arg && typeof arg === 'object' && arg !== null) {
+        const newObj: any = {};
+        for (const key in arg) {
+            newObj[key] = extractFilesFromArg(arg[key], files);
+        }
+        return newObj;
+    }
+    return arg;
+}
+
+/**
+ * Run an optimistic UI handler (if registered for `name`) on `target`, then
+ * snapshot/diff the component's @State keys to lock the ones the handler
+ * changed. Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
+ * handler are logged but never propagated (the server action still runs).
+ */
+function runOptimisticHandler(
+    target: any,
+    name: string,
+    args: any[],
+    optimisticHandlerName: string | undefined,
+    stateKeys: string[],
+): void {
+    if (!optimisticHandlerName || !target.hasMethod(optimisticHandlerName)) return;
+    try {
+        const optimisticMethod = target.getMethod(optimisticHandlerName);
+        const snapshot: Record<string, any> = {};
+        for (const key of stateKeys) {
+            snapshot[key] = target[key];
+        }
+        (optimisticMethod as any)(...args);
+        if (!target._optimisticLockedKeys[name]) {
+            target._optimisticLockedKeys[name] = new Set();
+        }
+        for (const key of stateKeys) {
+            if (target[key] !== snapshot[key]) {
+                target._optimisticLockedKeys[name].add(key);
+            }
+        }
+        target.requestUpdate();
+    } catch (e) {
+        console.error(`Error in optimistic handler for '${name}':`, e);
+    }
+}
+
+/**
  * Apply a server-sent state object to a component instance, respecting the
  * optimistic-lock protocol: locked keys are buffered in _optimisticPendingState
  * (applied once the action completes); other keys are set directly. Internal
@@ -101,27 +176,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             const self = component;
             const sseProxy = (...args: any[]) => {
                 // === Optimistic handler (sync) ===
-                if (optimisticHandlers[name] && self.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = self.getMethod(optimisticHandlers[name]);
-                        const snapshot: Record<string, any> = {};
-                        for (const key of stateKeys) {
-                            snapshot[key] = (self as any)[key];
-                        }
-                        (optimisticMethod as any)(...args);
-                        if (!self._optimisticLockedKeys[name]) {
-                            self._optimisticLockedKeys[name] = new Set();
-                        }
-                        for (const key of stateKeys) {
-                            if ((self as any)[key] !== snapshot[key]) {
-                                self._optimisticLockedKeys[name].add(key);
-                            }
-                        }
-                        self.requestUpdate();
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
+                // Optimistic UI Handler
+                runOptimisticHandler(self, name, args, optimisticHandlers[name], stateKeys);
 
                 self.loading[name] = (self.loading[name] || 0) + 1;
                 self.requestUpdate();
@@ -144,40 +200,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
                 // === File extraction (shared) ===
                 const files = new Map<string, File>();
-                const extractFiles = (arg: any): any => {
-                    if (arg && (
-                        arg instanceof Node ||
-                        arg instanceof Event ||
-                        arg instanceof Window ||
-                        (arg.constructor && arg.constructor.name && (
-                            arg.constructor.name.endsWith('Event') ||
-                            arg.constructor.name === 'Window' ||
-                            arg.constructor.name === 'Document'
-                        ))
-                    )) {
-                        return null;
-                    }
-                    if (arg instanceof File) {
-                        const id = `file_${files.size}`;
-                        files.set(id, arg);
-                        return { _cossack_file_id: id };
-                    }
-                    if (arg instanceof FileList) {
-                        return Array.from(arg).map(file => extractFiles(file));
-                    }
-                    if (Array.isArray(arg)) {
-                        return arg.map(item => extractFiles(item));
-                    }
-                    if (arg && typeof arg === 'object' && arg !== null) {
-                        const newObj: any = {};
-                        for (const key in arg) {
-                            newObj[key] = extractFiles(arg[key]);
-                        }
-                        return newObj;
-                    }
-                    return arg;
-                };
-                const processedArgs = args.map(arg => extractFiles(arg));
+                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
 
                  // === Shared apply-state helper ===
                  const applyState = (data: Record<string, any>) => {
@@ -463,33 +486,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
         const proxy = async (...args: any[]) => {
             invalidateCurrentClientPage();
             // Optimistic UI Handler
-            if (optimisticHandlers[name] && component.hasMethod(optimisticHandlers[name])) {
-                try {
-                    const optimisticMethod = component.getMethod(optimisticHandlers[name]);
-
-                    // Auto-detect: snapshot @State values before handler
-                    const snapshot: Record<string, any> = {};
-                    for (const key of stateKeys) {
-                        snapshot[key] = (component as any)[key];
-                    }
-
-                    (optimisticMethod as any)(...args);
-
-                    // Auto-detect: find which @State keys changed
-                    if (!component._optimisticLockedKeys[name]) {
-                        component._optimisticLockedKeys[name] = new Set();
-                    }
-                    for (const key of stateKeys) {
-                        if ((component as any)[key] !== snapshot[key]) {
-                            component._optimisticLockedKeys[name].add(key);
-                        }
-                    }
-
-                    component.requestUpdate();
-                } catch (e) {
-                    console.error(`Error in optimistic handler for '${name}':`, e);
-                }
-            }
+            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
 
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
@@ -498,43 +495,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 // Check for files in arguments
                 const files = new Map<string, File>();
 
-                const extractFiles = (arg: any): any => {
-                    // Skip recursion for DOM nodes, Events, Window, etc.
-                    if (arg && (
-                        arg instanceof Node ||
-                        arg instanceof Event ||
-                        arg instanceof Window ||
-                        (arg.constructor && arg.constructor.name && (
-                            arg.constructor.name.endsWith('Event') ||
-                            arg.constructor.name === 'Window' ||
-                            arg.constructor.name === 'Document'
-                        ))
-                    )) {
-                        return null;
-                    }
-
-                    if (arg instanceof File) {
-                        const id = `file_${files.size}`;
-                        files.set(id, arg);
-                        return { _cossack_file_id: id };
-                    }
-                    if (arg instanceof FileList) {
-                         return Array.from(arg).map(file => extractFiles(file));
-                    }
-                    if (Array.isArray(arg)) {
-                        return arg.map(item => extractFiles(item));
-                    }
-                    if (arg && typeof arg === 'object' && arg !== null) {
-                        const newObj: any = {};
-                        for (const key in arg) {
-                            newObj[key] = extractFiles(arg[key]);
-                        }
-                        return newObj;
-                    }
-                    return arg;
-                };
-
-                const processedArgs = args.map(arg => extractFiles(arg));
+                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
 
                 if (files.size > 0) {
                     const formData = new FormData();
@@ -685,33 +646,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
 
             if (ws && ws.readyState === WebSocket.OPEN) {
                 // Optimistic UI Handler
-                if (optimisticHandlers[name] && component.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = component.getMethod(optimisticHandlers[name]);
-
-                        // Auto-detect: snapshot @State values before handler
-                        const snapshot: Record<string, any> = {};
-                        for (const key of stateKeys) {
-                            snapshot[key] = (component as any)[key];
-                        }
-
-                        (optimisticMethod as any)(...args);
-
-                        // Auto-detect: find which @State keys changed
-                        if (!component._optimisticLockedKeys[name]) {
-                            component._optimisticLockedKeys[name] = new Set();
-                        }
-                        for (const key of stateKeys) {
-                            if ((component as any)[key] !== snapshot[key]) {
-                                component._optimisticLockedKeys[name].add(key);
-                            }
-                        }
-
-                        component.requestUpdate(); // Render immediately after optimistic update
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
+                runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
 
                 component.loading[name] = (component.loading[name] || 0) + 1;
                 component.requestUpdate();
