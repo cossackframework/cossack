@@ -130,3 +130,14 @@ export interface CossackInternalState {
 export interface DynamicPropertyAccess {
     [key: string]: unknown;
 }
+
+/**
+ * State keys that are framework-internal and must never be overwritten by an
+ * incoming state update from the server (they hold framework bookkeeping, not
+ * application state). Centralised so every state-merge site agrees.
+ */
+export const RESERVED_STATE_KEYS: ReadonlySet<string> = new Set([
+    'loading',
+    'isServer',
+    'params',
+]);

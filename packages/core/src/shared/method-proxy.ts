@@ -1,6 +1,7 @@
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
+import { RESERVED_STATE_KEYS } from './component-types';
 
 interface ServerMethodBase {
     name: string;
@@ -115,7 +116,7 @@ function runOptimisticHandler(
 export function applyStateToComponent(component: any, data: Record<string, any>): void {
     for (const key in data) {
         if (key.startsWith('_cossack_')) continue;
-        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+        if (RESERVED_STATE_KEYS.has(key)) continue;
         if (component._isOptimisticLocked(key)) {
             component._optimisticPendingState[key] = data[key];
         } else {
