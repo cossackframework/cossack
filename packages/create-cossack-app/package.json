@@ -13,15 +13,18 @@
     "create-cossack-app": "./bin/create-cossack-app.js"
   },
   "main": "./index.js",
+  "types": "./index.d.ts",
   "exports": {
     ".": {
-      "import": "./index.js"
+      "import": "./index.js",
+      "types": "./index.d.ts"
     },
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
     "index.js",
+    "index.d.ts",
     "template",
     "tsconfig.template.json"
   ],

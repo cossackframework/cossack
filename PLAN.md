@@ -91,7 +91,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **7.2** `tsconfig.template.json` references `./worker-configuration.d.ts` which doesn't exist post-scaffold. — _resolved by shipping the file (7.1)._
 - [x] **7.3** Hardcoded version strings (`^0.1.0`, `^8.16.0`) will drift. _(node-adapter now tracks create-cossack-app's own version; ws/@hono/node-server/@types/ws/@types/node aligned with the node-adapter's ranges.)_
 - [x] **7.4** Regex-based Node-adapter config rewriting (fragile) → placeholder approach. _(structural `@cossack:cloudflare-start/end` markers; scaffolder removes marked blocks instead of pattern-matching the import/call syntax.)_
-- [ ] **7.5** Missing `types` field on package; `prettier` in template but not in deps.
+- [x] **7.5** Missing `types` field on package; `prettier` in template but not in deps. _(Added `index.d.ts` + `types`/`exports.types` to create-cossack-app; added `prettier` to the template devDeps so the shipped `.prettierrc.json` is usable.)_
 
 ---
 
