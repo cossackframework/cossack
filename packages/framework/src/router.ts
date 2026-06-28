@@ -8,7 +8,7 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
-import { computeRouteIds, filePathToRoutePath, APP_ROUTE_ID } from './route-ids';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, APP_ROUTE_ID } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -575,15 +575,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   // Register all routes
   for (const path in pages) {
-    let httpRoute =
-      path
-        .replace('/src/pages', '')
-        .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
-        .replace(/\/index$/, '')
-        .replace(/\/\([^)]+\)/g, '')
-        .replace(/\[([^\]]+)\]/g, ':$1') || '/';
+    let httpRoute = filePathToHttpRoute(path);
 
-    if (httpRoute === '/index') httpRoute = '/';
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
 
     const module = pages[path] as any;

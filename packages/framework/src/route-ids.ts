@@ -35,6 +35,28 @@ export function filePathToRoutePath(filePath: string): string {
   return route;
 }
 
+/**
+ * Convert a file path to an HTTP route pattern (the shape Hono registers).
+ * Translates dynamic segments and catch-alls:
+ *   `/src/pages/docs/[...slug]/index.ts` -> `/docs/:slug*`
+ *   `/src/pages/hello/[name]/index.ts`   -> `/hello/:name`
+ * Route groups `(group)` are removed, and `/index` collapses to `/`.
+ *
+ * Catch-all handling MUST run before single-segment handling so `[...slug]`
+ * becomes `:slug*` (valid Hono) rather than `:...slug` (invalid).
+ */
+export function filePathToHttpRoute(filePath: string): string {
+  const route = filePath
+    .replace('/src/pages', '')
+    .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
+    .replace(/\/index$/, '')
+    .replace(/\/\([^)]+\)/g, '') // route groups, e.g. /(auth)/login -> /login
+    .replace(/\[\.\.\.([^\]]+)\]/g, ':$1*') // catch-all [...slug] -> :slug*
+    .replace(/\[([^\]]+)\]/g, ':$1'); // dynamic [name] -> :name
+  if (route === '/index') return '/';
+  return route || '/';
+}
+
 export interface RouteIdMaps {
   /** component route id (cmp_N) -> filePath */
   routeIdMap: Map<string, string>;
