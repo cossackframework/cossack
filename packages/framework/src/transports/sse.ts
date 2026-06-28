@@ -80,22 +80,34 @@ export function registerSseStoreEntry(
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
         const { componentRouteId } = c.req.param();
-        const scopeKey = c.req.query('scopeKey');
-        if (!scopeKey) return new Response('scopeKey query parameter is required', { status: 400 });
+        const requestedScopeKey = c.req.query('scopeKey');
         const componentPath = ctx.routeIdMap.get(componentRouteId);
         if (!componentPath) return new Response('Invalid component ID', { status: 400 });
 
+        const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
+        if (!module) return new Response('Component not found', { status: 404 });
+        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
+
+        // SECURITY: re-derive the expected scope server-side from the
+        // authenticated user (and the page's scope() config), and reject any
+        // client-supplied value that does not match. Otherwise a crafted
+        // request like `?scopeKey=user:<victim_id>` could subscribe to another
+        // user's SSE stream and receive all of their state updates
+        // (cross-user eavesdropping). The client only ever echoes back the
+        // scopeKey it received during SSR.
+        const pageOptions = Reflect.getMetadata('page:options', PageComponent) as PageOptions | undefined;
+        const expectedScopeKey = await resolveSseScopeKey(c, pageOptions);
+        if (!requestedScopeKey || requestedScopeKey !== expectedScopeKey) {
+            return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
+        }
+
         // Look up or create SSE state store entry
-        const storeKey = sseStoreKey(componentRouteId, scopeKey);
+        const storeKey = sseStoreKey(componentRouteId, expectedScopeKey);
         let entry = sseStateStore.get(storeKey);
 
         if (!entry) {
             // Cold start: create instance on demand
-            const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
-            if (!module) return new Response('Component not found', { status: 404 });
-            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-            if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
-
             const user = c.get('user');
             const componentInstance = createInstance(PageComponent) as any;
             await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });

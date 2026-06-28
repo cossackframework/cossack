@@ -471,7 +471,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/crpc', async (c) => {
     const body = await c.req.json();
-    const { componentRouteId, action, state, payload, target, scopeKey } = body;
+    const { componentRouteId, action, state, payload, target } = body;
     const isStreamRequest = !!body._cossack_stream;
     const user = c.get('user');
 
@@ -538,8 +538,15 @@ export function createApp(options: CreateAppOptions = {}) {
     // Get the state of the component that was actually modified
     const responseData = targetInstance.getPublicState();
 
-    // Handle SSE streaming detection and state sync
-    const sseResult = handleSseCrpc(componentRouteId, scopeKey, actionResult, responseData, targetInstance);
+    // Handle SSE streaming detection and state sync.
+    // SECURITY: re-derive the SSE scope server-side from the authenticated
+    // user (never trust the client-supplied scopeKey) so that a crafted
+    // request cannot target another user's SSE store entry.
+    const derivedScopeKey = await resolveSseScopeKey(
+      c,
+      Reflect.getMetadata('page:options', targetInstance.constructor) as PageOptions | undefined,
+    );
+    const sseResult = handleSseCrpc(componentRouteId, derivedScopeKey, actionResult, responseData, targetInstance);
     if (sseResult.handled) {
       return c.json(sseResult.response);
     }
