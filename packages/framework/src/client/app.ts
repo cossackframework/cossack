@@ -139,28 +139,47 @@ function parseStateFromHTML(html: string) {
   return null;
 }
 
+/**
+ * In-flight fetch deduplication. A hover prefetch and the subsequent click
+ * navigation can both call fetchPage(url) before the first resolves, issuing
+ * two identical network requests. Track the live promise per URL and reuse it
+ * so only one request is in flight at a time.
+ */
+const inFlightPages = new Map<string, Promise<{ html: string; state: any }>>();
+
 async function fetchPage(url: string) {
   if (pageCache.has(url)) {
     return pageCache.get(url)!;
   }
-
-  const response = await fetch(url);
-  const html = await response.text();
-  const parsed = parseStateFromHTML(html);
-
-  if (parsed) {
-    const data = { html, state: parsed.state };
-    pageCache.set(url, data);
-    // LRU eviction: drop the oldest entry once over capacity. Map iterates in
-    // insertion order, so the first key is the least-recently-inserted.
-    if (pageCache.size > PAGE_CACHE_MAX) {
-      const oldest = pageCache.keys().next().value;
-      if (oldest !== undefined) pageCache.delete(oldest);
-    }
-    return data;
+  const existing = inFlightPages.get(url);
+  if (existing) {
+    return existing;
   }
 
-  throw new Error('Failed to load page state');
+  const promise = (async () => {
+    const response = await fetch(url);
+    const html = await response.text();
+    const parsed = parseStateFromHTML(html);
+
+    if (parsed) {
+      const data = { html, state: parsed.state };
+      pageCache.set(url, data);
+      // LRU eviction: drop the oldest entry once over capacity. Map iterates in
+      // insertion order, so the first key is the least-recently-inserted.
+      if (pageCache.size > PAGE_CACHE_MAX) {
+        const oldest = pageCache.keys().next().value;
+        if (oldest !== undefined) pageCache.delete(oldest);
+      }
+      return data;
+    }
+
+    throw new Error('Failed to load page state');
+  })();
+
+  inFlightPages.set(url, promise);
+  // Always clear the in-flight entry so a failed fetch can be retried later.
+  promise.finally(() => inFlightPages.delete(url));
+  return promise;
 }
 
 export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false, progressBar: progressBarEnabled = false }: CreateClientAppOptions) {
