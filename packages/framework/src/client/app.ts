@@ -1,4 +1,4 @@
-import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, type NavigateOptions } from '@cossackframework/core';
+import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
@@ -464,13 +464,18 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       };
 
       if (viewTransitionsEnabled && supportsViewTransitions()) {
-        const transition = options?.types?.length
+        // Only use the object-form ({ update, types }) when the browser
+        // supports VT types (Chrome 125+); otherwise fall back to the
+        // single-callback form so older browsers don't throw inside the
+        // transition (which would surface as a navigation failure).
+        const useTypes = !!(options?.types?.length) && supportsViewTransitionTypes();
+        const transition = useTypes
           ? (document as any).startViewTransition({ update: commit, types: options.types })
           : (document as any).startViewTransition(commit);
         // transition.updateReady rejects if the transition is skipped (e.g.
-        // user navigates again mid-transition). The outer try/catch falls back
-        // to window.location.reload() on error — same fallback as today.
-        await transition.updateReady;
+        // user navigates again mid-transition). Swallow that so it doesn't
+        // trigger the outer error fallback.
+        await transition.updateReady?.catch(() => {});
       } else {
         await commit();
       }
