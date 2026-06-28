@@ -14,12 +14,18 @@ class MockWebSocket {
     readyState = 1; // OPEN
     onmessage: ((ev: { data: string }) => void) | null = null;
     onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
     sent: string[] = [];
+    closed = false;
     constructor(public url: string) {
         MockWebSocket.instances.push(this);
     }
     send(data: string) { this.sent.push(data); }
-    close() { this.readyState = 3; }
+    close() {
+        this.readyState = 3;
+        this.closed = true;
+        this.onclose?.();
+    }
     // helper to inject a server message
     receive(obj: unknown) {
         this.onmessage?.({ data: JSON.stringify(obj) });
@@ -101,5 +107,35 @@ describe('optimistic-lock cleanup on action-complete (WS)', () => {
         expect(component._optimisticPendingState.count).toBeUndefined();
         // 'other' is still in flight → its pending state must remain.
         expect(component._optimisticPendingState.name).toBe(2);
+    });
+
+    it('clears the keep-alive ping interval when the socket closes', () => {
+        const cleared: number[] = [];
+        const realSetInterval = globalThis.setInterval;
+        const realClearInterval = globalThis.clearInterval;
+        let nextId = 100;
+        const live = new Set<number>();
+        (globalThis as any).setInterval = (fn: () => void, ms: number) => {
+            const id = nextId++;
+            live.add(id);
+            return id;
+        };
+        (globalThis as any).clearInterval = (id: number) => {
+            cleared.push(id);
+            live.delete(id);
+        };
+
+        try {
+            const component = makeComponent() as any;
+            connectWebSocket(component);
+            const ws = MockWebSocket.instances[0];
+
+            // Simulate destroy() closing the websocket.
+            ws.close();
+            expect(cleared.length).toBe(1);
+        } finally {
+            (globalThis as any).setInterval = realSetInterval;
+            (globalThis as any).clearInterval = realClearInterval;
+        }
     });
 });

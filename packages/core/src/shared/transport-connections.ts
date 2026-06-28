@@ -115,11 +115,17 @@ export function connectWebSocket(component: any): void {
             }
         };
 
-        setInterval(() => {
+        // Keep-alive ping. The handle is cleared when the socket closes
+        // (including when Cossack.destroy() closes it) so it doesn't leak a
+        // timer — and a closure over the WS — for every provider per page.
+        const pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send('ping');
             }
         }, 25000);
+        const stopPing = () => clearInterval(pingInterval);
+        ws.onclose = stopPing;
+        ws.onerror = stopPing;
     }
 }
 
