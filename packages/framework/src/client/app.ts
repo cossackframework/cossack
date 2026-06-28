@@ -487,6 +487,18 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       return true;
     } catch (error) {
       console.error('Navigation failed:', error);
+      // Give the app a chance to handle the failure (show an error UI, retry,
+      // or fall back to a cached view) instead of forcing a full reload that
+      // discards client state (form input, scroll, theme). If a listener
+      // calls preventDefault, the app has handled it and we do not reload.
+      const handled = document.dispatchEvent(new CustomEvent('cossack:navigation-error', {
+        bubbles: true,
+        cancelable: true,
+        detail: { url, error, fromPathname: window.location.pathname },
+      }));
+      if (!handled) {
+        return false;
+      }
       window.location.reload();
       return false;
     }

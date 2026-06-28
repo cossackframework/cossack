@@ -59,7 +59,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **5.2** Head-merge iteration order appears inverted vs. documented inside-out — `router.ts:399-406` — _verified correct: arrays accumulate child-first (inside-out); title uses `value ?? context` so each level composes from accumulated context. Regression tests pin the pipeline order._
 - [x] **5.3** Double `pushState` on `this.redirect()` — `client/app.ts:456-461` + `cossack.ts:1322-1324`.
 - [x] **5.4** View-transition object-form `{types}` not feature-detected (Chrome 125+) → throws → full reload.
-- [ ] **5.5** Any nav error → `window.location.reload()`, losing client state — `client/app.ts:449-453`.
+- [x] **5.5** Any nav error → `window.location.reload()`, losing client state — `client/app.ts:449-453`. _(Now dispatches a cancelable `cossack:navigation-error` event; reload only if unhandled.)_
 - [ ] **5.6** Prefetch/navigation fetch race — no in-flight de-dup — `client/app.ts:114-130,465-469`.
 
 ## Phase 6 — Maintainability: De-duplication & Dead Code (MED impact / MED effort)
