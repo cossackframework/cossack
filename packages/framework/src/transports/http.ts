@@ -1,5 +1,5 @@
 // src/transports/http.ts
-import { Cossack, createInstance } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction } from '@cossackframework/core';
 import type { Context } from 'hono';
 
 export interface RouterContext {
@@ -62,6 +62,11 @@ export function handleUpload(ctx: RouterContext) {
         // Apply the received state directly to the target component
         for (const key in state) {
             (targetInstance as any)[key] = state[key];
+        }
+
+        // Authorisation gate: only @Server-registered methods are RPC-callable.
+        if (!isRpcCallableAction(targetInstance.constructor, action)) {
+            return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
         }
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);

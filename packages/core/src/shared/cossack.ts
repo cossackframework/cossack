@@ -24,6 +24,7 @@ import {
     proxyHttpMethods as proxyHttpMethodsFn,
     proxyServerMethods as proxyServerMethodsFn,
     setupServerMethodProxies as setupServerMethodProxiesFn,
+    isRpcCallableAction,
 } from './method-proxy';
 import { HeadTag, HeadContext, HeadValue } from './head';
 import {
@@ -623,6 +624,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async executeAction(action: string, payload: any[], user: any, clientContext: unknown) {
+        // Authorisation gate: only @Server-registered methods may be invoked
+        // remotely. Without this, any public/inherited method (bootstrap,
+        // setProperty, getPublicState, destroy, ...) would be callable by a
+        // crafted WebSocket message, bypassing the client-side stripping.
+        if (!isRpcCallableAction(this.constructor, action)) {
+            return;
+        }
         const actionMethod = this.getMethod(action);
         if (actionMethod) {
             this._cossack_ws_context = clientContext;

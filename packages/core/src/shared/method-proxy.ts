@@ -780,3 +780,49 @@ export function setupServerMethodProxies(component: any): void {
     }
     component._serverMethodsProxied = true;
 }
+
+/**
+ * Framework-internal lifecycle methods that are decorated with `@Server()`
+ * purely so the security plugin strips them from the client bundle. They are
+ * NOT RPC endpoints and must never be invocable by a remote client.
+ */
+const RPC_BLOCKED_INTERNAL_METHODS: ReadonlySet<string> = new Set([
+    'initializeProviders',
+    'proxyClientMethods',
+    'validateChannels',
+]);
+
+/**
+ * Authorisation gate for RPC dispatch (HTTP `/crpc`, `/upload`, and WebSocket
+ * action messages).
+ *
+ * Only methods registered in the `cossack:server-methods` metadata — i.e.
+ * `@Server()`-decorated methods — are eligible for remote invocation. This is
+ * the server-side counterpart to the client-side bundle stripping: without it,
+ * any public or inherited method on a component instance (e.g. `bootstrap`,
+ * `getMethod`, `setProperty`, `getPublicState`, `destroy`) could be invoked by
+ * a crafted request, fully bypassing the "secure by default" guarantee.
+ *
+ * `Reflect.getMetadata` returns only the nearest ancestor's own metadata, so
+ * the prototype chain is walked manually to honour inherited `@Server` methods
+ * (such as the base-class `redirect`).
+ */
+export function isRpcCallableAction(constructor: unknown, action: unknown): action is string {
+    if (typeof action !== 'string' || action.length === 0) return false;
+    // Prototype-pollution / builtin guards.
+    if (action === '__proto__' || action === 'prototype' || action === 'constructor') return false;
+    // Framework-internal @Server lifecycle hooks are not RPC endpoints.
+    if (RPC_BLOCKED_INTERNAL_METHODS.has(action)) return false;
+
+    let proto: object | null = typeof constructor === 'function' ? constructor : null;
+    while (proto !== null && proto !== Function.prototype) {
+        const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', proto) as
+            | Record<string, unknown>
+            | undefined;
+        if (serverMethods && Object.prototype.hasOwnProperty.call(serverMethods, action)) {
+            return true;
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}

@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
-import { createInstance } from '@cossackframework/core';
+import { createInstance, isRpcCallableAction } from '@cossackframework/core';
 import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
@@ -509,6 +509,13 @@ export function createApp(options: CreateAppOptions = {}) {
     // The state sent from client is the target component's public state
     for (const key in state) {
       (targetInstance as any)[key] = state[key];
+    }
+
+    // Authorisation gate: only @Server-registered methods are RPC-callable.
+    // Prevents crafted requests from invoking framework-internal methods
+    // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
+    if (!isRpcCallableAction(targetInstance.constructor, action)) {
+      return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
     }
 
     if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
