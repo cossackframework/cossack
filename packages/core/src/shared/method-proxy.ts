@@ -30,6 +30,17 @@ function isWsTransportable(arg: unknown): boolean {
 }
 
 /**
+ * Notify the client SPA (if present) that a server action is being dispatched,
+ * so it can invalidate the cached initial state for the current page. Without
+ * this, navigating away and back after a mutation returns the stale cached
+ * state. The hook is registered by the framework's client app; calling it when
+ * absent (SSR, tests) is a no-op.
+ */
+function invalidateCurrentClientPage(): void {
+    (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage?.();
+}
+
+/**
  * Create HTTP fetch proxies for @Server methods (client-side only).
  *
  * Two variants:
@@ -438,6 +449,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
         // HTTP transport: standard async proxy
         const proxy = async (...args: any[]) => {
+            invalidateCurrentClientPage();
             // Optimistic UI Handler
             if (optimisticHandlers[name] && component.hasMethod(optimisticHandlers[name])) {
                 try {
@@ -664,6 +676,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
         const proxy = (...args: any[]) => {
+            invalidateCurrentClientPage();
             let ws = component.websockets.get(provider);
             if (!ws) {
                 const root = component.consume(RootContext);

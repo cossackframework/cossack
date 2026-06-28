@@ -68,7 +68,35 @@ export interface CreateClientAppOptions {
   progressBar?: boolean;
 }
 
+/**
+ * In-memory cache of prefetched/visited pages for instant SPA navigation.
+ *
+ * Bounded (LRU): when the limit is reached the oldest entry is evicted on
+ * insert, so a long session traversing many dynamic routes (e.g. /items/[id])
+ * cannot grow the cache without bound.
+ *
+ * Invalidated wholesale after any successful RPC action, so navigating back to
+ * a page whose state was mutated server-side never serves stale content.
+ */
+const PAGE_CACHE_MAX = 20;
 const pageCache = new Map<string, { html: string; state: any }>();
+
+function invalidatePageCache(url?: string) {
+  if (url) pageCache.delete(url);
+  else pageCache.clear();
+}
+
+// Allow the RPC layer (core method-proxy) to invalidate the current page's
+// cache entry after an action mutates server state, without a hard import
+// cycle (core → framework). Only the current page is dropped so unrelated
+// prefetched pages stay cached.
+if (typeof globalThis !== 'undefined') {
+  (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage = () => {
+    try {
+      if (typeof location !== 'undefined') pageCache.delete(location.href);
+    } catch { /* location unavailable */ }
+  };
+}
 
 // Progress bar element. Only created when the `progressBar` option is enabled
 // in createClientApp(). setProgress() is a no-op when this is null, so
@@ -123,6 +151,12 @@ async function fetchPage(url: string) {
   if (parsed) {
     const data = { html, state: parsed.state };
     pageCache.set(url, data);
+    // LRU eviction: drop the oldest entry once over capacity. Map iterates in
+    // insertion order, so the first key is the least-recently-inserted.
+    if (pageCache.size > PAGE_CACHE_MAX) {
+      const oldest = pageCache.keys().next().value;
+      if (oldest !== undefined) pageCache.delete(oldest);
+    }
     return data;
   }
 

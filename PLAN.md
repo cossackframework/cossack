@@ -38,7 +38,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 - [x] **3.4** `@VisibleTask` IntersectionObservers never `disconnect()`-ed in `destroy()` — `cossack.ts:147,1436-1466`.
 - [x] **3.5** WS payload filter drops ALL objects (not just DOM/Event) — breaks `this.updateItem({id:5})` over WS — `method-proxy.ts:689-696`.
 - [x] **3.6** `_cossack_ws_context` shared-mutable per instance → concurrent WS actions cross-route client calls — `cossack.ts:625-639`. _(fixed via per-instance action-serialization queue.)_
-- [ ] **3.7** Unbounded `pageCache` serves stale state after mutations — `framework/src/client/app.ts:71`.
+- [x] **3.7** Unbounded `pageCache` serves stale state after mutations — `framework/src/client/app.ts:71`. _(LRU bound + current-page invalidation on RPC dispatch.)_
 - [ ] **3.8** Unbounded `sseStateStore` + 200ms-poll-per-client driver — `framework/src/transports/sse.ts:26,140-182`.
 - [ ] **3.9** `JSON.parse` unguarded in all transport/runtime handlers (cheap DoS) — add try/catch + schema validation.
 - [x] **3.10** `executeAction` has no error boundary → `loading[action]` stuck forever on server throw. — _resolved by 3.6._

@@ -83,4 +83,21 @@ describe('WS payload keeps serializable objects', () => {
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
     });
+
+    it('invokes the client page-cache invalidation hook on dispatch', () => {
+        const component = makeComponent();
+        const ws = new MockWS();
+        component.websockets.set('page', ws as any);
+        (globalThis as any).WebSocket = { OPEN: 1 };
+
+        let invalidated = 0;
+        (globalThis as any).__cossack_invalidateCurrentPage = () => { invalidated++; };
+        try {
+            proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
+            component.doThing();
+            expect(invalidated).toBe(1);
+        } finally {
+            delete (globalThis as any).__cossack_invalidateCurrentPage;
+        }
+    });
 });
