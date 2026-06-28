@@ -1,12 +1,11 @@
 ---
-title: "Cossack Template"
-description: "Powerful template syntax for building dynamic UIs inspired by Lit using tagged template literals via the html function."
+title: 'Cossack Template'
+description: 'Powerful template syntax for building dynamic UIs inspired by Lit using tagged template literals via the html function.'
 ---
 
 # Cossack Template
 
 Cossack provides a powerful template syntax for building dynamic UIs inspired by Lit. This guide covers the basics of using templates in your components.
-
 
 ## Template Syntax
 
@@ -15,7 +14,7 @@ Cossack uses tagged template literals via `html`.
 ### Basic Expressions
 
 ```typescript
-html`<h1>Hello ${name}</h1>`
+html`<h1>Hello ${name}</h1>`;
 ```
 
 ### Attributes
@@ -23,7 +22,7 @@ html`<h1>Hello ${name}</h1>`
 Boolean attributes are removed if `false/null/undefined`.
 
 ```typescript
-html`<button ?disabled="${isDisabled}">Click</button>`
+html`<button ?disabled="${isDisabled}">Click</button>`;
 ```
 
 ### Event Binding
@@ -31,7 +30,7 @@ html`<button ?disabled="${isDisabled}">Click</button>`
 Bind event listeners using Lit's `@` syntax.
 
 ```typescript
-html`<button @click="${(e) => this.handleClick(e)}">Click Me</button>`
+html`<button @click="${(e) => this.handleClick(e)}">Click Me</button>`;
 ```
 
 ### Property Binding
@@ -39,7 +38,7 @@ html`<button @click="${(e) => this.handleClick(e)}">Click Me</button>`
 For `<input>` elements, use `.` prefix to bind properties directly.
 
 ```typescript
-html`<input type="text" .value="${this.inputValue}" @input="${this.handleInput}" />`
+html`<input type="text" .value="${this.inputValue}" @input="${this.handleInput}" />`;
 ```
 
 ### Spread Attributes
@@ -48,7 +47,7 @@ You can spread an object into attributes using the `...` syntax.
 
 ```typescript
 const props = { id: 'btn', class: 'primary', 'data-type': 'action' };
-html`<button ...=${props}>Click</button>`
+html`<button ...=${props}>Click</button>`;
 ```
 
 ### Unsafe HTML
@@ -57,7 +56,7 @@ To render raw HTML strings (careful!):
 
 ```typescript
 import { unsafeHTML } from '@cossackframework/renderer';
-html`<div>${unsafeHTML('<script>...</script>')}</div>`
+html`<div>${unsafeHTML('<script>...</script>')}</div>`;
 ```
 
 ## Using Components in Templates
@@ -68,23 +67,15 @@ Use the `component` helper function to include child components in your template
 import { component } from '@cossackframework/renderer';
 import { ChildComponent } from './ChildComponent';
 
-html`
-  <div class="parent">
-    ${component(ChildComponent, { someProp: 'value' })}
-  </div>
-`
+html` <div class="parent">${component(ChildComponent, { someProp: 'value' })}</div> `;
 ```
 
 You can also pass children to components:
 
 ```typescript
 html`
-  <div class="parent">
-    ${component(ChildComponent, { someProp: 'value' }, html`
-      <span>Child content</span>
-    `)}
-  </div>
-`
+  <div class="parent">${component(ChildComponent, { someProp: 'value' }, html` <span>Child content</span> `)}</div>
+`;
 ```
 
 ## Directives
@@ -100,11 +91,13 @@ import { repeat } from '@cossackframework/renderer';
 
 html`
   <ul>
-    ${repeat(items, (item) => item.id, (item) => html`
-      <li>${item.text}</li>
-    `)}
+    ${repeat(
+      items,
+      (item) => item.id,
+      (item) => html` <li>${item.text}</li> `,
+    )}
   </ul>
-`
+`;
 ```
 
 ### `classMap` & `styleMap`
@@ -117,7 +110,7 @@ import { classMap, styleMap } from '@cossackframework/renderer';
 const classes = { active: isActive, error: hasError };
 const styles = { color: 'red', display: isVisible ? 'block' : 'none' };
 
-html`<div class="${classMap(classes)}" style="${styleMap(styles)}">...</div>`
+html`<div class="${classMap(classes)}" style="${styleMap(styles)}">...</div>`;
 ```
 
 ### `ref`
@@ -127,7 +120,7 @@ Get a reference to the DOM element.
 ```typescript
 import { ref } from '@cossackframework/renderer';
 
-html`<input ref="${(el) => console.log(el)}" />`
+html`<input ref="${(el) => console.log(el)}" />`;
 ```
 
 ### `live`
@@ -137,8 +130,24 @@ Check against the live DOM value (useful for inputs).
 ```typescript
 import { live } from '@cossackframework/renderer';
 
-html`<input .value="${live(inputValue)}" />`
+html`<input .value="${live(inputValue)}" />`;
 ```
+
+### `key`
+
+Force a subtree to be **recreated** when the key changes. Useful for
+re-triggering CSS animations or remounting a child (e.g. on tab/index change).
+With the same key, updates apply in place (no rebuild).
+
+```typescript
+import { key, html } from '@cossackframework/renderer';
+
+// `child` (and any enter animation) re-runs whenever `currentIndex` changes.
+html`<div>${key(currentIndex, html`<div class="animate-fade-in">${child}</div>`)}</div>`;
+```
+
+In SSR, `key` is transparent (it just renders its template — there is no
+previous DOM to dispose).
 
 ## Context API
 
@@ -217,24 +226,26 @@ class ClockElement extends CossackElement {
 Cossack supports passing children to components.
 
 **Parent:**
+
 ```typescript
 html`
-  ${component(Card, {}, html`
-    <h1>Title</h1>
-    <p>Content</p>
-  `)}
-`
+  ${component(
+    Card,
+    {},
+    html`
+      <h1>Title</h1>
+      <p>Content</p>
+    `,
+  )}
+`;
 ```
 
 **Child (Card):**
+
 ```typescript
 class Card extends CossackElement {
   render() {
-    return html`
-      <div class="card">
-        ${this.children}
-      </div>
-    `;
+    return html` <div class="card">${this.children}</div> `;
   }
 }
 ```
@@ -260,7 +271,7 @@ export class MyCounter extends CossackElement {
   // Define reactive properties
   static properties = {
     count: { state: true },
-    label: { state: true }
+    label: { state: true },
   };
 
   // Declare fields for TypeScript

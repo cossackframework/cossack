@@ -5,16 +5,16 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "build:ssg": "vite build && tsx scripts/build-ssg.ts",
+    "build:ssg": "vite build && cossack ssg",
     "build:types": "tsc -p tsconfig.declarations.json",
-    "build:all": "pnpm run build && tsx scripts/build-ssg.ts",
+    "build:all": "pnpm run build && cossack ssg",
     "preview": "pnpm run build:ssg && vite preview",
-    "deploy": "vite build && tsx scripts/build-ssg.ts && wrangler deploy"
+    "deploy": "vite build && cossack ssg && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/core": "^0.5.2",
-    "@cossackframework/framework": "^0.5.2",
-    "@cossackframework/renderer": "^0.5.2",
+    "@cossackframework/core": "^0.6.0",
+    "@cossackframework/framework": "^0.6.0",
+    "@cossackframework/renderer": "^0.6.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.25",
     "marked": "^17.0.1",

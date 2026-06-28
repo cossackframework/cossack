@@ -1,8 +1,9 @@
 import type { Plugin } from 'vite';
 import { marked } from 'marked';
 import matter from 'gray-matter';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { resolve, dirname, join, relative, sep } from 'path';
+import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
@@ -56,10 +57,10 @@ export function cossackPages(): Plugin {
         const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
         const match = code.match(regex);
         if (match) {
-            const insertionIndex = match.index! + match[0].length;
-            const sourceInfo = JSON.stringify({ file: id });
-            const injection = `\n  static __source = ${sourceInfo};\n`;
-            code = code.slice(0, insertionIndex) + injection + code.slice(insertionIndex);
+          const insertionIndex = match.index! + match[0].length;
+          const sourceInfo = JSON.stringify({ file: id });
+          const injection = `\n  static __source = ${sourceInfo};\n`;
+          code = code.slice(0, insertionIndex) + injection + code.slice(insertionIndex);
         }
       }
 
@@ -95,7 +96,7 @@ export function cossackPages(): Plugin {
 
             export default MdxPage;
           `,
-          map: null
+          map: null,
         };
       }
 
@@ -125,6 +126,60 @@ export function cossackPages(): Plugin {
       } catch {
         // Non-fatal: SSR will fall back to empty manifest.
       }
+
+      // Emit the routes manifest consumed by the `cossack ssg` CLI. This is the
+      // single source of truth for component route IDs (cmp_N) — the SSG build
+      // reads it instead of re-scanning `src/pages` and re-deriving IDs, so the
+      // IDs can never drift from what the SSR router assigns here.
+      try {
+        emitRoutesManifest(clientOutDir);
+      } catch {
+        // Non-fatal: SSG will surface a clear error if the manifest is missing.
+      }
+    },
+  };
+}
+
+/**
+ * Scan `src/pages` reproducing the same key set as the `import.meta.glob`
+ * patterns above (pages = `*.ts`/`*.mdx` excluding `layout.ts`/`loading.ts`;
+ * layouts = `layout.ts`). Keys use the `/src/pages/<rel>` format with forward
+ * slashes, exactly like Vite's glob keys.
+ */
+function scanPagesDir(pagesDir: string): { pageKeys: string[]; layoutKeys: string[] } {
+  const pageKeys: string[] = [];
+  const layoutKeys: string[] = [];
+  if (!existsSync(pagesDir)) return { pageKeys, layoutKeys };
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile()) {
+        const rel = relative(pagesDir, fullPath).split(sep).join('/');
+        const key = `/src/pages/${rel}`;
+        if (entry.name === 'layout.ts') {
+          layoutKeys.push(key);
+        } else if (entry.name === 'loading.ts') {
+          // Excluded — matches the glob's `!/src/pages/**/loading.ts`.
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx')) {
+          pageKeys.push(key);
+        }
+      }
     }
   };
+
+  walk(pagesDir);
+  return { pageKeys, layoutKeys };
+}
+
+function emitRoutesManifest(clientOutDir: string) {
+  const pagesDir = resolve(process.cwd(), 'src', 'pages');
+  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir);
+  const maps = computeRouteIds(pageKeys, layoutKeys);
+  const manifest = buildRoutesManifest(pageKeys, layoutKeys, maps);
+  if (!existsSync(clientOutDir)) mkdirSync(clientOutDir, { recursive: true });
+  const dest = resolve(clientOutDir, 'cossack-routes.json');
+  writeFileSync(dest, JSON.stringify(manifest, null, 2));
 }

@@ -8,8 +8,16 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
+import { computeRouteIds, filePathToRoutePath, APP_ROUTE_ID } from './route-ids';
 import { CossackElement } from '@cossackframework/renderer';
-import { handleSseEndpoint, handleSseCrpc, syncSseState, registerSseStoreEntry, resolveSseScopeKey, type RouterContext } from './transports/sse';
+import {
+  handleSseEndpoint,
+  handleSseCrpc,
+  syncSseState,
+  registerSseStoreEntry,
+  resolveSseScopeKey,
+  type RouterContext,
+} from './transports/sse';
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';
 
@@ -70,125 +78,107 @@ let cachedInlineCss: string | undefined | null = null;
  * Results are cached after the first successful read.
  */
 async function getInlineCss(env: any): Promise<string | undefined> {
-    if (cachedInlineCss !== null) return cachedInlineCss || undefined;
+  if (cachedInlineCss !== null) return cachedInlineCss || undefined;
 
-    const manifest = await getManifest(env);
-    const entry = manifest['src/client/entry-client.ts'];
-    if (!entry?.css?.[0]) {
+  const manifest = await getManifest(env);
+  const entry = manifest['src/client/entry-client.ts'];
+  if (!entry?.css?.[0]) {
+    cachedInlineCss = null;
+    return undefined;
+  }
+
+  const cssPath = `/${entry.css[0]}`;
+
+  try {
+    let cssText: string;
+
+    // Cloudflare Workers: use ASSETS binding
+    if (env?.ASSETS?.fetch) {
+      const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
+      if (!res.ok) {
         cachedInlineCss = null;
         return undefined;
+      }
+      cssText = await res.text();
+    } else {
+      // Node.js: read from dist/client
+      const { readFileSync } = await import('fs');
+      const { resolve, dirname } = await import('path');
+      // SSR output is in dist/worker, CSS is in dist/client
+      const clientDir = resolve(dirname(import.meta.url), '..', 'client');
+      cssText = readFileSync(resolve(clientDir, cssPath.replace(/^\//, '')), 'utf-8');
     }
 
-    const cssPath = `/${entry.css[0]}`;
-
-    try {
-        let cssText: string;
-
-        // Cloudflare Workers: use ASSETS binding
-        if (env?.ASSETS?.fetch) {
-            const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
-            if (!res.ok) {
-                cachedInlineCss = null;
-                return undefined;
-            }
-            cssText = await res.text();
-        } else {
-            // Node.js: read from dist/client
-            const { readFileSync } = await import('fs');
-            const { resolve, dirname } = await import('path');
-            // SSR output is in dist/worker, CSS is in dist/client
-            const clientDir = resolve(dirname(import.meta.url), '..', 'client');
-            cssText = readFileSync(resolve(clientDir, cssPath.replace(/^\//, '')), 'utf-8');
-        }
-
-        if (new TextEncoder().encode(cssText).length <= CSS_INLINE_THRESHOLD) {
-            cachedInlineCss = cssText;
-            return cssText;
-        }
-
-        // CSS too large — don't inline, but cache the decision
-        cachedInlineCss = null;
-        return undefined;
-    } catch {
-        cachedInlineCss = null;
-        return undefined;
+    if (new TextEncoder().encode(cssText).length <= CSS_INLINE_THRESHOLD) {
+      cachedInlineCss = cssText;
+      return cssText;
     }
+
+    // CSS too large — don't inline, but cache the decision
+    cachedInlineCss = null;
+    return undefined;
+  } catch {
+    cachedInlineCss = null;
+    return undefined;
+  }
 }
 
 /**
  * Convert a file path to a simplified route path.
- * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
+ * Re-exported from ./route-ids for any internal callers; the canonical
+ * implementation lives there so the SSR router and the SSG build agree.
  */
-function filePathToRoutePath(filePath: string): string {
-    const route = filePath
-        .replace('/src/pages/', '/')
-        .replace('/index.ts', '')
-        .replace('/index.md', '')
-        .replace('/index.mdx', '')
-        .replace(/\.(ts|tsx|md|mdx)$/, '');
-
-    // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
-    if (route === '/index' || route === '') {
-        return '/';
-    }
-    return route;
-}
+export { filePathToRoutePath };
 
 // Register Components
 for (const path in components) {
-    const module = components[path];
-    // Find the exported class
-    for (const key in module) {
-        const exported = (module as any)[key];
-        if (typeof exported === 'function' && (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)) {
-            // Register by export name
-            CossackElement.components[key] = exported;
-        }
+  const module = components[path];
+  // Find the exported class
+  for (const key in module) {
+    const exported = (module as any)[key];
+    if (
+      typeof exported === 'function' &&
+      (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)
+    ) {
+      // Register by export name
+      CossackElement.components[key] = exported;
     }
+  }
 }
 
-// Generate secure IDs for components
-const routeIdMap = new Map<string, string>();
-const routePathToIdMap = new Map<string, string>();
-const routePathToFilePathMap = new Map<string, string>();
-
-// Register the App component (global component) with a special ID
-const APP_ID = 'cossack_app';
-routeIdMap.set(APP_ID, '/src/App');
-
-[...Object.keys(pages), ...Object.keys(layouts)].sort().forEach((path, index) => {
-    const id = `cmp_${index.toString(36)}`;
-    routeIdMap.set(id, path);
-    routePathToIdMap.set(path, id);
-    // Map route path to file path for WebSocket connections
-    const routePath = filePathToRoutePath(path);
-    routePathToFilePathMap.set(routePath, path);
-});
+// Generate secure IDs for components (single source of truth: ./route-ids).
+// The same computation runs in the SSG build via the Vite-plugin-emitted
+// `cossack-routes.json`, so client hydration IDs always match the server's.
+const { routeIdMap, routePathToIdMap, routePathToFilePathMap } = computeRouteIds(
+  Object.keys(pages),
+  Object.keys(layouts),
+);
+const APP_ID = APP_ROUTE_ID;
 
 export type PageModule = {
-    [key: string]: (new () => Cossack) | Handler | Record<string, Handler>;
-}
+  [key: string]: (new () => Cossack) | Handler | Record<string, Handler>;
+};
 
 function getLayoutStack(pagePath: string) {
-    const stack: string[] = [];
-    const relativePath = pagePath.replace('/src/pages/', '');
-    const parts = relativePath.split('/');
+  const stack: string[] = [];
+  const relativePath = pagePath.replace('/src/pages/', '');
+  const parts = relativePath.split('/');
 
-    let currentPath = '/src/pages';
+  let currentPath = '/src/pages';
 
-    if (layouts[`${currentPath}/layout.ts`]) {
-        stack.push(`${currentPath}/layout.ts`);
+  if (layouts[`${currentPath}/layout.ts`]) {
+    stack.push(`${currentPath}/layout.ts`);
+  }
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    currentPath += `/${parts[i]}`;
+    const layoutPath = `${currentPath}/layout.ts`;
+    if (layouts[layoutPath]) {
+      stack.push(layoutPath);
     }
+  }
 
-    for (let i = 0; i < parts.length - 1; i++) {
-        currentPath += `/${parts[i]}`;
-        const layoutPath = `${currentPath}/layout.ts`;
-        if (layouts[layoutPath]) {
-            stack.push(layoutPath);
-        }
-    }
-
-    return stack;
+  return stack;
 }
 
 /**
@@ -197,73 +187,71 @@ function getLayoutStack(pagePath: string) {
  * In production, collects the page chunk and all its transitive JS imports.
  */
 function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
-    if (import.meta.env.DEV) return [];
+  if (import.meta.env.DEV) return [];
 
-    // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
-    const normalizedPath = pagePath.replace(/^\//, '');
-    const collected = new Set<string>();
+  // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
+  const normalizedPath = pagePath.replace(/^\//, '');
+  const collected = new Set<string>();
 
-    const collect = (key: string) => {
-        const entry = mfest[key];
-        if (!entry) return;
-        if (entry.file && !collected.has(entry.file)) {
-            collected.add(entry.file);
-        }
-        if (entry.imports) {
-            for (const imp of entry.imports) {
-                if (!collected.has(imp)) {
-                    collect(imp);
-                }
-            }
-        }
-    };
-
-    // Collect the page chunk and its transitive imports
-    collect(normalizedPath);
-
-    // Also collect entry-client's transitive imports (entry-client itself
-    // is already discovered via the <script> tag, so no preload needed)
-    const entryClient = mfest['src/client/entry-client.ts'];
-    if (entryClient?.imports) {
-        for (const imp of entryClient.imports) {
-            collect(imp);
-        }
+  const collect = (key: string) => {
+    const entry = mfest[key];
+    if (!entry) return;
+    if (entry.file && !collected.has(entry.file)) {
+      collected.add(entry.file);
     }
-
-    // Exclude entry-client itself (already discovered via <script> tag)
-    const entryClientFile = entryClient?.file;
-
-    // Map collected file keys/paths to hrefs
-    const hrefs: string[] = [];
-    for (const key of collected) {
-        // If the key looks like a manifest key (no '/'), look up its file
-        const entry = mfest[key];
-        if (entry?.file) {
-            if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
-        } else if (key.startsWith('assets/')) {
-            // Already a file path
-            if (key !== entryClientFile) hrefs.push(`/${key}`);
+    if (entry.imports) {
+      for (const imp of entry.imports) {
+        if (!collected.has(imp)) {
+          collect(imp);
         }
+      }
     }
-    return hrefs;
+  };
+
+  // Collect the page chunk and its transitive imports
+  collect(normalizedPath);
+
+  // Also collect entry-client's transitive imports (entry-client itself
+  // is already discovered via the <script> tag, so no preload needed)
+  const entryClient = mfest['src/client/entry-client.ts'];
+  if (entryClient?.imports) {
+    for (const imp of entryClient.imports) {
+      collect(imp);
+    }
+  }
+
+  // Exclude entry-client itself (already discovered via <script> tag)
+  const entryClientFile = entryClient?.file;
+
+  // Map collected file keys/paths to hrefs
+  const hrefs: string[] = [];
+  for (const key of collected) {
+    // If the key looks like a manifest key (no '/'), look up its file
+    const entry = mfest[key];
+    if (entry?.file) {
+      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
+    } else if (key.startsWith('assets/')) {
+      // Already a file path
+      if (key !== entryClientFile) hrefs.push(`/${key}`);
+    }
+  }
+  return hrefs;
 }
 
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
-    const relativePath = pagePath.replace('/src/pages/', '');
-    const parts = relativePath.split('/');
+  const relativePath = pagePath.replace('/src/pages/', '');
+  const parts = relativePath.split('/');
 
-    for (let i = parts.length - 1; i >= 0; i--) {
-        const dir = parts.slice(0, i).join('/');
-        const searchPath = dir
-            ? `/src/pages/${dir}/${type}/index.ts`
-            : `/src/pages/${type}/index.ts`;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const dir = parts.slice(0, i).join('/');
+    const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
 
-        if (pages[searchPath]) {
-            return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
-        }
+    if (pages[searchPath]) {
+      return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
     }
+  }
 
-    return null;
+  return null;
 }
 
 export interface CreateAppOptions {
@@ -273,355 +261,366 @@ export interface CreateAppOptions {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
-    const app = new Hono<{ Bindings: CloudflareBindings, Variables: { user?: AuthenticatedUser } }>();
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: AuthenticatedUser } }>();
 
-    // Shared context passed to transport handlers
-    const routerContext: RouterContext = {
-        routeIdMap,
-        routePathToIdMap,
-        routePathToFilePathMap,
-        pages,
-        layouts,
-    };
+  // Shared context passed to transport handlers
+  const routerContext: RouterContext = {
+    routeIdMap,
+    routePathToIdMap,
+    routePathToFilePathMap,
+    pages,
+    layouts,
+  };
 
-    // Authentication middleware - use custom or default (no-op)
-    app.use('*', (c, next) => {
-        if (options.authMiddleware) {
-            return options.authMiddleware(c, next);
-        }
-        return next();
-    });
+  // Authentication middleware - use custom or default (no-op)
+  app.use('*', (c, next) => {
+    if (options.authMiddleware) {
+      return options.authMiddleware(c, next);
+    }
+    return next();
+  });
 
-    const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
-        return async (c: Context) => {
-            const inlineCss = await getInlineCss(c.env);
+  const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
+    return async (c: Context) => {
+      const inlineCss = await getInlineCss(c.env);
 
-            try {
-                const user = c.get('user');
-                const appInstance = createInstance(options.AppComponent ?? App);
-                const layoutInstances: any[] = [];
-                const pageInstance = createInstance(PageComponent);
-                const layoutPaths = getLayoutStack(path);
-
-                // Check if component has a loading template (method or file convention)
-                // If so, skip init() during SSR to show loading UI immediately
-                const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
-                const lastSlash = path.lastIndexOf('/');
-                const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
-                const hasLoadingFile = loadings[loadingFilePath] !== undefined;
-                const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
-
-                // Compute scopeKey once — used for SSE store, DO ID, and client initial state.
-                const scopeKey = await resolveSseScopeKey(c, pageOptions);
-
-                // For durable-object transport, query the DO for existing state before SSR
-                // Only for stateful pages — stateless DOs don't persist state
-                let doInitialState: any = undefined;
-                let doIdName: string = c.req.url; // Default: per-URL
-                if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
-                    doIdName = scopeKey;
-                }
-                if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
-                    try {
-                        const doBinding = c.env.COSSACK_OBJECT;
-                        const id = doBinding.idFromName(doIdName);
-                        const stub = doBinding.get(id);
-
-                        // Build query params for on-demand DO initialization
-                        // Pass the file path since the DO registry is keyed by file path
-                        const queryParams = new URLSearchParams({
-                            componentPath: path,
-                            url: c.req.url,
-                            providerName: 'page',
-                            params: JSON.stringify(c.req.param() || {}),
-                        });
-
-                        // Query the DO for current state via HTTP
-                        const stateRequest = new Request(`http://dummy.local/state?${queryParams.toString()}`, {
-                            method: 'GET',
-                        });
-                        const stateResponse = await stub.fetch(stateRequest);
-                        if (stateResponse.ok) {
-                            const responseData = await stateResponse.json();
-                            // Extract public state from SerializedComponentState
-                            if (responseData.public) {
-                                doInitialState = responseData.public;
-                            } else if (!responseData.error) {
-                                // If no public field but no error, use the response directly
-                                doInitialState = responseData;
-                            }
-                        }
-                    } catch (e) {
-                        // DO might not exist yet, or other error - proceed with default state
-                        console.log('[Cossack] Could not query DO state:', e);
-                    }
-                }
-
-                // Bootstrap App
-                await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-
-                // Bootstrap Layouts
-                const layoutStates: Record<string, any> = {};
-                for (const lPath of layoutPaths) {
-                    const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-                    const lInst = createInstance(LComp);
-                    await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
-                    layoutInstances.push(lInst);
-                    layoutStates[lPath] = lInst.getInitialState();
-                }
-
-                // Bootstrap Page with retrieved DO initial state (if any)
-                // Skip init() if component has a loading template to show loading UI immediately
-                await pageInstance.bootstrap({
-                    context: c,
-                    user,
-                    env: c.env,
-                    page: c.req.path,
-                    initialState: doInitialState,
-                    skipInit: shouldSkipInit
-                });
-
-                // If we skipped init, set loading state so loadingTemplate() renders during SSR
-                // The client will then call init() via RPC to get the actual data
-                if (shouldSkipInit) {
-                    (pageInstance as any).loading.init = 1;
-                }
-
-                // Force render to populate registry
-                pageInstance._render();
-
-                // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
-                if (pageOptions?.transport === 'sse') {
-                    registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
-                }
-
-                // Wrap rendering
-                let body = (pageInstance as any)._getWrappedTemplate();
-                for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                    layoutInstances[i].children = body;
-                    body = layoutInstances[i]._getWrappedTemplate();
-                }
-                appInstance.children = body;
-                const finalHtml = appInstance._render();
-
-                // Head Merging
-                const emptyCtx = Cossack.buildHeadContext([]);
-                const pageHeadValue = pageInstance.head(emptyCtx);
-                let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-                for (let i = layoutInstances.length - 1; i >= 0; i--) {
-                    const headContext = Cossack.buildHeadContext(tags);
-                    const headValue = layoutInstances[i].head(headContext);
-                    tags = Cossack.mergeHead(headContext, headValue);
-                }
-                const finalHeadContext = Cossack.buildHeadContext(tags);
-                const appHeadValue = appInstance.head(finalHeadContext);
-                const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
-
-                const pageInitialState = pageInstance.getInitialState();
-
-                // For durable-object transport, add the DO ID to providerTargets
-                // Also add routePath to metadata for client WebSocket connections
-                if (pageOptions?.transport === 'durable-object') {
-                    const doBinding = c.env.COSSACK_OBJECT;
-                    // Use scoped ID (from scope function) or URL-based ID (default)
-                    const doId = doBinding.idFromName(doIdName);
-                    // Convert DurableObjectId to string for client-side use
-                    pageInitialState.providerTargets = {
-                        ...(pageInitialState.providerTargets || {}),
-                        page: doId.toString()
-                    };
-                    // Add routePath to metadata for client WebSocket connections
-                    if (pageInitialState.metadata) {
-                        pageInitialState.metadata.routePath = filePathToRoutePath(path);
-                    }
-                }
-
-                const finalInitialState = {
-                    ...pageInitialState,
-                    routePath: filePathToRoutePath(path),  // Simplified route path (no /src/pages prefix)
-                    componentRouteId: routePathToIdMap.get(path),
-                    appRouteId: 'cossack_app',  // Route ID for the App component (root)
-                    pathname: c.req.path,
-                    channels: pageOptions?.channels || ['global'],
-                    transport: pageOptions?.transport || 'http',
-                    scopeKey,
-                    _app_state: appInstance.getInitialState(),
-                    _layout_stack: layoutPaths.map(p => ({ path: p, state: layoutStates[p] })) // Keep file paths for layouts
-                };
-
-                c.header('Content-Type', 'text/html');
-                const manifest = await getManifest(c.env);
-                const modulePreloads = getModulePreloads(manifest, path);
-                return c.body(renderRoot({ body: finalHtml, initialState: finalInitialState, manifest, headTags, inlineCss, modulePreloads, htmlTemplate: options.htmlTemplate }));
-            } catch (err) {
-                console.error('[Cossack SSR Error]:', err);
-                const errorPage = findNearestSpecialPage(path, 'error');
-                if (errorPage && path !== errorPage.path) {
-                    c.status(500);
-                    const handler = createSsrHandler(errorPage.component, errorPage.path);
-                    return handler(c);
-                }
-                return c.html(`<h1>Internal Server Error</h1><pre>${err instanceof Error ? err.stack : err}</pre>`, 500);
-            }
-        };
-    };
-
-    // Transport routes
-    app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
-    app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
-    app.post('/upload', handleUpload(routerContext));
-
-    app.post('/crpc', async (c) => {
-        const body = await c.req.json();
-        const { componentRouteId, action, state, payload, target, scopeKey } = body;
-        const isStreamRequest = !!body._cossack_stream;
+      try {
         const user = c.get('user');
+        const appInstance = createInstance(options.AppComponent ?? App);
+        const layoutInstances: any[] = [];
+        const pageInstance = createInstance(PageComponent);
+        const layoutPaths = getLayoutStack(path);
 
-        const componentPath = routeIdMap.get(componentRouteId);
-        if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+        // Check if component has a loading template (method or file convention)
+        // If so, skip init() during SSR to show loading UI immediately
+        const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
+        const lastSlash = path.lastIndexOf('/');
+        const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
+        const hasLoadingFile = loadings[loadingFilePath] !== undefined;
+        const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
-        // Handle App component (global component) specially
-        let componentInstance: any;
-        if (componentPath === '/src/App') {
-            componentInstance = createInstance(options.AppComponent ?? App);
-            await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
-            componentInstance._render();
-        } else {
-            const module = pages[componentPath] || layouts[componentPath];
-            if (!module) return c.json({ error: 'Component not found' }, 404);
-            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-            if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-            componentInstance = createInstance(PageComponent) as any;
-            await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+        // Compute scopeKey once — used for SSE store, DO ID, and client initial state.
+        const scopeKey = await resolveSseScopeKey(c, pageOptions);
 
-            // Rebuild component tree
-            componentInstance._render();
+        // For durable-object transport, query the DO for existing state before SSR
+        // Only for stateful pages — stateless DOs don't persist state
+        let doInitialState: any = undefined;
+        let doIdName: string = c.req.url; // Default: per-URL
+        if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
+          doIdName = scopeKey;
         }
+        if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
+          try {
+            const doBinding = c.env.COSSACK_OBJECT;
+            const id = doBinding.idFromName(doIdName);
+            const stub = doBinding.get(id);
 
-        let targetInstance = componentInstance;
-        if (target && target !== targetInstance._id) {
-            if (targetInstance.activeComponents.has(target)) {
-                targetInstance = targetInstance.activeComponents.get(target);
-            } else {
-                return c.json({ error: `Target component '${target}' not found` }, 404);
+            // Build query params for on-demand DO initialization
+            // Pass the file path since the DO registry is keyed by file path
+            const queryParams = new URLSearchParams({
+              componentPath: path,
+              url: c.req.url,
+              providerName: 'page',
+              params: JSON.stringify(c.req.param() || {}),
+            });
+
+            // Query the DO for current state via HTTP
+            const stateRequest = new Request(`http://dummy.local/state?${queryParams.toString()}`, {
+              method: 'GET',
+            });
+            const stateResponse = await stub.fetch(stateRequest);
+            if (stateResponse.ok) {
+              const responseData = await stateResponse.json();
+              // Extract public state from SerializedComponentState
+              if (responseData.public) {
+                doInitialState = responseData.public;
+              } else if (!responseData.error) {
+                // If no public field but no error, use the response directly
+                doInitialState = responseData;
+              }
             }
+          } catch (e) {
+            // DO might not exist yet, or other error - proceed with default state
+            console.log('[Cossack] Could not query DO state:', e);
+          }
         }
 
-        // Apply the received state directly to the target component
-        // The state sent from client is the target component's public state
-        for (const key in state) {
-            (targetInstance as any)[key] = state[key];
+        // Bootstrap App
+        await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+
+        // Bootstrap Layouts
+        const layoutStates: Record<string, any> = {};
+        for (const lPath of layoutPaths) {
+          const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+          const lInst = createInstance(LComp);
+          await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+          layoutInstances.push(lInst);
+          layoutStates[lPath] = lInst.getInitialState();
         }
 
-        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+        // Bootstrap Page with retrieved DO initial state (if any)
+        // Skip init() if component has a loading template to show loading UI immediately
+        await pageInstance.bootstrap({
+          context: c,
+          user,
+          env: c.env,
+          page: c.req.path,
+          initialState: doInitialState,
+          skipInit: shouldSkipInit,
+        });
 
-        // Call the method. For streaming requests, don't await — the result may
-        // be an async iterable that the SSE driver will pull values from.
-        let actionResult: any;
-        if (isStreamRequest) {
-            actionResult = targetInstance[action](...(payload || []));
-        } else {
-            actionResult = await targetInstance[action](...(payload || []));
+        // If we skipped init, set loading state so loadingTemplate() renders during SSR
+        // The client will then call init() via RPC to get the actual data
+        if (shouldSkipInit) {
+          (pageInstance as any).loading.init = 1;
         }
 
-        const location = c.res.headers.get('Location');
-        if (location) return c.json({ _cossack_redirect: location });
-        if (actionResult instanceof Response) return actionResult;
+        // Force render to populate registry
+        pageInstance._render();
 
-        // Get the state of the component that was actually modified
-        const responseData = targetInstance.getPublicState();
-
-        // Handle SSE streaming detection and state sync
-        const sseResult = handleSseCrpc(componentRouteId, scopeKey, actionResult, responseData, targetInstance);
-        if (sseResult.handled) {
-            return c.json(sseResult.response);
+        // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
+        if (pageOptions?.transport === 'sse') {
+          registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
         }
 
-        // Non-streaming path: regular method return
-        if (actionResult !== undefined) {
-            (responseData as any)._cossack_return = actionResult;
+        // Wrap rendering
+        let body = (pageInstance as any)._getWrappedTemplate();
+        for (let i = layoutInstances.length - 1; i >= 0; i--) {
+          layoutInstances[i].children = body;
+          body = layoutInstances[i]._getWrappedTemplate();
+        }
+        appInstance.children = body;
+        const finalHtml = appInstance._render();
+
+        // Head Merging
+        const emptyCtx = Cossack.buildHeadContext([]);
+        const pageHeadValue = pageInstance.head(emptyCtx);
+        let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
+        for (let i = layoutInstances.length - 1; i >= 0; i--) {
+          const headContext = Cossack.buildHeadContext(tags);
+          const headValue = layoutInstances[i].head(headContext);
+          tags = Cossack.mergeHead(headContext, headValue);
+        }
+        const finalHeadContext = Cossack.buildHeadContext(tags);
+        const appHeadValue = appInstance.head(finalHeadContext);
+        const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+
+        const pageInitialState = pageInstance.getInitialState();
+
+        // For durable-object transport, add the DO ID to providerTargets
+        // Also add routePath to metadata for client WebSocket connections
+        if (pageOptions?.transport === 'durable-object') {
+          const doBinding = c.env.COSSACK_OBJECT;
+          // Use scoped ID (from scope function) or URL-based ID (default)
+          const doId = doBinding.idFromName(doIdName);
+          // Convert DurableObjectId to string for client-side use
+          pageInitialState.providerTargets = {
+            ...(pageInitialState.providerTargets || {}),
+            page: doId.toString(),
+          };
+          // Add routePath to metadata for client WebSocket connections
+          if (pageInitialState.metadata) {
+            pageInitialState.metadata.routePath = filePathToRoutePath(path);
+          }
         }
 
-        return c.json(responseData);
-    });
+        const finalInitialState = {
+          ...pageInitialState,
+          routePath: filePathToRoutePath(path), // Simplified route path (no /src/pages prefix)
+          componentRouteId: routePathToIdMap.get(path),
+          appRouteId: 'cossack_app', // Route ID for the App component (root)
+          pathname: c.req.path,
+          channels: pageOptions?.channels || ['global'],
+          transport: pageOptions?.transport || 'http',
+          scopeKey,
+          _app_state: appInstance.getInitialState(),
+          _layout_stack: layoutPaths.map((p) => ({ path: p, state: layoutStates[p] })), // Keep file paths for layouts
+        };
 
-    // Register all routes
-    for (const path in pages) {
-        let httpRoute = path
-            .replace('/src/pages', '')
-            .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
-            .replace(/\/index$/, '')
-            .replace(/\/\([^)]+\)/g, '')
-            .replace(/\[([^\]]+)\]/g, ':$1') || '/';
-
-        if (httpRoute === '/index') httpRoute = '/';
-        if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
-
-        const module = pages[path] as any;
-        const mainExport = Object.values(module)[0];
-
-        // 1. Check if it's a Cossack Component
-        if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
-            const PageComponent = mainExport as new () => Cossack;
-            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-            const layoutPaths = getLayoutStack(path);
-            const combinedMiddlewares: Middleware[] = [];
-            for (const lPath of layoutPaths) {
-                const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-                const lOpts = Reflect.getMetadata('page:options', LComp);
-                if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
-            }
-            if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
-
-            const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
-            if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
-                Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
-            }
-            // Register path-scoped middleware once so it runs ahead of every method handler
-            // on this route. Hono types route handlers as a fixed-length tuple, so a
-            // variable-length middleware spread can't be type-checked — `app.use` avoids that
-            // and lets the handlers below be registered as plain single-handler routes.
-            for (const middleware of combinedMiddlewares) {
-                app.use(httpRoute, middleware);
-            }
-            app.get(httpRoute, ssrHandler);
-
-            // Handle class-based HTTP method handlers for hybrid pages
-            // This allows pages to both render HTML AND handle API requests (e.g., form POST)
-            if (pageOptions?.transport === 'http') {
-                const httpMethods = ['post', 'put', 'patch', 'delete'];
-                for (const method of httpMethods) {
-                    if (method in PageComponent.prototype) {
-                        (app as any)[method](httpRoute, createApiHandler(PageComponent, method));
-                    }
-                }
-            }
+        c.header('Content-Type', 'text/html');
+        const manifest = await getManifest(c.env);
+        const modulePreloads = getModulePreloads(manifest, path);
+        return c.body(
+          renderRoot({
+            body: finalHtml,
+            initialState: finalInitialState,
+            manifest,
+            headTags,
+            inlineCss,
+            modulePreloads,
+            htmlTemplate: options.htmlTemplate,
+          }),
+        );
+      } catch (err) {
+        console.error('[Cossack SSR Error]:', err);
+        const errorPage = findNearestSpecialPage(path, 'error');
+        if (errorPage && path !== errorPage.path) {
+          c.status(500);
+          const handler = createSsrHandler(errorPage.component, errorPage.path);
+          return handler(c);
         }
-        // 2. Check if it's a functional API Route
-        else if (path.includes('/src/pages/api/')) {
-            // Handle default export as a generic handler
-            if (typeof module.default === 'function') {
-                app.all(httpRoute, module.default);
-            }
-            // Handle named exports for HTTP methods (Nuxt/Next style)
-            const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
-            for (const m of methods) {
-                if (typeof module[m] === 'function') {
-                    (app as any)[m.toLowerCase()](httpRoute, module[m]);
-                }
-            }
-        }
+        return c.html(`<h1>Internal Server Error</h1><pre>${err instanceof Error ? err.stack : err}</pre>`, 500);
+      }
+    };
+  };
+
+  // Transport routes
+  app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+  app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
+  app.post('/upload', handleUpload(routerContext));
+
+  app.post('/crpc', async (c) => {
+    const body = await c.req.json();
+    const { componentRouteId, action, state, payload, target, scopeKey } = body;
+    const isStreamRequest = !!body._cossack_stream;
+    const user = c.get('user');
+
+    const componentPath = routeIdMap.get(componentRouteId);
+    if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+
+    // Handle App component (global component) specially
+    let componentInstance: any;
+    if (componentPath === '/src/App') {
+      componentInstance = createInstance(options.AppComponent ?? App);
+      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+      componentInstance._render();
+    } else {
+      const module = pages[componentPath] || layouts[componentPath];
+      if (!module) return c.json({ error: 'Component not found' }, 404);
+      const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+      if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
+      componentInstance = createInstance(PageComponent) as any;
+      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+
+      // Rebuild component tree
+      componentInstance._render();
     }
 
-    app.notFound(async (c) => {
-        const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
-        const notFoundPage = findNearestSpecialPage(virtualPath, '404');
-        if (notFoundPage) {
-            c.status(404);
-            return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
-        }
-        return c.text('404 Not Found', 404);
-    });
+    let targetInstance = componentInstance;
+    if (target && target !== targetInstance._id) {
+      if (targetInstance.activeComponents.has(target)) {
+        targetInstance = targetInstance.activeComponents.get(target);
+      } else {
+        return c.json({ error: `Target component '${target}' not found` }, 404);
+      }
+    }
 
-    return app;
+    // Apply the received state directly to the target component
+    // The state sent from client is the target component's public state
+    for (const key in state) {
+      (targetInstance as any)[key] = state[key];
+    }
+
+    if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+
+    // Call the method. For streaming requests, don't await — the result may
+    // be an async iterable that the SSE driver will pull values from.
+    let actionResult: any;
+    if (isStreamRequest) {
+      actionResult = targetInstance[action](...(payload || []));
+    } else {
+      actionResult = await targetInstance[action](...(payload || []));
+    }
+
+    const location = c.res.headers.get('Location');
+    if (location) return c.json({ _cossack_redirect: location });
+    if (actionResult instanceof Response) return actionResult;
+
+    // Get the state of the component that was actually modified
+    const responseData = targetInstance.getPublicState();
+
+    // Handle SSE streaming detection and state sync
+    const sseResult = handleSseCrpc(componentRouteId, scopeKey, actionResult, responseData, targetInstance);
+    if (sseResult.handled) {
+      return c.json(sseResult.response);
+    }
+
+    // Non-streaming path: regular method return
+    if (actionResult !== undefined) {
+      (responseData as any)._cossack_return = actionResult;
+    }
+
+    return c.json(responseData);
+  });
+
+  // Register all routes
+  for (const path in pages) {
+    let httpRoute =
+      path
+        .replace('/src/pages', '')
+        .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
+        .replace(/\/index$/, '')
+        .replace(/\/\([^)]+\)/g, '')
+        .replace(/\[([^\]]+)\]/g, ':$1') || '/';
+
+    if (httpRoute === '/index') httpRoute = '/';
+    if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
+
+    const module = pages[path] as any;
+    const mainExport = Object.values(module)[0];
+
+    // 1. Check if it's a Cossack Component
+    if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
+      const PageComponent = mainExport as new () => Cossack;
+      const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
+      const layoutPaths = getLayoutStack(path);
+      const combinedMiddlewares: Middleware[] = [];
+      for (const lPath of layoutPaths) {
+        const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+        const lOpts = Reflect.getMetadata('page:options', LComp);
+        if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
+      }
+      if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
+
+      const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
+      if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
+        Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
+      }
+      // Register path-scoped middleware once so it runs ahead of every method handler
+      // on this route. Hono types route handlers as a fixed-length tuple, so a
+      // variable-length middleware spread can't be type-checked — `app.use` avoids that
+      // and lets the handlers below be registered as plain single-handler routes.
+      for (const middleware of combinedMiddlewares) {
+        app.use(httpRoute, middleware);
+      }
+      app.get(httpRoute, ssrHandler);
+
+      // Handle class-based HTTP method handlers for hybrid pages
+      // This allows pages to both render HTML AND handle API requests (e.g., form POST)
+      if (pageOptions?.transport === 'http') {
+        const httpMethods = ['post', 'put', 'patch', 'delete'];
+        for (const method of httpMethods) {
+          if (method in PageComponent.prototype) {
+            (app as any)[method](httpRoute, createApiHandler(PageComponent, method));
+          }
+        }
+      }
+    }
+    // 2. Check if it's a functional API Route
+    else if (path.includes('/src/pages/api/')) {
+      // Handle default export as a generic handler
+      if (typeof module.default === 'function') {
+        app.all(httpRoute, module.default);
+      }
+      // Handle named exports for HTTP methods (Nuxt/Next style)
+      const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
+      for (const m of methods) {
+        if (typeof module[m] === 'function') {
+          (app as any)[m.toLowerCase()](httpRoute, module[m]);
+        }
+      }
+    }
+  }
+
+  app.notFound(async (c) => {
+    const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
+    const notFoundPage = findNearestSpecialPage(virtualPath, '404');
+    if (notFoundPage) {
+      c.status(404);
+      return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
+    }
+    return c.text('404 Not Found', 404);
+  });
+
+  return app;
 }

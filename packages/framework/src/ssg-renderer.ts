@@ -50,10 +50,7 @@ export function filePathToRoutePath(filePath: string): string {
 /**
  * Get the layout stack for a given page path.
  */
-function getLayoutStack(
-  pagePath: string,
-  layouts: Record<string, LayoutModule>
-): LayoutStackItem[] {
+function getLayoutStack(pagePath: string, layouts: Record<string, LayoutModule>): LayoutStackItem[] {
   const stack: LayoutStackItem[] = [];
   const relativePath = pagePath.replace('/src/pages/', '');
   const parts = relativePath.split('/');
@@ -83,10 +80,7 @@ function getLayoutStack(
 /**
  * Collect all pages marked for SSG from the pages registry.
  */
-export function collectSsgRoutes(
-  pages: Record<string, unknown>,
-  layouts: Record<string, LayoutModule>
-): SsgRoute[] {
+export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record<string, LayoutModule>): SsgRoute[] {
   const routes: SsgRoute[] = [];
 
   for (const path in pages) {
@@ -101,16 +95,9 @@ export function collectSsgRoutes(
     const mainExport = Object.values(module)[0];
 
     // Check if it's a Cossack Component
-    if (
-      mainExport &&
-      typeof mainExport === 'function' &&
-      mainExport.prototype instanceof Cossack
-    ) {
+    if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
       const PageComponent = mainExport as new () => Cossack;
-      const pageOptions: PageOptions | undefined = Reflect.getMetadata(
-        'page:options',
-        PageComponent
-      );
+      const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
       // Check if SSG is enabled for this page
       if (pageOptions?.ssg) {
@@ -145,31 +132,35 @@ export async function renderSsgPage(
   AppComponent?: new (...args: any[]) => any,
   htmlTemplate?: HtmlTemplate,
   pageFilePath?: string,
-  componentRouteId?: string
+  componentRouteId?: string,
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
 
   // Get page options for transport type
-  const pageOptions: PageOptions | undefined = Reflect.getMetadata(
-    'page:options',
-    PageComponent
-  );
+  const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
   const user: AuthenticatedUser = { id: 'ssg-user', name: 'SSG User' };
   const env = {};
 
   // Bootstrap App
+  if (!AppComponent) {
+    // No user App was supplied — falling back to the framework's demo App.
+    // This is almost always a plumbing mistake (the SSG entry should import and
+    // pass the project's own `App`), and results in the wrong <title>/head and
+    // missing global tags. Warn loudly so it's not silent.
+    console.warn(
+      '[cossack/ssg] No AppComponent was passed to renderSsgPage(); falling back to the framework default App. ' +
+        'Pass your App (e.g. via `cossack ssg` or renderSsgPage(..., App)) so your head()/title are applied.',
+    );
+  }
   const appInstance = new (AppComponent ?? App)();
   await appInstance.bootstrap({ context: mockContext, user, env, page: routePath });
 
   // Bootstrap Layouts
   const layoutInstances: Cossack[] = [];
   const layoutStates: Record<string, any> = {};
-  const layoutPaths = getLayoutStack(
-    `/src/pages${routePath.replace(/\//g, '/').replace(/^\//, '')}/index.ts`,
-    layouts
-  );
+  const layoutPaths = getLayoutStack(`/src/pages${routePath.replace(/\//g, '/').replace(/^\//, '')}/index.ts`, layouts);
 
   for (const layoutItem of layoutPaths) {
     const LComp = layouts[layoutItem.path].default;
@@ -183,9 +174,10 @@ export async function renderSsgPage(
   const pageInstance = new PageComponent();
 
   // Wrap staticParams in SerializedComponentState format for initializeState
-  const initialState = staticParams && Object.keys(staticParams).length > 0
-    ? { public: staticParams, internal: {}, children: {} }
-    : undefined;
+  const initialState =
+    staticParams && Object.keys(staticParams).length > 0
+      ? { public: staticParams, internal: {}, children: {} }
+      : undefined;
 
   await pageInstance.bootstrap({
     context: mockContext,
@@ -263,11 +255,9 @@ export async function renderSsgPage(
 function createMockContext(
   path: string,
   params?: Record<string, string>,
-  baseUrl: string = 'https://example.com'
+  baseUrl: string = 'https://example.com',
 ): Context {
-  const fullUrl = params
-    ? replaceParams(path, params)
-    : path;
+  const fullUrl = params ? replaceParams(path, params) : path;
 
   // Create a minimal Hono context mock
   const mockContext = {
@@ -374,9 +364,7 @@ function getModulePreloads(mfest: Record<string, any>, pagePath: string): string
 /**
  * Get all static params for a dynamic SSG route.
  */
-export async function getStaticParams(
-  pageOptions: PageOptions
-): Promise<Record<string, string>[]> {
+export async function getStaticParams(pageOptions: PageOptions): Promise<Record<string, string>[]> {
   if (typeof pageOptions.ssg === 'object' && pageOptions.ssg.generateStaticParams) {
     return await pageOptions.ssg.generateStaticParams();
   }

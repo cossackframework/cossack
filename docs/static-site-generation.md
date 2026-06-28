@@ -1,6 +1,6 @@
 ---
-title: "Static Site Generation (SSG)"
-description: "Pre-render pages at build time for faster page loads, better SEO, and hosting on any static hosting service."
+title: 'Static Site Generation (SSG)'
+description: 'Pre-render pages at build time for faster page loads, better SEO, and hosting on any static hosting service.'
 ---
 
 # Static Site Generation (SSG)
@@ -48,13 +48,9 @@ import { html } from '@cossackframework/renderer';
     enabled: true,
     generateStaticParams: async () => {
       // Return array of params to pre-render
-      return [
-        { username: 'alice' },
-        { username: 'bob' },
-        { username: 'charlie' },
-      ];
-    }
-  }
+      return [{ username: 'alice' }, { username: 'bob' }, { username: 'charlie' }];
+    },
+  },
 })
 export class UserProfile extends Cossack {
   @State() username: string = '';
@@ -67,45 +63,87 @@ export class UserProfile extends Cossack {
 ```
 
 This will generate:
+
 - `dist/ssg/users/alice/index.html`
 - `dist/ssg/users/bob/index.html`
 - `dist/ssg/users/charlie/index.html`
 
 ## Build Commands
 
+SSG is driven by the `cossack` CLI (`cossack ssg`), which is installed
+alongside `@cossackframework/framework`. It reads the `cossack-routes.json`
+manifest emitted by the Cossack Vite plugin during `vite build`, and renders
+your pages using **your own `App` and html template** (the same values you pass
+to `createApp()` in `src/index.ts`) — so global `<head>` tags, branding, and
+your html shell are applied identically in SSR and SSG. There is no per-project
+build script to maintain.
+
 ### Standard Build
+
 ```bash
 pnpm run build
 ```
+
 Builds client assets and SSR bundle (no static HTML generation).
 
 ### SSG Build
+
 ```bash
 pnpm run build:ssg
 ```
-Runs the SSG build process to generate static HTML files.
+
+Runs `vite build` (which emits `cossack-routes.json`) followed by `cossack ssg`
+to generate static HTML files.
 
 ### Build All
+
 ```bash
 pnpm run build:all
 ```
+
 Runs both standard build and SSG build.
+
+### CLI flags
+
+```bash
+cossack ssg \
+  --project-root ./ \       # project root (default: cwd)
+  --out-dir dist/client \   # output dir (default: <root>/dist/client)
+  --base-url https://… \    # override the sitemap/canonical base URL
+  --app src/App.ts \        # override the App module
+  --template src/root.ts    # override the html-template module
+```
 
 ### Custom Base URL
 
 The base URL used for sitemap and canonical URLs is read automatically from
 your project config (`wrangler.jsonc` `vars.BASE_URL`, `.env`, or the `BASE_URL`
 shell env). See [Sitemap → Base URL](./sitemap.md#base-url) for the full
-resolution order.
+resolution order. You can also override it per-build with
+`cossack ssg --base-url …`.
 
 The legacy `VITE_SSG_BASE_URL` env var is still respected as a fallback.
 
+## How SSG resolves your App + html template
+
+The CLI imports these by convention from your project root:
+
+| What                   | Default path  | Export                  |
+| ---------------------- | ------------- | ----------------------- |
+| Global `App` component | `src/App.ts`  | `App` (or default)      |
+| Html shell template    | `src/root.ts` | `template` (or default) |
+
+These match what a scaffolded app passes to `createApp({ AppComponent, htmlTemplate })`,
+so SSR and SSG stay in sync automatically. Override the paths with `--app` /
+`--template` if your project layout differs.
+
 ## Output Structure
 
-After SSG build, the `dist/ssg/` directory contains:
+After SSG build, the `dist/client/` directory contains the static HTML alongside
+the client assets:
 
 ```
-dist/ssg/
+dist/client/
 ├── index.html                    # Root page
 ├── about/
 │   └── index.html                # /about page
@@ -114,8 +152,9 @@ dist/ssg/
 │   │   └── index.html            # /users/alice page
 │   └── bob/
 │       └── index.html            # /users/bob page
+├── cossack-routes.json           # Route/ID manifest (emitted by the Vite plugin)
 ├── sitemap.xml                   # XML sitemap for SEO
-└── routes.json                  # List of generated routes
+└── routes.json                   # List of generated routes
 ```
 
 ## PageOptions Interface
@@ -152,6 +191,7 @@ export interface SsgOptions {
 ## Example: SSG Demo Page
 
 See `src/pages/ssg-demo/` in the framework package for a complete example demonstrating:
+
 - Static page generation
 - Dynamic route generation with `generateStaticParams`
 - Integration with the Layout component
