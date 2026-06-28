@@ -1163,4 +1163,132 @@ export class UserProfile extends Cossack {
     expect(result).toContain('render() {');
     expect(result).toContain('User Profile');
   });
+
+  describe('constructor metadata injection (no duplicate constructor)', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    /**
+     * Count top-level `constructor(` occurrences in the transformed class body.
+     * A class with a duplicate constructor is a syntax error, so this must
+     * always be exactly 1 (or 0) when @Server methods are present.
+     */
+    function countTopLevelConstructors(result: string): number {
+      const classBodyStart = result.indexOf('{', result.indexOf('class'));
+      // Match `constructor` at brace depth 0 of the class body, followed by (.
+      let depth = 0;
+      let count = 0;
+      for (let i = classBodyStart; i < result.length; i++) {
+        const c = result[i];
+        if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+        else if (depth === 1 && c === 'c' && result.slice(i, i + 11) === 'constructor') {
+          const after = result[i + 11];
+          if (after === undefined || /[\s(]/.test(after)) count++;
+        }
+      }
+      return count;
+    }
+
+    it('does not produce a duplicate constructor when the class declares one AND has @Server methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  constructor() {
+    super();
+    console.log('custom ctor');
+  }
+
+  @Server()
+  async save() {
+    await db.insert();
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      const count = countTopLevelConstructors(result);
+      expect(count).toBe(1);
+      // The existing constructor body must be preserved.
+      expect(result).toContain("console.log('custom ctor')");
+      // The registration call must be injected (once).
+      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      expect(regCount).toBe(1);
+    });
+
+    it('injects a new constructor when the class has @Server methods but no constructor', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Server()
+  async save() {
+    await db.insert();
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // Exactly one constructor injected.
+      expect(countTopLevelConstructors(result)).toBe(1);
+      expect(result).toContain('super()');
+      expect(result).toContain('__registerServerOnlyMethods');
+    });
+
+    it('injects a constructor WITHOUT super() for @Service classes that do not extend', () => {
+      const code = `
+@Service()
+export class CounterService {
+  @Server()
+  increment() {
+    this.count++;
+  }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(countTopLevelConstructors(result)).toBe(1);
+      // No super() since the class does not extend anything.
+      expect(result).not.toMatch(/super\s*\(/);
+    });
+
+    it('still registers server-only methods when splicing into an existing constructor', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  private x = 1;
+  constructor(public foo: string) {
+    super();
+  }
+
+  @Server()
+  doThing() { this.x = 2; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(countTopLevelConstructors(result)).toBe(1);
+      // The __registerServerOnlyMethods call must run inside the constructor.
+      expect(result).toContain('doThing'); // method name listed in registration
+      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      expect(regCount).toBe(1);
+      // Constructor params preserved.
+      expect(result).toContain('public foo: string');
+    });
+
+    it('produces no constructor when there are no @Server methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Client()
+  click() { this.x++; }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('__registerServerOnlyMethods');
+      expect(result).not.toMatch(/constructor\s*\(/);
+    });
+  });
 });

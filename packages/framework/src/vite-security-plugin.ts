@@ -523,12 +523,32 @@ export function transformCossackClass(
 
     let finalBody = transformedBody;
 
-    // Inject metadata registration at the end of the class for server-only methods.
-    // createMetadataInjection returns '' when no @Server methods qualify, so no
-    // constructor is injected for classes that only strip undecorated helpers.
+    // Inject metadata registration for server-only methods. The static method
+    // is always appended; the constructor registration call is spliced into an
+    // existing constructor when present (appending unconditionally would create
+    // a duplicate constructor — a syntax error). createMetadataInjection
+    // returns '' when no @Server methods qualify.
     const metadataInjection = createMetadataInjection(serverOnlyMethods, hasExtends);
     if (metadataInjection) {
-      finalBody = transformedBody + metadataInjection;
+      const ctorBrace = findConstructorBodyOpenBrace(transformedBody);
+      if (ctorBrace !== -1) {
+        // Existing constructor: inject the registration as its first statement.
+        finalBody =
+          transformedBody.slice(0, ctorBrace + 1) +
+          '\n' +
+          REGISTER_SERVER_METHODS_CALL +
+          transformedBody.slice(ctorBrace + 1) +
+          metadataInjection;
+      } else {
+        // No constructor: append a new one (with super() if the class extends).
+        const superCall = hasExtends ? '      super();\n' : '';
+        finalBody =
+          transformedBody +
+          metadataInjection +
+          `    constructor() {
+${superCall}${REGISTER_SERVER_METHODS_CALL}    }
+`;
+      }
     }
 
     if (finalBody !== classBodyText) {
@@ -755,7 +775,7 @@ function extractServerOnlyMethodNames(
  */
 function createMetadataInjection(
   methods: Array<{ name: string; hasServerDecorator: boolean }>,
-  hasExtends: boolean
+  _hasExtends: boolean
 ): string {
   const serverMethodNames = methods
     .filter((m) => m.hasServerDecorator)
@@ -763,7 +783,11 @@ function createMetadataInjection(
   if (serverMethodNames.length === 0) return '';
 
   const methodList = JSON.stringify(serverMethodNames);
-  const superCall = hasExtends ? '      super();\n' : '';
+  // Returns ONLY the static registration method. The constructor wiring is
+  // handled by the caller (transformCossackClass), which splices the
+  // registration call into an existing constructor or appends a new one —
+  // appending unconditionally would produce a duplicate constructor
+  // (a syntax error) when the class already declares one.
   return `
     // Register server-only methods for RPC proxying
     static __registerServerOnlyMethods() {
@@ -777,10 +801,73 @@ function createMetadataInjection(
       }
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
     }
-    constructor() {
-${superCall}      (this.constructor as any).__registerServerOnlyMethods?.();
+`;
+}
+
+/**
+ * The statement injected into a constructor to register server-only methods.
+ */
+const REGISTER_SERVER_METHODS_CALL =
+  '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
+
+/**
+ * If `body` declares a top-level `constructor(...)`, return the index (within
+ * `body`) of the constructor's opening body brace `{`. Returns -1 if there is
+ * no top-level constructor. Used to splice the server-method registration call
+ * into an existing constructor instead of appending a duplicate one.
+ */
+function findConstructorBodyOpenBrace(body: string): number {
+  const len = body.length;
+  let depth = 0;
+  let i = 0;
+  while (i < len) {
+    const char = body[i];
+    if (char === '"' || char === "'" || char === '`') {
+      const end = findStringEnd(body, i, char);
+      if (end === -1) return -1;
+      i = end + 1;
+      continue;
     }
-  `;
+    if (char === '/' && i + 1 < len) {
+      if (body[i + 1] === '/') {
+        i = body.indexOf('\n', i + 2);
+        if (i === -1) i = len;
+        continue;
+      }
+      if (body[i + 1] === '*') {
+        const end = body.indexOf('*/', i + 2);
+        if (end === -1) return -1;
+        i = end + 2;
+        continue;
+      }
+    }
+    if (char === '{') { depth++; i++; continue; }
+    if (char === '}') { depth--; i++; continue; }
+    if (depth === 0 && char === 'c' && body.slice(i, i + 11) === 'constructor') {
+      const after = body[i + 11];
+      if (after === undefined || /[\s(]/.test(after)) {
+        let j = i + 11;
+        while (j < len && /\s/.test(body[j])) j++;
+        if (body[j] !== '(') { i++; continue; }
+        let pdepth = 1;
+        j++;
+        while (j < len && pdepth > 0) {
+          const c2 = body[j];
+          if (c2 === '"' || c2 === "'" || c2 === '`') {
+            const e = findStringEnd(body, j, c2);
+            if (e === -1) break;
+            j = e;
+          } else if (c2 === '(') pdepth++;
+          else if (c2 === ')') pdepth--;
+          j++;
+        }
+        while (j < len && /\s/.test(body[j])) j++;
+        if (body[j] === '{') return j;
+      }
+    }
+    i++;
+  }
+  return -1;
 }
 
 /**
