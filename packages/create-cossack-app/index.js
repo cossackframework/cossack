@@ -81,12 +81,17 @@ async function configureNodeAdapter(projectDir) {
   delete packageJson.devDependencies['@cloudflare/workers-types'];
   delete packageJson.devDependencies['@cloudflare/vite-plugin'];
 
-  packageJson.dependencies['@cossackframework/node-adapter'] = '^0.1.0';
-  packageJson.dependencies['@hono/node-server'] = '^1.0.0';
-  packageJson.dependencies['ws'] = '^8.16.0';
+  // Source the @cossackframework/node-adapter version from create-cossack-app's
+  // own package version (they release in lockstep) so it tracks the framework
+  // instead of rotting at a hardcoded stale value. Third-party deps are aligned
+  // with the node-adapter's own declared ranges.
+  const ccaVersion = JSON.parse(await fs.readFile(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
+  packageJson.dependencies['@cossackframework/node-adapter'] = `^${ccaVersion}`;
+  packageJson.dependencies['@hono/node-server'] = '^1.13.0';
+  packageJson.dependencies['ws'] = '^8.18.0';
 
-  packageJson.devDependencies['@types/ws'] = '^8.5.10';
-  packageJson.devDependencies['@types/node'] = '^20.0.0';
+  packageJson.devDependencies['@types/ws'] = '^8.18.0';
+  packageJson.devDependencies['@types/node'] = '^22.0.0';
 
   packageJson.scripts['dev'] = 'node scripts/dev.js';
   packageJson.scripts['start'] = 'node dist/server/index.js';

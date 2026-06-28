@@ -89,7 +89,7 @@ Confirmed leaks that compound over SPA sessions and per-navigation.
 
 - [x] **7.1** Template ships `build:types` referencing non-existent `tsconfig.declarations.json`; `cf-typegen` required before `tsc` works. — _removed broken `build:types`; shipped a minimal `worker-configuration.d.ts` so tsc works out-of-the-box (overwritten by `cf-typegen`); dropped unused `workerd` devDep._
 - [x] **7.2** `tsconfig.template.json` references `./worker-configuration.d.ts` which doesn't exist post-scaffold. — _resolved by shipping the file (7.1)._
-- [ ] **7.3** Hardcoded version strings (`^0.1.0`, `^8.16.0`) will drift.
+- [x] **7.3** Hardcoded version strings (`^0.1.0`, `^8.16.0`) will drift. _(node-adapter now tracks create-cossack-app's own version; ws/@hono/node-server/@types/ws/@types/node aligned with the node-adapter's ranges.)_
 - [ ] **7.4** Regex-based Node-adapter config rewriting (fragile) → placeholder approach.
 - [ ] **7.5** Missing `types` field on package; `prettier` in template but not in deps.
 
