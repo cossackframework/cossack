@@ -20,10 +20,36 @@ interface SseStoreEntry {
     pendingGenerator: PendingGenerator | null;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
+    /** Number of open SSE connections subscribed to this entry. */
+    connectionCount: number;
+    /** Last time an entry was touched (created or connected). Used for LRU eviction. */
+    lastActive: number;
 }
 
 /** In-memory state store for SSE transport pages. Keyed by componentRouteId:scopeKey. */
+const SSE_STORE_MAX = 500;
 const sseStateStore = new Map<string, SseStoreEntry>();
+
+/** Evict the oldest entry when the store exceeds its bound. */
+function enforceSseStoreBound(): void {
+    while (sseStateStore.size > SSE_STORE_MAX) {
+        let oldestKey: string | undefined;
+        let oldestTime = Infinity;
+        for (const [k, v] of sseStateStore) {
+            if (v.lastActive < oldestTime) {
+                oldestTime = v.lastActive;
+                oldestKey = k;
+            }
+        }
+        if (oldestKey === undefined) break;
+        sseStateStore.delete(oldestKey);
+    }
+}
+
+/** @internal Test seam: current number of entries in the SSE store. */
+export function __sseStoreSize(): number {
+    return sseStateStore.size;
+}
 
 function sseStoreKey(componentRouteId: string, scopeKey: string): string {
     return `${componentRouteId}:${scopeKey}`;
@@ -73,6 +99,8 @@ export function registerSseStoreEntry(
             runtime,
             pendingGenerator: null,
             stateVersion: 0,
+            connectionCount: 0,
+            lastActive: Date.now(),
         });
     }
 }
@@ -120,9 +148,15 @@ export function handleSseEndpoint(ctx: RouterContext) {
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0 };
+            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
+            enforceSseStoreBound();
         }
+
+        // Track this connection against the entry so the store can be trimmed
+        // when no clients remain.
+        entry.connectionCount++;
+        entry.lastActive = Date.now();
 
         const { componentInstance } = entry;
 
@@ -203,6 +237,16 @@ export function handleSseEndpoint(ctx: RouterContext) {
         const cleanup = () => {
             clearInterval(heartbeat);
             clearInterval(driver);
+            // Decrement the subscriber count; when no clients remain, drop the
+            // entry so the store (and its component instance) doesn't grow
+            // without bound across users/scopes.
+            const e = sseStateStore.get(storeKey);
+            if (e) {
+                e.connectionCount = Math.max(0, e.connectionCount - 1);
+                if (e.connectionCount === 0) {
+                    sseStateStore.delete(storeKey);
+                }
+            }
         };
         (c.req.raw as any).signal?.addEventListener('abort', cleanup);
 

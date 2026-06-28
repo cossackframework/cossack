@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from 'hono';
-import { handleSseEndpoint, type RouterContext } from '../src/transports/sse';
+import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, __sseStoreSize, type RouterContext } from '../src/transports/sse';
 
 // A Page component carrying the default scope (no scope() in pageOptions).
 // resolveSseScopeKey will fall back to `user:${user?.id || 'anonymous'}`.
@@ -77,5 +77,42 @@ describe('handleSseEndpoint scope validation (cross-user eavesdropping guard)', 
         );
         const res = await handler(makeContext({ id: 'alice' }, 'user:alice'));
         expect(res.status).toBe(400);
+    });
+});
+
+describe('SSE store bounding (connection counting)', () => {
+    function makeSignalContext(user: unknown, scopeKey: string, controller: AbortController): Context {
+        const url = 'http://localhost/sse/sse_page';
+        return {
+            req: {
+                param: (name?: string) => (name === 'componentRouteId' ? 'sse_page' : { componentRouteId: 'sse_page' }),
+                query: (name: string) => (name === 'scopeKey' ? scopeKey : undefined),
+                header: (name: string) => (name.toLowerCase() === 'origin' ? 'http://localhost' : undefined),
+                url,
+                raw: { signal: controller.signal } as any,
+            },
+            get: (key: string) => (key === 'user' ? user : undefined),
+            env: {},
+        } as unknown as Context;
+    }
+
+    it('deletes the store entry when the last connection disconnects', async () => {
+        const ctx = makeCtx();
+        const scopeKey = 'user:alice';
+        // Pre-register an entry so the handler skips cold-start bootstrap.
+        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, {
+            getPublicState: () => ({ count: 0 }),
+        } as any);
+        expect(__sseStoreSize()).toBe(1);
+
+        const controller = new AbortController();
+        const handler = handleSseEndpoint(ctx);
+        await handler(makeSignalContext({ id: 'alice' }, scopeKey, controller));
+        // Connection registered.
+        expect(__sseStoreSize()).toBe(1);
+
+        // Simulate client disconnect → entry should be removed.
+        controller.abort();
+        expect(__sseStoreSize()).toBe(0);
     });
 });
