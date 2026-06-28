@@ -20,10 +20,13 @@ function makeCtx(overrides: Partial<RouterContext> = {}): RouterContext {
 }
 
 function makeContext(user: unknown, scopeKey: string | null): Context {
+    const url = 'http://localhost/sse/sse_page';
     return {
         req: {
             param: (name?: string) => (name === 'componentRouteId' ? 'sse_page' : { componentRouteId: 'sse_page' }),
             query: (name: string) => (name === 'scopeKey' ? scopeKey : undefined),
+            header: (name: string) => (name.toLowerCase() === 'origin' ? 'http://localhost' : undefined),
+            url,
             raw: { signal: undefined } as any,
         },
         get: (key: string) => (key === 'user' ? user : undefined),

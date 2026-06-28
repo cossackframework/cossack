@@ -2,20 +2,35 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { NodeWebSocketRuntime } from './runtime';
 import type { Cossack } from '@cossackframework/core';
+import { isOriginAllowed } from '@cossackframework/core';
 import { URL } from 'url';
 
 export * from './runtime';
 export { serveStatic, type StaticServeOptions } from './static-serve';
+
+export interface CossackNodeAdapterOptions {
+    server: Server;
+    componentRegistry: Map<string, new () => Cossack>;
+    path?: string;
+    /**
+     * Allowed Origin values for WebSocket upgrades. Defaults to same-origin
+     * (the request's own origin). Missing Origin headers are rejected, which
+     * blocks cross-site WebSocket hijacking.
+     */
+    allowedOrigins?: string[];
+}
 
 export class CossackNodeAdapter {
     private wss: WebSocketServer;
     // Map of target ID -> Runtime instance
     private instances: Map<string, NodeWebSocketRuntime> = new Map();
     private componentRegistry: Map<string, new () => Cossack>;
+    private allowedOrigins?: string[];
 
-    constructor(options: { server: Server, componentRegistry: Map<string, new () => Cossack>, path?: string }) {
+    constructor(options: CossackNodeAdapterOptions) {
         this.wss = new WebSocketServer({ noServer: true });
         this.componentRegistry = options.componentRegistry;
+        this.allowedOrigins = options.allowedOrigins;
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -26,6 +41,14 @@ export class CossackNodeAdapter {
     }
 
     private handleUpgrade(request: IncomingMessage, socket: any, head: any) {
+        // SECURITY: validate Origin to prevent cross-site WebSocket hijacking.
+        const requestUrl = new URL(request.url || '', `http://${request.headers.host}`).toString();
+        const origin = request.headers.origin as string | undefined;
+        if (!isOriginAllowed(origin, requestUrl, this.allowedOrigins)) {
+            socket.destroy();
+            return;
+        }
+
         this.wss.handleUpgrade(request, socket, head, async (ws) => {
             const url = new URL(request.url || '', `http://${request.headers.host}`);
             // Path: /ws/:provider/:target

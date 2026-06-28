@@ -258,6 +258,12 @@ export interface CreateAppOptions {
   authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
   AppComponent?: new (...args: any[]) => any;
   htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
+  /**
+   * Allowed Origin values for WebSocket / SSE upgrade requests. Defaults to
+   * same-origin (the request's own origin). Set this for multi-origin
+   * deployments. Missing Origin headers are always rejected.
+   */
+  allowedOrigins?: string[];
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -270,6 +276,7 @@ export function createApp(options: CreateAppOptions = {}) {
     routePathToFilePathMap,
     pages,
     layouts,
+    allowedOrigins: options.allowedOrigins,
   };
 
   // Authentication middleware - use custom or default (no-op)

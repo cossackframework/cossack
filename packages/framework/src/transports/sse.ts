@@ -1,5 +1,5 @@
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, type PageOptions } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
 
 /** Active async generator being iterated by the SSE endpoint. */
@@ -35,6 +35,7 @@ export interface RouterContext {
     routePathToFilePathMap: Map<string, string>;
     pages: Record<string, any>;
     layouts: Record<string, any>;
+    allowedOrigins?: string[];
 }
 
 /**
@@ -79,6 +80,11 @@ export function registerSseStoreEntry(
 /** SSE endpoint handler — long-lived connection that pushes state updates to the client. */
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
+        // SECURITY: validate Origin to prevent cross-site abuse of the SSE
+        // endpoint (a long-lived, cookie-authenticated connection).
+        if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
+            return new Response('Origin not allowed', { status: 403 });
+        }
         const { componentRouteId } = c.req.param();
         const requestedScopeKey = c.req.query('scopeKey');
         const componentPath = ctx.routeIdMap.get(componentRouteId);

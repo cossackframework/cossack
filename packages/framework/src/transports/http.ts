@@ -8,6 +8,7 @@ export interface RouterContext {
     routePathToFilePathMap: Map<string, string>;
     pages: Record<string, any>;
     layouts: Record<string, any>;
+    allowedOrigins?: string[];
 }
 
 /** Upload handler — processes file uploads via multipart form data. */
