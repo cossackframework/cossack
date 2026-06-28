@@ -77,14 +77,15 @@ export function connectWebSocket(component: any): void {
                     component.loading[action]--;
                     if (component.loading[action] <= 0) {
                         delete component.loading[action];
-                        // Release the lock but don't flush buffered state.
-                        // The state-update for the final action arrives shortly
-                        // after (or before) this action-complete. By releasing
-                        // the lock, that state-update will apply the correct
-                        // final server value directly via setProperty.
-                        delete component._optimisticLockedKeys[action];
-                        // Discard stale buffered state
+                        // Release the optimistic lock and discard any buffered
+                        // pending state for the locked keys. Capture the set
+                        // BEFORE deleting (the previous code deleted first, then
+                        // read undefined — leaving _optimisticPendingState to
+                        // grow without bound). The authoritative post-action
+                        // value arrives in the next state-update and is applied
+                        // directly via setProperty once the lock is released.
                         const lockedKeys = component._optimisticLockedKeys[action];
+                        delete component._optimisticLockedKeys[action];
                         if (lockedKeys) {
                             for (const key of lockedKeys) {
                                 delete component._optimisticPendingState[key];
@@ -169,8 +170,9 @@ export function connectSSE(component: any): void {
                 component.loading[action]--;
                 if (component.loading[action] <= 0) {
                     delete component.loading[action];
-                    delete component._optimisticLockedKeys[action];
+                    // Capture locked keys BEFORE deleting (see WS handler).
                     const lockedKeys = component._optimisticLockedKeys[action];
+                    delete component._optimisticLockedKeys[action];
                     if (lockedKeys) {
                         for (const key of lockedKeys) {
                             delete component._optimisticPendingState[key];
