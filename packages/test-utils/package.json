@@ -8,8 +8,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@cossackframework/core": "workspace:*",
-    "@cossackframework/renderer": "workspace:*"
+    "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
     "vitest": "^4.1.0"

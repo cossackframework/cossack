@@ -196,9 +196,6 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
-      '@cossackframework/renderer':
-        specifier: workspace:*
-        version: link:../renderer
     devDependencies:
       vite:
         specifier: ^8.1.0
