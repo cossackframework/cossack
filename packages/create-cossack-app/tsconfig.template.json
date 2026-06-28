@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "types": [
       "reflect-metadata",
-      "@cloudflare/workers-types"
+      "./worker-configuration.d.ts"
     ],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
