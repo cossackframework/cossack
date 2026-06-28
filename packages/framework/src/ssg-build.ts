@@ -169,14 +169,24 @@ async function loadHtmlTemplate(
   }
 }
 
-function getOutputFilePath(routePath: string, outputDir: string): string {
+export function getOutputFilePath(routePath: string, outputDir: string): string {
   let normalizedPath = routePath;
   if (!normalizedPath.startsWith('/')) normalizedPath = '/' + normalizedPath;
   if (normalizedPath !== '/' && normalizedPath.endsWith('/')) normalizedPath = normalizedPath.slice(0, -1);
   if (normalizedPath === '/' || normalizedPath === '') return path.join(outputDir, 'index.html');
 
   const segments = normalizedPath.split('/').filter(Boolean);
-  return path.join(outputDir, ...segments, 'index.html');
+  const candidate = path.join(outputDir, ...segments, 'index.html');
+  // SECURITY: refuse any path that resolves outside the output directory —
+  // a malicious generateStaticParams value (e.g. '../../../etc/passwd') must
+  // not write outside outDir. The throw is caught by the per-route handler
+  // so one bad route skips without aborting the whole build.
+  const resolvedRoot = path.resolve(outputDir);
+  const resolvedFile = path.resolve(candidate);
+  if (resolvedFile !== resolvedRoot && !resolvedFile.startsWith(resolvedRoot + path.sep)) {
+    throw new Error(`[cossack/ssg] Refusing to write outside output directory: ${routePath}`);
+  }
+  return candidate;
 }
 
 function listFiles(dir: string, prefix: string): void {

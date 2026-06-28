@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
+import { getOutputFilePath } from '../src/ssg-build';
 
 /**
  * Use createRequire to obtain the real, unshimmed `node:fs`.
@@ -63,5 +64,29 @@ describe('SSG build test guard', () => {
     if (!manifestExists) {
       expect(sitemapExists).toBe(false);
     }
+  });
+});
+
+describe('getOutputFilePath (path-traversal guard)', () => {
+  const out = path.resolve(PROJECT_ROOT, 'dist', 'client');
+
+  it('resolves a simple nested route under the output dir', () => {
+    const p = getOutputFilePath('/users/alice', out);
+    expect(p).toBe(path.join(out, 'users', 'alice', 'index.html'));
+    expect(p.startsWith(out + path.sep)).toBe(true);
+  });
+
+  it('resolves root to outDir/index.html', () => {
+    const p = getOutputFilePath('/', out);
+    expect(p).toBe(path.join(out, 'index.html'));
+  });
+
+  it('throws on a traversal attempt via .. segments', () => {
+    expect(() => getOutputFilePath('/../../etc/passwd', out)).toThrow();
+  });
+
+  it('throws when a substituted param value escapes the output dir', () => {
+    // Simulates a malicious generateStaticParams value spliced into the route.
+    expect(() => getOutputFilePath('/users/../../../etc/passwd', out)).toThrow();
   });
 });
