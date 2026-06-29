@@ -140,6 +140,20 @@ describe('hydrate() — DOM preservation', () => {
     expect(container.querySelector('div')!.getAttribute('class')).toBe('btn active');
   });
 
+  it('falls back when the existing DOM has extra nodes beyond the template', () => {
+    // Correct SSR content, but with an extra trailing element that the
+    // template doesn't manage (e.g. injected by a browser extension). The
+    // end-of-walk check must reject this so the stale node isn't orphaned.
+    const container = document.createElement('div');
+    container.innerHTML = '<div>Hello</div><span>extra</span>';
+
+    expect(() => hydrate(html`<div>Hello</div>`, container)).not.toThrow();
+    // Fell back to a full render: the stale <span> is gone and the template
+    // owns the container.
+    expect(container.querySelector('span')).toBeNull();
+    expect(container.querySelector('div')!.textContent).toBe('Hello');
+  });
+
   it('falls back to render when container is empty', () => {
     const container = document.createElement('div');
     hydrate(html`<div>${'hi'}</div>`, container);

@@ -317,13 +317,25 @@ class NodePart implements Part {
   private _key: unknown = undefined;
   private _keySet = false;
   // When true, the next update() adopts the existing DOM (produced by SSR)
-  // instead of clearing and rebuilding. Set by hydrate()/_adoptTemplate().
+  // instead of clearing and rebuilding. Set via _beginHydration() so external
+  // hydration setup (rebindParts, _adoptSequence) doesn't reach into private
+  // state directly.
   private _hydrating = false;
 
   constructor(
     public startNode: Comment,
     public endNode: Comment,
   ) {}
+
+  /**
+   * Mark this part so its next `update()` adopts the existing DOM in place
+   * (hydration) instead of clearing and rebuilding. Used by the hydration
+   * setup paths after anchors have been rebound to existing nodes.
+   * @internal
+   */
+  _beginHydration(): void {
+    this._hydrating = true;
+  }
 
   update(value: unknown) {
     if (this._hydrating) {
@@ -379,10 +391,17 @@ class NodePart implements Part {
     }
     if (value instanceof KeyResult) {
       // key() forces a remount when the key changes; on initial hydration the
-      // SSR DOM already reflects the template, so adopt it and remember the key.
-      this._keySet = true;
-      this._key = value.value;
-      this._adoptTemplate(value.template);
+      // SSR DOM already reflects the template, so adopt it and remember the
+      // key. Non-template payloads (rare) fall through to the normal rebuild.
+      if (isTemplateResult(value.template)) {
+        this._keySet = true;
+        this._key = value.value;
+        this._adoptTemplate(value.template);
+        return;
+      }
+      this.clear();
+      this._clearTemplateCache();
+      this.updateNode(value.template);
       return;
     }
     if (value === null || value === undefined || value === false) {
@@ -502,7 +521,7 @@ class NodePart implements Part {
     for (let i = 0; i < items.length; i++) {
       const [start, end] = pairs[i];
       const part = new NodePart(start, end);
-      (part as any)._hydrating = true;
+      part._beginHydration();
       this._childParts.push(part);
       if (keys) this._partKeys.push(keys[i]);
       part.update(items[i]);
@@ -1230,6 +1249,15 @@ const reconcileNodeLists = (
       }
     }
   }
+  // Ensure there are no remaining non-filler existing nodes. Without this,
+  // hydration could "succeed" while leaving extra DOM behind (e.g. nodes
+  // injected by a browser extension, or leftover SSR divergence) that no Part
+  // manages and subsequent updates would never remove. Falling back to a full
+  // render is the safe outcome.
+  while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
+  if (ei < exNodes.length) {
+    throw new HydrateMismatch(`existing longer than blueprint (unexpected ${describeNode(exNodes[ei])})`);
+  }
 };
 
 /**
@@ -1247,7 +1275,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
       if (!start || !end) throw new HydrateMismatch('node part anchors not found');
       part.startNode = start as Comment;
       part.endNode = end as Comment;
-      (part as any)._hydrating = true;
+      part._beginHydration();
     } else if (part instanceof AttributePart || part instanceof SpreadPart) {
       const el = map.get((part as any).element);
       if (!el) throw new HydrateMismatch('attribute part element not found');
