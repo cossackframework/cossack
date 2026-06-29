@@ -450,7 +450,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/crpc', async (c) => {
     const body = await c.req.json();
-    const { componentRouteId, action, state, payload, target } = body;
+    const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const isStreamRequest = !!body._cossack_stream;
     const user = c.get('user');
 
@@ -531,14 +531,16 @@ export function createApp(options: CreateAppOptions = {}) {
     const responseData = targetInstance.getPublicState();
 
     // Handle SSE streaming detection and state sync.
-    // SECURITY: re-derive the SSE scope server-side from the authenticated
-    // user (never trust the client-supplied scopeKey) so that a crafted
-    // request cannot target another user's SSE store entry.
-    const derivedScopeKey = await resolveSseScopeKey(
-      c,
-      Reflect.getMetadata('page:options', targetInstance.constructor) as PageOptions | undefined,
-    );
-    const sseResult = handleSseCrpc(componentRouteId, derivedScopeKey, actionResult, responseData, targetInstance);
+    // For a CUSTOM scope() (e.g. chat room) the developer's scope function is
+    // the authorization model and depends on page-request data not present on
+    // this POST — so use the client-supplied scopeKey (echoed from SSR).
+    // For the DEFAULT per-user scope, re-derive server-side from the
+    // authenticated user so a crafted request can't target another user's entry.
+    const targetPageOptions = Reflect.getMetadata('page:options', targetInstance.constructor) as PageOptions | undefined;
+    const effectiveScopeKey = typeof targetPageOptions?.scope === 'function'
+      ? clientScopeKey
+      : await resolveSseScopeKey(c, targetPageOptions);
+    const sseResult = handleSseCrpc(componentRouteId, effectiveScopeKey, actionResult, responseData, targetInstance);
     if (sseResult.handled) {
       return c.json(sseResult.response);
     }
