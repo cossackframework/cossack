@@ -4,6 +4,27 @@ import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
 import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
+
+/**
+ * RPC allowlist that also accepts @Server methods on injected @Service
+ * dependencies. Service methods are forwarded onto the component instance at
+ * runtime but their cossack:server-methods metadata lives on the service class
+ * (reachable via the component's constructor paramtypes), so the base
+ * isRpcCallableAction (which walks the component's own prototype chain) would
+ * reject them.
+ */
+function isRpcCallableActionOrService(constructor: unknown, action: unknown): boolean {
+  if (isRpcCallableAction(constructor, action)) return true;
+  if (typeof action !== 'string' || typeof constructor !== 'function') return false;
+  const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', constructor) || [];
+  for (const t of paramTypes) {
+    if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
+      const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
+      if (Object.prototype.hasOwnProperty.call(serverMethods, action)) return true;
+    }
+  }
+  return false;
+}
 import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
@@ -463,18 +484,31 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
-    // Apply the received state to the target component, restricted to @State
-    // keys only. This prevents a crafted request from overwriting internal or
-    // security-sensitive properties (user, _runtime, _cossack_ws_context, ...).
+    // Apply the received state to the target component. First restrict to the
+    // component's own @State keys (sanitizeClientState) to block overwrites of
+    // internal/security-sensitive props. Then also apply keys in the instance's
+    // actual public state — covers @State from injected @Service dependencies
+    // (synced into the container) which must round-trip or per-action service
+    // state would reset on every call.
     const safeState = sanitizeClientState(targetInstance.constructor, state);
     for (const key in safeState) {
       (targetInstance as any)[key] = safeState[key];
+    }
+    const publicStateKeys = new Set(Object.keys(targetInstance.getPublicState()));
+    if (state && typeof state === 'object') {
+      for (const key of Object.keys(state)) {
+        if (key in safeState) continue;
+        if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+        if (publicStateKeys.has(key)) (targetInstance as any)[key] = (state as Record<string, unknown>)[key];
+      }
     }
 
     // Authorisation gate: only @Server-registered methods are RPC-callable.
     // Prevents crafted requests from invoking framework-internal methods
     // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
-    if (!isRpcCallableAction(targetInstance.constructor, action)) {
+    // Includes @Server methods on injected @Service dependencies (forwarded
+    // onto the component instance but registered on the service class).
+    if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
       return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
     }
 

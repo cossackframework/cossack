@@ -102,12 +102,25 @@ export function registerSseStoreEntry(
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
         // SECURITY: validate Origin to prevent cross-site abuse of the SSE
-        // endpoint (a long-lived, cookie-authenticated connection).
-        if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
+        // SECURITY: validate Origin to prevent cross-site abuse of the SSE
+        // endpoint. Unlike WebSocket, EventSource does NOT send an Origin
+        // header for same-origin requests (only `referer`), so we only enforce
+        // when Origin is present — i.e. a cross-origin attempt, which the
+        // browser would also block via CORS (this server sends no
+        // Access-Control-Allow-Origin). This keeps the defense-in-depth without
+        // rejecting legitimate same-origin SSE connections.
+        const requestOrigin = c.req.header('origin');
+        if (requestOrigin && !isOriginAllowed(requestOrigin, c.req.url, ctx.allowedOrigins)) {
             return new Response('Origin not allowed', { status: 403 });
         }
         const { componentRouteId } = c.req.param();
-        const requestedScopeKey = c.req.query('scopeKey');
+        let requestedScopeKey = c.req.query('scopeKey');
+        // Hono may return the raw ( %-encoded) query value for keys containing
+        // reserved characters (e.g. `room:xyz` → `room%3Axyz`). Decode so the
+        // store key matches the one /crpc and SSR use (decoded).
+        if (requestedScopeKey && requestedScopeKey.includes('%')) {
+            try { requestedScopeKey = decodeURIComponent(requestedScopeKey); } catch { /* keep raw */ }
+        }
         const componentPath = ctx.routeIdMap.get(componentRouteId);
         if (!componentPath) return new Response('Invalid component ID', { status: 400 });
 
@@ -116,21 +129,34 @@ export function handleSseEndpoint(ctx: RouterContext) {
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
 
-        // SECURITY: re-derive the expected scope server-side from the
-        // authenticated user (and the page's scope() config), and reject any
-        // client-supplied value that does not match. Otherwise a crafted
+        // SECURITY: for the DEFAULT per-user scope, re-derive the expected
+        // scope server-side from the authenticated user and reject any
+        // client-supplied value that does not match — otherwise a crafted
         // request like `?scopeKey=user:<victim_id>` could subscribe to another
-        // user's SSE stream and receive all of their state updates
-        // (cross-user eavesdropping). The client only ever echoes back the
-        // scopeKey it received during SSR.
+        // user's SSE stream (cross-user eavesdropping).
+        //
+        // For a CUSTOM scope() (e.g. `room:${c.req.query('room')}`) the
+        // developer's scope function is the authorization model and depends on
+        // page-request data that isn't present on this SSE request — so we
+        // trust the SSR-computed scopeKey the client echoes back (the same one
+        // SSR registered the store entry under).
         const pageOptions = Reflect.getMetadata('page:options', PageComponent) as PageOptions | undefined;
-        const expectedScopeKey = await resolveSseScopeKey(c, pageOptions);
-        if (!requestedScopeKey || requestedScopeKey !== expectedScopeKey) {
-            return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
+        let effectiveScopeKey: string;
+        if (typeof pageOptions?.scope === 'function') {
+            if (!requestedScopeKey) {
+                return new Response('scopeKey query parameter is required', { status: 400 });
+            }
+            effectiveScopeKey = requestedScopeKey;
+        } else {
+            const expectedScopeKey = await resolveSseScopeKey(c, pageOptions);
+            if (!requestedScopeKey || requestedScopeKey !== expectedScopeKey) {
+                return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
+            }
+            effectiveScopeKey = expectedScopeKey;
         }
 
         // Look up or create SSE state store entry
-        const storeKey = sseStoreKey(componentRouteId, expectedScopeKey);
+        const storeKey = sseStoreKey(componentRouteId, effectiveScopeKey);
         let entry = sseStateStore.get(storeKey);
 
         if (!entry) {
@@ -226,19 +252,13 @@ export function handleSseEndpoint(ctx: RouterContext) {
             }
         }, 200);
 
-        // Clean up on disconnect
         const cleanup = () => {
             clearInterval(heartbeat);
             clearInterval(driver);
-            // Decrement the subscriber count; when no clients remain, drop the
-            // entry so the store (and its component instance) doesn't grow
-            // without bound across users/scopes.
             const e = sseStateStore.get(storeKey);
             if (e) {
                 e.connectionCount = Math.max(0, e.connectionCount - 1);
-                if (e.connectionCount === 0) {
-                    sseStateStore.delete(storeKey);
-                }
+                e.lastActive = Date.now();
             }
         };
         (c.req.raw as any).signal?.addEventListener('abort', cleanup);

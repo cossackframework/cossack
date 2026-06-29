@@ -97,10 +97,13 @@ describe('SSE store bounding (connection counting)', () => {
         } as unknown as Context;
     }
 
-    it('deletes the store entry when the last connection disconnects', async () => {
+    it('decrements (but keeps) the store entry when a connection disconnects', async () => {
+        // The entry is NOT deleted on disconnect: in some runtimes the request
+        // abort signal fires before the client truly disconnects, which would
+        // drop the entry out from under the still-live driver. The store is
+        // bounded by the LRU hard cap instead.
         const ctx = makeCtx();
         const scopeKey = 'user:alice';
-        // Pre-register an entry so the handler skips cold-start bootstrap.
         registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, {
             getPublicState: () => ({ count: 0 }),
         } as any);
@@ -109,11 +112,10 @@ describe('SSE store bounding (connection counting)', () => {
         const controller = new AbortController();
         const handler = handleSseEndpoint(ctx);
         await handler(makeSignalContext({ id: 'alice' }, scopeKey, controller));
-        // Connection registered.
         expect(__sseStoreSize()).toBe(1);
 
-        // Simulate client disconnect → entry should be removed.
+        // Disconnect → entry kept (connection count decremented).
         controller.abort();
-        expect(__sseStoreSize()).toBe(0);
+        expect(__sseStoreSize()).toBe(1);
     });
 });

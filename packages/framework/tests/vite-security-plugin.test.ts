@@ -340,23 +340,42 @@ export class TestPage extends Cossack {
       expect(result).toContain('return input');
     });
 
-    it('should strip arrow function property bodies (server-only by default)', () => {
-      // Regression: previously arrow-function class fields were left verbatim,
-      // leaking server-only code. They are now stubbed like methods.
+    it('preserves undecorated arrow-function class fields (common event-handler pattern)', () => {
+      // Arrow-function class fields are commonly used as event handlers
+      // (e.g. @click=${this.handler}) and the transitive-preservation pass
+      // can't see bare template references, so undecorated arrow fields are
+      // preserved by default to avoid breaking apps. Only @Server arrow
+      // fields are stripped (see the member-kind suite below).
       const code = `
 @Page()
 export class TestPage extends Cossack {
-    arrowProperty = () => {
+    handler = () => {
+      return 'KEPT';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('handler = () =>');
+      expect(result).toContain("'KEPT'");
+      expect(result).not.toContain('__cossack_proxies');
+    });
+
+    it('strips @Server arrow-function class fields (explicit server-only)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @Server()
+    dbQuery = async () => {
       return 'SECRET_SHOULD_BE_STRIPPED';
     }
 }`;
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-      // Field structure preserved as an arrow function...
-      expect(result).toContain('arrowProperty = () =>');
-      // ...but the body is stripped and replaced with the proxy stub.
+      // @Server arrow field is stubbed with a rest-param signature (class
+      // field initializers forbid `arguments`).
+      expect(result).toContain('dbQuery = async (...args) =>');
       expect(result).not.toContain('SECRET_SHOULD_BE_STRIPPED');
-      expect(result).toContain("__cossack_proxies?.get('arrowProperty')");
+      expect(result).toContain("__cossack_proxies?.get('dbQuery')");
     });
 
     it('should NOT stub property getters/setters', () => {
@@ -1430,10 +1449,11 @@ export class TestPage extends Cossack {
       expect(result).toContain('render() {');
     });
 
-    it('strips an arrow-function class field holding server secrets', () => {
+    it('strips a @Server arrow-function class field holding server secrets', () => {
       const code = `
 @Page()
 export class TestPage extends Cossack {
+  @Server()
   dbQuery = async () => {
     const apiKey = process.env.DB_KEY;
     return await db.query(apiKey);
@@ -1443,9 +1463,10 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).not.toContain('DB_KEY');
       expect(result).not.toContain('db.query');
-      // Field structure preserved (async arrow intact), body stubbed.
-      expect(result).toContain('dbQuery = async () =>');
+      // Async arrow stub uses rest params (class fields forbid `arguments`).
+      expect(result).toContain('dbQuery = async (...args) =>');
       expect(result).toContain("__cossack_proxies?.get('dbQuery')");
+      expect(result).toContain('proxy.apply(this, args)');
       // Following render() intact (boundary not corrupted).
       expect(result).toContain('render() {');
     });
@@ -1495,10 +1516,11 @@ export class TestPage extends Cossack {
       expect(result).toContain('<p>cmp</p>');
     });
 
-    it('strips a function-expression class field', () => {
+    it('strips a @Server function-expression class field', () => {
       const code = `
 @Page()
 export class TestPage extends Cossack {
+  @Server()
   helper = function (x) {
     const secret = 'FN_SECRET';
     return x + secret;

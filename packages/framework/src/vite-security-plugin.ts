@@ -679,6 +679,12 @@ interface CollectedMethod {
   bodyStart: number;
   /** End offset (relative to `classBody`) just past the method's closing `}`. */
   bodyEnd: number;
+  /** For class fields with a function value: start of the value (incl. `async`). */
+  fieldValueStart?: number;
+  /** For class fields: 'arrow' or 'function' expression. */
+  fieldKind?: 'arrow' | 'function';
+  /** For class fields: whether the value was `async`. */
+  fieldIsAsync?: boolean;
 }
 
 /**
@@ -761,6 +767,9 @@ function collectMethods(
             hasServerDecorator: pendingDecorators.some((d) => /@Server\b/.test(d)),
             bodyStart,
             bodyEnd,
+            fieldValueStart: methodMatch.fieldValueStart,
+            fieldKind: methodMatch.fieldKind,
+            fieldIsAsync: methodMatch.fieldIsAsync,
           });
         }
 
@@ -993,12 +1002,30 @@ function transformMethodsWithDepthTracking(
   for (const m of methods) {
     if (preserved.has(m.name)) continue;
 
-    const stub = createStub(m.name, className, devWarning);
-    replacements.push({
-      start: m.bodyStart + 1, // After the opening brace
-      end: m.bodyEnd - 1, // Before the closing brace
-      replacement: stub.slice(1, -1), // Remove outer braces from stub
-    });
+    if (m.fieldValueStart !== undefined) {
+      // Class field with a function value. Only strip fields explicitly
+      // marked @Server — undecorated arrow fields are commonly used as event
+      // handlers (e.g. @click=${this.handler}) and the transitive-preservation
+      // pass can't see bare template references, so stripping them by default
+      // would break apps. (To strip a server-only arrow field, decorate it
+      // @Server; that is the explicit server-only contract.)
+      if (!m.hasServerDecorator) continue;
+      // Class field initializers forbid `arguments`, so we cannot reuse the
+      // method body stub — replace the whole value with a rest-param stub.
+      const stub = createFieldStub(m.name, className, devWarning, !!m.fieldIsAsync, m.fieldKind === 'function');
+      replacements.push({
+        start: m.fieldValueStart,
+        end: m.bodyEnd,
+        replacement: stub,
+      });
+    } else {
+      const stub = createStub(m.name, className, devWarning);
+      replacements.push({
+        start: m.bodyStart + 1, // After the opening brace
+        end: m.bodyEnd - 1, // Before the closing brace
+        replacement: stub.slice(1, -1), // Remove outer braces from stub
+      });
+    }
   }
 
   if (replacements.length === 0) return classBody;
@@ -1021,7 +1048,7 @@ function transformMethodsWithDepthTracking(
 function findMethodDefinition(
   code: string,
   startPos: number
-): { nameStart: number; nameEnd: number; methodName: string; paramsStart: number; paramsEnd: number; bodyStart: number; bodyEnd: number } | null {
+): { nameStart: number; nameEnd: number; methodName: string; paramsStart: number; paramsEnd: number; bodyStart: number; bodyEnd: number; fieldValueStart?: number; fieldKind?: 'arrow' | 'function'; fieldIsAsync?: boolean } | null {
   let i = startPos;
   const len = code.length;
 
@@ -1239,12 +1266,17 @@ function findMethodDefinition(
   // Class field with a function value, e.g. `dbQuery = async () => { SECRET }`.
   // Without this branch the arrow-function body is preserved verbatim, leaking
   // server-only code. We recognise block-bodied arrow functions and `function`
-  // expressions and report their body range so the existing stub logic applies.
-  // (The field stays a field: `name = () => { <stub> };`.)
+  // expressions. Because class field initializers forbid `arguments`, the field
+  // value is replaced wholesale with a rest-param stub (see createFieldStub) —
+  // so we report `fieldValueStart` (where the value begins, incl. `async`) and
+  // `fieldKind`/`fieldIsAsync` for the transform.
   if (i < len && code[i] === '=' && code[i + 1] !== '=' && code[i + 1] !== '>') {
     let j = i + 1;
     while (j < len && /\s/.test(code[j])) j++;
+    const valueStart = j;
+    let isAsync = false;
     if (code.slice(j, j + 5) === 'async' && /[\s(]/.test(code[j + 5] || '')) {
+      isAsync = true;
       j += 5;
       while (j < len && /\s/.test(code[j])) j++;
     }
@@ -1286,7 +1318,7 @@ function findMethodDefinition(
             j++;
           }
           const bodyEnd = j;
-          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd };
+          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd, fieldValueStart: valueStart, fieldKind: 'arrow', fieldIsAsync: isAsync };
         }
       }
     }
@@ -1318,7 +1350,7 @@ function findMethodDefinition(
             k++;
           }
           const bodyEnd = k;
-          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd };
+          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd, fieldValueStart: valueStart, fieldKind: 'function', fieldIsAsync: isAsync };
         }
       }
     }
@@ -1632,6 +1664,41 @@ function createStub(
   return `{
     const proxy = this.__cossack_proxies?.get('${methodName}');
     if (proxy) return proxy.apply(this, arguments);
+    throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
+  }`;
+}
+
+/**
+ * Stub for a class field whose value is a function (`name = (...) => {...}` or
+ * `name = function(...) {...}`). Class field initializers forbid `arguments`,
+ * so unlike {@link createStub} this replaces the whole value and forwards
+ * arguments via a rest parameter (`...args`). The result is a complete value
+ * (an arrow or function expression), inserted at the field's value start.
+ */
+function createFieldStub(
+  methodName: string,
+  className: string,
+  devWarning: boolean,
+  isAsync: boolean,
+  isFunction: boolean,
+): string {
+  const asyncPrefix = isAsync ? 'async ' : '';
+  // arrow: `async (...args) =>` ; function: `async function (...args)`
+  const sig = isFunction
+    ? `${asyncPrefix}function (...args)`
+    : `${asyncPrefix}(...args) =>`;
+  if (devWarning) {
+    return `${sig} {
+      const proxy = this.__cossack_proxies?.get('${methodName}');
+      if (proxy) {
+        return proxy.apply(this, args);
+      }
+      throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
+    }`;
+  }
+  return `${sig} {
+    const proxy = this.__cossack_proxies?.get('${methodName}');
+    if (proxy) return proxy.apply(this, args);
     throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
   }`;
 }
