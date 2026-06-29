@@ -15,7 +15,7 @@ describe('Directives', () => {
         (i) => html`<li>${i.text}</li>`,
       )}
     </ul>`;
-    expect(renderToString(template).trim()).toBe('<ul><li>A</li><li>B</li></ul>');
+    expect(renderToString(template).trim()).toBe('<ul>\n      <li>A</li><li>B</li>\n    </ul>');
   });
 
   it('classMap generates class string', () => {
