@@ -34,12 +34,13 @@ export interface BuildAuthorizeUrlArgs {
     config: OAuthProviderConfig;
     redirectUrl: string;
     state: string;
-    codeChallenge: string;
+    /** When provided, adds `code_challenge` + `code_challenge_method=S256`. Omit to disable PKCE. */
+    codeChallenge?: string;
 }
 
 /**
- * Build the provider authorize URL with all standard OAuth 2.0 params
- * (including PKCE S256) plus any provider-specific extras.
+ * Build the provider authorize URL with all standard OAuth 2.0 params plus
+ * optional PKCE (S256) and any provider-specific extras.
  */
 export function buildAuthorizeUrl(args: BuildAuthorizeUrlArgs): string {
     const { definition, config, redirectUrl, state, codeChallenge } = args;
@@ -52,9 +53,13 @@ export function buildAuthorizeUrl(args: BuildAuthorizeUrlArgs): string {
         client_id: config.clientId,
         redirect_uri: redirectUrl,
         state,
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256',
     };
+    // PKCE is opt-in per request: only the handler that can recover the
+    // verifier (i.e. has a cookie store) sets a challenge.
+    if (codeChallenge) {
+        baseParams.code_challenge = codeChallenge;
+        baseParams.code_challenge_method = 'S256';
+    }
     if (scopes.length > 0) {
         baseParams.scope = scopes.join(separator);
     }
@@ -76,7 +81,8 @@ export interface ExchangeCodeArgs {
     config: OAuthProviderConfig;
     redirectUrl: string;
     code: string;
-    codeVerifier: string;
+    /** Required when the authorize request was sent with a `code_challenge`; omit to skip PKCE. */
+    codeVerifier?: string;
 }
 
 /**
@@ -93,8 +99,13 @@ export async function exchangeCode(args: ExchangeCodeArgs): Promise<TokenSet> {
         redirect_uri: redirectUrl,
         client_id: config.clientId,
         client_secret: config.clientSecret,
-        code_verifier: codeVerifier,
     };
+    // Only include the PKCE verifier when the authorize request was sent with
+    // a matching challenge. Sending an empty/missing verifier to a provider
+    // that expects one causes a hard failure.
+    if (codeVerifier) {
+        body.code_verifier = codeVerifier;
+    }
     const extras = definition.tokenParams?.(config) ?? {};
     for (const [key, value] of Object.entries(extras)) {
         body[key] = value;
@@ -141,11 +152,27 @@ export function parseTokenResponse(body: string): TokenSet {
     return {
         accessToken,
         refreshToken: typeof parsed.refresh_token === 'string' ? parsed.refresh_token : undefined,
-        expiresIn: typeof parsed.expires_in === 'number' ? parsed.expires_in : undefined,
+        // Some providers (and all form-encoded responses) return expires_in as
+        // a string; coerce both forms to a number.
+        expiresIn: coerceNumber(parsed.expires_in),
         tokenType: typeof parsed.token_type === 'string' ? parsed.token_type : undefined,
         scope: typeof parsed.scope === 'string' ? parsed.scope : undefined,
         idToken: typeof parsed.id_token === 'string' ? parsed.id_token : undefined,
     };
+}
+
+/**
+ * Coerce a token-response field to a finite number. Accepts numbers and
+ * numeric strings; returns `undefined` for anything else (including `null`,
+ * empty strings, and non-numeric values).
+ */
+function coerceNumber(value: unknown): number | undefined {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value === 'string' && /^\d+$/.test(value)) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
 }
 
 export interface FetchUserInfoArgs {

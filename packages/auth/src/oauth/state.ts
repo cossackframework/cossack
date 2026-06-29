@@ -145,8 +145,9 @@ export async function consumeStateCookie(
 ): Promise<OAuthStatePayload | null> {
     const name = options.name ?? DEFAULT_COOKIE_NAME;
     const token = getCookie(c, name);
-    // Always delete, even on failure, to prevent replay.
-    deleteCookie(c, name, { path: options.path ?? '/' });
+    // Always delete, even on failure, to prevent replay. Pass the same domain
+    // (if any) used at set time so the deletion actually matches the cookie.
+    deleteCookie(c, name, { path: options.path ?? '/', domain: options.domain });
     if (!token) return null;
     return verifyCookieValue(token, secret);
 }

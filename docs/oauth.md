@@ -274,11 +274,15 @@ createOAuth({
 
 ## Stateless mode (advanced)
 
-For cookie-less API clients, pass `stateless: true`. The package will not set
-or verify a state cookie. **You are then responsible for CSRF protection** of
-the callback — for example, by including a signed `state` value in the
-authorize URL that you verify yourself on callback. PKCE alone defends against
-authorization-code injection but does **not** defend against login CSRF.
+For cookie-less API clients, pass `stateless: true`. In this mode the package
+will **not** set or verify a state cookie, and **PKCE is disabled** as well
+(since the `code_verifier` cannot be recovered without a cookie store).
+
+**You are then responsible for CSRF protection** of the callback — for example,
+by including a signed `state` value in the authorize URL that you verify
+yourself on callback. Without PKCE you also lose the defense against
+authorization-code injection, so stateless mode is riskier than the default and
+should only be used when you cannot use cookies.
 
 ```ts
 createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* ... */ } });

@@ -13,7 +13,11 @@ import {
     parseTokenResponse,
     resolveRedirectUrl,
 } from '../src/oauth/flow';
-import type { OAuthProviderConfig, OAuthProviderDefinition } from '../src/oauth/types';
+import type {
+    GoogleProviderOptions,
+    OAuthProviderConfig,
+    OAuthProviderDefinition,
+} from '../src/oauth/types';
 import { mockFetch, restoreFetch } from './helpers';
 
 const config: OAuthProviderConfig = {
@@ -186,6 +190,28 @@ describe('parseTokenResponse', () => {
             /missing access_token/,
         );
     });
+
+    it('coerces string expires_in to a number (form-encoded responses)', () => {
+        // Many providers return expires_in as a string, especially in
+        // application/x-www-form-urlencoded responses.
+        const tokens = parseTokenResponse('access_token=at&expires_in=3600&token_type=bearer');
+        expect(tokens.expiresIn).toBe(3600);
+        expect(typeof tokens.expiresIn).toBe('number');
+    });
+
+    it('coerces JSON-encoded string expires_in to a number', () => {
+        const tokens = parseTokenResponse(
+            JSON.stringify({ access_token: 'at', expires_in: '7200' }),
+        );
+        expect(tokens.expiresIn).toBe(7200);
+    });
+
+    it('drops non-numeric expires_in', () => {
+        const tokens = parseTokenResponse(
+            JSON.stringify({ access_token: 'at', expires_in: 'never' }),
+        );
+        expect(tokens.expiresIn).toBeUndefined();
+    });
 });
 
 describe('exchangeCode', () => {
@@ -329,10 +355,11 @@ describe('provider definitions', () => {
     describe('google', () => {
         it('passes hostedDomain and offlineAccess as authorize params', () => {
             const def = createGoogleProvider({ hostedDomain: 'acme.com', offlineAccess: true });
-            const configWithOpts = {
+            // No cast needed: OAuthProviderConfig<GoogleProviderOptions> types the `provider` bag.
+            const configWithOpts: OAuthProviderConfig<GoogleProviderOptions> = {
                 ...config,
                 provider: { hostedDomain: 'acme.com', offlineAccess: true },
-            } as OAuthProviderConfig & { provider: unknown };
+            };
             const extras = def.authorizeParams?.(configWithOpts) ?? {};
             expect(extras.hd).toBe('acme.com');
             expect(extras.access_type).toBe('offline');

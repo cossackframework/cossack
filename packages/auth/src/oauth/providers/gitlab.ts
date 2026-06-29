@@ -1,17 +1,13 @@
 import type {
+    OAuthProviderConfig,
     OAuthProviderDefinition,
     OAuthUser,
     TokenSet,
+    GitLabProviderOptions,
 } from '../types';
 import { createNormalizer } from '../provider';
 
-export interface GitLabProviderOptions {
-    /**
-     * Base URL of the GitLab instance. Defaults to `https://gitlab.com`.
-     * Override for self-hosted GitLab (e.g. `https://gitlab.example.com`).
-     */
-    baseUrl?: string;
-}
+export type { GitLabProviderOptions };
 
 /**
  * GitLab OAuth2 provider.

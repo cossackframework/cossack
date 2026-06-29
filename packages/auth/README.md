@@ -226,10 +226,12 @@ export const oauth = createOAuth({
 
 ### Stateless mode
 
-For cookie-less API clients, pass `stateless: true` to `createOAuth()`. **You
-then become responsible for CSRF protection** of the callback (e.g. by passing
-`state` through a signed query param you verify yourself). PKCE alone defends
-against code injection but not against login CSRF.
+For cookie-less API clients, pass `stateless: true` to `createOAuth()`. In
+this mode **PKCE is disabled too** (the verifier cannot be recovered without a
+cookie store), and **you become responsible for CSRF protection** of the
+callback (e.g. by passing `state` through a signed query param you verify
+yourself). Use only when cookies aren't an option — the default stateful mode
+is strictly more secure.
 
 See [`docs/oauth.md`](../docs/oauth.md) for the complete guide.
 

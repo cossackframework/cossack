@@ -36,13 +36,58 @@ export interface TokenSet {
 /**
  * Per-provider credentials. The `redirectUrl` may be relative; it is resolved
  * to an absolute URL against the incoming request origin at redirect time.
+ *
+ * The optional `provider` bag carries provider-specific options — typed via
+ * the generic `TProviderOpts`. Use it to pass Google's `hostedDomain`, GitLab's
+ * `baseUrl`, Microsoft's `tenant`, etc. (see the per-provider option types
+ * below).
  */
-export interface OAuthProviderConfig {
+export interface OAuthProviderConfig<TProviderOpts = Record<string, unknown>> {
     clientId: string;
     clientSecret: string;
     redirectUrl: string;
     /** Override the provider's default scopes. */
     scopes?: string[];
+    /** Provider-specific options. The shape depends on the provider. */
+    provider?: TProviderOpts;
+}
+
+// --- Per-provider options (kept here to avoid circular imports between the
+// provider factories and the shared config types). ---
+
+/** Google OIDC options. */
+export interface GoogleProviderOptions {
+    /**
+     * Hosted-domain hint (`hd`). Restricts sign-in to a specific Google
+     * Workspace domain; passed as the `hd` authorize param.
+     */
+    hostedDomain?: string;
+    /**
+     * Request a refresh token. Sets `access_type=offline` and `prompt=consent`.
+     */
+    offlineAccess?: boolean;
+    /**
+     * Custom OpenID Connect issuer URL. Defaults to Google's public issuer.
+     */
+    issuer?: string;
+}
+
+/** GitLab options. */
+export interface GitLabProviderOptions {
+    /**
+     * Base URL of the GitLab instance. Defaults to `https://gitlab.com`.
+     * Override for self-hosted GitLab.
+     */
+    baseUrl?: string;
+}
+
+/** Microsoft (Azure AD v2.0) options. */
+export interface MicrosoftProviderOptions {
+    /**
+     * Azure AD tenant: `'common'` (default), `'organizations'`,
+     * `'consumers'`, or a tenant GUID / verified domain name.
+     */
+    tenant?: string;
 }
 
 /**
@@ -70,15 +115,20 @@ export interface OAuthProviderDefinition {
      * Optional extra/optional query params to add to the authorize URL
      * (e.g. Google's `hd` hosted-domain hint, Apple's `response_mode`).
      * Reserved keys (`state`, `response_type`, `code_challenge*`) are dropped.
+     *
+     * Accepts any {@link OAuthProviderConfig} variant so it works with the
+     * per-provider option bags (e.g. `OAuthProviderConfig<GoogleProviderOptions>`).
      */
-    authorizeParams?: (config: OAuthProviderConfig) => Record<string, string>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    authorizeParams?: (config: OAuthProviderConfig<any>) => Record<string, string>;
     /**
      * Optional token-request body mutator. Some providers need extra fields
      * (e.g. Microsoft tenant, Apple JWT client_secret). The base set
      * (`grant_type`, `code`, `redirect_uri`, `client_id`, `client_secret`,
      * `code_verifier`) is already supplied.
      */
-    tokenParams?: (config: OAuthProviderConfig) => Record<string, string>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tokenParams?: (config: OAuthProviderConfig<any>) => Record<string, string>;
     /**
      * Optional customizer for the user-info request (e.g. Facebook needs
      * `?fields=...`). Return extra query params to append to userInfoUrl.
@@ -124,7 +174,24 @@ export interface CreateOAuthConfig {
      * e.g. `env.OAUTH_STATE_SECRET`. Should be at least 32 bytes of entropy.
      */
     secret: string;
-    providers: Record<string, OAuthProviderConfig>;
+    /**
+     * Per-provider credentials. First-party keys (`github`, `google`,
+     * `gitlab`, `facebook`, `microsoft`) are typed with their specific option
+     * bags; any other key is accepted for custom providers registered via
+     * `customProviders`.
+     */
+    providers: {
+        github?: OAuthProviderConfig<Record<string, never>>;
+        google?: OAuthProviderConfig<GoogleProviderOptions>;
+        gitlab?: OAuthProviderConfig<GitLabProviderOptions>;
+        facebook?: OAuthProviderConfig<Record<string, never>>;
+        microsoft?: OAuthProviderConfig<MicrosoftProviderOptions>;
+        // Arbitrary custom provider ids (registered via `customProviders`).
+        // `any` is required here so the precisely-typed first-party keys above
+        // remain assignable to the index signature.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        [key: string]: OAuthProviderConfig<any> | undefined;
+    };
     /** Custom provider definitions keyed by id (use {@link defineOAuthProvider}). */
     customProviders?: Record<string, OAuthProviderDefinition>;
     cookie?: OAuthCookieOptions;

@@ -186,4 +186,27 @@ describe('createAuth — reusable createSession', () => {
         expect(res.status).toBe(200);
         expect(res.headers.get('set-cookie')).toBe('fallback=1; HttpOnly');
     });
+
+    it('createLoginHandler returns 500 when no createSession is configured anywhere', async () => {
+        const user: User = { id: 'u1', email: 'a@b.io', name: 'Tan' };
+        const kit = createAuth<User>({
+            extractSessionId: () => undefined,
+            validateSessionId: async () => null,
+            resolveUserById: async () => null,
+            // no createSession on the provider
+        });
+        // And omit it on the login handler too (cast to exercise the runtime guard).
+        const loginHandler = kit.createLoginHandler({
+            validateCredentials: async () => user,
+            createSession: undefined as unknown as () => Promise<{ headers: Headers }>,
+        });
+        const app = buildApp(kit, loginHandler);
+        const res = await app.request('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: 'a@b.io', password: 'pw' }),
+        });
+        expect(res.status).toBe(500);
+        expect(((await res.json()) as { error: string }).error).toMatch(/No createSession configured/);
+    });
 });

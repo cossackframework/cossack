@@ -76,21 +76,27 @@ export function createOAuthHandlers(
         return async (c: Context, next): Promise<Response | void> => {
             try {
                 const state = generateState();
-                const pkce = await createPkcePair();
                 const redirectUrl = resolveRedirectUrl(config.redirectUrl, c);
+
+                // PKCE requires recovering the verifier across the round-trip,
+                // which needs the state cookie. In stateless mode there is no
+                // cookie store, so PKCE is skipped — the developer is then
+                // responsible for CSRF protection (see docs/oauth.md).
+                const usePkce = !deps.config.stateless;
+                const pkce = usePkce ? await createPkcePair() : null;
 
                 const authorizeUrl = buildAuthorizeUrl({
                     definition,
                     config,
                     redirectUrl,
                     state,
-                    codeChallenge: pkce.codeChallenge,
+                    codeChallenge: pkce?.codeChallenge,
                 });
 
-                if (!deps.config.stateless) {
+                if (usePkce) {
                     await setStateCookie(
                         c,
-                        { state, codeVerifier: pkce.codeVerifier },
+                        { state, codeVerifier: pkce!.codeVerifier },
                         deps.config.secret,
                         deps.cookieOptions,
                         deps.requestIsSecure(c),
@@ -138,11 +144,10 @@ export function createOAuthHandlers(
                         throw new Error('OAuth state mismatch (possible CSRF attack).');
                     }
                     storedVerifier = stored.codeVerifier;
-                } else {
-                    // Stateless mode: verifier cannot be recovered without a cookie;
-                    // caller must provide their own PKCE/state handling.
-                    storedVerifier = '';
                 }
+                // In stateless mode there is no verifier to recover (PKCE was
+                // not sent on the redirect). `exchangeCode` omits the
+                // `code_verifier` field when `storedVerifier` is undefined.
 
                 const redirectUrl = resolveRedirectUrl(config.redirectUrl, c);
                 const tokens = await exchangeCode({

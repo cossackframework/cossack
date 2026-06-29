@@ -3,34 +3,18 @@ import type {
     OAuthProviderDefinition,
     OAuthUser,
     TokenSet,
+    GoogleProviderOptions,
 } from '../types';
 import { createNormalizer, decodeJwtPayload } from '../provider';
 
-export interface GoogleProviderOptions {
-    /**
-     * Hosted-domain hint (`hd`). Restricts sign-in to a specific Google Workspace
-     * domain; passed as the `hd` authorize param. Users outside the domain are
-     * shown an error by Google.
-     */
-    hostedDomain?: string;
-    /**
-     * Whether to request a refresh token. Sets `access_type=offline` and
-     * `prompt=consent` on the authorize request.
-     */
-    offlineAccess?: boolean;
-    /**
-     * Custom OpenID Connect issuer URL. Defaults to Google's public issuer.
-     * Override only for restricted/sovereign-cloud setups.
-     */
-    issuer?: string;
-}
+export type { GoogleProviderOptions };
 
 /**
- * Resolve Google-specific options from an `OAuthProviderConfig`. Callers stash
- * provider options on the config object via casting; this is a typed accessor.
+ * Resolve Google-specific options from an `OAuthProviderConfig`. The config's
+ * `provider` bag is typed via the {@link OAuthProviderConfig} generic.
  */
-function optionsOf(config: OAuthProviderConfig): GoogleProviderOptions {
-    return ((config as OAuthProviderConfig & { provider?: GoogleProviderOptions }).provider) ?? {};
+function optionsOf(config: OAuthProviderConfig<GoogleProviderOptions>): GoogleProviderOptions {
+    return config.provider ?? {};
 }
 
 /**
@@ -59,7 +43,7 @@ export function createGoogleProvider(
         scopes: ['openid', 'email', 'profile'],
         authorizeParams: (config) => {
             const params: Record<string, string> = {};
-            const o = optionsOf(config);
+            const o = optionsOf(config as OAuthProviderConfig<GoogleProviderOptions>);
             if (o.hostedDomain) params.hd = o.hostedDomain;
             if (o.offlineAccess) {
                 params.access_type = 'offline';

@@ -53,10 +53,7 @@ export interface OAuthKit {
  * Build the internal provider-definition registry from a user config.
  * First-party providers are pre-registered with their defaults; the user's
  * per-provider `provider` option (e.g. `{ provider: { hostedDomain: '...' } }`)
- * is respected for the configurable ones.
- *
- * The user's config object is enriched in place with a non-enumerable
- * `__definition` so the kit can look up definitions per provider id.
+ * is honored for the configurable ones (Google/GitLab/Microsoft).
  */
 function buildDefinitions(
     config: CreateOAuthConfig,
@@ -66,34 +63,14 @@ function buildDefinitions(
         facebook: facebookProvider,
     };
 
-    // Google/GitLab/Microsoft accept per-config options. We honor the option
-    // object attached to the first configured credential entry (best-effort —
-    // these factories produce a definition with default URLs that are correct
-    // for the public cloud; instance customization for GitLab is handled at
-    // request time via resolveGitLabUrls).
     if (config.providers.google) {
-        const providerOpts = (
-            config.providers.google as CreateOAuthConfig['providers'][string] & {
-                provider?: import('./providers/google').GoogleProviderOptions;
-            }
-        ).provider;
-        defs.google = createGoogleProvider(providerOpts ?? {});
+        defs.google = createGoogleProvider(config.providers.google.provider ?? {});
     }
     if (config.providers.gitlab) {
-        const providerOpts = (
-            config.providers.gitlab as CreateOAuthConfig['providers'][string] & {
-                provider?: import('./providers/gitlab').GitLabProviderOptions;
-            }
-        ).provider;
-        defs.gitlab = createGitLabProvider(providerOpts ?? {});
+        defs.gitlab = createGitLabProvider(config.providers.gitlab.provider ?? {});
     }
     if (config.providers.microsoft) {
-        const providerOpts = (
-            config.providers.microsoft as CreateOAuthConfig['providers'][string] & {
-                provider?: import('./providers/microsoft').MicrosoftProviderOptions;
-            }
-        ).provider;
-        defs.microsoft = createMicrosoftProvider(providerOpts ?? {});
+        defs.microsoft = createMicrosoftProvider(config.providers.microsoft.provider ?? {});
     }
 
     if (config.customProviders) {

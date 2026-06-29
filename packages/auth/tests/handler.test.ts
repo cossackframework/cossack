@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createOAuth } from '../src/oauth';
@@ -296,6 +296,74 @@ describe('createOAuth — stateless mode', () => {
         const res = await app.request('/r');
         expect(res.status).toBe(302);
         expect(getSetCookieHeader(res)).not.toContain('cossack_oauth_state');
+    });
+
+    it('omits code_challenge / PKCE on the authorize URL (no verifier can be recovered)', async () => {
+        const oauth = createOAuth({
+            secret: SECRET,
+            stateless: true,
+            providers: {
+                github: {
+                    clientId: 'gh-id',
+                    clientSecret: 'gh-secret',
+                    redirectUrl: '/auth/github/callback',
+                },
+            },
+        });
+        const app = new Hono();
+        app.get('/r', oauth.redirect('github'));
+        const res = await app.request('/r');
+        const location = new URL(res.headers.get('location') ?? '');
+        expect(location.searchParams.get('code_challenge')).toBeNull();
+        expect(location.searchParams.get('code_challenge_method')).toBeNull();
+    });
+
+    it('completes the callback flow without sending a code_verifier', async () => {
+        const oauth = createOAuth({
+            secret: SECRET,
+            stateless: true,
+            providers: {
+                github: {
+                    clientId: 'gh-id',
+                    clientSecret: 'gh-secret',
+                    redirectUrl: '/auth/github/callback',
+                },
+            },
+        });
+        let observedBody: string | undefined;
+        const mock = mockFetch([
+            {
+                body: { access_token: 'at', token_type: 'bearer' },
+            },
+            { body: { id: 1, login: 'u', email: 'a@b.io' } },
+        ]);
+        // Wrap fetch to capture the token-exchange body.
+        const original = globalThis.fetch;
+        vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+            if (typeof input === 'string' && input.includes('access_token')) {
+                observedBody = String(init?.body);
+            }
+            return original(input, init);
+        });
+
+        const seen: { user?: unknown } = {};
+        const app = new Hono();
+        app.get(
+            '/cb',
+            oauth.callback('github', {
+                onUser: async (user) => {
+                    seen.user = user;
+                },
+                successRedirect: '/done',
+            }),
+        );
+        const res = await app.request('/cb?code=thecode&state=anystate');
+        expect(res.status).toBe(302);
+        expect(res.headers.get('location')).toBe('/done');
+        // No code_verifier in the token-exchange body.
+        expect(observedBody).not.toContain('code_verifier');
+        expect((seen.user as { id: string }).id).toBe('1');
+        expect(mock).toHaveBeenCalledTimes(2);
     });
 });
 

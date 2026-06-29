@@ -3,22 +3,14 @@ import type {
     OAuthProviderDefinition,
     OAuthUser,
     TokenSet,
+    MicrosoftProviderOptions,
 } from '../types';
 import { createNormalizer, decodeJwtPayload } from '../provider';
 
-export interface MicrosoftProviderOptions {
-    /**
-     * Azure AD tenant. One of:
-     *  - `'common'` (default) — any Microsoft account
-     *  - `'organizations'` — work/school only
-     *  - `'consumers'` — personal Microsoft accounts only
-     *  - a tenant GUID or verified domain name — a single tenant
-     */
-    tenant?: string;
-}
+export type { MicrosoftProviderOptions };
 
-function optionsOf(config: OAuthProviderConfig): MicrosoftProviderOptions {
-    return ((config as OAuthProviderConfig & { provider?: MicrosoftProviderOptions }).provider) ?? {};
+function optionsOf(config: OAuthProviderConfig<MicrosoftProviderOptions>): MicrosoftProviderOptions {
+    return config.provider ?? {};
 }
 
 /**

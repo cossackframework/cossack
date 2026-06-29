@@ -71,6 +71,12 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
             }
 
             const sessionCreator = loginOptions.createSession ?? provider.createSession;
+            if (!sessionCreator) {
+                return c.json(
+                    { error: 'No createSession configured: provide it in LoginHandlerOptions or on the AuthProvider.' },
+                    500,
+                );
+            }
             const { headers } = await sessionCreator(user, c);
             const response = c.json({ success: true });
 
