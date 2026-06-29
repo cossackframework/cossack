@@ -60,6 +60,12 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     return '';
   }
   if (Array.isArray(value)) {
+    // Wrap each item in CSA start/end markers when emitting hydratable SSR,
+    // so the client can split the rendered items and adopt each one in place
+    // instead of rebuilding the whole list.
+    if (opts.hydrate) {
+      return value.map((v) => `<!--CSA-S-->${valueToString(v, opts)}<!--CSA-E-->`).join('');
+    }
     return value.map((v) => valueToString(v, opts)).join('');
   }
   if (isTemplateResult(value)) {
@@ -69,6 +75,11 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     return valueToString(value.value, opts);
   }
   if (value instanceof RepeatResult) {
+    if (opts.hydrate) {
+      return value.items
+        .map((item, i) => `<!--CSA-S-->${valueToString(value.templateFn(item, i), opts)}<!--CSA-E-->`)
+        .join('');
+    }
     return value.items.map((item, i) => valueToString(value.templateFn(item, i), opts)).join('');
   }
   if (value instanceof KeyResult) {
@@ -342,26 +353,36 @@ class NodePart implements Part {
   /**
    * Adoption path: the nodes between startNode/endNode were rendered by SSR
    * from `value`. Bind part state to the existing DOM instead of clearing.
-   *
-   * - TemplateResult: recursively hydrate the sub-template (preserves the
-   *   entire subtree — the main win for large page content).
-   * - ComponentResult: instantiate + register the component (so state and
-   *   reactivity work) but let it render normally. Its initial DOM is rebuilt;
-   *   full component-DOM adoption is a future enhancement.
-   * - primitives/text/Node/null: keep the existing node(s) when they match.
-   * - arrays / repeat / key / unsafeHTML: safe rebuild fallback.
+   * Every branch here preserves the SSR nodes when possible; structural
+   * mismatches bubble up as a HydrateMismatch (caught by hydrate(), which
+   * falls back to a full render).
    */
   private _hydrateValue(value: unknown) {
     if (isComponentResult(value)) {
-      // The existing SSR nodes for this component will be replaced when the
-      // instance renders. Clear them first so updateComponent starts clean.
-      this.clear();
-      this._clearTemplateCache();
-      this.updateComponent(value);
+      this._adoptComponent(value);
       return;
     }
     if (isTemplateResult(value)) {
       this._adoptTemplate(value);
+      return;
+    }
+    if (value instanceof RepeatResult) {
+      this._adoptSequence(
+        value.items.map((item, i) => value.templateFn(item, i)),
+        value.items.map((item, i) => value.keyFn(item, i)),
+      );
+      return;
+    }
+    if (Array.isArray(value)) {
+      this._adoptSequence(value);
+      return;
+    }
+    if (value instanceof KeyResult) {
+      // key() forces a remount when the key changes; on initial hydration the
+      // SSR DOM already reflects the template, so adopt it and remember the key.
+      this._keySet = true;
+      this._key = value.value;
+      this._adoptTemplate(value.template);
       return;
     }
     if (value === null || value === undefined || value === false) {
@@ -371,6 +392,17 @@ class NodePart implements Part {
     }
     if (value instanceof Node) {
       // SSR rendered this node; keep it as-is.
+      return;
+    }
+    if (isUnsafeHTML(value)) {
+      // The existing DOM already holds the parsed HTML from SSR (the same
+      // string the client has). Keep it; a future update with a different
+      // value rebuilds via updateNode. If the part is unexpectedly empty,
+      // fall through to a rebuild.
+      if (this.startNode.nextSibling !== this.endNode) return;
+      this.clear();
+      this._clearTemplateCache();
+      this.updateNode(value);
       return;
     }
     if (typeof value !== 'object') {
@@ -384,14 +416,97 @@ class NodePart implements Part {
       }
       return;
     }
-    // Arrays / RepeatResult / KeyResult / UnsafeHTMLResult / plain objects:
-    // fall back to a full rebuild within this part. Correct, just not optimal.
+    // Plain object (spread result, etc.): safe rebuild fallback.
     this.clear();
     this._clearTemplateCache();
-    if (value instanceof RepeatResult) this.updateRepeat(value);
-    else if (value instanceof KeyResult) this.updateKey(value);
-    else if (Array.isArray(value)) this.updateArray(value);
-    else this.updateNode(value);
+    this.updateNode(value);
+  }
+
+  /**
+   * Adopt a component's SSR-rendered output: create the instance (preserving
+   * state/reactivity) and bind its render listener to HYDRATE the existing
+   * DOM on its first render instead of clearing and rebuilding. Subsequent
+   * renders reconcile via the normal updateNode cache path.
+   */
+  private _adoptComponent(result: ComponentResult) {
+    if (this.componentInstance && this.componentInstance.constructor !== result.clazz) {
+      this.disposeComponent();
+    }
+    if (!this.componentInstance) {
+      this.componentInstance = new result.clazz();
+      this.componentInstance.__parent = CossackElement.currentRenderingInstance;
+      if (this.componentInstance.__parent) {
+        this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
+      }
+      let firstRender = true;
+      this.renderListener = (template) => {
+        if (firstRender) {
+          firstRender = false;
+          if (isTemplateResult(template)) {
+            // Best-effort: adopt the component's SSR-rendered output. This
+            // succeeds when the server and client render the same structure
+            // (the common case, and always in production). It can diverge in
+            // dev (where the client wraps render() in devtools marker
+            // comments that SSR doesn't emit) or with non-deterministic
+            // render — on any mismatch, fall back to a clean rebuild so the
+            // component always ends up correct.
+            try {
+              this._adoptTemplate(template);
+            } catch (e) {
+              if (e instanceof HydrateMismatch) {
+                this.clear();
+                this._clearTemplateCache();
+                this.updateNode(template);
+              } else {
+                throw e;
+              }
+            }
+          } else if (template === null || template === undefined) {
+            this.clear();
+          } else {
+            this.updateNode(template);
+          }
+        } else {
+          this.updateNode(template);
+        }
+      };
+      this.componentInstance.addRenderListener(this.renderListener);
+      this.componentInstance.connectedCallback();
+    }
+    const instance = this.componentInstance;
+    Object.assign(instance, result.props);
+    if ('props' in instance) {
+      (instance as any).props = result.props;
+    }
+    instance.children = result.children;
+    instance.requestUpdate();
+  }
+
+  /**
+   * Adopt a list (array or repeat) whose SSR output is wrapped in CSA item
+   * markers. Splits the existing nodes into per-item NodeParts (anchored on
+   * the CSA comments) and hydrates each item. Falls back to rebuild if the
+   * CSA structure doesn't match the item count.
+   */
+  private _adoptSequence(items: unknown[], keys?: unknown[]) {
+    const nodes = this._nodesBetween();
+    const pairs = findSequencePairs(nodes);
+    // If the SSR item count doesn't match, we can't safely adopt — rebuild.
+    if (pairs.length !== items.length) {
+      throw new HydrateMismatch(
+        `sequence length mismatch: SSR has ${pairs.length} items, client has ${items.length}`,
+      );
+    }
+    this._childParts = [];
+    this._partKeys = keys ? [] : this._partKeys;
+    for (let i = 0; i < items.length; i++) {
+      const [start, end] = pairs[i];
+      const part = new NodePart(start, end);
+      (part as any)._hydrating = true;
+      this._childParts.push(part);
+      if (keys) this._partKeys.push(keys[i]);
+      part.update(items[i]);
+    }
   }
 
   /**
@@ -1025,9 +1140,37 @@ const isFiller = (n: Node): boolean => {
   if (n.nodeType === Node.TEXT_NODE) return (n.nodeValue || '').trim() === '';
   if (n.nodeType === Node.COMMENT_NODE) {
     const v = n.nodeValue || '';
-    return !/^CRP_\d+$/.test(v) && v !== '/CRP';
+    // Hydration markers (CRP node anchors + CSA list-item anchors) are
+    // structurally significant and must be matched. All other comments are
+    // stripped by minifyHtml in production and must be skipped.
+    return !/^CRP_\d+$/.test(v) && v !== '/CRP' && v !== 'CSA-S' && v !== 'CSA-E';
   }
   return false;
+};
+
+/**
+ * Find top-level `<!--CSA-S-->` / `<!--CSA-E-->` pairs in a node list. List
+ * items can themselves be lists (nested arrays/repeat), so matching is
+ * depth-aware: only pairs whose `CSA-E` returns the depth to zero are
+ * returned as items of THIS list; nested pairs belong to a child part and
+ * are resolved when that child adopts its own item.
+ */
+const findSequencePairs = (nodes: Node[]): [Comment, Comment][] => {
+  const pairs: [Comment, Comment][] = [];
+  const stack: Comment[] = [];
+  for (const n of nodes) {
+    if (n.nodeType !== Node.COMMENT_NODE) continue;
+    const v = n.nodeValue;
+    if (v === 'CSA-S') {
+      stack.push(n as Comment);
+    } else if (v === 'CSA-E') {
+      const start = stack.pop();
+      if (start && stack.length === 0) {
+        pairs.push([start, n as Comment]);
+      }
+    }
+  }
+  return pairs;
 };
 
 /**
@@ -1152,13 +1295,11 @@ export const hydrate = (result: TemplateResult, container: Node) => {
     }
   } catch (e) {
     if (e instanceof HydrateMismatch) {
-      // Mismatch between SSR output and client template (e.g. user-content
-      // differences, manual DOM edits, or a template that diverges between
-      // server and client). Safe fall back to a full render. Warn in dev so
-      // developers notice lost hydration; silent in production (still correct).
-      if (import.meta.env?.DEV) {
-        console.warn('[cossack] hydration mismatch, falling back to render:', (e as Error).message);
-      }
+      // Mismatch between SSR output and client template (divergent render
+      // output, manual DOM edits, etc.). Safe fall back to a full render so
+      // behaviour is always correct. Warn so the lost hydration is visible —
+      // a silent fallback here would hide a real SSR/client divergence.
+      console.warn('[cossack] hydration mismatch, falling back to render:', (e as Error).message);
       return render(result, container);
     }
     throw e;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { html, renderToString, render, hydrate, unsafeHTML } from './cossack-html';
+import { repeat, key } from './directives';
 import { CossackElement } from './cossack-element';
 
 /**
@@ -181,36 +182,107 @@ describe('hydrate() — DOM preservation', () => {
   });
 });
 
-describe('hydrate() — components & lists', () => {
-  it('instantiates a component during hydration and renders its output', async () => {
+describe('hydrate() — components & lists (adoption)', () => {
+  it('adopts a component subtree (preserves the SSR element node)', async () => {
+    let rendered = 0;
     class Badge extends CossackElement {
       render() {
+        rendered++;
         return html`<span class="badge">new</span>`;
       }
     }
-    // Build SSR output for a template that embeds the component via a helper.
     const embed = () => html`<div>${{ _type: 'COMPONENT', clazz: Badge, props: {}, children: null } as any}</div>`;
     const container = document.createElement('div');
     container.innerHTML = renderToString(embed(), { hydrate: true });
+    const ssrSpan = container.querySelector('span.badge')!;
 
     hydrate(embed(), container);
     // Component render runs via an async requestUpdate(); let it flush.
     await Promise.resolve();
     await Promise.resolve();
-    const span = container.querySelector('span.badge');
-    expect(span).not.toBeNull();
-    expect(span!.textContent).toBe('new');
+
+    // The exact SSR <span> survives hydration (not rebuilt).
+    expect(container.querySelector('span.badge')).toBe(ssrSpan);
+    expect(ssrSpan.textContent).toBe('new');
   });
 
-  it('hydrates arrays by rebuilding the list (safe fallback) with correct content', () => {
+  it('adopts array items (preserves each SSR item node)', () => {
+    const list = (vals: string[]) => html`<ul>${vals.map((v) => html`<li>${v}</li>`)}</ul>`;
     const container = document.createElement('div');
-    container.innerHTML = renderToString(html`<ul>${['a', 'b'].map((i) => html`<li>${i}</li>`)}</ul>`, { hydrate: true });
+    container.innerHTML = renderToString(list(['a', 'b']), { hydrate: true });
+    const ssrItems = Array.from(container.querySelectorAll('li'));
 
-    hydrate(html`<ul>${['a', 'b'].map((i) => html`<li>${i}</li>`)}</ul>`, container);
-    const items = container.querySelectorAll('li');
-    expect(items.length).toBe(2);
-    expect(items[0].textContent).toBe('a');
-    expect(items[1].textContent).toBe('b');
+    hydrate(list(['a', 'b']), container);
+    const after = container.querySelectorAll('li');
+    expect(after.length).toBe(2);
+    // Same node identity — the SSR <li>s were adopted.
+    expect(after[0]).toBe(ssrItems[0]);
+    expect(after[1]).toBe(ssrItems[1]);
+    expect(after[0].textContent).toBe('a');
+  });
+
+  it('updates an adopted array (append / remove items reconcile in place)', () => {
+    const list = (vals: string[]) => html`<ul>${vals.map((v) => html`<li>${v}</li>`)}</ul>`;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(list(['a', 'b']), { hydrate: true });
+    hydrate(list(['a', 'b']), container);
+    const item0 = container.querySelectorAll('li')[0];
+
+    // Append a third item — the adopted part should reconcile, keeping item0.
+    render(list(['a', 'b', 'c']), container);
+    const after = container.querySelectorAll('li');
+    expect(after.length).toBe(3);
+    expect(after[0]).toBe(item0); // original item preserved across update
+    expect(after[2].textContent).toBe('c');
+  });
+
+  it('adopts a `repeat()` list (preserves items, tracks keys)', () => {
+    const container = document.createElement('div');
+    const tpl = (items: { k: number; v: string }[]) =>
+      html`<ul>${repeat(items, (i) => i.k, (i) => html`<li>${i.v}</li>`)}</ul>`;
+    const data = [{ k: 1, v: 'a' }, { k: 2, v: 'b' }];
+    container.innerHTML = renderToString(tpl(data), { hydrate: true });
+    const ssrItems = Array.from(container.querySelectorAll('li'));
+
+    hydrate(tpl(data), container);
+    const after = container.querySelectorAll('li');
+    expect(after.length).toBe(2);
+    expect(after[0]).toBe(ssrItems[0]);
+    expect(after[1]).toBe(ssrItems[1]);
+  });
+
+  it('adopts a `key()` region (preserves the SSR subtree)', () => {
+    const tpl = (k: unknown, v: string) => html`<div>${key(k, html`<b>${v}</b>`)}</div>`;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tpl('stable', 'x'), { hydrate: true });
+    const ssrBold = container.querySelector('b')!;
+
+    hydrate(tpl('stable', 'x'), container);
+    expect(container.querySelector('b')).toBe(ssrBold);
+    expect(ssrBold.textContent).toBe('x');
+  });
+
+  it('adopts unsafeHTML (keeps the SSR-parsed nodes)', () => {
+    const tpl = (raw: string) => html`<div>${unsafeHTML(raw)}</div>`;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tpl('<b>raw</b>'), { hydrate: true });
+    const ssrBold = container.querySelector('b')!;
+
+    hydrate(tpl('<b>raw</b>'), container);
+    // The SSR <b> is preserved, not reparsed.
+    expect(container.querySelector('b')).toBe(ssrBold);
+    expect(ssrBold.textContent).toBe('raw');
+  });
+
+  it('falls back to rebuild when the array length differs from SSR', () => {
+    const list = (vals: string[]) => html`<ul>${vals.map((v) => html`<li>${v}</li>`)}</ul>`;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(list(['a', 'b']), { hydrate: true });
+
+    // Client template has a different length than the SSR DOM. Hydration must
+    // not throw and must produce the correct (rebuilt) output.
+    expect(() => hydrate(list(['a', 'b', 'c']), container)).not.toThrow();
+    expect(container.querySelectorAll('li').length).toBe(3);
   });
 });
 
