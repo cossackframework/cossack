@@ -280,6 +280,12 @@ Available factories:
 | `requirePermission(perm, resource?)` | User holds the permission, optionally against a domain object. |
 | `requireAllPermissions(...perms)` | User holds EVERY permission (AND). |
 
+For **conditional UI** (show/hide elements inside `render()`), use the boolean
+helpers on the same kit: `guard.can(c, permission)`, `guard.hasRole(c, role)`,
+plus their `Async` variants for DB-backed checks. See
+[`docs/authorization.md`](../docs/authorization.md#conditional-ui-in-render)
+for the inline-sync and `init()`/`@State` patterns.
+
 Default failure responses are `401 JSON` (unauthenticated) and `403 JSON`
 (forbidden); override both via `onUnauthorized`.
 

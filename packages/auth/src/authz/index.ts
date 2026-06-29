@@ -45,6 +45,49 @@ export interface AuthorizerKit {
     requireAllPermissions: (
         ...permissions: string[]
     ) => MiddlewareHandler;
+
+    // --- Boolean helpers (for conditional UI / imperative checks) ---
+    // These complement the route-protection middleware: use them inside
+    // render(), event handlers, or anywhere you need a yes/no answer instead
+    // of an HTTP response. They read the user from `c.get('user')` and return
+    // `false` when unauthenticated (never throw for that case).
+
+    /**
+     * Synchronous boolean permission check. Returns `false` when there is no
+     * user or the user lacks the permission.
+     *
+     * Throws if the configured `hasPermission` callback returns a Promise —
+     * sync render cannot await it. Use {@link AuthorizerKit.canAsync} (from
+     * `init()`) for DB-backed checks.
+     *
+     * @example
+     * ```ts
+     * render() {
+     *   return html`${guard.can(this.c, 'posts.create')
+     *     ? html`<button @click=${this.createPost}>New Post</button>`
+     *     : ''}`;
+     * }
+     * ```
+     */
+    can: (c: Context, permission: string, resource?: unknown) => boolean;
+    /**
+     * Synchronous boolean role check (any of). Returns `false` when there is
+     * no user or the user holds none of the roles. Throws if `hasRole` is async.
+     */
+    hasRole: (c: Context, ...roles: string[]) => boolean;
+    /**
+     * Async permission check. Use from `init()` and store the result in
+     * `@State` so it syncs to the client and survives re-renders.
+     *
+     * @example
+     * ```ts
+     * @State() canDelete = false;
+     * async init() { this.canDelete = await guard.canAsync(this.c, 'posts.delete'); }
+     * ```
+     */
+    canAsync: (c: Context, permission: string, resource?: unknown) => Promise<boolean>;
+    /** Async role check (any of). */
+    hasRoleAsync: (c: Context, ...roles: string[]) => Promise<boolean>;
 }
 
 function defaultOnUnauthorized(c: Context, reason: UnauthorizedReason): Response {
@@ -169,11 +212,69 @@ export function createAuthorizer<User>(options: AuthorizerOptions<User>): Author
             await next();
         };
 
+    // --- Boolean helpers (see interface docstrings above) ---
+
+    const ensureSync = (
+        result: boolean | Promise<boolean>,
+        helper: string,
+    ): boolean => {
+        if (
+            result &&
+            typeof (result as Promise<boolean> | unknown) === 'object' &&
+            typeof (result as Promise<boolean>).then === 'function'
+        ) {
+            throw new Error(
+                `createAuthorizer: guard.${helper}() received a Promise from its callback. ` +
+                    `Sync render cannot await it — either make the callback synchronous, or use ` +
+                    `guard.${helper}Async() from init() and store the result in @State.`,
+            );
+        }
+        return result as boolean;
+    };
+
+    const can = (c: Context, permission: string, resource?: unknown): boolean => {
+        const user = c.get('user') as User | undefined;
+        if (!user || !options.hasPermission) return false;
+        return ensureSync(options.hasPermission(user, permission, resource, c), 'can');
+    };
+
+    const hasRole = (c: Context, ...roles: string[]): boolean => {
+        const user = c.get('user') as User | undefined;
+        if (!user || !options.hasRole || roles.length === 0) return false;
+        for (const role of roles) {
+            if (ensureSync(options.hasRole(user, role, c), 'hasRole')) return true;
+        }
+        return false;
+    };
+
+    const canAsync = async (
+        c: Context,
+        permission: string,
+        resource?: unknown,
+    ): Promise<boolean> => {
+        const user = c.get('user') as User | undefined;
+        if (!user || !options.hasPermission) return false;
+        return options.hasPermission(user, permission, resource, c);
+    };
+
+    const hasRoleAsync = async (c: Context, ...roles: string[]): Promise<boolean> => {
+        const user = c.get('user') as User | undefined;
+        if (!user || !options.hasRole || roles.length === 0) return false;
+        for (const role of roles) {
+            if (await options.hasRole(user, role, c)) return true;
+        }
+        return false;
+    };
+
     return {
         requireUser,
         requireRole,
         requireAllRoles,
         requirePermission,
         requireAllPermissions,
+        can,
+        hasRole,
+        canAsync,
+        hasRoleAsync,
     };
 }

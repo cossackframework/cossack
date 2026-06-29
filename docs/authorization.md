@@ -73,6 +73,127 @@ export class NewPost extends Cossack {}
 export class EditorDashboard extends Cossack {}
 ```
 
+## Conditional UI in `render()`
+
+The `require*` factories are **route-level** middleware — they deny access with
+an HTTP response. For conditional UI (show/hide a button, toggle a menu item),
+use the boolean helpers on the same kit:
+
+| Helper | Returns | Use when |
+| --- | --- | --- |
+| `guard.can(c, permission, resource?)` | `boolean` (sync) | `hasPermission` is sync (in-memory array). |
+| `guard.hasRole(c, ...roles)` | `boolean` (sync, OR) | `hasRole` is sync. |
+| `guard.canAsync(c, permission, resource?)` | `Promise<boolean>` | `hasPermission` is async (DB-backed). |
+| `guard.hasRoleAsync(c, ...roles)` | `Promise<boolean>` | `hasRole` is async. |
+
+All four read the user from `c.get('user')` and return `false` (never throw)
+when there is no user — unauthenticated visitors simply don't see the gated UI.
+
+### Pattern 1: inline sync check (in-memory permissions)
+
+When your `hasPermission` callback is synchronous (e.g. the user has a
+`permissions: string[]` array), call `guard.can(this.c, ...)` directly inside
+`render()`:
+
+```ts
+import { Page, Cossack } from '@cossackframework/core';
+import { html } from 'lit';
+import { guard } from '../auth';
+
+@Page()
+export class PostList extends Cossack {
+    render() {
+        return html`
+            <ul>${this.posts.map(/* ... */)}</ul>
+            ${guard.can(this.c, 'posts.create')
+                ? html`<button @click=${this.createPost}>New Post</button>`
+                : null}
+        `;
+    }
+}
+```
+
+If `hasPermission` returns a Promise, `guard.can()` **throws a clear error**
+rather than silently returning `false` — use Pattern 2 instead.
+
+### Pattern 2: async check via `init()` + `@State` (DB-backed permissions)
+
+When `hasPermission` queries a database or external service, resolve the
+result in `init()` (server-only) and store it in `@State`. The state syncs to
+the client automatically and survives re-renders without re-querying:
+
+```ts
+import { Page, Cossack, State, Server } from '@cossackframework/core';
+import { html } from 'lit';
+import { guard } from '../auth';
+
+@Page()
+export class PostList extends Cossack {
+    @State() canCreatePosts = false;
+    @State() posts: Post[] = [];
+
+    @Server()
+    async init() {
+        this.posts = await db.posts.findMany();
+        // Async permission check — runs once on the server during SSR.
+        this.canCreatePosts = await guard.canAsync(this.c, 'posts.create');
+    }
+
+    render() {
+        return html`
+            <ul>${this.posts.map(/* ... */)}</ul>
+            ${this.canCreatePosts
+                ? html`<button @click=${this.createPost}>New Post</button>`
+                : null}
+        `;
+    }
+}
+```
+
+This is the **recommended** pattern for anything non-trivial: it keeps
+`render()` synchronous, works identically on server and client, and avoids
+repeated permission queries on every re-render.
+
+### Pattern 3: a reusable `<Guard>` wrapper (userland)
+
+For deeply nested conditional UI, a small wrapper component keeps templates
+readable. The auth package can't ship a renderer component (it doesn't depend
+on `@cossackframework/core`), but you can define one in your app:
+
+```ts
+// src/components/Can.ts
+import { Cossack, Client, Prop } from '@cossackframework/core';
+import { html } from 'lit';
+import { guard } from '../auth';
+
+@Client()
+export class Can extends Cossack {
+    @Prop() permission!: string;
+
+    render() {
+        return guard.can(this.c, this.permission)
+            ? html`<slot></slot>`
+            : html``;
+    }
+}
+```
+
+```ts
+// Usage:
+import './components/Can';
+
+render() {
+    return html`
+        <cossack-can permission="posts.create">
+            <button @click=${this.createPost}>New Post</button>
+        </cossack-can>
+    `;
+}
+```
+
+Use the `init()` + `@State` pattern (Pattern 2) inside `<Can>` if your
+permission check is async.
+
 ## Resource-aware permission checks
 
 Pass a domain object as the third argument when the permission depends on
