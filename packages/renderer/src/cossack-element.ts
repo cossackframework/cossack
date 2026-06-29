@@ -1,4 +1,4 @@
-import { TemplateResult, render, html, isTemplateResult } from './cossack-html';
+import { TemplateResult, render, hydrate, html, isTemplateResult } from './cossack-html';
 import { Context } from './context';
 
 export type PropertyDeclaration = {
@@ -198,14 +198,21 @@ export class CossackElement implements ReactiveControllerHost {
       this.__renderListeners.delete(listener);
   }
 
-  mount(container: HTMLElement) {
+  mount(container: HTMLElement, hydrateFirst = false) {
+      let firstRender = hydrateFirst;
       this.addRenderListener((template) => {
           if (template) {
-             if (isTemplateResult(template)) {
-                 render(template, container);
-             } else {
-                 render(html`${template}`, container);
-             }
+              const result = isTemplateResult(template) ? template : html`${template}`;
+              // On the very first render after a server-side render, hydrate
+              // the existing DOM in place (preserving the SSR nodes) instead
+              // of wiping and rebuilding. Subsequent updates use the normal
+              // render() path, which reconciles via the container cache.
+              if (firstRender) {
+                  firstRender = false;
+                  hydrate(result, container);
+              } else {
+                  render(result, container);
+              }
           }
       });
       this.requestUpdate();

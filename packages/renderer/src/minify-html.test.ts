@@ -32,6 +32,32 @@ describe('minifyHtml', () => {
         expect(result).toBe('<div><span>hello</span></div>');
     });
 
+    it('preserves Cossack hydration markers (CRP)', () => {
+        const input = '<div>Hello <!--CRP_0-->World<!--/CRP--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div>Hello <!--CRP_0-->World<!--/CRP--></div>');
+    });
+
+    it('still strips non-CRP comments while keeping CRP markers', () => {
+        const input = '<div><!-- note --><!--CRP_0-->x<!--/CRP--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div><!--CRP_0-->x<!--/CRP--></div>');
+    });
+
+    it('preserves Cossack sequence markers (CSA)', () => {
+        // CSA markers wrap each list item so the client can adopt lists in
+        // place. Stripping them would silently break list hydration.
+        const input = '<div><!--CSA-S--><span>a</span><!--CSA-E--><!--CSA-S--><span>b</span><!--CSA-E--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div><!--CSA-S--><span>a</span><!--CSA-E--><!--CSA-S--><span>b</span><!--CSA-E--></div>');
+    });
+
+    it('keeps CRP and CSA markers while stripping other comments', () => {
+        const input = '<div><!--x--><!--CSA-S--><!--CRP_0-->v<!--/CRP--><!--CSA-E--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div><!--CSA-S--><!--CRP_0-->v<!--/CRP--><!--CSA-E--></div>');
+    });
+
     it('preserves content inside <script> tags', () => {
         const input = `<div>
             <script>

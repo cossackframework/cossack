@@ -553,8 +553,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         this.isBootstrapping = false;
 
-        // Mount to DOM if we have a container (for root/app components)
-        if (this.container && !this.isServer) {
+        // Mount to DOM if we have a container (for root/app components).
+        // Honour `deferMount`: when set, the caller takes responsibility for
+        // invoking `mount()` once the component tree is fully composed. This is
+        // critical for the client app bootstrap — mounting before the page
+        // content is loaded would render the App shell with empty `children`,
+        // wiping the SSR DOM and flashing an empty main (a major CLS source).
+        if (this.container && !this.isServer && !deferMount) {
             this.skipRenderTasks = true;
             this.mount(this.container as HTMLElement);
             this.skipRenderTasks = false;
@@ -1199,10 +1204,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         let res = '';
         if (template) {
             if (this.isServer) {
+                // Emit hydratable SSR (node positions wrapped in marker
+                // comments) so the client can hydrate the existing DOM in
+                // place instead of wiping and rebuilding it. Controlled by a
+                // static flag so non-hydrating SSR contexts can opt out.
+                const ssrOpts = Cossack.SSR_HYDRATABLE ? { hydrate: true } : {};
                 if (isTemplateResult(template)) {
-                    res = renderToString(template);
+                    res = renderToString(template, ssrOpts);
                 } else {
-                    res = renderToString(html`${template}`);
+                    res = renderToString(html`${template}`, ssrOpts);
                 }
             }
         }
@@ -1349,6 +1359,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<void>;
+
+    /**
+     * When true (default), server-side rendering emits hydratable marker
+     * comments around dynamic node positions so the client can hydrate the
+     * existing DOM in place. Set to false for SSR contexts that do not pair
+     * with client hydration (e.g. rendering to a string for email/API output).
+     */
+    public static SSR_HYDRATABLE = true;
 
     public redirect(url: string, status?: RedirectStatusCode): void;
     public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): void;

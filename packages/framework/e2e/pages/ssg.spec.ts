@@ -35,8 +35,11 @@ test.describe('SSG serving (preview server)', () => {
     // time. A dynamically SSR-rendered page would show the current time.
     const resp = await request.get('/ssg-demo/');
     const html = await resp.text();
+    // Strip Cossack hydration marker comments so the assertion sees the
+    // rendered value contiguously (SSR wraps dynamic values in markers).
+    const visible = html.replace(/<!--\/?CRP[\s\S]*?-->/g, '');
 
-    const match = html.match(/Build date:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+    const match = visible.match(/Build date:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
     expect(match, 'expected an ISO build-date timestamp in the HTML').not.toBeNull();
 
     const renderedAt = new Date(match![1]);
@@ -54,8 +57,11 @@ test.describe('SSG serving (preview server)', () => {
     const resp = await request.get('/ssg-demo/users/alice/');
     expect(resp.status()).toBe(200);
     const html = await resp.text();
-    expect(html).toContain('User Profile');
-    expect(html).toContain('@alice');
+    // Strip hydration markers so `@alice` (split as `@<!--CRP_1-->alice<!--/CRP-->`
+    // by SSR) is matched contiguously.
+    const visible = html.replace(/<!--\/?CRP[\s\S]*?-->/g, '');
+    expect(visible).toContain('User Profile');
+    expect(visible).toContain('@alice');
   });
 
   test('serves sitemap.xml at /sitemap.xml', async ({ request }) => {
