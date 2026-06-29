@@ -1,6 +1,6 @@
 {
   "name": "create-cossack-app",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "type": "module",
   "description": "CLI to scaffold a new Cossack Framework project",
   "license": "MIT",
@@ -12,8 +12,19 @@
   "bin": {
     "create-cossack-app": "./bin/create-cossack-app.js"
   },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "bin",
+    "index.js",
+    "index.d.ts",
     "template",
     "tsconfig.template.json"
   ],

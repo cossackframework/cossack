@@ -1,6 +1,7 @@
 // src/shared/service-bootstrap.ts
 import 'reflect-metadata';
 import { isService } from './container';
+import { RESERVED_STATE_KEYS } from './component-types';
 
 /**
  * Bootstrap a service instance: set up @State properties as simple
@@ -216,7 +217,7 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
 
                 // Sync updated state back to the service instance
                 for (const key in data) {
-                    if (key === 'loading' || key === 'isServer' || key === 'params') continue;
+                    if (RESERVED_STATE_KEYS.has(key)) continue;
                     if (component._isOptimisticLocked(key)) {
                         component._optimisticPendingState[key] = data[key];
                     } else {

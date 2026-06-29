@@ -24,8 +24,9 @@ import {
     proxyHttpMethods as proxyHttpMethodsFn,
     proxyServerMethods as proxyServerMethodsFn,
     setupServerMethodProxies as setupServerMethodProxiesFn,
+    isRpcCallableAction,
 } from './method-proxy';
-import { HeadTag, HeadContext, HeadValue } from './head';
+import { HeadTag, HeadContext, HeadValue, composeHead as composeHeadFn, type Headed } from './head';
 import {
     buildHeadContext as buildHeadContextFn,
     mergeHead as mergeHeadFn,
@@ -284,6 +285,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public static mergeHead(context: HeadContext, value: HeadValue): HeadTag[] {
         return mergeHeadFn(context, value);
+    }
+
+    public static composeHead(page: Headed, layouts: Headed[], app: Headed): HeadTag[] {
+        return composeHeadFn(page, layouts, app);
     }
 
     public static applyHeadTags(tags: HeadTag[]) {
@@ -622,18 +627,54 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return current.startsWith(path);
     }
 
-    public async executeAction(action: string, payload: any[], user: any, clientContext: unknown) {
+    /**
+     * Serialised queue of in-flight RPC actions on this instance.
+     *
+     * In a Durable Object (or Node adapter) a single component instance serves
+     * many WebSocket clients, whose action messages can dispatch concurrently.
+     * `_cossack_ws_context` (used by @Client method proxies to route
+     * client-actions back to the originating socket) is per-instance state, so
+     * overlapping actions would cross-route: client A's action body could fire
+     * a @Client call against client B's socket. Serialising execution — one
+     * action at a time per instance — eliminates the race. It also bounds
+     * re-entrancy on shared component state.
+     */
+    private _actionQueue: Promise<void> = Promise.resolve();
+
+    public executeAction(action: string, payload: any[], user: AuthenticatedUser | undefined, clientContext: unknown): Promise<void> {
+        // Authorisation gate: only @Server-registered methods may be invoked
+        // remotely. Without this, any public/inherited method (bootstrap,
+        // setProperty, getPublicState, destroy, ...) would be callable by a
+        // crafted WebSocket message, bypassing the client-side stripping.
+        if (!isRpcCallableAction(this.constructor, action)) {
+            return Promise.resolve();
+        }
+        // Chain onto the queue so actions run one at a time. The runner catches
+        // its own errors so a failing action never breaks the chain for later
+        // callers (and never surfaces as an unhandled rejection).
+        const run = () => this._runAction(action, payload, user, clientContext);
+        this._actionQueue = this._actionQueue.then(run, run);
+        return this._actionQueue;
+    }
+
+    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown): Promise<void> {
         const actionMethod = this.getMethod(action);
-        if (actionMethod) {
-            this._cossack_ws_context = clientContext;
-            try {
-                await (actionMethod as any)(...(payload || []), user);
-            } finally {
-                this._cossack_ws_context = undefined;
-                const ws = clientContext as WebSocket;
-                if (ws.readyState === WebSocket.OPEN) {
-                     ws.send(JSON.stringify({ type: 'action-complete', action }));
-                }
+        if (!actionMethod) return;
+        this._cossack_ws_context = clientContext;
+        try {
+            await (actionMethod as any)(...(payload || []), user);
+        } catch (e) {
+            // Error boundary: log and continue so the runtime doesn't receive an
+            // unhandled rejection and so `loading[action]` is always released.
+            console.error(`[Cossack] Error executing action '${action}':`, e);
+        } finally {
+            this._cossack_ws_context = undefined;
+            const ws = clientContext as { readyState?: number; send: (d: string) => void };
+            // Use the numeric literal (1 === WebSocket.OPEN) rather than the
+            // global so this works in the Node adapter where `WebSocket` is
+            // imported from 'ws' and may not be a global.
+            if (ws && ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'action-complete', action }));
             }
         }
     }
@@ -1320,7 +1361,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
             const types = opts.types;
             if (Cossack._onNavigate) {
-                window.history.pushState({}, '', url);
+                // _onNavigate (the SPA entry) performs the navigation AND the
+                // history.pushState on success. Pushing state here too would
+                // create two history entries per redirect (Back needed twice).
                 Cossack._onNavigate(url, types ? { types } : undefined);
             } else {
                 window.location.href = url;
@@ -1454,6 +1497,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     this._sseConnection.close();
                     this._sseConnection = undefined;
                 }
+
+                // Disconnect @VisibleTask IntersectionObservers — otherwise they
+                // retain references to the destroyed component and keep firing
+                // callbacks that mutate destroyed state.
+                this._visibleTaskObservers.forEach(({ observer }) => observer.disconnect());
+                this._visibleTaskObservers.clear();
 
                 // Clean up event listeners
                 this.eventCleanupFns.forEach(cleanup => cleanup());

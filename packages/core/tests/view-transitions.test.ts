@@ -38,7 +38,7 @@ vi.mock('@cossackframework/renderer', () => {
     };
 });
 
-import { supportsViewTransitions } from '../src/client/navigation';
+import { supportsViewTransitions, supportsViewTransitionTypes } from '../src/client/navigation';
 import { Cossack } from '../src/shared/cossack';
 
 class TestComponent extends Cossack<{}> {}
@@ -60,6 +60,24 @@ describe('supportsViewTransitions', () => {
     doc.startViewTransition = vi.fn();
     vi.stubGlobal('document', doc);
     expect(supportsViewTransitions()).toBe(true);
+  });
+});
+
+describe('supportsViewTransitionTypes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns a boolean and never throws (graceful when CSS is absent)', () => {
+    vi.stubGlobal('CSS', undefined);
+    expect(() => supportsViewTransitionTypes()).not.toThrow();
+    expect(typeof supportsViewTransitionTypes()).toBe('boolean');
+  });
+
+  it('returns false in environments lacking the VT-type selector', () => {
+    // jsdom does not implement view-transition-type, so the detector reports
+    // false here (the real feature ships in Chrome 125+).
+    expect(supportsViewTransitionTypes()).toBe(false);
   });
 });
 
@@ -168,7 +186,7 @@ describe('Cossack.prototype.redirect with options on client', () => {
     vi.unstubAllGlobals();
   });
 
-  it('passes options.types to Cossack._onNavigate', async () => {
+  it('passes options.types to Cossack._onNavigate and does not push state itself', async () => {
     const onNavigateMock = vi.fn().mockResolvedValue(undefined);
     const originalOnNavigate = Cossack._onNavigate;
     Cossack._onNavigate = onNavigateMock;
@@ -177,7 +195,9 @@ describe('Cossack.prototype.redirect with options on client', () => {
 
     component.redirect('/new-page', { types: ['nav-forward'] });
 
-    expect(historySpy).toHaveBeenCalledWith({}, '', '/new-page');
+    // redirect() delegates history.pushState to _onNavigate (the SPA entry);
+    // it must NOT push state itself (would double up history entries).
+    expect(historySpy).not.toHaveBeenCalled();
     expect(onNavigateMock).toHaveBeenCalledTimes(1);
     expect(onNavigateMock.mock.calls[0][0]).toBe('/new-page');
     // Second argument should be options with types

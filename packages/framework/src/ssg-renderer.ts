@@ -31,29 +31,16 @@ interface LayoutStackItem {
  * Convert a file path to a simplified route path.
  * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
  */
-export function filePathToRoutePath(filePath: string): string {
-  let route = filePath
-    .replace('/src/pages/', '/')
-    .replace('/index.ts', '')
-    .replace('/index.mdx', '')
-    .replace('/index.md', '')
-    .replace(/\.(ts|tsx|md|mdx)$/, '');
-
-  // Handle root path: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
-  if (route === '/index' || route === '') {
-    return '/';
-  }
-
-  return route;
-}
+// Re-export the canonical route-path helper so callers that historically
+// imported it from ssg-renderer keep working, without maintaining a
+// divergent copy here.
+export { filePathToRoutePath, getModulePreloads } from './route-ids';
+import { filePathToRoutePath, getModulePreloads } from './route-ids';
 
 /**
  * Get the layout stack for a given page path.
  */
-function getLayoutStack(
-  pagePath: string,
-  layouts: Record<string, LayoutModule>
-): LayoutStackItem[] {
+function getLayoutStack(pagePath: string, layouts: Record<string, LayoutModule>): LayoutStackItem[] {
   const stack: LayoutStackItem[] = [];
   const relativePath = pagePath.replace('/src/pages/', '');
   const parts = relativePath.split('/');
@@ -83,10 +70,7 @@ function getLayoutStack(
 /**
  * Collect all pages marked for SSG from the pages registry.
  */
-export function collectSsgRoutes(
-  pages: Record<string, unknown>,
-  layouts: Record<string, LayoutModule>
-): SsgRoute[] {
+export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record<string, LayoutModule>): SsgRoute[] {
   const routes: SsgRoute[] = [];
 
   for (const path in pages) {
@@ -101,16 +85,9 @@ export function collectSsgRoutes(
     const mainExport = Object.values(module)[0];
 
     // Check if it's a Cossack Component
-    if (
-      mainExport &&
-      typeof mainExport === 'function' &&
-      mainExport.prototype instanceof Cossack
-    ) {
+    if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
       const PageComponent = mainExport as new () => Cossack;
-      const pageOptions: PageOptions | undefined = Reflect.getMetadata(
-        'page:options',
-        PageComponent
-      );
+      const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
       // Check if SSG is enabled for this page
       if (pageOptions?.ssg) {
@@ -145,31 +122,35 @@ export async function renderSsgPage(
   AppComponent?: new (...args: any[]) => any,
   htmlTemplate?: HtmlTemplate,
   pageFilePath?: string,
-  componentRouteId?: string
+  componentRouteId?: string,
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
 
   // Get page options for transport type
-  const pageOptions: PageOptions | undefined = Reflect.getMetadata(
-    'page:options',
-    PageComponent
-  );
+  const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
   const user: AuthenticatedUser = { id: 'ssg-user', name: 'SSG User' };
   const env = {};
 
   // Bootstrap App
+  if (!AppComponent) {
+    // No user App was supplied — falling back to the framework's demo App.
+    // This is almost always a plumbing mistake (the SSG entry should import and
+    // pass the project's own `App`), and results in the wrong <title>/head and
+    // missing global tags. Warn loudly so it's not silent.
+    console.warn(
+      '[cossack/ssg] No AppComponent was passed to renderSsgPage(); falling back to the framework default App. ' +
+        'Pass your App (e.g. via `cossack ssg` or renderSsgPage(..., App)) so your head()/title are applied.',
+    );
+  }
   const appInstance = new (AppComponent ?? App)();
   await appInstance.bootstrap({ context: mockContext, user, env, page: routePath });
 
   // Bootstrap Layouts
   const layoutInstances: Cossack[] = [];
   const layoutStates: Record<string, any> = {};
-  const layoutPaths = getLayoutStack(
-    `/src/pages${routePath.replace(/\//g, '/').replace(/^\//, '')}/index.ts`,
-    layouts
-  );
+  const layoutPaths = getLayoutStack(`/src/pages${routePath.replace(/\//g, '/').replace(/^\//, '')}/index.ts`, layouts);
 
   for (const layoutItem of layoutPaths) {
     const LComp = layouts[layoutItem.path].default;
@@ -183,9 +164,10 @@ export async function renderSsgPage(
   const pageInstance = new PageComponent();
 
   // Wrap staticParams in SerializedComponentState format for initializeState
-  const initialState = staticParams && Object.keys(staticParams).length > 0
-    ? { public: staticParams, internal: {}, children: {} }
-    : undefined;
+  const initialState =
+    staticParams && Object.keys(staticParams).length > 0
+      ? { public: staticParams, internal: {}, children: {} }
+      : undefined;
 
   await pageInstance.bootstrap({
     context: mockContext,
@@ -207,18 +189,8 @@ export async function renderSsgPage(
   appInstance.children = body;
   const finalHtml = appInstance._render();
 
-  // Head Merging
-  const emptyCtx = Cossack.buildHeadContext([]);
-  const pageHeadValue = pageInstance.head(emptyCtx);
-  let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-  for (let i = layoutInstances.length - 1; i >= 0; i--) {
-    const headContext = Cossack.buildHeadContext(tags);
-    const headValue = layoutInstances[i].head(headContext);
-    tags = Cossack.mergeHead(headContext, headValue);
-  }
-  const finalHeadContext = Cossack.buildHeadContext(tags);
-  const appHeadValue = appInstance.head(finalHeadContext);
-  const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+  // Head Merging (page → layouts → app, inside-out)
+  const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
 
   // Build the initial state payload, mirroring the SSR handler in router.ts
   // so the client hydration code receives the same shape it expects.
@@ -263,11 +235,9 @@ export async function renderSsgPage(
 function createMockContext(
   path: string,
   params?: Record<string, string>,
-  baseUrl: string = 'https://example.com'
+  baseUrl: string = 'https://example.com',
 ): Context {
-  const fullUrl = params
-    ? replaceParams(path, params)
-    : path;
+  const fullUrl = params ? replaceParams(path, params) : path;
 
   // Create a minimal Hono context mock
   const mockContext = {
@@ -318,7 +288,10 @@ function readManifestFile(): Record<string, any> {
     const manifestPath = path.join(process.cwd(), 'dist/client/.vite/manifest.json');
     const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
     return JSON.parse(manifestContent);
-  } catch {
+  } catch (e) {
+    // Non-fatal: SSG surfaces a clear error later if the manifest is missing,
+    // but warn here so a corrupt read isn't silent.
+    console.warn('[cossack/ssg] Could not load client manifest:', e);
     return {};
   }
 }
@@ -327,56 +300,10 @@ function readManifestFile(): Record<string, any> {
  * Collect modulepreload hrefs for the current page.
  * Mirrors the implementation in router.ts so SSG output matches SSR output.
  */
-function getModulePreloads(mfest: Record<string, any>, pagePath: string): string[] {
-  if (!pagePath) return [];
-
-  // Strip leading '/' to match Vite manifest keys (e.g. "src/pages/...")
-  const normalizedPath = pagePath.replace(/^\//, '');
-  const collected = new Set<string>();
-
-  const collect = (key: string) => {
-    const entry = mfest[key];
-    if (!entry) return;
-    if (entry.file && !collected.has(entry.file)) {
-      collected.add(entry.file);
-    }
-    if (entry.imports) {
-      for (const imp of entry.imports) {
-        if (!collected.has(imp)) {
-          collect(imp);
-        }
-      }
-    }
-  };
-
-  collect(normalizedPath);
-
-  const entryClient = mfest['src/client/entry-client.ts'];
-  if (entryClient?.imports) {
-    for (const imp of entryClient.imports) {
-      collect(imp);
-    }
-  }
-
-  const entryClientFile = entryClient?.file;
-  const hrefs: string[] = [];
-  for (const key of collected) {
-    const entry = mfest[key];
-    if (entry?.file) {
-      if (entry.file !== entryClientFile) hrefs.push(`/${entry.file}`);
-    } else if (key.startsWith('assets/')) {
-      if (key !== entryClientFile) hrefs.push(`/${key}`);
-    }
-  }
-  return hrefs;
-}
-
 /**
  * Get all static params for a dynamic SSG route.
  */
-export async function getStaticParams(
-  pageOptions: PageOptions
-): Promise<Record<string, string>[]> {
+export async function getStaticParams(pageOptions: PageOptions): Promise<Record<string, string>[]> {
   if (typeof pageOptions.ssg === 'object' && pageOptions.ssg.generateStaticParams) {
     return await pageOptions.ssg.generateStaticParams();
   }

@@ -31,7 +31,7 @@ describe('head() return type inference', () => {
         }
 
         const page = new Page();
-        const value: HeadValue = page.head({} as any);
+        const value: HeadValue = page.head();
         expect(value.title).toBe('World-Class Services, Designed for You');
         expect(value.meta).toHaveLength(2);
         expect(value.meta![0].tag).toBe('meta');
@@ -53,7 +53,7 @@ describe('head() return type inference', () => {
         }
 
         const page = new Page();
-        const value = page.head({} as any);
+        const value = page.head();
         expect(value.tags![0].tag).toBe('custom-thing');
     });
 });

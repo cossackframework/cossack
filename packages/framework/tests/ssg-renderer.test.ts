@@ -55,14 +55,7 @@ describe('ssg-renderer', () => {
 
   describe('renderSsgPage', () => {
     it('produces HTML containing the client hydration script tag', async () => {
-      const html = await renderSsgPage(
-        SsgTestPage,
-        '/ssg-test',
-        undefined,
-        {},
-        'https://example.com',
-        TestApp
-      );
+      const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
       // No manifest on disk in test env -> dev fallback path is used, which
       // still emits the module script tag pointing at the dev entry-client.
       expect(html).toContain('<script type="module"');
@@ -70,26 +63,12 @@ describe('ssg-renderer', () => {
     });
 
     it('produces HTML containing window.__INITIAL_STATE__', async () => {
-      const html = await renderSsgPage(
-        SsgTestPage,
-        '/ssg-test',
-        undefined,
-        {},
-        'https://example.com',
-        TestApp
-      );
+      const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
       expect(html).toContain('window.__INITIAL_STATE__');
     });
 
     it('produces HTML containing the page <title>', async () => {
-      const html = await renderSsgPage(
-        SsgTestPage,
-        '/ssg-test',
-        undefined,
-        {},
-        'https://example.com',
-        TestApp
-      );
+      const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
       // renderTag adds a data-cossack attribute marker to head tags.
       expect(html).toMatch(/<title[^>]*>SSG Test Title<\/title>/);
     });
@@ -106,7 +85,7 @@ describe('ssg-renderer', () => {
         'https://example.com',
         TestApp,
         stringTemplate,
-        '/src/pages/ssg-test/index.ts'
+        '/src/pages/ssg-test/index.ts',
       );
 
       expect(html).toContain('<html lang="zz">');
@@ -121,14 +100,7 @@ describe('ssg-renderer', () => {
       // during unit tests), renderRoot falls back to the dev CSS link. Verify
       // that fallback is present — the production path is covered by the
       // build integration test (ssg-build.test.ts).
-      const html = await renderSsgPage(
-        SsgTestPage,
-        '/ssg-test',
-        undefined,
-        {},
-        'https://example.com',
-        TestApp
-      );
+      const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
       expect(html).toContain('rel="stylesheet"');
     });
 
@@ -139,20 +111,52 @@ describe('ssg-renderer', () => {
       // "Component module loader not found for path".
       const html = await renderSsgPage(
         SsgTestPage,
-        '/users/alice',                    // concrete route path (params filled in)
-        { name: 'alice' },                 // static params
+        '/users/alice', // concrete route path (params filled in)
+        { name: 'alice' }, // static params
         {},
         'https://example.com',
         TestApp,
-        undefined,                         // htmlTemplate
+        undefined, // htmlTemplate
         '/src/pages/users/[name]/index.ts', // pageFilePath with bracket pattern
-        'cmp_test'
+        'cmp_test',
       );
 
       // routePath in initial state must preserve the [name] bracket pattern
       expect(html).toContain('"routePath":"/users/[name]"');
       // pathname must be the concrete URL
       expect(html).toContain('"pathname":"/users/alice"');
+    });
+
+    it('applies the supplied AppComponent head() (wraps title + contributes global links)', async () => {
+      // Regression: SSG must use the project's own App (not fall back to the
+      // framework default). If it falls back, the custom title and the global
+      // font <link> below would be missing from the output.
+      @Page({ transport: 'http' })
+      class AppWithGlobals extends Cossack {
+        head(context: any) {
+          return {
+            title: `My App - ${context.title || 'Welcome'}`,
+            links: [{ tag: 'link', attributes: { rel: 'stylesheet', href: '/fonts.css' } }],
+          };
+        }
+        render() {
+          return html`<div id="app">${this.children}</div>`;
+        }
+      }
+
+      const output = await renderSsgPage(
+        SsgTestPage,
+        '/ssg-test',
+        undefined,
+        {},
+        'https://example.com',
+        AppWithGlobals,
+      );
+
+      // App title wraps the page title.
+      expect(output).toMatch(/<title[^>]*>My App - SSG Test Title<\/title>/);
+      // App global link is present (head arrays accumulate, not replace).
+      expect(output).toContain('/fonts.css');
     });
   });
 });

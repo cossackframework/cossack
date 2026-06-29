@@ -14,22 +14,32 @@ export class DurableObjectRuntime implements CossackServerRuntime {
     }
 
     async onClientMessage(client: WebSocket, message: string): Promise<void> {
-        const data = JSON.parse(message);
-        if (data.type === 'action') {
-            const { user } = (client as any).deserializeAttachment() as any;
-            
-            let targetInstance = this.component;
-            if (data.target && data.target !== targetInstance._id) {
-                if (targetInstance.activeComponents.has(data.target)) {
-                    targetInstance = targetInstance.activeComponents.get(data.target)!;
-                } else {
-                    console.warn(`[Cossack] Target component '${data.target}' not found. Action '${data.action}' dropped.`);
-                    return;
-                }
-            }
-
-            await targetInstance.executeAction(data.action, data.payload, user, client);
+        let data: any;
+        try {
+            data = JSON.parse(message);
+        } catch (e) {
+            // A single malformed frame must not crash the runtime / close the
+            // shared Durable Object connection for all clients.
+            console.error('[Cossack] Ignoring malformed WebSocket message:', e);
+            return;
         }
+        if (!data || typeof data !== 'object' || data.type !== 'action' ||
+            typeof data.action !== 'string' || !Array.isArray(data.payload)) {
+            return;
+        }
+        const { user } = (client as any).deserializeAttachment() as any;
+
+        let targetInstance = this.component;
+        if (data.target && data.target !== targetInstance._id) {
+            if (targetInstance.activeComponents.has(data.target)) {
+                targetInstance = targetInstance.activeComponents.get(data.target)!;
+            } else {
+                console.warn(`[Cossack] Target component '${data.target}' not found. Action '${data.action}' dropped.`);
+                return;
+            }
+        }
+
+        await targetInstance.executeAction(data.action, data.payload, user, client);
     }
 
     broadcastState(partialState: Record<string, any>): void {

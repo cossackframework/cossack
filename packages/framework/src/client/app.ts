@@ -1,29 +1,11 @@
-import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, type NavigateOptions } from '@cossackframework/core';
+import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions } from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
+import { filePathToRoutePath } from '../route-ids';
 import registry from 'virtual:cossack-pages';
 
 const { pages, layouts, loadings, components } = registry;
-
-/**
- * Convert a file path to a simplified route path.
- * Example: /src/pages/hello/[name]/index.ts -> /hello/[name]
- */
-function filePathToRoutePath(filePath: string): string {
-    const route = filePath
-        .replace('/src/pages/', '/')
-        .replace('/index.ts', '')
-        .replace('/index.md', '')
-        .replace('/index.mdx', '')
-        .replace(/\.(ts|md|mdx)$/, '');
-
-    // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
-    if (route === '/index' || route === '') {
-        return '/';
-    }
-    return route;
-}
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
@@ -68,7 +50,35 @@ export interface CreateClientAppOptions {
   progressBar?: boolean;
 }
 
+/**
+ * In-memory cache of prefetched/visited pages for instant SPA navigation.
+ *
+ * Bounded (LRU): when the limit is reached the oldest entry is evicted on
+ * insert, so a long session traversing many dynamic routes (e.g. /items/[id])
+ * cannot grow the cache without bound.
+ *
+ * Invalidated wholesale after any successful RPC action, so navigating back to
+ * a page whose state was mutated server-side never serves stale content.
+ */
+const PAGE_CACHE_MAX = 20;
 const pageCache = new Map<string, { html: string; state: any }>();
+
+function invalidatePageCache(url?: string) {
+  if (url) pageCache.delete(url);
+  else pageCache.clear();
+}
+
+// Allow the RPC layer (core method-proxy) to invalidate the current page's
+// cache entry after an action mutates server state, without a hard import
+// cycle (core → framework). Only the current page is dropped so unrelated
+// prefetched pages stay cached.
+if (typeof globalThis !== 'undefined') {
+  (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage = () => {
+    try {
+      if (typeof location !== 'undefined') pageCache.delete(location.href);
+    } catch { /* location unavailable */ }
+  };
+}
 
 // Progress bar element. Only created when the `progressBar` option is enabled
 // in createClientApp(). setProgress() is a no-op when this is null, so
@@ -111,22 +121,47 @@ function parseStateFromHTML(html: string) {
   return null;
 }
 
+/**
+ * In-flight fetch deduplication. A hover prefetch and the subsequent click
+ * navigation can both call fetchPage(url) before the first resolves, issuing
+ * two identical network requests. Track the live promise per URL and reuse it
+ * so only one request is in flight at a time.
+ */
+const inFlightPages = new Map<string, Promise<{ html: string; state: any }>>();
+
 async function fetchPage(url: string) {
   if (pageCache.has(url)) {
     return pageCache.get(url)!;
   }
-
-  const response = await fetch(url);
-  const html = await response.text();
-  const parsed = parseStateFromHTML(html);
-
-  if (parsed) {
-    const data = { html, state: parsed.state };
-    pageCache.set(url, data);
-    return data;
+  const existing = inFlightPages.get(url);
+  if (existing) {
+    return existing;
   }
 
-  throw new Error('Failed to load page state');
+  const promise = (async () => {
+    const response = await fetch(url);
+    const html = await response.text();
+    const parsed = parseStateFromHTML(html);
+
+    if (parsed) {
+      const data = { html, state: parsed.state };
+      pageCache.set(url, data);
+      // LRU eviction: drop the oldest entry once over capacity. Map iterates in
+      // insertion order, so the first key is the least-recently-inserted.
+      if (pageCache.size > PAGE_CACHE_MAX) {
+        const oldest = pageCache.keys().next().value;
+        if (oldest !== undefined) pageCache.delete(oldest);
+      }
+      return data;
+    }
+
+    throw new Error('Failed to load page state');
+  })();
+
+  inFlightPages.set(url, promise);
+  // Always clear the in-flight entry so a failed fetch can be retried later.
+  promise.finally(() => inFlightPages.delete(url));
+  return promise;
 }
 
 export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false, progressBar: progressBarEnabled = false }: CreateClientAppOptions) {
@@ -205,20 +240,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
   const syncHead = () => {
     if (!currentPage) return;
-    const emptyCtx = Cossack.buildHeadContext([]);
-    const pageHeadValue = currentPage.head(emptyCtx);
-
-    let tags = Cossack.mergeHead(emptyCtx, pageHeadValue);
-
-    for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
-        const headContext = Cossack.buildHeadContext(tags);
-        const headValue = currentLayoutInstances[i].head(headContext);
-        tags = Cossack.mergeHead(headContext, headValue);
-    }
-
-    const finalHeadContext = Cossack.buildHeadContext(tags);
-    const appHeadValue = appInstance.head(finalHeadContext);
-    const headTags = Cossack.mergeHead(finalHeadContext, appHeadValue);
+    const headTags = Cossack.composeHead(currentPage, currentLayoutInstances, appInstance);
 
     const serialized = JSON.stringify(headTags);
     if (serialized === _lastHeadTagsJson) return;
@@ -430,13 +452,18 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       };
 
       if (viewTransitionsEnabled && supportsViewTransitions()) {
-        const transition = options?.types?.length
+        // Only use the object-form ({ update, types }) when the browser
+        // supports VT types (Chrome 125+); otherwise fall back to the
+        // single-callback form so older browsers don't throw inside the
+        // transition (which would surface as a navigation failure).
+        const useTypes = !!(options?.types?.length) && supportsViewTransitionTypes();
+        const transition = useTypes
           ? (document as any).startViewTransition({ update: commit, types: options.types })
           : (document as any).startViewTransition(commit);
         // transition.updateReady rejects if the transition is skipped (e.g.
-        // user navigates again mid-transition). The outer try/catch falls back
-        // to window.location.reload() on error — same fallback as today.
-        await transition.updateReady;
+        // user navigates again mid-transition). Swallow that so it doesn't
+        // trigger the outer error fallback.
+        await transition.updateReady?.catch(() => {});
       } else {
         await commit();
       }
@@ -448,6 +475,18 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       return true;
     } catch (error) {
       console.error('Navigation failed:', error);
+      // Give the app a chance to handle the failure (show an error UI, retry,
+      // or fall back to a cached view) instead of forcing a full reload that
+      // discards client state (form input, scroll, theme). If a listener
+      // calls preventDefault, the app has handled it and we do not reload.
+      const handled = document.dispatchEvent(new CustomEvent('cossack:navigation-error', {
+        bubbles: true,
+        cancelable: true,
+        detail: { url, error, fromPathname: window.location.pathname },
+      }));
+      if (!handled) {
+        return false;
+      }
       window.location.reload();
       return false;
     }

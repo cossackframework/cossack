@@ -193,3 +193,34 @@ describe('Cossack Core: Client-Side', () => {
       expect(component.loading['increment']).toBeUndefined();
   });
 });
+
+describe('redirect() does not double-push history state', () => {
+  // The SPA entry (_onNavigate) owns history.pushState on success. redirect()
+  // must NOT also push, otherwise each redirect creates two history entries
+  // (Back button needs two presses).
+  class RedirectComponent extends Cossack<{}> {
+    render(): TemplateResult {
+      return { strings: [], values: [] } as unknown as TemplateResult;
+    }
+  }
+
+  it('delegates pushState to _onNavigate (no push from redirect itself)', () => {
+    const component = new RedirectComponent();
+    const pushSpy = vi.fn();
+    // A real window may not exist in this env; redirect's _onNavigate branch
+    // never touches window, so we only need to ensure it isn't called.
+    (globalThis as any).history = { pushState: pushSpy };
+    const navSpy = vi.fn();
+    const prev = Cossack._onNavigate;
+    Cossack._onNavigate = navSpy;
+    try {
+      component.redirect('/new-path');
+    } finally {
+      Cossack._onNavigate = prev;
+    }
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    expect(navSpy).toHaveBeenCalledWith('/new-path', undefined);
+    // redirect() itself must not push state.
+    expect(pushSpy).not.toHaveBeenCalled();
+  });
+});

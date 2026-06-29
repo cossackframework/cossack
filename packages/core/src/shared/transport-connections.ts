@@ -1,5 +1,6 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
+import { applyStateToComponent } from './method-proxy';
 
 /**
  * Initialize provider map for the component (server-side only).
@@ -59,32 +60,33 @@ export function connectWebSocket(component: any): void {
             if (event.data === 'pong') {
                 return; // Server heartbeat response, ignore.
             }
-            const data = JSON.parse(event.data);
+            let data: any;
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                // Malformed frame — ignore rather than poisoning the socket.
+                console.error('[Cossack] Ignoring malformed WebSocket message:', e);
+                return;
+            }
+            if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
-                const stateUpdate = data.state || {};
-                for (const key in stateUpdate) {
-                    if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                    if (component._isOptimisticLocked(key)) {
-                        component._optimisticPendingState[key] = stateUpdate[key];
-                    } else {
-                        component.setProperty(key, stateUpdate[key]);
-                    }
-                }
+                applyStateToComponent(component, data.state || {});
             } else if (data.type === 'action-complete') {
                 const { action } = data;
                 if (component.loading[action]) {
                     component.loading[action]--;
                     if (component.loading[action] <= 0) {
                         delete component.loading[action];
-                        // Release the lock but don't flush buffered state.
-                        // The state-update for the final action arrives shortly
-                        // after (or before) this action-complete. By releasing
-                        // the lock, that state-update will apply the correct
-                        // final server value directly via setProperty.
-                        delete component._optimisticLockedKeys[action];
-                        // Discard stale buffered state
+                        // Release the optimistic lock and discard any buffered
+                        // pending state for the locked keys. Capture the set
+                        // BEFORE deleting (the previous code deleted first, then
+                        // read undefined — leaving _optimisticPendingState to
+                        // grow without bound). The authoritative post-action
+                        // value arrives in the next state-update and is applied
+                        // directly via setProperty once the lock is released.
                         const lockedKeys = component._optimisticLockedKeys[action];
+                        delete component._optimisticLockedKeys[action];
                         if (lockedKeys) {
                             for (const key of lockedKeys) {
                                 delete component._optimisticPendingState[key];
@@ -114,11 +116,17 @@ export function connectWebSocket(component: any): void {
             }
         };
 
-        setInterval(() => {
+        // Keep-alive ping. The handle is cleared when the socket closes
+        // (including when Cossack.destroy() closes it) so it doesn't leak a
+        // timer — and a closure over the WS — for every provider per page.
+        const pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send('ping');
             }
         }, 25000);
+        const stopPing = () => clearInterval(pingInterval);
+        ws.onclose = stopPing;
+        ws.onerror = stopPing;
     }
 }
 
@@ -148,14 +156,7 @@ export function connectSSE(component: any): void {
     es.addEventListener('state-update', (event: MessageEvent) => {
         try {
             const stateUpdate = JSON.parse((event as any).data);
-            for (const key in stateUpdate) {
-                if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                if (component._isOptimisticLocked(key)) {
-                    component._optimisticPendingState[key] = stateUpdate[key];
-                } else {
-                    component.setProperty(key, stateUpdate[key]);
-                }
-            }
+            applyStateToComponent(component, stateUpdate);
             component.requestUpdate();
         } catch (e) {
             console.error('[Cossack] Error parsing SSE state-update:', e);
@@ -169,8 +170,9 @@ export function connectSSE(component: any): void {
                 component.loading[action]--;
                 if (component.loading[action] <= 0) {
                     delete component.loading[action];
-                    delete component._optimisticLockedKeys[action];
+                    // Capture locked keys BEFORE deleting (see WS handler).
                     const lockedKeys = component._optimisticLockedKeys[action];
+                    delete component._optimisticLockedKeys[action];
                     if (lockedKeys) {
                         for (const key of lockedKeys) {
                             delete component._optimisticPendingState[key];

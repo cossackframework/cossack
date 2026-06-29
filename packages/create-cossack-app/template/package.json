@@ -1,33 +1,35 @@
 {
   "name": "my-cossack-app",
   "type": "module",
-  "description": "Borderless TypeScript Framework for the Edge",
+  "description": "The Borderless TypeScript Framework",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "build:ssg": "vite build && tsx scripts/build-ssg.ts",
-    "build:types": "tsc -p tsconfig.declarations.json",
-    "build:all": "pnpm run build && tsx scripts/build-ssg.ts",
+    "build:ssg": "vite build && cossack ssg",
+    "build:all": "pnpm run build && cossack ssg",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "preview": "pnpm run build:ssg && vite preview",
-    "deploy": "vite build && tsx scripts/build-ssg.ts && wrangler deploy"
+    "deploy": "vite build && cossack ssg && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/core": "^0.5.2",
-    "@cossackframework/framework": "^0.5.2",
-    "@cossackframework/renderer": "^0.5.2",
+    "@cossackframework/core": "^0.6.0",
+    "@cossackframework/framework": "^0.6.0",
+    "@cossackframework/renderer": "^0.6.0",
+    "cossack": "^0.1.0",
     "gray-matter": "^4.0.3",
-    "hono": "^4.9.5",
+    "hono": "^4.12.25",
     "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.37.1",
-    "@cloudflare/workers-types": "^4.20260515.1",
+    "@cloudflare/vite-plugin": "^1.42.2",
+    "@cloudflare/workers-types": "^4.20260624.1",
     "@tailwindcss/vite": "^4.1.0",
+    "prettier": "^3.4.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.0.0",
-    "vite": "^8.0.0",
-    "wrangler": "^4.92.0"
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.104.0"
   }
 }

@@ -1,17 +1,16 @@
 // src/transports/websocket.ts
 import type { Context } from 'hono';
-
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
-}
+import { isOriginAllowed } from '@cossackframework/core';
+import type { RouterContext } from '../route-ids';
 
 /** WebSocket proxy handler — forwards WebSocket upgrade requests to the appropriate Durable Object. */
 export function handleWebSocketProxy(ctx: RouterContext) {
     return async (c: Context) => {
+        // SECURITY: validate Origin to prevent cross-site WebSocket hijacking
+        // (CSWSH), where a malicious page opens a WS using the victim's cookies.
+        if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
+            return new Response('Origin not allowed', { status: 403 });
+        }
         const user = c.get('user');
         const { provider, id: durableObjectId } = c.req.param();
         const routePath = c.req.query('routePath');

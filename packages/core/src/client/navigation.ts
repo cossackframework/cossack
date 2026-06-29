@@ -21,6 +21,29 @@ export function supportsViewTransitions(): boolean {
         typeof (document as any).startViewTransition === 'function';
 }
 
+/**
+ * Feature-detect the object-form `startViewTransition({ update, types })`
+ * (Chrome 125+). The single-argument callback form predates `types`, so
+ * passing an object on an older browser throws or is mis-handled — callers
+ * must fall back to the callback form (dropping types) when this is false.
+ *
+ * Detection uses the `:active-view-transition-type()` selector, which ships
+ * with the types feature. Cached after the first check.
+ */
+let _supportsVtTypes: boolean | undefined;
+export function supportsViewTransitionTypes(): boolean {
+    if (_supportsVtTypes !== undefined) return _supportsVtTypes;
+    try {
+        _supportsVtTypes =
+            typeof CSS !== 'undefined' &&
+            typeof CSS.supports === 'function' &&
+            CSS.supports('selector(:active-view-transition-type(x))');
+    } catch {
+        _supportsVtTypes = false;
+    }
+    return _supportsVtTypes;
+}
+
 export function enableClientNavigation(
     onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean>,
     onPreFetch?: (url: string) => Promise<void>

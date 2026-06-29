@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/test-utils",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -8,8 +8,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@cossackframework/core": "workspace:*",
-    "@cossackframework/renderer": "workspace:*"
+    "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
     "vitest": "^4.1.0"

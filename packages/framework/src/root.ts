@@ -7,6 +7,24 @@ export interface TemplateHelpers {
     cossackBody: () => string;
 }
 
+/**
+ * Serialise state as JSON safe for embedding inside a `<script>` element.
+ *
+ * `JSON.stringify` alone does NOT escape `<`, `>`, `&`, U+2028 or U+2029, so
+ * any user-controlled value (route params, comments, profile names, DB cells)
+ * containing `</script><script>…` would close the tag and execute attacker
+ * JS in every viewer's browser. We escape those characters to their JSON
+ * unicode-escape forms (still valid JSON/JS) so the payload can no longer
+ * break out of the script element.
+ */
+export const serializeInitialState = (state: unknown): string =>
+    JSON.stringify(state)
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+
 type RenderRootProps = {
     body: string;
     initialState?: Record<string, any>;
@@ -58,7 +76,7 @@ export const renderRoot = (props: RenderRootProps) => {
             : '/src/style.css';
 
     const initialStateScript = props.initialState
-        ? `<script>window.__INITIAL_STATE__ = ${JSON.stringify(props.initialState)}</script>`
+        ? `<script>window.__INITIAL_STATE__ = ${serializeInitialState(props.initialState)}</script>`
         : '';
 
     const headTagsHtml = (props.headTags || []).map(renderTag).join('\n');
@@ -97,9 +115,10 @@ export const renderRoot = (props: RenderRootProps) => {
         <html lang="en">
             <head>
                 <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 ${cossackScripts()}
             </head>
-            <body>
+            <body class="antialiased">
                 ${cossackBody()}
             </body>
         </html>

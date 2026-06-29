@@ -1,13 +1,20 @@
 // src/transports/http.ts
-import { Cossack, createInstance } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import type { Context } from 'hono';
+import type { RouterContext } from '../route-ids';
 
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
+/** RPC allowlist including @Server methods on injected @Service deps (see router.ts). */
+function isRpcCallableActionOrService(constructor: unknown, action: unknown): boolean {
+    if (isRpcCallableAction(constructor, action)) return true;
+    if (typeof action !== 'string' || typeof constructor !== 'function') return false;
+    const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', constructor) || [];
+    for (const t of paramTypes) {
+        if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
+            const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
+            if (Object.prototype.hasOwnProperty.call(serverMethods, action)) return true;
+        }
+    }
+    return false;
 }
 
 /** Upload handler — processes file uploads via multipart form data. */
@@ -59,9 +66,25 @@ export function handleUpload(ctx: RouterContext) {
             }
         }
 
-        // Apply the received state directly to the target component
-        for (const key in state) {
-            (targetInstance as any)[key] = state[key];
+        // Apply received state: own @State keys plus keys in the instance's
+        // public state (covers @Service state). Blocks internal/security props.
+        const safeState = sanitizeClientState(targetInstance.constructor, state);
+        for (const key in safeState) {
+            (targetInstance as any)[key] = safeState[key];
+        }
+        const publicStateKeys = new Set(Object.keys(targetInstance.getPublicState()));
+        if (state && typeof state === 'object') {
+            for (const key of Object.keys(state)) {
+                if (key in safeState) continue;
+                if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+                if (publicStateKeys.has(key)) (targetInstance as any)[key] = (state as Record<string, unknown>)[key];
+            }
+        }
+
+        // Authorisation gate: only @Server-registered methods are RPC-callable
+        // (including @Server methods on injected @Service dependencies).
+        if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
+            return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
         }
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);

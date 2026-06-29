@@ -1,0 +1,38 @@
+{
+  "name": "cossack",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Cossack Framework CLI — scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/cossack"
+  },
+  "bin": {
+    "cossack": "./bin/cossack.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "start": "node ./bin/cossack.js",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@cossackframework/framework": "workspace:*",
+    "create-cossack-app": "workspace:*",
+    "prompts": "^2.4.2",
+    "tsx": "^4.7.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

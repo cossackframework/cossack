@@ -340,18 +340,42 @@ export class TestPage extends Cossack {
       expect(result).toContain('return input');
     });
 
-    it('should handle arrow function properties', () => {
+    it('preserves undecorated arrow-function class fields (common event-handler pattern)', () => {
+      // Arrow-function class fields are commonly used as event handlers
+      // (e.g. @click=${this.handler}) and the transitive-preservation pass
+      // can't see bare template references, so undecorated arrow fields are
+      // preserved by default to avoid breaking apps. Only @Server arrow
+      // fields are stripped (see the member-kind suite below).
       const code = `
 @Page()
 export class TestPage extends Cossack {
-    arrowProperty = () => {
-      return 'arrow';
+    handler = () => {
+      return 'KEPT';
     }
 }`;
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-      expect(result).toContain('arrowProperty = () =>');
-      expect(result).toContain("return 'arrow'");
+      expect(result).toContain('handler = () =>');
+      expect(result).toContain("'KEPT'");
+      expect(result).not.toContain('__cossack_proxies');
+    });
+
+    it('strips @Server arrow-function class fields (explicit server-only)', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+    @Server()
+    dbQuery = async () => {
+      return 'SECRET_SHOULD_BE_STRIPPED';
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // @Server arrow field is stubbed with a rest-param signature (class
+      // field initializers forbid `arguments`).
+      expect(result).toContain('dbQuery = async (...args) =>');
+      expect(result).not.toContain('SECRET_SHOULD_BE_STRIPPED');
+      expect(result).toContain("__cossack_proxies?.get('dbQuery')");
     });
 
     it('should NOT stub property getters/setters', () => {
@@ -1162,5 +1186,350 @@ export class UserProfile extends Cossack {
     // render preserved
     expect(result).toContain('render() {');
     expect(result).toContain('User Profile');
+  });
+
+  describe('constructor metadata injection (no duplicate constructor)', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    /**
+     * Count top-level `constructor(` occurrences in the transformed class body.
+     * A class with a duplicate constructor is a syntax error, so this must
+     * always be exactly 1 (or 0) when @Server methods are present.
+     */
+    function countTopLevelConstructors(result: string): number {
+      const classBodyStart = result.indexOf('{', result.indexOf('class'));
+      // Match `constructor` at brace depth 0 of the class body, followed by (.
+      let depth = 0;
+      let count = 0;
+      for (let i = classBodyStart; i < result.length; i++) {
+        const c = result[i];
+        if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) break; }
+        else if (depth === 1 && c === 'c' && result.slice(i, i + 11) === 'constructor') {
+          const after = result[i + 11];
+          if (after === undefined || /[\s(]/.test(after)) count++;
+        }
+      }
+      return count;
+    }
+
+    it('does not produce a duplicate constructor when the class declares one AND has @Server methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  constructor() {
+    super();
+    console.log('custom ctor');
+  }
+
+  @Server()
+  async save() {
+    await db.insert();
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      const count = countTopLevelConstructors(result);
+      expect(count).toBe(1);
+      // The existing constructor body must be preserved.
+      expect(result).toContain("console.log('custom ctor')");
+      // The registration call must be injected (once).
+      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      expect(regCount).toBe(1);
+    });
+
+    it('injects a new constructor when the class has @Server methods but no constructor', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Server()
+  async save() {
+    await db.insert();
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // Exactly one constructor injected.
+      expect(countTopLevelConstructors(result)).toBe(1);
+      expect(result).toContain('super()');
+      expect(result).toContain('__registerServerOnlyMethods');
+    });
+
+    it('injects a constructor WITHOUT super() for @Service classes that do not extend', () => {
+      const code = `
+@Service()
+export class CounterService {
+  @Server()
+  increment() {
+    this.count++;
+  }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(countTopLevelConstructors(result)).toBe(1);
+      // No super() since the class does not extend anything.
+      expect(result).not.toMatch(/super\s*\(/);
+    });
+
+    it('still registers server-only methods when splicing into an existing constructor', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  private x = 1;
+  constructor(public foo: string) {
+    super();
+  }
+
+  @Server()
+  doThing() { this.x = 2; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(countTopLevelConstructors(result)).toBe(1);
+      // The __registerServerOnlyMethods call must run inside the constructor.
+      expect(result).toContain('doThing'); // method name listed in registration
+      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      expect(regCount).toBe(1);
+      // Constructor params preserved.
+      expect(result).toContain('public foo: string');
+    });
+
+    it('produces no constructor when there are no @Server methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Client()
+  click() { this.x++; }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('__registerServerOnlyMethods');
+      expect(result).not.toMatch(/constructor\s*\(/);
+    });
+  });
+
+  describe('regex literals in method bodies (no brace corruption)', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    it('strips a server method whose body contains a regex with a closing brace', () => {
+      // The `}` inside /}/ previously decremented the method's brace depth,
+      // truncating the body and leaking the rest (incl. the secret + a later method).
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  validate(x) {
+    const closingBrace = /}/;
+    const secret = 'LEAK_ME';
+    return closingBrace.test(x);
+  }
+
+  render() { return html\`<p>hi</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // The secret in the server-only (undecorated) method must be stripped.
+      expect(result).not.toContain('LEAK_ME');
+      // The render() method (after the regex-containing method) must still be intact.
+      expect(result).toContain('render() {');
+      expect(result).toContain('<p>hi</p>');
+      // And validate must have been stubbed (proxied).
+      expect(result).toContain("__cossack_proxies?.get('validate')");
+    });
+
+    it('strips a server method with a quantified regex like /^\\d{3}-\\d{4}$/', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  phone(input) {
+    const re = /^\\d{3}-\\d{4}$/;
+    const apiKey = 'SHOULD_NOT_LEAK';
+    return re.test(input);
+  }
+
+  @Client()
+  handle() { this.x++; }
+
+  render() { return html\`<p>phone</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('SHOULD_NOT_LEAK');
+      // The @Client method after must be preserved (proves the boundary wasn't corrupted).
+      expect(result).toContain('handle() {');
+      expect(result).toContain('this.x++');
+      expect(result).toContain('render() {');
+    });
+
+    it('does not treat a division operator as a regex (preserves client methods)', () => {
+      // Ensure the regex/division heuristic doesn\'t misfire on plain division
+      // inside a preserved (@Client) method.
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Client()
+  compute() {
+    const half = this.total / 2;
+    return half;
+  }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('this.total / 2');
+      expect(result).toContain('return half');
+    });
+
+    it('handles a character class containing a brace in a regex', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  lint(src) {
+    const braceClass = /[}{]/g;
+    const secret = 'SENSITIVE';
+    return braceClass.test(src);
+  }
+  render() { return html\`<p>lint</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('SENSITIVE');
+      expect(result).toContain('render() {');
+      expect(result).toContain("<p>lint</p>");
+    });
+  });
+
+  describe('member-kind stripping (generators, fields, computed names)', () => {
+    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+      if (hasClientDecorator) return true;
+      if (builtinMethods.has(methodName)) return true;
+      if (decorators.some((d) => /@Server\b/.test(d))) return false;
+      return false;
+    }
+
+    it('strips generator methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  *streamSecrets() {
+    const apiKey = 'GEN_SECRET';
+    yield 1;
+  }
+  render() { return html\`<p>g</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('GEN_SECRET');
+      expect(result).toContain('render() {');
+      expect(result).toContain('__cossack_proxies?.get(\'streamSecrets\')');
+    });
+
+    it('strips async generator methods', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  async *streamAsync() {
+    const secret = 'AGEN_SECRET';
+    yield 1;
+  }
+  render() { return html\`<p>a</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('AGEN_SECRET');
+      expect(result).toContain('render() {');
+    });
+
+    it('strips a @Server arrow-function class field holding server secrets', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Server()
+  dbQuery = async () => {
+    const apiKey = process.env.DB_KEY;
+    return await db.query(apiKey);
+  };
+  render() { return html\`<p>q</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('DB_KEY');
+      expect(result).not.toContain('db.query');
+      // Async arrow stub uses rest params (class fields forbid `arguments`).
+      expect(result).toContain('dbQuery = async (...args) =>');
+      expect(result).toContain("__cossack_proxies?.get('dbQuery')");
+      expect(result).toContain('proxy.apply(this, args)');
+      // Following render() intact (boundary not corrupted).
+      expect(result).toContain('render() {');
+    });
+
+    it('preserves a @Client arrow-function class field', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Client()
+  handler = () => {
+    this.x++;
+  };
+  render() { return html\`<p>c</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('handler = () =>');
+      expect(result).toContain('this.x++');
+      expect(result).not.toContain('__cossack_proxies');
+    });
+
+    it('leaves non-function data fields untouched', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  count = 0;
+  label = 'hello';
+  render() { return html\`<p>d</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('count = 0');
+      expect(result).toContain("label = 'hello'");
+    });
+
+    it('does not corrupt parsing for a computed-name method', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  ['computed']() {
+    const secret = 'COMP_SECRET';
+    return secret;
+  }
+  render() { return html\`<p>cmp</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // render() after the computed-name method must remain intact (no corruption).
+      expect(result).toContain('render() {');
+      expect(result).toContain('<p>cmp</p>');
+    });
+
+    it('strips a @Server function-expression class field', () => {
+      const code = `
+@Page()
+export class TestPage extends Cossack {
+  @Server()
+  helper = function (x) {
+    const secret = 'FN_SECRET';
+    return x + secret;
+  };
+  render() { return html\`<p>f</p>\`; }
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).not.toContain('FN_SECRET');
+      expect(result).toContain('render() {');
+    });
   });
 });

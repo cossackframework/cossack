@@ -1,6 +1,7 @@
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
+import { RESERVED_STATE_KEYS } from './component-types';
 
 interface ServerMethodBase {
     name: string;
@@ -8,6 +9,131 @@ interface ServerMethodBase {
 interface ServerMethodWs extends ServerMethodBase {
     channel: string;
     provider: string;
+}
+
+/**
+ * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
+ * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
+ * instances, and functions (none of which are JSON-transportable).
+ */
+function isWsTransportable(arg: unknown): boolean {
+    if (arg === null) return true;
+    const t = typeof arg;
+    if (t === 'function') return false;
+    if (t !== 'object') return true; // primitive (string/number/boolean/undefined/bigint)
+    // Object: reject DOM nodes, Events, Files, Blobs.
+    const obj = arg as { nodeType?: unknown };
+    if (typeof obj.nodeType === 'number') return false; // DOM node
+    if (typeof Event !== 'undefined' && arg instanceof Event) return false;
+    if (typeof File !== 'undefined' && arg instanceof File) return false;
+    if (typeof Blob !== 'undefined' && arg instanceof Blob) return false;
+    return true; // plain object / array / Date — JSON.stringify-able
+}
+
+/**
+ * Walk an argument tree, replacing DOM nodes / Events / Window with null and
+ * File objects with `{ _cossack_file_id }` references collected into `files`
+ * (so they can be sent as multipart parts alongside the JSON payload). Shared
+ * by the SSE and HTTP upload proxies.
+ */
+function extractFilesFromArg(arg: any, files: Map<string, File>): any {
+    if (arg && (
+        arg instanceof Node ||
+        arg instanceof Event ||
+        arg instanceof Window ||
+        (arg.constructor && arg.constructor.name && (
+            arg.constructor.name.endsWith('Event') ||
+            arg.constructor.name === 'Window' ||
+            arg.constructor.name === 'Document'
+        ))
+    )) {
+        return null;
+    }
+    if (arg instanceof File) {
+        const id = `file_${files.size}`;
+        files.set(id, arg);
+        return { _cossack_file_id: id };
+    }
+    if (arg instanceof FileList) {
+        return Array.from(arg).map(file => extractFilesFromArg(file, files));
+    }
+    if (Array.isArray(arg)) {
+        return arg.map(item => extractFilesFromArg(item, files));
+    }
+    if (arg && typeof arg === 'object' && arg !== null) {
+        const newObj: any = {};
+        for (const key in arg) {
+            newObj[key] = extractFilesFromArg(arg[key], files);
+        }
+        return newObj;
+    }
+    return arg;
+}
+
+/**
+ * Run an optimistic UI handler (if registered for `name`) on `target`, then
+ * snapshot/diff the component's @State keys to lock the ones the handler
+ * changed. Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
+ * handler are logged but never propagated (the server action still runs).
+ */
+function runOptimisticHandler(
+    target: any,
+    name: string,
+    args: any[],
+    optimisticHandlerName: string | undefined,
+    stateKeys: string[],
+): void {
+    if (!optimisticHandlerName || !target.hasMethod(optimisticHandlerName)) return;
+    try {
+        const optimisticMethod = target.getMethod(optimisticHandlerName);
+        const snapshot: Record<string, any> = {};
+        for (const key of stateKeys) {
+            snapshot[key] = target[key];
+        }
+        (optimisticMethod as any)(...args);
+        if (!target._optimisticLockedKeys[name]) {
+            target._optimisticLockedKeys[name] = new Set();
+        }
+        for (const key of stateKeys) {
+            if (target[key] !== snapshot[key]) {
+                target._optimisticLockedKeys[name].add(key);
+            }
+        }
+        target.requestUpdate();
+    } catch (e) {
+        console.error(`Error in optimistic handler for '${name}':`, e);
+    }
+}
+
+/**
+ * Apply a server-sent state object to a component instance, respecting the
+ * optimistic-lock protocol: locked keys are buffered in _optimisticPendingState
+ * (applied once the action completes); other keys are set directly. Internal
+ * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
+ * call requestUpdate — callers schedule a render as appropriate to their
+ * transport.
+ */
+export function applyStateToComponent(component: any, data: Record<string, any>): void {
+    for (const key in data) {
+        if (key.startsWith('_cossack_')) continue;
+        if (RESERVED_STATE_KEYS.has(key)) continue;
+        if (component._isOptimisticLocked(key)) {
+            component._optimisticPendingState[key] = data[key];
+        } else {
+            component.setProperty(key, data[key]);
+        }
+    }
+}
+
+/**
+ * Notify the client SPA (if present) that a server action is being dispatched,
+ * so it can invalidate the cached initial state for the current page. Without
+ * this, navigating away and back after a mutation returns the stale cached
+ * state. The hook is registered by the framework's client app; calling it when
+ * absent (SSR, tests) is a no-op.
+ */
+function invalidateCurrentClientPage(): void {
+    (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage?.();
 }
 
 /**
@@ -51,27 +177,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             const self = component;
             const sseProxy = (...args: any[]) => {
                 // === Optimistic handler (sync) ===
-                if (optimisticHandlers[name] && self.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = self.getMethod(optimisticHandlers[name]);
-                        const snapshot: Record<string, any> = {};
-                        for (const key of stateKeys) {
-                            snapshot[key] = (self as any)[key];
-                        }
-                        (optimisticMethod as any)(...args);
-                        if (!self._optimisticLockedKeys[name]) {
-                            self._optimisticLockedKeys[name] = new Set();
-                        }
-                        for (const key of stateKeys) {
-                            if ((self as any)[key] !== snapshot[key]) {
-                                self._optimisticLockedKeys[name].add(key);
-                            }
-                        }
-                        self.requestUpdate();
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
+                // Optimistic UI Handler
+                runOptimisticHandler(self, name, args, optimisticHandlers[name], stateKeys);
 
                 self.loading[name] = (self.loading[name] || 0) + 1;
                 self.requestUpdate();
@@ -94,52 +201,11 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
                 // === File extraction (shared) ===
                 const files = new Map<string, File>();
-                const extractFiles = (arg: any): any => {
-                    if (arg && (
-                        arg instanceof Node ||
-                        arg instanceof Event ||
-                        arg instanceof Window ||
-                        (arg.constructor && arg.constructor.name && (
-                            arg.constructor.name.endsWith('Event') ||
-                            arg.constructor.name === 'Window' ||
-                            arg.constructor.name === 'Document'
-                        ))
-                    )) {
-                        return null;
-                    }
-                    if (arg instanceof File) {
-                        const id = `file_${files.size}`;
-                        files.set(id, arg);
-                        return { _cossack_file_id: id };
-                    }
-                    if (arg instanceof FileList) {
-                        return Array.from(arg).map(file => extractFiles(file));
-                    }
-                    if (Array.isArray(arg)) {
-                        return arg.map(item => extractFiles(item));
-                    }
-                    if (arg && typeof arg === 'object' && arg !== null) {
-                        const newObj: any = {};
-                        for (const key in arg) {
-                            newObj[key] = extractFiles(arg[key]);
-                        }
-                        return newObj;
-                    }
-                    return arg;
-                };
-                const processedArgs = args.map(arg => extractFiles(arg));
+                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
 
-                // === Shared apply-state helper ===
-                const applyState = (data: Record<string, any>) => {
-                    for (const key in data) {
-                        if (key.startsWith('_cossack_')) continue;
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (self._isOptimisticLocked(key)) {
-                            self._optimisticPendingState[key] = data[key];
-                        } else {
-                            self.setProperty(key, data[key]);
-                        }
-                    }
+                 // === Shared apply-state helper ===
+                 const applyState = (data: Record<string, any>) => {
+                    applyStateToComponent(self, data);
                     self.requestUpdate();
                 };
 
@@ -419,34 +485,9 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
         // HTTP transport: standard async proxy
         const proxy = async (...args: any[]) => {
+            invalidateCurrentClientPage();
             // Optimistic UI Handler
-            if (optimisticHandlers[name] && component.hasMethod(optimisticHandlers[name])) {
-                try {
-                    const optimisticMethod = component.getMethod(optimisticHandlers[name]);
-
-                    // Auto-detect: snapshot @State values before handler
-                    const snapshot: Record<string, any> = {};
-                    for (const key of stateKeys) {
-                        snapshot[key] = (component as any)[key];
-                    }
-
-                    (optimisticMethod as any)(...args);
-
-                    // Auto-detect: find which @State keys changed
-                    if (!component._optimisticLockedKeys[name]) {
-                        component._optimisticLockedKeys[name] = new Set();
-                    }
-                    for (const key of stateKeys) {
-                        if ((component as any)[key] !== snapshot[key]) {
-                            component._optimisticLockedKeys[name].add(key);
-                        }
-                    }
-
-                    component.requestUpdate();
-                } catch (e) {
-                    console.error(`Error in optimistic handler for '${name}':`, e);
-                }
-            }
+            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
 
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
@@ -455,43 +496,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 // Check for files in arguments
                 const files = new Map<string, File>();
 
-                const extractFiles = (arg: any): any => {
-                    // Skip recursion for DOM nodes, Events, Window, etc.
-                    if (arg && (
-                        arg instanceof Node ||
-                        arg instanceof Event ||
-                        arg instanceof Window ||
-                        (arg.constructor && arg.constructor.name && (
-                            arg.constructor.name.endsWith('Event') ||
-                            arg.constructor.name === 'Window' ||
-                            arg.constructor.name === 'Document'
-                        ))
-                    )) {
-                        return null;
-                    }
-
-                    if (arg instanceof File) {
-                        const id = `file_${files.size}`;
-                        files.set(id, arg);
-                        return { _cossack_file_id: id };
-                    }
-                    if (arg instanceof FileList) {
-                         return Array.from(arg).map(file => extractFiles(file));
-                    }
-                    if (Array.isArray(arg)) {
-                        return arg.map(item => extractFiles(item));
-                    }
-                    if (arg && typeof arg === 'object' && arg !== null) {
-                        const newObj: any = {};
-                        for (const key in arg) {
-                            newObj[key] = extractFiles(arg[key]);
-                        }
-                        return newObj;
-                    }
-                    return arg;
-                };
-
-                const processedArgs = args.map(arg => extractFiles(arg));
+                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
 
                 if (files.size > 0) {
                     const formData = new FormData();
@@ -538,14 +543,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                         delete data._cossack_return;
                                     }
 
-                                    for (const key in data) {
-                                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                                        if (component._isOptimisticLocked(key)) {
-                                            component._optimisticPendingState[key] = data[key];
-                                        } else {
-                                            component.setProperty(key, data[key]);
-                                        }
-                                    }
+                                    applyStateToComponent(component, data);
                                     resolve(returnValue);
                                 } catch (e) {
                                     reject(e);
@@ -592,14 +590,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         delete data._cossack_return;
                     }
 
-                    for (const key in data) {
-                        if (key === 'loading' || key === 'isServer' || key === 'params') continue;
-                        if (component._isOptimisticLocked(key)) {
-                            component._optimisticPendingState[key] = data[key];
-                        } else {
-                            component.setProperty(key, data[key]);
-                        }
-                    }
+                    applyStateToComponent(component, data);
                     return returnValue;
                 }
             } catch (error) {
@@ -645,6 +636,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
         const proxy = (...args: any[]) => {
+            invalidateCurrentClientPage();
             let ws = component.websockets.get(provider);
             if (!ws) {
                 const root = component.consume(RootContext);
@@ -655,52 +647,31 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
 
             if (ws && ws.readyState === WebSocket.OPEN) {
                 // Optimistic UI Handler
-                if (optimisticHandlers[name] && component.hasMethod(optimisticHandlers[name])) {
-                    try {
-                        const optimisticMethod = component.getMethod(optimisticHandlers[name]);
-
-                        // Auto-detect: snapshot @State values before handler
-                        const snapshot: Record<string, any> = {};
-                        for (const key of stateKeys) {
-                            snapshot[key] = (component as any)[key];
-                        }
-
-                        (optimisticMethod as any)(...args);
-
-                        // Auto-detect: find which @State keys changed
-                        if (!component._optimisticLockedKeys[name]) {
-                            component._optimisticLockedKeys[name] = new Set();
-                        }
-                        for (const key of stateKeys) {
-                            if ((component as any)[key] !== snapshot[key]) {
-                                component._optimisticLockedKeys[name].add(key);
-                            }
-                        }
-
-                        component.requestUpdate(); // Render immediately after optimistic update
-                    } catch (e) {
-                        console.error(`Error in optimistic handler for '${name}':`, e);
-                    }
-                }
+                runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
 
                 component.loading[name] = (component.loading[name] || 0) + 1;
                 component.requestUpdate();
 
-                // Filter out Event objects and DOM nodes, keep only serializable values
-                const payload = args.filter(arg => {
-                    const type = typeof arg;
-                    // Keep primitives (string, number, boolean, undefined)
-                    if (type !== 'object') return true;
-                    // Filter out null, objects (including Events, DOM nodes, etc.)
-                    return false;
-                });
-                ws.send(JSON.stringify({
-                    type: 'action',
-                    action: name,
-                    payload: payload,
-                    channel: channel,
-                    target: component._id,
-                }));
+                // Keep serializable args (primitives, plain objects, arrays),
+                // drop non-transportable ones (DOM nodes, Event, File, Blob,
+                // functions). The previous implementation dropped ALL objects,
+                // so calling e.g. this.updateItem({ id: 5 }) over WebSocket
+                // sent an empty payload.
+                const payload = args.filter(isWsTransportable);
+                let message;
+                try {
+                    message = JSON.stringify({
+                        type: 'action',
+                        action: name,
+                        payload: payload,
+                        channel: channel,
+                        target: component._id,
+                    });
+                } catch (e) {
+                    console.error(`[Cossack] Failed to serialise WS payload for '${name}':`, e);
+                    return;
+                }
+                ws.send(message);
             } else {
                 console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
             }
@@ -779,4 +750,87 @@ export function setupServerMethodProxies(component: any): void {
         component.proxyServerMethods(serverMethods);
     }
     component._serverMethodsProxied = true;
+}
+
+/**
+ * Framework-internal lifecycle methods that are decorated with `@Server()`
+ * purely so the security plugin strips them from the client bundle. They are
+ * NOT RPC endpoints and must never be invocable by a remote client.
+ */
+const RPC_BLOCKED_INTERNAL_METHODS: ReadonlySet<string> = new Set([
+    'initializeProviders',
+    'proxyClientMethods',
+    'validateChannels',
+]);
+
+/**
+ * Authorisation gate for RPC dispatch (HTTP `/crpc`, `/upload`, and WebSocket
+ * action messages).
+ *
+ * Only methods registered in the `cossack:server-methods` metadata — i.e.
+ * `@Server()`-decorated methods — are eligible for remote invocation. This is
+ * the server-side counterpart to the client-side bundle stripping: without it,
+ * any public or inherited method on a component instance (e.g. `bootstrap`,
+ * `getMethod`, `setProperty`, `getPublicState`, `destroy`) could be invoked by
+ * a crafted request, fully bypassing the "secure by default" guarantee.
+ *
+ * `Reflect.getMetadata` returns only the nearest ancestor's own metadata, so
+ * the prototype chain is walked manually to honour inherited `@Server` methods
+ * (such as the base-class `redirect`).
+ */
+export function isRpcCallableAction(constructor: unknown, action: unknown): action is string {
+    if (typeof action !== 'string' || action.length === 0) return false;
+    // Prototype-pollution / builtin guards.
+    if (action === '__proto__' || action === 'prototype' || action === 'constructor') return false;
+    // Framework-internal @Server lifecycle hooks are not RPC endpoints.
+    if (RPC_BLOCKED_INTERNAL_METHODS.has(action)) return false;
+
+    let proto: object | null = typeof constructor === 'function' ? constructor : null;
+    while (proto !== null && proto !== Function.prototype) {
+        const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', proto) as
+            | Record<string, unknown>
+            | undefined;
+        if (serverMethods && Object.prototype.hasOwnProperty.call(serverMethods, action)) {
+            return true;
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+    return false;
+}
+
+/**
+ * Reduce a client-supplied `state` blob (from `/crpc` or `/upload`) to only the
+ * keys registered as `@State` on the target component. This is the server-side
+ * guard against state-injection / privilege escalation: without it a crafted
+ * request could overwrite framework-internal or security-sensitive properties
+ * such as `user`, `_runtime`, `_cossack_ws_context`, `loading`, etc.
+ *
+ * Prototype-pollution vectors (`__proto__`, `prototype`, `constructor`) are
+ * refused unconditionally even if they somehow appeared in metadata.
+ */
+export function sanitizeClientState(
+    constructor: unknown,
+    state: unknown
+): Record<string, unknown> {
+    const clean: Record<string, unknown> = {};
+    if (!state || typeof state !== 'object') return clean;
+
+    const allowed = new Set<string>();
+    let proto: object | null = typeof constructor === 'function' ? constructor : null;
+    while (proto !== null && proto !== Function.prototype) {
+        const stateMeta = Reflect.getOwnMetadata('cossack:state', proto) as
+            | Record<string, unknown>
+            | undefined;
+        if (stateMeta) {
+            for (const key of Object.keys(stateMeta)) allowed.add(key);
+        }
+        proto = Object.getPrototypeOf(proto);
+    }
+
+    const source = state as Record<string, unknown>;
+    for (const key of Object.keys(source)) {
+        if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+        if (allowed.has(key)) clean[key] = source[key];
+    }
+    return clean;
 }

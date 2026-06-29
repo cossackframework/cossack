@@ -1,6 +1,7 @@
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, type PageOptions } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
+import type { RouterContext } from '../route-ids';
 
 /** Active async generator being iterated by the SSE endpoint. */
 interface PendingGenerator {
@@ -20,22 +21,41 @@ interface SseStoreEntry {
     pendingGenerator: PendingGenerator | null;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
+    /** Number of open SSE connections subscribed to this entry. */
+    connectionCount: number;
+    /** Last time an entry was touched (created or connected). Used for LRU eviction. */
+    lastActive: number;
 }
 
 /** In-memory state store for SSE transport pages. Keyed by componentRouteId:scopeKey. */
+const SSE_STORE_MAX = 500;
 const sseStateStore = new Map<string, SseStoreEntry>();
+
+/** Evict the oldest entry when the store exceeds its bound. */
+function enforceSseStoreBound(): void {
+    while (sseStateStore.size > SSE_STORE_MAX) {
+        let oldestKey: string | undefined;
+        let oldestTime = Infinity;
+        for (const [k, v] of sseStateStore) {
+            if (v.lastActive < oldestTime) {
+                oldestTime = v.lastActive;
+                oldestKey = k;
+            }
+        }
+        if (oldestKey === undefined) break;
+        sseStateStore.delete(oldestKey);
+    }
+}
+
+/** @internal Test seam: current number of entries in the SSE store. */
+export function __sseStoreSize(): number {
+    return sseStateStore.size;
+}
 
 function sseStoreKey(componentRouteId: string, scopeKey: string): string {
     return `${componentRouteId}:${scopeKey}`;
 }
 
-export interface RouterContext {
-    routeIdMap: Map<string, string>;
-    routePathToIdMap: Map<string, string>;
-    routePathToFilePathMap: Map<string, string>;
-    pages: Record<string, any>;
-    layouts: Record<string, any>;
-}
 
 /**
  * Evaluate the scope function from PageOptions, or return the default SSE scope.
@@ -72,6 +92,8 @@ export function registerSseStoreEntry(
             runtime,
             pendingGenerator: null,
             stateVersion: 0,
+            connectionCount: 0,
+            lastActive: Date.now(),
         });
     }
 }
@@ -79,32 +101,81 @@ export function registerSseStoreEntry(
 /** SSE endpoint handler — long-lived connection that pushes state updates to the client. */
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
+        // SECURITY: validate Origin to prevent cross-site abuse of the SSE
+        // SECURITY: validate Origin to prevent cross-site abuse of the SSE
+        // endpoint. Unlike WebSocket, EventSource does NOT send an Origin
+        // header for same-origin requests (only `referer`), so we only enforce
+        // when Origin is present — i.e. a cross-origin attempt, which the
+        // browser would also block via CORS (this server sends no
+        // Access-Control-Allow-Origin). This keeps the defense-in-depth without
+        // rejecting legitimate same-origin SSE connections.
+        const requestOrigin = c.req.header('origin');
+        if (requestOrigin && !isOriginAllowed(requestOrigin, c.req.url, ctx.allowedOrigins)) {
+            return new Response('Origin not allowed', { status: 403 });
+        }
         const { componentRouteId } = c.req.param();
-        const scopeKey = c.req.query('scopeKey');
-        if (!scopeKey) return new Response('scopeKey query parameter is required', { status: 400 });
+        let requestedScopeKey = c.req.query('scopeKey');
+        // Hono may return the raw ( %-encoded) query value for keys containing
+        // reserved characters (e.g. `room:xyz` → `room%3Axyz`). Decode so the
+        // store key matches the one /crpc and SSR use (decoded).
+        if (requestedScopeKey && requestedScopeKey.includes('%')) {
+            try { requestedScopeKey = decodeURIComponent(requestedScopeKey); } catch { /* keep raw */ }
+        }
         const componentPath = ctx.routeIdMap.get(componentRouteId);
         if (!componentPath) return new Response('Invalid component ID', { status: 400 });
 
+        const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
+        if (!module) return new Response('Component not found', { status: 404 });
+        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
+
+        // SECURITY: for the DEFAULT per-user scope, re-derive the expected
+        // scope server-side from the authenticated user and reject any
+        // client-supplied value that does not match — otherwise a crafted
+        // request like `?scopeKey=user:<victim_id>` could subscribe to another
+        // user's SSE stream (cross-user eavesdropping).
+        //
+        // For a CUSTOM scope() (e.g. `room:${c.req.query('room')}`) the
+        // developer's scope function is the authorization model and depends on
+        // page-request data that isn't present on this SSE request — so we
+        // trust the SSR-computed scopeKey the client echoes back (the same one
+        // SSR registered the store entry under).
+        const pageOptions = Reflect.getMetadata('page:options', PageComponent) as PageOptions | undefined;
+        let effectiveScopeKey: string;
+        if (typeof pageOptions?.scope === 'function') {
+            if (!requestedScopeKey) {
+                return new Response('scopeKey query parameter is required', { status: 400 });
+            }
+            effectiveScopeKey = requestedScopeKey;
+        } else {
+            const expectedScopeKey = await resolveSseScopeKey(c, pageOptions);
+            if (!requestedScopeKey || requestedScopeKey !== expectedScopeKey) {
+                return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
+            }
+            effectiveScopeKey = expectedScopeKey;
+        }
+
         // Look up or create SSE state store entry
-        const storeKey = sseStoreKey(componentRouteId, scopeKey);
+        const storeKey = sseStoreKey(componentRouteId, effectiveScopeKey);
         let entry = sseStateStore.get(storeKey);
 
         if (!entry) {
             // Cold start: create instance on demand
-            const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
-            if (!module) return new Response('Component not found', { status: 404 });
-            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-            if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
-
             const user = c.get('user');
             const componentInstance = createInstance(PageComponent) as any;
             await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0 };
+            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
+            enforceSseStoreBound();
         }
+
+        // Track this connection against the entry so the store can be trimmed
+        // when no clients remain.
+        entry.connectionCount++;
+        entry.lastActive = Date.now();
 
         const { componentInstance } = entry;
 
@@ -181,10 +252,14 @@ export function handleSseEndpoint(ctx: RouterContext) {
             }
         }, 200);
 
-        // Clean up on disconnect
         const cleanup = () => {
             clearInterval(heartbeat);
             clearInterval(driver);
+            const e = sseStateStore.get(storeKey);
+            if (e) {
+                e.connectionCount = Math.max(0, e.connectionCount - 1);
+                e.lastActive = Date.now();
+            }
         };
         (c.req.raw as any).signal?.addEventListener('abort', cleanup);
 

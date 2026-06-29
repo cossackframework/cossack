@@ -53,6 +53,14 @@ function normalizeUrlPath(urlPath: string): string {
  */
 export function serveStatic(options: StaticServeOptions) {
     const { root, prefix = '/', index = true } = options;
+    // Resolve root once; every served path must resolve to within it.
+    const resolvedRoot = path.resolve(root);
+    const rootPrefix = resolvedRoot + path.sep;
+
+    const containsRoot = (filePath: string): boolean => {
+        const resolved = path.resolve(filePath);
+        return resolved === resolvedRoot || resolved.startsWith(rootPrefix);
+    };
 
     return async (c: Context, next: Next) => {
         // Only handle GET requests
@@ -88,15 +96,24 @@ export function serveStatic(options: StaticServeOptions) {
             }
         }
 
+        // SECURITY: refuse any path that escapes the configured root (e.g.
+        // `/../etc/passwd` or encoded variants). Treat as a 404 (next()) rather
+        // than 403 to avoid confirming the existence of files outside root.
+        if (!containsRoot(filePath)) {
+            return next();
+        }
+
         // Check if file exists and is not a directory
         try {
-            const stats = fs.statSync(filePath);
+            let stats = await fs.promises.stat(filePath);
             if (stats.isDirectory()) {
                 if (index) {
                     const indexPath = path.join(filePath, 'index.html');
-                    if (fs.existsSync(indexPath)) {
+                    try {
+                        await fs.promises.access(indexPath);
                         filePath = indexPath;
-                    } else {
+                        stats = await fs.promises.stat(filePath);
+                    } catch {
                         return next();
                     }
                 } else {
@@ -104,11 +121,16 @@ export function serveStatic(options: StaticServeOptions) {
                 }
             }
 
-            // Read and serve the file
-            const content = fs.readFileSync(filePath, 'utf-8');
+            // Read (as a Buffer so binary assets aren't corrupted) and serve
+            // with the correct Content-Type. Previously c.html() forced
+            // text/html for every asset (CSS, JS, images, fonts).
+            const content = await fs.promises.readFile(filePath);
             const contentType = getContentType(filePath);
 
-            return c.html(content, 200);
+            return new Response(new Uint8Array(content), {
+                status: 200,
+                headers: { 'Content-Type': contentType },
+            });
         } catch (e) {
             // File doesn't exist or other error
             return next();

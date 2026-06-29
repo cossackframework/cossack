@@ -1,13 +1,16 @@
 ---
-title: "Index"
-description: "Complete documentation index covering all Cossack framework concepts, getting started guides, and advanced features."
+title: 'Index'
+description: 'Complete documentation index covering all Cossack framework concepts, getting started guides, and advanced features.'
 ---
 
 # Index
+
 ## Concepts
+
 - [Motivation](/docs/motivation.md)
 
 ## Getting Started
+
 - [Installation](/docs/installation.md)
 - [Project Structure](/docs/project-structure.md)
 - [Routing](/docs/routing.md)
@@ -19,6 +22,7 @@ description: "Complete documentation index covering all Cossack framework concep
 - [Layouts](/docs/layouts.md)
 - [Template](/docs/template.md)
 - [Styling](/docs/styling.md)
+- [Scroll Reveal](/docs/scroll-reveal.md)
 - [Loading](/docs/loading.md)
 - [Optimistic UI](/docs/optimistic.md)
 - [Tasks](/docs/tasks.md)
@@ -29,12 +33,14 @@ description: "Complete documentation index covering all Cossack framework concep
 - [Links](/docs/links.md)
 
 ## Security
+
 - [Authentication](/docs/authentication.md)
 - [Client Bundle & Method Stripping](/docs/client-bundle.md)
 - [Middlewares](/docs/middlewares.md)
 - [Vite Plugin](/docs/vite-plugins.md)
 
 ## Digging Deeper
+
 - [Environment Variables](/docs/environment.md)
 - [Testing](/docs/testing.md)
 - [Sitemap](/docs/sitemap.md)
@@ -53,9 +59,11 @@ description: "Complete documentation index covering all Cossack framework concep
 - [Helpers](/docs/helpers.md)
 
 ## Scaling
+
 - [Services](/docs/services.md)
 - [Providers](/docs/providers.md)
 
 ## Optimizations
+
 - [Optimizations](/docs/optimizations.md)
 - [Static Site Generation](/docs/static-site-generation.md)

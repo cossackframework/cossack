@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "types": [
       "reflect-metadata",
-      "@cloudflare/workers-types"
+       "./worker-configuration.d.ts"
     ],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
@@ -26,7 +26,6 @@
   },
   "include": [
     "src/**/*.ts",
-    "tests/**/*.ts",
-    "worker-configuration.d.ts"
+    "tests/**/*.ts"
   ]
 }

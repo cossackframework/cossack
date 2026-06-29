@@ -36,3 +36,9 @@ declare module 'virtual:cossack-ssg' {
   export { collectSsgRoutes, renderSsgPage, getStaticParams, filePathToRoutePath } from './ssg-renderer';
   export { generateSitemap } from './sitemap-generator';
 }
+
+// Programmatic TS loader used by the `cossack ssg` CLI to import user `.ts`
+// pages/App outside of Vite. Typed loosely to avoid coupling to tsx internals.
+declare module 'tsx/esm/api' {
+  export function tsImport(name: string, defaultCase?: unknown): Promise<Record<string, unknown>>;
+}
