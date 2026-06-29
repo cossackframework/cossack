@@ -32,6 +32,18 @@ describe('minifyHtml', () => {
         expect(result).toBe('<div><span>hello</span></div>');
     });
 
+    it('preserves Cossack hydration markers (CRP)', () => {
+        const input = '<div>Hello <!--CRP_0-->World<!--/CRP--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div>Hello <!--CRP_0-->World<!--/CRP--></div>');
+    });
+
+    it('still strips non-CRP comments while keeping CRP markers', () => {
+        const input = '<div><!-- note --><!--CRP_0-->x<!--/CRP--></div>';
+        const result = minifyHtml(input);
+        expect(result).toBe('<div><!--CRP_0-->x<!--/CRP--></div>');
+    });
+
     it('preserves content inside <script> tags', () => {
         const input = `<div>
             <script>

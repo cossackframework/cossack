@@ -374,6 +374,12 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   };
 
   await loadComponent(window.__INITIAL_STATE__);
+  // Mount now that the full app tree (header + page + footer) is composed.
+  // Hydrate the existing SSR DOM in place instead of wiping it — the server
+  // already rendered this exact tree, so we bind to the existing nodes (no
+  // flash, no duplicate component initialisation). Subsequent re-renders use
+  // the normal reconcile path via the container cache.
+  appInstance.mount(containerEl, true);
   appInstance.isMounted = true;
   appInstance._frameworkMount();
   appInstance._frameworkNavigateComplete(window.location.pathname);

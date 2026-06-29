@@ -44,8 +44,10 @@ export function minifyHtml(html: string): string {
     // (also strips type=text/javascript and type=text/css from their opening tags)
     const { html: preserved, blocks } = preserveBlocks(html);
 
-    // Step 2: Remove HTML comments (but not conditional IE comments <!--[if ...]>)
-    let result = preserved.replace(/<!--(?!\[if\s)[\s\S]*?-->/g, '');
+    // Step 2: Remove HTML comments — but preserve conditional IE comments
+    // (<!--[if ...]>) AND Cossack hydration markers (<!--CRP_i-->, <!--/CRP-->),
+    // which the client renderer relies on to bind Parts to the existing DOM.
+    let result = preserved.replace(/<!--(?!\[if\s|\/?CRP)[\s\S]*?-->/g, '');
 
     // Step 3: Remove type="text/javascript" and type="text/css" attributes
     // (for any remaining tags not inside preserved blocks)
