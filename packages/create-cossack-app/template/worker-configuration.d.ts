@@ -10,4 +10,6 @@ interface CloudflareBindings {
 	ASSETS: Fetcher;
 	/** Site base URL, used for sitemap/canonical/OG generation (wrangler.jsonc `vars.BASE_URL`). */
 	BASE_URL: string;
+	/** Default locale for `__()`. Override with `cossack_locale` cookie or `Accept-Language`. See `cossack lang publish`. */
+	APP_LOCALE: string;
 }

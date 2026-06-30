@@ -10,6 +10,7 @@
  *   --dry-run         Print actions without writing
  */
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
@@ -34,7 +35,7 @@ export async function langCommand(args, ctx) {
   return 1;
 }
 
-/** `cossack lang publish` — create the default locale catalog. */
+/** `cossack lang publish` — create the default locale catalog + wire root.ts. */
 async function publish(args, ctx) {
   const { flags } = parseSimpleFlags(args, ctx);
   const locale = flagString(flags.locale) || DEFAULT_LOCALE;
@@ -52,6 +53,10 @@ async function publish(args, ctx) {
     );
     reportFile(`src/lang/${locale}.json`, result);
     if (result !== 'skipped') {
+      // Wire {{ cossackLang }} and APP_LOCALE so the feature is fully
+      // active immediately — no manual edits needed.
+      await wireRootTemplate(root, ctx);
+      await wireAppLocaleEnv(root, locale, ctx);
       console.log(
         `\nLocalization enabled. Default locale: ${locale}.\n` +
           `Edit src/lang/${locale}.json, then use __('key') in any render().\n` +
@@ -65,6 +70,8 @@ async function publish(args, ctx) {
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
   reportFile(`src/lang/${locale}.json`, result);
   if (result !== 'skipped') {
+    await wireRootTemplate(root, ctx);
+    await wireAppLocaleEnv(root, locale, ctx);
     console.log(
       `\nCreated src/lang/${locale}.json from your ${DEFAULT_LOCALE} catalog.\n` +
         'Fill in the translations, then switch at runtime with setLocale(...).',
@@ -142,6 +149,101 @@ function parseSimpleFlags(args, ctx) {
     }
   }
   return { flags };
+}
+
+/**
+ * Ensures `src/root.ts` uses the `{{ cossackLang }}` placeholder in
+ * `<html lang="...">` so the framework can set the locale dynamically.
+ *
+ * - Already wired → skip.
+ * - Hardcoded `<html lang="xx">` → replace with `{{ cossackLang }}`.
+ * - No root.ts / function template → print guidance.
+ *
+ * Honors `--dry-run`.
+ */
+async function wireRootTemplate(root, ctx) {
+  const target = path.resolve(root, 'src', 'root.ts');
+  if (!(await exists(target))) {
+    console.log(
+      '  note     No src/root.ts found — if you supply a custom htmlTemplate,\n' +
+        '           add {{ cossackLang }} to <html lang="..."> for dynamic locale.',
+    );
+    return;
+  }
+  let content;
+  try {
+    content = await fs.readFile(target, 'utf8');
+  } catch {
+    return;
+  }
+  if (content.includes('{{ cossackLang }}')) {
+    return; // already wired
+  }
+  // Replace <html lang="en">, <html lang='en'>, <html lang="es">, etc.
+  const replaced = content.replace(
+    /<html\s+lang\s*=\s*["'][^"']*["']/i,
+    (match) => match.replace(/["'][^"']*["']/i, '"{{ cossackLang }}"'),
+  );
+  if (replaced === content) {
+    console.log(
+      '  note     src/root.ts does not have <html lang="..."> — add\n' +
+        '           {{ cossackLang }} to your htmlTemplate for dynamic locale.',
+    );
+    return;
+  }
+  if (ctx.dryRun) {
+    console.log('  would wire  src/root.ts ({{ cossackLang }})');
+    return;
+  }
+  await fs.writeFile(target, replaced, 'utf8');
+  console.log('  wired    src/root.ts → {{ cossackLang }}');
+}
+
+/**
+ * Ensures `APP_LOCALE` is present in `wrangler.jsonc` `vars` so the
+ * deployment-wide default locale is exposed to the Worker at runtime.
+ *
+ * Idempotent: skips if already present. Creates a minimal `vars` block
+ * if none exists. Honors `--dry-run`.
+ */
+async function wireAppLocaleEnv(root, locale, ctx) {
+  const target = path.resolve(root, 'wrangler.jsonc');
+  if (!(await exists(target))) {
+    // Node-adapter projects don't have wrangler.jsonc; APP_LOCALE comes
+    // from process.env instead. Nothing to wire.
+    return;
+  }
+  let content;
+  try {
+    content = await fs.readFile(target, 'utf8');
+  } catch {
+    return;
+  }
+  if (/\bAPP_LOCALE\b/.test(content)) {
+    return; // already present
+  }
+  // Inject APP_LOCALE into the vars block. JSONC allows trailing commas,
+  // so we append after the last entry in the vars object.
+  const varsMatch = content.match(/"vars"\s*:\s*\{([\s\S]*?)\}/);
+  let updated;
+  if (varsMatch) {
+    const varsBody = varsMatch[1].trimEnd();
+    const separator = varsBody.endsWith(',') ? '' : ',';
+    const replacement = `"vars": {${varsBody}${separator}\n    // Default locale for __(). Override per-request via cookie or Accept-Language.\n    "APP_LOCALE": "${locale}"\n  }`;
+    updated = content.replace(/"vars"\s*:\s*\{[\s\S]*?\}/, replacement);
+  } else {
+    // No vars block — add one before the closing brace.
+    updated = content.replace(
+      /\n(\s*)\}\s*$/,
+      `\n  "vars": {\n    "APP_LOCALE": "${locale}"\n  }\n$1}`,
+    );
+  }
+  if (ctx.dryRun) {
+    console.log(`  would add  APP_LOCALE="${locale}" to wrangler.jsonc`);
+    return;
+  }
+  await fs.writeFile(target, updated, 'utf8');
+  console.log(`  added    APP_LOCALE="${locale}" to wrangler.jsonc`);
 }
 
 function reportFile(rel, result) {

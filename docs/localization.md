@@ -15,7 +15,11 @@ Generate the default catalog:
 npx cossack lang publish
 ```
 
-This creates `src/lang/en.json`:
+This creates `src/lang/en.json` and **automatically wires** everything else:
+
+- `{{ cossackLang }}` is injected into `<html lang="...">` in your `src/root.ts` (if you have one).
+- `APP_LOCALE` is added to the `vars` block in `wrangler.jsonc`.
+- The locale middleware, `__()` global, and `<html lang>` attribute are already wired by the framework — no manual imports or middleware registration needed.
 
 ```json
 {

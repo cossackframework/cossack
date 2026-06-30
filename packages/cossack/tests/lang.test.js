@@ -154,3 +154,96 @@ describe('lang dispatch', () => {
     expect(fs.existsSync(path.join(tmp, 'src/lang/en.json'))).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// publish auto-wiring (root.ts + wrangler.jsonc)
+// ---------------------------------------------------------------------------
+function writeFile(rel, content) {
+  const full = path.join(tmp, rel);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content, 'utf8');
+}
+
+function readFile(rel) {
+  return fs.readFileSync(path.join(tmp, rel), 'utf8');
+}
+
+describe('lang publish auto-wires root.ts', () => {
+  it('replaces <html lang="en"> with {{ cossackLang }}', async () => {
+    writeFile(
+      'src/root.ts',
+      'export const template = `<html lang="en"><body>{{ cossackBody }}</body></html>`;',
+    );
+    await langCommand(['publish'], ctx);
+    expect(readFile('src/root.ts')).toContain('{{ cossackLang }}');
+    expect(readFile('src/root.ts')).not.toContain('<html lang="en">');
+  });
+
+  it('skips when already wired', async () => {
+    writeFile(
+      'src/root.ts',
+      'export const template = `<html lang="{{ cossackLang }}"><body>{{ cossackBody }}</body></html>`;',
+    );
+    await langCommand(['publish'], ctx);
+    // Still has the placeholder, unchanged.
+    expect(readFile('src/root.ts')).toContain('{{ cossackLang }}');
+  });
+
+  it('prints a note when root.ts has no <html lang> tag', async () => {
+    writeFile('src/root.ts', 'export const template = `<div>no html tag</div>`;');
+    await langCommand(['publish'], ctx);
+    expect(readFile('src/root.ts')).not.toContain('{{ cossackLang }}');
+  });
+
+  it('prints a note when root.ts does not exist', async () => {
+    // No root.ts created — the publish command should note its absence.
+    expect(await langCommand(['publish'], ctx)).toBe(0);
+  });
+
+  it('respects --dry-run', async () => {
+    writeFile('src/root.ts', 'export const template = `<html lang="en"></html>`;');
+    ctx.dryRun = true;
+    await langCommand(['publish'], ctx);
+    expect(readFile('src/root.ts')).toContain('<html lang="en">');
+    expect(readFile('src/root.ts')).not.toContain('{{ cossackLang }}');
+  });
+});
+
+describe('lang publish auto-wires wrangler.jsonc', () => {
+  it('adds APP_LOCALE to an existing vars block', async () => {
+    writeFile(
+      'wrangler.jsonc',
+      '{\n  "name": "test",\n  "vars": {\n    "BASE_URL": "https://example.com"\n  }\n}\n',
+    );
+    await langCommand(['publish'], ctx);
+    const wrangler = readFile('wrangler.jsonc');
+    expect(wrangler).toContain('APP_LOCALE');
+    expect(wrangler).toContain('"en"');
+  });
+
+  it('skips when APP_LOCALE is already present', async () => {
+    writeFile(
+      'wrangler.jsonc',
+      '{\n  "vars": {\n    "APP_LOCALE": "es"\n  }\n}\n',
+    );
+    await langCommand(['publish'], ctx);
+    // Should not have added a duplicate or changed the value.
+    const wrangler = readFile('wrangler.jsonc');
+    expect(wrangler.match(/APP_LOCALE/g)).toHaveLength(1);
+    expect(wrangler).toContain('"es"');
+  });
+
+  it('skips silently when there is no wrangler.jsonc (Node adapter)', async () => {
+    // No wrangler.jsonc — should not error.
+    expect(await langCommand(['publish'], ctx)).toBe(0);
+  });
+
+  it('uses the --locale value for APP_LOCALE', async () => {
+    writeFile(
+      'wrangler.jsonc',
+      '{\n  "vars": {\n    "BASE_URL": "https://example.com"\n  }\n}\n',
+    );
+    await langCommand(['publish', '--locale=es'], ctx);
+    expect(readFile('wrangler.jsonc')).toContain('"APP_LOCALE": "es"');
+  });
+});
