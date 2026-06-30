@@ -17,9 +17,7 @@ Users use `npx cossack lang:publish` to generate a `src/lang` folder with the de
 Users want to ability to switch the locale at runtime, so we need to add a `setLocale` function to the framework.
 
 
-```
-setLocale(locale: string): void
-```
+    setLocale(locale: string): Promise<void>
 
 Also, please have an option to detect user's locale and set it automatically via browser or via country (cloudflare expose `cf` headers) if needed. YOU determine if those are practical or not. Here are my suggestions:
 
