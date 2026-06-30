@@ -223,12 +223,9 @@ Cossack uses `Intl.PluralRules` for CLDR-correct pluralization. The number of `|
 | 4     | one, few, many, other    | Russian, Ukrainian   |
 | 6     | zero, one, two, few, many, other | Arabic       |
 
-Russian (`src/lang/ru.json`):
+Note: Russian is commonly authored with **3 forms** (`one|few|many`). When only 3 forms are provided, categories like `many`/`other` fall back to the last form.
 
-```json
-{
-  "apples": "У вас :count яблоко|У вас :count яблока|У вас :count яблок"
-}
+Russian (`src/lang/ru.json`):
 ```
 
 ```ts
