@@ -28,5 +28,9 @@
     "R2_BUCKET_NAME": "serverdash",
     "R2_PUBLIC_URL": "https://data.serverdash.org",
     "BASE_URL": "https://cossack.dev",
+    // Default locale for localization (`__('key')`). Override per-request via
+    // the `cossack_locale` cookie or Accept-Language (when autoDetectBrowser
+    // is enabled in createApp({ i18n: { ... } })). Defaults to "en" in code.
+    "APP_LOCALE": "en",
   }
 }

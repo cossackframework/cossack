@@ -1,0 +1,10 @@
+{
+    "welcome": "Локализация Козака",
+    "greeting": "Привет, :name",
+    "greetingUpper": "Привет, :NAME",
+    "greetingTitle": "Привет, :Name",
+    "apples": "У вас :count яблоко|У вас :count яблока|У вас :count яблок",
+    "missing": "Пример отсутствующего ключа",
+    "I love programming.": "Я люблю программировать.",
+    "ru": "Русский"
+}

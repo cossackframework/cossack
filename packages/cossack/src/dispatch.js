@@ -12,6 +12,7 @@ import { deleteCommand } from './commands/delete.js';
 import { createCommand } from './commands/create.js';
 import { ssgCommand } from './commands/ssg.js';
 import { addCommand } from './commands/add.js';
+import { langCommand } from './commands/lang.js';
 import { devCommand } from './commands/dev.js';
 import { buildCommand } from './commands/build.js';
 import { startCommand } from './commands/start.js';
@@ -29,6 +30,7 @@ const COMMANDS = {
   generate: { run: generateCommand, aliases: ['g'] },
   delete: { run: deleteCommand, aliases: ['d'] },
   add: { run: addCommand, aliases: [] },
+  lang: { run: langCommand, aliases: [] },
   // introspection
   routes: { run: routesCommand, aliases: [] },
   info: { run: infoCommand, aliases: [] },
@@ -91,6 +93,8 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
   delete <type> <name>    (d)  Delete a generated file/folder.
   add <feature>                Add a feature (e.g. auth).
+  lang <subcommand>            Manage localization catalogs under src/lang/.
+                               Subcommands: publish, add <locale>.
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.

@@ -102,8 +102,6 @@ export default class MyComponent extends Cossack {
 
 Runs after every SPA navigation completes. **Only called on the App component** — page/layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
 
-No `super` call is needed — the framework refreshes `@VisibleTask` observers and fires `@On('navigate-complete')` handlers in a separate internal hook before your `onNavigateComplete()` runs.
-
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
 
@@ -119,8 +117,6 @@ export class App extends Cossack {
 ### `onCleanup()`
 
 Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework — you do not need to clean those up here.
-
-No `super` call is needed.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -459,7 +455,6 @@ Use `@On('mount')` on a page for "this page just became active" logic. Use `@On(
 ### Common Pitfalls
 
 - **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `onMount()` or `@On('mount')` instead.
-- **Don't** worry about `super` in lifecycle hooks. The framework wires up `@VisibleTask` observers, `@On` listeners, and lifecycle-event handlers in separate internal hooks — your `onMount()` / `onCleanup()` / `onNavigateComplete()` overrides are purely for your own logic.
 - **Don't** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
 - **Don't** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` — they handle cleanup automatically.
 - **Don't** reach for `@VisibleTask` when `@Task` would do. `@VisibleTask` defers work until the element is scrolled into view; if the work is cheap or needed immediately, `@Task` (or `onMount()`) is simpler.

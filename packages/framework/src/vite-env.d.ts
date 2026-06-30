@@ -37,8 +37,30 @@ declare module 'virtual:cossack-ssg' {
   export { generateSitemap } from './sitemap-generator';
 }
 
+declare module 'virtual:cossack-lang' {
+  type TranslationCatalog = Record<string, string>;
+
+  // Client: a lazy loader per locale (code-split chunk).
+  // Server: a thunk resolving to the already-imported catalog.
+  type CatalogLoader = () => Promise<{ default: TranslationCatalog } | TranslationCatalog>;
+
+  export const defaultLocale: string;
+  export const supportedLocales: string[];
+  export const catalogs: Record<string, CatalogLoader>;
+  export function loadCatalog(locale: string): Promise<TranslationCatalog | undefined>;
+}
+
 // Programmatic TS loader used by the `cossack ssg` CLI to import user `.ts`
 // pages/App outside of Vite. Typed loosely to avoid coupling to tsx internals.
 declare module 'tsx/esm/api' {
   export function tsImport(name: string, defaultCase?: unknown): Promise<Record<string, unknown>>;
 }
+
+// Ambient globals registered by the framework (src/i18n-globals.ts) so
+// `__('key')`, `setLocale('es')`, `getLocale()`, and `isLocale('es')` work
+// in render() without explicit imports. This file is a global script (no
+// top-level import/export), so plain `declare function` is globally visible.
+declare function __(key: string, params?: Record<string, string | number>): string;
+declare function setLocale(locale: string): Promise<void>;
+declare function getLocale(): string;
+declare function isLocale(locale: string): boolean;

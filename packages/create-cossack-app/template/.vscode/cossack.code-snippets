@@ -330,5 +330,14 @@
       ""
     ],
     "description": "Create an auth guard middleware"
+  },
+  "Cossack Translation": {
+    "prefix": "ctranslate",
+    "scope": "typescript",
+    "body": [
+      "__('${1:Translation key}'${2:, { ${3:name}: '${4:value}' }})",
+      ""
+    ],
+    "description": "Insert a __() translation call (works without src/lang/ — returns the key itself)"
   }
 }

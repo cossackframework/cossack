@@ -1,0 +1,10 @@
+{
+    "welcome": "Bienvenido a la Localización de Cossack",
+    "greeting": "Hola, :name",
+    "greetingUpper": "Hola, :NAME",
+    "greetingTitle": "Hola, :Name",
+    "apples": "Tienes :count manzana|Tienes :count manzanas",
+    "missing": "Ejemplo de clave faltante",
+    "I love programming.": "Me encanta programar.",
+    "ru": "Ruso"
+}

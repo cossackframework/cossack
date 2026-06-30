@@ -38,9 +38,6 @@ Cossack merges metadata from the **inside out**: `Page` → `Layouts` → `Globa
   global tags (e.g. font `<link>`s) without discarding page-specific tags such
   as a canonical link.
 
-> As of `0.6.0` the array categories accumulate instead of replacing. Previously
-> returning `meta`/`links` at a parent level replaced the child's array.
-
 #### Example: Root Branding + global fonts in `App.ts`
 
 ```typescript

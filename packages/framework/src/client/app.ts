@@ -1,9 +1,20 @@
 import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions } from '@cossackframework/core';
+import {
+    setSupportedLocales,
+    setDefaultLocale,
+    setLocaleLoader,
+    registerLocale,
+    __hydrateLocale,
+    getDefaultLocale,
+} from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
 import { filePathToRoutePath } from '../route-ids';
 import registry from 'virtual:cossack-pages';
+import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
+// Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
+import '../i18n-globals';
 
 const { pages, layouts, loadings, components } = registry;
 
@@ -174,6 +185,47 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     console.error('Could not find root container');
     return;
   }
+
+  // Hydrate localization runtime from the build-time manifest and the
+  // server-provided initial state. The active + default catalogs ship inline
+  // so `__()` works on first paint; the rest are dynamic-imported on demand
+  // by `setLocale()` (one chunk per locale).
+  setSupportedLocales(supportedLocales);
+  setLocaleLoader(async (locale) => (await loadCatalog(locale)) || {});
+
+  const langState = (window as any).__INITIAL_STATE__?.__cossackLang;
+  if (langState && typeof langState === 'object') {
+    // Prefer the SSR-provided default (which accounts for runtime resolution
+    // like env.APP_LOCALE and supported-locale fallback). Fall back to the
+    // first supported locale, then the build-time default.
+    const effectiveDefault =
+      langState.defaultLocale ||
+      supportedLocales[0] ||
+      defaultLocale ||
+      getDefaultLocale();
+    setDefaultLocale(effectiveDefault);
+    if (langState.defaultMessages && langState.defaultLocale) {
+      registerLocale(langState.defaultLocale, langState.defaultMessages);
+    }
+    __hydrateLocale(langState.locale, langState.messages);
+  } else {
+    // No SSR state (e.g. client-only fallback): derive an effective default
+    // that is guaranteed to have a catalog, then load it.
+    const effectiveDefault =
+      supportedLocales.includes(defaultLocale)
+        ? defaultLocale
+        : supportedLocales[0] || defaultLocale || getDefaultLocale();
+    setDefaultLocale(effectiveDefault);
+    if (supportedLocales.length > 0) {
+      const msgs = await loadCatalog(effectiveDefault);
+      if (msgs) __hydrateLocale(effectiveDefault, msgs);
+    }
+  }
+
+  // Update <html lang> when the locale changes at runtime.
+  window.addEventListener('localechange', ((e: CustomEvent) => {
+    if (e.detail?.locale) document.documentElement.lang = e.detail.locale;
+  }) as EventListener);
 
   // Create the progress bar once when enabled.
   if (progressBarEnabled && !progressBar) {

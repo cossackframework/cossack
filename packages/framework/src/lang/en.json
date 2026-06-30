@@ -1,0 +1,10 @@
+{
+    "welcome": "Welcome to Cossack Localization",
+    "greeting": "Hello, :name",
+    "greetingUpper": "Hello, :NAME",
+    "greetingTitle": "Hello, :Name",
+    "apples": "You have :count apple|You have :count apples",
+    "missing": "Missing key example",
+    "I love programming.": "I love programming.",
+    "ru": "Russian"
+}

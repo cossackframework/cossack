@@ -41,6 +41,8 @@ import {
 } from './transports/sse';
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';
+import { createLocaleMiddleware } from './middlewares/locale';
+import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -87,6 +89,50 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
   }
   _manifest = resolved;
   return _manifest;
+}
+
+/**
+ * Builds the localization payload embedded in `window.__INITIAL_STATE__` so
+ * the client can render translated text on first paint without fetching.
+ *
+ * Ships the active locale's catalog plus the default fallback (when they
+ * differ). Other locales are code-split and dynamic-imported by `setLocale`.
+ * Returns `undefined` when no catalog is registered (the project has no
+ * `src/lang/` folder), so the payload is omitted entirely for apps without
+ * localization.
+ */
+function buildLocaleHydrationData(): { locale: string; messages: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } | undefined {
+  const locale = getLocale();
+  const messages = getLocaleCatalog(locale);
+  // No catalog registered → the feature is inactive (no src/lang/ folder).
+  // Omit the payload entirely rather than embedding an empty catalog.
+  if (!messages) return undefined;
+  const def = getDefaultLocale();
+  const data: { locale: string; messages: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } = { locale, messages };
+  if (def && def !== locale) {
+    const defMsgs = getLocaleCatalog(def);
+    if (defMsgs) {
+      data.defaultLocale = def;
+      data.defaultMessages = defMsgs;
+    }
+  }
+  return data;
+}
+
+/**
+ * Resolves a `<link rel="modulepreload">` href for the predicted non-default
+ * locale chunk, when one is needed. Returns `undefined` when the active
+ * locale is already the default (no preload necessary) or when the manifest
+ * can't resolve the chunk (dev mode, missing src/lang file, etc.).
+ */
+function getLocalePreloadHref(manifest: Record<string, any>): string | undefined {
+  const locale = getLocale();
+  if (!locale || locale === getDefaultLocale()) return undefined;
+  // Vite emits each `src/lang/<locale>.json` as its own chunk; the manifest
+  // key is the source path.
+  const entry = manifest[`src/lang/${locale}.json`];
+  if (!entry?.file) return undefined;
+  return `/${entry.file}`;
 }
 
 const { pages, layouts, components, loadings } = registry;
@@ -240,6 +286,15 @@ export interface CreateAppOptions {
    * deployments. Missing Origin headers are always rejected.
    */
   allowedOrigins?: string[];
+  /**
+   * Localization options. The locale middleware always runs (it's a no-op
+   * when the project has no `src/lang/` folder). Enable `autoDetectBrowser`
+   * to honor the `Accept-Language` header for visitors without a locale
+   * cookie. Disabled by default because it can affect caching/SEO.
+   */
+  i18n?: {
+    autoDetectBrowser?: boolean;
+  };
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -262,6 +317,11 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     return next();
   });
+
+  // Locale middleware — resolves per-request locale and wraps the remainder
+  // of the request in an AsyncLocalStorage scope so `__()` / `getLocale()`
+  // resolve the right locale for each visitor. No-op without `src/lang/`.
+  app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser }));
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
@@ -408,6 +468,10 @@ export function createApp(options: CreateAppOptions = {}) {
           scopeKey,
           _app_state: appInstance.getInitialState(),
           _layout_stack: layoutPaths.map((p) => ({ path: p, state: layoutStates[p] })), // Keep file paths for layouts
+          // Localization: hydrate the active locale's catalog (and the default
+          // fallback if different) so `__()` works on the client immediately.
+          // Other locales are dynamic-imported on demand by `setLocale()`.
+          __cossackLang: buildLocaleHydrationData(),
         };
 
         c.header('Content-Type', 'text/html');
@@ -422,6 +486,8 @@ export function createApp(options: CreateAppOptions = {}) {
             inlineCss,
             modulePreloads,
             htmlTemplate: options.htmlTemplate,
+            lang: getLocale(),
+            localePreloadHref: getLocalePreloadHref(manifest),
           }),
         );
       } catch (err) {

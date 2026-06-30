@@ -27,7 +27,10 @@
   },
   // Replace with your production domain. Used for sitemap generation, canonical
   // URLs, and OG tags. Also exposed to the Worker at runtime as env.BASE_URL.
+  //
+  // APP_LOCALE sets the default locale for `__()`. See `cossack lang publish`.
   "vars": {
-    "BASE_URL": "https://example.com"
+    "BASE_URL": "https://example.com",
+    "APP_LOCALE": "en"
   }
 }
