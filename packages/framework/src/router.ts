@@ -4,6 +4,7 @@ import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
 import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
+import { enforceMethodRateLimit } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -511,6 +512,10 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
       return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
     }
+
+    // Rate-limit gate: enforce any @RateLimit declared on the action.
+    const rateLimited = await enforceMethodRateLimit(c, targetInstance.constructor, action, `crpc:${componentRouteId}`);
+    if (rateLimited) return rateLimited;
 
     if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
 

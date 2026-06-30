@@ -16,6 +16,7 @@ export * from './shared/service-bootstrap';
 export * from './shared/middleware';
 export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy';
 export { isOriginAllowed } from './shared/origin-security';
+export * from './shared/rate-limit';
 
 export * from './client/navigation';
 

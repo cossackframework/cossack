@@ -382,6 +382,71 @@ export function OnWindow(
   };
 }
 
+/**
+ * Rate-limit a method so it only runs once after `ms` milliseconds of inactivity.
+ * Each new call within the window resets the timer, so only the final invocation
+ * (with its latest arguments) actually executes.
+ *
+ * `@Debounce` is a **client-only** modifier: on the server the method runs
+ * immediately. It composes with any classification decorator — `@Client`,
+ * `@Shared`, `@On` keep the real body; `@Server` debounces the RPC *proxy*
+ * call (useful for search-as-you-type hitting the server).
+ *
+ * The wrapped method returns `void` — the original return value is lost because
+ * execution is deferred. Per-instance timers prevent leakage between component
+ * instances.
+ *
+ * @example
+ * ```ts
+ * @Client()
+ * @Debounce(500)
+ * search(query: string) {
+ *   console.log('Searching for:', query);
+ * }
+ * ```
+ *
+ * Standalone usage (without `@Client`/`@Server`/`@Shared`/`@On`) leaves the
+ * method server-only by default and emits a dev warning on the client.
+ */
+export function Debounce(ms: number): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const store = Reflect.hasOwnMetadata('cossack:debounce', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:debounce', target.constructor)
+      : {};
+    store[propertyKey] = ms;
+    Reflect.defineMetadata('cossack:debounce', store, target.constructor);
+    return descriptor;
+  };
+}
+
+/**
+ * Rate-limit a method so it runs at most once per `ms` milliseconds. The first
+ * call executes immediately (leading edge); subsequent calls within the window
+ * are ignored.
+ *
+ * Like `@Debounce`, this is a **client-only** modifier and composes with the
+ * classification decorators (`@Client`, `@Server`, `@Shared`, `@On`).
+ *
+ * @example
+ * ```ts
+ * @Client()
+ * @Throttle(200)
+ * onScroll() {
+ *   this.loadMore();
+ * }
+ * ```
+ */
+export function Throttle(ms: number): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const store = Reflect.hasOwnMetadata('cossack:throttle', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:throttle', target.constructor)
+      : {};
+    store[propertyKey] = ms;
+    Reflect.defineMetadata('cossack:throttle', store, target.constructor);
+    return descriptor;
+  };
+}
+
 export function Computed(): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     Reflect.defineMetadata('computed', true, target, propertyKey);

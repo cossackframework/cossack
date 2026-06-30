@@ -57,6 +57,19 @@ export default class MyApi extends Cossack {
 }
 ```
 
+## Rate Limiting
+
+API routes and `@Server` methods can be protected from abuse with `RateLimit`, which enforces **server-side** request limits and responds `429 Too Many Requests` when a caller exceeds them. See the dedicated [Rate Limiting guide](/docs/rate-limiting.md) for options, the `RateLimit()` wrapper, the `@RateLimit()` decorator, and the storage backends (Durable Object, Redis/Upstash, KV).
+
+```typescript
+import { RateLimit } from '@cossackframework/core';
+
+// 3 requests per 10 seconds per caller.
+export const GET = RateLimit({ window: 10_000, max: 3 }, (c) => {
+    return c.json([{ id: 1, name: 'Alice' }]);
+});
+```
+
 ## Routing Conventions
 
 Cossack follows a standard file-based routing convention for API routes:

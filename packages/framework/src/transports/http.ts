@@ -1,5 +1,5 @@
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids';
 
@@ -86,6 +86,10 @@ export function handleUpload(ctx: RouterContext) {
         if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
             return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
         }
+
+        // Rate-limit gate: enforce any @RateLimit declared on the action.
+        const rateLimited = await enforceMethodRateLimit(c, targetInstance.constructor, action, `upload:${componentRouteId}`);
+        if (rateLimited) return rateLimited;
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
 

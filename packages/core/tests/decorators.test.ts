@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref } from '../src/shared/decorators';
+import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref, Debounce, Throttle } from '../src/shared/decorators';
 import * as environment from '../src/shared/environment';
 
 vi.mock('../src/shared/environment');
@@ -196,6 +196,66 @@ describe('Decorators', () => {
                 showAlert: true,
             });
         });
+    });
+  });
+
+  describe('@Debounce', () => {
+    it('should store debounce metadata mapping method name to ms', () => {
+      class TestComponent {
+        @Debounce(500)
+        search() {}
+      }
+      const meta = Reflect.getMetadata('cossack:debounce', TestComponent);
+      expect(meta).toEqual({ search: 500 });
+    });
+
+    it('should accumulate metadata for multiple @Debounce methods', () => {
+      class TestComponent {
+        @Debounce(300)
+        search() {}
+
+        @Debounce(1000)
+        save() {}
+      }
+      const meta = Reflect.getMetadata('cossack:debounce', TestComponent);
+      expect(meta).toEqual({ search: 300, save: 1000 });
+    });
+
+    it('does not stub or wrap the method body at decoration time', () => {
+      // @Debounce is a neutral modifier: it only records metadata and leaves the
+      // method callable as-is. Wrapping happens later, during _frameworkMount().
+      class TestComponent {
+        @Debounce(500)
+        handler() {
+          return 'real implementation';
+        }
+      }
+      const instance = new TestComponent();
+      expect((instance as any).handler()).toBe('real implementation');
+      expect(Reflect.getMetadata('cossack:debounce', TestComponent)).toEqual({ handler: 500 });
+    });
+  });
+
+  describe('@Throttle', () => {
+    it('should store throttle metadata mapping method name to ms', () => {
+      class TestComponent {
+        @Throttle(200)
+        onScroll() {}
+      }
+      const meta = Reflect.getMetadata('cossack:throttle', TestComponent);
+      expect(meta).toEqual({ onScroll: 200 });
+    });
+
+    it('uses a separate metadata key from @Debounce', () => {
+      class TestComponent {
+        @Debounce(500)
+        search() {}
+
+        @Throttle(200)
+        onScroll() {}
+      }
+      expect(Reflect.getMetadata('cossack:debounce', TestComponent)).toEqual({ search: 500 });
+      expect(Reflect.getMetadata('cossack:throttle', TestComponent)).toEqual({ onScroll: 200 });
     });
   });
 
