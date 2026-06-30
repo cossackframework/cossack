@@ -441,7 +441,7 @@ export function Throttle(ms: number): MethodDecorator {
     const store = Reflect.hasOwnMetadata('cossack:throttle', target.constructor)
       ? Reflect.getOwnMetadata('cossack:throttle', target.constructor)
       : {};
-    store[propertyKey] = ms;
+    store[String(propertyKey)] = ms;
     Reflect.defineMetadata('cossack:throttle', store, target.constructor);
     return descriptor;
   };
