@@ -28,7 +28,7 @@ export class LocalizationDemo extends Cossack {
         window.addEventListener('localechange', this.handleLocaleChange);
     }
 
-    onUnmount() {
+    onCleanup() {
         window.removeEventListener('localechange', this.handleLocaleChange);
     }
 
