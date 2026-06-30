@@ -1,9 +1,20 @@
 import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions } from '@cossackframework/core';
+import {
+    setSupportedLocales,
+    setDefaultLocale,
+    setLocaleLoader,
+    registerLocale,
+    __hydrateLocale,
+    getDefaultLocale,
+} from '@cossackframework/core';
 import { App } from '../App';
 import { CossackElement } from '@cossackframework/renderer';
 import { registerDevToolsInstance } from './devtools';
 import { filePathToRoutePath } from '../route-ids';
 import registry from 'virtual:cossack-pages';
+import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
+// Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
+import '../i18n-globals';
 
 const { pages, layouts, loadings, components } = registry;
 
@@ -174,6 +185,31 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     console.error('Could not find root container');
     return;
   }
+
+  // Hydrate localization runtime from the build-time manifest and the
+  // server-provided initial state. The active + default catalogs ship inline
+  // so `__()` works on first paint; the rest are dynamic-imported on demand
+  // by `setLocale()` (one chunk per locale).
+  setSupportedLocales(supportedLocales);
+  if (defaultLocale) setDefaultLocale(defaultLocale);
+  setLocaleLoader(async (locale) => (await loadCatalog(locale)) || {});
+  const langState = (window as any).__INITIAL_STATE__?.__cossackLang;
+  if (langState && typeof langState === 'object') {
+    if (langState.defaultMessages && langState.defaultLocale) {
+      registerLocale(langState.defaultLocale, langState.defaultMessages);
+    }
+    __hydrateLocale(langState.locale, langState.messages);
+  } else if (supportedLocales.length > 0) {
+    // No SSR state (e.g. client-only fallback): resolve from the default.
+    const fallback = defaultLocale || getDefaultLocale();
+    const msgs = await loadCatalog(fallback);
+    if (msgs) __hydrateLocale(fallback, msgs);
+  }
+
+  // Update <html lang> when the locale changes at runtime.
+  window.addEventListener('localechange', ((e: CustomEvent) => {
+    if (e.detail?.locale) document.documentElement.lang = e.detail.locale;
+  }) as EventListener);
 
   // Create the progress bar once when enabled.
   if (progressBarEnabled && !progressBar) {

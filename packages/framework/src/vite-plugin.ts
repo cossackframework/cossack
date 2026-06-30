@@ -8,6 +8,9 @@ import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
+const langVirtualModuleId = 'virtual:cossack-lang';
+const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
+
 /**
  * Public path the SSR runtime uses to fetch the Vite manifest via the
  * Cloudflare ASSETS binding. The Cloudflare Vite plugin generates a
@@ -184,4 +187,76 @@ function emitRoutesManifest(clientOutDir: string) {
   if (!existsSync(clientOutDir)) mkdirSync(clientOutDir, { recursive: true });
   const dest = resolve(clientOutDir, 'cossack-routes.json');
   writeFileSync(dest, JSON.stringify(manifest, null, 2));
+}
+
+/**
+ * Virtual module exposing the user's `src/lang/*.json` catalogs.
+ *
+ * - **Server**: catalogs are `import.meta.glob`-ed eagerly so the locale
+ *   middleware can read any locale synchronously during SSR.
+ * - **Client**: catalogs are loaded lazily (one chunk per locale) so only the
+ *   active + default locales ship in the initial bundle. The framework
+ *   hydrates those two via `window.__INITIAL_STATE__`; the rest are fetched
+ *   on demand by `setLocale('<code>')`.
+ *
+ * Emits:
+ * ```ts
+ * export const defaultLocale: string;          // 'en' (or APP_LOCALE at build time)
+ * export const supportedLocales: string[];     // ['en', 'es', ...]
+ * export const catalogs: Record<string, () => Promise<{ default: TranslationCatalog }>>;
+ * export async function loadCatalog(locale: string): Promise<TranslationCatalog>;
+ * ```
+ */
+export function cossackLang(): Plugin {
+  return {
+    name: 'cossack-lang',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === langVirtualModuleId) return resolvedLangVirtualModuleId;
+    },
+    load(id) {
+      if (id !== resolvedLangVirtualModuleId) return;
+      const isSsrEnvironment = this.environment?.name !== 'client';
+      const globOptions = isSsrEnvironment ? ', { eager: true }' : '';
+      return `
+        // One entry per src/lang/<locale>.json. Eager on the server, lazy on the
+        // client so each locale becomes its own chunk (code splitting).
+        const modules = import.meta.glob('/src/lang/*.json'${globOptions});
+
+        function extractLocale(globKey) {
+          const parts = globKey.split('/');
+          const file = parts[parts.length - 1];
+          return file.replace(/\\.json$/, '');
+        }
+
+        const supportedLocales = Object.keys(modules)
+          .map(extractLocale)
+          .sort((a, b) => (a === 'en' ? -1 : b === 'en' ? 1 : a.localeCompare(b)));
+
+        // Lazy loaders used by the client. On the server these are pre-resolved
+        // (eager), but we keep the same call signature for a unified API.
+        const catalogs = {};
+        for (const [key, mod] of Object.entries(modules)) {
+          const locale = extractLocale(key);
+          if (${isSsrEnvironment ? 'true' : 'false'}) {
+            const messages = (mod && mod.default) ? mod.default : (mod || {});
+            catalogs[locale] = () => Promise.resolve({ default: messages });
+          } else {
+            catalogs[locale] = mod;
+          }
+        }
+
+        async function loadCatalog(locale) {
+          const loader = catalogs[locale];
+          if (!loader) return undefined;
+          const loaded = await loader();
+          return (loaded && loaded.default) ? loaded.default : loaded;
+        }
+
+        const defaultLocale = ${JSON.stringify(process.env.APP_LOCALE || 'en')} || 'en';
+
+        export { defaultLocale, supportedLocales, catalogs, loadCatalog };
+      `;
+    },
+  };
 }

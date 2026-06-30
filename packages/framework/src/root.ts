@@ -33,6 +33,10 @@ type RenderRootProps = {
     inlineCss?: string;
     modulePreloads?: string[];
     htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
+    /** Locale code for the `<html lang>` attribute. Defaults to `'en'`. */
+    lang?: string;
+    /** Optional modulepreload href for the predicted non-default locale chunk. */
+    localePreloadHref?: string;
 }
 
 const renderTag = (tag: HeadTag) => {
@@ -97,10 +101,21 @@ export const renderRoot = (props: RenderRootProps) => {
         .map(href => `<link rel="modulepreload" href="${href}">`)
         .join('\n');
 
+    // Preload the predicted non-default locale chunk so a client-side
+    // `setLocale()` switch is instant (the chunk is already cached).
+    const localePreloadHtml = props.localePreloadHref
+        ? `<link rel="modulepreload" href="${props.localePreloadHref}">`
+        : '';
+
     const cossackScripts = () =>
-        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n<script type="module" src="${clientScript}"></script>`;
+        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n${localePreloadHtml}\n<script type="module" src="${clientScript}"></script>`;
 
     const cossackBody = () => `<div id="root">${props.body}</div>`;
+
+    // `<html lang>` drives screen-reader pronunciation and search engines.
+    // Defaults to 'en' for backward compatibility; the locale middleware
+    // threads the resolved per-request locale through to here.
+    const langAttr = props.lang || 'en';
 
     let raw: string;
 
@@ -109,10 +124,11 @@ export const renderRoot = (props: RenderRootProps) => {
     } else if (typeof props.htmlTemplate === 'string') {
         raw = props.htmlTemplate
             .replace('{{ cossackScripts }}', cossackScripts())
-            .replace('{{ cossackBody }}', cossackBody());
+            .replace('{{ cossackBody }}', cossackBody())
+            .replace('{{ cossackLang }}', langAttr);
     } else {
         raw = `<!DOCTYPE html>
-        <html lang="en">
+        <html lang="${langAttr}">
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">

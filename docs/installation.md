@@ -1,6 +1,6 @@
 ---
 title: "Installation & Setup"
-description: "Get started with Cossack framework using the create-cossack-app CLI tool with support for Node.js v22 and modern editors."
+description: "Get started with Cossack framework using the Cossack CLI tool with support for Node.js v22 and modern editors."
 ---
 
 # Installation & Setup
@@ -16,14 +16,14 @@ To get started with Cossack locally, you need:
 
 ## Creating a New Project
 
-The easiest way to start a new Cossack project is by using the `create-cossack-app` CLI tool.
+The easiest way to start a new Cossack project is by using the `cossack` CLI tool.
 
 ### Usage
 
 Run the following command in your terminal:
 
 ```sh
-npx create-cossack-app@latest my-app
+npx cossack create my-app
 ```
 
 Replace `my-app` with your desired project name.

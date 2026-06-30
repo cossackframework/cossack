@@ -2,6 +2,17 @@ import 'reflect-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Cossack, PageOptions, AuthenticatedUser } from '@cossackframework/core';
+import {
+    setSupportedLocales,
+    setDefaultLocale,
+    __hydrateLocale,
+    registerLocale,
+    getLocale,
+    getLocaleCatalog,
+    getSupportedLocales,
+    getDefaultLocale,
+    DEFAULT_LOCALE,
+} from '@cossackframework/core';
 import { App } from './App';
 import { renderRoot, TemplateHelpers } from './root';
 import type { Context } from 'hono';
@@ -36,6 +47,46 @@ interface LayoutStackItem {
 // divergent copy here.
 export { filePathToRoutePath, getModulePreloads } from './route-ids';
 import { filePathToRoutePath, getModulePreloads } from './route-ids';
+
+/**
+ * One-time locale setup for the SSG build. SSG runs under tsx (not Vite), so
+ * the `virtual:cossack-lang` module isn't available — read `src/lang/*.json`
+ * directly from disk and seed the i18n runtime.
+ *
+ * The rendered locale is `process.env.APP_LOCALE` (or `'en'`). Per-locale
+ * static output is a follow-up; today every page renders once in the default.
+ */
+let ssgLocaleInitialized = false;
+function ensureSsgLocaleInitialized(projectRoot: string): void {
+    if (ssgLocaleInitialized) return;
+    ssgLocaleInitialized = true;
+    const langDir = path.resolve(projectRoot, 'src', 'lang');
+    const locales: string[] = [];
+    try {
+        if (fs.existsSync(langDir)) {
+            for (const file of fs.readdirSync(langDir)) {
+                if (file.endsWith('.json')) {
+                    locales.push(file.replace(/\.json$/, ''));
+                }
+            }
+        }
+    } catch {
+        // Non-fatal — fall through with no catalogs.
+    }
+    setSupportedLocales(locales.length > 0 ? locales : [DEFAULT_LOCALE]);
+    const target = process.env.APP_LOCALE || DEFAULT_LOCALE;
+    setDefaultLocale(target);
+    for (const locale of locales) {
+        try {
+            const text = fs.readFileSync(path.join(langDir, `${locale}.json`), 'utf8');
+            registerLocale(locale, JSON.parse(text));
+        } catch {
+            // Skip unreadable files.
+        }
+    }
+    const initial = locales.includes(target) ? target : DEFAULT_LOCALE;
+    __hydrateLocale(initial, getLocaleCatalog(initial));
+}
 
 /**
  * Get the layout stack for a given page path.
@@ -124,6 +175,10 @@ export async function renderSsgPage(
   pageFilePath?: string,
   componentRouteId?: string,
 ): Promise<string> {
+  // Seed the i18n runtime from `src/lang/*.json` (one-time) so SSG output
+  // renders in the default locale. Reads the project root from cwd.
+  ensureSsgLocaleInitialized(process.cwd());
+
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
 
@@ -217,13 +272,40 @@ export async function renderSsgPage(
   const manifest = readManifestFile();
   const modulePreloads = getModulePreloads(manifest, pageFilePath ?? '');
 
+  const supported = getSupportedLocales();
+  const activeLocale = getLocale();
+  const langHydration =
+    supported.length > 0
+      ? {
+          locale: activeLocale,
+          messages: getLocaleCatalog(activeLocale) || {},
+          ...(getDefaultLocale() !== activeLocale
+            ? {
+                defaultLocale: getDefaultLocale(),
+                defaultMessages: getLocaleCatalog(getDefaultLocale()) || {},
+              }
+            : {}),
+        }
+      : undefined;
+
+  const localePreloadEntry = manifest[`src/lang/${activeLocale}.json`];
+  const localePreloadHref =
+    localePreloadEntry?.file && activeLocale !== getDefaultLocale()
+      ? `/${localePreloadEntry.file}`
+      : undefined;
+
   const html = renderRoot({
     body: finalHtml,
-    initialState: finalInitialState,
+    initialState: {
+      ...finalInitialState,
+      ...(langHydration ? { __cossackLang: langHydration } : {}),
+    },
     manifest,
     headTags,
     modulePreloads,
     htmlTemplate,
+    lang: activeLocale,
+    localePreloadHref,
   });
 
   return html;

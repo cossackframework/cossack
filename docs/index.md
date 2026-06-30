@@ -50,6 +50,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Server-Sent Events](/docs/sse.md)
 - [Storage](/docs/storage.md)
 - [Rate Limiting](/docs/rate-limiting.md)
+- [Localization](/docs/localization.md)
 - [Prevent Navigation](/docs/prevent-navigation.md)
 - [View Transitions](/docs/view-transitions.md)
 - [Errors Handling](/docs/errors-handling.md)
