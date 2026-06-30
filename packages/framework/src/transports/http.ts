@@ -88,7 +88,22 @@ export function handleUpload(ctx: RouterContext) {
         }
 
         // Rate-limit gate: enforce any @RateLimit declared on the action.
-        const rateLimited = await enforceMethodRateLimit(c, targetInstance.constructor, action, `upload:${componentRouteId}`);
+        // If this is a forwarded @Service method, the metadata lives on the service class.
+        let rateLimitConstructor: unknown = targetInstance.constructor;
+        if (!isRpcCallableAction(rateLimitConstructor, action)) {
+            const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', targetInstance.constructor) || [];
+            for (const t of paramTypes) {
+                if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
+                    const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
+                    if (Object.prototype.hasOwnProperty.call(serverMethods, action)) {
+                        rateLimitConstructor = t;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `upload:${componentRouteId}`);
         if (rateLimited) return rateLimited;
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
