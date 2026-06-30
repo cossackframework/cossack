@@ -51,13 +51,16 @@ export interface LocaleMiddlewareOptions {
  */
 let coreSeeded = false;
 let resolvedDefaultLocale = DEFAULT_LOCALE;
-function seedCoreI18n(): void {
+function seedCoreI18n(requestedDefault?: string): void {
     if (coreSeeded) return;
     coreSeeded = true;
     setSupportedLocales(supportedLocales);
+
+    const envDefault = requestedDefault ? normalizeLocale(requestedDefault) : undefined;
+    const preferred = envDefault || buildDefaultLocale;
     resolvedDefaultLocale =
-        supportedLocales.includes(buildDefaultLocale)
-            ? buildDefaultLocale
+        supportedLocales.includes(preferred)
+            ? preferred
             : supportedLocales[0] || DEFAULT_LOCALE;
     setDefaultLocale(resolvedDefaultLocale);
 }
