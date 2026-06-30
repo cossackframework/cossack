@@ -6,6 +6,9 @@
 **/dist
 **/build
 
+# TypeScript incremental build cache
+**/*.tsbuildinfo
+
 # Cloudflare Wrangler
 .wrangler/
 .dev.vars
