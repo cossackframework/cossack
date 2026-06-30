@@ -26,7 +26,6 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Loading](/docs/loading.md)
 - [Optimistic UI](/docs/optimistic.md)
 - [Tasks](/docs/tasks.md)
-- [Debounce & Throttle](/docs/tasks.md#rate-limiting-method-calls-debounce-and-throttle)
 - [Refs](/docs/refs.md)
 - [Backend Context](/docs/context.md)
 - [API Routes](/docs/api-routes.md)
@@ -36,6 +35,8 @@ description: 'Complete documentation index covering all Cossack framework concep
 ## Security
 
 - [Authentication](/docs/authentication.md)
+- [Authorization](/docs/authorization.md)
+- [Social Login](/docs/oauth.md)
 - [Client Bundle & Method Stripping](/docs/client-bundle.md)
 - [Middlewares](/docs/middlewares.md)
 - [Vite Plugin](/docs/vite-plugins.md)
@@ -45,7 +46,6 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Environment Variables](/docs/environment.md)
 - [Testing](/docs/testing.md)
 - [Sitemap](/docs/sitemap.md)
-- [Static Site Generation](/docs/static-site-generation.md)
 - [Websockets](/docs/websockets.md)
 - [Server-Sent Events](/docs/sse.md)
 - [Storage](/docs/storage.md)
@@ -56,9 +56,11 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Dev Tools](/docs/dev-tools.md)
 - [Snippets](/docs/vscode-snippets.md)
 - [Adapters](/docs/adapters.md)
+- [Debounce & Throttle](/docs/tasks.md#rate-limiting-method-calls-debounce-and-throttle)
 - [Deployment](/docs/deployment.md)
 - [Framework Context](/docs/framework-context.md)
 - [Helpers](/docs/helpers.md)
+- [Scroll Reveal](/docs/scroll-reveal.md)
 
 ## Scaling
 
@@ -69,3 +71,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 
 - [Optimizations](/docs/optimizations.md)
 - [Static Site Generation](/docs/static-site-generation.md)
+
+## LLM
+
+- [Skills](/docs/skills.md)

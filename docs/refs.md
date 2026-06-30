@@ -56,16 +56,3 @@ render() {
     `;
 }
 ```
-
-## Using with Multi-Interpolation
-
-Refs work seamlessly alongside other attributes, including our new multi-interpolation support.
-
-```typescript
-html`
-    <input 
-        ref=${this.inputRef}
-        style="color: ${this.color}; background: ${this.bg}"
-    />
-`
-```
