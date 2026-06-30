@@ -422,9 +422,9 @@ export function configureRateLimitFromEnv(env: Record<string, any> | undefined):
     if (!raw) return;
     const mode = String(raw).trim().toLowerCase();
     const store = buildRateLimitStore(mode, env);
+    autoConfigured = true;
     if (store) {
         globalStore = store;
-        autoConfigured = true;
     }
 }
 
