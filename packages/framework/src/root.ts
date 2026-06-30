@@ -90,25 +90,25 @@ export const renderRoot = (props: RenderRootProps) => {
     // with optional inline CSS for faster initial paint.
     let cssHtml = '';
     if (isDev) {
-        cssHtml = `<link rel="stylesheet" href="${css}">`;
+        cssHtml = `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     } else if (css) {
         cssHtml = props.inlineCss
-            ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${css}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${css}"></noscript>`
-            : `<link rel="stylesheet" href="${css}">`;
+            ? `<style>${escapeHtml(props.inlineCss)}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`
+            : `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     }
 
     const modulePreloadHtml = (props.modulePreloads || [])
-        .map(href => `<link rel="modulepreload" href="${href}">`)
+        .map(href => `<link rel="modulepreload" href="${escapeHtml(href)}">`)
         .join('\n');
 
     // Preload the predicted non-default locale chunk so a client-side
     // `setLocale()` switch is instant (the chunk is already cached).
     const localePreloadHtml = props.localePreloadHref
-        ? `<link rel="modulepreload" href="${props.localePreloadHref}">`
+        ? `<link rel="modulepreload" href="${escapeHtml(props.localePreloadHref)}">`
         : '';
 
     const cossackScripts = () =>
-        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n${localePreloadHtml}\n<script type="module" src="${clientScript}"></script>`;
+        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n${localePreloadHtml}\n<script type="module" src="${escapeHtml(clientScript)}"></script>`;
 
     const cossackBody = () => `<div id="root">${props.body}</div>`;
 

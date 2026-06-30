@@ -108,7 +108,7 @@ function buildLocaleHydrationData(): { locale: string; messages: Record<string, 
   // Omit the payload entirely rather than embedding an empty catalog.
   if (!messages) return undefined;
   const def = getDefaultLocale();
-  const data: any = { locale, messages };
+  const data: { locale: string; messages: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } = { locale, messages };
   if (def && def !== locale) {
     const defMsgs = getLocaleCatalog(def);
     if (defMsgs) {
