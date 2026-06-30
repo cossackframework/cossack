@@ -93,7 +93,7 @@ export const renderRoot = (props: RenderRootProps) => {
         cssHtml = `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     } else if (css) {
         cssHtml = props.inlineCss
-            ? `<style>${escapeHtml(props.inlineCss)}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`
+            ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`
             : `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     }
 
