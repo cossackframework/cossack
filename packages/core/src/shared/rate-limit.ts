@@ -596,11 +596,11 @@ export function RateLimit(options: RateLimitOptions): MethodDecorator;
 export function RateLimit<T extends HonoHandler>(handler: T): T;
 export function RateLimit<T extends HonoHandler>(options: RateLimitOptions, handler: T): T;
 export function RateLimit(first: RateLimitOptions | HonoHandler, second?: HonoHandler): any {
-    // Form 3: RateLimit(options, handler)
+    // Form 2: RateLimit(options, handler)
     if (typeof second === 'function') {
         return wrapHandler((first as RateLimitOptions) ?? {}, second);
     }
-    // Form 2: RateLimit(handler)
+    // Form 3: RateLimit(handler)
     if (typeof first === 'function') {
         return wrapHandler({}, first);
     }
