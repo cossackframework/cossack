@@ -10,7 +10,7 @@ Up until now, our framework didn't have support for localization. Let's add it.
 
 ### Adding multi-language support
 
-Users use `npx cossack lang:publish` to generate a `src/lang` folder with the default `en.json` file, so let's add that command to the `cossack` CLI.
+Users use `npx cossack lang publish` to generate a `src/lang` folder with the default `en.json` file, so let's add that command to the `cossack` CLI.
 
 ### Runtime locale switching
 
