@@ -410,9 +410,8 @@ function writeLocaleCookie(locale: string): void {
     if (isServer) return;
     if (typeof document === 'undefined') return;
     try {
-        document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(
-            locale,
-        )}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax`;
+        const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `${LOCALE_COOKIE}=${encodeURIComponent(locale)}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax${secure}`;
     } catch {
         // Restricted environments (SSR previews, etc.) — ignore.
     }
