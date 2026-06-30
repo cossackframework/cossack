@@ -107,7 +107,7 @@ export function createLocaleMiddleware(
     const autoDetect = options.autoDetectBrowser === true;
     return async (c, next) => {
         ensureLocaleAlsWired();
-        seedCoreI18n();
+        seedCoreI18n((c.env as any)?.APP_LOCALE);
 
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
