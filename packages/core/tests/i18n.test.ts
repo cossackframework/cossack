@@ -13,6 +13,7 @@ import {
     setDefaultLocale,
     setLocaleStoreGetter,
     setLocaleLoader,
+    normalizeLocale,
     resolveAutoLocale,
     detectBrowserLocale,
     replacePlaceholders,
@@ -474,6 +475,55 @@ describe('setLocale (client)', () => {
             (globalThis as any).navigator = original;
         }
     });
+
+    it('rejects unsupported locale codes', async () => {
+        setSupportedLocales(['en', 'es']);
+        registerLocale('en', { hi: 'Hi' });
+        __hydrateLocale('en');
+        await expect(setLocale('de')).rejects.toThrow(/Unsupported locale/);
+        expect(getLocale()).toBe('en');
+    });
+
+    it('normalizes case (ES → es)', async () => {
+        setSupportedLocales(['en', 'es']);
+        registerLocale('es', { hi: 'Hola' });
+        await setLocale('ES');
+        expect(getLocale()).toBe('es');
+    });
+
+    it('normalizes regional tags to base language (en-US → en)', async () => {
+        setSupportedLocales(['en', 'es']);
+        registerLocale('en', { hi: 'Hi' });
+        await setLocale('en-US');
+        expect(getLocale()).toBe('en');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeLocale
+// ---------------------------------------------------------------------------
+describe('normalizeLocale', () => {
+    beforeEach(() => setSupportedLocales(['en', 'es', 'fr']));
+
+    it('returns the canonical casing for an exact match', () => {
+        expect(normalizeLocale('ES')).toBe('es');
+        expect(normalizeLocale('EN')).toBe('en');
+    });
+
+    it('falls back to the base language for regional tags', () => {
+        expect(normalizeLocale('en-US')).toBe('en');
+        expect(normalizeLocale('fr-FR')).toBe('fr');
+        expect(normalizeLocale('es-419')).toBe('es');
+    });
+
+    it('returns undefined for unsupported locales', () => {
+        expect(normalizeLocale('de')).toBeUndefined();
+        expect(normalizeLocale('zh-CN')).toBeUndefined();
+    });
+
+    it('returns undefined for empty input', () => {
+        expect(normalizeLocale('')).toBeUndefined();
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -497,6 +547,7 @@ describe('readLocaleCookie', () => {
             writable: true,
             value: '',
         });
+        setSupportedLocales(['en', 'es']);
         registerLocale('es', { hi: 'Hola' });
         await setLocale('es');
         // The previous test wrote the cookie; re-read it.

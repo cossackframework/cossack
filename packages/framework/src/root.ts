@@ -114,8 +114,9 @@ export const renderRoot = (props: RenderRootProps) => {
 
     // `<html lang>` drives screen-reader pronunciation and search engines.
     // Defaults to 'en' for backward compatibility; the locale middleware
-    // threads the resolved per-request locale through to here.
-    const langAttr = props.lang || 'en';
+    // threads the resolved per-request locale through to here. Escaped as
+    // defense-in-depth even though locale codes are normally alphanumeric.
+    const langAttr = escapeHtml(props.lang || 'en');
 
     let raw: string;
 

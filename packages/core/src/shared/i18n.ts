@@ -353,6 +353,30 @@ export function resolveAutoLocale(locale: string): string | undefined {
 }
 
 /**
+ * Canonicalizes a locale code against the supported list.
+ *
+ * - Case-insensitive exact match: `'ES'` → `'es'` (if `es` is supported).
+ * - Base-language fallback: `'en-US'` → `'en'` (if `en` is supported but
+ *   `en-US` is not).
+ * - Returns `undefined` when no supported locale matches.
+ *
+ * Used by {@link setLocale} to reject unsupported codes before mutating state,
+ * and by the framework middleware to normalize cookie / env values.
+ */
+export function normalizeLocale(locale: string): string | undefined {
+    if (!locale) return undefined;
+    const lower = locale.toLowerCase();
+    const exact = supportedLocales.find((s) => s.toLowerCase() === lower);
+    if (exact) return exact;
+    const base = lower.split('-')[0];
+    if (base !== lower) {
+        const baseMatch = supportedLocales.find((s) => s.toLowerCase() === base);
+        if (baseMatch) return baseMatch;
+    }
+    return undefined;
+}
+
+/**
  * Ensures a locale's catalog is registered, loading it on demand via the
  * injected loader (if any). Memoized so concurrent calls share one import.
  */
@@ -453,11 +477,23 @@ export async function setLocale(locale: string): Promise<void> {
         );
     }
 
-    const resolved = resolveAutoLocale(locale);
-    if (!resolved) {
+    const autoResolved = resolveAutoLocale(locale);
+    if (!autoResolved) {
         throw new Error(
             `[Cossack] Could not resolve locale "${locale}" on the client. ` +
                 'Pass a concrete locale code (e.g. "es") instead.',
+        );
+    }
+
+    // Normalize to a canonical supported locale code (case-insensitive, with
+    // base-language fallback e.g. "en-US" → "en"). Reject unsupported locales
+    // so we never set currentLocale / write a cookie for a locale with no
+    // catalog, which would break the __() fallback chain.
+    const resolved = normalizeLocale(autoResolved);
+    if (!resolved) {
+        throw new Error(
+            `[Cossack] Unsupported locale "${locale}". Supported locales: ` +
+                supportedLocales.join(', '),
         );
     }
 

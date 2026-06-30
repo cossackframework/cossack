@@ -74,11 +74,14 @@ function ensureSsgLocaleInitialized(projectRoot: string): void {
         // Non-fatal — fall through with no catalogs.
     }
     setSupportedLocales(locales.length > 0 ? locales : [DEFAULT_LOCALE]);
-    // Only set the default fallback to APP_LOCALE when a matching catalog
-    // exists; otherwise point it at a locale that actually has translations
-    // so `__()` missing-key fallback can resolve.
+    // Resolve a default that is guaranteed to have a catalog on disk. Prefer
+    // APP_LOCALE when it exists; otherwise the first discovered locale; only
+    // fall back to 'en' when there are no catalogs at all. This ensures the
+    // `__()` missing-key fallback chain always targets a real catalog.
     const requestedDefault = process.env.APP_LOCALE || DEFAULT_LOCALE;
-    const resolvedDefault = locales.includes(requestedDefault) ? requestedDefault : DEFAULT_LOCALE;
+    const resolvedDefault = locales.includes(requestedDefault)
+        ? requestedDefault
+        : locales[0] || DEFAULT_LOCALE;
     setDefaultLocale(resolvedDefault);
     for (const locale of locales) {
         try {
@@ -88,7 +91,7 @@ function ensureSsgLocaleInitialized(projectRoot: string): void {
             // Skip unreadable files.
         }
     }
-    const initial = locales.includes(resolvedDefault) ? resolvedDefault : DEFAULT_LOCALE;
+    const initial = locales.length > 0 ? resolvedDefault : DEFAULT_LOCALE;
     __hydrateLocale(initial, getLocaleCatalog(initial));
 }
 

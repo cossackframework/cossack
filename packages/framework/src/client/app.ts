@@ -191,19 +191,35 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   // so `__()` works on first paint; the rest are dynamic-imported on demand
   // by `setLocale()` (one chunk per locale).
   setSupportedLocales(supportedLocales);
-  if (defaultLocale) setDefaultLocale(defaultLocale);
   setLocaleLoader(async (locale) => (await loadCatalog(locale)) || {});
+
   const langState = (window as any).__INITIAL_STATE__?.__cossackLang;
   if (langState && typeof langState === 'object') {
+    // Prefer the SSR-provided default (which accounts for runtime resolution
+    // like env.APP_LOCALE and supported-locale fallback). Fall back to the
+    // first supported locale, then the build-time default.
+    const effectiveDefault =
+      langState.defaultLocale ||
+      supportedLocales[0] ||
+      defaultLocale ||
+      getDefaultLocale();
+    setDefaultLocale(effectiveDefault);
     if (langState.defaultMessages && langState.defaultLocale) {
       registerLocale(langState.defaultLocale, langState.defaultMessages);
     }
     __hydrateLocale(langState.locale, langState.messages);
-  } else if (supportedLocales.length > 0) {
-    // No SSR state (e.g. client-only fallback): resolve from the default.
-    const fallback = defaultLocale || getDefaultLocale();
-    const msgs = await loadCatalog(fallback);
-    if (msgs) __hydrateLocale(fallback, msgs);
+  } else {
+    // No SSR state (e.g. client-only fallback): derive an effective default
+    // that is guaranteed to have a catalog, then load it.
+    const effectiveDefault =
+      supportedLocales.includes(defaultLocale)
+        ? defaultLocale
+        : supportedLocales[0] || defaultLocale || getDefaultLocale();
+    setDefaultLocale(effectiveDefault);
+    if (supportedLocales.length > 0) {
+      const msgs = await loadCatalog(effectiveDefault);
+      if (msgs) __hydrateLocale(effectiveDefault, msgs);
+    }
   }
 
   // Update <html lang> when the locale changes at runtime.

@@ -22,6 +22,7 @@ import {
     getLocaleCatalog,
     setSupportedLocales,
     setDefaultLocale,
+    normalizeLocale,
     LOCALE_COOKIE_NAME,
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
@@ -42,13 +43,23 @@ export interface LocaleMiddlewareOptions {
  * runtime. Without this, server-side `getSupportedLocales()` / `getDefaultLocale()`
  * (used by the hydration payload builder and the `__()` fallback chain) would
  * return the hardcoded defaults instead of the real values.
+ *
+ * Also resolves a **guaranteed-supported** default: the build default is only
+ * used when it actually has a catalog; otherwise the first supported locale
+ * wins. This prevents scenarios like `cossack lang publish --locale=es` (only
+ * `es.json`) from anchoring the fallback chain to a catalog-less `'en'`.
  */
 let coreSeeded = false;
+let resolvedDefaultLocale = DEFAULT_LOCALE;
 function seedCoreI18n(): void {
     if (coreSeeded) return;
     coreSeeded = true;
     setSupportedLocales(supportedLocales);
-    if (buildDefaultLocale) setDefaultLocale(buildDefaultLocale);
+    resolvedDefaultLocale =
+        supportedLocales.includes(buildDefaultLocale)
+            ? buildDefaultLocale
+            : supportedLocales[0] || DEFAULT_LOCALE;
+    setDefaultLocale(resolvedDefaultLocale);
 }
 
 function readCookie(c: Context, name: string): string | undefined {
@@ -69,12 +80,6 @@ function readCookie(c: Context, name: string): string | undefined {
 
 function isSupported(locale: string | undefined): locale is string {
     return !!locale && supportedLocales.some((s: string) => s.toLowerCase() === locale!.toLowerCase());
-}
-
-function normalizeSupported(target: string): string | undefined {
-    const lower = target.toLowerCase();
-    const found = supportedLocales.find((s: string) => s.toLowerCase() === lower);
-    return found;
 }
 
 /**
@@ -112,8 +117,8 @@ export function createLocaleMiddleware(
 
         // 1. Explicit user choice via cookie.
         const cookieLocale = readCookie(c, LOCALE_COOKIE_NAME);
-        if (isSupported(cookieLocale)) {
-            locale = normalizeSupported(cookieLocale);
+        if (cookieLocale) {
+            locale = normalizeLocale(cookieLocale);
         }
 
         // 2. Accept-Language (opt-in).
@@ -121,20 +126,22 @@ export function createLocaleMiddleware(
             const detected = detectBrowserLocale(
                 c.req.header('accept-language'),
                 supportedLocales,
-                buildDefaultLocale,
+                resolvedDefaultLocale,
             );
-            if (isSupported(detected)) locale = normalizeSupported(detected);
+            if (isSupported(detected)) locale = detected;
         }
 
         // 3. env.APP_LOCALE (deployment default).
         if (!locale) {
             const envLocale = (c.env as any)?.APP_LOCALE;
-            if (isSupported(envLocale)) locale = normalizeSupported(envLocale);
+            if (envLocale) locale = normalizeLocale(envLocale);
         }
 
-        // 4. Build default or hard-coded fallback.
+        // 4. Guaranteed-supported fallback: the resolved default (which is
+        //    always a locale with a catalog), never a hardcoded 'en' that
+        //    might not exist in src/lang/.
         if (!locale) {
-            locale = isSupported(buildDefaultLocale) ? normalizeSupported(buildDefaultLocale)! : DEFAULT_LOCALE;
+            locale = resolvedDefaultLocale;
         }
 
         // Ensure both the active and the default locale's catalogs are
@@ -142,8 +149,8 @@ export function createLocaleMiddleware(
         // default when a key is missing. `ensureCatalogRegistered` skips the
         // work when the catalog is already loaded (common on hot paths).
         await ensureCatalogRegistered(locale);
-        if (buildDefaultLocale && buildDefaultLocale !== locale) {
-            await ensureCatalogRegistered(buildDefaultLocale);
+        if (resolvedDefaultLocale !== locale) {
+            await ensureCatalogRegistered(resolvedDefaultLocale);
         }
 
         const messages = getLocaleCatalog(locale) || {};
