@@ -80,6 +80,37 @@ export type {
 
 export const RootContext = createContext<Cossack | null>(null);
 
+/**
+ * Wraps `fn` in a trailing-edge debounce: each call resets the timer, so `fn`
+ * only runs once after `ms` milliseconds of inactivity (with the latest args).
+ * Shared by `@OnWindow({ debounce })`, `@OnDocument({ debounce })`, and the
+ * `@Debounce(ms)` method decorator.
+ */
+function createDebounce(fn: Function, ms: number) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    return (...args: any[]) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), ms);
+    };
+}
+
+/**
+ * Wraps `fn` in a leading-edge throttle: the first call runs immediately, and
+ * further calls within the `ms` window are ignored. Shared by
+ * `@OnWindow({ throttle })`, `@OnDocument({ throttle })`, and the
+ * `@Throttle(ms)` method decorator.
+ */
+function createThrottle(fn: Function, ms: number) {
+    let lastCall = 0;
+    return (...args: any[]) => {
+        const now = Date.now();
+        if (now - lastCall >= ms) {
+            lastCall = now;
+            fn(...args);
+        }
+    };
+}
+
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     // Standard Properties
     protected container?: Element;
@@ -764,34 +795,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private setupEventListeners() {
         if (this.isServer) return;
 
-        // Throttle helper
-        const throttle = (fn: Function, ms: number) => {
-            let lastCall = 0;
-            return (...args: any[]) => {
-                const now = Date.now();
-                if (now - lastCall >= ms) {
-                    lastCall = now;
-                    fn(...args);
-                }
-            };
-        };
-
-        // Debounce helper
-        const debounce = (fn: Function, ms: number) => {
-            let timer: ReturnType<typeof setTimeout> | null = null;
-            return (...args: any[]) => {
-                if (timer) clearTimeout(timer);
-                timer = setTimeout(() => fn(...args), ms);
-            };
-        };
-
         // Helper to attach and track events, with optional throttle/debounce
         const attach = (target: EventTarget, eventName: string, method: Function, options?: { throttle?: number; debounce?: number }) => {
             let handler = method.bind(this);
             if (options?.throttle) {
-                handler = throttle(handler, options.throttle);
+                handler = createThrottle(handler, options.throttle);
             } else if (options?.debounce) {
-                handler = debounce(handler, options.debounce);
+                handler = createDebounce(handler, options.debounce);
             }
             target.addEventListener(eventName, handler as EventListener);
             this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler as EventListener));
@@ -836,6 +846,41 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
             }
         }
+    }
+
+    /**
+     * Wraps methods decorated with `@Debounce(ms)` / `@Throttle(ms)` so any
+     * direct call to them is rate-limited. Runs client-only and *after* server
+     * method proxies are installed (`bootstrap` runs proxying before
+     * `_frameworkMount`), so a `@Server` method gets its RPC *proxy*
+     * debounced/throttled — ideal for search-as-you-type hitting the server.
+     *
+     * Each wrapper closes over its own timer/last-call timestamp, created fresh
+     * per instance, so there is no leakage between component instances.
+     */
+    private setupRateLimitedMethods() {
+        if (this.isServer) return;
+
+        const apply = (metaKey: 'cossack:debounce' | 'cossack:throttle', wrap: (fn: Function, ms: number) => Function, kind: string) => {
+            const entries: Record<string, number> | undefined = Reflect.getMetadata(metaKey, this.constructor);
+            if (!entries) return;
+            for (const propertyKey of Object.keys(entries)) {
+                const ms = entries[propertyKey];
+                if (!this.hasMethod(propertyKey)) {
+                    console.warn(
+                        `[Cossack] @${kind}(${ms}) is applied to '${propertyKey}' but the method ` +
+                        `is not callable on the client. Pair it with @Client, @Shared, @On, or ` +
+                        `@Server so the method (or its RPC proxy) is available client-side.`,
+                    );
+                    continue;
+                }
+                const bound = (this.getMethod(propertyKey) as any).bind(this);
+                this.setProperty(propertyKey, wrap(bound, ms));
+            }
+        };
+
+        apply('cossack:debounce', createDebounce, 'Debounce');
+        apply('cossack:throttle', createThrottle, 'Throttle');
     }
 
     private setupVisibleTasks() {
@@ -1317,6 +1362,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.setupVisibleTasks();
         this.setupLifecycleEventHandlers();
         this.setupEventListeners();
+        this.setupRateLimitedMethods();
         this.onMount();
     }
 

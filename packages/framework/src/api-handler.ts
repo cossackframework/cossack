@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { Cossack } from '@cossackframework/core';
+import { Cossack, enforceMethodRateLimit } from '@cossackframework/core';
 
 /**
  * Create an API handler for a Cossack class method.
@@ -12,6 +12,15 @@ import { Cossack } from '@cossackframework/core';
 export function createApiHandler(ComponentClass: new () => Cossack, methodName: string) {
     return async (c: Context) => {
         try {
+            // Rate-limit gate: enforce any @RateLimit declared on the handler method.
+            const rateLimited = await enforceMethodRateLimit(
+                c,
+                ComponentClass,
+                methodName,
+                `api:${c.req.method}:${c.req.path}`,
+            );
+            if (rateLimited) return rateLimited;
+
             const instance = new ComponentClass();
             // Manually set the context for the instance
             (instance as any).c = c;

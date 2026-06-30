@@ -76,6 +76,15 @@ These decorators mark code that only runs on the client:
 ### Shared Decorators
 - **`@Shared()`**: Marks a method as safe to run on both client and server. The full implementation is retained in both bundles. Use for pure functions, validation logic, and data transformation utilities.
 
+### Rate-Limiting Decorators (client-only effect)
+- **`@Debounce(ms)`**: Coalesces rapid calls into a single trailing invocation after `ms` of inactivity (latest args win). Composes with `@Client`/`@Server`/`@Shared`/`@On`; with `@Server` it debounces the RPC proxy call. Stores `cossack:debounce` metadata; applied during `_frameworkMount()`. On the server the method runs immediately. Returns `void`.
+- **`@Throttle(ms)`**: Leading-edge throttle — first call runs immediately, further calls ignored for `ms`. Same composition/metadata (`cossack:throttle`) and client-only semantics as `@Debounce`.
+
+### Server-Side Rate Limiting (`RateLimit`) — abuse protection
+- **`@RateLimit({ window?, max?, key?, message? })`**: Method decorator enforced **server-side** at the `/crpc`, `/upload`, and class-based API dispatch boundaries — returns `429 Too Many Requests` (+ `Retry-After`) before the handler runs. Used on `@Server` methods and class-based API `get/post/…`. Client-side `@Debounce`/`@Throttle` are UX-only and bypassable; `@RateLimit` is not.
+- **`RateLimit(options, handler)` / `RateLimit(handler)`**: Higher-order wrapper for **functional API routes** (decorators can't apply to `const` exports). Defaults: `window` 60s, `max` 60.
+- Storage: pluggable via `setRateLimitStore()` (manual) or the **zero-code** `rateLimit` env var (`"durable-object"` / `"redis"` / `"kv"` in `wrangler.jsonc` `vars`, auto-applied lazily in `enforceRateLimit` via `configureRateLimitFromEnv`; a manual `setRateLimitStore` call wins). Built-ins: `InMemoryRateLimitStore` (default, per-process), `DurableObjectRateLimitStore` + `RateLimitDurableObject` (strongly consistent, one DO per key — recommended for strict limits), `RedisRateLimitStore` / `redisRateLimitStoreFromEnv` (zero-dep Upstash REST, cross-runtime), `KvRateLimitStore` (approximate). Default key: user id else client IP. Lives in `packages/core/src/shared/rate-limit.ts`.
+
 ### Computed Properties
 - **`@Computed()`**: Marks a getter method as a computed property (memoized).
 

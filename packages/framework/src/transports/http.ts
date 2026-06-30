@@ -1,5 +1,5 @@
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids';
 
@@ -86,6 +86,25 @@ export function handleUpload(ctx: RouterContext) {
         if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
             return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
         }
+
+        // Rate-limit gate: enforce any @RateLimit declared on the action.
+        // If this is a forwarded @Service method, the metadata lives on the service class.
+        let rateLimitConstructor: unknown = targetInstance.constructor;
+        if (!isRpcCallableAction(rateLimitConstructor, action)) {
+            const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', targetInstance.constructor) || [];
+            for (const t of paramTypes) {
+                if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
+                    const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
+                    if (Object.prototype.hasOwnProperty.call(serverMethods, action)) {
+                        rateLimitConstructor = t;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `upload:${componentRouteId}`);
+        if (rateLimited) return rateLimited;
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
 

@@ -285,6 +285,67 @@ export default class MyComponent extends Cossack {
 }
 ```
 
+## Rate-Limiting Method Calls: `@Debounce` and `@Throttle`
+
+The `{ throttle, debounce }` options above only apply to event listeners attached via `@OnDocument` / `@OnWindow`. To rate-limit **any** method call — for example, a search function invoked from a template handler or called directly — use the `@Debounce(ms)` and `@Throttle(ms)` method decorators.
+
+Both are **client-only** modifiers. On the server the method runs immediately, so they're safe to leave on a method that also runs server-side. They compose with any classification decorator:
+
+- `@Client`, `@Shared`, `@On` keep the real body and rate-limit it.
+- `@Server` rate-limits the **RPC proxy call** on the client — perfect for search-as-you-type that hits the server, so you don't flood it with one request per keystroke.
+
+The wrapped method returns `void` because execution is deferred/coalesced — the original return value is lost. Each component instance gets its own independent timer.
+
+```typescript
+import { Cossack, Page, ClientState, Client, Server, Debounce, Throttle } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page()
+export default class SearchPage extends Cossack {
+    @ClientState()
+    results: string[] = [];
+
+    @ClientState()
+    clicks = 0;
+
+    // Debounced: only the LAST query (after 500ms of inactivity) runs.
+    @Client()
+    @Debounce(500)
+    async runSearch(query: string) {
+        this.results = await this.searchServer(query);
+    }
+
+    // Debounced server RPC: rapid keystrokes send at most one request per pause.
+    @Server()
+    @Debounce(500)
+    async searchServer(query: string) {
+        return await db.search(query);
+    }
+
+    // Throttled: the first click runs immediately; the rest are ignored for 1s.
+    @Client()
+    @Throttle(1000)
+    trackClick() {
+        this.clicks++;
+    }
+
+    render() {
+        return html`<input @input=${(e: InputEvent) => this.runSearch((e.target as HTMLInputElement).value)} />`;
+    }
+}
+```
+
+> **`@Debounce` / `@Throttle` are client-only.** They never wrap anything on the server — a server method runs immediately on every call. On a `@Server` method the decorator wraps the **client-side RPC proxy**, so it only coalesces *that user's* outgoing requests (per browser, independent per user). That is good UX (fewer round-trips while typing), but it is **not** server-side rate limiting — a malicious client can skip the proxy and flood the endpoint. For enforcement that actually blocks abuse, use [`@RateLimit`](/docs/rate-limiting.md).
+
+| Decorator | Edge | Behavior |
+| --- | --- | --- |
+| `@Debounce(ms)` | trailing | Resets a timer on every call; fires **once** after `ms` of inactivity, with the latest arguments. |
+| `@Throttle(ms)` | leading | Fires **immediately** on the first call, then ignores further calls for `ms`. |
+
+> **Note:** Using `@Debounce` / `@Throttle` *without* a classification decorator (`@Client` / `@Server` / `@Shared` / `@On`) leaves the method server-only by default (secure by default), and the framework emits a development warning on the client. Pair them with one of those decorators.
+
+> **These are client-side, UX-only.** They run in the browser, so a malicious client can bypass them. For real abuse protection — rate limiting enforced on the **server** with `429 Too Many Requests` — use [`@RateLimit`](/docs/rate-limiting.md), which works on `@Server` methods, class-based API routes, and functional API routes.
+
 ## Example: All Together
 
 Here is a comprehensive example combining these features:
