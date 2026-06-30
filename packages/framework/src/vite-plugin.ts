@@ -229,9 +229,17 @@ export function cossackLang(): Plugin {
           return file.replace(/\\.json$/, '');
         }
 
+        const defaultLocale = ${JSON.stringify(process.env.APP_LOCALE || 'en')} || 'en';
+
         const supportedLocales = Object.keys(modules)
           .map(extractLocale)
-          .sort((a, b) => (a === 'en' ? -1 : b === 'en' ? 1 : a.localeCompare(b)));
+          .sort((a, b) => {
+            // Default locale first so wildcard / fallback behavior prefers
+            // the configured default (APP_LOCALE) instead of hardcoding 'en'.
+            if (a === defaultLocale) return -1;
+            if (b === defaultLocale) return 1;
+            return a.localeCompare(b);
+          });
 
         // Lazy loaders used by the client. On the server these are pre-resolved
         // (eager), but we keep the same call signature for a unified API.
@@ -252,8 +260,6 @@ export function cossackLang(): Plugin {
           const loaded = await loader();
           return (loaded && loaded.default) ? loaded.default : loaded;
         }
-
-        const defaultLocale = ${JSON.stringify(process.env.APP_LOCALE || 'en')} || 'en';
 
         export { defaultLocale, supportedLocales, catalogs, loadCatalog };
       `;

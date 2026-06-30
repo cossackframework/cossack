@@ -42,7 +42,7 @@ import {
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';
 import { createLocaleMiddleware } from './middlewares/locale';
-import { getLocale, getLocaleCatalog, getSupportedLocales, getDefaultLocale } from '@cossackframework/core';
+import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -97,14 +97,16 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
  *
  * Ships the active locale's catalog plus the default fallback (when they
  * differ). Other locales are code-split and dynamic-imported by `setLocale`.
- * Returns `undefined` when there are no catalogs, so the payload is omitted
- * entirely for apps without `src/lang/`.
+ * Returns `undefined` when no catalog is registered (the project has no
+ * `src/lang/` folder), so the payload is omitted entirely for apps without
+ * localization.
  */
 function buildLocaleHydrationData(): { locale: string; messages: Record<string, string>; defaultLocale?: string; defaultMessages?: Record<string, string> } | undefined {
-  const supported = getSupportedLocales();
-  if (supported.length === 0) return undefined;
   const locale = getLocale();
-  const messages = getLocaleCatalog(locale) || {};
+  const messages = getLocaleCatalog(locale);
+  // No catalog registered → the feature is inactive (no src/lang/ folder).
+  // Omit the payload entirely rather than embedding an empty catalog.
+  if (!messages) return undefined;
   const def = getDefaultLocale();
   const data: any = { locale, messages };
   if (def && def !== locale) {

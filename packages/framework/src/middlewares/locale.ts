@@ -19,6 +19,9 @@ import type { Context, MiddlewareHandler } from 'hono';
 import {
     detectBrowserLocale,
     registerLocale,
+    getLocaleCatalog,
+    setSupportedLocales,
+    setDefaultLocale,
     LOCALE_COOKIE_NAME,
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
@@ -34,12 +37,34 @@ export interface LocaleMiddlewareOptions {
     autoDetectBrowser?: boolean;
 }
 
+/**
+ * One-time synchronization of the build-time locale config into core's i18n
+ * runtime. Without this, server-side `getSupportedLocales()` / `getDefaultLocale()`
+ * (used by the hydration payload builder and the `__()` fallback chain) would
+ * return the hardcoded defaults instead of the real values.
+ */
+let coreSeeded = false;
+function seedCoreI18n(): void {
+    if (coreSeeded) return;
+    coreSeeded = true;
+    setSupportedLocales(supportedLocales);
+    if (buildDefaultLocale) setDefaultLocale(buildDefaultLocale);
+}
+
 function readCookie(c: Context, name: string): string | undefined {
     const header = c.req.header('cookie');
     if (!header) return undefined;
     const re = new RegExp(`(?:^|; )${name}=([^;]*)`);
     const match = header.match(re);
-    return match ? decodeURIComponent(match[1]) : undefined;
+    if (!match) return undefined;
+    try {
+        return decodeURIComponent(match[1]);
+    } catch {
+        // Malformed cookie value (e.g. a stray `%`). Treat as no cookie so
+        // the request falls back to the normal resolution chain instead of
+        // crashing.
+        return undefined;
+    }
 }
 
 function isSupported(locale: string | undefined): locale is string {
@@ -53,6 +78,18 @@ function normalizeSupported(target: string): string | undefined {
 }
 
 /**
+ * Loads and registers a locale catalog into core's catalog Map, skipping the
+ * work if the catalog is already registered. This avoids re-merging the same
+ * object on every request while ensuring the `__()` fallback chain can reach
+ * both the active and the default locale's translations.
+ */
+async function ensureCatalogRegistered(locale: string): Promise<void> {
+    if (getLocaleCatalog(locale)) return;
+    const messages = await loadCatalog(locale);
+    if (messages) registerLocale(locale, messages);
+}
+
+/**
  * Builds a Hono middleware that resolves the request locale and wraps the
  * remainder of the request in a per-request ALS scope.
  */
@@ -62,6 +99,7 @@ export function createLocaleMiddleware(
     const autoDetect = options.autoDetectBrowser === true;
     return async (c, next) => {
         ensureLocaleAlsWired();
+        seedCoreI18n();
 
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
@@ -99,10 +137,16 @@ export function createLocaleMiddleware(
             locale = isSupported(buildDefaultLocale) ? normalizeSupported(buildDefaultLocale)! : DEFAULT_LOCALE;
         }
 
-        const messages = (await loadCatalog(locale)) || {};
-        // Register in the catalog Map so getLocaleCatalog() / the hydration
-        // payload can read it (the ALS store is only used by __()/getLocale()).
-        registerLocale(locale, messages);
+        // Ensure both the active and the default locale's catalogs are
+        // registered in core's Map so `__()` can fall back from active →
+        // default when a key is missing. `ensureCatalogRegistered` skips the
+        // work when the catalog is already loaded (common on hot paths).
+        await ensureCatalogRegistered(locale);
+        if (buildDefaultLocale && buildDefaultLocale !== locale) {
+            await ensureCatalogRegistered(buildDefaultLocale);
+        }
+
+        const messages = getLocaleCatalog(locale) || {};
         return runWithLocale({ locale, messages }, () => next());
     };
 }
