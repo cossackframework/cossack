@@ -413,7 +413,7 @@ export function Debounce(ms: number): MethodDecorator {
     const store = Reflect.hasOwnMetadata('cossack:debounce', target.constructor)
       ? Reflect.getOwnMetadata('cossack:debounce', target.constructor)
       : {};
-    store[propertyKey] = ms;
+    store[String(propertyKey)] = ms;
     Reflect.defineMetadata('cossack:debounce', store, target.constructor);
     return descriptor;
   };
