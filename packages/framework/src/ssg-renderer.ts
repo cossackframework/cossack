@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Cossack, PageOptions, AuthenticatedUser } from '@cossackframework/core';
+import { Cossack, PageOptions, User } from '@cossackframework/core';
 import {
     setSupportedLocales,
     setDefaultLocale,
@@ -192,7 +192,7 @@ export async function renderSsgPage(
   // Get page options for transport type
   const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
-  const user: AuthenticatedUser = { id: 'ssg-user', name: 'SSG User' };
+  const user: User = { id: 'ssg-user' };
   const env = {};
 
   // Bootstrap App

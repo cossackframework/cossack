@@ -154,3 +154,35 @@ describe('delete', () => {
     expect(await deleteCommand(['m', 'log'], ctx)).toBe(0);
   });
 });
+
+describe('generate model / migration / seeder', () => {
+  it('creates a typed User model under src/models/', async () => {
+    expect(await generateCommand(['model', 'User'], ctx)).toBe(0);
+    const file = path.join(tmp, 'src/models/User.ts');
+    expect(fs.existsSync(file)).toBe(true);
+    const content = fs.readFileSync(file, 'utf8');
+    expect(content).toContain('export interface UserRow');
+    expect(content).toContain("declare module '@cossackframework/database'");
+    expect(content).toContain("declare module '@cossackframework/core'");
+  });
+
+  it('creates a timestamped migration under src/migrations/', async () => {
+    expect(await generateCommand(['migration', 'create_posts'], ctx)).toBe(0);
+    const dir = path.join(tmp, 'src/migrations');
+    const files = fs.readdirSync(dir);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^\d{4}_\d{2}_\d{2}_\d{6}_create_posts\.ts$/);
+    const content = fs.readFileSync(path.join(dir, files[0]), 'utf8');
+    expect(content).toContain('export async function up');
+    expect(content).toContain('export async function down');
+  });
+
+  it('creates a seeder under src/seeders/', async () => {
+    expect(await generateCommand(['seeder', 'users'], ctx)).toBe(0);
+    const file = path.join(tmp, 'src/seeders/users.ts');
+    expect(fs.existsSync(file)).toBe(true);
+    const content = fs.readFileSync(file, 'utf8');
+    expect(content).toContain('export default');
+    expect(content).toContain('async run(db');
+  });
+});

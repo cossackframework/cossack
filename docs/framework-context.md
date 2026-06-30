@@ -16,7 +16,7 @@ The Framework Context API provides universal access to global resources—`env` 
 | Property | Type | Description |
 |----------|------|-------------|
 | `this.env` | `Env` | Cloudflare environment bindings (D1, R2, KV, DOs, etc.) |
-| `this.user` | `AuthenticatedUser \| undefined` | Currently authenticated user (if any) |
+| `this.user` | `User \| undefined` | Currently authenticated user (if any) |
 | `this.c` | `Context` | Hono request context (params, queries, headers, etc.) |
 
 ---
@@ -108,12 +108,23 @@ export class UserGreeting extends Cossack {
 
 ### User Interface
 
-The `AuthenticatedUser` interface is defined as:
+The `User` interface defaults to a minimal shape and is intended to be augmented
+from `src/models/User.ts` via declaration merging so `this.user` reflects your
+app's real user columns:
 
 ```typescript
-interface AuthenticatedUser {
+interface User {
     id: string;
-    [key: string]: any; // Additional user properties
+}
+```
+
+```typescript
+// src/models/User.ts
+declare module '@cossackframework/core' {
+    interface User {
+        email: string;
+        name: string;
+    }
 }
 ```
 

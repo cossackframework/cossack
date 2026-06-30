@@ -32,6 +32,13 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Images](/docs/images.md)
 - [Links](/docs/links.md)
 
+## Database
+
+- [Database](/docs/database.md)
+- [Queries](/docs/queries.md)
+- [Migrations](/docs/migrations.md)
+- [Seeders](/docs/seeders.md)
+
 ## Security
 
 - [Authentication](/docs/authentication.md)

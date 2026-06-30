@@ -19,9 +19,11 @@ const RESPAWN_FLAG = '__COSSACK_SSG_RESPAWNED';
 
 const argv = process.argv.slice(2);
 
-// `ssg` is the only command that needs the tsx loader.
+// `ssg`, `migration`, and `seeder` import the user's `.ts` App/config and the
+// framework/database engine, so they need the tsx loader.
 const [command] = argv;
-const needsTsx = command === 'ssg';
+const needsTsx = command === 'ssg' || command === 'migration' || command === 'migrate' ||
+  command === 'seeder' || command === 'seed';
 
 if (needsTsx && !process.env[RESPAWN_FLAG]) {
   // Resolve tsx from this package's own deps so it is found regardless of cwd.

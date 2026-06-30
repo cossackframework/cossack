@@ -42,6 +42,7 @@ jobs:
         run: |
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
+          pnpm --filter @cossackframework/database vitest --run
           pnpm --filter @cossackframework/framework vitest --run tests/
           pnpm --filter cossack vitest --run
 
@@ -62,6 +63,11 @@ jobs:
 
       - name: Publish @cossackframework/auth
         run: pnpm publish --filter @cossackframework/auth --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/database
+        run: pnpm publish --filter @cossackframework/database --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

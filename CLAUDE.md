@@ -6,6 +6,15 @@
 - This project is the monorepo using pnpm, all packages located at `packages` directory.
 - Check `/specs/architecture.md` for architectural guidelines before making significant changes.
 
+## Database (`@cossackframework/database`)
+- Optional package; add to an app with `npx cossack add database` (prompts dialect, default D1).
+- Built on **Kysely 0.29** (re-exported — don't install kysely separately). Custom D1 and libSQL/Turso dialects (the community ones are stale). Postgres/MySQL are deferred.
+- Querying: `this.c.get('db')` or `getDb(c)` in routes, or the global `db()` helper (AsyncLocalStorage, scoped per-request by `createDbMiddleware`). Requires the `dbMiddleware` option on `createApp()`.
+- Typing: the `Database` interface (table→row) and `User` (from core) are empty by default and augmented via `declare module` from `src/models/*.ts`.
+- Migrations/seeders live under `src/migrations/` and `src/seeders/`. CLI: `cossack migration up|down|status`, `cossack seeder run`, `cossack generate model|migration|seeder <name>`.
+- D1 has no interactive transactions — use `db.batch([...])` for atomic writes. The migrator is unaffected (SQLite adapter reports `supportsTransactionalDdl: false`).
+
+
 ## 1. High-Level Project Goal
 
 Cossack is a modern, full-stack TypeScript framework. The core goal is to enable developers to write applications with a unified syntax on only one component that runs on both the server (Cloudflare Workers, Node.js) and the client. Client and server methods can call each other directly without complex `fetch()`, instead, the framework setups proxy between them.
@@ -25,6 +34,7 @@ The project is a `pnpm` workspace.
 -   **`@cossackframework/node-adapter`**: The Node.js runtime adapter.
 -   **`@cossackframework/framework`**: The meta framework package
 -   **`@cossackframework/auth`**: Auth package
+-   **`@cossackframework/database`**: Database support — Kysely-based query builder with D1 + Turso dialects, migrations, and seeders. Re-exports Kysely. Optional; add via `cossack add database`.
 -   **`@cossackframework/test-utils`**: Test helpers
 -   **`@cossackframework/create-cossack-app`**: `create-cossack-app` CLI.
 

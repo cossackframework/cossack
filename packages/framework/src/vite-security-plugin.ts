@@ -58,6 +58,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     if (id.includes('@cossackframework/core')) return false;
     if (id.includes('@cossackframework/renderer')) return false;
     if (id.includes('@cossackframework/auth')) return false;
+    if (id.includes('@cossackframework/database')) return false;
 
     // Only process TypeScript files in user code
     return id.endsWith('.ts') || id.endsWith('.tsx') || id.endsWith('.mts');

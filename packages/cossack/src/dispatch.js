@@ -13,6 +13,8 @@ import { createCommand } from './commands/create.js';
 import { ssgCommand } from './commands/ssg.js';
 import { addCommand } from './commands/add.js';
 import { langCommand } from './commands/lang.js';
+import { migrationCommand } from './commands/migration.js';
+import { seederCommand } from './commands/seeder.js';
 import { devCommand } from './commands/dev.js';
 import { buildCommand } from './commands/build.js';
 import { startCommand } from './commands/start.js';
@@ -31,6 +33,8 @@ const COMMANDS = {
   delete: { run: deleteCommand, aliases: ['d'] },
   add: { run: addCommand, aliases: [] },
   lang: { run: langCommand, aliases: [] },
+  migration: { run: migrationCommand, aliases: ['migrate'] },
+  seeder: { run: seederCommand, aliases: ['seed'] },
   // introspection
   routes: { run: routesCommand, aliases: [] },
   info: { run: infoCommand, aliases: [] },
@@ -89,12 +93,16 @@ Commands:
   dev                          Start the dev server (vite dev).
   build                        Production build (vite build && cossack ssg).
   start                        Start the production server.
-  generate <type> <name> (g)   Generate page/component/layout/middleware/service.
+  generate <type> <name> (g)   Generate page/component/layout/middleware/service/model/migration/seeder.
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
+                                      model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (e.g. auth).
+  add <feature>                Add a feature (auth, database).
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
+  migration <sub> (migrate)    Run Kysely migrations under src/migrations/.
+                               Subcommands: up, down, status.
+  seeder <sub> (seed)          Run seeders under src/seeders/. Subcommands: run.
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
