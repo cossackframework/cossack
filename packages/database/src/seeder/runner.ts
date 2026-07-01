@@ -1,6 +1,7 @@
 // src/seeder/runner.ts
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { DbClient } from '../types';
 
 export interface Seeder {
@@ -31,7 +32,14 @@ export interface RunSeedersOptions {
  */
 export async function runSeeders(options: RunSeedersOptions): Promise<string[]> {
     const folder = options.folder ?? defaultSeedersFolder();
-    const files = (await fs.readdir(folder)).filter(
+    let entries: string[];
+    try {
+        entries = await fs.readdir(folder);
+    } catch (err: any) {
+        if (err.code === 'ENOENT') return [];
+        throw err;
+    }
+    const files = entries.filter(
         (f) => (f.endsWith('.ts') || f.endsWith('.js')) && !f.endsWith('.d.ts'),
     );
     const filtered = options.only
@@ -42,7 +50,7 @@ export async function runSeeders(options: RunSeedersOptions): Promise<string[]> 
     const ran: string[] = [];
     for (const file of filtered) {
         const fullPath = path.resolve(folder, file);
-        const mod = await import(`${fullPath}?t=${Date.now()}`);
+        const mod = await import(`${pathToFileURL(fullPath).href}?t=${Date.now()}`);
         const seeder: Seeder = mod.default ?? mod;
         if (typeof seeder?.run !== 'function') {
             throw new Error(`Seeder "${file}" has no \`run(db)\` method (or default export).`);

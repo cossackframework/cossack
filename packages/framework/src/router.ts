@@ -298,7 +298,7 @@ export interface CreateAppOptions {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
-  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: unknown } }>();
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>();
 
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {

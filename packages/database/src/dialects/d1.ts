@@ -1,11 +1,11 @@
 // src/dialects/d1.ts
 import {
-    CompiledQuery,
     SqliteAdapter,
     SqliteIntrospector,
     SqliteQueryCompiler,
 } from 'kysely';
 import type {
+    CompiledQuery,
     DatabaseConnection,
     DatabaseIntrospector,
     Dialect,
@@ -61,14 +61,20 @@ class D1Driver implements Driver {
     async acquireConnection(): Promise<DatabaseConnection> {
         return this.connection;
     }
-    async beginTransaction(connection: DatabaseConnection): Promise<void> {
-        await connection.executeQuery(CompiledQuery.raw('BEGIN'));
+    async beginTransaction(): Promise<void> {
+        throw new Error(
+            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+        );
     }
-    async commitTransaction(connection: DatabaseConnection): Promise<void> {
-        await connection.executeQuery(CompiledQuery.raw('COMMIT'));
+    async commitTransaction(): Promise<void> {
+        throw new Error(
+            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+        );
     }
-    async rollbackTransaction(connection: DatabaseConnection): Promise<void> {
-        await connection.executeQuery(CompiledQuery.raw('ROLLBACK'));
+    async rollbackTransaction(): Promise<void> {
+        throw new Error(
+            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+        );
     }
     async releaseConnection(): Promise<void> {}
     async destroy(): Promise<void> {}

@@ -9,7 +9,7 @@
 ## Database (`@cossackframework/database`)
 - Optional package; add to an app with `npx cossack add database` (prompts dialect, default D1).
 - Built on **Kysely 0.29** (re-exported — don't install kysely separately). Custom D1 and libSQL/Turso dialects (the community ones are stale). Postgres/MySQL are deferred.
-- Querying: `this.c.get('db')` or `getDb(c)` in routes, or the global `db()` helper (AsyncLocalStorage, scoped per-request by `createDbMiddleware`). Requires the `dbMiddleware` option on `createApp()`.
+- Querying: `this.c.get('db')` or `getDb(c)` in routes, or the global `db()` helper (AsyncLocalStorage, scoped per-request by `createDbMiddleware`). Registered via `src/config/middlewares.ts` (auto-loaded by the framework via `virtual:cossack-middlewares`).
 - Typing: the `Database` interface (table→row) and `User` (from core) are empty by default and augmented via `declare module` from `src/models/*.ts`.
 - Migrations/seeders live under `src/migrations/` and `src/seeders/`. CLI: `cossack migration up|down|status`, `cossack seeder run`, `cossack generate model|migration|seeder <name>`.
 - D1 has no interactive transactions — use `db.batch([...])` for atomic writes. The migrator is unaffected (SQLite adapter reports `supportsTransactionalDdl: false`).

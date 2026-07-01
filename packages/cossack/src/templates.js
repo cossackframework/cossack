@@ -371,13 +371,12 @@ export const dbMiddleware = createDbMiddleware({
 export function dbConfigD1Template() {
   return `import {
   createDatabase,
-  createDbMiddleware,
   type DbClient,
 } from '@cossackframework/database';
 
 /**
- * Build a per-request Kysely client from the D1 binding. Wire this into your
- * app entry (src/index.ts) via createApp({ dbMiddleware: createDbMiddleware({ client: (c) => createClient(c.env) }) }).
+ * Build a per-request Kysely client from the D1 binding.
+ * Used by src/middlewares/db.ts which is registered in src/config/middlewares.ts.
  */
 export function createClient(env: { DB: D1Database }): DbClient {
   return createDatabase({ dialect: 'd1', binding: env.DB });
@@ -409,22 +408,20 @@ export async function getCliClient(): Promise<DbClient> {
 export function dbConfigTursoTemplate() {
   return `import {
   createDatabase,
-  createDbMiddleware,
   type DbClient,
 } from '@cossackframework/database';
-import { createClient } from '@tursodatabase/serverless/compat';
+import { createClient as createTursoClient } from '@tursodatabase/serverless/compat';
 // Fallback driver (battle-tested, same API):
-// import { createClient } from '@libsql/client/web';
+// import { createClient as createTursoClient } from '@libsql/client/web';
 
 /**
- * Build a per-request Kysely client. Wire this into your app entry (src/index.ts):
- *
- *   createApp({ dbMiddleware: createDbMiddleware({ client: (c) => createClient(c.env) }) })
+ * Build a per-request Kysely client.
+ * Used by src/middlewares/db.ts which is registered in src/config/middlewares.ts.
  */
 export function createClient(env: { TURSO_URL: string; TURSO_TOKEN?: string }): DbClient {
   return createDatabase({
     dialect: 'libsql',
-    client: createClient({ url: env.TURSO_URL, authToken: env.TURSO_TOKEN }),
+    client: createTursoClient({ url: env.TURSO_URL, authToken: env.TURSO_TOKEN }),
   });
 }
 

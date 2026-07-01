@@ -47,7 +47,7 @@ It also:
 
 - Adds `@cossackframework/database` to `package.json`.
 - (D1) injects a `[[d1_databases]]` binding block into `wrangler.jsonc`.
-- Wires `dbMiddleware` into your `src/index.ts` `createApp()` call.
+- Registers `dbMiddleware` in `src/config/middlewares.ts` (the global request middleware registry).
 
 Then install deps and apply the migrations:
 

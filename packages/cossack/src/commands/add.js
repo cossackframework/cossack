@@ -379,8 +379,8 @@ Features:
             src/pages/layout.ts.
   database  Adds @cossackframework/database (Kysely + D1/Turso dialects), a default
             User model, starter migrations (users, sessions, roles, permissions,
-            oauth_accounts), a seeder, src/db/config.ts, and wires the dbMiddleware
-            into src/index.ts. Prompts for the dialect (default: D1).
+            oauth_accounts), a seeder, src/db/config.ts, and registers the dbMiddleware
+            in src/config/middlewares.ts. Prompts for the dialect (default: D1).
 
 Options:
   --force, -f       Overwrite existing stub files.

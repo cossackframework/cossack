@@ -34,7 +34,7 @@ async function withClient(root, fn) {
   try {
     return await fn(client);
   } finally {
-    await client.destroy?.().catch(() => {});
+    await (client.destroy?.() ?? Promise.resolve()).catch(() => {});
   }
 }
 
