@@ -50,6 +50,13 @@ declare module 'virtual:cossack-lang' {
   export function loadCatalog(locale: string): Promise<TranslationCatalog | undefined>;
 }
 
+declare module 'virtual:cossack-middlewares' {
+  import type { MiddlewareHandler } from 'hono';
+  /** Ordered list of global request middlewares from `src/config/middlewares.ts`. */
+  const middlewares: MiddlewareHandler[];
+  export default middlewares;
+}
+
 // Programmatic TS loader used by the `cossack ssg` CLI to import user `.ts`
 // pages/App outside of Vite. Typed loosely to avoid coupling to tsx internals.
 declare module 'tsx/esm/api' {

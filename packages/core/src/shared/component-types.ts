@@ -1,7 +1,7 @@
 // src/shared/component-types.ts
 import type { TemplateResult, CossackElement } from '@cossackframework/renderer';
 import type { Context } from 'hono';
-import type { AuthenticatedUser } from './user';
+import type { User } from './user';
 import type { HydratedContext } from './context';
 
 /**
@@ -85,7 +85,7 @@ export interface BootstrapOptions {
   /** Hono request context (server) or hydrated client context. */
   context?: Context | HydratedContext;
   /** Authenticated user, if any. */
-  user?: AuthenticatedUser;
+  user?: User;
   /** Environment bindings (server) or emulated env (client). */
   env?: any;
   /** Current page route identifier. */

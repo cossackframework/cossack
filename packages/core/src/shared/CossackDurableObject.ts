@@ -1,6 +1,6 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
-import type { AuthenticatedUser } from './user';
+import type { User } from './user';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import 'reflect-metadata';
@@ -148,7 +148,7 @@ export abstract class CossackDurableObject {
 
         const userId = request.headers.get('X-User-ID');
         const userData = request.headers.get('X-User-Data');
-        const user: AuthenticatedUser = userId
+        const user: User = userId
             ? (userData ? JSON.parse(userData) : { id: userId })
             : { id: 'anonymous' };
 

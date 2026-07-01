@@ -2,6 +2,7 @@ import path from 'node:path';
 import {
   resolvePageTarget,
   resolveFileTarget,
+  resolveMigrationTarget,
   toPascal,
   toKebab,
 } from '../names.js';
@@ -13,6 +14,9 @@ import {
   layoutTemplate,
   middlewareTemplate,
   serviceTemplate,
+  userModelTemplate,
+  migrationTemplate,
+  seederTemplate,
 } from '../templates.js';
 
 const TYPE_ALIASES = {
@@ -26,6 +30,9 @@ const TYPE_ALIASES = {
   m: 'middleware',
   service: 'service',
   s: 'service',
+  model: 'model',
+  migration: 'migration',
+  seeder: 'seeder',
 };
 
 export async function generateCommand(args, ctx) {
@@ -34,7 +41,7 @@ export async function generateCommand(args, ctx) {
 
   if (!type) {
     console.error(
-      `Unknown generate type: ${typeArg || '(none)'}.\nValid: page(p) component(c) layout(l) middleware(m) service(s)`,
+      `Unknown generate type: ${typeArg || '(none)'}.\nValid: page(p) component(c) layout(l) middleware(m) service(s) model migration seeder`,
     );
     return 1;
   }
@@ -56,6 +63,12 @@ export async function generateCommand(args, ctx) {
       return generateMiddleware(nameArg, root, ctx);
     case 'service':
       return generateService(nameArg, root, ctx);
+    case 'model':
+      return generateModel(nameArg, root, ctx);
+    case 'migration':
+      return generateMigration(nameArg, root, ctx);
+    case 'seeder':
+      return generateSeeder(nameArg, root, ctx);
   }
   return 0;
 }
@@ -115,6 +128,33 @@ async function generateService(raw, root, ctx) {
   return report(target, result, ctx);
 }
 
+/** `cossack g model User` — scaffolds a typed model + Database/User augmentations. */
+async function generateModel(raw, root, ctx) {
+  const t = resolveFileTarget(raw, 'models', { pascal: true });
+  const target = path.resolve(root, `${t.full}${t.ext}`);
+  const content = userModelTemplate();
+  const result = await writeFile(target, content, ctx);
+  return report(target, result, ctx);
+}
+
+/** `cossack g migration create_users` — src/migrations/<timestamp>_create_users.ts */
+async function generateMigration(raw, root, ctx) {
+  const t = resolveMigrationTarget(raw);
+  const target = path.resolve(root, t.full);
+  const content = migrationTemplate();
+  const result = await writeFile(target, content, ctx);
+  return report(target, result, ctx);
+}
+
+/** `cossack g seeder users` — src/seeders/<kebab>.ts */
+async function generateSeeder(raw, root, ctx) {
+  const t = resolveFileTarget(raw, 'seeders', { pascal: false });
+  const target = path.resolve(root, `${t.full}${t.ext}`);
+  const content = seederTemplate();
+  const result = await writeFile(target, content, ctx);
+  return report(target, result, ctx);
+}
+
 function report(target, result, ctx) {
   const rel = path.relative(process.cwd(), target);
   switch (result) {
@@ -137,10 +177,11 @@ function report(target, result, ctx) {
 export function generateHelp() {
   return `cossack generate <type> <name>   (alias: g)
 
-Generate a page, component, layout, middleware, or service.
+Generate a page, component, layout, middleware, service, model, migration, or seeder.
 
 Types:
-  page (p), component (c), layout (l), middleware (m), service (s)
+  page (p), component (c), layout (l), middleware (m), service (s),
+  model, migration, seeder
 
 Examples:
   cossack g p my-page
@@ -150,6 +191,9 @@ Examples:
   cossack g l dashboard
   cossack g m request-logger
   cossack g s counter
+  cossack g model User
+  cossack g migration create_posts
+  cossack g seeder posts
 
 Options:
   --force, -f   Overwrite an existing file.`;

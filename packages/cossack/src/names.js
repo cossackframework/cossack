@@ -103,3 +103,35 @@ export function resolveFileTarget(raw, baseDir, { suffix = '', pascal = true } =
     kebab: toKebab(leaf),
   };
 }
+
+/**
+ * `YYYY_MM_DD_HHMMSS` timestamp for migration file prefixes. Padded so files
+ * sort chronologically. `d` defaults to now (injectable for tests).
+ */
+export function migrationTimestamp(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}_${pad(d.getUTCMonth() + 1)}_${pad(d.getUTCDate())}` +
+    `_${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`
+  );
+}
+
+/**
+ * Resolve a migration file target: `src/migrations/<timestamp>_<snake>.ts`.
+ * The name is snake_cased to match the default migration naming
+ * (`0001_create_users.ts`). `timestamp` is injectable for deterministic tests.
+ */
+export function resolveMigrationTarget(raw, timestamp = migrationTimestamp()) {
+  const parsed = parseName(raw);
+  const snake = toKebab(parsed.leaf || 'migration').replace(/-/g, '_');
+  const dir = ['src', 'migrations', ...parsed.segments].filter(Boolean).join('/');
+  const fileName = `${timestamp}_${snake}.ts`;
+  return {
+    dir,
+    file: fileName,
+    full: `${dir}/${fileName}`,
+    ext: '.ts',
+    kebab: snake,
+    timestamp,
+  };
+}

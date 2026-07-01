@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root';
-import { PageOptions, Cossack, AuthenticatedUser, type Middleware } from '@cossackframework/core';
+import { PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
 import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
 
@@ -29,6 +29,7 @@ function isRpcCallableActionOrService(constructor: unknown, action: unknown): bo
 import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
+import configuredMiddlewares from 'virtual:cossack-middlewares';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
@@ -277,7 +278,6 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
 }
 
 export interface CreateAppOptions {
-  authMiddleware?: (c: any, next: () => Promise<void>) => Promise<void>;
   AppComponent?: new (...args: any[]) => any;
   htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
   /**
@@ -298,7 +298,7 @@ export interface CreateAppOptions {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
-  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: AuthenticatedUser } }>();
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>();
 
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {
@@ -310,13 +310,13 @@ export function createApp(options: CreateAppOptions = {}) {
     allowedOrigins: options.allowedOrigins,
   };
 
-  // Authentication middleware - use custom or default (no-op)
-  app.use('*', (c, next) => {
-    if (options.authMiddleware) {
-      return options.authMiddleware(c, next);
-    }
-    return next();
-  });
+  // Global request middlewares from `src/config/middlewares.ts` (db client,
+  // auth session, feature flags, ...). Each is registered in array order,
+  // before the locale middleware. The registry is the Laravel-style "kernel"
+  // list — definitions live in `src/middlewares/*.ts`. Absent file → no-op.
+  for (const middleware of configuredMiddlewares) {
+    app.use('*', middleware as any);
+  }
 
   // Locale middleware — resolves per-request locale and wraps the remainder
   // of the request in an AsyncLocalStorage scope so `__()` / `getLocale()`

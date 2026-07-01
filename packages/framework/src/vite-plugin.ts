@@ -266,3 +266,50 @@ export function cossackLang(): Plugin {
     },
   };
 }
+
+const middlewaresVirtualModuleId = 'virtual:cossack-middlewares';
+const resolvedMiddlewaresVirtualModuleId = '\0' + middlewaresVirtualModuleId;
+
+/**
+ * Virtual module exposing the project's global request middleware registry.
+ *
+ * Loads `src/config/middlewares.ts` (if present) — an ordered array of Hono
+ * `MiddlewareHandler`s (db client, auth session, feature flags, ...). This is
+ * the Laravel-style "kernel" list: middleware definitions live in
+ * `src/middlewares/*.ts`, and `src/config/middlewares.ts` only holds the
+ * ordered references. `createApp()` imports this module and registers each
+ * handler with `app.use('*', ...)` in array order.
+ *
+ * Absent file → empty array (existing apps without the registry are unaffected).
+ * Client environment → empty array (middlewares only run on the server).
+ *
+ * Emits:
+ * ```ts
+ * const middlewares: MiddlewareHandler[];
+ * export default middlewares;
+ * ```
+ */
+export function cossackMiddlewares(): Plugin {
+  return {
+    name: 'cossack-middlewares',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === middlewaresVirtualModuleId) return resolvedMiddlewaresVirtualModuleId;
+    },
+    load(id) {
+      if (id !== resolvedMiddlewaresVirtualModuleId) return;
+      const isSsrEnvironment = this.environment?.name !== 'client';
+      if (!isSsrEnvironment) {
+        return `const middlewares = [];\nexport default middlewares;\n`;
+      }
+      return `
+        // Loads src/config/middlewares.ts (if present). Globs a single
+        // well-known path so the absence of the file resolves to [].
+        const modules = import.meta.glob('/src/config/middlewares.ts', { eager: true });
+        const mod = modules['/src/config/middlewares.ts'];
+        const middlewares = (mod && mod.default) || [];
+        export default middlewares;
+      `;
+    },
+  };
+}

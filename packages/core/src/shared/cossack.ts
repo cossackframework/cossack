@@ -64,7 +64,7 @@ import type {
     CossackInternalState,
     DynamicPropertyAccess,
 } from './component-types';
-import type { AuthenticatedUser } from './user';
+import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
@@ -117,7 +117,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     protected isServer: boolean = isServer;
     
     private _c!: Context;
-    private _user?: AuthenticatedUser;
+    private _user?: User;
     private _env!: Env;
 
     protected get c(): Context { 
@@ -127,8 +127,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._c = val; 
     }
 
-    protected get user(): AuthenticatedUser | undefined { return this._user || this.consume(UserContext); }
-    protected set user(val: AuthenticatedUser | undefined) { this._user = val; }
+    protected get user(): User | undefined { return this._user || this.consume(UserContext); }
+    protected set user(val: User | undefined) { this._user = val; }
 
     protected get env(): Env { return this._env || this.consume(EnvContext) as Env; }
     protected set env(val: Env) { this._env = val; }
@@ -677,7 +677,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     private _actionQueue: Promise<void> = Promise.resolve();
 
-    public executeAction(action: string, payload: any[], user: AuthenticatedUser | undefined, clientContext: unknown): Promise<void> {
+    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown): Promise<void> {
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
