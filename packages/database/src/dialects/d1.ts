@@ -22,9 +22,11 @@ import type { D1DatabaseLike } from '../types';
  * that talks to the `D1Database` binding (`prepare().bind().all()`). No extra
  * runtime dependencies — the D1 binding is provided by the Workers runtime.
  *
- * Note: D1 does not support interactive (`BEGIN`/`COMMIT`) transactions; use
- * `db.batch([...])` for atomic multi-statement writes. Kysely's migrator is
- * unaffected because the SQLite adapter reports `supportsTransactionalDdl: false`.
+ * Note: D1 does not support interactive (`BEGIN`/`COMMIT`) transactions. For
+ * atomic multi-statement writes, use the raw D1 binding's `.batch([...])`
+ * (e.g. `c.env.DB.batch([...])` with prepared statements) — Kysely has no
+ * `.batch()`. Kysely's migrator is unaffected because the SQLite adapter
+ * reports `supportsTransactionalDdl: false`.
  */
 export class D1Dialect implements Dialect {
     constructor(private readonly d1: D1DatabaseLike) {}
@@ -63,17 +65,17 @@ class D1Driver implements Driver {
     }
     async beginTransaction(): Promise<void> {
         throw new Error(
-            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+            'D1 does not support interactive transactions. For atomic multi-statement writes, use the raw D1 binding (.batch([...]), e.g. c.env.DB.batch([...])) — Kysely has no .batch().',
         );
     }
     async commitTransaction(): Promise<void> {
         throw new Error(
-            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+            'D1 does not support interactive transactions. For atomic multi-statement writes, use the raw D1 binding (.batch([...]), e.g. c.env.DB.batch([...])) — Kysely has no .batch().',
         );
     }
     async rollbackTransaction(): Promise<void> {
         throw new Error(
-            'D1 does not support interactive transactions. Use db.batch([...]) for atomic multi-statement writes instead.',
+            'D1 does not support interactive transactions. For atomic multi-statement writes, use the raw D1 binding (.batch([...]), e.g. c.env.DB.batch([...])) — Kysely has no .batch().',
         );
     }
     async releaseConnection(): Promise<void> {}

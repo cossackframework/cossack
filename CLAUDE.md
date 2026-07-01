@@ -12,7 +12,7 @@
 - Querying: `this.c.get('db')` or `getDb(c)` in routes, or the global `db()` helper (AsyncLocalStorage, scoped per-request by `createDbMiddleware`). Registered via `src/config/middlewares.ts` (auto-loaded by the framework via `virtual:cossack-middlewares`).
 - Typing: the `Database` interface (table→row) and `User` (from core) are empty by default and augmented via `declare module` from `src/models/*.ts`.
 - Migrations/seeders live under `src/migrations/` and `src/seeders/`. CLI: `cossack migration up|down|status`, `cossack seeder run`, `cossack generate model|migration|seeder <name>`.
-- D1 has no interactive transactions — use `db.batch([...])` for atomic writes. The migrator is unaffected (SQLite adapter reports `supportsTransactionalDdl: false`).
+- D1 has no interactive transactions — for atomic multi-statement writes, use the raw D1 binding's `.batch([...])` (`c.env.DB.batch([...])`); Kysely has no `.batch()`. The migrator is unaffected (SQLite adapter reports `supportsTransactionalDdl: false`).
 
 
 ## 1. High-Level Project Goal

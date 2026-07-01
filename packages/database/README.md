@@ -140,7 +140,7 @@ cossack seeder run
 ## Transactions
 
 - **Turso / libSQL** supports interactive transactions via Kysely's `db().transaction().execute(async (trx) => { ... })`.
-- **D1** does **not** support `BEGIN`/`COMMIT` through its binding. For atomic multi-statement writes, use the raw D1 binding's `.batch([...])` with prepared statements; for single-statement writes, just call the Kysely builder directly.
+- **D1** does **not** support `BEGIN`/`COMMIT` through its binding. For atomic multi-statement writes, use the raw D1 binding's `.batch([...])` with prepared statements (e.g. `c.env.DB.batch([...])`) — Kysely has no `.batch()`; for single-statement writes, just call the Kysely builder directly.
 
 The migrator is unaffected — the SQLite adapter reports `supportsTransactionalDdl: false`, so each migration runs without a transaction wrapper.
 
