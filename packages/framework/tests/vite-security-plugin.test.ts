@@ -1680,4 +1680,24 @@ export class Page extends Cossack {
     expect(result).toContain('FIELD_HELPER_SECRET');
     expect(result).not.toContain("__cossack_proxies?.get('helper')");
   });
+
+  it('warns and skips stripping when the source cannot be parsed', () => {
+    // Security plugin: a parse failure must NOT silently ship server-only code.
+    // It returns the source unchanged (fail-open is unavoidable — we can't strip
+    // what we can't parse) but emits a console.warn naming the file.
+    const original = console.warn;
+    const warnings: string[] = [];
+    console.warn = (msg: string) => warnings.push(String(msg));
+    try {
+      // Intentionally malformed TypeScript that Oxc rejects.
+      const code = `export class extends Cossack { @Server() x(`;
+      const result = transformCossackClass(code, 'broken.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      // Source is returned unchanged.
+      expect(result).toBe(code);
+      // A warning naming the file was emitted.
+      expect(warnings.some((w) => w.includes('broken.ts') && w.includes('SKIPPED'))).toBe(true);
+    } finally {
+      console.warn = original;
+    }
+  });
 });

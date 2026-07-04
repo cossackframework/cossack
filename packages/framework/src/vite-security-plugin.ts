@@ -110,19 +110,24 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 
 /**
  * Parse `code` as TypeScript and return the ESTree-ish `Program`, or `null` if
- * the source does not parse (the plugin then leaves the file untouched rather
- * than crashing the build). `lang` is inferred from `id`'s extension so `.tsx`
- * gets the JSX-aware grammar.
+ * the source does not parse.
+ *
+ * Only `.ts` is supported — the framework's pages/components are TypeScript
+ * without JSX, so we hardcode the `ts` grammar. (JSX/`.tsx` support can be
+ * re-added by switching on a cleaned filename if ever needed.)
  *
  * Uses `parseSync` (the non-deprecated Oxc entry point re-exported by Vite).
  * Unlike `parseAst`, `parseSync` does not throw on parse errors — it returns a
- * `ParseResult` with an `.errors` array, which we check to preserve the safe
- * default of skipping unparseable files.
+ * `ParseResult` with an `.errors` array. On failure we return `null`; the
+ * caller decides whether to warn.
+ *
+ * The filename passed to `parseSync` is a fixed placeholder (not the Vite
+ * module `id`, which can carry query strings like `?import` and is not a valid
+ * path for Oxc's filename handling).
  */
-function parseProgram(code: string, id: string): any | null {
-  const lang: 'ts' | 'tsx' = id.endsWith('.tsx') ? 'tsx' : 'ts';
+function parseProgram(code: string): any | null {
   try {
-    const result = parseSync(id, code, { lang });
+    const result = parseSync('cossack-security.ts', code, { lang: 'ts' });
     if (result.errors && result.errors.length > 0) return null;
     return result.program;
   } catch {
@@ -537,11 +542,21 @@ export function transformCossackClass(
 ): string {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
-  // `id` is threaded so `.tsx` sources use the JSX-aware grammar.
-  code = stripSsgGenerateStaticParams(code, id);
+  code = stripSsgGenerateStaticParams(code);
 
-  const program = parseProgram(code, id);
-  if (!program) return code; // parse error — leave untouched (safe default)
+  const program = parseProgram(code);
+  if (!program) {
+    // Fail-open on parse errors (we can't strip what we can't parse), but warn
+    // loudly so a parse failure never silently ships server-only code in the
+    // client bundle. This is a security plugin — silent skip is the wrong default.
+    console.warn(
+      `[Cossack Security] Could not parse ${id} with Oxc; server-only code ` +
+        `stripping was SKIPPED for this file. If it contains @Server methods, ` +
+        `their bodies may leak into the client bundle. Check the syntax or ` +
+        `report a parser bug.`
+    );
+    return code;
+  }
 
   // Collect, per class, the splices to apply. We record replacements as
   // file-relative offsets and apply them in reverse order at the end.
@@ -666,9 +681,9 @@ function findConstructor(cls: any): any | null {
  *
  * Exported for unit testing.
  */
-export function stripSsgGenerateStaticParams(code: string, id: string = 'ssg-strip.ts'): string {
+export function stripSsgGenerateStaticParams(code: string): string {
   if (!code.includes('generateStaticParams')) return code;
-  const program = parseProgram(code, id);
+  const program = parseProgram(code);
   if (!program) return code;
 
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];

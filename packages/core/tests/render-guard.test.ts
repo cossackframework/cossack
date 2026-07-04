@@ -8,6 +8,9 @@ import {
 } from '../src/shared/server-fn';
 import { composeHead } from '../src/shared/head';
 import type { HeadContext, HeadValue } from '../src/shared/head';
+import { Cossack } from '../src/shared/cossack';
+import { Page } from '../src/shared/decorators';
+import type { TemplateResult } from '@cossackframework/renderer';
 
 /**
  * Coverage for the runtime render-phase guard retained after the
@@ -122,20 +125,30 @@ describe('render-phase guard — head()', () => {
     // `_getWrappedTemplate()` directly (router.ts / ssg-renderer.ts / client
     // app.ts), bypassing `_render()`. The guard must live in
     // `_getWrappedTemplate` itself so those paths are covered, not just the
-    // `_render`/`performUpdate` internal calls.
-    //
-    // We can't easily build a full Cossack instance in this unit test, so we
-    // verify the chokepoint indirectly: a render()/loadingTemplate() body that
-    // calls assertNotRendering() must observe isRendering()===true even when
-    // invoked via _getWrappedTemplate rather than _render. The render-guard
-    // unit tests above already cover the flag; this test exists to document the
-    // architectural invariant and guard against someone moving the wrap back
-    // out to _render only.
-    enterRender();
-    expect(isRendering()).toBe(true);
-    exitRender();
-    // After exit, a direct assertNotRendering is a no-op (proves balance).
+    // `_render`/`performUpdate` internal calls. This test exercises the real
+    // chokepoint by calling `_getWrappedTemplate` on a Cossack instance and
+    // observing the render flag from inside `render()`.
     (globalThis as any).process.env.NODE_ENV = 'development';
-    expect(() => assertNotRendering()).not.toThrow();
+
+    let observedDuringRender: boolean | null = null;
+    @Page({})
+    class GuardProbe extends Cossack<{}> {
+      render(): TemplateResult | null {
+        observedDuringRender = isRendering();
+        return null;
+      }
+    }
+    const instance = new GuardProbe();
+
+    // Before: not rendering.
+    expect(isRendering()).toBe(false);
+
+    // Direct call to the composition chokepoint (not _render()).
+    instance._getWrappedTemplate();
+
+    // During render(), the flag was observed true.
+    expect(observedDuringRender).toBe(true);
+    // After: balanced back to false (the try/finally exited the window).
+    expect(isRendering()).toBe(false);
   });
 });
