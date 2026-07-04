@@ -54,6 +54,15 @@ export function toPascal(s) {
     .join('');
 }
 
+/** Title Case: "my-page" / "user_widget" -> "My Page" (words joined by spaces). */
+export function toTitle(s) {
+  return String(s || '')
+    .split(/[-_\s/.]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
+
 /** camelCase: "my-page" -> "myPage". */
 export function toCamel(s) {
   const p = toPascal(s);
@@ -64,16 +73,30 @@ export function toCamel(s) {
  * Resolve a page target from a raw input under `src/pages`.
  * Returns an absolute-ish project-relative path and class name parts.
  *
- *   "my-page"           -> { dir: "src/pages/my-page", file: "index", full: "src/pages/my-page/index", ext: ".ts" }
- *   "/dashboard/foo"    -> { dir: "src/pages/dashboard/foo", ... }
- *   "MyPage.md"         -> ext: ".md"
+ *   "my-page"                          -> { dir: "src/pages/my-page", file: "index", full: "src/pages/my-page/index", ext: ".ts" }
+ *   "/dashboard/foo"                   -> { dir: "src/pages/dashboard/foo", ... }
+ *   "MyPage.md"                        -> ext: ".md"
+ *   "my-page", { noIndex: true }       -> { dir: "src/pages", file: "my-page", full: "src/pages/my-page", ext: ".ts" }
+ *   "/dashboard/foo", { noIndex: true }-> { dir: "src/pages/dashboard", file: "foo", full: "src/pages/dashboard/foo", ext: ".ts" }
  */
-export function resolvePageTarget(raw, { defaultExt = '.ts' } = {}) {
+export function resolvePageTarget(raw, { defaultExt = '.ts', noIndex = false } = {}) {
   const parsed = parseName(raw);
   const ext = parsed.ext || defaultExt;
   const leafDir = toKebab(parsed.leaf) || 'page';
-  const dir = ['src/pages', ...parsed.segments, leafDir].join('/');
   const pascal = toPascal(parsed.leaf || 'page');
+  if (noIndex) {
+    const dir = ['src/pages', ...parsed.segments].join('/');
+    return {
+      dir,
+      file: leafDir,
+      full: ['src/pages', ...parsed.segments, leafDir].join('/'),
+      ext,
+      className: `${pascal}Page`,
+      pascal,
+      kebab: toKebab(parsed.leaf),
+    };
+  }
+  const dir = ['src/pages', ...parsed.segments, leafDir].join('/');
   return {
     dir,
     file: 'index',

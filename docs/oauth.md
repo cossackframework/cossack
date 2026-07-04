@@ -92,13 +92,23 @@ The `secret` signs the state cookie. Generate one with, for example,
 
 ## 3. Mount the routes
 
+Register `auth.middleware` in `src/config/middlewares.ts` (the registry
+`createApp()` auto-loads), then mount the OAuth routes in `src/index.ts`:
+
+```ts
+// src/config/middlewares.ts
+import type { MiddlewareHandler } from 'hono';
+import { auth } from '../auth';
+const middlewares: MiddlewareHandler[] = [auth.middleware];
+export default middlewares;
+```
+
 ```ts
 // src/index.ts
-import { Hono } from 'hono';
 import { createApp } from '@cossackframework/framework';
 import { oauth, auth } from './auth';
 
-const app = createApp({ authMiddleware: auth.middleware });
+const app = createApp({ AppComponent: App, htmlTemplate: template });
 
 app.get('/auth/github/redirect', oauth.redirect('github'));
 app.get('/auth/github/callback', oauth.callback('github', {

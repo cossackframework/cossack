@@ -12,7 +12,15 @@
  * Repeated `--force-file a --force-file b` collects into an array.
  */
 
-const KNOWN_BOOL = new Set(['force', 'f', 'dry-run', 'json', 'verbose', 'apply-template']);
+const KNOWN_BOOL = new Set([
+  'force',
+  'f',
+  'dry-run',
+  'json',
+  'verbose',
+  'apply-template',
+  'head',
+]);
 
 export function parseFlags(argv) {
   const args = [];

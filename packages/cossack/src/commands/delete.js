@@ -85,8 +85,16 @@ export async function deleteCommand(args, ctx) {
 function resolveCandidates(type, raw, root) {
   switch (type) {
     case 'page': {
-      const t = resolvePageTarget(raw);
-      return PAGE_EXTS.map((ext) => path.resolve(root, `${t.full}${ext}`));
+      // Consider both directory-based (index.<ext>) and flat (<name>.<ext>)
+      // page files so `delete` can remove whatever `generate` produced.
+      const index = resolvePageTarget(raw);
+      const flat = resolvePageTarget(raw, { noIndex: true });
+      const out = [];
+      for (const ext of PAGE_EXTS) {
+        out.push(path.resolve(root, `${index.full}${ext}`));
+        if (flat.full !== index.full) out.push(path.resolve(root, `${flat.full}${ext}`));
+      }
+      return out;
     }
     case 'component': {
       const t = resolveFileTarget(raw, 'components', { pascal: true });

@@ -17,9 +17,11 @@
 
 <h1 align="center">The Borderless TypeScript Framework</h1>
 
-A full-stack TypeScript framework for building edge first, real-time web applications, LLM friendly.
+A full-stack TypeScript framework for building edge first, real-time web applications.
 
-Write client and server logics like no boundaries exist. Cossack automatically handles state synchronization, server-side rendering, and real-time updates. Think of it like Phoenix LiveView, but for TypeScript and the edge.
+Write client and server logics in the same class seamlessly. Cossack automatically handles state management, SSR, security. 
+
+Think of it like Phoenix LiveView, or Laravel Livewire, but TypeScript native and edge deployment ready.
 
 ## Quick Start
 
@@ -36,8 +38,9 @@ The CLI will prompt you to choose a runtime adapter:
 
 ## Why Cossack?
 
-No more `fetch()`, no more query libraries, no more client-server boilerplate, even no more client-server components. Cossack is a **full-stack borderless framework** where your server and client code glues together, with security and performance in mind. 
+Cossack is the most advanced TypeScript framework for building modern web applications.
 
+No more `fetch()`, no more query libraries, no more client-server boilerplate, even no more client-server components.
 Your server methods are directly callable from the client, and vice-versa.
 
 ```typescript
@@ -50,7 +53,7 @@ export default class Counter extends Cossack {
 
     increment() {
         // This runs secured on the server. 
-        // The updated state is sent back to the client automatically.
+        // The code is never exposed to the client
         this.count++;
     }
 
@@ -92,14 +95,9 @@ Cossack has a rich set of features that every modern web application needs, plus
 - **LLM friendly**: use less tokens, native TypeScript syntax, easy for LLMs to understand, type check, and generate code
 - *and a lot more features to discover in the [documentation](https://cossack.dev/docs).*
 
-### Per-component Transport Modes
+### Realtime Support in mind
 
-Traditional frameworks rely on a single transport mode, usually HTTP. So in order to write real time applications, you usually to write websockets client and server yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes within the same application:
-
-- **HTTP** *(default)* — Traditional HTTP requests for server communication. Stateless, one-way communication from client to server. Best for non-real-time applications or when real-time updates are not required.
-- **SSE** — Server-Sent Events for real-time updates. Real-time, one-way communication from server to all connected clients. Best for applications that require live updates but do not need bi-directional communication.
-- **Durable Object** — Bi-directional WebSocket connection to a Cloudflare Durable Object. Real-time, all connected clients receive live updates. Best for applications that require bi-directional communication with server-rendered state.
-- **Websocket** — Bi-directional WebSocket connection to a Node.js server. Real-time, all connected clients receive live updates. Best for applications that require bi-directional communication with server-rendered state.
+Traditional frameworks rely on a single transport mode, usually HTTP. So in order to write real time applications, you usually to write websockets client and server yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
 
 ## Learning Cossack
 
@@ -122,7 +120,7 @@ pnpm run dev
 
 ```sh
 ## Unit tests
-pnpm run test
+pnpm run test:unit
 
 ## E2E tests
 pnpm run test:e2e

@@ -1,0 +1,13 @@
+# Cloudflare-style _headers file.
+# https://developers.cloudflare.com/pages/configuration/headers/
+# Served from the build root (Vite copies public/* to dist). Apply edits freely.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Long-cache fingerprinted build assets (Vite emits content-hashed filenames).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

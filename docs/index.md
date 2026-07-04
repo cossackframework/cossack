@@ -12,6 +12,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 ## Getting Started
 
 - [Installation](/docs/installation.md)
+- [Cossack CLI](/docs/cossack-cli.md)
 - [Project Structure](/docs/project-structure.md)
 - [Routing](/docs/routing.md)
 - [Pages](/docs/pages.md)

@@ -5,6 +5,7 @@ import {
   resolveMigrationTarget,
   toPascal,
   toKebab,
+  toTitle,
 } from '../names.js';
 import { writeFile, exists } from '../fs-utils.js';
 import {
@@ -74,15 +75,23 @@ export async function generateCommand(args, ctx) {
 }
 
 async function generatePage(raw, root, ctx) {
-  const t = resolvePageTarget(raw);
+  const noIndex = ctx.flags?.['no-index'] === true || ctx.flags?.ni === true;
+  const t = resolvePageTarget(raw, { noIndex });
   const target = path.resolve(root, `${t.full}${t.ext}`);
-  const title = toPascal(t.kebab || 'page');
+  const defaultTitle = toTitle(t.kebab || 'page');
+  const flagTitle = ctx.flags?.title;
+  const flagDescription = ctx.flags?.description;
+  const title = typeof flagTitle === 'string' && flagTitle ? flagTitle : defaultTitle;
+  const description =
+    typeof flagDescription === 'string' && flagDescription ? flagDescription : defaultTitle;
+  const withHead =
+    ctx.flags?.head === true || flagTitle !== undefined || flagDescription !== undefined;
 
   let content;
   if (t.ext === '.md' || t.ext === '.mdx') {
-    content = pageMdxTemplate({ title });
+    content = pageMdxTemplate({ title, description: flagDescription });
   } else {
-    content = pageTemplate({ className: t.className, title });
+    content = pageTemplate({ className: t.className, title, description, withHead });
   }
 
   const result = await writeFile(target, content, ctx);
@@ -187,8 +196,12 @@ Examples:
   cossack g p my-page
   cossack g p /dashboard/my-page
   cossack g p my-page.md
+  cossack g p my-page --head                        # page with a head() method (SEO)
+  cossack g p my-page --title "My Custom Title" \\
+                       --description "Custom desc"  # custom head() values
+  cossack g p hello --no-index                      # -> src/pages/hello.ts (flat file, no folder)
   cossack g c UserWidget
-  cossack g l dashboard
+  cossack g l admin/dashboard                       # -> src/pages/admin/dashboard/layout.ts
   cossack g m request-logger
   cossack g s counter
   cossack g model User
@@ -196,5 +209,9 @@ Examples:
   cossack g seeder posts
 
 Options:
-  --force, -f   Overwrite an existing file.`;
+  --force, -f        Overwrite an existing file.
+  --head             (page) Include a head() method with title/description.
+  --title <string>   (page) Set the head <title> and <h1>.
+  --description <string>   (page) Set the head description and <p>.
+  --no-index, --ni   (page) Generate a flat src/pages/<name>.ts file instead of <name>/index.ts.`;
 }

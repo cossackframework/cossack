@@ -27,6 +27,7 @@ For slow network conditions or large data fetches where pre-fetching isn't enoug
 This gives the user immediate visual feedback that their navigation is in progress, improving the perceived reliability of the application.
 
 ## 3. Optimistic UI Updates
+
 With the `@Optimistic` decorator, you can eliminate the "waiting for server" feel for interactive actions.
 
 ```typescript
@@ -39,4 +40,8 @@ applyOptimisticIncrement() {
 When the server eventually broadcasts the "true" state, Cossack seamlessly overwrites the optimistic state with the verified value from the server. See the [State Management Guide](./states.md) for more details.
 
 ## 4. Image Optimization
-The built-in `Image` helper ensures your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./image.md) for more details.
+
+The built-in `Image` helper ensures your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./images.md) for more details.
+
+We also provide a `cossack image:optimize` CLI command to automatically optimize all images in your `public` folder. This command scans for the `Image` component in your project and optimizes the images used in the `src` attribute of the component.
+The optimized images will be saved in WebP format, next to the original image.

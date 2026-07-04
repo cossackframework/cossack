@@ -13,8 +13,11 @@ import {
   loginPageTemplate,
   registerPageTemplate,
   forgotPasswordPageTemplate,
+  resetPasswordPageTemplate,
   authMiddlewareTemplate,
   rootLayoutWithAuthTemplate,
+  sessionModelTemplate,
+  authModuleTemplate,
   userModelTemplate,
   dbConfigD1Template,
   dbConfigTursoTemplate,
@@ -26,6 +29,7 @@ import {
   createOauthAccountsMigration,
   seederTemplate,
 } from '../templates.js';
+import { flagList, flagString } from '../flags.js';
 
 const FEATURES = {
   auth: addAuth,
@@ -44,19 +48,98 @@ export async function addCommand(args, ctx) {
   return fn(ctx);
 }
 
+const SUPPORTED_OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
+
+/**
+ * Resolve the auth route group from --path, or default to (auth).
+ * Returns the directory name and the public route paths.
+ */
+async function resolveAuthPaths(ctx) {
+  const flag = flagString(ctx.flags.path) || flagString(ctx.flags.p);
+  const group = flag && flag.length ? flag : '(auth)';
+  // Public route paths: strip parentheses for the URL (route groups are
+  // filesystem-only). e.g. "(auth)" -> "/login", "admin/auth" -> "/admin/auth/login".
+  const urlPrefix = group.replace(/^\((.+)\)$/, '$1');
+  const base = urlPrefix ? `/${urlPrefix}` : '';
+  return {
+    group,
+    pagesDir: `src/pages/${group}`,
+    loginPath: `${base}/login`,
+    registerPath: `${base}/register`,
+    forgotPasswordPath: `${base}/forgot-password`,
+    resetPasswordPath: `${base}/reset-password`,
+  };
+}
+
+/** Resolve OAuth providers from --oauth (comma-list/repeatable) or an interactive prompt. */
+async function resolveOauthProviders(ctx) {
+  const raw = ctx.flags.oauth;
+  let list = [];
+  if (raw === true) {
+    // bare --oauth: prompt
+    if (ctx.dryRun) return ['github'];
+    const resp = await prompts(
+      {
+        type: 'multiselect',
+        name: 'providers',
+        message: 'Which OAuth providers?',
+        choices: SUPPORTED_OAUTH_PROVIDERS.map((p) => ({
+          title: p.charAt(0).toUpperCase() + p.slice(1),
+          value: p,
+        })),
+      },
+      { onCancel: () => process.exit(1) },
+    );
+    list = resp.providers ?? [];
+  } else if (raw) {
+    list = flagList(raw)
+      .flatMap((v) => String(v).split(','))
+      .map((v) => v.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  const invalid = list.filter((p) => !SUPPORTED_OAUTH_PROVIDERS.includes(p));
+  if (invalid.length) {
+    console.error(
+      `  error   Unknown OAuth provider(s): ${invalid.join(', ')}. Supported: ${SUPPORTED_OAUTH_PROVIDERS.join(', ')}`,
+    );
+    process.exit(1);
+  }
+  return list;
+}
+
 async function addAuth(ctx) {
   const root = await findProjectRoot(ctx.cwd);
 
-  // 1. add dependency to package.json
+  // 0. resolve options
+  const paths = await resolveAuthPaths(ctx);
+  const oauthProviders = await resolveOauthProviders(ctx);
+  const publicPaths = [
+    paths.loginPath,
+    paths.registerPath,
+    paths.forgotPasswordPath,
+    paths.resetPasswordPath,
+  ];
+
+  // 1. ensure database support (auth needs users + sessions tables)
+  if (!(await exists(path.resolve(root, 'src/db/config.ts')))) {
+    const dialect = (await resolveDialect(ctx));
+    console.log('  adding database support (required by auth)...');
+    await ensureDatabase(root, { dialect, ctx });
+  }
+
+  // 2. add auth dependency
   await addDependency(root, '@cossackframework/auth', resolveAuthVersion(), ctx);
 
-  // 2. scaffold route-group pages + layout under src/pages/(auth)/
+  // 3. scaffold auth module + session model + pages + middleware
   const files = [
-    ['src/pages/(auth)/layout.ts', authLayoutTemplate()],
-    ['src/pages/(auth)/login/index.ts', loginPageTemplate()],
-    ['src/pages/(auth)/register/index.ts', registerPageTemplate()],
-    ['src/pages/(auth)/forgot-password/index.ts', forgotPasswordPageTemplate()],
-    ['src/middlewares/auth.ts', authMiddlewareTemplate()],
+    ['src/models/Session.ts', sessionModelTemplate()],
+    ['src/auth.ts', authModuleTemplate({ publicPaths, loginPath: paths.loginPath, oauthProviders })],
+    [`${paths.pagesDir}/layout.ts`, authLayoutTemplate()],
+    [`${paths.pagesDir}/login/index.ts`, loginPageTemplate({ loginPath: paths.loginPath, registerPath: paths.registerPath, oauthProviders })],
+    [`${paths.pagesDir}/register/index.ts`, registerPageTemplate({ loginPath: paths.loginPath })],
+    [`${paths.pagesDir}/forgot-password/index.ts`, forgotPasswordPageTemplate({ loginPath: paths.loginPath })],
+    [`${paths.pagesDir}/reset-password/index.ts`, resetPasswordPageTemplate({ loginPath: paths.loginPath })],
+    ['src/middlewares/auth.ts', authMiddlewareTemplate({ publicPaths, loginPath: paths.loginPath })],
   ];
 
   for (const [rel, content] of files) {
@@ -65,34 +148,83 @@ async function addAuth(ctx) {
     reportFile(rel, result, ctx);
   }
 
-  // 3. wire the middleware into the root layout (src/pages/layout.ts)
-  await wireRootLayout(root, ctx);
+  // 4. register global middleware (auth session + guard) in
+  //    src/config/middlewares.ts (the registry createApp auto-loads).
+  await registerMiddleware(root, {
+    importLine: "import { auth } from '../auth';\nimport { authGuard } from '../middlewares/auth';",
+    entry: '  auth.middleware,\n  authGuard,',
+    marker: 'authGuard',
+    label: 'auth',
+    ctx,
+  });
+
+  // 5. wire the send_email binding into wrangler.jsonc (for password-reset emails)
+  await wireSendEmailBinding(root, ctx);
+
+  // 6. ensure a root layout exists (renders children; middleware is centralized)
+  await ensureRootLayout(root, ctx);
 
   console.log(
-    '\nAuth stub added. Resulting routes: /login, /register, /forgot-password\n' +
-      'Next: install deps (`pnpm install`) and fill in the stubs in\n' +
-      '  src/middlewares/auth.ts and the (auth) pages.',
+    `\nAuth added. Routes: ${paths.loginPath}, ${paths.registerPath}, ${paths.forgotPasswordPath}, ${paths.resetPasswordPath}\n` +
+      'Next:\n' +
+      '  1. Run `pnpm install`.\n' +
+      '  2. Apply migrations: `cossack migration up`.\n' +
+      (oauthProviders.length
+        ? `  3. Set OAUTH_SECRET + provider credentials (${oauthProviders.map((p) => p.toUpperCase() + '_CLIENT_ID/SECRET').join(', ')}) in .dev.vars,\n     and mount the oauth redirect/callback routes in src/index.ts.`
+        : ''),
   );
   return 0;
 }
 
-async function wireRootLayout(root, ctx) {
+async function ensureRootLayout(root, ctx) {
   const target = path.resolve(root, 'src/pages/layout.ts');
   if (await exists(target)) {
-    // Already exists — don't clobber. Surface guidance instead.
-    const existing = await fs.readFile(target, 'utf8');
-    if (existing.includes('authMiddleware')) {
-      console.log('  exists   src/pages/layout.ts already wires authMiddleware');
-      return;
-    }
-    console.log(
-      '  note     src/pages/layout.ts exists — to enable auth, import authMiddleware\n' +
-        "           from '../middlewares/auth' and add it to @Page({ middlewares: [...], transport: 'http' }).",
-    );
+    console.log('  exists   src/pages/layout.ts (auth middleware is registered in src/config/middlewares.ts)');
     return;
   }
   const result = await writeFile(target, rootLayoutWithAuthTemplate(), ctx);
   reportFile('src/pages/layout.ts', result, ctx);
+}
+
+/**
+ * Inject a `send_email` binding into wrangler.jsonc for password-reset emails.
+ * Idempotent: skips if a `send_email` block exists.
+ */
+async function wireSendEmailBinding(root, ctx) {
+  const target = path.resolve(root, 'wrangler.jsonc');
+  if (!(await exists(target))) {
+    console.log('  note     No wrangler.jsonc found (Node-adapter project?). Email binding skipped.');
+    return;
+  }
+  let content;
+  try {
+    content = await fs.readFile(target, 'utf8');
+  } catch {
+    return;
+  }
+  if (/"send_email"\s*:/.test(content)) {
+    console.log('  exists   send_email binding already in wrangler.jsonc');
+    return;
+  }
+  const block =
+    '\n  // Cloudflare Email Routing. Used by env.EMAIL.send(...) for password-reset\n' +
+    '  // (and any transactional email). Verify the `from` domain in the dashboard.\n' +
+    '  "send_email": [\n' +
+    '    {\n' +
+    '      "name": "EMAIL"\n' +
+    '    }\n' +
+    '  ],';
+  const replaced = content.replace(/^(\s*\{)/m, `$1${block}`);
+  if (replaced === content) {
+    console.log('  note     Could not locate insertion point in wrangler.jsonc');
+    return;
+  }
+  if (ctx.dryRun) {
+    console.log('  would add  send_email binding to wrangler.jsonc');
+    return;
+  }
+  await fs.writeFile(target, replaced, 'utf8');
+  console.log('  added    send_email binding (EMAIL) to wrangler.jsonc');
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +255,26 @@ async function resolveDialect(ctx) {
 async function addDatabase(ctx) {
   const root = await findProjectRoot(ctx.cwd);
   const dialect = await resolveDialect(ctx);
+  await ensureDatabase(root, { dialect, ctx });
+  console.log(
+    `\nDatabase support added (dialect: ${dialect}).\n` +
+      'Next:\n' +
+      '  1. Run `pnpm install`.' +
+      (dialect === 'd1'
+        ? '\n  2. Create a D1 database: `npx wrangler d1 create <name>` and paste\n     the database_id into the [[d1_databases]] block in wrangler.jsonc.'
+        : '\n  2. Set TURSO_URL / TURSO_TOKEN (e.g. in .dev.vars).') +
+      '\n  3. Apply migrations: `cossack migration up`.\n' +
+      '  4. Query via `db()` in any server method, or `getDb(c)` in API routes.',
+  );
+  return 0;
+}
 
+/**
+ * Scaffold database support (deps, models, migrations, config, middleware).
+ * Extracted from `addDatabase` so `addAuth` can reuse it. Idempotent — each
+ * `writeFile` skips files that already exist (pass `ctx.force` to overwrite).
+ */
+async function ensureDatabase(root, { dialect, ctx }) {
   // 1. dependencies
   await addDependency(root, '@cossackframework/database', resolveDatabaseVersion(), ctx);
   if (dialect === 'turso') {
@@ -170,18 +321,6 @@ async function addDatabase(ctx) {
     label: 'db',
     ctx,
   });
-
-  console.log(
-    `\nDatabase support added (dialect: ${dialect}).\n` +
-      'Next:\n' +
-      '  1. Run `pnpm install`.' +
-      (dialect === 'd1'
-        ? '\n  2. Create a D1 database: `npx wrangler d1 create <name>` and paste\n     the database_id into the [[d1_databases]] block in wrangler.jsonc.'
-        : '\n  2. Set TURSO_URL / TURSO_TOKEN (e.g. in .dev.vars).') +
-      '\n  3. Apply migrations: `cossack migration up`.\n' +
-      '  4. Query via `db()` in any server method, or `getDb(c)` in API routes.',
-  );
-  return 0;
 }
 
 function resolveTursoVersion() {
@@ -374,15 +513,22 @@ export function addHelp() {
 Add a feature to the current project.
 
 Features:
-  auth      Adds @cossackframework/auth, login/register/forgot-password page stubs,
-            an (auth) route-group layout, an auth middleware, and wires it into
-            src/pages/layout.ts.
+  auth      Adds @cossackframework/auth + full working session auth: PBKDF2 password
+            hashing, a createAuth() module (src/auth.ts), Session model, real
+            login/register/forgot-password/reset-password pages (validated forms with
+            @Server methods), an auth guard middleware, and registers everything in
+            src/config/middlewares.ts. Also ensures database support (D1/Turso) and
+            wires the send_email binding for password-reset emails.
+            Routes default to (auth)/{login,register,forgot-password,reset-password}.
   database  Adds @cossackframework/database (Kysely + D1/Turso dialects), a default
             User model, starter migrations (users, sessions, roles, permissions,
             oauth_accounts), a seeder, src/db/config.ts, and registers the dbMiddleware
             in src/config/middlewares.ts. Prompts for the dialect (default: D1).
 
 Options:
-  --force, -f       Overwrite existing stub files.
-  --dialect=<d1|turso>  Skip the database dialect prompt.`;
+  --force, -f              Overwrite existing files.
+  --dialect=<d1|turso>     Skip the database dialect prompt (used by both features).
+  --path <route-group>     (auth) Custom route group, e.g. --path admin/auth.
+  --oauth <providers>      (auth) OAuth providers: github,google,gitlab,facebook,microsoft.
+                           Comma-separated or repeated. Bare --oauth prompts interactively.`;
 }

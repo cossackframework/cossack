@@ -179,6 +179,74 @@ describe('upgradeCommand end-to-end (no network)', () => {
     );
   });
 
+  it('--force overwrites modified files from the template', async () => {
+    const baselineRoot = await write(tmpProject, 'src/root.ts', 'root-v1');
+    const baselineApp = await write(tmpProject, 'src/App.ts', 'app-v1');
+    await write(tmpProject, 'package.json', '{}');
+    const manifest = {
+      schemaVersion: 1,
+      templateVersion: '0.1.0',
+      files: { 'src/root.ts': baselineRoot, 'src/App.ts': baselineApp },
+    };
+    await write(tmpProject, '.cossack/scaffold.json', JSON.stringify(manifest));
+    // user edited BOTH files
+    await write(tmpProject, 'src/root.ts', 'root-user-edit');
+    await write(tmpProject, 'src/App.ts', 'app-user-edit');
+    await write(tmpTemplate, 'src/root.ts', 'root-v2');
+    await write(tmpTemplate, 'src/App.ts', 'app-v2');
+
+    const ctx = makeCtx(['--force']);
+    await upgradeCommand(ctx.args, ctx.ctx);
+    // --force overwrites the user edits with the template content
+    expect(fs.readFileSync(path.join(tmpProject, 'src/root.ts'), 'utf8')).toBe(
+      'root-v2',
+    );
+    expect(fs.readFileSync(path.join(tmpProject, 'src/App.ts'), 'utf8')).toBe(
+      'app-v2',
+    );
+  });
+
+  it('--force restores deleted (missing) files', async () => {
+    const baselineRoot = await write(tmpProject, 'src/root.ts', 'root-v1');
+    await write(tmpProject, 'package.json', '{}');
+    const manifest = {
+      schemaVersion: 1,
+      templateVersion: '0.1.0',
+      files: { 'src/root.ts': baselineRoot },
+    };
+    await write(tmpProject, '.cossack/scaffold.json', JSON.stringify(manifest));
+    // user deleted the file
+    fs.unlinkSync(path.join(tmpProject, 'src/root.ts'));
+    await write(tmpTemplate, 'src/root.ts', 'root-v2');
+
+    expect(fs.existsSync(path.join(tmpProject, 'src/root.ts'))).toBe(false);
+    const ctx = makeCtx(['--force']);
+    await upgradeCommand(ctx.args, ctx.ctx);
+    expect(fs.readFileSync(path.join(tmpProject, 'src/root.ts'), 'utf8')).toBe(
+      'root-v2',
+    );
+  });
+
+  it('without --force, modified files are NOT overwritten', async () => {
+    const baselineRoot = await write(tmpProject, 'src/root.ts', 'root-v1');
+    await write(tmpProject, 'package.json', '{}');
+    const manifest = {
+      schemaVersion: 1,
+      templateVersion: '0.1.0',
+      files: { 'src/root.ts': baselineRoot },
+    };
+    await write(tmpProject, '.cossack/scaffold.json', JSON.stringify(manifest));
+    await write(tmpProject, 'src/root.ts', 'user-edit');
+    await write(tmpTemplate, 'src/root.ts', 'root-v2');
+
+    // --apply-template (no --force): modified file is skipped
+    const ctx = makeCtx(['--apply-template']);
+    await upgradeCommand(ctx.args, ctx.ctx);
+    expect(fs.readFileSync(path.join(tmpProject, 'src/root.ts'), 'utf8')).toBe(
+      'user-edit',
+    );
+  });
+
   async function runUpgrade(flags) {
     const ctx = makeCtx(flags);
     return upgradeCommand(ctx.args, ctx.ctx);
