@@ -7,7 +7,7 @@ import path from 'node:path';
  *
  *   route = filePath
  *     .replace('/src/pages', '')
- *     .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
+ *     .replace(/\.(ts|js|md|mdx)$/, '')
  *     .replace(/\/index$/, '')
  *     .replace(/\/\([^)]+\)/g, '')     // strip route groups (auth)
  *     .replace(/\[([^\]]+)\]/g, ':$1') // [name] -> :name
@@ -19,7 +19,7 @@ import path from 'node:path';
 export function filePathToHttpRoute(filePath) {
   let route = filePath
     .replace('/src/pages', '')
-    .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
+    .replace(/\.(ts|js|md|mdx)$/, '')
     .replace(/\/index$/, '')
     .replace(/\/\([^)]+\)/g, '')
     .replace(/\[([^\]]+)\]/g, ':$1');

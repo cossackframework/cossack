@@ -28,7 +28,7 @@ export function filePathToRoutePath(filePath: string): string {
     // is a substring of '/index.mdx' and would otherwise leave a trailing 'x'.
     .replace('/index.mdx', '')
     .replace('/index.md', '')
-    .replace(/\.(ts|tsx|md|mdx)$/, '');
+    .replace(/\.(ts|md|mdx)$/, '');
 
   // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
   if (route === '/index' || route === '') {
@@ -50,7 +50,7 @@ export function filePathToRoutePath(filePath: string): string {
 export function filePathToHttpRoute(filePath: string): string {
   const route = filePath
     .replace('/src/pages', '')
-    .replace(/\.(ts|tsx|js|jsx|md|mdx)$/, '')
+    .replace(/\.(ts|js|md|mdx)$/, '')
     .replace(/\/index$/, '')
     .replace(/\/\([^)]+\)/g, '') // route groups, e.g. /(auth)/login -> /login
     .replace(/\[\.\.\.([^\]]+)\]/g, ':$1*') // catch-all [...slug] -> :slug*

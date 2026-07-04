@@ -9,6 +9,8 @@
  * switch in {@link buildHeadContext} routes only the recognized tags;
  * anything else falls to the `default` branch.
  */
+import { enterRender, exitRender } from './server-fn';
+
 export type HeadTagName = 'title' | 'meta' | 'link' | 'script' | 'style' | 'base' | (string & {});
 
 export interface HeadTag {
@@ -189,13 +191,32 @@ export function composeHead(
   appInstance: Headed,
 ): HeadTag[] {
   const emptyCtx = buildHeadContext([]);
-  let tags = mergeHead(emptyCtx, pageInstance.head(emptyCtx));
+  // `head()` is synchronous, so a @Server method invoked from it would return a
+  // Promise that the head machinery stringifies as "[object Promise]" (same
+  // footgun as render()). Guard each call with the render window so the base
+  // class' __cossackAssertNotRendering catches it. runHead() is a thin wrapper.
+  let tags = mergeHead(emptyCtx, runHead(pageInstance, emptyCtx));
   for (let i = layoutInstances.length - 1; i >= 0; i--) {
     const headContext = buildHeadContext(tags);
-    tags = mergeHead(headContext, layoutInstances[i].head(headContext));
+    tags = mergeHead(headContext, runHead(layoutInstances[i], headContext));
   }
   const finalHeadContext = buildHeadContext(tags);
-  return mergeHead(finalHeadContext, appInstance.head(finalHeadContext));
+  return mergeHead(finalHeadContext, runHead(appInstance, finalHeadContext));
+}
+
+/**
+ * Invoke a component's `head()` hook inside the render-phase window so the
+ * runtime guard catches any server method called from it. The window is entered
+ * and exited around each call; nested head()/render() calls are safe because
+ * the underlying flag is a depth counter.
+ */
+function runHead(instance: Headed, ctx: HeadContext): HeadValue {
+  enterRender();
+  try {
+    return instance.head(ctx);
+  } finally {
+    exitRender();
+  }
 }
 
 /**

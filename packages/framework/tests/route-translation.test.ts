@@ -15,7 +15,7 @@ describe('filePathToHttpRoute', () => {
   });
 
   it('mixes dynamic and catch-all segments', () => {
-    expect(filePathToHttpRoute('/src/pages/users/[id]/files/[...rest]/index.tsx'))
+    expect(filePathToHttpRoute('/src/pages/users/[id]/files/[...rest]/index.ts'))
       .toBe('/users/:id/files/:rest*');
   });
 

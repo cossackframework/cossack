@@ -9,7 +9,7 @@ Cossack provides built-in support for handling asynchronous operations, allowing
 
 ## File-based Loading Convention (`loading.ts`)
 
-You can create a `loading.ts` (or `loading.tsx`) file in any route directory. Cossack will automatically render this component **instantly** when a user navigates to that route, while the main Page component is being fetched and its `init()` method is running.
+You can create a `loading.ts` file in any route directory. Cossack will automatically render this component **instantly** when a user navigates to that route, while the main Page component is being fetched and its `init()` method is running.
 
 This is the recommended way to implement global page transitions and high-fidelity skeleton screens.
 

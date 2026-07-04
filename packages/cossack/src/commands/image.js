@@ -8,7 +8,7 @@ import { extractImageCalls, isLocalSource, resolveOutputPath } from '../image-sc
 
 const execFileP = promisify(execFile);
 
-const SUPPORTED_SOURCE_EXT = new Set(['.ts', '.tsx', '.mdx', '.md', '.js', '.jsx']);
+const SUPPORTED_SOURCE_EXT = new Set(['.ts', '.mdx', '.md', '.js', '.jsx']);
 
 export async function imageCommand(args, ctx) {
   const [sub] = args;

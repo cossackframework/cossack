@@ -1,4 +1,5 @@
 import type { Plugin } from 'vite';
+import { parseSync } from 'vite';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -16,7 +17,12 @@ export interface CossackSecurityPluginOptions {
  * The goal is to ensure server-only code (database queries, API keys, business logic)
  * is not exposed in the client bundle.
  *
- * Uses the Vite 6 Environment API to detect the current environment automatically.
+ * Discovery and the transitive-preservation closure are driven by the Oxc AST
+ * (re-exported by Vite as `parseSync`), which parses TypeScript + legacy
+ * decorators + class fields natively. Byte-offset spans from the AST are spliced
+ * directly into the source string.
+ *
+ * Uses the Vite Environment API to detect the current environment automatically.
  * Only applies stripping in the 'client' environment.
  */
 export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}): Plugin {
@@ -61,7 +67,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     if (id.includes('@cossackframework/database')) return false;
 
     // Only process TypeScript files in user code
-    return id.endsWith('.ts') || id.endsWith('.tsx') || id.endsWith('.mts');
+    return id.endsWith('.ts') || id.endsWith('.mts');
   }
 
   return {
@@ -98,696 +104,193 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   };
 }
 
+// ============================================================================
+// AST helpers (Oxc, via Vite's re-export of rolldown/utils → parseSync)
+// ============================================================================
+
 /**
- * Transform a Cossack class by stubbing server-only methods.
- * Uses brace depth tracking to ensure only top-level methods are processed.
- */
-/**
- * Build a set of character ranges that are inside strings or template literals.
- * Used to skip regex matches that fall within string/template literal regions.
+ * Parse `code` as TypeScript and return the ESTree-ish `Program`, or `null` if
+ * the source does not parse.
  *
- * Also recognises regular-expression literals: a `/` that begins a regex (rather
- * than division) is scanned to its closing `/` and added as a skip range. This
- * prevents `{`, `}`, `(`, `)` inside a regex literal (e.g. `/}/`, `/\d{2}/`)
- * from corrupting the brace/paren depth tracking used elsewhere in this module.
- */
-function buildStringRanges(code: string): Array<[number, number]> {
-  const ranges: Array<[number, number]> = [];
-  let i = 0;
-  const len = code.length;
-
-  while (i < len) {
-    const char = code[i];
-    if (char === '"' || char === "'" || char === '`') {
-      const start = i;
-      const end = findStringEnd(code, i, char);
-      if (end === -1) break;
-      ranges.push([start, end]);
-      i = end + 1;
-    } else if (char === '/' && i + 1 < len) {
-      const next = code[i + 1];
-      if (next === '/') {
-        i = code.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-      } else if (next === '*') {
-        const start = i;
-        const end = code.indexOf('*/', i + 2);
-        if (end === -1) break;
-        ranges.push([start, end + 1]);
-        i = end + 2;
-      } else if (isRegexStartPosition(code, i)) {
-        const start = i;
-        const end = findRegexLiteralEnd(code, i);
-        if (end === -1) {
-          i++;
-        } else {
-          ranges.push([start, end - 1]);
-          i = end;
-        }
-      } else {
-        i++;
-      }
-    } else {
-      i++;
-    }
-  }
-
-  return ranges;
-}
-
-/**
- * Decide whether the `/` at `pos` begins a regex literal (vs. division).
- * Uses the standard JS lexing heuristic: a `/` is a regex when the previous
- * significant token is NOT a value (identifier, number, `)`, `]`, string end,
- * or a value keyword like `this`/`true`). Otherwise it is division.
- */
-function isRegexStartPosition(code: string, pos: number): boolean {
-  let i = pos - 1;
-  while (i >= 0 && /\s/.test(code[i])) i--;
-  if (i < 0) return true;
-  const prev = code[i];
-  // After these, '/' is always a regex (statement/argument position).
-  if ('([{,;:!&|=<>+-*/%^~?'.includes(prev)) return true;
-  // After a closing brace we treat '/' as a regex (block end / statement).
-  if (prev === '}') return true;
-  // After a value-ish character, '/' is division — UNLESS the preceding token
-  // is a keyword that precedes expressions (return, typeof, in, ...).
-  if (/[a-zA-Z0-9_$)\]"']/.test(prev)) {
-    if (/[a-zA-Z_$]/.test(prev)) {
-      let j = i;
-      while (j > 0 && /[a-zA-Z0-9_$]/.test(code[j - 1])) j--;
-      const kw = code.slice(j, i + 1);
-      // 'this', 'true', 'false', 'null', 'super' are VALUES → division.
-      if (
-        kw === 'return' || kw === 'typeof' || kw === 'instanceof' ||
-        kw === 'in' || kw === 'of' || kw === 'do' || kw === 'else' ||
-        kw === 'yield' || kw === 'await' || kw === 'case' ||
-        kw === 'delete' || kw === 'void' || kw === 'new' || kw === 'throw'
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-  return true;
-}
-
-/**
- * Given the index of a regex's opening `/`, return the index just past the
- * closing `/` (including trailing flags), respecting escaped chars and `[...]`
- * character classes. Returns -1 if unterminated (or if it spans a newline).
- */
-function findRegexLiteralEnd(code: string, start: number): number {
-  let i = start + 1;
-  const len = code.length;
-  let inClass = false;
-  while (i < len) {
-    const c = code[i];
-    if (c === '\\') {
-      i += 2;
-      continue;
-    }
-    if (c === '[') inClass = true;
-    else if (c === ']') inClass = false;
-    else if (c === '/' && !inClass) {
-      i++;
-      while (i < len && /[a-z]/i.test(code[i])) i++;
-      return i;
-    } else if (c === '\n') {
-      return -1;
-    }
-    i++;
-  }
-  return -1;
-}
-
-/**
- * If the `/` at `i` begins a regex literal, return the index just past its
- * closing `/` (incl. flags); otherwise return -1. Convenience wrapper for the
- * inline brace/paren scanners.
- */
-function regexEndIfRegex(code: string, i: number): number {
-  if (i + 1 >= code.length) return -1;
-  const next = code[i + 1];
-  if (next === '/' || next === '*') return -1; // comment, not regex
-  return isRegexStartPosition(code, i) ? findRegexLiteralEnd(code, i) : -1;
-}
-
-/**
- * Check if a position falls within any of the given ranges.
- */
-function isInRange(ranges: Array<[number, number]>, pos: number): boolean {
-  for (const [start, end] of ranges) {
-    if (pos >= start && pos <= end) return true;
-    if (start > pos) break;
-  }
-  return false;
-}
-
-/**
- * Strip the body of `generateStaticParams` from `@Page(...)` / `@Component(...)`
- * decorator arguments. The function is only ever invoked at SSG build time
- * (see `getStaticParams` in ssg-renderer.ts) — never on the client — so its
- * body is pure leak risk in the client bundle (database queries, API keys,
- * business logic). Each occurrence is replaced with `async () => []`, which
- * preserves the declared type and acts as a defensive no-op.
+ * Uses `parseSync` (the non-deprecated Oxc entry point re-exported by Vite).
+ * Unlike `parseAst`, `parseSync` does not throw on parse errors — it returns a
+ * `ParseResult` with an `.errors` array. On failure we return `null`; the
+ * caller decides whether to warn.
  *
- * Reuses buildStringRanges / isInRange so matches inside strings, comments,
- * and template literals are skipped.
+ * The filename passed to `parseSync` is a fixed placeholder (not the Vite
+ * module `id`, which can carry query strings like `?import` and is not a valid
+ * path for Oxc's filename handling).
  */
-export function stripSsgGenerateStaticParams(code: string): string {
-  const stringRanges = buildStringRanges(code);
-
-  // Locate every @Page( / @Component( occurrence (the two are the same function).
-  // We match the decorator name + opening paren manually, then depth-track.
-  const decoratorOpeners: Array<{ decoratorNameStart: number; openParenIdx: number }> = [];
-  const decoratorNameRe = /@(Page|Component)\s*\(/g;
-  let m: RegExpExecArray | null;
-  while ((m = decoratorNameRe.exec(code)) !== null) {
-    const decoratorNameStart = m.index;
-    if (isInRange(stringRanges, decoratorNameStart)) continue;
-    const openParenIdx = m.index + m[0].length - 1; // index of '('
-    decoratorOpeners.push({ decoratorNameStart, openParenIdx });
-  }
-
-  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
-
-  for (const { openParenIdx } of decoratorOpeners) {
-    const closeParenIdx = findMatchingParen(code, openParenIdx, stringRanges);
-    if (closeParenIdx === -1) continue;
-
-    const ssgObj = findSsgObjectLiteral(code, openParenIdx + 1, closeParenIdx, stringRanges);
-    if (!ssgObj) continue;
-
-    const valueRange = findGenerateStaticParamsValue(code, ssgObj.bodyStart, ssgObj.bodyEnd, stringRanges);
-    if (!valueRange) continue;
-
-    replacements.push({
-      start: valueRange.valueStart,
-      end: valueRange.valueEnd,
-      replacement: 'async () => []',
-    });
-  }
-
-  if (replacements.length === 0) return code;
-
-  let result = code;
-  for (const r of [...replacements].reverse()) {
-    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
-  }
-  return result;
-}
-
-/**
- * Given the index of an opening `(`, return the index of the matching `)`.
- * Tracks nested `()`, `[]`, and `{}` and skips strings / comments / template
- * literals. Returns -1 if unbalanced.
- */
-function findMatchingParen(
-  code: string,
-  openParenIdx: number,
-  stringRanges: Array<[number, number]>
-): number {
-  let depth = 0;
-  let i = openParenIdx;
-  const len = code.length;
-  while (i < len) {
-    const char = code[i];
-
-    if (char === '"' || char === "'" || char === '`') {
-      const end = findStringEnd(code, i, char);
-      if (end === -1) return -1;
-      i = end + 1;
-      continue;
-    }
-
-    if (char === '/' && i + 1 < len) {
-      const next = code[i + 1];
-      if (next === '/') {
-        i = code.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-        continue;
-      } else if (next === '*') {
-        const end = code.indexOf('*/', i + 2);
-        if (end === -1) return -1;
-        i = end + 2;
-        continue;
-      }
-    }
-
-    if (isInRange(stringRanges, i)) {
-      i++;
-      continue;
-    }
-
-    if (char === '(') depth++;
-    else if (char === ')') {
-      depth--;
-      if (depth === 0) return i;
-    } else if (char === '[' || char === '{') {
-      depth++;
-    } else if (char === ']' || char === '}') {
-      depth--;
-      if (depth < 0) return -1;
-    }
-    i++;
-  }
-  return -1;
-}
-
-/**
- * Inside the span [start, end) of a decorator argument list, find the
- * `ssg: { ... }` object literal. Returns the half-open body range
- * `{ bodyStart, bodyEnd }` covering the interior of the `{ ... }`, or null
- * if there is no `ssg` option or it is the boolean form (`ssg: true|false`).
- */
-function findSsgObjectLiteral(
-  code: string,
-  start: number,
-  end: number,
-  stringRanges: Array<[number, number]>
-): { bodyStart: number; bodyEnd: number } | null {
-  const ssgKeyRe = /\bssg\s*:\s*/g;
-  ssgKeyRe.lastIndex = start;
-  let m: RegExpExecArray | null;
-  while ((m = ssgKeyRe.exec(code)) !== null) {
-    if (m.index >= end) break;
-    if (isInRange(stringRanges, m.index)) continue;
-
-    let i = m.index + m[0].length;
-    // Skip whitespace just in case
-    while (i < end && /\s/.test(code[i])) i++;
-
-    if (code[i] !== '{') {
-      // Boolean form (or anything else) — no generateStaticParams to strip.
-      return null;
-    }
-
-    // Depth-track to the matching `}`.
-    let depth = 1;
-    i++;
-    while (i < end && depth > 0) {
-      const char = code[i];
-
-      if (char === '"' || char === "'" || char === '`') {
-        const strEnd = findStringEnd(code, i, char);
-        if (strEnd === -1) return null;
-        i = strEnd + 1;
-        continue;
-      }
-
-      if (char === '/' && i + 1 < code.length) {
-        const next = code[i + 1];
-        if (next === '/') {
-          i = code.indexOf('\n', i + 2);
-          if (i === -1) i = code.length;
-          continue;
-        } else if (next === '*') {
-          const cend = code.indexOf('*/', i + 2);
-          if (cend === -1) return null;
-          i = cend + 2;
-          continue;
-        }
-      }
-
-      if (isInRange(stringRanges, i)) {
-        i++;
-        continue;
-      }
-
-      if (char === '{') depth++;
-      else if (char === '}') {
-        depth--;
-        if (depth === 0) {
-          return { bodyStart: m.index + m[0].length + 1, bodyEnd: i };
-        }
-      }
-      i++;
-    }
+function parseProgram(code: string): any | null {
+  try {
+    const result = parseSync('cossack-security.ts', code, { lang: 'ts' });
+    if (result.errors && result.errors.length > 0) return null;
+    return result.program;
+  } catch {
     return null;
   }
+}
+
+/** True if `node` is a `ClassDeclaration` or `ClassExpression`. */
+function isClassNode(node: any): boolean {
+  return node?.type === 'ClassDeclaration' || node?.type === 'ClassExpression';
+}
+
+/**
+ * Yield every class node anywhere in `program`. A class may be the
+ * `declaration` of an `ExportNamedDeclaration`/`ExportDefaultDeclaration`, or a
+ * top-level/`Program`-body class, or nested in an `ExportDefaultDeclaration`
+ * (anonymous default class). We walk the top level + one level of export
+ * wrappers; deeply-nested classes are not currently processed.
+ */
+function* findClasses(program: any): Generator<any> {
+  for (const stmt of program?.body ?? []) {
+    if (isClassNode(stmt)) yield stmt;
+    else if (
+      (stmt?.type === 'ExportNamedDeclaration' || stmt?.type === 'ExportDefaultDeclaration') &&
+      isClassNode(stmt.declaration)
+    ) {
+      yield stmt.declaration;
+    }
+  }
+}
+
+/** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
+function superclassName(cls: any): string | null {
+  const sc = cls?.superClass;
+  if (!sc) return null;
+  if (sc.type === 'Identifier') return sc.name;
   return null;
 }
 
 /**
- * Inside the span [start, end) of an `ssg: { ... }` object body, find the
- * value of the `generateStaticParams` property. Returns the half-open range
- * of the value expression (the text to replace), or null if the property is
- * absent.
+ * The name of a member's `key`: identifier names, string/literal keys, and
+ * private names (`#foo`) are returned as strings; computed keys that aren't a
+ * simple literal return null (we can't match them by name, so we leave them
+ * alone — preserving them, the safe default).
  */
-function findGenerateStaticParamsValue(
-  code: string,
-  start: number,
-  end: number,
-  stringRanges: Array<[number, number]>
-): { valueStart: number; valueEnd: number } | null {
-  const keyRe = /\bgenerateStaticParams\s*:\s*/g;
-  keyRe.lastIndex = start;
-  let m: RegExpExecArray | null;
-  while ((m = keyRe.exec(code)) !== null) {
-    if (m.index >= end) break;
-    if (isInRange(stringRanges, m.index)) continue;
-
-    const valueStart = m.index + m[0].length;
-
-    // Depth-track the value expression until a `,` or `}` at depth 0.
-    let i = valueStart;
-    let depth = 0;
-    while (i < end) {
-      const char = code[i];
-
-      if (char === '"' || char === "'" || char === '`') {
-        const strEnd = findStringEnd(code, i, char);
-        if (strEnd === -1) return null;
-        i = strEnd + 1;
-        continue;
-      }
-
-      if (char === '/' && i + 1 < code.length) {
-        const next = code[i + 1];
-        if (next === '/') {
-          i = code.indexOf('\n', i + 2);
-          if (i === -1) i = code.length;
-          continue;
-        } else if (next === '*') {
-          const cend = code.indexOf('*/', i + 2);
-          if (cend === -1) return null;
-          i = cend + 2;
-          continue;
-        }
-      }
-
-      if (isInRange(stringRanges, i)) {
-        i++;
-        continue;
-      }
-
-      if (char === '(' || char === '[' || char === '{') {
-        depth++;
-      } else if (char === ')' || char === ']' || char === '}') {
-        if (depth === 0) {
-          // Closed the enclosing object before seeing a separator — value ends here.
-          return { valueStart, valueEnd: i };
-        }
-        depth--;
-      } else if (depth === 0 && (char === ',' || char === '}')) {
-        return { valueStart, valueEnd: i };
-      }
-      i++;
-    }
-    // Reached end of enclosing span.
-    return { valueStart, valueEnd: i };
-  }
+function memberKeyName(key: any): string | null {
+  if (!key) return null;
+  if (key.type === 'Identifier') return key.name;
+  if (key.type === 'PrivateIdentifier') return key.name;
+  if (key.type === 'Literal' && typeof key.value === 'string') return key.value;
   return null;
 }
 
-export function transformCossackClass(
-  code: string,
-  id: string,
-  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
-  devWarning: boolean
-): string {
-  // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...) decorator
-  // arguments first. This runs before any class-body transformation so the existing
-  // method-stripping logic operates on already-sanitized source.
-  code = stripSsgGenerateStaticParams(code);
-
-  // Build string ranges to skip false matches inside template literals
-  const stringRanges = buildStringRanges(code);
-
-  // Collect all class ranges to process (both Cossack-extended and @Service-decorated)
-  const classRanges: Array<{ classEnd: number; bodyEnd: number; closingBrace: number; className: string; hasExtends: boolean }> = [];
-
-  // Find class definitions extending Cossack or CossackElement
-  const classRegex =
-    /(?:export\s+(?:default\s+)?)?class\s+(\w+)\s+(?:extends\s+(?:Cossack(?:<[^>]+>)?|CossackElement))\s*\{/g;
-
-  let match;
-  while ((match = classRegex.exec(code)) !== null) {
-    const className = match[1];
-    const classStart = match.index;
-    const classEnd = match.index + match[0].length;
-
-    // Skip matches that are inside strings or template literals
-    if (isInRange(stringRanges, classStart)) {
-      continue;
-    }
-
-    // Find the matching closing brace for the class
-    const classBody = extractClassBody(code, classEnd);
-    if (!classBody) {
-      console.warn(`[Cossack Security] Could not extract class body for ${className} in ${id}`);
-      continue;
-    }
-
-    classRanges.push({
-      classEnd,
-      bodyEnd: classEnd + classBody.body.length,
-      closingBrace: classBody.closingBrace,
-      className,
-      hasExtends: true, // Cossack/CossackElement always extends
-    });
-  }
-
-  // Also find @Service decorated classes (may not extend Cossack)
-  const serviceClassRegex =
-    /@Service(?:\([^)]*\))?\s*\n\s*(?:export\s+(?:default\s+)?)?class\s+(\w+)\s*(?:extends\s+(\w+(?:<[^>]+>)?))?\s*\{/g;
-
-  while ((match = serviceClassRegex.exec(code)) !== null) {
-    const className = match[1];
-    const classStart = match.index;
-    const extendsClause = match[2]; // undefined if no extends
-
-    // Skip matches inside strings
-    if (isInRange(stringRanges, classStart)) {
-      continue;
-    }
-
-    // Find the opening brace of the class
-    const openBrace = match[0].lastIndexOf('{');
-    const classEnd = match.index + openBrace + 1;
-
-    const classBody = extractClassBody(code, classEnd);
-    if (!classBody) {
-      console.warn(`[Cossack Security] Could not extract class body for @Service class ${className} in ${id}`);
-      continue;
-    }
-
-    // Skip if this class was already found by the Cossack regex
-    const alreadyFound = classRanges.some(
-      r => r.classEnd === classEnd
-    );
-    if (alreadyFound) continue;
-
-    classRanges.push({
-      classEnd,
-      bodyEnd: classEnd + classBody.body.length,
-      closingBrace: classBody.closingBrace,
-      className,
-      hasExtends: extendsClause !== undefined,
-    });
-  }
-
-  let result = code;
-  let replacements: Array<{ start: number; end: number; replacement: string }> = [];
-
-  for (const { classEnd, bodyEnd, closingBrace, className, hasExtends } of classRanges) {
-    const classBodyText = code.slice(classEnd, bodyEnd);
-
-    // Transform method definitions using depth tracking
-    const transformedBody = transformMethodsWithDepthTracking(
-      code,
-      classEnd,
-      bodyEnd,
-      className,
-      id,
-      isClientSafeMethod,
-      builtinMethods,
-      devWarning
-    );
-
-    // Collect server-only method names that were stubbed
-    const serverOnlyMethods = extractServerOnlyMethodNames(
-      code,
-      classEnd,
-      bodyEnd,
-      isClientSafeMethod,
-      builtinMethods
-    );
-
-    let finalBody = transformedBody;
-
-    // Inject metadata registration for server-only methods. The static method
-    // is always appended; the constructor registration call is spliced into an
-    // existing constructor when present (appending unconditionally would create
-    // a duplicate constructor — a syntax error). createMetadataInjection
-    // returns '' when no @Server methods qualify.
-    const metadataInjection = createMetadataInjection(serverOnlyMethods, hasExtends);
-    if (metadataInjection) {
-      const ctorBrace = findConstructorBodyOpenBrace(transformedBody);
-      if (ctorBrace !== -1) {
-        // Existing constructor: inject the registration as its first statement.
-        finalBody =
-          transformedBody.slice(0, ctorBrace + 1) +
-          '\n' +
-          REGISTER_SERVER_METHODS_CALL +
-          transformedBody.slice(ctorBrace + 1) +
-          metadataInjection;
-      } else {
-        // No constructor: append a new one (with super() if the class extends).
-        const superCall = hasExtends ? '      super();\n' : '';
-        finalBody =
-          transformedBody +
-          metadataInjection +
-          `    constructor() {
-${superCall}${REGISTER_SERVER_METHODS_CALL}    }
-`;
-      }
-    }
-
-    if (finalBody !== classBodyText) {
-      replacements.push({
-        start: classEnd,
-        end: closingBrace,
-        replacement: finalBody,
-      });
-    }
-  }
-
-  // Apply replacements in reverse order to maintain positions
-  if (replacements.length === 0) return code;
-
-  for (const replacement of [...replacements].reverse()) {
-    result =
-      result.slice(0, replacement.start) +
-      replacement.replacement +
-      result.slice(replacement.end);
-  }
-
-  return result;
+/** Slice the source text spanned by `node`'s `start`/`end`. */
+function sourceSlice(code: string, node: any): string {
+  return code.slice(node.start, node.end);
 }
 
 /**
- * Description of a single method definition in a class body, used by the
- * collect/transitive-closure/stub passes.
+ * Description of a single class member relevant to stripping. Mirrors the
+ * information the old `CollectedMethod` carried, but now derived from AST nodes
+ * with authoritative byte offsets.
  */
-interface CollectedMethod {
+interface AstMethod {
   name: string;
+  /** Raw decorator source slices, e.g. `['@Server()', '@RateLimit(...)']`. */
   decorators: string[];
   hasServerDecorator: boolean;
-  /** Start offset (relative to `classBody`) of the method's `{` body opening. */
-  bodyStart: number;
-  /** End offset (relative to `classBody`) just past the method's closing `}`. */
-  bodyEnd: number;
-  /** For class fields with a function value: start of the value (incl. `async`). */
+  /** `MethodDefinition.value.body` span (the `{...}`) for methods; null for
+   *  fields without a function value. Offsets are into the FILE source. */
+  bodyStart: number; // index of opening `{`
+  bodyEnd: number;   // index of closing `}` (exclusive+1)
+  /** For class fields whose value is a function: the offset where the function
+   *  value begins, so we can replace the whole value. Undefined otherwise. */
   fieldValueStart?: number;
-  /** For class fields: 'arrow' or 'function' expression. */
   fieldKind?: 'arrow' | 'function';
-  /** For class fields: whether the value was `async`. */
   fieldIsAsync?: boolean;
 }
 
 /**
- * Walk the class body once (collect-only) and return every top-level method
- * definition with its decorators and body offsets. Offsets are relative to
- * `classBody` (the slice of source between the class's opening `{` and its
- * closing `}`), so the same offsets can be used both for body-text scanning
- * (transitive preservation) and for range replacement (stubbing).
+ * Collect every method/field-function in a class body as {@link AstMethod}s.
+ * Getters/setters (`MethodDefinition.kind === 'get' | 'set'`) are intentionally
+ * SKIPPED — they are read as bare property accesses inside preserved methods
+ * like `render()`, and the transitive-preservation pass only sees parenthesised
+ * calls, so stripping them would break client rendering.
  */
-function collectMethods(
-  classBody: string,
-  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>
-): CollectedMethod[] {
-  const methods: CollectedMethod[] = [];
-  const stringRanges = buildStringRanges(classBody);
-
-  let i = 0;
-  const len = classBody.length;
-  let braceDepth = 0;
-  let pendingDecorators: string[] = [];
-
-  while (i < len) {
-    const char = classBody[i];
-
-    if (char === '"' || char === "'" || char === '`') {
-      const stringEnd = findStringEndInString(classBody, i, char);
-      if (stringEnd === -1) break;
-      i = stringEnd + 1;
-      continue;
+function collectAstMethods(cls: any, code: string): AstMethod[] {
+  const methods: AstMethod[] = [];
+  for (const member of cls?.body?.body ?? []) {
+    if (member.type === 'MethodDefinition') {
+      // Skip accessors (preserved by policy — see comment above).
+      if (member.kind === 'get' || member.kind === 'set') continue;
+      // The constructor is never a stub candidate — it is preserved verbatim
+      // (the metadata-injection pass may splice a registration call into it,
+      // but its body must survive so `super()` and any field initialisation run).
+      if (member.kind === 'constructor') continue;
+      const name = memberKeyName(member.key);
+      if (name === null) continue;
+      const fn = member.value; // FunctionExpression / ArrowFunctionExpression
+      const body = fn?.body;
+      if (!body || body.type !== 'BlockStatement') continue;
+      const decorators = (member.decorators ?? []).map((d: any) => sourceSlice(code, d));
+      methods.push({
+        name,
+        decorators,
+        hasServerDecorator: decorators.some((d: string) => /@Server\b/.test(d)),
+        bodyStart: body.start,
+        bodyEnd: body.end,
+      });
+    } else if (member.type === 'PropertyDefinition') {
+      const name = memberKeyName(member.key);
+      if (name === null) continue;
+      const value = member.value;
+      if (!value) continue; // non-function data field — leave as-is
+      const kind = value.type === 'ArrowFunctionExpression' ? 'arrow'
+        : value.type === 'FunctionExpression' ? 'function'
+        : null;
+      if (!kind) continue; // non-function field value
+      const body = value.body;
+      // Arrow concise-body has no block; treat the whole value as the span to
+      // replace (fieldValueStart..value.end).
+      const decorators = (member.decorators ?? []).map((d: any) => sourceSlice(code, d));
+      methods.push({
+        name,
+        decorators,
+        hasServerDecorator: decorators.some((d: string) => /@Server\b/.test(d)),
+        bodyStart: body.type === 'BlockStatement' ? body.start : value.start,
+        bodyEnd: body.type === 'BlockStatement' ? body.end : value.end,
+        fieldValueStart: value.start,
+        fieldKind: kind,
+        fieldIsAsync: !!value.async,
+      });
     }
-
-    if (char === '/' && i + 1 < len) {
-      const next = classBody[i + 1];
-      if (next === '/') {
-        i = classBody.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-        continue;
-      } else if (next === '*') {
-        i = classBody.indexOf('*/', i + 2);
-        if (i === -1) break;
-        i += 2;
-        continue;
-      }
-    }
-
-    if (braceDepth === 0 && char === '@') {
-      const decoratorEnd = findDecoratorEnd(classBody, i);
-      if (decoratorEnd > i) {
-        const decorator = classBody.slice(i, decoratorEnd);
-        pendingDecorators.push(decorator);
-        i = decoratorEnd;
-        while (i < len && classBody[i] !== '\n') i++;
-        continue;
-      }
-    }
-
-    if (char === '{') {
-      braceDepth++;
-      i++;
-      continue;
-    }
-    if (char === '}') {
-      braceDepth--;
-      if (braceDepth < 0) break;
-      if (braceDepth === 0) pendingDecorators = [];
-      i++;
-      continue;
-    }
-
-    if (braceDepth === 0 && /[a-zA-Z_$]/.test(char) && !isInRange(stringRanges, i)) {
-      const methodMatch = findMethodDefinition(classBody, i);
-      if (methodMatch) {
-        const { methodName, bodyStart, bodyEnd } = methodMatch;
-
-        if (methodName !== 'constructor' && methodName !== 'get' && methodName !== 'set') {
-          methods.push({
-            name: methodName,
-            decorators: pendingDecorators.slice(),
-            hasServerDecorator: pendingDecorators.some((d) => /@Server\b/.test(d)),
-            bodyStart,
-            bodyEnd,
-            fieldValueStart: methodMatch.fieldValueStart,
-            fieldKind: methodMatch.fieldKind,
-            fieldIsAsync: methodMatch.fieldIsAsync,
-          });
-        }
-
-        pendingDecorators = [];
-        i = bodyEnd;
-        continue;
-      }
-    }
-
-    i++;
   }
-
-  // Suppress unused-parameter warning for isClientSafeMethod when no methods are
-  // collected — the callback is still consulted by the transitive-closure pass.
-  void isClientSafeMethod;
-  void builtinMethods;
   return methods;
+}
+
+/**
+ * Walk `node`'s subtree and collect every `this.<name>(...)` call's `<name>`.
+ * Used by the transitive-preservation closure: a preserved method that calls
+ * `this.foo(...)` preserves `foo`. Only static member names are considered
+ * (`this[dyn]()` is ignored — we can't match it by name).
+ */
+function collectThisCalls(node: any): string[] {
+  const names: string[] = [];
+  const visit = (n: any) => {
+    if (!n || typeof n.type !== 'string') return;
+    if (
+      n.type === 'CallExpression' &&
+      n.callee?.type === 'MemberExpression' &&
+      n.callee.object?.type === 'ThisExpression' &&
+      !n.callee.computed &&
+      n.callee.property?.type === 'Identifier'
+    ) {
+      names.push(n.callee.property.name);
+    }
+    for (const k of Object.keys(n)) {
+      const v = n[k];
+      if (Array.isArray(v)) {
+        for (const c of v) visit(c);
+      } else if (v && typeof v.type === 'string') {
+        visit(v);
+      }
+    }
+  };
+  visit(node);
+  return names;
 }
 
 /**
@@ -796,44 +299,65 @@ function collectMethods(
  * name) and then iterates a transitive closure to a fixed point (capped at 3
  * rounds) — any `this.foo(...)` call from a preserved method to another method
  * on the same class preserves `foo` as well.
+ *
+ * AST-driven: call edges come from {@link collectThisCalls} walking each
+ * preserved method's body node, so string/comment content is naturally ignored
+ * and computed `this[dyn]()` calls can't fool the closure.
  */
 function computePreservedSet(
-  classBody: string,
-  methods: CollectedMethod[],
-  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>
+  cls: any,
+  methods: AstMethod[],
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>,
 ): Set<string> {
-  const byName = new Map<string, CollectedMethod>();
+  const byName = new Map<string, AstMethod>();
   for (const m of methods) {
     if (!byName.has(m.name)) byName.set(m.name, m);
   }
 
   const preserved = new Set<string>();
   for (const m of methods) {
-    if (isClientSafeMethod(m.decorators, m.name, builtinMethods)) {
+    if (isClientSafeMethodFn(m.decorators, m.name, builtinMethods)) {
       preserved.add(m.name);
     }
   }
 
-  const stringRanges = buildStringRanges(classBody);
-  const callRe = /\bthis\s*\.\s*([a-zA-Z_$][\w$]*)\s*\(/g;
+  // Map method/field-function name → its AST body node, for call-edge
+  // traversal. A function-valued class field (`@Client handler = () => {...}`)
+  // can also be preserved and call helpers, so its body must be walked too —
+  // otherwise helpers it reaches via `this.foo()` would be incorrectly stubbed.
+  const bodyByName = new Map<string, any>();
+  for (const member of cls?.body?.body ?? []) {
+    if (member.type === 'MethodDefinition') {
+      const name = memberKeyName(member.key);
+      if (name !== null && member.value?.body) bodyByName.set(name, member.value.body);
+      continue;
+    }
+    if (member.type === 'PropertyDefinition') {
+      const name = memberKeyName(member.key);
+      const value = member.value;
+      if (
+        name !== null &&
+        value &&
+        (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
+      ) {
+        // Arrow concise-body is an Expression (no BlockStatement); use the
+        // value body if present, else the value itself so `collectThisCalls`
+        // walks the expression.
+        bodyByName.set(name, value.body ?? value);
+      }
+    }
+  }
 
   // Fixed-point iteration, capped at 3 rounds. Depth 3 covers the common
   // onMount -> setupReveal -> wireObserver -> addListener chain.
   for (let round = 0; round < 3; round++) {
     const before = preserved.size;
-    for (const m of methods) {
-      if (!preserved.has(m.name)) continue;
-      const body = classBody.slice(m.bodyStart, m.bodyEnd);
-      let match: RegExpExecArray | null;
-      callRe.lastIndex = 0;
-      while ((match = callRe.exec(body)) !== null) {
-        const calleeName = match[1];
-        const absolutePos = m.bodyStart + match.index;
-        if (isInRange(stringRanges, absolutePos)) continue;
-        if (byName.has(calleeName) && !preserved.has(calleeName)) {
-          preserved.add(calleeName);
-        }
+    for (const name of [...preserved]) {
+      const body = bodyByName.get(name);
+      if (!body) continue;
+      for (const callee of collectThisCalls(body)) {
+        if (byName.has(callee)) preserved.add(callee);
       }
     }
     if (preserved.size === before) break;
@@ -842,809 +366,32 @@ function computePreservedSet(
   return preserved;
 }
 
-/**
- * Extract the names of server-only methods that will be stubbed, along with
- * whether each one carries an explicit `@Server` decorator. Only `@Server`
- * methods are eligible for RPC metadata injection — undecorated helpers that
- * get stripped must NOT be auto-registered as RPC endpoints.
- */
-function extractServerOnlyMethodNames(
-  fullCode: string,
-  classBodyStart: number,
-  classBodyEnd: number,
-  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>
-): Array<{ name: string; hasServerDecorator: boolean }> {
-  const classBody = fullCode.slice(classBodyStart, classBodyEnd);
-  const methods = collectMethods(classBody, isClientSafeMethod, builtinMethods);
-  const preserved = computePreservedSet(classBody, methods, isClientSafeMethod, builtinMethods);
-
-  const result: Array<{ name: string; hasServerDecorator: boolean }> = [];
-  for (const m of methods) {
-    if (!preserved.has(m.name)) {
-      result.push({ name: m.name, hasServerDecorator: m.hasServerDecorator });
-    }
-  }
-  return result;
-}
+// ============================================================================
+// Stub generation
+// ============================================================================
 
 /**
- * Create metadata injection code that registers server-only methods for RPC
- * proxying. Only methods that carry an explicit `@Server` decorator are
- * registered — undecorated helpers that get stripped must never receive an RPC
- * proxy, so their stubs throw loudly instead of silently no-op'ing.
- *
- * Returns an empty string when no method qualifies, so no constructor is
- * injected. This is injected at the end of the class body.
- */
-function createMetadataInjection(
-  methods: Array<{ name: string; hasServerDecorator: boolean }>,
-  _hasExtends: boolean
-): string {
-  const serverMethodNames = methods
-    .filter((m) => m.hasServerDecorator)
-    .map((m) => m.name);
-  if (serverMethodNames.length === 0) return '';
-
-  const methodList = JSON.stringify(serverMethodNames);
-  // Returns ONLY the static registration method. The constructor wiring is
-  // handled by the caller (transformCossackClass), which splices the
-  // registration call into an existing constructor or appends a new one —
-  // appending unconditionally would produce a duplicate constructor
-  // (a syntax error) when the class already declares one.
-  return `
-    // Register server-only methods for RPC proxying
-    static __registerServerOnlyMethods() {
-      if (typeof Reflect === 'undefined' || !Reflect.hasMetadata) return;
-      const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', this) || {};
-      const methods = ${methodList};
-      for (const name of methods) {
-        if (!serverMethods[name]) {
-          serverMethods[name] = { channel: 'global', provider: 'page', __serverOnly: true };
-        }
-      }
-      Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
-    }
-`;
-}
-
-/**
- * The statement injected into a constructor to register server-only methods.
- */
-const REGISTER_SERVER_METHODS_CALL =
-  '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
-
-/**
- * If `body` declares a top-level `constructor(...)`, return the index (within
- * `body`) of the constructor's opening body brace `{`. Returns -1 if there is
- * no top-level constructor. Used to splice the server-method registration call
- * into an existing constructor instead of appending a duplicate one.
- */
-function findConstructorBodyOpenBrace(body: string): number {
-  const len = body.length;
-  let depth = 0;
-  let i = 0;
-  while (i < len) {
-    const char = body[i];
-    if (char === '"' || char === "'" || char === '`') {
-      const end = findStringEnd(body, i, char);
-      if (end === -1) return -1;
-      i = end + 1;
-      continue;
-    }
-    if (char === '/' && i + 1 < len) {
-      if (body[i + 1] === '/') {
-        i = body.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-        continue;
-      }
-      if (body[i + 1] === '*') {
-        const end = body.indexOf('*/', i + 2);
-        if (end === -1) return -1;
-        i = end + 2;
-        continue;
-      }
-    }
-    if (char === '{') { depth++; i++; continue; }
-    if (char === '}') { depth--; i++; continue; }
-    if (depth === 0 && char === 'c' && body.slice(i, i + 11) === 'constructor') {
-      const after = body[i + 11];
-      if (after === undefined || /[\s(]/.test(after)) {
-        let j = i + 11;
-        while (j < len && /\s/.test(body[j])) j++;
-        if (body[j] !== '(') { i++; continue; }
-        let pdepth = 1;
-        j++;
-        while (j < len && pdepth > 0) {
-          const c2 = body[j];
-          if (c2 === '"' || c2 === "'" || c2 === '`') {
-            const e = findStringEnd(body, j, c2);
-            if (e === -1) break;
-            j = e;
-          } else if (c2 === '(') pdepth++;
-          else if (c2 === ')') pdepth--;
-          j++;
-        }
-        while (j < len && /\s/.test(body[j])) j++;
-        if (body[j] === '{') return j;
-      }
-    }
-    i++;
-  }
-  return -1;
-}
-
-/**
- * Transform methods using a collect/transitive-closure/stub pipeline.
- *
- * 1. Collect every top-level method in the class body.
- * 2. Compute the preserved set (client-safe + transitively reachable helpers).
- * 3. Replace the body of every non-preserved method with a stub.
- *
- * Only top-level methods are processed; nested functions, template literals,
- * and braces inside strings/comments are skipped.
- */
-function transformMethodsWithDepthTracking(
-  fullCode: string,
-  classBodyStart: number,
-  classBodyEnd: number,
-  className: string,
-  id: string,
-  isClientSafeMethod: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
-  devWarning: boolean
-): string {
-  void id;
-  const classBody = fullCode.slice(classBodyStart, classBodyEnd);
-  const methods = collectMethods(classBody, isClientSafeMethod, builtinMethods);
-  const preserved = computePreservedSet(classBody, methods, isClientSafeMethod, builtinMethods);
-
-  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
-  for (const m of methods) {
-    if (preserved.has(m.name)) continue;
-
-    if (m.fieldValueStart !== undefined) {
-      // Class field with a function value. Only strip fields explicitly
-      // marked @Server — undecorated arrow fields are commonly used as event
-      // handlers (e.g. @click=${this.handler}) and the transitive-preservation
-      // pass can't see bare template references, so stripping them by default
-      // would break apps. (To strip a server-only arrow field, decorate it
-      // @Server; that is the explicit server-only contract.)
-      if (!m.hasServerDecorator) continue;
-      // Class field initializers forbid `arguments`, so we cannot reuse the
-      // method body stub — replace the whole value with a rest-param stub.
-      const stub = createFieldStub(m.name, className, devWarning, !!m.fieldIsAsync, m.fieldKind === 'function');
-      replacements.push({
-        start: m.fieldValueStart,
-        end: m.bodyEnd,
-        replacement: stub,
-      });
-    } else {
-      const stub = createStub(m.name, className, devWarning);
-      replacements.push({
-        start: m.bodyStart + 1, // After the opening brace
-        end: m.bodyEnd - 1, // Before the closing brace
-        replacement: stub.slice(1, -1), // Remove outer braces from stub
-      });
-    }
-  }
-
-  if (replacements.length === 0) return classBody;
-
-  let result = classBody;
-  for (const replacement of [...replacements].reverse()) {
-    result =
-      result.slice(0, replacement.start) +
-      replacement.replacement +
-      result.slice(replacement.end);
-  }
-
-  return result;
-}
-
-/**
- * Find a method definition starting at the given position.
- * Returns null if not a method definition.
- */
-function findMethodDefinition(
-  code: string,
-  startPos: number
-): { nameStart: number; nameEnd: number; methodName: string; paramsStart: number; paramsEnd: number; bodyStart: number; bodyEnd: number; fieldValueStart?: number; fieldKind?: 'arrow' | 'function'; fieldIsAsync?: boolean } | null {
-  let i = startPos;
-  const len = code.length;
-
-  // Skip leading whitespace
-  while (i < len && /\s/.test(code[i])) i++;
-  if (i >= len) return null;
-
-  // Check for get/set at the current position - these are property accessors, not methods
-  // Note: We check the first 4 characters which includes the space after get/set
-  const next4 = code.slice(i, i + 4);
-  const isGet = code[i] === 'g' && next4 === 'get ';
-  const isSet = code[i] === 's' && next4 === 'set ';
-  const isGetOrSet = isGet || isSet;
-  if (isGetOrSet) {
-    // Getters/setters are intentionally PRESERVED (not stubbed).
-    // Unlike methods (called via `this.foo()`), accessors are read as bare
-    // property accesses (`this.foo`) inside preserved methods like render().
-    // The transitive-preservation pass only detects parenthesised calls
-    // (`this.foo(`), so it cannot tell which accessors a preserved method
-    // reads. Stripping undecorated accessors would therefore break client
-    // rendering. Mark them client-safe-by-construction by reporting them with
-    // the reserved names 'get'/'set', which collectMethods excludes from
-    // stubbing. A dedicated access-aware preservation pass would be needed to
-    // strip accessors safely — see plan item 2.1 (getters/setters, deferred).
-    const accessorType = code.slice(i, i + 3); // 'get' or 'set'
-    i += 3; // Skip 'get' or 'set'
-    while (i < len && /\s/.test(code[i])) i++; // Skip whitespace after get/set
-
-    // Find the property name (identifier)
-    const propNameMatch = code.slice(i).match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
-    if (!propNameMatch) return null;
-    const propName = propNameMatch[1];
-    i += propName.length;
-
-    // Skip whitespace
-    while (i < len && /\s/.test(code[i])) i++;
-
-    // Skip parameter list for getters/setters
-    // For getters: `get value()` - we need to skip the `()`
-    // For setters: `set value(v)` - we need to skip the `(v)`
-    if (i < len && code[i] === '(') {
-      let parenDepth = 1;
-      i++;
-      while (i < len && parenDepth > 0) {
-        if (code[i] === '(') parenDepth++;
-        else if (code[i] === ')') parenDepth--;
-        else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-          const stringEnd = findStringEndInString(code, i, code[i]);
-          if (stringEnd === -1) return null;
-          i = stringEnd;
-        } else if (code[i] === '/') {
-          const re = regexEndIfRegex(code, i);
-          if (re !== -1) i = re - 1;
-        }
-        i++;
-      }
-    }
-
-    // Skip whitespace
-    while (i < len && /\s/.test(code[i])) i++;
-
-    // Skip optional type annotation (for getters)
-    if (i < len && code[i] === ':') {
-      i++;
-      while (i < len && code[i] !== '{') {
-        if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-          const stringEnd = findStringEndInString(code, i, code[i]);
-          if (stringEnd === -1) return null;
-          i = stringEnd + 1;
-        } else if (code[i] === '(') {
-          // Handle parentheses in type annotations (e.g., function types)
-          let depth = 1;
-          i++;
-          while (i < len && depth > 0) {
-            if (code[i] === '(') depth++;
-            else if (code[i] === ')') depth--;
-            i++;
-          }
-        } else {
-          i++;
-        }
-      }
-    }
-
-    // Skip whitespace
-    while (i < len && /\s/.test(code[i])) i++;
-
-    // Find opening brace
-    if (i >= len || code[i] !== '{') return null;
-    const bodyStart = i;
-
-    // Find closing brace (matching braces)
-    let braceDepth = 1;
-    i++;
-    while (i < len && braceDepth > 0) {
-      if (code[i] === '{') braceDepth++;
-      else if (code[i] === '}') braceDepth--;
-      else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-        const stringEnd = findStringEndInString(code, i, code[i]);
-        if (stringEnd === -1) return null;
-        i = stringEnd;
-      } else if (code[i] === '/') {
-        const re = regexEndIfRegex(code, i);
-        if (re !== -1) i = re - 1;
-      }
-      i++;
-    }
-    const bodyEnd = i;
-
-    // Return as if it's a method with a special marker
-    return {
-      nameStart: startPos,
-      nameEnd: startPos + 3,
-      methodName: accessorType, // 'get' or 'set' - will be checked in main loop
-      paramsStart: bodyStart,
-      paramsEnd: bodyStart,
-      bodyStart,
-      bodyEnd
-    };
-  }
-
-  // Skip optional access modifiers and async keyword
-  const accessModifiers = ['public', 'private', 'protected', 'static', 'readonly'];
-  while (i < len) {
-    const remaining = code.slice(i);
-    let found = false;
-    for (const mod of accessModifiers) {
-      if (remaining.startsWith(mod + ' ') || remaining.startsWith(mod + '\t')) {
-        i += mod.length;
-        while (i < len && /\s/.test(code[i])) i++;
-        found = true;
-        break;
-      }
-    }
-    if (remaining.startsWith('async ') || remaining.startsWith('async\t') || remaining.startsWith('async\n')) {
-      i += 5;
-      while (i < len && /\s/.test(code[i])) i++;
-      found = true;
-    } else if (!found) {
-      break;
-    }
-  }
-
-  // Skip whitespace
-  while (i < len && /\s/.test(code[i])) i++;
-  if (i >= len) return null;
-
-  // Check for get/set after access modifiers
-  if ((code[i] === 'g' && code.slice(i, i + 4) === 'get ' && (i + 3 >= len || /\s/.test(code[i + 3]))) ||
-      (code[i] === 's' && code.slice(i, i + 4) === 'set ' && (i + 3 >= len || /\s/.test(code[i + 3])))) {
-    // Property accessors should not be stubbed
-    return null;
-  }
-
-  // Consume an optional generator marker `*` (e.g. `*gen()` or `async *gen()`).
-  if (code[i] === '*') {
-    i++;
-    while (i < len && /\s/.test(code[i])) i++;
-  }
-
-  // Computed-name methods (e.g. `['x']()` or `[Symbol.iterator]()`). These are
-  // rare and their name is a dynamic expression, so we don't stub them (no
-  // stable proxy key) — but we must consume the full definition so the closing
-  // brace doesn't corrupt the caller's depth tracking. Return the body range
-  // marked as 'get' so collectMethods treats it as not-stubbable (preserved).
-  if (code[i] === '[') {
-    let bdepth = 1;
-    i++;
-    while (i < len && bdepth > 0) {
-      if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-        const se = findStringEndInString(code, i, code[i]);
-        if (se === -1) return null;
-        i = se;
-      } else if (code[i] === '[') bdepth++;
-      else if (code[i] === ']') bdepth--;
-      i++;
-    }
-    while (i < len && /\s/.test(code[i])) i++;
-    if (i >= len || code[i] !== '(') return null;
-    // Skip params, optional return type, and body — reuse the same flow by
-    // falling through with a synthesised identifier name.
-    // (Computed names are preserved, so use a placeholder name that collectMethods
-    // will treat via the 'get'/'set' exclusion path — return null to keep simple.)
-    return null;
-  }
-
-  // Find method name (identifier)
-  const nameMatch = code.slice(i).match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
-  if (!nameMatch) return null;
-
-  const methodName = nameMatch[1];
-  const nameStart = i;
-  const nameEnd = i + methodName.length;
-  i = nameEnd;
-
-  // Skip optional generics <...>
-  if (i < len && code[i] === '<') {
-    let depth = 1;
-    i++;
-    while (i < len && depth > 0) {
-      if (code[i] === '<') depth++;
-      else if (code[i] === '>') depth--;
-      else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-        const stringEnd = findStringEndInString(code, i, code[i]);
-        if (stringEnd === -1) return null;
-        i = stringEnd;
-      }
-      i++;
-    }
-  }
-
-  // Skip whitespace
-  while (i < len && /\s/.test(code[i])) i++;
-
-  // Class field with a function value, e.g. `dbQuery = async () => { SECRET }`.
-  // Without this branch the arrow-function body is preserved verbatim, leaking
-  // server-only code. We recognise block-bodied arrow functions and `function`
-  // expressions. Because class field initializers forbid `arguments`, the field
-  // value is replaced wholesale with a rest-param stub (see createFieldStub) —
-  // so we report `fieldValueStart` (where the value begins, incl. `async`) and
-  // `fieldKind`/`fieldIsAsync` for the transform.
-  if (i < len && code[i] === '=' && code[i + 1] !== '=' && code[i + 1] !== '>') {
-    let j = i + 1;
-    while (j < len && /\s/.test(code[j])) j++;
-    const valueStart = j;
-    let isAsync = false;
-    if (code.slice(j, j + 5) === 'async' && /[\s(]/.test(code[j + 5] || '')) {
-      isAsync = true;
-      j += 5;
-      while (j < len && /\s/.test(code[j])) j++;
-    }
-    // Arrow function with a block body: (params) => { ... }
-    if (code[j] === '(') {
-      // skip params
-      let pdepth = 1;
-      j++;
-      while (j < len && pdepth > 0) {
-        const c2 = code[j];
-        if (c2 === '"' || c2 === "'" || c2 === '`') {
-          const se = findStringEndInString(code, j, c2);
-          if (se === -1) break;
-          j = se;
-        } else if (c2 === '(') pdepth++;
-        else if (c2 === ')') pdepth--;
-        j++;
-      }
-      while (j < len && /\s/.test(code[j])) j++;
-      if (code[j] === '=' && code[j + 1] === '>') {
-        j += 2;
-        while (j < len && /\s/.test(code[j])) j++;
-        if (code[j] === '{') {
-          const bodyStart = j;
-          let bdepth = 1;
-          j++;
-          while (j < len && bdepth > 0) {
-            const c2 = code[j];
-            if (c2 === '"' || c2 === "'" || c2 === '`') {
-              const se = findStringEndInString(code, j, c2);
-              if (se === -1) return null;
-              j = se;
-            } else if (c2 === '{') bdepth++;
-            else if (c2 === '}') bdepth--;
-            else if (c2 === '/') {
-              const re = regexEndIfRegex(code, j);
-              if (re !== -1) j = re - 1;
-            }
-            j++;
-          }
-          const bodyEnd = j;
-          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd, fieldValueStart: valueStart, fieldKind: 'arrow', fieldIsAsync: isAsync };
-        }
-      }
-    }
-    // `function` expression field: name = function(...) { ... }
-    if (code.slice(j, j + 8) === 'function') {
-      let k = j + 8;
-      // optional name
-      while (k < len && /\s/.test(code[k])) k++;
-      const fnName = code.slice(k).match(/^([a-zA-Z_$][\w$]*)/);
-      if (fnName) k += fnName[1].length;
-      while (k < len && /\s/.test(code[k])) k++;
-      if (code[k] === '(') {
-        let pdepth = 1; k++;
-        while (k < len && pdepth > 0) {
-          const c2 = code[k];
-          if (c2 === '"' || c2 === "'" || c2 === '`') { const se = findStringEndInString(code, k, c2); if (se===-1) break; k = se; }
-          else if (c2 === '(') pdepth++; else if (c2 === ')') pdepth--;
-          k++;
-        }
-        while (k < len && /\s/.test(code[k])) k++;
-        if (code[k] === '{') {
-          const bodyStart = k;
-          let bdepth = 1; k++;
-          while (k < len && bdepth > 0) {
-            const c2 = code[k];
-            if (c2 === '"' || c2 === "'" || c2 === '`') { const se = findStringEndInString(code, k, c2); if (se===-1) return null; k = se; }
-            else if (c2 === '{') bdepth++; else if (c2 === '}') bdepth--;
-            else if (c2 === '/') { const re = regexEndIfRegex(code, k); if (re !== -1) k = re - 1; }
-            k++;
-          }
-          const bodyEnd = k;
-          return { nameStart, nameEnd, methodName, paramsStart: bodyStart, paramsEnd: bodyStart, bodyStart, bodyEnd, fieldValueStart: valueStart, fieldKind: 'function', fieldIsAsync: isAsync };
-        }
-      }
-    }
-    // Non-function data field — leave as-is.
-    return null;
-  }
-
-  // Find opening paren of parameter list
-  if (i >= len || code[i] !== '(') return null;
-  const paramsStart = i;
-  i++;
-
-  // Find closing paren (handling nested parens)
-  let parenDepth = 1;
-  while (i < len && parenDepth > 0) {
-    if (code[i] === '(') parenDepth++;
-    else if (code[i] === ')') parenDepth--;
-    else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-      const stringEnd = findStringEndInString(code, i, code[i]);
-      if (stringEnd === -1) return null;
-      i = stringEnd;
-    } else if (code[i] === '/') {
-      const re = regexEndIfRegex(code, i);
-      if (re !== -1) i = re - 1;
-    }
-    i++;
-  }
-  const paramsEnd = i;
-
-  // Skip optional return type annotation
-  if (i < len && code[i] === ':') {
-    i++;
-    while (i < len && code[i] !== '{') {
-      if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-        const stringEnd = findStringEndInString(code, i, code[i]);
-        if (stringEnd === -1) return null;
-        i = stringEnd + 1;
-      } else if (code[i] === '{') {
-        break;
-      }
-      i++;
-    }
-  }
-
-  // Skip whitespace
-  while (i < len && /\s/.test(code[i])) i++;
-
-  // Find opening brace
-  if (i >= len || code[i] !== '{') return null;
-  const bodyStart = i;
-
-  // Find closing brace (matching braces)
-  let braceDepth = 1;
-  i++;
-  while (i < len && braceDepth > 0) {
-    if (code[i] === '{') braceDepth++;
-    else if (code[i] === '}') braceDepth--;
-    else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-      const stringEnd = findStringEndInString(code, i, code[i]);
-      if (stringEnd === -1) return null;
-      i = stringEnd;
-    } else if (code[i] === '/') {
-      const re = regexEndIfRegex(code, i);
-      if (re !== -1) i = re - 1;
-    }
-    i++;
-  }
-  const bodyEnd = i;
-
-  return { nameStart, nameEnd, methodName, paramsStart, paramsEnd, bodyStart, bodyEnd };
-}
-
-/**
- * Find the end of a decorator (e.g., @Server(), @Client, @Optimistic('action'))
- */
-function findDecoratorEnd(code: string, startPos: number): number {
-  let i = startPos + 1; // Skip @
-  const len = code.length;
-
-  // Find identifier
-  while (i < len && /[a-zA-Z0-9_]/.test(code[i])) i++;
-
-  // Skip whitespace
-  while (i < len && /\s/.test(code[i])) i++;
-
-  // Check for parenthesized arguments
-  if (i < len && code[i] === '(') {
-    let depth = 1;
-    i++;
-    while (i < len && depth > 0) {
-      if (code[i] === '(') depth++;
-      else if (code[i] === ')') depth--;
-      else if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
-        const stringEnd = findStringEndInString(code, i, code[i]);
-        if (stringEnd === -1) return -1;
-        i = stringEnd;
-      }
-      i++;
-    }
-  }
-
-  return i;
-}
-
-/**
- * Extract the class body content including the closing brace position.
- */
-function extractClassBody(
-  code: string,
-  startPos: number
-): { body: string; bodyEnd: number; closingBrace: number } | null {
-  let depth = 1; // We start after the opening '{'
-  let i = startPos;
-  const len = code.length;
-
-  while (i < len && depth > 0) {
-    const char = code[i];
-
-    // Skip strings and template literals
-    if (char === '"' || char === "'" || char === '`') {
-      const stringEnd = findStringEnd(code, i, char);
-      if (stringEnd === -1) return null; // Unclosed string
-      i = stringEnd;
-      i++;
-      continue;
-    }
-
-    // Skip comments
-    if (char === '/' && i + 1 < len) {
-      const next = code[i + 1];
-      if (next === '/') {
-        // Single-line comment
-        i = code.indexOf('\n', i + 2);
-        if (i === -1) i = len;
-        continue;
-      } else if (next === '*') {
-        // Multi-line comment
-        i = code.indexOf('*/', i + 2);
-        if (i === -1) return null; // Unclosed comment
-        i += 2;
-        continue;
-      } else {
-        // Possibly a regex literal — skip it so its braces don't corrupt depth.
-        const re = regexEndIfRegex(code, i);
-        if (re !== -1) {
-          i = re;
-          continue;
-        }
-      }
-    }
-
-    if (char === '{') {
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0) {
-        return {
-          body: code.slice(startPos, i),
-          bodyEnd: i,
-          closingBrace: i,
-        };
-      }
-    }
-    i++;
-  }
-
-  return null;
-}
-
-/**
- * Find the end of a string literal starting at position pos.
- * For template literals (backticks), handles ${...} expressions recursively.
- */
-function findStringEnd(code: string, pos: number, quote: string): number {
-  let i = pos + 1;
-  const len = code.length;
-
-  while (i < len) {
-    const char = code[i];
-    if (char === '\\') {
-      // Skip escaped character
-      i += 2;
-      continue;
-    }
-    if (quote === '`' && char === '$' && i + 1 < len && code[i + 1] === '{') {
-      // Template literal expression ${...}
-      i += 2; // Skip ${
-      let exprDepth = 1;
-      while (i < len && exprDepth > 0) {
-        const exprChar = code[i];
-        if (exprChar === '{') {
-          exprDepth++;
-          i++;
-        } else if (exprChar === '}') {
-          exprDepth--;
-          if (exprDepth === 0) break;
-          i++;
-        } else if (exprChar === '"' || exprChar === "'" || exprChar === '`') {
-          // Nested string/template literal inside expression
-          const nestedEnd = findStringEnd(code, i, exprChar);
-          if (nestedEnd === -1) return -1;
-          i = nestedEnd + 1;
-        } else if (exprChar === '/' && i + 1 < len) {
-          // Skip comments inside expressions
-          const next = code[i + 1];
-          if (next === '/') {
-            i = code.indexOf('\n', i + 2);
-            if (i === -1) i = len;
-          } else if (next === '*') {
-            i = code.indexOf('*/', i + 2);
-            if (i === -1) return -1;
-            i += 2;
-          } else {
-            i++;
-          }
-        } else {
-          i++;
-        }
-      }
-      continue;
-    }
-    if (char === quote) {
-      return i;
-    }
-    i++;
-  }
-
-  return -1; // Unclosed string
-}
-
-/**
- * Find the end of a string literal in a substring (for use with classBody).
- * For template literals (backticks), handles ${...} expressions recursively.
- */
-function findStringEndInString(code: string, pos: number, quote: string): number {
-  let i = pos + 1;
-  const len = code.length;
-
-  while (i < len) {
-    const char = code[i];
-    if (char === '\\') {
-      // Skip escaped character
-      i += 2;
-      continue;
-    }
-    if (quote === '`' && char === '$' && i + 1 < len && code[i + 1] === '{') {
-      // Template literal expression ${...}
-      i += 2; // Skip ${
-      let exprDepth = 1;
-      while (i < len && exprDepth > 0) {
-        const exprChar = code[i];
-        if (exprChar === '{') {
-          exprDepth++;
-          i++;
-        } else if (exprChar === '}') {
-          exprDepth--;
-          if (exprDepth === 0) break;
-          i++;
-        } else if (exprChar === '"' || exprChar === "'" || exprChar === '`') {
-          // Nested string/template literal inside expression
-          const nestedEnd = findStringEndInString(code, i, exprChar);
-          if (nestedEnd === -1) return -1;
-          i = nestedEnd + 1;
-        } else {
-          i++;
-        }
-      }
-      continue;
-    }
-    if (char === quote) {
-      return i;
-    }
-    i++;
-  }
-
-  return -1; // Unclosed string
-}
-
-/**
- * Create a stub function for a server-only method.
+ * Create a stub function body for a server-only method.
  *
  * The stub checks if a runtime proxy exists and calls it. `@Server` methods
  * receive an RPC proxy at bootstrap, so the stub transparently forwards.
  * Undecorated helpers that were stripped (no `@Server`, not reachable from a
  * client-safe method) have no proxy and therefore throw with guidance.
+ *
+ * The leading render-phase guard (`this.__cossackAssertNotRendering?.(...)`)
+ * makes a stripped server method invoked during `render()` fail loudly instead
+ * of returning a Promise that the synchronous renderer would stringify as
+ * "[object Promise]".
  */
 function createStub(
   methodName: string,
   className: string,
   devWarning: boolean
 ): string {
+  const renderGuard = `this.__cossackAssertNotRendering?.('${methodName}');`;
   if (devWarning) {
     return `{
+      ${renderGuard}
       // Check if a proxy has been set up for this server-only method
       const proxy = this.__cossack_proxies?.get('${methodName}');
       if (proxy) {
@@ -1663,6 +410,7 @@ function createStub(
   }
   // Production: minimal stub that still checks for proxy
   return `{
+    ${renderGuard}
     const proxy = this.__cossack_proxies?.get('${methodName}');
     if (proxy) return proxy.apply(this, arguments);
     throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
@@ -1688,8 +436,10 @@ function createFieldStub(
   const sig = isFunction
     ? `${asyncPrefix}function (...args)`
     : `${asyncPrefix}(...args) =>`;
+  const renderGuard = `this.__cossackAssertNotRendering?.('${methodName}');`;
   if (devWarning) {
     return `${sig} {
+      ${renderGuard}
       const proxy = this.__cossack_proxies?.get('${methodName}');
       if (proxy) {
         return proxy.apply(this, args);
@@ -1698,11 +448,299 @@ function createFieldStub(
     }`;
   }
   return `${sig} {
+    ${renderGuard}
     const proxy = this.__cossack_proxies?.get('${methodName}');
     if (proxy) return proxy.apply(this, args);
     throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
   }`;
 }
+
+// ============================================================================
+// Server-method metadata injection
+// ============================================================================
+
+/**
+ * Extract the names of server-only methods that will be stubbed, along with
+ * whether each one carries an explicit `@Server` decorator. Only `@Server`
+ * methods are eligible for RPC metadata injection — undecorated helpers that
+ * get stripped must NOT be auto-registered as RPC endpoints.
+ */
+function extractServerOnlyMethodNames(
+  methods: AstMethod[],
+  preserved: Set<string>,
+): Array<{ name: string; hasServerDecorator: boolean }> {
+  const result: Array<{ name: string; hasServerDecorator: boolean }> = [];
+  for (const m of methods) {
+    if (!preserved.has(m.name)) {
+      result.push({ name: m.name, hasServerDecorator: m.hasServerDecorator });
+    }
+  }
+  return result;
+}
+
+/**
+ * Create metadata injection code that registers server-only methods for RPC
+ * proxying. Only methods that carry an explicit `@Server` decorator are
+ * registered — undecorated helpers that get stripped must never receive an RPC
+ * proxy, so their stubs throw loudly instead of silently no-op'ing.
+ *
+ * Returns an empty string when no method qualifies, so no constructor is
+ * injected. This is injected at the end of the class body.
+ */
+function createMetadataInjection(
+  methods: Array<{ name: string; hasServerDecorator: boolean }>,
+): string {
+  const serverMethodNames = methods
+    .filter((m) => m.hasServerDecorator)
+    .map((m) => m.name);
+  if (serverMethodNames.length === 0) return '';
+
+  const methodList = JSON.stringify(serverMethodNames);
+  return `
+    // Register server-only methods for RPC proxying
+    static __registerServerOnlyMethods() {
+      if (typeof Reflect === 'undefined' || !Reflect.hasMetadata) return;
+      const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', this) || {};
+      const methods = ${methodList};
+      for (const name of methods) {
+        if (!serverMethods[name]) {
+          serverMethods[name] = { channel: 'global', provider: 'page', __serverOnly: true };
+        }
+      }
+      Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
+    }
+`;
+}
+
+/** The statement injected into a constructor to register server-only methods. */
+const REGISTER_SERVER_METHODS_CALL =
+  '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
+
+// ============================================================================
+// Main transform
+// ============================================================================
+
+/**
+ * Transform a source string by stubbing server-only methods of every Cossack /
+ * CossackElement subclass and every `@Service`-decorated class. Discovery,
+ * preservation, and stub spans are all derived from the Oxc AST, so the
+ * transform is robust to formatting, single-statement bodies, and field/method
+ * ordering — cases the previous regex/brace scanner mishandled.
+ *
+ * Exported for unit testing.
+ */
+export function transformCossackClass(
+  code: string,
+  id: string,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>,
+  devWarning: boolean
+): string {
+  // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
+  // decorator arguments first, so method-stripping operates on sanitized source.
+  code = stripSsgGenerateStaticParams(code);
+
+  const program = parseProgram(code);
+  if (!program) {
+    // Fail-open on parse errors (we can't strip what we can't parse), but warn
+    // loudly so a parse failure never silently ships server-only code in the
+    // client bundle. This is a security plugin — silent skip is the wrong default.
+    console.warn(
+      `[Cossack Security] Could not parse ${id} with Oxc; server-only code ` +
+        `stripping was SKIPPED for this file. If it contains @Server methods, ` +
+        `their bodies may leak into the client bundle. Check the syntax or ` +
+        `report a parser bug.`
+    );
+    return code;
+  }
+
+  // Collect, per class, the splices to apply. We record replacements as
+  // file-relative offsets and apply them in reverse order at the end.
+  type Replacement = { start: number; end: number; replacement: string };
+  const replacements: Replacement[] = [];
+
+  for (const cls of findClasses(program)) {
+    const isCossackSubclass = superclassName(cls) === 'Cossack' || superclassName(cls) === 'CossackElement';
+    const hasServiceDecorator = (cls.decorators ?? []).some((d: any) => /@Service\b/.test(sourceSlice(code, d)));
+    if (!isCossackSubclass && !hasServiceDecorator) continue;
+
+    const className = cls.id?.name ?? 'Anonymous';
+    const hasExtends = cls.superClass != null;
+
+    const methods = collectAstMethods(cls, code);
+    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
+    const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved);
+
+    // 1. Stub the body of every non-preserved method, and the value of every
+    //    non-preserved @Server function field.
+    for (const m of methods) {
+      if (preserved.has(m.name)) continue;
+
+      if (m.fieldValueStart !== undefined) {
+        // Class field with a function value. Only strip fields explicitly
+        // marked @Server — undecorated arrow fields are commonly used as event
+        // handlers (e.g. @click=${this.handler}) and the transitive-preservation
+        // pass can't see bare template references, so stripping them by default
+        // would break apps.
+        if (!m.hasServerDecorator) continue;
+        const stub = createFieldStub(m.name, className, devWarning, !!m.fieldIsAsync, m.fieldKind === 'function');
+        replacements.push({ start: m.fieldValueStart, end: m.bodyEnd, replacement: stub });
+      } else {
+        const stub = createStub(m.name, className, devWarning);
+        // Splice the stub between the body braces (exclusive of the braces).
+        replacements.push({
+          start: m.bodyStart + 1,
+          end: m.bodyEnd - 1,
+          replacement: stub.slice(1, -1), // drop the stub's outer braces
+        });
+      }
+    }
+
+    // 2. Inject the __registerServerOnlyMethods static + constructor wiring.
+    //    The static method definition is ALWAYS appended (just before the
+    //    class's closing brace) when there is at least one @Server method;
+    //    separately, the registration CALL is spliced into an existing
+    //    constructor or a freshly-appended one. Appending the static method
+    //    unconditionally here is safe — only the constructor must avoid
+    //    duplication, and that is handled below.
+    const metadataInjection = createMetadataInjection(serverOnlyMethods);
+    if (metadataInjection) {
+      const closeBrace = cls.body.end - 1; // index of class's closing `}`
+      const ctor = findConstructor(cls);
+      if (ctor) {
+        // Existing constructor: inject the registration as its first statement.
+        const openBrace = ctor.value.body.start; // index of `{`
+        replacements.push({
+          start: openBrace + 1,
+          end: openBrace + 1,
+          replacement: '\n' + REGISTER_SERVER_METHODS_CALL,
+        });
+        // Still append the static registration method definition.
+        replacements.push({
+          start: closeBrace,
+          end: closeBrace,
+          replacement: metadataInjection,
+        });
+      } else {
+        // No constructor: append one (with super() if the class extends),
+        // together with the static method definition.
+        const superCall = hasExtends ? '      super();\n' : '';
+        const injected =
+          metadataInjection +
+          `    constructor() {
+${superCall}${REGISTER_SERVER_METHODS_CALL}    }
+`;
+        replacements.push({
+          start: closeBrace,
+          end: closeBrace,
+          replacement: injected,
+        });
+      }
+    }
+  }
+
+  if (replacements.length === 0) return code;
+
+  // Apply in reverse offset order so earlier offsets stay valid.
+  let result = code;
+  for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
+  }
+  return result;
+}
+
+/**
+ * Find the `constructor` `MethodDefinition` of `cls`, or null if the class
+ * declares none. Used to splice the server-method registration call into an
+ * existing constructor instead of appending a duplicate.
+ */
+function findConstructor(cls: any): any | null {
+  for (const member of cls?.body?.body ?? []) {
+    if (member.type === 'MethodDefinition' && member.kind === 'constructor') {
+      return member;
+    }
+  }
+  return null;
+}
+
+// ============================================================================
+// SSG generateStaticParams stripping (AST-driven)
+// ============================================================================
+
+/**
+ * Strip the body of `generateStaticParams` from `@Page(...)` / `@Component(...)`
+ * decorator arguments. The function is only ever invoked at SSG build time
+ * (see `getStaticParams` in ssg-renderer.ts) — never on the client — so its
+ * body is pure leak risk in the client bundle (database queries, API keys,
+ * business logic). Each occurrence is replaced with `async () => []`, which
+ * preserves the declared type and acts as a defensive no-op.
+ *
+ * Exported for unit testing.
+ */
+export function stripSsgGenerateStaticParams(code: string): string {
+  if (!code.includes('generateStaticParams')) return code;
+  const program = parseProgram(code);
+  if (!program) return code;
+
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const cls of findClasses(program)) {
+    const decos = cls.decorators ?? [];
+    for (const deco of decos) {
+      const decoText = sourceSlice(code, deco);
+      if (!/@(Page|Component)\b/.test(decoText)) continue;
+      // The decorator argument is an ObjectExpression inside the call.
+      const value = findGenerateStaticParamsValueNode(deco, code);
+      if (value) {
+        replacements.push({
+          start: value.start,
+          end: value.end,
+          replacement: 'async () => []',
+        });
+      }
+    }
+  }
+
+  if (replacements.length === 0) return code;
+  let result = code;
+  for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
+  }
+  return result;
+}
+
+/**
+ * Within a `@Page(...)` / `@Component(...)` decorator call's argument object,
+ * find the `generateStaticParams` property's VALUE node (the function), but only
+ * if it lives under an `ssg: { ... }` object literal. Returns the value node or
+ * null. Mirrors the old `findSsgObjectLiteral` + `findGenerateStaticParamsValue`
+ * pair, but via AST.
+ */
+function findGenerateStaticParamsValueNode(decoratorNode: any, code: string): any | null {
+  const expr = decoratorNode.expression;
+  // @Page / @Component are call decorators: `@Page({ ... })`.
+  if (!expr || expr.type !== 'CallExpression') return null;
+  const arg = expr.arguments?.[0];
+  if (!arg || arg.type !== 'ObjectExpression') return null;
+
+  for (const prop of arg.properties) {
+    if (prop.type !== 'Property') continue;
+    if (memberKeyName(prop.key) !== 'ssg') continue;
+    const ssgVal = prop.value;
+    if (!ssgVal || ssgVal.type !== 'ObjectExpression') return null; // boolean form
+    for (const ssgProp of ssgVal.properties) {
+      if (ssgProp.type !== 'Property') continue;
+      if (memberKeyName(ssgProp.key) === 'generateStaticParams') {
+        return ssgProp.value;
+      }
+    }
+  }
+  return null;
+}
+
+// ============================================================================
+// Client-safe classification (pure logic, exported + tested)
+// ============================================================================
 
 /**
  * Check if a method is decorated with a client-safe decorator.
