@@ -264,10 +264,11 @@ cossack image optimize --format avif --quality 85
 cossack image optimize --dry-run
 ```
 
-For each `Image({ src, width, height })` call whose `src` points to a local asset under `public/`, the command writes a resized, re-encoded file named `<name>-<w>x<h>.<format>` beside the original:
+For each `Image({ src, width })` call whose `src` points to a local asset under `public/`, the command writes a resized, re-encoded variant beside the original. `width` is required; `height` is optional and, when present, is included in the filename:
 
 ```
-public/img/hero.png  +  Image({ width: 800, height: 600 })  ->  public/img/hero-800x600.webp
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })               ->  public/img/hero-800.webp
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })  ->  public/img/hero-800x600.webp
 ```
 
 **Options**

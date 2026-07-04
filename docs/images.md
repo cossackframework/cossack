@@ -89,11 +89,11 @@ cossack image optimize --format avif --quality 85
 cossack image optimize --dry-run      # preview without writing
 ```
 
-For each `Image({ src, width, height })` call referencing a local asset, a file named `<name>-<w>x<h>.<format>` is generated:
+For each `Image({ src, width })` call referencing a local asset, a variant is generated. `width` is required (the variant is sized by width); `height` is optional and, when present, produces a `<name>-<w>x<h>.<format>` filename:
 
 ```
-public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
-                   ->  public/img/hero-800x600.webp
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })          ->  public/img/hero-800.webp
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })  ->  public/img/hero-800x600.webp
 ```
 
 | Option | Description |

@@ -3,7 +3,7 @@
   "compilerOptions": {
     "composite": true,
     "moduleResolution": "Bundler",
-    "types": ["vite/client", "@cloudflare/workers-types"],
+    "types": ["vite/client", "@cloudflare/workers-types", "node"],
     "paths": {
       "@/*": ["./src/*"]
     },
