@@ -1637,4 +1637,47 @@ export class Page extends Cossack {
     expect(result).toContain("__cossack_proxies?.get('serverOnly')");
     expect(result).toContain("'kept'");
   });
+
+  it('registers @Server methods for RPC even when the class declares a constructor', () => {
+    // Regression: the metadata-injection pass must append BOTH the registration
+    // CALL into the existing constructor AND the static
+    // __registerServerOnlyMethods() definition. Previously the static method was
+    // skipped when a constructor existed, so @Server methods were never
+    // registered for RPC proxying and the client stub 403'd.
+    const code = `
+@Page()
+export class Page extends Cossack {
+  constructor() { super(); }
+  @Server()
+  async save() { const key = 'SAVE_KEY'; return key; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    // The registration CALL is in the constructor...
+    expect(result).toMatch(/__registerServerOnlyMethods\?\.\(\)/);
+    // ...AND the static method definition is present (this is the regression).
+    expect(result).toMatch(/static\s+__registerServerOnlyMethods\(\)/);
+    // Exactly one constructor (no duplicate).
+    expect((result.match(/constructor\s*\(/g) || []).length).toBe(1);
+    expect(result).not.toContain('SAVE_KEY');
+  });
+
+  it('walks function-valued class fields when computing transitive preservation', () => {
+    // Regression: a preserved function field (e.g. a @Client handler) that
+    // calls a helper must pull that helper into the preserved set. Previously
+    // only MethodDefinition bodies were walked, so the helper was stubbed and
+    // its secret leaked.
+    const code = `
+@Page()
+export class Page extends Cossack {
+  @Client()
+  handler = () => { this.helper(); };
+  helper() { const secret = 'FIELD_HELPER_SECRET'; return secret; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    // helper() was reached from the preserved field, so it survives.
+    expect(result).toContain('FIELD_HELPER_SECRET');
+    expect(result).not.toContain("__cossack_proxies?.get('helper')");
+  });
 });

@@ -1,5 +1,5 @@
 import type { Plugin } from 'vite';
-import { parseAst } from 'vite';
+import { parseSync } from 'vite';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -18,7 +18,7 @@ export interface CossackSecurityPluginOptions {
  * is not exposed in the client bundle.
  *
  * Discovery and the transitive-preservation closure are driven by the Oxc AST
- * (re-exported by Vite as `parseAst`), which parses TypeScript + legacy
+ * (re-exported by Vite as `parseSync`), which parses TypeScript + legacy
  * decorators + class fields natively. Byte-offset spans from the AST are spliced
  * directly into the source string.
  *
@@ -105,7 +105,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 }
 
 // ============================================================================
-// AST helpers (Oxc, via Vite's re-export of rolldown/parseAst)
+// AST helpers (Oxc, via Vite's re-export of rolldown/utils → parseSync)
 // ============================================================================
 
 /**
@@ -113,11 +113,18 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
  * the source does not parse (the plugin then leaves the file untouched rather
  * than crashing the build). `lang` is inferred from `id`'s extension so `.tsx`
  * gets the JSX-aware grammar.
+ *
+ * Uses `parseSync` (the non-deprecated Oxc entry point re-exported by Vite).
+ * Unlike `parseAst`, `parseSync` does not throw on parse errors — it returns a
+ * `ParseResult` with an `.errors` array, which we check to preserve the safe
+ * default of skipping unparseable files.
  */
 function parseProgram(code: string, id: string): any | null {
   const lang: 'ts' | 'tsx' = id.endsWith('.tsx') ? 'tsx' : 'ts';
   try {
-    return parseAst(code, { lang });
+    const result = parseSync(id, code, { lang });
+    if (result.errors && result.errors.length > 0) return null;
+    return result.program;
   } catch {
     return null;
   }
@@ -314,12 +321,31 @@ function computePreservedSet(
     }
   }
 
-  // Map method name → its AST body node, for call-edge traversal.
+  // Map method/field-function name → its AST body node, for call-edge
+  // traversal. A function-valued class field (`@Client handler = () => {...}`)
+  // can also be preserved and call helpers, so its body must be walked too —
+  // otherwise helpers it reaches via `this.foo()` would be incorrectly stubbed.
   const bodyByName = new Map<string, any>();
   for (const member of cls?.body?.body ?? []) {
-    if (member.type !== 'MethodDefinition') continue;
-    const name = memberKeyName(member.key);
-    if (name !== null && member.value?.body) bodyByName.set(name, member.value.body);
+    if (member.type === 'MethodDefinition') {
+      const name = memberKeyName(member.key);
+      if (name !== null && member.value?.body) bodyByName.set(name, member.value.body);
+      continue;
+    }
+    if (member.type === 'PropertyDefinition') {
+      const name = memberKeyName(member.key);
+      const value = member.value;
+      if (
+        name !== null &&
+        value &&
+        (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
+      ) {
+        // Arrow concise-body is an Expression (no BlockStatement); use the
+        // value body if present, else the value itself so `collectThisCalls`
+        // walks the expression.
+        bodyByName.set(name, value.body ?? value);
+      }
+    }
   }
 
   // Fixed-point iteration, capped at 3 rounds. Depth 3 covers the common
@@ -511,7 +537,8 @@ export function transformCossackClass(
 ): string {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
-  code = stripSsgGenerateStaticParams(code);
+  // `id` is threaded so `.tsx` sources use the JSX-aware grammar.
+  code = stripSsgGenerateStaticParams(code, id);
 
   const program = parseProgram(code, id);
   if (!program) return code; // parse error — leave untouched (safe default)
@@ -559,8 +586,15 @@ export function transformCossackClass(
     }
 
     // 2. Inject the __registerServerOnlyMethods static + constructor wiring.
+    //    The static method definition is ALWAYS appended (just before the
+    //    class's closing brace) when there is at least one @Server method;
+    //    separately, the registration CALL is spliced into an existing
+    //    constructor or a freshly-appended one. Appending the static method
+    //    unconditionally here is safe — only the constructor must avoid
+    //    duplication, and that is handled below.
     const metadataInjection = createMetadataInjection(serverOnlyMethods);
     if (metadataInjection) {
+      const closeBrace = cls.body.end - 1; // index of class's closing `}`
       const ctor = findConstructor(cls);
       if (ctor) {
         // Existing constructor: inject the registration as its first statement.
@@ -570,16 +604,21 @@ export function transformCossackClass(
           end: openBrace + 1,
           replacement: '\n' + REGISTER_SERVER_METHODS_CALL,
         });
+        // Still append the static registration method definition.
+        replacements.push({
+          start: closeBrace,
+          end: closeBrace,
+          replacement: metadataInjection,
+        });
       } else {
-        // No constructor: append one (with super() if the class extends).
+        // No constructor: append one (with super() if the class extends),
+        // together with the static method definition.
         const superCall = hasExtends ? '      super();\n' : '';
         const injected =
           metadataInjection +
           `    constructor() {
 ${superCall}${REGISTER_SERVER_METHODS_CALL}    }
 `;
-        // Insert just before the class's closing brace.
-        const closeBrace = cls.body.end - 1; // index of class's closing `}`
         replacements.push({
           start: closeBrace,
           end: closeBrace,
@@ -627,9 +666,9 @@ function findConstructor(cls: any): any | null {
  *
  * Exported for unit testing.
  */
-export function stripSsgGenerateStaticParams(code: string): string {
+export function stripSsgGenerateStaticParams(code: string, id: string = 'ssg-strip.ts'): string {
   if (!code.includes('generateStaticParams')) return code;
-  const program = parseProgram(code, 'ssg-strip.ts');
+  const program = parseProgram(code, id);
   if (!program) return code;
 
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];

@@ -1198,7 +1198,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // to correctly re-run header merging. For now, we'll keep it simple as most head
         // updates are page-specific. Complex layout-based head updates might need the App instance.
         const emptyCtx: HeadContext = { title: '', description: '', image: '', meta: [], links: [], scripts: [], tags: [] };
-        const value = this.head(emptyCtx);
+        // Mark the head window so a @Server method invoked from head() is caught
+        // (same footgun as render(): a server call returns a Promise the head
+        // machinery would stringify as "[object Promise]"). See `_render`.
+        enterRender();
+        let value: HeadValue;
+        try {
+            value = this.head(emptyCtx);
+        } finally {
+            exitRender();
+        }
         const tags = Cossack.mergeHead(emptyCtx, value);
         const serialized = JSON.stringify(tags);
         if (serialized === this._lastHeadTags) return;
