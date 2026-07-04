@@ -21,7 +21,7 @@ const TYPE_ALIASES = {
   s: 'service',
 };
 
-const PAGE_EXTS = ['.ts', '.tsx', '.md', '.mdx'];
+const PAGE_EXTS = ['.ts', '.md', '.mdx'];
 
 export async function deleteCommand(args, ctx) {
   const [typeArg, nameArg] = args;

@@ -11,7 +11,7 @@ Cossack has **four** built-in loading mechanisms. **Do not hand-roll `isLoading`
 
 ## 1. Route-level skeleton (`loading.ts`)
 
-Create a `loading.ts` (or `loading.tsx`) in any route directory. The router renders it **instantly** on navigation while the main page's `init()` runs.
+Create a `loading.ts` in any route directory. The router renders it **instantly** on navigation while the main page's `init()` runs.
 
 ```
 src/pages/dashboard/

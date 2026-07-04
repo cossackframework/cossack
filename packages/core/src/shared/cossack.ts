@@ -162,7 +162,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * loudly instead of returning a Promise that renders as "[object Promise]".
      */
     public __cossackAssertNotRendering(methodName?: string): void {
-       // Uses the shared render-depth flag (see ./server-fn.ts).
+        // Uses the shared render-depth flag (see ./server-fn.ts).
         if (!isRenderingFn()) return;
         const msg =
             '[Cossack] ' +

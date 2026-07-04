@@ -67,7 +67,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     if (id.includes('@cossackframework/database')) return false;
 
     // Only process TypeScript files in user code
-    return id.endsWith('.ts') || id.endsWith('.tsx') || id.endsWith('.mts');
+    return id.endsWith('.ts') || id.endsWith('.mts');
   }
 
   return {
@@ -111,10 +111,6 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 /**
  * Parse `code` as TypeScript and return the ESTree-ish `Program`, or `null` if
  * the source does not parse.
- *
- * Only `.ts` is supported — the framework's pages/components are TypeScript
- * without JSX, so we hardcode the `ts` grammar. (JSX/`.tsx` support can be
- * re-added by switching on a cleaned filename if ever needed.)
  *
  * Uses `parseSync` (the non-deprecated Oxc entry point re-exported by Vite).
  * Unlike `parseAst`, `parseSync` does not throw on parse errors — it returns a
