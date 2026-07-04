@@ -89,7 +89,7 @@ export function Server(options: ServerOptions = {}): any {
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
       ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
       : {};
-    
+
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',

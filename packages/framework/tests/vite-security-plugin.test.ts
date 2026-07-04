@@ -1533,3 +1533,108 @@ export class TestPage extends Cossack {
     });
   });
 });
+
+// Cases that the previous regex/brace scanner mishandled; the AST-driven
+// rewrite fixes them. These guard against regressions if the discovery logic
+// ever moves back to text scanning.
+describe('vite-security-plugin — AST-driven bug fixes', () => {
+  const BUILTIN_METHODS = new Set([
+    'render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml',
+    'loadingTemplate', 'toString', 'valueOf', 'clientInit',
+    'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors',
+    'startViewTransition',
+  ]);
+
+  function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+    const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
+    if (hasClientDecorator) return true;
+    if (builtinMethods.has(methodName)) return true;
+    if (decorators.some((d) => /@Server\b/.test(d))) return false;
+    return false;
+  }
+
+  it('stubs a single-statement @Server method body', () => {
+    // Previously: a one-line body like `{ this.count++; }` was not detected
+    // by the brace scanner, so `increment` was neither stubbed nor registered.
+    const code = `
+@Page()
+export class Counter extends Cossack {
+  @Server() increment() { this.count++; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    expect(result).toContain("__cossack_proxies?.get('increment')");
+    expect(result).not.toContain('this.count++');
+  });
+
+  it('stubs a @Server method declared after a @State field', () => {
+    // Previously: a `@State() field = value;` before a `@Server` method broke
+    // the brace scanner, so the method was not stubbed. The AST is immune to
+    // field/method ordering.
+    const code = `
+@Page()
+export class Counter extends Cossack {
+  @State() count = 0;
+  @Server()
+  async increment() { this.count++; }
+  render() { return html\`<p>\${this.count}</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    expect(result).toContain("__cossack_proxies?.get('increment')");
+    expect(result).not.toContain('this.count++');
+  });
+
+  it('preserves transitive this.foo() chains to the documented depth-3 cap', () => {
+    // The preservation closure runs 3 rounds, covering the common chain
+    // onMount -> setup -> wire -> listen (3 hops). The deepest helper's body
+    // must survive. (Deeper chains are intentionally not guaranteed.)
+    const code = `
+@Page()
+export class Page extends Cossack {
+  onMount() { this.setup(); }
+  setup() { this.wire(); }
+  wire() { this.listen(); }
+  listen() { const secret = 'DEEP_SECRET'; return secret; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    // The deepest helper's body survives (it was transitively preserved).
+    expect(result).toContain('DEEP_SECRET');
+    expect(result).toContain('listen()');
+  });
+
+  it('handles @Server with options object', () => {
+    const code = `
+@Page()
+export class Page extends Cossack {
+  @Server({ channel: 'admin', provider: 'session' })
+  doAdmin() { const key = 'ADMIN_KEY'; return key; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    expect(result).toContain("__cossack_proxies?.get('doAdmin')");
+    expect(result).not.toContain('ADMIN_KEY');
+  });
+
+  it('does not treat a server-call comment as a real call edge', () => {
+    // A `// this.serverOnly()` comment must NOT pull serverOnly into the
+    // preserved set. The AST ignores comment text entirely.
+    const code = `
+@Page()
+export class Page extends Cossack {
+  onMount() {
+    // this.serverOnly();
+    this.realHelper();
+  }
+  realHelper() { return 'kept'; }
+  serverOnly() { const secret = 'COMMENT_SECRET'; return secret; }
+  render() { return html\`<p>x</p>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+    // serverOnly was not preserved (the comment is not a call), so it's stubbed
+    // and its secret does not leak.
+    expect(result).not.toContain('COMMENT_SECRET');
+    expect(result).toContain("__cossack_proxies?.get('serverOnly')");
+    expect(result).toContain("'kept'");
+  });
+});
