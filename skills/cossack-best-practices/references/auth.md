@@ -42,7 +42,7 @@ import { getCookie, setCookie } from 'hono/cookie';
 import { db } from './db';
 import type { User } from './types';
 
-export const { middleware, createLoginHandler } = createAuth<User>({
+export const auth = createAuth<User>({
     extractSessionId: (c) => getCookie(c, 'session_token'),
 
     validateSessionId: async (sessionId, c) => {
@@ -57,7 +57,7 @@ export const { middleware, createLoginHandler } = createAuth<User>({
     },
 });
 
-export const loginHandler = createLoginHandler({
+export const loginHandler = auth.createLoginHandler({
     validateCredentials: async (credentials, c) => {
         const { email, password } = credentials;
         const user = await db.users.find({ email });
@@ -83,19 +83,33 @@ export const loginHandler = createLoginHandler({
 });
 ```
 
-## 4. Integrate (`src/index.ts`)
+## 4. Integrate
+
+Register `auth.middleware` in `src/config/middlewares.ts` (the registry
+`createApp()` auto-loads — there is **no** `createApp({ authMiddleware })`
+option). Then either use a `@Server` method on the login page (recommended) or
+mount a raw login route in `src/index.ts`:
 
 ```typescript
-import { createApp } from './router';
-import { middleware as authMiddleware, loginHandler } from './auth';
+// src/config/middlewares.ts
+import type { MiddlewareHandler } from 'hono';
+import { auth } from '../auth';
+const middlewares: MiddlewareHandler[] = [auth.middleware];
+export default middlewares;
+```
 
-const app = createApp({ authMiddleware });
+```typescript
+// src/index.ts — only if you use the raw route (not the @Server pattern)
+import { createApp } from './router';
+import { loginHandler } from './auth';
+
+const app = createApp({ AppComponent: App, htmlTemplate: template });
 app.post('/api/login', loginHandler);
 
 export default { fetch: app.fetch };
 ```
 
-`createApp` accepts an `authMiddleware` option. When provided, it runs on every request and populates `c.get('user')`.
+`auth.middleware` runs on every request (via the registry) and populates `c.get('user')`.
 
 ## 5. Use `this.user` in components
 

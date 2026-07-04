@@ -23,18 +23,22 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
     "hono": "^4.12.25",
+    "nodemailer": "^6.9.16",
     "ws": ">=8.21.0"
   },
   "devDependencies": {
+    "@types/nodemailer": "^6.4.17",
     "@types/ws": "^8.18.0",
     "typescript": "^5.0.0",
     "vite": "^8.1.0",
     "vite-plugin-dts": "^3.9.1",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.9"
   }
 }

@@ -283,7 +283,13 @@ describe('Validation', () => {
         function makeComponent<T extends new (...args: any[]) => any>(
             Klass: T,
             initialValues: Record<string, any> = {}
-        ): InstanceType<T> {
+        ): InstanceType<T> & {
+            // Backed by a Record<string, any> store, so values are loosely typed.
+            getProperty(name: string): any;
+            setProperty(name: string, value: any): void;
+            requestUpdate(): void;
+            isServer: boolean;
+        } {
             const comp = new Klass() as any;
             const store: Record<string, any> = { errors: {}, ...initialValues };
             // @Validate decorates properties on the prototype; copy initial

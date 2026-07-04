@@ -7,6 +7,14 @@ import { URL } from 'url';
 
 export * from './runtime';
 export { serveStatic, type StaticServeOptions } from './static-serve';
+export {
+    createNodeEmailSender,
+    type NodeEmailOptions,
+    type NodeEmailSender,
+    type EmailMessageInput,
+    type EmailSendResult,
+    type EmailAddress,
+} from './email';
 
 export interface CossackNodeAdapterOptions {
     server: Server;
@@ -28,6 +36,13 @@ export interface CossackNodeAdapterOptions {
     authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
     /** User used when no `authenticate` hook is provided. Defaults to `{ id: 'anonymous' }`. */
     defaultUser?: unknown;
+    /**
+     * Runtime bindings to expose to components as `this.env` (mirrors
+     * Cloudflare's `env` argument). Use it to supply polyfills such as
+     * `{ EMAIL: createNodeEmailSender({...}) }` so the same
+     * `this.env.EMAIL.send(...)` call works on both runtimes.
+     */
+    env?: Record<string, unknown>;
 }
 
 export class CossackNodeAdapter {
@@ -38,6 +53,7 @@ export class CossackNodeAdapter {
     private allowedOrigins?: string[];
     private authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
     private defaultUser: unknown;
+    private env?: Record<string, unknown>;
 
     constructor(options: CossackNodeAdapterOptions) {
         this.wss = new WebSocketServer({ noServer: true });
@@ -45,6 +61,7 @@ export class CossackNodeAdapter {
         this.allowedOrigins = options.allowedOrigins;
         this.authenticate = options.authenticate;
         this.defaultUser = options.defaultUser ?? { id: 'anonymous' };
+        this.env = options.env;
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -111,12 +128,13 @@ export class CossackNodeAdapter {
                 } as any;
                 
                 // We need to bootstrap the component.
-                // Note: We might be missing 'env' here if the Node server has specific env vars.
-                // Users can pass a global env to the Adapter if needed, but for now we'll pass empty.
-                await componentInstance.bootstrap({ 
-                    context, 
-                    page: pathname, 
-                    providerName: provider 
+                // Thread the configured `env` (bindings such as EMAIL polyfills)
+                // so `this.env` works identically to Cloudflare's runtime.
+                await componentInstance.bootstrap({
+                    context,
+                    env: this.env,
+                    page: pathname,
+                    providerName: provider
                 });
                 
                 // init() and get() are now automatically called during bootstrap

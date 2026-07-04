@@ -43,9 +43,15 @@ export class SseChat extends Cossack {
     @Client()
     handleSubmit(e: Event) {
         e.preventDefault();
-        const text = this.inputValue;
-        if (!text.trim() || this.isStreaming) return;
+        // Read the text directly from the form's input at submit time. The
+        // controlled `.value=${this.inputValue}` binding can re-render mid-typing
+        // and leave `this.inputValue` stale, truncating multi-word messages.
+        const form = e.target as HTMLFormElement;
+        const input = form.querySelector('input[type="text"]') as HTMLInputElement;
+        const text = (input?.value ?? this.inputValue).trim();
+        if (!text || this.isStreaming) return;
         this.inputValue = '';
+        if (input) input.value = '';
         // Server mutates state (messages, streamingText, isStreaming);
         // SSE pushes state updates to this client automatically.
         this.sendMessage(text);

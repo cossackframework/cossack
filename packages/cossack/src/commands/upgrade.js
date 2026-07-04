@@ -66,7 +66,7 @@ export async function upgradeCommand(args, ctx) {
   const report = await buildDriftReport(root, ctx);
   printReport(report);
 
-  if (applyTemplate) {
+  if (applyTemplate || ctx.force) {
     const applied = await applyTemplateUpdates(root, report, forceFiles, ctx);
     if (applied.forced.length > 0) {
       console.log(
@@ -75,7 +75,7 @@ export async function upgradeCommand(args, ctx) {
     }
     if (applied.applied.length > 0) {
       console.log(`\nApplied template updates to ${applied.applied.length} file(s).`);
-    } else {
+    } else if (!ctx.force) {
       console.log('\nNo template updates applied.');
     }
   } else if (report.canUpdate.length > 0) {
@@ -287,7 +287,33 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
     applied.push(rel);
   }
 
-  // Force-update specific modified/excluded files the user explicitly requested.
+  // --force: overwrite ALL modified files the user has edited, and restore
+  // any files they deleted (missing), pulling every one from the template.
+  // This is destructive — local edits are lost.
+  if (ctx.force) {
+    for (const rel of [...report.modified, ...report.missing]) {
+      const src = path.join(templateDir, rel);
+      if (!(await exists(src))) {
+        continue;
+      }
+      if (ctx.dryRun) {
+        console.log(`  would force-update  ${rel}`);
+        forced.push(rel);
+        continue;
+      }
+      await fs.copyFile(src, path.join(root, rel));
+      console.log(`  force-updated  ${rel}`);
+      forced.push(rel);
+    }
+    if (forced.length > 0) {
+      console.log(
+        '  warning  --force overwrote local edits. Restore from version control if needed.',
+      );
+    }
+  }
+
+  // Force-update specific modified/excluded files the user explicitly requested
+  // via --force-file <path> (surgical, even without --force).
   for (const rel of forceFiles) {
     const src = path.join(templateDir, rel);
     if (!(await exists(src))) {
@@ -342,13 +368,16 @@ export function upgradeHelp() {
 Upgrade Cossack dependencies in the current project and report template drift.
 By default this is NON-DESTRUCTIVE: it only updates package.json + reinstalls,
 and prints which scaffolded files have upstream changes. Source files are never
-overwritten unless you pass --apply-template.
+overwritten unless you pass --apply-template or --force.
 
 Options:
   --tag <latest|canary|<version>>   Version to upgrade to (default: latest).
   --apply-template                  Also update scaffolded files that you have
                                     NOT modified (detected via .cossack/scaffold.json).
                                     Modified files are always skipped.
+  --force                           Overwrite ALL modified files and restore any
+                                    deleted ones from the template. DESTRUCTIVE —
+                                    local edits are lost. Implies --apply-template.
   --force-file <path>               Force-update one specific file even if you
                                     modified it. May be repeated.
   --dry-run                         Show what would happen without writing.`;

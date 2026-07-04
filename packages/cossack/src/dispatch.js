@@ -20,6 +20,7 @@ import { buildCommand } from './commands/build.js';
 import { startCommand } from './commands/start.js';
 import { infoCommand } from './commands/info.js';
 import { upgradeCommand } from './commands/upgrade.js';
+import { imageCommand } from './commands/image.js';
 import { parseFlags } from './flags.js';
 
 const COMMANDS = {
@@ -42,6 +43,7 @@ const COMMANDS = {
   // engine / maintenance
   ssg: { run: ssgCommand, aliases: [] },
   upgrade: { run: upgradeCommand, aliases: [] },
+  image: { run: imageCommand, aliases: [] },
 };
 
 function resolveCommand(name) {
@@ -53,7 +55,7 @@ function resolveCommand(name) {
 }
 
 export async function dispatch(argv) {
-  const [raw, ...rest] = argv;
+  let [raw, ...rest] = argv;
 
   if (raw === '--help' || raw === '-h' || raw === 'help' || raw === 'h') {
     printHelp();
@@ -61,6 +63,17 @@ export async function dispatch(argv) {
   }
   if (raw === '--version' || raw === '-V') {
     return versionCommand([], await buildCtx([]));
+  }
+
+  // Support colon-joined form for namespaced commands: `cossack image:optimize`
+  // is equivalent to `cossack image optimize`. The first segment must resolve
+  // to a registered command; the remainder becomes the first positional arg.
+  if (raw && raw.includes(':')) {
+    const [head, ...tail] = raw.split(':');
+    if (resolveCommand(head)) {
+      raw = head;
+      rest = [...tail, ...rest];
+    }
   }
 
   const command = resolveCommand(raw);
@@ -106,6 +119,7 @@ Commands:
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
+  image <subcommand>           Image tooling. Subcommands: optimize.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

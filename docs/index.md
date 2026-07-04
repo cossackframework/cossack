@@ -12,6 +12,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 ## Getting Started
 
 - [Installation](/docs/installation.md)
+- [Cossack CLI](/docs/cossack-cli.md)
 - [Project Structure](/docs/project-structure.md)
 - [Routing](/docs/routing.md)
 - [Pages](/docs/pages.md)
@@ -22,7 +23,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Layouts](/docs/layouts.md)
 - [Template](/docs/template.md)
 - [Styling](/docs/styling.md)
-- [Scroll Reveal](/docs/scroll-reveal.md)
+- [Forms](/docs/forms.md)
 - [Loading](/docs/loading.md)
 - [Optimistic UI](/docs/optimistic.md)
 - [Tasks](/docs/tasks.md)
@@ -62,7 +63,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [View Transitions](/docs/view-transitions.md)
 - [Errors Handling](/docs/errors-handling.md)
 - [Dev Tools](/docs/dev-tools.md)
-- [Snippets](/docs/vscode-snippets.md)
+- [VS Code Snippets](/docs/vscode-snippets.md)
 - [Adapters](/docs/adapters.md)
 - [Debounce & Throttle](/docs/tasks.md#rate-limiting-method-calls-debounce-and-throttle)
 - [Deployment](/docs/deployment.md)

@@ -57,6 +57,68 @@ describe('generate page', () => {
     await generateCommand(['p', 'x'], ctx);
     expect(fs.existsSync(path.join(tmp, 'src/pages/x/index.ts'))).toBe(false);
   });
+
+  it('--head adds a head() method with default title/description', async () => {
+    ctx.flags = { head: true };
+    await generateCommand(['p', 'my-page'], ctx);
+    const file = path.join(tmp, 'src/pages/my-page/index.ts');
+    const content = fs.readFileSync(file, 'utf8');
+    expect(content).toContain('head() {');
+    expect(content).toContain('title: "My Page"');
+    expect(content).toContain('description: "My Page"');
+    expect(content).toContain('<h1 class="text-2xl font-bold">My Page</h1>');
+    expect(content).toContain('<p class="mt-2 text-gray-600">My Page</p>');
+  });
+
+  it('--title/--description override head() values', async () => {
+    ctx.flags = { title: 'My Custom Title', description: 'My custom description' };
+    await generateCommand(['p', 'x'], ctx);
+    const content = fs.readFileSync(
+      path.join(tmp, 'src/pages/x/index.ts'),
+      'utf8',
+    );
+    expect(content).toContain('head() {');
+    expect(content).toContain('title: "My Custom Title"');
+    expect(content).toContain('description: "My custom description"');
+    expect(content).toContain('<h1 class="text-2xl font-bold">My Custom Title</h1>');
+    expect(content).toContain(
+      '<p class="mt-2 text-gray-600">My custom description</p>',
+    );
+  });
+
+  it('--description on a .md page adds frontmatter description', async () => {
+    ctx.flags = { description: 'custom desc' };
+    await generateCommand(['p', 'x.md'], ctx);
+    const content = fs.readFileSync(path.join(tmp, 'src/pages/x/index.md'), 'utf8');
+    expect(content).toMatch(/^---\ntitle:/);
+    expect(content).toMatch(/description: custom desc/);
+  });
+
+  it('default (no --head) omits head() method', async () => {
+    await generateCommand(['p', 'plain'], ctx);
+    const content = fs.readFileSync(
+      path.join(tmp, 'src/pages/plain/index.ts'),
+      'utf8',
+    );
+    expect(content).not.toContain('head() {');
+  });
+
+  it('--no-index generates a flat file instead of a directory', async () => {
+    ctx.flags = { 'no-index': true };
+    await generateCommand(['p', 'hello'], ctx);
+    // flat file exists, no folder/index
+    expect(fs.existsSync(path.join(tmp, 'src/pages/hello.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/hello/index.ts'))).toBe(false);
+    const content = fs.readFileSync(path.join(tmp, 'src/pages/hello.ts'), 'utf8');
+    expect(content).toContain('export default class HelloPage extends Cossack');
+  });
+
+  it('--ni alias works and supports nested + md', async () => {
+    ctx.flags = { ni: true };
+    await generateCommand(['p', '/docs/intro.md'], ctx);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/docs/intro.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/docs/intro/index.md'))).toBe(false);
+  });
 });
 
 describe('generate component / service / middleware / layout', () => {
@@ -94,6 +156,18 @@ describe('generate component / service / middleware / layout', () => {
     expect(fs.readFileSync(file, 'utf8')).toContain(
       "export default class DashboardLayout",
     );
+  });
+
+  it('layout nested path -> src/pages/<segments>/<leaf>/layout.ts', async () => {
+    // Router-correct colocated convention: only src/pages/**/layout.ts is
+    // discovered by the framework (vite-plugin.ts). A separate src/layouts/
+    // dir would be silently ignored.
+    await generateCommand(['l', 'admin/dashboard'], ctx);
+    const file = path.join(tmp, 'src/pages/admin/dashboard/layout.ts');
+    expect(fs.existsSync(file)).toBe(true);
+    const content = fs.readFileSync(file, 'utf8');
+    expect(content).toContain('export default class DashboardLayout');
+    expect(content).toContain('@Page({ transport: \'http\' })');
   });
 });
 
@@ -142,6 +216,19 @@ describe('delete', () => {
   it('errors when target missing', async () => {
     ctx.force = true;
     expect(await deleteCommand(['p', 'nope'], ctx)).toBe(1);
+  });
+
+  it('removes a flat (--no-index) page file', async () => {
+    ctx.flags = { 'no-index': true };
+    await generateCommand(['p', 'flat'], ctx);
+    const file = path.join(tmp, 'src/pages/flat.ts');
+    expect(fs.existsSync(file)).toBe(true);
+    // reset flags for delete
+    ctx.flags = {};
+    ctx.force = true;
+    const code = await deleteCommand(['p', 'flat'], ctx);
+    expect(code).toBe(0);
+    expect(fs.existsSync(file)).toBe(false);
   });
 
   it('deletes component / service / middleware', async () => {

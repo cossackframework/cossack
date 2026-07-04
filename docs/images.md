@@ -74,3 +74,47 @@ When this is set, the helper transforms your URL:
 ### 3. Production (Node.js / Other)
 
 If `VITE_COSSACK_IMAGE_PROVIDER` is not set or set to `none`, the helper acts as a pass-through, rendering the original `src`. This ensures your application works correctly on any platform, even without an image optimization service.
+
+## Optimization
+
+For hosts without a built-in image CDN (e.g. the Node.js adapter), or when you want committed, pre-generated variants, use the CLI to optimize images at build time.
+
+### `cossack image optimize`
+
+The command scans `src/` for `Image({ ... })` helper calls, resolves each local `src` to a file under `public/`, and writes resized, re-encoded variants beside the original. It requires **ImageMagick** to be installed.
+
+```bash
+cossack image optimize
+cossack image optimize --format avif --quality 85
+cossack image optimize --dry-run      # preview without writing
+```
+
+For each `Image({ src, width })` call referencing a local asset, a variant is generated. `width` is required (the variant is sized by width); `height` is optional and, when present, produces a `<name>-<w>x<h>.<format>` filename:
+
+```
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })          ->  public/img/hero-800.webp
+public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })  ->  public/img/hero-800x600.webp
+```
+
+| Option | Description |
+| :--- | :--- |
+| `--format <webp\|avif>` | Output format (default: `webp`). |
+| `--quality <0-100>` | Output quality (default: `80`). |
+| `--dry-run` | List the variants that would be generated without writing. |
+
+**Installing ImageMagick**
+
+```bash
+# macOS
+brew install imagemagick
+# Debian/Ubuntu
+sudo apt-get install imagemagick
+# Windows (Chocolatey)
+choco install imagemagick
+```
+
+If the binary is missing, the command prints these instructions and exits with a non-zero code.
+
+> **Cloudflare deployments:** prefer runtime resizing via `/cdn-cgi/image/...` (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) — it generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter or when you want the files committed to your repository.
+
+See the [Cossack CLI reference](/docs/cossack-cli.md#image-optimization) for the full `image optimize` options.

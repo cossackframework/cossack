@@ -1,17 +1,15 @@
 ---
-title: "Building Interactive UIs and APIs with the HTTP Transport"
+title: "HTTP Transport"
 description: "Build interactive UIs and JSON APIs using the default HTTP transport with automatic state updates and re-rendering."
 ---
 
-# Building Interactive UIs and APIs with the HTTP Transport
+# HTTP Transport
 
 Cossack's default transport is a powerful, stateless HTTP layer that allows you to build both traditional server-side applications and modern, AJAX-driven interactive UIs using the exact same component model. This is ideal for three primary use cases:
 
 1.  **Interactive Components**: Creating dynamic UIs that update without a full page reload (e.g., counters, filters, searches).
 2.  **Pure JSON APIs**: Creating RESTful endpoints for other applications.
 3.  **Classic Forms**: Handling simple, stateless UI actions like form submissions that render HTML.
-
-This "LiveView over HTTP" model provides the simplicity of a server-rendered approach with the smooth user experience of a single-page application, and it is the default behavior for all Cossack components.
 
 ## 1. Interactive Components (Default)
 
@@ -24,7 +22,7 @@ This is the most common pattern. By default, any `@Server` method in a component
 import { Page, State, Cossack, Server } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page() // No transport needed, defaults to 'http'
+@Page()
 export default class extends Cossack {
     @State()
     private count: number = 0;
@@ -48,8 +46,6 @@ export default class extends Cossack {
 ```
 When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to seamlessly update the DOM.
 
----
-
 ## 2. Pure JSON APIs
 
 To create a pure API endpoint, simply create a component without a `render()` method.
@@ -60,7 +56,7 @@ To create a pure API endpoint, simply create a component without a `render()` me
 ```typescript
 import { Page, State, Cossack } from '@cossackframework/core';
 
-@Page() // Defaults to 'http' transport
+@Page()
 export default class extends Cossack {
     @State()
     private message: string = '';
@@ -95,7 +91,7 @@ The router intelligently handles this:
 import { Page, State, Cossack } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-@Page() // Defaults to 'http' transport
+@Page()
 export default class extends Cossack {
     @State()
     private successMessage: string = '';
@@ -240,7 +236,7 @@ async get() {
 
 ### Middleware
 
-Apply Hono middleware to your routes by exporting a `middleware` array from the route file.
+Apply Hono middleware to your routes by exporting a `middleware` array from the page.
 
 **File:** `src/pages/api/me.ts`
 
@@ -251,6 +247,19 @@ import { authMiddleware } from '@/middleware/auth'; // Your custom auth middlewa
 export const middleware = [authMiddleware];
 
 @Page()
+export default class extends Cossack {
+    async get() {
+        // The authMiddleware has already run and attached the user
+        const user = this.c.get('user');
+        return this.c.json({ user });
+    }
+}
+```
+
+You can also implicitly apply middleware into the page by using the `middleware` property on the `@Page()` decorator:
+
+```typescript
+@Page({ middleware: [authMiddleware] })
 export default class extends Cossack {
     async get() {
         // The authMiddleware has already run and attached the user

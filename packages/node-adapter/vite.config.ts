@@ -19,7 +19,7 @@ export default defineConfig({
     },
     outDir: 'dist',
     rolldownOptions: {
-        external: ['ws', 'http', 'url', 'fs', 'path', 'os', '@cossackframework/core']
+        external: ['ws', 'http', 'url', 'fs', 'path', 'os', 'nodemailer', '@cossackframework/core']
     }
   },
 });

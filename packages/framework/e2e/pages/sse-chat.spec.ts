@@ -20,21 +20,29 @@ test.describe('SSE Chat Page', () => {
     await page.goto(`/sse-chat?room=${nextRoom()}`);
     await page.waitForSelector('.sse-chat h1');
 
-    await page.fill('input[type="text"]', 'Hello SSE!');
-    await page.click('button[type="submit"]');
+    const input = page.locator('input[type="text"]');
+    // Use the locator API (auto-waits, resilient to reactive re-renders on the
+    // controlled input) and submit via Enter to avoid a click/fill race.
+    await input.fill('Hello SSE!');
+    // Ensure the controlled input has fully settled before submitting — a
+    // re-render can otherwise reset .value from a stale bound state.
+    await expect(input).toHaveValue('Hello SSE!');
+    await input.press('Enter');
 
     // User message should appear
     await expect(page.locator('.msg.user .bubble').last()).toContainText('Hello SSE!');
     // Input should be cleared
-    await expect(page.locator('input[type="text"]')).toHaveValue('');
+    await expect(input).toHaveValue('');
   });
 
   test('should stream bot response via SSE', async ({ page }) => {
     await page.goto(`/sse-chat?room=${nextRoom()}`);
     await page.waitForSelector('.sse-chat h1');
 
-    await page.fill('input[type="text"]', 'Hello');
-    await page.click('button[type="submit"]');
+    const input = page.locator('input[type="text"]');
+    await input.fill('Hello');
+    await expect(input).toHaveValue('Hello');
+    await input.press('Enter');
 
     // Streaming indicator should appear (blinking cursor)
     await expect(page.locator('.msg.assistant.streaming')).toBeVisible({ timeout: 5000 });
@@ -55,8 +63,10 @@ test.describe('SSE Chat Page', () => {
     await page.goto(`/sse-chat?room=${nextRoom()}`);
     await page.waitForSelector('.sse-chat h1');
 
-    await page.fill('input[type="text"]', 'Hello');
-    await page.click('button[type="submit"]');
+    const input = page.locator('input[type="text"]');
+    await input.fill('Hello');
+    await expect(input).toHaveValue('Hello');
+    await input.press('Enter');
 
     // Input and button should be disabled during streaming
     await expect(page.locator('input[type="text"]')).toBeDisabled();

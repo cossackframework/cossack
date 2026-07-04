@@ -106,17 +106,36 @@ async function configureNodeAdapter(projectDir) {
   await fs.writeFile(tsconfigPath, JSON.stringify(tsconfig, null, 2));
 
   const indexTsContent = `import { serve } from '@hono/node-server';
-import { CossackNodeAdapter } from '@cossackframework/node-adapter';
+import { CossackNodeAdapter, createNodeEmailSender } from '@cossackframework/node-adapter';
 import { createApp } from '@cossackframework/framework/router';
 
 const app = createApp();
 
+// Runtime bindings — mirrors Cloudflare's \`env\` so application code stays
+// identical across runtimes. The email sender polyfills the \`send_email\`
+// binding via SMTP (configure SMTP_* env vars when you add auth/email).
+const env: Record<string, unknown> = {};
+if (process.env.SMTP_HOST) {
+    env.EMAIL = createNodeEmailSender({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT ?? 587),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: { user: process.env.SMTP_USER!, pass: process.env.SMTP_PASS! },
+        from: process.env.MAIL_FROM ?? 'no-reply@example.com',
+    });
+}
+
 const server = serve({
-    fetch: app.fetch,
+    // Pass env so \`c.env\` / \`this.env\` is populated for @Server methods.
+    fetch: (req) => app.fetch(req, env),
     port: Number(process.env.PORT) || 3000,
 }, (info) => {
     console.log(\`Listening on http://localhost:\${info.port}\`);
 });
+
+// Pass env to the WebSocket adapter too, so @Server methods over WS see the
+// same bindings (this.env.EMAIL, etc.) as over HTTP.
+// new CossackNodeAdapter({ server, componentRegistry, env });
 `;
   await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
 
