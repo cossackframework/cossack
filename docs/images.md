@@ -81,7 +81,7 @@ For hosts without a built-in image CDN (e.g. the Node.js adapter), or when you w
 
 ### `cossack image optimize`
 
-The command scans `src/` for `<Image>` usages, resolves each local `src` to a file under `public/`, and writes resized, re-encoded variants beside the original. It requires **ImageMagick** to be installed.
+The command scans `src/` for `Image({ ... })` helper calls, resolves each local `src` to a file under `public/`, and writes resized, re-encoded variants beside the original. It requires **ImageMagick** to be installed.
 
 ```bash
 cossack image optimize

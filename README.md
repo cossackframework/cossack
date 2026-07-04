@@ -19,7 +19,7 @@
 
 A full-stack TypeScript framework for building edge first, real-time web applications.
 
-Write client and server logics in the same class seamlessly. Cossack automatically handles state management, SSR, security. 
+Write client and server logic in the same class seamlessly. Cossack automatically handles state management, SSR, and security.
 
 Think of it like Phoenix LiveView, or Laravel Livewire, but TypeScript native and edge deployment ready.
 
@@ -95,9 +95,9 @@ Cossack has a rich set of features that every modern web application needs, plus
 - **LLM friendly**: use less tokens, native TypeScript syntax, easy for LLMs to understand, type check, and generate code
 - *and a lot more features to discover in the [documentation](https://cossack.dev/docs).*
 
-### Realtime Support in mind
+### Real-time support
 
-Traditional frameworks rely on a single transport mode, usually HTTP. So in order to write real time applications, you usually to write websockets client and server yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
+Traditional frameworks rely on a single transport mode, usually HTTP. So in order to build real-time applications, you usually have to write WebSocket client and server code yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
 
 ## Learning Cossack
 

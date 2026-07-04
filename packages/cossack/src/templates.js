@@ -732,9 +732,7 @@ export async function down(db: Kysely<any>): Promise<void> {
 
 /** `src/models/Session.ts` — sessions table row + Database augmentation. */
 export function sessionModelTemplate() {
-  return `import type { Generated } from '@cossackframework/database';
-
-/**
+  return `/**
  * The \`sessions\` table row shape (snake_case to match the migration).
  */
 export interface SessionRow {
@@ -869,19 +867,19 @@ function publicUser(u: UserRow) {
 }
 
 // --- Session create / validate / resolve ----------------------------------
-async function createSessionRow(c: Context, user: UserRow): Promise<Headers> {
+async function createSessionRow(c: Context, user: UserRow): Promise<{ headers: Headers }> {
   const id = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
   await db(c).insertInto('sessions').values({ id, user_id: user.id, expires_at }).execute();
   const headers = new Headers();
-  setCookie(c, SESSION_COOKIE, id, {
+  setCookie(headers, SESSION_COOKIE, id, {
     httpOnly: true,
     sameSite: 'Lax',
     secure: true,
     path: '/',
     maxAge: SESSION_TTL_SECONDS,
   });
-  return headers;
+  return { headers };
 }
 
 export const auth = createAuth<{ id: string; email: string; name: string }>({

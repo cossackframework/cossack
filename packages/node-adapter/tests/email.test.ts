@@ -91,6 +91,23 @@ describe('createNodeEmailSender', () => {
         expect(mockSendMail.mock.calls[0][0].from).toBe('default@example.com');
     });
 
+    it('throws a clear error when neither message.from nor default from is provided', async () => {
+        const sender = createNodeEmailSender({
+            host: 'smtp.example.com',
+            port: 587,
+            auth: { user: 'u', pass: 'p' },
+        });
+
+        await expect(
+            sender.send({
+                to: 'a@example.com',
+                subject: 'S',
+                text: 't',
+            }),
+        ).rejects.toThrow('Missing "from" email address');
+        expect(mockSendMail).not.toHaveBeenCalled();
+    });
+
     it('rethrows on transport error (fail loud)', async () => {
         mockSendMail.mockRejectedValue(new Error('SMTP down'));
         const sender = createNodeEmailSender({

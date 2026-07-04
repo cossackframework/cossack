@@ -119,7 +119,7 @@ Commands:
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
-  image <sub>                  Image tooling. Subcommands: optimize.
+  image <subcommand>           Image tooling. Subcommands: optimize.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

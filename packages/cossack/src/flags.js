@@ -20,6 +20,8 @@ const KNOWN_BOOL = new Set([
   'verbose',
   'apply-template',
   'head',
+  'no-index',
+  'ni',
 ]);
 
 export function parseFlags(argv) {

@@ -58,13 +58,13 @@ async function optimize(_rest, ctx) {
     }
     for (const call of extractImageCalls(source)) {
       if (!call.src || !isLocalSource(call.src)) continue;
-      if (!call.width && !call.height) continue;
+      if (!call.width) continue;
       jobs.push({ src: call.src, width: call.width, height: call.height, from: rel });
     }
   }
 
   if (jobs.length === 0) {
-    console.log('  No local <Image> usages with width/height found in src/.');
+    console.log('  No local Image({ ... }) usages with width found in src/.');
     return 0;
   }
 
@@ -85,7 +85,7 @@ async function optimize(_rest, ctx) {
       skipped++;
       continue;
     }
-    const outRel = resolveOutputPath(relPath, job.width || 1, job.height, format);
+    const outRel = resolveOutputPath(relPath, job.width, job.height, format);
     const outPath = path.resolve(publicDir, outRel);
 
     if (ctx.dryRun) {

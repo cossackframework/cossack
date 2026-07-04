@@ -118,6 +118,14 @@ describe('add auth', () => {
     expect(guard).toContain("c.redirect('/admin/auth/login')");
   });
 
+  it('default (auth) route group is stripped from public auth paths', async () => {
+    await addCommand(['auth'], ctx);
+    const guard = fs.readFileSync(path.join(tmp, 'src/middlewares/auth.ts'), 'utf8');
+    expect(guard).toContain("'/login'");
+    expect(guard).not.toContain("'/auth/login'");
+    expect(guard).toContain("c.redirect('/login')");
+  });
+
   it('--oauth github generates oauth export + provider buttons', async () => {
     ctx.flags = { dialect: 'd1', oauth: 'github' };
     await addCommand(['auth'], ctx);

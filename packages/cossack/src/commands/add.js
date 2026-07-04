@@ -57,9 +57,13 @@ const SUPPORTED_OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'mi
 async function resolveAuthPaths(ctx) {
   const flag = flagString(ctx.flags.path) || flagString(ctx.flags.p);
   const group = flag && flag.length ? flag : '(auth)';
-  // Public route paths: strip parentheses for the URL (route groups are
-  // filesystem-only). e.g. "(auth)" -> "/login", "admin/auth" -> "/admin/auth/login".
-  const urlPrefix = group.replace(/^\((.+)\)$/, '$1');
+  // Public route paths: strip route-group segments for the URL (route groups are
+  // filesystem-only). e.g. "(auth)" -> "/login", "admin/(auth)" -> "/admin/login".
+  const urlPrefix = group
+    .split('/')
+    .filter(Boolean)
+    .filter((segment) => !/^\(.+\)$/.test(segment))
+    .join('/');
   const base = urlPrefix ? `/${urlPrefix}` : '';
   return {
     group,

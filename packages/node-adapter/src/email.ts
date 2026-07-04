@@ -23,7 +23,7 @@ export interface EmailAddress {
  */
 export interface EmailMessageInput {
     to: string | EmailAddress | (string | EmailAddress)[];
-    from: string | EmailAddress;
+    from?: string | EmailAddress;
     subject: string;
     html?: string;
     text?: string;
@@ -100,8 +100,14 @@ export function createNodeEmailSender(options: NodeEmailOptions): NodeEmailSende
 
     return {
         async send(message: EmailMessageInput): Promise<EmailSendResult> {
+            const from = message.from ?? defaultFrom;
+            if (!from) {
+                throw new Error(
+                    'Missing "from" email address. Provide message.from or configure options.from.',
+                );
+            }
             const info = await transport.sendMail({
-                from: message.from ?? defaultFrom,
+                from,
                 to: message.to,
                 subject: message.subject,
                 html: message.html,

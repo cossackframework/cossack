@@ -43,5 +43,5 @@ When the server eventually broadcasts the "true" state, Cossack seamlessly overw
 
 The built-in `Image` helper ensures your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./images.md) for more details.
 
-We also provide a `cossack image:optimize` CLI command to automatically optimize all images in your `public` folder. This command scans for the `Image` component in your project and optimizes the images used in the `src` attribute of the component.
-The optimized images will be saved in WebP format, next to the original image.
+We also provide a `cossack image:optimize` CLI command to automatically optimize images in your `public` folder. This command scans for `Image({ ... })` helper calls in your project and optimizes local `src` assets.
+The optimized images will be saved next to the original image in either WebP or AVIF format (`--format webp|avif`).
