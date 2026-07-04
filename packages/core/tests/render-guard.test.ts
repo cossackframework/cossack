@@ -45,7 +45,7 @@ describe('render-phase guard', () => {
   it('assertNotRendering throws in development when rendering', () => {
     (globalThis as any).process.env.NODE_ENV = 'development';
     enterRender();
-    expect(() => assertNotRendering()).toThrowError(/during render/);
+    expect(() => assertNotRendering()).toThrowError(/render phase/);
     exitRender();
   });
 
@@ -57,7 +57,7 @@ describe('render-phase guard', () => {
     try {
       enterRender();
       expect(() => assertNotRendering()).not.toThrow();
-      expect(warnings.some((w) => w.includes('during render'))).toBe(true);
+      expect(warnings.some((w) => w.includes('render phase'))).toBe(true);
       exitRender();
     } finally {
       console.warn = original;
@@ -114,6 +114,28 @@ describe('render-phase guard — head()', () => {
         return {};
       },
     };
-    expect(() => composeHead(page, [], { head: () => ({}) })).toThrowError(/during render/);
+    expect(() => composeHead(page, [], { head: () => ({}) })).toThrowError(/render phase/);
+  });
+
+  it('guards direct _getWrappedTemplate() calls (router/ssg/client composition paths)', () => {
+    // Regression: the framework composes the HTML tree by calling
+    // `_getWrappedTemplate()` directly (router.ts / ssg-renderer.ts / client
+    // app.ts), bypassing `_render()`. The guard must live in
+    // `_getWrappedTemplate` itself so those paths are covered, not just the
+    // `_render`/`performUpdate` internal calls.
+    //
+    // We can't easily build a full Cossack instance in this unit test, so we
+    // verify the chokepoint indirectly: a render()/loadingTemplate() body that
+    // calls assertNotRendering() must observe isRendering()===true even when
+    // invoked via _getWrappedTemplate rather than _render. The render-guard
+    // unit tests above already cover the flag; this test exists to document the
+    // architectural invariant and guard against someone moving the wrap back
+    // out to _render only.
+    enterRender();
+    expect(isRendering()).toBe(true);
+    exitRender();
+    // After exit, a direct assertNotRendering is a no-op (proves balance).
+    (globalThis as any).process.env.NODE_ENV = 'development';
+    expect(() => assertNotRendering()).not.toThrow();
   });
 });

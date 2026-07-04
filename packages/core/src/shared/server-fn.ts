@@ -26,9 +26,9 @@ export function isRendering(): boolean {
 }
 
 const RENDER_GUARD_MESSAGE =
-  '[Cossack] A server function cannot be called during render(). ' +
+  '[Cossack] A server function cannot be called during a synchronous render phase (render()/head()/loadingTemplate()). ' +
   'Use get()/init() to load data before render, or move the server call into ' +
-  'an event handler. render() is synchronous and a server function would ' +
+  'an event handler. render()/head()/loadingTemplate() are synchronous and a server function would ' +
   'either stringify as "[object Promise]" or leak server-only code into the ' +
   'client bundle.';
 
