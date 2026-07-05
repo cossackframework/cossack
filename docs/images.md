@@ -57,7 +57,7 @@ The optimization behavior depends on your environment configuration.
 
 ### 1. Development (Local)
 
-By default, in development mode (`import.meta.env.DEV`), the `Image` helper renders a standard `<img>` tag pointing to the original `src`. No optimization is applied to avoid breaking local assets that aren't proxied.
+In development mode (`import.meta.env.DEV`), the `Image` helper renders a standard `<img>` tag pointing to the original `src`. Optimization can also be done at build time using the [`cossack image optimize` command](#build-time-optimization).
 
 ### 2. Production (Cloudflare)
 
@@ -75,9 +75,9 @@ When this is set, the helper transforms your URL:
 
 If `VITE_COSSACK_IMAGE_PROVIDER` is not set or set to `none`, the helper acts as a pass-through, rendering the original `src`. This ensures your application works correctly on any platform, even without an image optimization service.
 
-## Optimization
+## Build Time Optimization
 
-For hosts without a built-in image CDN (e.g. the Node.js adapter), or when you want committed, pre-generated variants, use the CLI to optimize images at build time.
+For hosts without a built-in image CDN (e.g. Node.js), or when you want committed, pre-generated variants, use the CLI to optimize images at build time.
 
 ### `cossack image optimize`
 

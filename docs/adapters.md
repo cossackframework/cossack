@@ -66,4 +66,4 @@ new CossackNodeAdapter({
 });
 ```
 
-You can generate a project pre-configured with this adapter using `create-cossack-app`.
+You can generate a project pre-configured with this adapter using the `cossack` CLI.
