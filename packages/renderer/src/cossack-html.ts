@@ -960,28 +960,35 @@ class AttributePart implements Part {
     }
 
     if (this.name.startsWith('@') && typeof value === 'function') {
+      // Event handlers are typically inline arrows (`@input="${(e) => ...}"`),
+      // which produce a NEW function reference on every render. Naively
+      // removeEventListener(old)+addEventListener(new) on each update churns
+      // the listener and — critically — if a re-render happens during event
+      // dispatch (e.g. a `bind()` writeback triggers requestUpdate), the
+      // handler for the CURRENT event can be removed before it fires.
+      //
+      // Fix: register a single STABLE wrapper once, and have it delegate to
+      // the latest handler stored on the element. Updates just swap the stored
+      // ref; the registered listener never changes identity, so there is no
+      // remove/add during dispatch.
       const eventName = this.name.slice(1);
-      const propName = `__crp_handler_${eventName}`;
-      const oldHandler = (this.element as any)[propName];
-      if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
-      (this.element as any)[propName] = value;
-      this.element.addEventListener(eventName, value as EventListener);
+      const handlerProp = `__crp_handler_${eventName}`;
+      const wrapperProp = `__crp_wrapper_${eventName}`;
+      if (!(this.element as any)[wrapperProp]) {
+        const wrapper = (e: Event) => {
+          const current = (e.currentTarget as any)?.[handlerProp];
+          if (typeof current === 'function') current.call(e.currentTarget, e);
+        };
+        (this.element as any)[wrapperProp] = wrapper;
+        this.element.addEventListener(eventName, wrapper);
+      }
+      (this.element as any)[handlerProp] = value;
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);
-      // `.value`/`.checked` on form elements follow Lit semantics:
-      //  - Plain `.value=${x}`: dirty-check against the LAST value this part
-      //    committed (not the DOM). If unchanged, skip the write — so a
-      //    re-render with the same bound value does NOT clobber an in-progress
-      //    user edit. (This is the bug the previous implementation had: it
-      //    compared against the live DOM for both branches, making plain and
-      //    `live()` behave identically and clobbering edits on every render.)
-      //  - `live(x)`: compare against the LIVE DOM value instead. This is the
-      //    opt-in for "force the DOM back to x even if something else (user,
-      //    another library) changed it", e.g. a Reset button. It will overwrite
-      //    a user's in-progress edit — that is the documented Lit behavior.
-      // NOTE: a `.value`/`.checked` AttributePart carries the leading dot in
-      // `this.name` (see compileTemplate), so it is handled here.
+      // `.value`/`.checked` on form fields get Lit-style dirty-checking so a
+      // re-render doesn't clobber an in-progress user edit; `live()` switches
+      // the comparison to the live DOM (see `lastFormValue`).
       const isFormProp =
         propName === 'value' || propName === 'checked'
           ? this.element instanceof HTMLInputElement ||
