@@ -959,7 +959,7 @@ class AttributePart implements Part {
       return;
     }
 
-    if (this.name.startsWith('@') && typeof value === 'function') {
+    if (this.name.startsWith('@')) {
       // Event handlers are typically inline arrows (`@input="${(e) => ...}"`),
       // which produce a NEW function reference on every render. Naively
       // removeEventListener(old)+addEventListener(new) on each update churns
@@ -970,7 +970,10 @@ class AttributePart implements Part {
       // Fix: register a single STABLE wrapper once, and have it delegate to
       // the latest handler stored on the element. Updates just swap the stored
       // ref; the registered listener never changes identity, so there is no
-      // remove/add during dispatch.
+      // remove/add during dispatch. A non-function value (null/undefined when
+      // a handler is conditionally removed) clears the stored ref, and the
+      // wrapper's `typeof === 'function'` guard then no-ops — the stale
+      // handler cannot keep firing.
       const eventName = this.name.slice(1);
       const handlerProp = `__crp_handler_${eventName}`;
       const wrapperProp = `__crp_wrapper_${eventName}`;
@@ -982,7 +985,7 @@ class AttributePart implements Part {
         (this.element as any)[wrapperProp] = wrapper;
         this.element.addEventListener(eventName, wrapper);
       }
-      (this.element as any)[handlerProp] = value;
+      (this.element as any)[handlerProp] = typeof value === 'function' ? value : undefined;
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);

@@ -57,12 +57,40 @@ describe('Cossack Syntax Extensions', () => {
     it('binds events using @ syntax (Client)', () => {
         const container = document.createElement('div');
         const spy = vi.fn();
-        
+
         const template = html`<button @click=${spy}></button>`;
         render(template, container);
-        
+
         const btn = container.querySelector('button')!;
         btn.click();
         expect(spy).toHaveBeenCalled();
+    });
+
+    it('stops firing when an event handler is removed (value becomes null/undefined)', () => {
+        // Regression: a conditional `@click=${cond ? handler : null}` must
+        // disable the handler when cond becomes false. Previously the stable
+        // wrapper kept delegating to the stale stored handler.
+        const container = document.createElement('div');
+        const spy = vi.fn();
+        const on = () => spy;
+        const tpl = (handler: unknown) => html`<button @click=${handler}>x</button>`;
+
+        render(tpl(on()), container);
+        const btn = container.querySelector('button')!;
+        btn.click();
+        expect(spy).toHaveBeenCalledTimes(1);
+
+        // Conditionally remove the handler.
+        render(tpl(null), container);
+        btn.click();
+        expect(spy).toHaveBeenCalledTimes(1); // still 1, not 2
+
+        // And a non-function non-null value (e.g. undefined from a missing prop)
+        // must also disable, not throw or stringify into an attribute.
+        render(tpl(undefined), container);
+        btn.click();
+        expect(spy).toHaveBeenCalledTimes(1);
+        // Must not leak a bogus `@click` HTML attribute either.
+        expect(btn.hasAttribute('@click')).toBe(false);
     });
 });
