@@ -1,5 +1,7 @@
 // src/shared/validation.ts
 
+import { resolveStatePath } from './store';
+
 /**
  * Validation rule options for the @Validate decorator
  */
@@ -16,6 +18,120 @@ export interface ValidationRule {
   customAsync?: (value: any, component?: any) => Promise<boolean>;
   message?: string;
 }
+
+// ============================================================================
+// Type-safe store rules
+// ============================================================================
+// `storeRules<T>()` lets you write validation rules for a @Store property with
+// compile-time checking of the (relative) field paths against the store type T.
+//
+//   @Store()
+//   @Validate({
+//     rules: storeRules<SubmissionState>({
+//       email: { required: true, email: true, message: '...' },
+//       'address.zip': { required: true, pattern: /^\d{5}$/ },
+//       tags: { required: true, minLength: 1 },
+//     }),
+//   })
+//   submission: SubmissionState = { email: '', address: { zip: '' }, tags: [] };
+//
+// Keys are RELATIVE to the store ('email', 'address.zip') and are auto-prefixed
+// by @Validate to the full runtime paths ('submission.email',
+// 'submission.address.zip'). Passing <T> is optional — omit it for an untyped
+// Record<string, ValidationRule>.
+
+/**
+ * Built-in non-plain object types that should NOT be recursed into when
+ * deriving validation paths (their own methods/properties are not user state).
+ * Such values are validated as a whole (e.g. via a `custom` rule).
+ */
+type NonRecurableObject =
+  | Date
+  | RegExp
+  | Map<unknown, unknown>
+  | Set<unknown>
+  | Promise<unknown>
+  | File
+  | Blob
+  | ArrayBuffer
+  | DataView
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array;
+
+/**
+ * Recursively build the union of dotted paths into a plain-object type T.
+ *
+ * - For an object T, yields each string key plus, for keys whose value is
+ *   itself a plain object, `'key' + '.' + DeepKeysOf<value>`.
+ * - For array values, yields only the top-level key (arrays are validated as a
+ *   whole via minLength/maxLength; elements are not addressable).
+ * - For built-in non-plain objects (Date, RegExp, Map, Set, typed arrays,
+ *   etc.), yields only the top-level key — they are validated as a whole.
+ * - For primitives, yields the key only (no recursion).
+ * - Yields `never` for non-object types so the recursion terminates.
+ */
+export type DeepKeysOf<T> = T extends object
+  ? T extends (infer _U)[]
+    ? never // array elements are not addressable; use the array key directly
+    : T extends NonRecurableObject
+      ? never // built-in non-plain objects are validated as a whole
+      : {
+          [K in keyof T & string]: T[K] extends object
+            ? T[K] extends (infer _U)[]
+              ? K // array value: validate the array as a whole
+              : T[K] extends NonRecurableObject
+                ? K // built-in non-plain object value: validate as a whole
+                : K | `${K}.${DeepKeysOf<T[K]>}`
+            : K;
+        }[keyof T & string]
+  : never;
+
+/**
+ * A rule map whose keys are relative dotted paths into the store type T.
+ * Use `keyof T` (top-level only) when you don't want deep paths typed.
+ */
+export type StoreRuleMap<T = any> = Partial<Record<DeepKeysOf<T>, ValidationRule>>;
+
+/**
+ * Identity helper that type-checks a map of RELATIVE store field paths against
+ * the store type `T`. Returns the map unchanged at runtime; the type parameter
+ * is purely for compile-time validation.
+ *
+ * Omit `<T>` to get an untyped `Record<string, ValidationRule>` (no path
+ * checking, but still usable with @Validate on a @Store).
+ *
+ * The keys you write are relative to the store ('email', 'address.zip'); the
+ * `@Validate` decorator auto-prefixes them with the decorated property name to
+ * produce the full runtime paths ('submission.email').
+ *
+ * @example
+ * ```ts
+ * interface Form { email: string; address: { zip: string }; tags: string[] }
+ *
+ * @Store()
+ * @Validate({ rules: storeRules<Form>({
+ *   email: { required: true, email: true },
+ *   'address.zip': { required: true, pattern: /^\d{5}$/ },
+ *   tags: { required: true, minLength: 1 },
+ * }) })
+ * form: Form = { email: '', address: { zip: '' }, tags: [] };
+ * ```
+ */
+export function storeRules<T = any>(
+    rules: StoreRuleMap<T>,
+): StoreRuleMap<T> {
+    return rules;
+}
+
 
 /**
  * Configuration options for validation behavior
@@ -404,12 +520,14 @@ export async function validateProperty(
         return true;
     }
 
-    const value = component.getProperty(propertyName);
+    const value = resolveStatePath(component, propertyName);
     const { rules: validationRules, config } = propertyRules;
 
-    // Determine where to run validation
-    const shouldRunOnClient = config.runOn === 'client' || config.runOn === 'both';
-    const shouldRunOnServer = config.runOn === 'server' || config.runOn === 'both';
+    // Determine where to run validation. Default to 'both' if unset (e.g. for
+    // rules registered manually via setValidationRules without config defaults).
+    const runOn = config.runOn || 'both';
+    const shouldRunOnClient = runOn === 'client' || runOn === 'both';
+    const shouldRunOnServer = runOn === 'server' || runOn === 'both';
 
     // Reserve a request ID for this async sequence. Any stale async result
     // (from a previous call whose ID is no longer the latest) will be ignored.

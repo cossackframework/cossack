@@ -12,6 +12,23 @@ interface ServerMethodWs extends ServerMethodBase {
 }
 
 /**
+ * Collect ALL reactive state-like keys on a component constructor: `@State`,
+ * `@Store`, `@ClientState`, and `@ClientStore`. Used by the optimistic-UI
+ * snapshot/lock logic so that optimistic handlers track changes to stores
+ * and client-only state too, not just `@State` keys.
+ */
+function getAllReactiveStateKeys(constructor: any): string[] {
+    const keys = new Set<string>();
+    const stateMeta = Reflect.getMetadata('cossack:state', constructor) || {};
+    const storeMeta = Reflect.getMetadata('cossack:store', constructor) || {};
+    for (const k of Object.keys(stateMeta)) keys.add(k);
+    for (const k of Object.keys(storeMeta)) keys.add(k);
+    for (const k of (Reflect.getMetadata('cossack:client-state', constructor) || [])) keys.add(k);
+    for (const k of (Reflect.getMetadata('cossack:client-store', constructor) || [])) keys.add(k);
+    return Array.from(keys);
+}
+
+/**
  * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
  * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
  * instances, and functions (none of which are JSON-transportable).
@@ -163,7 +180,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
     const scopeKey = initialState?.scopeKey;
     const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
-    const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', component.constructor) || {});
+    const stateKeys = getAllReactiveStateKeys(component.constructor);
 
     // SSE transport: server methods may be async generators, so the proxy must
     // support both `await` (thenable) and `for await...of` (async iterable).
@@ -631,7 +648,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
  */
 export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[]): void {
     const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
-    const stateKeys = Object.keys(Reflect.getMetadata('cossack:state', component.constructor) || {});
+    const stateKeys = getAllReactiveStateKeys(component.constructor);
 
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
@@ -818,11 +835,20 @@ export function sanitizeClientState(
     const allowed = new Set<string>();
     let proto: object | null = typeof constructor === 'function' ? constructor : null;
     while (proto !== null && proto !== Function.prototype) {
+        // Allow push-back for public state only: @State and @Store.
+        // @ClientState and @ClientStore are client-only by design and must
+        // never be accepted from an inbound client request.
         const stateMeta = Reflect.getOwnMetadata('cossack:state', proto) as
             | Record<string, unknown>
             | undefined;
         if (stateMeta) {
             for (const key of Object.keys(stateMeta)) allowed.add(key);
+        }
+        const storeMeta = Reflect.getOwnMetadata('cossack:store', proto) as
+            | Record<string, unknown>
+            | undefined;
+        if (storeMeta) {
+            for (const key of Object.keys(storeMeta)) allowed.add(key);
         }
         proto = Object.getPrototypeOf(proto);
     }

@@ -5,7 +5,7 @@ import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
-import { ValidationRule, ValidationConfig, ValidationRulesStore, setValidationRules } from './validation';
+import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules } from './validation';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -73,6 +73,32 @@ export function Component(options: PageOptions = {}): ClassDecorator {
 }
 
 const noop = () => {};
+
+/**
+ * Discriminate the two `rules` shapes by VALUE, not by key name.
+ *
+ * - A single `ValidationRule` (for `@State`/`@ClientState`) has values that
+ *   are primitives (`boolean`/`number`/`string`), a `RegExp` (for `pattern`),
+ *   or a `Function` (for `custom`/`customAsync`).
+ * - A rule-map (for `@Store`/`@ClientStore`) maps field paths to nested
+ *   `ValidationRule` objects — so its values are themselves plain objects.
+ *
+ * Discriminating by value is robust against store field names that collide
+ * with rule keys (e.g. a store with a field literally named `required` or
+ * `message`), which would defeat a key-name-based heuristic.
+ */
+function isValidationRuleMap(rules: Record<string, unknown>): boolean {
+    const values = Object.values(rules);
+    if (values.length === 0) return false;
+    // Map shape: at least one value is a plain object (a nested ValidationRule).
+    // A single rule never has a plain-object value (RegExp is special-cased;
+    // custom/customAsync are functions).
+    return values.some(v =>
+        v !== null
+        && typeof v === 'object'
+        && !(v instanceof RegExp),
+    );
+}
 
 export interface ServerOptions {
   channel?: string;
@@ -161,27 +187,124 @@ export function ClientState(): PropertyDecorator {
     const clientStateProperties = Reflect.hasOwnMetadata('cossack:client-state', target.constructor)
       ? Reflect.getOwnMetadata('cossack:client-state', target.constructor)
       : new Set();
-    
+
     (clientStateProperties as Set<string | symbol>).add(propertyKey);
     Reflect.defineMetadata('cossack:client-state', clientStateProperties, target.constructor);
   };
 }
 
+/**
+ * Options for the @Store decorator. Mirrors @State so a store can target a
+ * specific channel/provider exactly like an individual @State property.
+ */
+export interface StoreOptions {
+  channel?: string;
+  provider?: string;
+}
+
+/**
+ * Decorator for a *store*: a single object property that groups multiple
+ * related fields together (`@Store() form = { email: '', password: '' }`).
+ *
+ * The framework wraps the value in a recursive reactive Proxy at runtime, so
+ * nested mutations (`this.form.address.zip = x`, `this.items.push(...)`,
+ * `this.tags[0] = y`) trigger the same broadcast / re-render path as a
+ * `@State` setter — at any depth.
+ *
+ * Like `@State`, a store is isomorphic public state: serialized into the
+ * initial state, hydrated on the client, and broadcast to connected clients
+ * when mutated on the server.
+ */
+export function Store(options: StoreOptions = {}): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const storeProperties = Reflect.hasOwnMetadata('cossack:store', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:store', target.constructor)
+      : {};
+
+    storeProperties[propertyKey] = {
+      channel: options.channel || 'global',
+      provider: options.provider || 'page',
+    };
+    Reflect.defineMetadata('cossack:store', storeProperties, target.constructor);
+  };
+}
+
+/**
+ * Decorator for a client-only store. Behaves like `@ClientState`: nested
+ * mutations trigger client re-renders, but the store is NEVER serialized or
+ * sent over the wire. Use for ephemeral UI state grouped together (multi-step
+ * form drafts, collapsible panels, transient filters).
+ */
+export function ClientStore(): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const clientStoreProperties = Reflect.hasOwnMetadata('cossack:client-store', target.constructor)
+      ? Reflect.getOwnMetadata('cossack:client-store', target.constructor)
+      : new Set();
+
+    (clientStoreProperties as Set<string | symbol>).add(propertyKey);
+    Reflect.defineMetadata('cossack:client-store', clientStoreProperties, target.constructor);
+  };
+}
+
 export interface ValidateDecoratorOptions {
-  rules?: ValidationRule;
+  /**
+   * Validation rules. Three shapes are supported:
+   *
+   * 1. **Single-rule** (for `@State`/`@ClientState` fields): a `ValidationRule`
+   *    applied to the decorated property itself.
+   * 2. **Untyped rule-map** (for `@Store`/`@ClientStore`): a
+   *    `Record<string, ValidationRule>` map whose keys are dotted paths to
+   *    nested fields. Keys may be written **relative** to the store
+   *    (`'email'`, `'address.zip'`) — the decorator auto-prefixes them with
+   *    the decorated property name (`'form.email'`). A key that already starts
+   *    with `${propertyName}.` is treated as a full path and used verbatim.
+   * 3. **Typed rule-map** via `storeRules<T>()`: same as (2) but the keys are
+   *    compile-time checked against the store type `T`. Typos like `'emial'`
+   *    fail to compile. See {@link storeRules}.
+   *
+   * The map shape is selected whenever `rules` is an object with at least one
+   * own key; the single-rule shape applies when `rules` is a flat
+   * `ValidationRule` (no map keys).
+   */
+  rules?: ValidationRule | Record<string, ValidationRule> | StoreRuleMap;
   config?: ValidationConfig;
 }
 
 /**
  * Decorator for validating form fields.
- * Works with @State and @ClientState decorated properties.
+ * Works with @State, @ClientState, @Store, and @ClientStore decorated properties.
  *
- * @example
+ * - On a `@State`/`@ClientState` property, pass a single `ValidationRule`.
+ * - On a `@Store`/`@ClientStore` property, pass a map of rules — either inline
+ *   or via the type-safe `storeRules<T>()` helper. Keys are RELATIVE to the
+ *   store and auto-prefixed to full runtime paths.
+ *
+ * @example single field
  * ```typescript
  * @State()
- * @Validate({ required: true, email: true, message: 'Please enter a valid email' })
+ * @Validate({ rules: { required: true, email: true, message: 'Please enter a valid email' } })
  * email = '';
  * ```
+ *
+ * @example store with typed, relative keys (recommended)
+ * ```typescript
+ * interface FormState { email: string; address: { zip: string }; tags: string[] }
+ *
+ * @Store()
+ * @Validate({
+ *   rules: storeRules<FormState>({
+ *     email: { required: true, email: true, message: '...' },
+ *     'address.zip': { required: true, pattern: /^\d{5}$/, message: '...' },
+ *     tags: { required: true, minLength: 1, message: 'Add at least one tag' },
+ *   }),
+ *   config: { trigger: 'all', runOn: 'both' },
+ * })
+ * form: FormState = { email: '', address: { zip: '' }, tags: [] };
+ * ```
+ *
+ * At runtime, validators and `errors` use the full prefixed paths
+ * (`'form.email'`, `'form.address.zip'`), so `validateProperty('form.email')`,
+ * `hasError('form.address.zip')`, and `getError('form.tags')` all work.
  */
 export function Validate(options: ValidateDecoratorOptions = {}): PropertyDecorator {
   return (target: any, propertyKey: string | symbol) => {
@@ -192,21 +315,46 @@ export function Validate(options: ValidateDecoratorOptions = {}): PropertyDecora
       ? Reflect.getOwnMetadata('cossack:validation', target.constructor)
       : {};
 
-    // Merge with existing rules for this property (allows chaining with @Validate on same property)
-    const existingPropertyRules = existingRules[propertyName]?.rules || {};
-    const mergedRules = { ...existingPropertyRules, ...options.rules };
-
-    // Store validation rules
-    existingRules[propertyName] = {
-      rules: mergedRules,
-      config: {
-        trigger: 'all',
-        runOn: 'both',
-        errorProperty: 'errors',
-        debounce: 0,
-        ...options.config,
-      },
+    const config = {
+      trigger: 'all',
+      runOn: 'both',
+      errorProperty: 'errors',
+      debounce: 0,
+      ...options.config,
     };
+
+    const rules = options.rules as Record<string, ValidationRule> | ValidationRule | undefined;
+
+    // Detect the rule-map shape by VALUE (see isValidationRuleMap). A single
+    // ValidationRule is detected when `rules` is an object with no plain-object
+    // values. This is robust against store field names that collide with rule
+    // keys (e.g. a store field named 'required' or 'message').
+    const isRuleMap = !!(rules && typeof rules === 'object' && isValidationRuleMap(rules as Record<string, unknown>));
+
+    if (isRuleMap) {
+      // Map shape: each key is a path into the store. RELATIVE keys
+      // ('email', 'address.zip') are prefixed with the decorated property
+      // name → 'form.email'. Keys already starting with `${propertyName}.`
+      // are treated as full paths and used verbatim (backward compatible).
+      const prefix = `${propertyName}.`;
+      for (const [key, pathRules] of Object.entries(rules as Record<string, ValidationRule>)) {
+        const fullPath = key.startsWith(prefix) ? key : `${prefix}${key}`;
+        const existingPathRules = existingRules[fullPath]?.rules || {};
+        existingRules[fullPath] = {
+          rules: { ...existingPathRules, ...pathRules },
+          config,
+        };
+      }
+    } else {
+      // Single-rule shape (existing behavior): rules apply to the decorated
+      // property itself.
+      const existingPropertyRules = existingRules[propertyName]?.rules || {};
+      const mergedRules = { ...existingPropertyRules, ...(rules as ValidationRule) };
+      existingRules[propertyName] = {
+        rules: mergedRules,
+        config,
+      };
+    }
 
     Reflect.defineMetadata('cossack:validation', existingRules, target.constructor);
 

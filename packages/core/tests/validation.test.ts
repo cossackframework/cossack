@@ -1,8 +1,8 @@
 // tests/validation.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, ValidationRule, ValidationConfig } from '../src/shared/validation';
-import { Validate } from '../src/shared/decorators';
+import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
+import { Validate, Store } from '../src/shared/decorators';
 
 describe('Validation', () => {
     describe('validateValue', () => {
@@ -471,6 +471,189 @@ describe('Validation', () => {
                 const errors = comp.getProperty('errors');
                 expect(errors.field).toBe('Invalid value');
             });
+        });
+    });
+
+    describe('store / dot-path validation', () => {
+        /**
+         * Build a minimal component mock backed by a Record store, with
+         * nested stores materialized so resolveStatePath can walk them.
+         */
+        function makeStoreComponent<T extends new (...args: any[]) => any>(
+            Klass: T,
+            initialValues: Record<string, any> = {},
+        ): InstanceType<T> & {
+            getProperty(name: string): any;
+            setProperty(name: string, value: any): void;
+            requestUpdate(): void;
+            isServer: boolean;
+        } {
+            const comp = new Klass() as any;
+            const store: Record<string, any> = { errors: {}, ...initialValues };
+            comp.getProperty = (name: string) => store[name];
+            comp.setProperty = (name: string, value: any) => { store[name] = value; };
+            comp.requestUpdate = vi.fn();
+            comp.isServer = false;
+            return comp;
+        }
+
+        class StoreValidationComponent {
+            @Validate({
+                rules: {
+                    'form.email': { required: true, email: true, message: 'Bad email' },
+                    'form.address.zip': {
+                        required: true,
+                        pattern: /^\d{5}$/,
+                        message: 'Bad ZIP',
+                    },
+                    'form.tags': { required: true, minLength: 1, message: 'Add a tag' },
+                },
+                config: { trigger: 'all', runOn: 'both' },
+            })
+            form: any;
+        }
+
+        it('reads a nested value via dot-path for validation', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: 'not-an-email', address: { zip: '' }, tags: [] },
+            });
+            const valid = await validateProperty(comp, 'form.email');
+            expect(valid).toBe(false);
+            expect(comp.getProperty('errors')['form.email']).toBe('Bad email');
+        });
+
+        it('passes for a valid nested value and clears any prior error', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: 'good@example.com', address: { zip: '' }, tags: [] },
+            });
+            // Seed an error, then validate a passing value to confirm it clears.
+            comp.getProperty('errors')['form.email'] = 'stale';
+            const valid = await validateProperty(comp, 'form.email');
+            expect(valid).toBe(true);
+            expect(comp.getProperty('errors')['form.email']).toBeUndefined();
+        });
+
+        it('resolves a multi-level dot-path (form.address.zip)', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: 'a@b.com', address: { zip: 'abc' }, tags: ['x'] },
+            });
+            const valid = await validateProperty(comp, 'form.address.zip');
+            expect(valid).toBe(false);
+            expect(comp.getProperty('errors')['form.address.zip']).toBe('Bad ZIP');
+        });
+
+        it('validates an array field by dot-path (minLength)', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: 'a@b.com', address: { zip: '12345' }, tags: [] },
+            });
+            const valid = await validateProperty(comp, 'form.tags');
+            expect(valid).toBe(false);
+            expect(comp.getProperty('errors')['form.tags']).toBe('Add a tag');
+        });
+
+        it('validateAll validates every dot-path rule', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: 'bad', address: { zip: 'bad' }, tags: [] },
+            });
+            const valid = await validateAll(comp);
+            expect(valid).toBe(false);
+            const errors = comp.getProperty('errors');
+            expect(errors['form.email']).toBeDefined();
+            expect(errors['form.address.zip']).toBeDefined();
+            expect(errors['form.tags']).toBeDefined();
+        });
+
+        it('validateAll passes when every nested field is valid', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: {
+                    email: 'good@example.com',
+                    address: { zip: '12345' },
+                    tags: ['x'],
+                },
+            });
+            const valid = await validateAll(comp);
+            expect(valid).toBe(true);
+        });
+
+        it('customAsync receives the component and resolves a nested value', async () => {
+            class AsyncStoreComponent {
+                @Validate({
+                    rules: {
+                        'form.code': {
+                            required: true,
+                            customAsync: async (value: string, component: any) => {
+                                return component.check(value);
+                            },
+                            message: 'Invalid code',
+                        },
+                    },
+                    config: { trigger: 'all', runOn: 'both' },
+                })
+                form: any;
+            }
+            const comp = makeStoreComponent(AsyncStoreComponent, {
+                form: { code: 'WRONG' },
+            });
+            (comp as any).check = vi.fn().mockResolvedValue(false);
+            const valid = await validateProperty(comp, 'form.code');
+            expect(valid).toBe(false);
+            expect((comp as any).check).toHaveBeenCalledWith('WRONG');
+            expect(comp.getProperty('errors')['form.code']).toBe('Invalid code');
+        });
+
+        it('returns true for a dot-path with no registered rule (no-op)', async () => {
+            const comp = makeStoreComponent(StoreValidationComponent, {
+                form: { email: '', address: { zip: '' }, tags: [] },
+            });
+            const valid = await validateProperty(comp, 'form.unknown');
+            expect(valid).toBe(true);
+            // No error set for the unknown path.
+            expect(comp.getProperty('errors')['form.unknown']).toBeUndefined();
+        });
+
+        it('backward-compat: flat single-rule fields still validate via getProperty', async () => {
+            class FlatComponent {
+                @Validate({
+                    rules: { required: true, message: 'Required' },
+                    config: { trigger: 'all', runOn: 'both' },
+                })
+                email = '';
+            }
+            const comp = makeStoreComponent(FlatComponent, { email: '' });
+            const valid = await validateProperty(comp, 'email');
+            expect(valid).toBe(false);
+            expect(comp.getProperty('errors').email).toBe('Required');
+        });
+
+        it('end-to-end: storeRules relative keys validate via the full prefixed path', async () => {
+            interface FormShape { email: string; address: { zip: string } }
+            class StoreRulesComponent {
+                @Store()
+                @Validate({
+                    rules: storeRules<FormShape>({
+                        email: { required: true, email: true, message: 'Bad email' },
+                        'address.zip': { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' },
+                    }),
+                    config: { trigger: 'all', runOn: 'both' },
+                })
+                form: any;
+            }
+            const comp = makeStoreComponent(StoreRulesComponent, {
+                form: { email: 'not-an-email', address: { zip: 'abc' } },
+            });
+            // Relative keys are registered under full prefixed paths, so
+            // validateProperty must use the full path.
+            const emailValid = await validateProperty(comp, 'form.email');
+            expect(emailValid).toBe(false);
+            expect(comp.getProperty('errors')['form.email']).toBe('Bad email');
+
+            const zipValid = await validateProperty(comp, 'form.address.zip');
+            expect(zipValid).toBe(false);
+            expect(comp.getProperty('errors')['form.address.zip']).toBe('Bad ZIP');
+
+            // validateAll covers the storeRules-registered paths.
+            const allValid = await validateAll(comp);
+            expect(allValid).toBe(false);
         });
     });
 });
