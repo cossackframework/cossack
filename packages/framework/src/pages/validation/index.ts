@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { html, bind, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, Page, State, Validate, Client, Server, HeadContext, HeadValue } from '@cossackframework/core';
 
 @Page({
@@ -89,10 +89,10 @@ export class ValidationDemo extends Cossack {
 
     @Client()
     handleInput(field: string, event: Event) {
-        const target = event.target as HTMLInputElement;
-        this.setProperty(field, target.value);
-        // Validate on input — fields configured with trigger 'blur' or 'submit'
-        // will be skipped here (returns true without running validators).
+        // Value sync is handled by `bind()` on each input; this handler only
+        // runs validation. Validate on input — fields configured with trigger
+        // 'blur' or 'submit' will be skipped here (returns true without running
+        // validators).
         this.validateProperty(field, 'input');
     }
 
@@ -134,11 +134,11 @@ export class ValidationDemo extends Cossack {
                 <form @submit="${(e: Event) => this.handleSubmit(e)}">
                     <!-- Email Field -->
                     <div class="mb-4">
-                        <label for="email" class="block mb-2">Email (required, email)</label>
+                        <label for="email" class="block mb-2">Email (required, email) ${this.email}</label>
                         <input
                             type="email"
                             id="email"
-                            .value="${this.email}"
+                            .value="${bind(this, 'email')}"
                             @input="${(e: Event) => this.handleInput('email', e)}"
                             @blur="${(e: Event) => this.handleBlur('email', e)}"
                             class="w-full p-2 border rounded ${this.hasError('email') ? 'border-red-500' : 'border-gray-300'}"
@@ -152,7 +152,7 @@ export class ValidationDemo extends Cossack {
                         <input
                             type="password"
                             id="password"
-                            .value="${this.password}"
+                            .value="${bind(this, 'password')}"
                             @input="${(e: Event) => this.handleInput('password', e)}"
                             @blur="${(e: Event) => this.handleBlur('password', e)}"
                             class="w-full p-2 border rounded ${this.hasError('password') ? 'border-red-500' : 'border-gray-300'}"
@@ -166,7 +166,7 @@ export class ValidationDemo extends Cossack {
                         <input
                             type="text"
                             id="username"
-                            .value="${this.username}"
+                            .value="${bind(this, 'username')}"
                             @input="${(e: Event) => this.handleInput('username', e)}"
                             @blur="${(e: Event) => this.handleBlur('username', e)}"
                             class="w-full p-2 border rounded ${this.hasError('username') ? 'border-red-500' : 'border-gray-300'}"
@@ -180,7 +180,7 @@ export class ValidationDemo extends Cossack {
                         <input
                             type="number"
                             id="age"
-                            .value="${this.age}"
+                            .value="${bind(this, 'age')}"
                             @input="${(e: Event) => this.handleInput('age', e)}"
                             @blur="${(e: Event) => this.handleBlur('age', e)}"
                             class="w-full p-2 border rounded ${this.hasError('age') ? 'border-red-500' : 'border-gray-300'}"
@@ -194,7 +194,7 @@ export class ValidationDemo extends Cossack {
                         <input
                             type="url"
                             id="website"
-                            .value="${this.website}"
+                            .value="${bind(this, 'website')}"
                             @input="${(e: Event) => this.handleInput('website', e)}"
                             @blur="${(e: Event) => this.handleBlur('website', e)}"
                             class="w-full p-2 border rounded ${this.hasError('website') ? 'border-red-500' : 'border-gray-300'}"
@@ -209,7 +209,7 @@ export class ValidationDemo extends Cossack {
                             type="text"
                             id="discountCode"
                             placeholder="Try: SAVE10, SAVE20, WELCOME, VIP50"
-                            .value="${this.discountCode}"
+                            .value="${bind(this, 'discountCode')}"
                             @input="${(e: Event) => this.handleInput('discountCode', e)}"
                             @blur="${(e: Event) => this.handleBlur('discountCode', e)}"
                             class="w-full p-2 border rounded ${this.hasError('discountCode') ? 'border-red-500' : 'border-gray-300'}"
