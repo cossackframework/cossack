@@ -14,7 +14,6 @@ export const html = (strings: TemplateStringsArray, ...values: unknown[]) => {
   return new TemplateResult(strings, values);
 };
 
-
 export const component = <T extends CossackElement>(
   clazz: new () => T,
   props: Record<string, unknown> = {},
@@ -910,6 +909,16 @@ class AttributePart implements Part {
   private boundComponent: unknown = null;
   private boundFieldName: string | null = null;
 
+  private _detachBindListener() {
+    if (!this.bindListener) return;
+    const prev = this.bindListener as any;
+    this.element.removeEventListener(prev.__eventName, prev);
+    this.bindListener = null;
+    this.boundPropName = null;
+    this.boundComponent = null;
+    this.boundFieldName = null;
+  }
+
   constructor(
     public element: Element,
     public name: string,
@@ -941,14 +950,8 @@ class AttributePart implements Part {
     }
     // Detach any bind() writeback listener when this part is no longer bound
     // (e.g. template conditionally switched from bind(...) to a plain value).
-    // Otherwise the listener keeps writing user edits into the old field.
     if (this.bindListener) {
-      const prev = this.bindListener as any;
-      this.element.removeEventListener(prev.__eventName, prev);
-      this.bindListener = null;
-      this.boundPropName = null;
-      this.boundComponent = null;
-      this.boundFieldName = null;
+      this._detachBindListener();
     }
     if (this.name === 'ref') {
       if (typeof value === 'function') {
@@ -976,20 +979,10 @@ class AttributePart implements Part {
     }
 
     if (this.name.startsWith('@')) {
-      // Event handlers are typically inline arrows (`@input="${(e) => ...}"`),
-      // which produce a NEW function reference on every render. Naively
-      // removeEventListener(old)+addEventListener(new) on each update churns
-      // the listener and — critically — if a re-render happens during event
-      // dispatch (e.g. a `bind()` writeback triggers requestUpdate), the
-      // handler for the CURRENT event can be removed before it fires.
-      //
-      // Fix: register a single STABLE wrapper once, and have it delegate to
-      // the latest handler stored on the element. Updates just swap the stored
-      // ref; the registered listener never changes identity, so there is no
-      // remove/add during dispatch. A non-function value (null/undefined when
-      // a handler is conditionally removed) clears the stored ref, and the
-      // wrapper's `typeof === 'function'` guard then no-ops — the stale
-      // handler cannot keep firing.
+      // Stable delegating wrapper: register a single listener on the element
+      // that delegates to whatever handler is stored at any given moment.
+      // This avoids remove/add churn during dispatch (re-entrancy) and
+      // correctly disables when value becomes non-function (null/undefined).
       const eventName = this.name.slice(1);
       const handlerProp = `__crp_handler_${eventName}`;
       const wrapperProp = `__crp_wrapper_${eventName}`;
@@ -1072,6 +1065,11 @@ class AttributePart implements Part {
       // render still reflects the current field value, with no writeback.
       (this.element as any)[propName] = (bind.component as any)?.[bind.fieldName];
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      // Detach any listener from a previous bind() — switching from .value to
+      // .foo on the same part would otherwise leave the old listener attached.
+      if (this.bindListener) {
+        this._detachBindListener();
+      }
       return;
     }
 
@@ -1113,17 +1111,15 @@ class AttributePart implements Part {
         this.boundFieldName !== bind.fieldName ||
         (this.bindListener as any).__eventName !== eventName)
     ) {
-      const prev = this.bindListener as any;
-      this.element.removeEventListener(prev.__eventName, prev);
-      this.bindListener = null;
+      this._detachBindListener();
     }
     if (!this.bindListener) {
       const listener = (e: Event) => {
-        // Read from currentTarget (the element the listener is registered on),
-        // not e.target — bubbled events from a child (e.g. an internal input
-        // inside a custom element) would otherwise read the wrong property.
-        const el = (e.currentTarget ?? e.target) as any;
-        const next = propName === 'checked' ? !!el[propName] : el[propName];
+        // `currentTarget` is the element the listener is registered on. Using
+        // `target` would read from a bubbled child instead (e.g. an internal
+        // input inside a custom element's shadow root).
+        const source = e.currentTarget as Element & Record<string, any>;
+        const next = propName === 'checked' ? !!source[propName] : source[propName];
         // Plain assignment on a `@State` field triggers requestUpdate on the
         // client (see cossack.ts setupStateProperty), driving the re-render.
         if (component) component[bind.fieldName] = next;
