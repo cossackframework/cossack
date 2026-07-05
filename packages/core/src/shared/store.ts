@@ -22,14 +22,27 @@
 export type StoreProxyTrigger = (storeKey: string) => void;
 
 /**
- * Per-raw-target cache of child proxies. Keyed on the RAW target (never on a
- * proxy) so that:
- *  - identity is stable across reads (`store.user === store.user`),
- *  - circular references terminate,
- *  - dead subtrees become GC-eligible once nothing else references the raw
- *    target (WeakMap does not pin it).
+ * Per-trigger cache of child proxies, keyed outer by the store's `trigger`
+ * closure and inner by the RAW target object.
+ *
+ * Why scope by trigger? A trigger closure is unique per (component instance,
+ * store property) pair — it captures the instance and routes mutations to that
+ * instance's broadcast / requestUpdate path. Without per-trigger scoping, a raw
+ * object shared across two component instances (e.g. a module-level default
+ * assigned to `@Store()` on both) would be reused, and the cached proxy would
+ * keep the FIRST instance's trigger — so nested mutations in the second
+ * instance would silently notify the first, cross-wiring reactivity and
+ * pinning the first instance in memory.
+ *
+ * Scoping by trigger means each component/store pair gets its own proxy tree
+ * over the (possibly shared) raw object. Identity is still stable WITHIN a
+ * single trigger scope (`store.user === store.user`) and cycles terminate.
+ *
+ * Both WeakMaps so dead triggers/targets are GC-eligible. Keyed on the RAW
+ * target (never on a proxy) and on the trigger function (stable for the
+ * lifetime of the store binding).
  */
-const childProxyCache = new WeakMap<object, object>();
+const childProxyCache = new WeakMap<StoreProxyTrigger, Map<object, object>>();
 
 /**
  * Returns true only for plain objects (`{}` literals) and arrays — the shapes
@@ -76,9 +89,12 @@ export function createStoreProxy(
     storeKey: string,
     trigger: StoreProxyTrigger,
 ): Record<PropertyKey, unknown> {
-    // Reuse an existing proxy for this raw target so identity is stable across
-    // paths (including cycles back to the root).
-    const existing = childProxyCache.get(target);
+    const inner = childProxyCache.get(trigger) ?? new Map<object, object>();
+    if (inner.size === 0) childProxyCache.set(trigger, inner);
+
+    // Reuse an existing proxy for this raw target (within this trigger scope)
+    // so identity is stable across paths (including cycles back to the root).
+    const existing = inner.get(target);
     if (existing) {
         return existing as Record<PropertyKey, unknown>;
     }
@@ -95,7 +111,7 @@ export function createStoreProxy(
                     return value;
                 }
                 const raw = value as object;
-                const cached = childProxyCache.get(raw)
+                const cached = inner.get(raw)
                     ?? createStoreProxy(
                         value as Record<PropertyKey, unknown>,
                         storeKey,
@@ -131,7 +147,7 @@ export function createStoreProxy(
         },
     };
     const proxy = new Proxy(target, handler);
-    childProxyCache.set(target, proxy);
+    inner.set(target, proxy);
     return proxy;
 }
 

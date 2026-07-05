@@ -147,22 +147,35 @@ export class ComplexForm extends Cossack {
 Stores compose with `@Validate` and the **type-safe `storeRules<T>()` helper**. Keys are written relative to the store and compile-time checked against the store type — typos fail to compile. See [Form Validation → Validating Stores](/docs/validation.md#validating-stores) for details.
 
 ```typescript
-import { Store, Validate, storeRules } from '@cossackframework/core';
+import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
 
-@Store()
-@Validate({
-    rules: storeRules<FormState>({
-        email: { required: true, email: true, message: 'Enter a valid email' },
-        'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
-        tags: { required: true, minLength: 1, message: 'Add at least one tag' },
-    }),
-    config: { trigger: 'all', runOn: 'both' },
-})
-form: FormState = { email: '', address: { zip: '', country: '' }, tags: [] };
+interface FormState {
+    email: string;
+    address: { zip: string; country: string };
+    tags: string[];
+}
 
-// At runtime, validate by the full prefixed path:
-this.validateProperty('form.address.zip', 'input');
-this.hasError('form.address.zip');
+@Page({ transport: 'http' })
+export class StoreFormDemo extends Cossack {
+    @Store()
+    @Validate({
+        rules: storeRules<FormState>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            tags: { required: true, minLength: 1, message: 'Add at least one tag' },
+        }),
+        config: { trigger: 'all', runOn: 'both' },
+    })
+    form: FormState = { email: '', address: { zip: '', country: '' }, tags: [] };
+
+    @Client()
+    onZipInput(event: Event) {
+        this.form.address.zip = (event.target as HTMLInputElement).value;
+        // At runtime, validate by the full prefixed path:
+        this.validateProperty('form.address.zip', 'input');
+        this.hasError('form.address.zip');
+    }
+}
 ```
 
 `storeRules<T>()` is optional — omit `<T>` for an untyped map, or write full-path keys (`'form.email'`) directly to skip the helper entirely.

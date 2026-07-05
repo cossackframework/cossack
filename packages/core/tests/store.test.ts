@@ -195,18 +195,76 @@ describe('createStoreProxy does NOT wrap built-in non-plain objects (regression)
 
     it('still proxies plain objects and arrays (positive control)', () => {
         const trigger = vi.fn();
+        // Capture the raw nested references so we can assert the proxy returns
+        // a DIFFERENT reference (i.e. the value really is proxied, not passed
+        // through). Comparing to `store` itself would always be true and prove
+        // nothing.
+        const rawObj = { a: 1 };
+        const rawArr = [1, 2];
         const store = createStoreProxy(
-            { obj: { a: 1 }, arr: [1, 2] },
+            { obj: rawObj, arr: rawArr },
             'store',
             trigger,
         );
-        // Plain object: proxied (different reference), mutation reactive.
-        expect(store.obj).not.toBe((store as any));
+        // Plain object: proxied (different reference from raw), mutation reactive.
+        expect(store.obj).not.toBe(rawObj);
         (store.obj as any).a = 2;
         expect(trigger).toHaveBeenCalledWith('store');
-        // Array: proxied, mutation reactive.
+        // Array: proxied (different reference from raw), mutation reactive.
+        expect(store.arr).not.toBe(rawArr);
         (store.arr as number[]).push(3);
         expect(trigger).toHaveBeenCalledWith('store');
+    });
+});
+
+describe('per-instance cache isolation (shared raw object across instances)', () => {
+    /**
+     * Regression: a raw store object shared across two component instances
+     * (e.g. a module-level default) must NOT cross-wire reactivity. Each
+     * instance gets its own proxy tree (keyed by trigger), so mutating a
+     * nested field in instance B must notify only instance B's trigger — not
+     * instance A's. The cache is scoped by trigger identity precisely so this
+     * works even when the raw target is identical.
+     */
+    it('does not notify instance A when instance B mutates the shared object', () => {
+        const triggerA = vi.fn();
+        const triggerB = vi.fn();
+        const sharedRaw = { user: { name: 'x' } };
+
+        // Both instances wrap the SAME raw object, but with different triggers
+        // (one closure per instance, as initializeState produces).
+        const storeA = createStoreProxy(sharedRaw, 'form', triggerA);
+        const storeB = createStoreProxy(sharedRaw, 'form', triggerB);
+
+        // Sanity: both reads return proxied values.
+        expect(storeA.user).not.toBe(sharedRaw.user);
+        expect(storeB.user).not.toBe(sharedRaw.user);
+
+        // Mutating through B must fire B's trigger, NOT A's.
+        (storeB.user as any).name = 'y';
+        expect(triggerB).toHaveBeenCalledWith('form');
+        expect(triggerA).not.toHaveBeenCalled();
+
+        // And vice versa.
+        (storeA.user as any).name = 'z';
+        expect(triggerA).toHaveBeenCalledWith('form');
+    });
+
+    it('returns the same child proxy within a single instance (identity stable)', () => {
+        const trigger = vi.fn();
+        const store = createStoreProxy({ user: { name: 'x' } }, 'form', trigger);
+        // Within one trigger scope, repeated reads are stable.
+        expect(store.user).toBe(store.user);
+    });
+
+    it('returns DIFFERENT child proxies across two instances (no shared proxy)', () => {
+        const triggerA = vi.fn();
+        const triggerB = vi.fn();
+        const sharedRaw = { user: { name: 'x' } };
+        const storeA = createStoreProxy(sharedRaw, 'form', triggerA);
+        const storeB = createStoreProxy(sharedRaw, 'form', triggerB);
+        // The child proxies must be distinct objects across instances.
+        expect(storeA.user).not.toBe(storeB.user);
     });
 });
 
