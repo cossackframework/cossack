@@ -137,4 +137,59 @@ describe('bind directive (two-way)', () => {
     const template = html`<input type="checkbox" .checked=${bind(component, 'active')}>`;
     expect(renderToString(template)).toBe('<input type="checkbox" checked>');
   });
+
+  it('detaches the writeback listener when the part switches from bind() to a plain value', () => {
+    // Regression: a conditional `.value=${cond ? bind(this,'x') : 'static'}`
+    // must stop writing user edits into `x` once cond becomes false. Previously
+    // the listener stayed attached and kept mutating the old field.
+    //
+    // We use a SINGLE template literal site (so the render cache reuses the
+    // same part across re-renders) and toggle the value between bind() and a
+    // plain string.
+    const container = document.createElement('div');
+    const component = { email: 'a@b.c' };
+    const tpl = (useBind: boolean) =>
+      html`<input .value=${useBind ? bind(component, 'email') : 'static'}>`;
+
+    render(tpl(true), container);
+    const input = container.querySelector('input')!;
+    expect(input.value).toBe('a@b.c');
+
+    // Switch away from bind() on the SAME part (same template site → cached).
+    render(tpl(false), container);
+    const input2 = container.querySelector('input')!;
+    expect(input2.value).toBe('static');
+
+    // A user edit must NOT write back to the old component field.
+    input2.value = 'changed-by-user';
+    input2.dispatchEvent(new Event('input'));
+    expect(component.email).toBe('a@b.c'); // not 'changed-by-user'
+  });
+
+  it('recreates the listener when the bound component/field changes', () => {
+    // Regression: `.value=${bind(a,'x')}` then `.value=${bind(b,'y')}` on the
+    // same part must write the edit to `b.y`, not the stale `a.x` captured by
+    // the first listener. Uses one template site so the part is reused.
+    const container = document.createElement('div');
+    const a = { x: 'from-a' };
+    const b = { y: 'from-b' };
+
+    const tpl = (target: { x?: string; y?: string } | typeof a | typeof b) =>
+      html`<input .value=${'x' in target ? bind(target, 'x') : bind(target, 'y')}>`;
+
+    render(tpl(a), container);
+    const input = container.querySelector('input')!;
+    expect(input.value).toBe('from-a');
+
+    // Re-render binding to a different component + field on the same part.
+    render(tpl(b), container);
+    const input2 = container.querySelector('input')!;
+    expect(input2.value).toBe('from-b');
+
+    // User edit must write to b.y, not a.x.
+    input2.value = 'edited';
+    input2.dispatchEvent(new Event('input'));
+    expect(b.y).toBe('edited');
+    expect(a.x).toBe('from-a'); // untouched
+  });
 });

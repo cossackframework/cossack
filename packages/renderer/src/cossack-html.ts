@@ -901,9 +901,14 @@ class AttributePart implements Part {
   private lastFormValue: unknown = undefined;
   private lastFormKind: 'value' | 'checked' | null = null;
   // Two-way binding (`bind()`) state: the writeback listener is attached once
-  // and reuses this stored closure so re-renders don't pile up duplicates.
+  // and reuses this stored closure so re-renders don't pile up duplicates. We
+  // also track which component/field the closure writes to so a re-render with
+  // a different `bind(otherComponent, 'field')` recreates the listener instead
+  // of silently writing to the old target.
   private bindListener: ((e: Event) => void) | null = null;
   private boundPropName: string | null = null;
+  private boundComponent: unknown = null;
+  private boundFieldName: string | null = null;
 
   constructor(
     public element: Element,
@@ -933,6 +938,17 @@ class AttributePart implements Part {
     if (value instanceof BindResult) {
       this.updateBind(value);
       return;
+    }
+    // Detach any bind() writeback listener when this part is no longer bound
+    // (e.g. template conditionally switched from bind(...) to a plain value).
+    // Otherwise the listener keeps writing user edits into the old field.
+    if (this.bindListener) {
+      const prev = this.bindListener as any;
+      this.element.removeEventListener(prev.__eventName, prev);
+      this.bindListener = null;
+      this.boundPropName = null;
+      this.boundComponent = null;
+      this.boundFieldName = null;
     }
     if (this.name === 'ref') {
       if (typeof value === 'function') {
@@ -1082,13 +1098,17 @@ class AttributePart implements Part {
       }
     }
 
-    // Attach the writeback listener exactly once per part lifecycle. If the
-    // field name or DOM event type changes (e.g. the element was rebuilt with
-    // a different type), swap the listener out.
+    // Attach the writeback listener exactly once per part lifecycle. Recreate
+    // it when ANY of the captured inputs change: DOM property, event type, OR
+    // the bound component/field — otherwise a `bind(otherComponent, 'field')`
+    // re-render would keep writing to the old target.
     const eventName = bindEventFor(this.element, propName);
     if (
       this.bindListener &&
-      (this.boundPropName !== propName || (this.bindListener as any).__eventName !== eventName)
+      (this.boundPropName !== propName ||
+        this.boundComponent !== component ||
+        this.boundFieldName !== bind.fieldName ||
+        (this.bindListener as any).__eventName !== eventName)
     ) {
       const prev = this.bindListener as any;
       this.element.removeEventListener(prev.__eventName, prev);
@@ -1105,6 +1125,8 @@ class AttributePart implements Part {
       (listener as any).__eventName = eventName;
       this.bindListener = listener;
       this.boundPropName = propName;
+      this.boundComponent = component;
+      this.boundFieldName = bind.fieldName;
       this.element.addEventListener(eventName, listener);
     }
 
