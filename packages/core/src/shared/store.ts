@@ -32,6 +32,27 @@ export type StoreProxyTrigger = (storeKey: string) => void;
 const childProxyCache = new WeakMap<object, object>();
 
 /**
+ * Returns true only for plain objects (`{}` literals) and arrays — the shapes
+ * that are SAFE to wrap in a recursive Proxy. Built-in non-plain objects
+ * (`Date`, `Map`, `Set`, `RegExp`, `Promise`, typed arrays, `ArrayBuffer`,
+ * `DataView`, etc.) and arbitrary class instances are returned raw because
+ * Proxy-wrapping them breaks methods that perform internal-slot checks
+ * (e.g. `Map.prototype.set` throws "incompatible receiver" when `this` is a
+ * Proxy, not a real Map). Such values are treated as scalar state: mutations
+ * to them are NOT reactive (reassign the property to trigger an update).
+ *
+ * Exported so the host (`initializeState`) can apply the same guard at the
+ * top-level store boundary.
+ */
+export function isPlainObjectOrArray(value: object): boolean {
+    if (Array.isArray(value)) return true;
+    // Plain objects have Object.prototype as their direct prototype. Class
+    // instances and built-ins have a different prototype, so they fail this
+    // check and are returned raw.
+    return Object.getPrototypeOf(value) === Object.prototype;
+}
+
+/**
  * Wrap a store target in a recursive reactive Proxy.
  *
  * - `get`: object/array values are returned through a cached child proxy;
@@ -66,9 +87,13 @@ export function createStoreProxy(
         get(obj, prop, receiver) {
             const value = Reflect.get(obj, prop, receiver);
             if (value !== null && typeof value === 'object') {
-                // Function/Array both qualify as 'object'; cache by raw target.
-                // createStoreProxy itself registers the new proxy in the cache,
-                // so we just read it back here.
+                // Only recurse into plain objects/arrays. Built-ins (Date, Map,
+                // Set, RegExp, typed arrays) and class instances are returned
+                // RAW — proxying them throws "incompatible receiver" on method
+                // calls and is unsafe. They are treated as scalar state.
+                if (!isPlainObjectOrArray(value as object)) {
+                    return value;
+                }
                 const raw = value as object;
                 const cached = childProxyCache.get(raw)
                     ?? createStoreProxy(

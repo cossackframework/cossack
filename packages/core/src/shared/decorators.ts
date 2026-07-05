@@ -75,18 +75,30 @@ export function Component(options: PageOptions = {}): ClassDecorator {
 const noop = () => {};
 
 /**
- * Property keys that belong to a single `ValidationRule` (vs. a
- * `Record<path, ValidationRule>` map). Used by `@Validate` to distinguish the
- * two `rules` shapes: an object is treated as a single rule when ALL of its
- * own keys are in this set, and as a rule-map otherwise.
+ * Discriminate the two `rules` shapes by VALUE, not by key name.
  *
- * Kept in sync with the {@link ValidationRule} interface — any new rule field
- * must be added here too.
+ * - A single `ValidationRule` (for `@State`/`@ClientState`) has values that
+ *   are primitives (`boolean`/`number`/`string`), a `RegExp` (for `pattern`),
+ *   or a `Function` (for `custom`/`customAsync`).
+ * - A rule-map (for `@Store`/`@ClientStore`) maps field paths to nested
+ *   `ValidationRule` objects — so its values are themselves plain objects.
+ *
+ * Discriminating by value is robust against store field names that collide
+ * with rule keys (e.g. a store with a field literally named `required` or
+ * `message`), which would defeat a key-name-based heuristic.
  */
-const SINGLE_RULE_KEYS = new Set<string>([
-  'required', 'minLength', 'maxLength', 'min', 'max',
-  'pattern', 'email', 'url', 'custom', 'customAsync', 'message',
-]);
+function isValidationRuleMap(rules: Record<string, unknown>): boolean {
+    const values = Object.values(rules);
+    if (values.length === 0) return false;
+    // Map shape: at least one value is a plain object (a nested ValidationRule).
+    // A single rule never has a plain-object value (RegExp is special-cased;
+    // custom/customAsync are functions).
+    return values.some(v =>
+        v !== null
+        && typeof v === 'object'
+        && !(v instanceof RegExp),
+    );
+}
 
 export interface ServerOptions {
   channel?: string;
@@ -313,12 +325,11 @@ export function Validate(options: ValidateDecoratorOptions = {}): PropertyDecora
 
     const rules = options.rules as Record<string, ValidationRule> | ValidationRule | undefined;
 
-    // Detect the rule-map shape: an object is treated as a single ValidationRule
-    // when ALL of its own keys are in SINGLE_RULE_KEYS; otherwise as a
-    // Record<path, ValidationRule> map (the store form).
-    const ruleKeys = rules && typeof rules === 'object' ? Object.keys(rules) : [];
-    const isRuleMap = ruleKeys.length > 0
-      && ruleKeys.some(k => !SINGLE_RULE_KEYS.has(k));
+    // Detect the rule-map shape by VALUE (see isValidationRuleMap). A single
+    // ValidationRule is detected when `rules` is an object with no plain-object
+    // values. This is robust against store field names that collide with rule
+    // keys (e.g. a store field named 'required' or 'message').
+    const isRuleMap = !!(rules && typeof rules === 'object' && isValidationRuleMap(rules as Record<string, unknown>));
 
     if (isRuleMap) {
       // Map shape: each key is a path into the store. RELATIVE keys

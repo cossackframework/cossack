@@ -53,7 +53,7 @@ import {
     getConstructorParamNames as getConstructorParamNamesFn,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
-import { createStoreProxy } from './store';
+import { createStoreProxy, isPlainObjectOrArray } from './store';
 import { LifecyclePhase } from './component-types';
 import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
@@ -1058,7 +1058,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     const raw = isPublic
                         ? this._stateContainer.getPublic(key)
                         : this._stateContainer.getInternal(key);
-                    if (raw === null || typeof raw !== 'object') {
+                    // Only plain objects/arrays are wrapped in a reactive Proxy.
+                    // Built-ins (Date/Map/Set/RegExp) and class instances are
+                    // returned raw — proxying them throws on method calls.
+                    if (raw === null || typeof raw !== 'object' || !isPlainObjectOrArray(raw)) {
                         return raw;
                     }
                     // Object/array: return the cached top-level proxy so nested

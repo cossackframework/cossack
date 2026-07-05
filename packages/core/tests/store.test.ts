@@ -149,6 +149,67 @@ describe('createStoreProxy', () => {
     });
 });
 
+describe('createStoreProxy does NOT wrap built-in non-plain objects (regression)', () => {
+    /**
+     * Proxy-wrapping Date/Map/Set/RegExp/typed arrays throws "incompatible
+     * receiver" when their methods run with `this` = Proxy. The get trap must
+     * return such values RAW (treated as scalar state — not deeply reactive).
+     * Only plain objects ({}) and arrays are recursively proxied.
+     */
+    it('returns Date values raw so .getTime() works', () => {
+        const trigger = vi.fn();
+        const date = new Date(2020, 0, 1);
+        const store = createStoreProxy({ createdAt: date }, 'store', trigger);
+        // Reading must not throw, and the method must work.
+        expect((store.createdAt as Date).getTime()).toBe(date.getTime());
+        // And the value is the SAME reference (not a Proxy wrapper).
+        expect(store.createdAt).toBe(date);
+    });
+
+    it('returns Map values raw so .set()/.get() work', () => {
+        const trigger = vi.fn();
+        const map = new Map([['a', 1]]);
+        const store = createStoreProxy({ counts: map }, 'store', trigger);
+        // Must not throw "Method Map.prototype.set called on incompatible receiver".
+        (store.counts as Map<string, number>).set('b', 2);
+        expect((store.counts as Map<string, number>).get('b')).toBe(2);
+        expect(store.counts).toBe(map);
+    });
+
+    it('returns Set values raw so .add() works', () => {
+        const trigger = vi.fn();
+        const set = new Set<number>([1]);
+        const store = createStoreProxy({ ids: set }, 'store', trigger);
+        (store.ids as Set<number>).add(2);
+        expect((store.ids as Set<number>).has(2)).toBe(true);
+        expect(store.ids).toBe(set);
+    });
+
+    it('returns RegExp values raw so .test() works', () => {
+        const trigger = vi.fn();
+        const re = /abc/;
+        const store = createStoreProxy({ pattern: re }, 'store', trigger);
+        expect((store.pattern as RegExp).test('xabcx')).toBe(true);
+        expect(store.pattern).toBe(re);
+    });
+
+    it('still proxies plain objects and arrays (positive control)', () => {
+        const trigger = vi.fn();
+        const store = createStoreProxy(
+            { obj: { a: 1 }, arr: [1, 2] },
+            'store',
+            trigger,
+        );
+        // Plain object: proxied (different reference), mutation reactive.
+        expect(store.obj).not.toBe((store as any));
+        (store.obj as any).a = 2;
+        expect(trigger).toHaveBeenCalledWith('store');
+        // Array: proxied, mutation reactive.
+        (store.arr as number[]).push(3);
+        expect(trigger).toHaveBeenCalledWith('store');
+    });
+});
+
 describe('resolveStatePath', () => {
     it('resolves a flat property via getProperty when present', () => {
         const comp: any = {
@@ -392,6 +453,67 @@ describe('storeRules<T>()', () => {
         expect(rules['form.email']).toBeDefined();
         expect(rules['form.age']).toBeDefined();
         expect(rules['form.age'].rules.min).toBe(18);
+    });
+});
+
+describe('@Validate value-shape discrimination (regression: collisions with rule key names)', () => {
+    /**
+     * A store may have fields literally named 'required', 'message', 'pattern',
+     * etc. (collisions with ValidationRule keys). The old key-name heuristic
+     * misclassified these as single-rule; the new value-shape check treats a
+     * map of plain-object values as a rule-map regardless of the key names.
+     */
+    it('registers relative keys named after rule properties (required/message)', () => {
+        interface CollidingShape { required: string; message: string; pattern: string }
+        class Comp {
+            @Store()
+            @Validate({
+                rules: storeRules<CollidingShape>({
+                    required: { required: true },
+                    message: { required: true },
+                    pattern: { required: true },
+                }),
+                config: { trigger: 'all', runOn: 'both' },
+            })
+            form: CollidingShape = { required: '', message: '', pattern: '' };
+        }
+        const rules = getValidationRules(new Comp());
+        expect(rules['form.required']).toBeDefined();
+        expect(rules['form.message']).toBeDefined();
+        expect(rules['form.pattern']).toBeDefined();
+        // No single-rule fallback on 'form' itself.
+        expect(rules['form']).toBeUndefined();
+    });
+
+    it('still detects a flat single rule correctly (no plain-object values)', () => {
+        class Comp {
+            @Validate({
+                rules: { required: true, email: true, message: 'bad email' },
+                config: { trigger: 'all', runOn: 'both' },
+            })
+            email = '';
+        }
+        const rules = getValidationRules(new Comp());
+        expect(rules.email).toBeDefined();
+        expect(rules.email.rules.required).toBe(true);
+        expect(rules.email.rules.email).toBe(true);
+        expect(rules.email.rules.message).toBe('bad email');
+    });
+
+    it('treats a single rule with a RegExp pattern value as single (not a map)', () => {
+        // Regression: a RegExp is an object but should NOT flip to map mode.
+        class Comp {
+            @Validate({
+                rules: { required: true, pattern: /^[a-z]+$/, message: 'bad' },
+                config: { trigger: 'all', runOn: 'both' },
+            })
+            code = '';
+        }
+        const rules = getValidationRules(new Comp());
+        expect(rules.code).toBeDefined();
+        expect(rules.code.rules.pattern).toBeInstanceOf(RegExp);
+        // No accidental map entries.
+        expect(rules['code.pattern']).toBeUndefined();
     });
 });
 
