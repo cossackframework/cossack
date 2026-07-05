@@ -125,12 +125,57 @@ html`<input ref="${(el) => console.log(el)}" />`;
 
 ### `live`
 
-Check against the live DOM value (useful for inputs).
+Compare against the **live DOM value** instead of the last-rendered value when
+deciding whether to write a property. This is the Lit-faithful `live` directive.
+
+By default, a plain property binding like `.value="${this.email}"` does a dirty
+check against the last value the renderer committed: if the bound value is
+unchanged, the write is skipped (so a user's in-progress edit is not clobbered).
+`live()` switches the comparison to the actual DOM value — meaning the property
+**is** written whenever the DOM differs from the bound value, even if the bound
+value itself has not changed. Use it when you need to force the DOM back to the
+bound value (e.g. a "Reset" button that reverts a field the user edited).
+
+> Note: `live()` is a render-direction directive only. It does **not** provide
+> two-way binding (it will not write DOM edits back into your state). For
+> two-way binding, use [`bind()`](#bind) instead.
 
 ```typescript
 import { live } from '@cossackframework/renderer';
 
-html`<input .value="${live(inputValue)}" />`;
+html`<input .value="${live(this.email)}" />`;
+```
+
+### `bind`
+
+Two-way binding for a form element's value/checked against a component state
+field. It reads the field for rendering **and** writes user edits back to it
+(assignment to a `@State` field triggers a re-render automatically). The DOM
+property is inferred from the attribute it is attached to (`.value` → `value`,
+`.checked` → `checked`), and the writeback event is chosen per element
+(`input` for text-like inputs and `<textarea>`, `change` for checkbox/radio/
+range inputs and `<select>`).
+
+`bind(this, 'field')` replaces the manual `.value` + `@input` + `setProperty`
+dance:
+
+```typescript
+import { html, bind } from '@cossackframework/renderer';
+
+// Before:
+html`<input
+    .value="${this.email}"
+    @input="${(e: Event) => this.setProperty('email', (e.target as HTMLInputElement).value)}"
+/>`;
+
+// After:
+html`<input .value="${bind(this, 'email')}" />`;
+```
+
+Works for checkboxes too:
+
+```typescript
+html`<input type="checkbox" .checked="${bind(this, 'active')}" />`;
 ```
 
 ### `key`

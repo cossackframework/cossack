@@ -19,6 +19,16 @@ export class KeyResult {
   ) {}
 }
 
+export class BindResult {
+  constructor(
+    // The component instance that owns the state field. The directive reads
+    // the current value from it on render and writes user edits back to it.
+    public readonly component: unknown,
+    // The state field name on the component (e.g. 'email').
+    public readonly fieldName: string,
+  ) {}
+}
+
 // --- Directives ---
 
 /**
@@ -70,6 +80,26 @@ export const styleMap = (styleInfo: Record<string, string | undefined | null>) =
  * Usage: html`${key(id, html`<child></child>`)}`
  */
 export const key = (value: unknown, template: unknown) => new KeyResult(value, template);
+
+/**
+ * Two-way binding for a form element's value/checked against a component
+ * state field. Reads the field for rendering AND writes user edits back to
+ * it (which triggers a re-render via the `@State` setter).
+ *
+ * Usage (`.value`/`.checked` is inferred from the bound attribute):
+ *   <input .value="${bind(this, 'email')}" />
+ *   <input type="checkbox" .checked="${bind(this, 'active')}" />
+ *
+ * `bind` picks the DOM property to bind from the attribute it is attached to
+ * (`.value` -> `value`, `.checked` -> `checked`) and the appropriate writeback
+ * event for the element (`input` for text-like inputs/textarea; `change` for
+ * checkbox/radio/range inputs and `<select>`).
+ *
+ * @param component  The component instance owning the state field (usually `this`).
+ * @param fieldName  The state field name to read from / write back to.
+ */
+export const bind = (component: unknown, fieldName: string) =>
+  new BindResult(component, fieldName);
 
 // Ref is usually just a function, but we can verify it
 export type RefCallback = (el: Element | undefined) => void;

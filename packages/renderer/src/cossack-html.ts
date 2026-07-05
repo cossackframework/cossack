@@ -1,6 +1,6 @@
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { LiveResult, RepeatResult, KeyResult } from './directives';
+import { LiveResult, RepeatResult, KeyResult, BindResult } from './directives';
 
 export class TemplateResult {
   public readonly _cossack_template_result = true;
@@ -13,7 +13,6 @@ export class TemplateResult {
 export const html = (strings: TemplateStringsArray, ...values: unknown[]) => {
   return new TemplateResult(strings, values);
 };
-
 
 export const component = <T extends CossackElement>(
   clazz: new () => T,
@@ -85,6 +84,15 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
   if (value instanceof KeyResult) {
     // SSR has no previous DOM, so key is transparent: just render the template.
     return valueToString(value.template, opts);
+  }
+  if (value instanceof BindResult) {
+    // SSR for two-way binding: emit the current field value. The DOM property
+    // name (value/checked) is determined by the attribute this BindResult is
+    // attached to, which the SSR scanner handles via its `.startsWith('.')`
+    // branch and calls valueToString here. Writeback listeners are a
+    // client-only concern.
+    const current = (value.component as any)?.[value.fieldName];
+    return valueToString(current, opts);
   }
   if (isComponentResult(value)) {
     const instance = new value.clazz();
@@ -251,9 +259,31 @@ class SSRScanner {
               this.result = this.result.trimEnd();
             }
           } else if (name.startsWith('.')) {
-            if (val !== null && val !== undefined && val !== false) {
+            // Unwrap a `bind()` two-way value to the current field value so it
+            // follows the same emit rules as a plain property binding.
+            let propVal: unknown;
+            const isBind = val instanceof BindResult;
+            if (isBind) {
+              propVal = (val.component as any)?.[val.fieldName];
+            } else {
+              propVal = val;
+            }
+            const attrName = name.slice(1);
+            // For `bind()` on a known boolean attribute (.checked/.disabled),
+            // emit a bare attribute when truthy — matching how a checkbox
+            // serializes. Plain (non-bind) property bindings keep their
+            // original behavior (value="...") to avoid changing existing usage.
+            const isBooleanAttr =
+              isBind &&
+              (attrName === 'checked' || attrName === 'disabled' || attrName === 'readonly' ||
+                attrName === 'selected' || attrName === 'multiple' || attrName === 'required' ||
+                attrName === 'hidden');
+            if (isBooleanAttr) {
               this.result = this.result.trimEnd();
-              this.result += ` ${name.slice(1)}="${valueToString(val, this.opts)}"`;
+              if (propVal) this.result += ` ${attrName}`;
+            } else if (propVal !== null && propVal !== undefined && propVal !== false) {
+              this.result = this.result.trimEnd();
+              this.result += ` ${attrName}="${valueToString(propVal, this.opts)}"`;
             } else {
               this.result = this.result.trimEnd();
             }
@@ -863,6 +893,31 @@ class AttributePart implements Part {
   private segments: string[];
   private isMulti: boolean;
   private multiState: MultiMarkerState | null;
+  // Tracks the last value this part committed (for the `.value`/`.checked`
+  // dirty check). Plain bindings skip the write when the new value equals
+  // this; `live()` instead compares against the live DOM. Matches Lit's
+  // semantics where `live()` switches the comparison source.
+  private lastFormValue: unknown = undefined;
+  private lastFormKind: 'value' | 'checked' | null = null;
+  // Two-way binding (`bind()`) state: the writeback listener is attached once
+  // and reuses this stored closure so re-renders don't pile up duplicates. We
+  // also track which component/field the closure writes to so a re-render with
+  // a different `bind(otherComponent, 'field')` recreates the listener instead
+  // of silently writing to the old target.
+  private bindListener: ((e: Event) => void) | null = null;
+  private boundPropName: string | null = null;
+  private boundComponent: unknown = null;
+  private boundFieldName: string | null = null;
+
+  private _detachBindListener() {
+    if (!this.bindListener) return;
+    const prev = this.bindListener as any;
+    this.element.removeEventListener(prev.__eventName, prev);
+    this.bindListener = null;
+    this.boundPropName = null;
+    this.boundComponent = null;
+    this.boundFieldName = null;
+  }
 
   constructor(
     public element: Element,
@@ -889,6 +944,15 @@ class AttributePart implements Part {
       isLive = true;
       value = value.value;
     }
+    if (value instanceof BindResult) {
+      this.updateBind(value);
+      return;
+    }
+    // Detach any bind() writeback listener when this part is no longer bound
+    // (e.g. template conditionally switched from bind(...) to a plain value).
+    if (this.bindListener) {
+      this._detachBindListener();
+    }
     if (this.name === 'ref') {
       if (typeof value === 'function') {
         // Function ref: call the function with the element
@@ -914,38 +978,66 @@ class AttributePart implements Part {
       return;
     }
 
-    if (this.name.startsWith('@') && typeof value === 'function') {
+    if (this.name.startsWith('@')) {
+      // Stable delegating wrapper: register a single listener on the element
+      // that delegates to whatever handler is stored at any given moment.
+      // This avoids remove/add churn during dispatch (re-entrancy) and
+      // correctly disables when value becomes non-function (null/undefined).
       const eventName = this.name.slice(1);
-      const propName = `__crp_handler_${eventName}`;
-      const oldHandler = (this.element as any)[propName];
-      if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
-      (this.element as any)[propName] = value;
-      this.element.addEventListener(eventName, value as EventListener);
+      const handlerProp = `__crp_handler_${eventName}`;
+      const wrapperProp = `__crp_wrapper_${eventName}`;
+      if (!(this.element as any)[wrapperProp]) {
+        const wrapper = (e: Event) => {
+          const current = (e.currentTarget as any)?.[handlerProp];
+          if (typeof current === 'function') current.call(e.currentTarget, e);
+        };
+        (this.element as any)[wrapperProp] = wrapper;
+        this.element.addEventListener(eventName, wrapper);
+      }
+      (this.element as any)[handlerProp] = typeof value === 'function' ? value : undefined;
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);
-      (this.element as any)[propName] = value;
+      // `.value`/`.checked` on form fields get Lit-style dirty-checking so a
+      // re-render doesn't clobber an in-progress user edit; `live()` switches
+      // the comparison to the live DOM (see `lastFormValue`).
+      const isFormProp =
+        propName === 'value' || propName === 'checked'
+          ? this.element instanceof HTMLInputElement ||
+            this.element instanceof HTMLTextAreaElement ||
+            this.element instanceof HTMLSelectElement
+          : false;
+      if (isFormProp) {
+        if (propName === 'checked') {
+          const boolValue = Boolean(value);
+          const shouldWrite = isLive
+            ? (this.element as any).checked !== boolValue // compare against live DOM
+            : this.lastFormKind !== 'checked' || this.lastFormValue !== boolValue; // dirty check
+          if (shouldWrite) {
+            (this.element as any).checked = boolValue;
+            this.lastFormValue = boolValue;
+            this.lastFormKind = 'checked';
+          }
+        } else {
+          const strValue = String(value);
+          const shouldWrite = isLive
+            ? (this.element as any).value !== strValue // compare against live DOM
+            : this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue; // dirty check
+          if (shouldWrite) {
+            (this.element as any).value = strValue;
+            this.lastFormValue = value;
+            this.lastFormKind = 'value';
+          }
+        }
+      } else {
+        (this.element as any)[propName] = value;
+      }
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
     } else if (this.name.startsWith('?')) {
       const attrName = this.name.slice(1);
       if (value) this.element.setAttribute(attrName, '');
       else this.element.removeAttribute(attrName);
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
-    } else if (
-      this.name === 'value' &&
-      (this.element instanceof HTMLInputElement || this.element instanceof HTMLTextAreaElement)
-    ) {
-      if (isLive) {
-        if (this.element.value !== String(value)) this.element.value = String(value);
-      } else {
-        if (this.element.value !== String(value)) this.element.value = String(value);
-      }
-      this.element.setAttribute(this.name, String(value));
-    } else if (this.name === 'checked' && this.element instanceof HTMLInputElement) {
-      const boolValue = Boolean(value);
-      if (this.element.checked !== boolValue) this.element.checked = boolValue;
-      if (boolValue) this.element.setAttribute(this.name, '');
-      else this.element.removeAttribute(this.name);
     } else if (typeof value === 'boolean') {
       if (value) this.element.setAttribute(this.name, '');
       else this.element.removeAttribute(this.name);
@@ -953,7 +1045,118 @@ class AttributePart implements Part {
       this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
     }
   }
+
+  /**
+   * Two-way binding (`bind(this, 'field')`). Called when the part's value is a
+   * `BindResult`. The DOM property (value/checked) is inferred from the bound
+   * attribute name; a writeback listener is attached once and reuses the same
+   * closure across re-renders so duplicates never accumulate.
+   *
+   * The render-direction write uses the same dirty-check as a plain `.value`
+   * binding so a re-render with an unchanged field does not clobber a user's
+   * in-progress edit — the field typically only changes BECAUSE the user
+   * edited the input, so skipping is correct and avoids a feedback loop.
+   */
+  private updateBind(bind: BindResult) {
+    // `.value` / `.checked` only — bind() is a form-element directive.
+    const propName = this.name.startsWith('.') ? this.name.slice(1) : this.name;
+    if (propName !== 'value' && propName !== 'checked') {
+      // Unsupported property: fall back to a plain property assignment so the
+      // render still reflects the current field value, with no writeback.
+      (this.element as any)[propName] = (bind.component as any)?.[bind.fieldName];
+      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      // Detach any listener from a previous bind() — switching from .value to
+      // .foo on the same part would otherwise leave the old listener attached.
+      if (this.bindListener) {
+        this._detachBindListener();
+      }
+      return;
+    }
+
+    const el = this.element as any;
+    const component = bind.component as any;
+
+    // Render direction: push current field value into the DOM (dirty-checked
+    // against the last value we committed, so an unchanged field — e.g. the
+    // user is mid-edit and nothing else changed — is left alone).
+    const current = component?.[bind.fieldName];
+    if (propName === 'checked') {
+      const boolValue = Boolean(current);
+      if (this.lastFormKind !== 'checked' || this.lastFormValue !== boolValue) {
+        el.checked = boolValue;
+        this.lastFormValue = boolValue;
+        this.lastFormKind = 'checked';
+      }
+    } else {
+      const strValue = current == null ? '' : String(current);
+      if (this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue) {
+        el.value = strValue;
+        // Store the normalized string we actually wrote (not `current`), so a
+        // null/undefined field compares equal to '' on the next render instead
+        // of churning every time (String(undefined) === 'undefined' !== '').
+        this.lastFormValue = strValue;
+        this.lastFormKind = 'value';
+      }
+    }
+
+    // Attach the writeback listener exactly once per part lifecycle. Recreate
+    // it when ANY of the captured inputs change: DOM property, event type, OR
+    // the bound component/field — otherwise a `bind(otherComponent, 'field')`
+    // re-render would keep writing to the old target.
+    const eventName = bindEventFor(this.element, propName);
+    if (
+      this.bindListener &&
+      (this.boundPropName !== propName ||
+        this.boundComponent !== component ||
+        this.boundFieldName !== bind.fieldName ||
+        (this.bindListener as any).__eventName !== eventName)
+    ) {
+      this._detachBindListener();
+    }
+    if (!this.bindListener) {
+      const listener = (e: Event) => {
+        // `currentTarget` is the element the listener is registered on. Using
+        // `target` would read from a bubbled child instead (e.g. an internal
+        // input inside a custom element's shadow root).
+        const source = e.currentTarget as Element & Record<string, any>;
+        const next = propName === 'checked' ? !!source[propName] : source[propName];
+        // Plain assignment on a `@State` field triggers requestUpdate on the
+        // client (see cossack.ts setupStateProperty), driving the re-render.
+        if (component) component[bind.fieldName] = next;
+      };
+      (listener as any).__eventName = eventName;
+      this.bindListener = listener;
+      this.boundPropName = propName;
+      this.boundComponent = component;
+      this.boundFieldName = bind.fieldName;
+      this.element.addEventListener(eventName, listener);
+    }
+
+    // `.value`/`.checked` are not real HTML attributes — strip the binding
+    // marker so it never appears in the DOM.
+    if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+  }
 }
+
+/**
+ * Pick the DOM event that signals a user edit for a given element + property.
+ * Text-like inputs and textareas fire `input`; checkbox/radio/range inputs
+ * and `<select>` update on `change`.
+ */
+const bindEventFor = (element: Element, propName: string): string => {
+  if (element instanceof HTMLSelectElement) return 'change';
+  if (element instanceof HTMLTextAreaElement) return 'input';
+  if (element instanceof HTMLInputElement) {
+    const type = element.type.toLowerCase();
+    if (propName === 'checked' || type === 'checkbox' || type === 'radio' || type === 'range') {
+      return 'change';
+    }
+    return 'input';
+  }
+  // Fall back to `input` for anything else (covers custom elements that
+  // dispatch input events on edit).
+  return 'input';
+};
 
 const containerCache = new WeakMap<Node, { strings: TemplateStringsArray; parts: Part[] }>();
 
