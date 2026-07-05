@@ -288,3 +288,43 @@ export class Greeting extends Cossack {
 -   The server automatically broadcasts a partial state update containing **only `feedCount`** to all clients connected to this page.
 -   The "Increment Notifications" button behaves identically but for the `notificationCount` state.
 -   If `this.name` were to change, the partial update would contain only the `name` property.
+
+## Sharing State Across Pages/Components with Providers
+
+To share state between pages or components (e.g., a shopping cart, notifications), you can create a custom `StateProvider`.
+
+For example, a `UserSessionProvider` would be responsible for connecting to a Durable Object whose ID is derived from the user's session, not the URL.
+
+```typescript
+// 1. Define a custom provider
+export class UserSessionProvider extends StateProvider {
+  getDurableObjectId() {
+    const userId = this.component.user?.id;
+    if (!userId) throw new Error("User not authenticated!");
+    // All components using this provider will connect to the SAME DO for this user
+    return this.env.SESSION_DO.idFromName(userId);
+  }
+}
+
+// 2. Register it in your component
+@Page({
+  transport: 'durable-object',
+  providers: {
+    session: new UserSessionProvider()
+  }
+})
+export class MyPageComponent extends Cossack {
+
+  // 3. Target the provider for state and actions
+  @State({ provider: 'session' })
+  private notificationCount: number = 0;
+
+  @Server({ provider: 'session' })
+  private async markNotificationsAsRead() {
+    // This action is sent to the user's session DO, not the page DO.
+    this.notificationCount = 0;
+  }
+}
+```
+
+Now, `notificationCount` can be accessed and modified consistently from any page that registers and uses the `session` provider.

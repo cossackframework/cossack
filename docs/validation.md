@@ -5,7 +5,7 @@ description: "Form validation using the @Validate decorator that runs on both cl
 
 # Form Validation
 
-The `@Validate` decorator provides form validation that runs on both client and server. It integrates seamlessly with `@State` and `@ClientState` decorators.
+The `@Validate` decorator provides form validation that runs on both client and server. It integrates seamlessly with `@State`, `@ClientState`, `@Store`, and `@ClientStore` decorators.
 
 ## Usage
 
@@ -149,6 +149,91 @@ async checkUsernameAvailable(username: string): Promise<boolean> {
 ```
 
 Note: The `customAsync` function receives a `component` parameter that gives you access to the component instance and its `@Server()` methods.
+
+## Validating Stores
+
+When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **map of field paths to rules** — one entry per nested field you want validated. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `'emial'` fail to compile.
+
+### Type-safe rules with `storeRules<T>()` (recommended)
+
+Pass `storeRules<T>(...)` as the `rules`. The keys are written **relative** to the store (`email`, `address.zip`) and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional — omit it for an untyped map.
+
+```typescript
+import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
+
+interface FormState {
+    email: string;
+    password: string;
+    address: { zip: string };
+    tags: string[];
+}
+
+@Page({ transport: 'http' })
+export class StoreFormDemo extends Cossack {
+    @Store()
+    @Validate({
+        rules: storeRules<FormState>({
+            email: { required: true, email: true, message: 'Please enter a valid email' },
+            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+            // Deep nested path — relative form ('address.zip'), type-checked.
+            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            // Array field — validated as a whole (minLength/required).
+            tags: { required: true, minLength: 1, message: 'Add at least one tag' },
+        }),
+        config: { trigger: 'all', runOn: 'both' },
+    })
+    form: FormState = { email: '', password: '', address: { zip: '' }, tags: [] };
+
+    @Store() errors: Record<string, string> = {};
+
+    @Client()
+    handleInput(field: string, event: Event) {
+        // Mutate the store directly (nested assignment is reactive via the Proxy).
+        (this.form as any)[field] = (event.target as HTMLInputElement).value;
+        // Validate the field by its full runtime path.
+        this.validateProperty(`form.${field}`, 'input');
+    }
+}
+```
+
+A typo in a key is caught at compile time:
+
+```typescript
+// ❌ Type error: 'emial' is not assignable to 'email' | 'password' | 'address.zip' | ...
+rules: storeRules<FormState>({ emial: { required: true } })
+```
+
+### Addressing fields at runtime
+At runtime, `validateProperty`, `hasError`, and `getError` always take the **full prefixed path** (the store name + the relative key you wrote). The framework resolves the path on the component instance (walking into the store), so it works at any depth.
+
+```typescript
+await this.validateProperty('form.address.zip', 'input');
+this.hasError('form.address.zip');   // => true | false
+this.getError('form.address.zip');   // => 'Invalid ZIP' | undefined
+```
+
+### Untyped / full-path form (manual)
+If you prefer not to declare a type, write the keys as **full paths** (prefixed with the store name) and the decorator uses them verbatim. This is the most explicit form:
+
+```typescript
+@Store()
+@Validate({
+    rules: {
+        'form.email': { required: true, email: true, message: '...' },
+        'form.address.zip': { required: true, pattern: /^\d{5}$/ },
+    },
+    config: { trigger: 'all', runOn: 'both' },
+})
+form = { email: '', address: { zip: '' } };
+```
+
+> Relative keys (no store prefix) are auto-prefixed; full paths (already starting with the store name) are used verbatim. You can mix them, but `storeRules<T>()` with relative keys is the recommended, type-safe style.
+
+### How errors are stored
+The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed path**. There is no nesting in `errors` itself — `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered path (including nested ones) and `clearErrors()` clears them all in one call.
+
+### Mixing stores and individual states
+You can freely mix `@Store` with `@State`/`@ClientState` on the same component. A `@Validate` on a store property produces dot-path rules; a `@Validate` on a `@State` property produces a single-rule entry keyed by the property name. Both coexist in the same `errors` object.
 
 ## Complete Example
 

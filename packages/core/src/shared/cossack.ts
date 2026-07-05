@@ -53,6 +53,7 @@ import {
     getConstructorParamNames as getConstructorParamNamesFn,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
+import { createStoreProxy } from './store';
 import { LifecyclePhase } from './component-types';
 import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
@@ -142,6 +143,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     // Unified State Management
     private _stateContainer = new StateContainer();
+    /**
+     * Top-level reactive Proxy caches for `@Store` / `@ClientStore` properties,
+     * keyed by store property name. Child proxies (for nested objects/arrays)
+     * live in the module-level WeakMap inside store.ts. The cache is invalidated
+     * by the setter on whole-store reassignment so a fresh proxy tree is built
+     * over the new target.
+     */
+    private _storeProxies = new Map<string, object>();
     /** Serialized children state for restoration during hydration */
     private _childrenStateRegistry: Record<string, SerializedComponentState> = {};
 
@@ -975,15 +984,25 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Initialize state properties using the unified state container.
-     * This method sets up reactive getters/setters for all @State and @ClientState properties.
+     * Sets up reactive getters/setters for all @State, @ClientState,
+     * @Store, and @ClientStore properties.
+     *
+     * @State / @ClientState use a plain reactive setter (reassignment triggers
+     * reactivity). @Store / @ClientStore additionally wrap their value in a
+     * recursive reactive Proxy (see store.ts) so nested mutations trigger the
+     * same broadcast / re-render path at any depth.
      */
     private initializeState(serializedState?: SerializedComponentState) {
         const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
         const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
+        const storeProperties = Reflect.getMetadata('cossack:store', this.constructor) || {};
+        const clientStoreProperties = Reflect.getMetadata('cossack:client-store', this.constructor) || new Set();
 
         const stateKeys = Object.keys(stateProperties);
         const clientKeys = Array.from(clientStateProperties) as string[];
-        const allKeys = [...new Set([...stateKeys, ...clientKeys])];
+        const storeKeys = Object.keys(storeProperties);
+        const clientStoreKeys = Array.from(clientStoreProperties) as string[];
+        const allKeys = [...new Set([...stateKeys, ...clientKeys, ...storeKeys, ...clientStoreKeys])];
 
         // Determine the state source based on environment
         // Ensure stateSource is always a Record<string, unknown> for type-safe indexing
@@ -997,8 +1016,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 continue;
             }
 
-            const isClientOnly = clientStateProperties.has(key);
-            const isPublic = stateProperties[key];
+            // Determine the kind of state for this key.
+            const isStore = !!storeProperties[key] || clientStoreProperties.has(key);
+            const isClientOnly = clientStateProperties.has(key) || clientStoreProperties.has(key);
+            const isPublic = !isClientOnly; // @State / @Store are public; @ClientState / @ClientStore are internal
 
             // Get initial value from state source or from existing property value
             let value = this.getProperty(key);
@@ -1008,66 +1029,160 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 value = stateSource[key];
             }
 
-            // Store in the appropriate container
+            // Store the raw value in the appropriate container. Object/array
+            // store values are wrapped in a Proxy on read (lazily); primitive
+            // store values behave like a plain @State (reassignment triggers
+            // reactivity). Coercion is intentionally avoided so primitives
+            // (string/number/boolean) keep their real value.
             if (isPublic) {
                 this._stateContainer.setPublic(key, value);
             } else {
                 this._stateContainer.setInternal(key, value);
             }
 
-            // Create reactive property with getter/setter
-            Object.defineProperty(this, key, {
-                get: () => {
-                    return isPublic
+            // The reactive trigger shared by the plain setter and the store
+            // Proxy. Routes to broadcast (server, public) or requestUpdate
+            // (client), honoring the bootstrapping suppression.
+            const triggerReactivity = () => {
+                const current = isPublic
+                    ? this._stateContainer.getPublic(key)
+                    : this._stateContainer.getInternal(key);
+                this._applyStateChange(key, current, current, isPublic);
+            };
+
+            if (isStore) {
+                // Helper: only object/array values get a reactive Proxy.
+                // Primitives are returned raw so methods like trim()/toFixed()
+                // work, and so serialization reflects the real value.
+                const readStoreValue = () => {
+                    const raw = isPublic
                         ? this._stateContainer.getPublic(key)
                         : this._stateContainer.getInternal(key);
-                },
-                set: (newValue: any) => {
-                    const oldValue = isPublic
-                        ? this._stateContainer.getPublic(key)
-                        : this._stateContainer.getInternal(key);
-
-                    if (oldValue !== newValue) {
-                        // Update the container
-                        if (isPublic) {
-                            this._stateContainer.setPublic(key, newValue);
-                        } else {
-                            this._stateContainer.setInternal(key, newValue);
-                        }
-
-                        if (import.meta.env.DEV) {
-                            console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
-                        }
-
-                        // Handle reactivity based on state type
-                        if (isPublic) {
-                            // Public state: sync to server and trigger re-render
-                            if (this.isServer) {
-                                this._scheduleStateBroadcast(key);
-                            } else if (!this.isBootstrapping) {
-                                this.requestUpdate(key, oldValue);
-                            }
-                        } else {
-                            // Client-only state: just trigger re-render on client
-                            if (!this.isServer && !this.isBootstrapping) {
-                                this.requestUpdate(key, oldValue);
-                            } else if (import.meta.env.DEV && this.isBootstrapping) {
-                                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
-                            }
-                        }
-                    } else if (import.meta.env.DEV) {
-                        console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
+                    if (raw === null || typeof raw !== 'object') {
+                        return raw;
                     }
-                },
-                enumerable: true,
-                configurable: true,
-            });
+                    // Object/array: return the cached top-level proxy so nested
+                    // mutations are reactive. Child proxies (nested objects/
+                    // arrays) live in the module-level WeakMap inside store.ts.
+                    let cached = this._storeProxies.get(key);
+                    if (!cached) {
+                        cached = createStoreProxy(
+                            raw as Record<PropertyKey, unknown>,
+                            key,
+                            () => triggerReactivity(),
+                        );
+                        this._storeProxies.set(key, cached);
+                    }
+                    return cached;
+                };
+
+                Object.defineProperty(this, key, {
+                    get: () => readStoreValue(),
+                    set: (newValue: any) => {
+                        const oldValue = isPublic
+                            ? this._stateContainer.getPublic(key)
+                            : this._stateContainer.getInternal(key);
+
+                        if (oldValue !== newValue) {
+                            if (isPublic) {
+                                this._stateContainer.setPublic(key, newValue);
+                            } else {
+                                this._stateContainer.setInternal(key, newValue);
+                            }
+                            // Drop the cached proxy so the next read builds a
+                            // fresh proxy tree over the new target (or returns
+                            // a raw primitive if newValue is not an object).
+                            this._storeProxies.delete(key);
+
+                            if (import.meta.env.DEV) {
+                                console.log(`[Cossack] Store change: ${key}`, oldValue, '->', newValue);
+                            }
+                            triggerReactivity();
+                        } else if (import.meta.env.DEV) {
+                            console.log(`[Cossack] Store change suppressed (same value): ${key}`, oldValue);
+                        }
+                    },
+                    enumerable: true,
+                    configurable: true,
+                });
+            } else {
+                // Plain @State / @ClientState reactive getter/setter.
+                Object.defineProperty(this, key, {
+                    get: () => {
+                        return isPublic
+                            ? this._stateContainer.getPublic(key)
+                            : this._stateContainer.getInternal(key);
+                    },
+                    set: (newValue: any) => {
+                        const oldValue = isPublic
+                            ? this._stateContainer.getPublic(key)
+                            : this._stateContainer.getInternal(key);
+
+                        if (oldValue !== newValue) {
+                            // Update the container
+                            if (isPublic) {
+                                this._stateContainer.setPublic(key, newValue);
+                            } else {
+                                this._stateContainer.setInternal(key, newValue);
+                            }
+
+                            if (import.meta.env.DEV) {
+                                console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
+                            }
+                            this._applyStateChange(key, oldValue, newValue, isPublic);
+                        } else if (import.meta.env.DEV) {
+                            console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
+                        }
+                    },
+                    enumerable: true,
+                    configurable: true,
+                });
+            }
         }
 
         // Setup server method proxies for nested components (client-side only)
         if (!this.isServer) {
             this._setupServerMethodProxies();
         }
+    }
+
+    /**
+     * Apply a state change through the reactivity pipeline. Shared by the
+     * @State/@ClientState setters and the @Store/@ClientStore Proxy triggers.
+     *
+     * - Public state (@State/@Store) on the server: schedule a broadcast to
+     *   connected clients + persistence.
+     * - Public state on the client: request a re-render (unless bootstrapping).
+     * - Client-only state (@ClientState/@ClientStore): re-render on the client
+     *   only (never broadcast).
+     *
+     * The `oldValue`/`newValue` are forwarded to `requestUpdate` for lifecycle
+     * hooks (PropertyValues); for store Proxy triggers they are the same store
+     * reference (the nested mutation did not reassign the top-level object).
+     */
+    private _applyStateChange(
+        key: string,
+        oldValue: unknown,
+        newValue: unknown,
+        isPublic: boolean,
+    ): void {
+        if (isPublic) {
+            if (this.isServer) {
+                this._scheduleStateBroadcast(key);
+            } else if (!this.isBootstrapping) {
+                this.requestUpdate(key, oldValue);
+            }
+        } else {
+            // Client-only state: just trigger re-render on client
+            if (!this.isServer && !this.isBootstrapping) {
+                this.requestUpdate(key, oldValue);
+            } else if (import.meta.env.DEV && this.isBootstrapping) {
+                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
+            }
+        }
+        // Reference newValue so it is part of the signature for future hooks;
+        // currently only forwarded indirectly via the broadcast payload.
+        void newValue;
     }
 
     /**
@@ -1623,6 +1738,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Clean up event listeners
                 this.eventCleanupFns.forEach(cleanup => cleanup());
                 this.eventCleanupFns = [];
+
+                // Drop cached store proxies so their raw targets (and the
+                // component's state) can be GC'd once the component is gone.
+                this._storeProxies.clear();
             }
         } finally {
             // Don't restore phase after destroy - the component is destroyed

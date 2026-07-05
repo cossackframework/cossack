@@ -9,6 +9,7 @@ export * from './shared/runtime';
 export * from './shared/image';
 export * from './shared/ref';
 export * from './shared/validation';
+export * from './shared/store';
 export * from './shared/runtimes/durable-object';
 export * from './shared/runtimes/sse';
 export * from './shared/container';
