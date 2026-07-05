@@ -134,7 +134,7 @@ export class ValidationDemo extends Cossack {
                 <form @submit="${(e: Event) => this.handleSubmit(e)}">
                     <!-- Email Field -->
                     <div class="mb-4">
-                        <label for="email" class="block mb-2">Email (required, email) ${this.email}</label>
+                        <label for="email" class="block mb-2">Email (required, email)</label>
                         <input
                             type="email"
                             id="email"
