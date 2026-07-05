@@ -1093,7 +1093,10 @@ class AttributePart implements Part {
       const strValue = current == null ? '' : String(current);
       if (this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue) {
         el.value = strValue;
-        this.lastFormValue = current;
+        // Store the normalized string we actually wrote (not `current`), so a
+        // null/undefined field compares equal to '' on the next render instead
+        // of churning every time (String(undefined) === 'undefined' !== '').
+        this.lastFormValue = strValue;
         this.lastFormKind = 'value';
       }
     }
@@ -1116,8 +1119,11 @@ class AttributePart implements Part {
     }
     if (!this.bindListener) {
       const listener = (e: Event) => {
-        const target = e.target as any;
-        const next = propName === 'checked' ? !!target[propName] : target[propName];
+        // Read from currentTarget (the element the listener is registered on),
+        // not e.target — bubbled events from a child (e.g. an internal input
+        // inside a custom element) would otherwise read the wrong property.
+        const el = (e.currentTarget ?? e.target) as any;
+        const next = propName === 'checked' ? !!el[propName] : el[propName];
         // Plain assignment on a `@State` field triggers requestUpdate on the
         // client (see cossack.ts setupStateProperty), driving the re-render.
         if (component) component[bind.fieldName] = next;

@@ -94,6 +94,72 @@ describe('bind directive (two-way)', () => {
     expect(input.value).toBe('mid-edit@example.com');
   });
 
+  it('does not clobber a user edit when the field is null/undefined (stable empty string)', () => {
+    // Regression: the dirty-check normalized null/undefined to '' on write but
+    // stored the raw value, so String(undefined) === 'undefined' !== '' on the
+    // next render — the field was rewritten every render, clobbering edits.
+    const container = document.createElement('div');
+    const component: { email: string | null } = { email: null };
+    const tpl = () => html`<input .value=${bind(component, 'email')} />`;
+
+    render(tpl(), container);
+    const input = container.querySelector('input')!;
+    expect(input.value).toBe('');
+
+    // User starts typing into the empty field.
+    input.value = 'mid-edit';
+    // Re-render with the SAME null field: dirty-check must skip the write.
+    render(tpl(), container);
+    expect(input.value).toBe('mid-edit');
+
+    // Same for undefined.
+    component.email = undefined as unknown as null;
+    render(tpl(), container);
+    expect(input.value).toBe('mid-edit');
+  });
+
+  it('reads writeback from the bound element, not a bubbled child (currentTarget)', () => {
+    // Regression: the writeback listener used e.target, which on a bubbled
+    // event from a child is the child, not the bound element. We simulate a
+    // custom element that wraps a native input and binds .value on the HOST.
+    // The inner input dispatches `input`; e.target is the inner input, but
+    // e.currentTarget is the host — the listener must read the host's .value.
+    class InputHost extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'open' });
+        const inner = document.createElement('input');
+        inner.type = 'text';
+        root.appendChild(inner);
+      }
+    }
+    if (!customElements.get('bind-input-host')) {
+      customElements.define('bind-input-host', InputHost);
+    }
+
+    const container = document.createElement('div');
+    const component = { value: 'initial' };
+    // Bind .value onto the host. bindEventFor falls back to 'input' for the
+    // custom element, so a writeback listener is attached on the host.
+    const tpl = () => html`<bind-input-host .value=${bind(component, 'value')}></bind-input-host>`;
+    render(tpl(), container);
+    const host = container.querySelector('bind-input-host') as any;
+    expect(host.value).toBe('initial');
+
+    // The host's .value is what should be written back. Set it, then dispatch
+    // a bubbled input event from the inner shadow input (whose own .value
+    // differs). The listener must read currentTarget.value, not target.value.
+    host.value = 'host-value';
+    const inner = host.shadowRoot.querySelector('input') as any;
+    inner.value = 'inner-value';
+    const bubbled = new Event('input', { bubbles: true, composed: true });
+    Object.defineProperty(bubbled, 'target', { value: inner });
+    host.dispatchEvent(bubbled);
+
+    // component.value must reflect the HOST's .value, not the inner input's.
+    expect(component.value).toBe('host-value');
+  });
+
   it('does not attach duplicate listeners across re-renders', () => {
     const container = document.createElement('div');
     const component = { email: '' };
