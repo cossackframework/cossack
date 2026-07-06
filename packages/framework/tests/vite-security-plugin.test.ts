@@ -716,6 +716,38 @@ export class CounterHttp extends Cossack {
       expect(result).toContain('Count:');
     });
 
+    it('stubs get()/init() on a pure API route (no @Server required)', () => {
+      // Mirrors src/pages/api/class-based.ts: a class with no render() and an
+      // undecorated get(). get() must be stripped (server-only) — but because
+      // bootstrap() no longer invokes get()/init() on the client, no RPC proxy
+      // is needed and the user does not have to decorate it with @Server().
+      const code = `
+import { Cossack, Page } from '@cossackframework/core';
+
+@Page({ transport: 'http' })
+export class ClassBasedApi extends Cossack {
+    async get() {
+        return this.c.json({ message: 'Hello from class!' });
+    }
+
+    async post() {
+        const body = await this.c.req.json();
+        return this.c.json({ echo: body }, 201);
+    }
+}`;
+
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+
+      // get()/post() should be stubbed (no client-safe decorator)
+      expect(result).toContain('get() {');
+      expect(result).toContain("__cossack_proxies?.get('get')");
+      expect(result).not.toContain("Hello from class!");
+
+      expect(result).toContain('post() {');
+      expect(result).toContain("__cossack_proxies?.get('post')");
+      expect(result).not.toContain('this.c.req.json()');
+    });
+
     it('should handle the optimistic-counter pattern', () => {
       const code = `
 import { Cossack, Page, Server, State, ClientState, Optimistic, Computed, Client } from '@cossackframework/core';

@@ -1,4 +1,4 @@
-import { Cossack, Page } from '@cossackframework/core';
+import { Client, Cossack, Page, State } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
 import { Image } from '@cossackframework/core';
 import { Layout } from '@/components/Layout';

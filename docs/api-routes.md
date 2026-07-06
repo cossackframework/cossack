@@ -44,7 +44,12 @@ export const POST = async (c) => {
 
 ## Class-based API Routes
 
-If you need to share state between the client and server (via WebSockets) or prefer an object-oriented approach, you can extend the `Cossack` base class.
+If you prefer an object-oriented approach, you can extend the `Cossack` base class.
+
+A class **without** a `render()` method is treated as a pure API route: every HTTP
+method it defines returns JSON (no HTML rendering). Use `get()` to handle `GET`
+requests — it matches the HTTP method directly and is server-only, so no
+`@Server()` decorator is required. `init()` is kept as a server-side alias.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -54,8 +59,26 @@ export default class MyApi extends Cossack {
     async get() {
         return this.c.json({ message: 'Hello from class!' });
     }
+
+    async post() {
+        const body = await this.c.req.json();
+        return this.c.json({ echo: body }, 201);
+    }
 }
 ```
+
+### Pages that also expose endpoints
+
+A class **with** a `render()` method is a regular page: `GET` renders HTML through
+SSR, while `post()` / `put()` / `patch()` / `delete()` are still exposed as JSON
+endpoints on the same route. This is handy for co-locating a form's view with its
+submit handler.
+
+### Server-only lifecycle methods
+
+`get()` and `init()` are server-only — their bodies are stripped from client
+bundles. For client-side initialization that runs after hydration, override
+`clientInit()` instead.
 
 ## Rate Limiting
 
