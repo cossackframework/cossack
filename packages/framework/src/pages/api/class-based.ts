@@ -1,5 +1,4 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class ClassBasedApi extends Cossack {

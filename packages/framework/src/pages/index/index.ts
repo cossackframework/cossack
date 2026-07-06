@@ -1,7 +1,6 @@
-import { Client, Cossack, Page, State } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
-import { Image } from '@cossackframework/core';
 import { Layout } from '@/components/Layout';
+import { Cossack, Image, Page } from '@cossackframework/core';
+import { component, html } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })
 export default class ImageDemo extends Cossack {
