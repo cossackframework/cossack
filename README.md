@@ -26,7 +26,7 @@ Think of it like Phoenix LiveView, or Laravel Livewire, but TypeScript native an
 ## Quick Start
 
 ```sh
-npx create-cossack-app@latest my-app
+npx cossack create my-app
 cd my-app
 pnpm install
 pnpm dev

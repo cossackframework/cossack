@@ -661,7 +661,6 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
 
-      const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
       if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
         Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
       }
@@ -672,7 +671,22 @@ export function createApp(options: CreateAppOptions = {}) {
       for (const middleware of combinedMiddlewares) {
         app.use(httpRoute, middleware);
       }
-      app.get(httpRoute, ssrHandler);
+      // A class that does not override render() is a pure API route: GET must
+      // return JSON (via the API handler) rather than render HTML. A class that
+      // overrides render() is a page, so GET renders HTML through the SSR
+      // handler as usual (it may still expose post/put/etc. as JSON endpoints).
+      const isApiRoute =
+        pageOptions?.transport === 'http' &&
+        !Object.getOwnPropertyDescriptor(PageComponent.prototype, 'render');
+
+      if (isApiRoute) {
+        // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
+        // kept as a server-side alias for backward compatibility.
+        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init']));
+      } else {
+        const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
+        app.get(httpRoute, ssrHandler);
+      }
 
       // Handle class-based HTTP method handlers for hybrid pages
       // This allows pages to both render HTML AND handle API requests (e.g., form POST)

@@ -610,10 +610,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
 
-        // Perform initialization (wrapped hooks)
-        await this.get();
-        if (!skipInit) {
-            await this.init();
+        // Perform initialization (wrapped hooks). get()/init() are server-only;
+        // the security plugin strips them from client bundles, so we must not
+        // invoke them during hydration (use clientInit() for client-side setup).
+        if (this.isServer) {
+            await this.get();
+            if (!skipInit) {
+                await this.init();
+            }
         }
 
         this.isBootstrapping = false;
