@@ -1,16 +1,24 @@
-import { Cossack, Page, storeRules } from '@cossackframework/core';
+import {
+  Cossack,
+  Page,
+  storeRules,
+  flash,
+  flashed,
+  flashInput,
+  old,
+  State,
+} from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
-// This page demonstrates typed + validated complex (nested) form data using
-// PHP-style bracket `name` attributes and Cossack's built-in validation.
+// This page demonstrates the full POST → redirect → GET pattern with:
+//   - typed + validated nested form data (`getFormData<T>()` + `storeRules<T>`)
+//   - flash messages (`flash` / `flashed`) — one-shot data carried across the redirect
+//   - old input repopulation (`flashInput` / `old`) — keeps field values on validation failure
+//   - NESTED validation errors — `errors.address.city` works (option chaining),
+//     matching the form's type shape. Flat-key access is available via `flatErrors`.
 //
-// HTML inputs use bracket names like `address[street]`; on submit the browser
-// sends a flat FormData with literal keys "address[street]". `getFormData<T>()`
-// parses that into a nested object typed as `T`, and the optional `rules`
-// (built with `storeRules<T>()`) run Cossack's built-in validators at runtime —
-// the same vocabulary used by `@Store`/`@Validate` components.
-//
-// See the /http docs for the full bracket syntax and the typed+validated flow.
+// Flash data is signed-cookie-backed (stateless) and lives for exactly one
+// redirect. It requires a `COSSACK_SECRET` env var. See the /http docs.
 
 interface AddressForm {
   street: string;
@@ -25,10 +33,34 @@ interface ComplexFormShape {
 
 @Page({ transport: 'http' })
 export default class FormIndex extends Cossack {
+  @State()
+  success: string | undefined;
+
+  @State()
+  errors: {
+    name?: string;
+    address?: {
+      street?: string;
+      city?: string;
+      state?: string;
+    };
+  } | undefined;
+
+  @State()
+  name: string = '';
+
+  @State()
+  address: AddressForm = { street: '', city: '', state: '' };
+
+  async init() {
+    // Read flashed data on the GET that follows the redirect.
+    this.success = flashed<string>('success');
+    this.errors = flashed('errors');
+    this.name = old<string>('name') ?? '';
+    this.address = old<AddressForm>('address') ?? { street: '', city: '', state: '' };
+  }
 
   async post() {
-    // Typed + validated in one call. `data` is typed `ComplexFormShape`;
-    // `errors` is a dot-path -> message map; `valid` is the aggregate flag.
     const { data, errors, valid } = await this.c.getFormData<ComplexFormShape>({
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
@@ -38,39 +70,56 @@ export default class FormIndex extends Cossack {
       }),
     });
 
+    // Repopulate the submitted values on either branch so the user keeps them.
+    flashInput(data as unknown as Record<string, unknown>);
+
     if (!valid) {
-      return this.c.json({ errors }, 400);
+      flash('errors', errors); // nested shape: errors.address.city
+      return this.back();      // redirect to Referer (returns the Response)
     }
 
     console.log('Validated form data:', data.name, data.address.street);
-    return this.c.json({ ok: true });
+    flash('success', 'Form submitted successfully!');
+    return this.c.redirect('/forms/complex');
   }
 
   render() {
     return html`
       <div>
         <h1>Complex Form</h1>
-        <p>Hello, ${this.c.req.query('name') ? this.c.req.query('name') : 'Guest'}!</p>
+        ${this.success ? html`<p style="color: green;">${this.success}</p>` : ''}
+        ${this.errors ? html`<p style="color: red;">Please fix the errors below.</p>` : ''}
+
         <form method="post">
           <div>
             <label for="name">Name:</label>
-            <input type="text" id="name" name="name" required />
+            <input type="text" id="name" name="name" value="${this.name ?? ''}" required />
+            ${this.errors?.name ? html`<span style="color: red;">${this.errors.name}</span>` : ''}
           </div>
 
           <h3>Address</h3>
           <div>
             <label for="street">Street:</label>
-            <input type="text" id="street" name="address[street]" required />
+            <input type="text" id="street" name="address[street]" value="${this.address?.street ?? ''}" required />
+            ${this.errors?.address?.street
+              ? html`<span style="color: red;">${this.errors.address.street}</span>`
+              : ''}
           </div>
 
           <div>
             <label for="city">City:</label>
-            <input type="text" id="city" name="address[city]" required />
+            <input type="text" id="city" name="address[city]" value="${this.address?.city ?? ''}" required />
+            ${this.errors?.address?.city
+              ? html`<span style="color: red;">${this.errors.address.city}</span>`
+              : ''}
           </div>
 
           <div>
             <label for="state">State:</label>
-            <input type="text" id="state" name="address[state]" required />
+            <input type="text" id="state" name="address[state]" value="${this.address?.state ?? ''}" required />
+            ${this.errors?.address?.state
+              ? html`<span style="color: red;">${this.errors.address.state}</span>`
+              : ''}
           </div>
 
           <button type="submit">Submit</button>

@@ -160,6 +160,26 @@ export interface ValidationResult {
 }
 
 /**
+ * Nesting of error messages that mirrors the validated type `T`: each object
+ * key becomes an object with `NestedErrors` children, each scalar leaf becomes
+ * `string | undefined`. So for `{ address: { city: string } }`, the error type
+ * is `{ address?: { city?: string } }` — usable with optional chaining and
+ * destructuring (`errors?.address?.city`).
+ *
+ * `string | undefined` is also permitted at any node (a rule may target a path
+ * that also has deeper rules), so callers should prefer optional chaining.
+ */
+export type NestedErrors<T> = T extends object
+  ? T extends (infer _U)[]
+    ? string | undefined
+    : T extends NonRecurableObject
+      ? string | undefined
+      : {
+          [K in keyof T]?: NestedErrors<T[K]> | string;
+        }
+  : string | undefined;
+
+/**
  * Store for validation rules per property
  */
 export interface ValidationRulesStore {
@@ -404,14 +424,41 @@ export async function validateValueAsync(
 }
 
 /**
- * Result of validating a plain object against a `storeRules<T>()` map. The
- * `errors` keys are the same dot-paths the rules used; `data` is the input
- * echoed back (typed as `T`), untouched.
+ * Result of validating a plain object against a `storeRules<T>()` map.
+ *
+ * - `errors`: a NESTED object mirroring the form's type structure, so you can
+ *   use optional chaining / destructuring: `errors?.address?.city`. Built from
+ *   the dot-path rule keys (e.g. `'address.city'` → `errors.address.city`).
+ * - `flatErrors`: the same data as a flat `Record<dotPath, string>` — useful if
+ *   you need to look up a message by its exact rule key.
+ * - `data`: the input echoed back (typed `T`), untouched.
  */
 export interface ObjectValidationResult<T> {
   data: T;
-  errors: Partial<Record<DeepKeysOf<T>, string>>;
+  errors: NestedErrors<T>;
+  flatErrors: Partial<Record<DeepKeysOf<T>, string>>;
   valid: boolean;
+}
+
+/**
+ * Recursively nest a dot-path key into an object tree.
+ * `setNested(root, 'address.city', 'Required')` → `root.address.city = 'Required'`.
+ * Intermediate nodes are created as needed.
+ */
+function setNested(root: Record<string, unknown>, dotPath: string, message: string): void {
+  const parts = dotPath.split('.');
+  let current = root;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    const existing = current[part];
+    // Reuse an existing object node, or create one. If a non-object (e.g. a
+    // string from a shallower rule) is there, overwrite — deeper rules win.
+    if (typeof existing !== 'object' || existing === null) {
+      current[part] = {};
+    }
+    current = current[part] as Record<string, unknown>;
+  }
+  current[parts[parts.length - 1]] = message;
 }
 
 /**
@@ -439,8 +486,9 @@ function resolveDotPath(obj: unknown, path: string): unknown {
  * interchangeable with rules on a store.
  *
  * Notes:
- * - Non-throwing: invalid fields are collected into `errors`; `valid` is the
- *   aggregate. The caller decides what to do (400, re-render, etc.).
+ * - Non-throwing: invalid fields are collected into `errors` (nested) and
+ *   `flatErrors` (dot-path keyed); `valid` is the aggregate. The caller decides
+ *   what to do (400, re-render, etc.).
  * - `customAsync` callbacks that expect a `component` argument receive
  *   `undefined` here — component-coupled async rules are a component-lifecycle
  *   feature, not a plain-object one.
@@ -455,17 +503,20 @@ export async function validateObject<T>(
   data: T,
   rules: StoreRuleMap<T>,
 ): Promise<ObjectValidationResult<T>> {
-  const errors: Partial<Record<DeepKeysOf<T>, string>> = {};
+  const flatErrors: Partial<Record<DeepKeysOf<T>, string>> = {};
+  const nestedErrors: Record<string, unknown> = {};
   for (const [dotPath, rule] of Object.entries(rules)) {
     if (!rule) continue;
     const value = resolveDotPath(data, dotPath);
     const result = await validateValueAsync(value, rule);
     if (!result.valid) {
-      (errors as Record<string, string>)[dotPath] =
-        result.message || getDefaultMessage(rule, 'custom');
+      const message = result.message || getDefaultMessage(rule, 'custom');
+      (flatErrors as Record<string, string>)[dotPath] = message;
+      setNested(nestedErrors, dotPath, message);
     }
   }
-  return { data, errors, valid: Object.keys(errors).length === 0 };
+  const valid = Object.keys(flatErrors).length === 0;
+  return { data, errors: nestedErrors as NestedErrors<T>, flatErrors, valid };
 }
 
 /**

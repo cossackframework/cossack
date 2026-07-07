@@ -318,6 +318,191 @@ Pass `{ novalidate: false }` if you want native validation restored:
 @submit="${preventDefault(this.serverHandle, { novalidate: false })}"
 ```
 
+## Flash Data
+
+Flash data carries values across exactly one redirect (POST → GET), then is
+consumed — the classic Laravel `back()->with('success', 'Saved!')` pattern.
+Use it for success messages, validation errors, or repopulating form fields
+after a failed submission.
+
+```typescript
+import { flash, flashed, flashInput, old } from '@cossackframework/core';
+
+@Page({ transport: 'http' })
+export default class FormPage extends Cossack {
+  async post() {
+    const { data, errors, valid } = await this.c.getFormData<MyForm>({ rules });
+    if (!valid) {
+      flashInput(data);              // repopulate fields on next render
+      flash('errors', errors);       // show what went wrong
+      return this.back('/form');     // redirect back to Referer
+    }
+    flash('success', 'Saved!');      // one-shot success message
+    return this.c.redirect('/form');
+  }
+
+  render() {
+    const success = flashed<string>('success');
+    const name = old<string>('name') ?? '';
+    return html`
+      ${success ? html`<p>${success}</p>` : ''}
+      <form method="post">
+        <input name="name" value="${name}" />
+      </form>
+    `;
+  }
+}
+```
+
+### API
+
+| Function | Description |
+|---|---|
+| `flash(key, value)` / `flash({...})` | Write a flash value (or several) for the next request. |
+| `flashed(key)` / `flashedAll()` / `hasFlashed(key)` | Read previously-flashed values during this request. |
+| `flashInput(formData)` | Stash submitted form input for repopulation (namespaced — won't collide with message-style flash keys of the same name). |
+| `old(key)` | Read a stashed input field for repopulating the form. |
+| `this.back(fallback)` | Redirect to the request's `Referer` (falls back to `fallback`). |
+
+### How it works
+
+Flash data is carried in a **signed cookie** (`cossack_flash`) that survives the
+redirect. The framework's flash middleware reads + consumes it on the next
+request (read-once semantics) and seeds a per-request store so `flashed()` /
+`old()` work context-free, like `__()` for i18n. Writes are signed and set on
+the response after the handler returns.
+
+**Signing secret required.** Because flash messages render into HTML, the
+cookie is HMAC-signed to prevent tampering. Set `COSSACK_SECRET` (min 16 chars)
+in your wrangler env:
+
+```jsonc
+// wrangler.jsonc
+{
+  "vars": { "COSSACK_SECRET": "your-long-random-secret-here" }
+}
+```
+
+Apps that never use `flash()` need no secret — the middleware throws only when
+flash is actually exercised.
+
+### Limitations
+
+- **~4KB cookie limit.** Fine for messages + small form input. For larger
+  payloads, use a database-backed session (`session()`) instead.
+- **Read-once.** Flash is consumed on the first GET that reads it. Refreshing
+  the page clears it. (`flash().keep()` / `reflash()` aren't implemented yet.)
+- **Traditional `method="post"` flows only.** The CRPC `/crpc` path returns
+  JSON (no redirect), so flash isn't applicable there — and `@Server` reactive
+  forms already show success inline via `@State`.
+
+## Cookies
+
+The `cookie()` helper reads and writes cookies on the active request without an
+explicit `Context` argument — same context-free ergonomics as `db()`, `__()`,
+and `flash()`. It delegates to Hono's `hono/cookie` under the hood.
+
+```typescript
+import { cookie } from '@cossackframework/core';
+
+async get() {
+    const theme = cookie().get('theme');              // string | undefined
+    const sid = await cookie().getSigned(secret, 'session_id'); // signed/verified
+}
+
+async post() {
+    cookie().set('theme', 'dark', { maxAge: 3600, httpOnly: true, path: '/' });
+    cookie().delete('old_session');
+    return this.c.redirect('/settings');
+}
+```
+
+| Method | Description |
+|---|---|
+| `cookie().get(name)` | Read a cookie value. |
+| `await cookie().getSigned(secret, name)` | Read + HMAC-verify a signed cookie. |
+| `cookie().set(name, value, options?)` | Set a cookie on the response. |
+| `cookie().delete(name, options?)` | Expire a cookie. |
+
+`cookie()` works anywhere inside a request — handlers, services, and
+middlewares. It's available out of the box (the request-context middleware
+scopes the Hono `Context` into AsyncLocalStorage for every request, first in
+the stack).
+
+## Sessions (database-backed)
+
+For data that outlives a single redirect — shopping carts, wizard state,
+per-user preferences — use `session()`. Unlike flash (cookie-backed, ~4KB,
+read-once), sessions are **database-backed** (D1/Turso via the `sessions`
+table), long-lived, and keyed off a session ID cookie.
+
+```typescript
+import { session } from '@cossackframework/database';
+
+async get() {
+    const cart = await session().get('cart');         // any value
+    const sid = session().id();                        // the session ID
+}
+
+async post() {
+    await session().set('cart', { items: [1, 2, 3] });
+    return this.c.redirect('/cart');
+}
+```
+
+### Setup
+
+Sessions require the database package and its middleware. Run `cossack add
+database`, then register the session middleware in `src/config/middlewares.ts`:
+
+```typescript
+// src/middlewares/session.ts
+import { createSessionMiddleware } from '@cossackframework/database';
+export const sessionMiddleware = createSessionMiddleware();
+
+// src/config/middlewares.ts
+import { sessionMiddleware } from '../middlewares/session';
+export const middlewares = [sessionMiddleware];
+```
+
+The migration shipped by `cossack add database` creates the `sessions` table
+(`id`, nullable `user_id`, JSON `data`, `expires_at`) — no extra schema work.
+
+### Anonymous vs. authenticated sessions
+
+By default, `createSessionMiddleware()` issues an anonymous `cossack_sid`
+cookie on first visit. To reuse the auth session ID when a user is logged in,
+pass `authCookieReader`:
+
+```typescript
+import { createSessionMiddleware } from '@cossackframework/database';
+
+export const sessionMiddleware = createSessionMiddleware({
+    // When authenticated, reuse the auth session ID; otherwise fall back to
+    // the anonymous cossack_sid cookie.
+    authCookieReader: (c) => getAuthSessionId(c),
+});
+```
+
+### API
+
+| Method | Description |
+|---|---|
+| `session().id()` | The active session ID for this request. |
+| `await session().get(key)` / `getAll()` | Read a key / the whole bag. |
+| `await session().set(key, value)` | Merge a key into the bag (refreshes expiry). |
+| `await session().unset(key)` | Remove a key. |
+| `await session().destroy()` | Delete the session row (e.g. on logout). |
+
+### Flash vs. session — when to use which
+
+| | Flash | Session |
+|---|---|---|
+| **Lifetime** | One redirect (read-once) | Long-lived (until logout/expiry) |
+| **Storage** | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
+| **Best for** | Success/error messages, old form input | Carts, wizards, prefs, A/B |
+| **Requires** | `COSSACK_SECRET` | `cossack add database` |
+
 ## Sending Responses
 
 ### Automatic JSON Responses

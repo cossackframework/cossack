@@ -32,5 +32,6 @@
     // the `cossack_locale` cookie or Accept-Language (when autoDetectBrowser
     // is enabled in createApp({ i18n: { ... } })). Defaults to "en" in code.
     "APP_LOCALE": "en",
+    "COSSACK_SECRET": "cossack-secret",
   }
 }

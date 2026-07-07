@@ -43,6 +43,8 @@ import {
 import { handleWebSocketProxy } from './transports/websocket';
 import { handleUpload } from './transports/http';
 import { createLocaleMiddleware } from './middlewares/locale';
+import { createFlashMiddleware } from './middlewares/flash';
+import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
@@ -310,6 +312,11 @@ export function createApp(options: CreateAppOptions = {}) {
     allowedOrigins: options.allowedOrigins,
   };
 
+  // Request-context middleware — scopes the Hono `Context` into
+  // AsyncLocalStorage FIRST so `cookie()` / `session()` / `getRequestContext()`
+  // work from anywhere downstream (including the user middlewares below).
+  app.use('*', createRequestContextMiddleware());
+
   // Global request middlewares from `src/config/middlewares.ts` (db client,
   // auth session, feature flags, ...). Each is registered in array order,
   // before the locale middleware. The registry is the Laravel-style "kernel"
@@ -322,6 +329,11 @@ export function createApp(options: CreateAppOptions = {}) {
   // of the request in an AsyncLocalStorage scope so `__()` / `getLocale()`
   // resolve the right locale for each visitor. No-op without `src/lang/`.
   app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser }));
+
+  // Flash middleware — two-phase signed-cookie lifecycle for flash data
+  // (POST writes → GET reads once). No-op (no cookie, no outgoing data) when
+  // flash isn't used; throws only if flash is used without a COSSACK_SECRET.
+  app.use('*', createFlashMiddleware());
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {

@@ -21,6 +21,15 @@ export { getDb } from './accessor';
 export { db, setDbStoreGetter } from './store';
 export { ensureDbAlsWired, runWithDb } from './als';
 
+// Sessions
+export { SessionStore } from './session-store';
+export type { SessionRow } from './session-store';
+export { session } from './session';
+export { createSessionMiddleware } from './session-middleware';
+export type { SessionMiddlewareOptions } from './session-middleware';
+export { runWithSession, ensureSessionAlsWired } from './session-als';
+export type { SessionScope } from './session-als';
+
 // Dialects (advanced — for custom Kysely instances)
 export { D1Dialect } from './dialects/d1';
 export { LibsqlDialect } from './dialects/libsql';
