@@ -33,7 +33,7 @@ import {
     mergeHead as mergeHeadFn,
     applyHeadTags as applyHeadTagsFn,
 } from './head';
-import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
+import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext, CossackContext } from './context';
 import {
     getError as getErrorFn,
     hasError as hasErrorFn,
@@ -122,11 +122,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _user?: User;
     private _env!: Env;
 
-    protected get c(): Context { 
-        return this._c || this.consume(RequestContext) as Context; 
+    protected get c(): Context & CossackContext {
+        // The context is wrapped by `createCossackContext`, whose proxy adds
+        // `getFormData` at runtime. Cast through to the augmented type so
+        // `this.c.getFormData` type-checks for developers.
+        return (this._c || this.consume(RequestContext)) as Context & CossackContext;
     }
-    protected set c(val: Context) { 
-        this._c = val; 
+    protected set c(val: Context) {
+        this._c = val;
     }
 
     protected get user(): User | undefined { return this._user || this.consume(UserContext); }

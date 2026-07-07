@@ -188,6 +188,136 @@ async post() {
 }
 ```
 
+### Nested Form Data (PHP-style brackets)
+
+For complex forms with nested fields, name your inputs using bracket notation:
+
+```html
+<input name="address[street]" />
+<input name="address[city]" />
+<input name="tags[]" />   <!-- repeated -> array -->
+```
+
+The browser sends these as a flat `FormData` with literal keys like
+`"address[street]"`. Cossack offers two ways to turn that into a nested object.
+
+#### `getFormData<T>()` — typed, optionally validated (recommended)
+
+The convenient server-side helper on `this.c`. Pass a type parameter for the
+shape and (optionally) `rules` built with `storeRules<T>()` for built-in
+validation — the same vocabulary used by `@Store`/`@Validate` components.
+
+```typescript
+import { storeRules } from '@cossackframework/core';
+
+interface MyFormData {
+    name: string;
+    address: { street: string; city: string; state: string };
+}
+
+async post() {
+    // 1) Simple DTO: parse + compile-time type only (no runtime validation)
+    const data = await this.c.getFormData<MyFormData>();
+
+    // 2) Typed AND validated: returns { data, errors, valid }
+    const { data, errors, valid } = await this.c.getFormData<MyFormData>({
+        rules: storeRules<MyFormData>({
+            name: { required: true, minLength: 2 },
+            'address.street': { required: true },
+            'address.city': { required: true },
+            'address.state': { required: true, minLength: 2 },
+        }),
+    });
+    if (!valid) return this.c.json({ errors }, 400);
+    // data: MyFormData — data.name, data.address.street fully typed
+    // errors: Partial<Record<keyof dot-paths, string>>
+}
+```
+
+- **No `rules`** → returns `Promise<T>` (parsed data, type-asserted).
+- **With `rules`** → returns `{ data: T; errors: Partial<Record<...>>; valid: boolean }`.
+- **Non-throwing.** You decide how to handle a failure (400 JSON, re-render with
+  errors, etc.). The same `storeRules<T>()` syntax works in `@Store` components
+  too — learn one validation vocabulary, use it everywhere.
+
+**Cast, not coercion.** `<T>` is a compile-time assertion about the shape; it
+does not convert values. `FormData` values are strings/`File`, so a field typed
+`number` stays a string at runtime (`"30"`). Built-in validators like `min`/`max`
+do validate numerically, but for a true `number` you still cast/transform at the
+edge. Use `rules` for runtime validation; the `<T>` alone is just a type hint.
+
+#### `parseFormData()` — the lower-level utility
+
+If you're in a functional `pages/api/*` route (no `this.c`) or want full control:
+
+```typescript
+import { parseFormData } from '@cossackframework/core';
+
+async post() {
+    const data = parseFormData(await this.c.req.formData());
+    // data.address.street, data.address.city, data.tags -> ['a', 'b', ...]
+}
+```
+
+For `@Server` method flows, gather the form on the client, parse, then pass the
+object as a normal argument:
+
+```typescript
+// client handler
+const data = parseFormData(new FormData(formElement));
+this.serverHandle(data);
+```
+
+#### Supported bracket syntax
+
+| HTML `name` | Resulting shape |
+|---|---|
+| `address[street]` | `{ address: { street } }` |
+| `tags[]` (repeated) | `{ tags: ['a', 'b'] }` |
+| `address[street][]` | `{ address: { street: [...] } }` |
+| `contacts[][email]` + `contacts[][name]` | `{ contacts: [{ email, name }] }` (one object) |
+| `contacts[][email]` (twice) | `{ contacts: [{ email }, { email }] }` (two objects) |
+| `name=a` then `name=b` (no `[]`) | `{ name: ['a', 'b'] }` |
+
+#### Why a separate API (not overriding `formData()`)
+
+`this.c.req.formData()` stays flat — the standard Hono surface, untouched and
+backward compatible. The convenience is additive: `getFormData<T>()` is the
+opt-in for nested + typed + validated data. Cossack intentionally does NOT
+auto-nest every form body (matching Hono, Fastify, and Express 5), because
+auto-nesting has been a recurring source of prototype-pollution CVEs and
+ambiguity footguns across the Node ecosystem. Parsing is **prototype-pollution
+safe by construction**: intermediate containers use `Object.create(null)` (no
+`__proto__` setter), so a crafted field name like `__proto__[polluted]` just
+becomes a normal own property and never reaches `Object.prototype`. Bracket-only
+(no dot-path) also avoids the `api.version` ambiguity ("flat key or nested?").
+
+### Preventing the default submit (and native validation)
+
+When you submit to a `@Server` method via JavaScript instead of a traditional
+`method="post"`, use the `preventDefault` directive instead of a manual
+`e.preventDefault()` arrow. It also disables the browser's native (HTML5
+constraint) validation by default, since Cossack encourages custom `@Validate`
+validation:
+
+```typescript
+import { html, preventDefault } from '@cossackframework/renderer';
+
+render() {
+    return html`
+        <form @submit="${preventDefault(this.serverHandle)}">
+            <input .value="${bind(this, 'name')}" />
+        </form>
+    `;
+}
+```
+
+Pass `{ novalidate: false }` if you want native validation restored:
+
+```typescript
+@submit="${preventDefault(this.serverHandle, { novalidate: false })}"
+```
+
 ## Sending Responses
 
 ### Automatic JSON Responses

@@ -404,6 +404,71 @@ export async function validateValueAsync(
 }
 
 /**
+ * Result of validating a plain object against a `storeRules<T>()` map. The
+ * `errors` keys are the same dot-paths the rules used; `data` is the input
+ * echoed back (typed as `T`), untouched.
+ */
+export interface ObjectValidationResult<T> {
+  data: T;
+  errors: Partial<Record<DeepKeysOf<T>, string>>;
+  valid: boolean;
+}
+
+/**
+ * Resolve a dot-path (`'address.zip'`) against a plain object via bracket
+ * access. Returns `undefined` for missing paths (never throws). Works on
+ * null-proto objects (used by `parseFormData`).
+ */
+function resolveDotPath(obj: unknown, path: string): unknown {
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Validate a plain object against a `storeRules<T>()` map WITHOUT a component
+ * instance — the component-free counterpart to `validateAll(component)`.
+ *
+ * Walks each dot-path rule, resolves the value from the object, and runs
+ * `validateValueAsync`. Reuses the same dot-path vocabulary as
+ * `@Store`/`@Validate` components, so the rules you write here are
+ * interchangeable with rules on a store.
+ *
+ * Notes:
+ * - Non-throwing: invalid fields are collected into `errors`; `valid` is the
+ *   aggregate. The caller decides what to do (400, re-render, etc.).
+ * - `customAsync` callbacks that expect a `component` argument receive
+ *   `undefined` here — component-coupled async rules are a component-lifecycle
+ *   feature, not a plain-object one.
+ *
+ * @example
+ *   const { data, errors, valid } = await validateObject<MyForm>(parsed, {
+ *     email: { required: true, email: true },
+ *     'address.zip': { required: true, pattern: /^\d{5}$/ },
+ *   });
+ */
+export async function validateObject<T>(
+  data: T,
+  rules: StoreRuleMap<T>,
+): Promise<ObjectValidationResult<T>> {
+  const errors: Partial<Record<DeepKeysOf<T>, string>> = {};
+  for (const [dotPath, rule] of Object.entries(rules)) {
+    if (!rule) continue;
+    const value = resolveDotPath(data, dotPath);
+    const result = await validateValueAsync(value, rule);
+    if (!result.valid) {
+      (errors as Record<string, string>)[dotPath] =
+        result.message || getDefaultMessage(rule, 'custom');
+    }
+  }
+  return { data, errors, valid: Object.keys(errors).length === 0 };
+}
+
+/**
  * Get validation rules from a component class
  */
 export function getValidationRules(target: any): ValidationRulesStore {
