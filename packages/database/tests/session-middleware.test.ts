@@ -142,7 +142,44 @@ describe('session middleware + session() helper', () => {
         const body = (await res.json()) as any;
         expect(body.sid).toBe(authId);
         expect(body.cart).toEqual({ items: ['from-auth'] });
-        // No anonymous cookie issued when authCookieReader was used.
+        // No anonymous cookie issued when auth provided the ID.
         expect(getSetCookie(res, 'cossack_sid')).toBeUndefined();
+    });
+
+    it('issues the anonymous cookie when authCookieReader is set but returns undefined', async () => {
+        // Regression: the guard `!options.authCookieReader` used to suppress the
+        // anonymous cookie even when auth returned undefined (unauthenticated),
+        // orphaning the new session. Now the cookie is set so the session
+        // survives the next request.
+        const app2 = new Hono();
+        app2.use('*', createDbMiddleware({ client: db }));
+        app2.use(
+            '*',
+            createSessionMiddleware({
+                ttl: 60_000,
+                // Auth reader that always says "no authenticated session".
+                authCookieReader: () => undefined,
+            }),
+        );
+        app2.get('/cart', async (c) => {
+            return c.json({ sid: session().id() });
+        });
+
+        const res = await app2.request('/cart');
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as any;
+        // A new anonymous session was created and ITS cookie was issued.
+        const sidCookie = getSetCookie(res, 'cossack_sid');
+        expect(sidCookie).toBeDefined();
+        expect(sidCookie).toBe(body.sid);
+
+        // And it persists: a follow-up request with the cookie reuses the ID.
+        const res2 = await app2.request('/cart', {
+            headers: { cookie: `cossack_sid=${sidCookie}` },
+        });
+        const body2 = (await res2.json()) as any;
+        expect(body2.sid).toBe(sidCookie);
+        // No new cookie issued on the follow-up (session already existed).
+        expect(getSetCookie(res2, 'cossack_sid')).toBeUndefined();
     });
 });

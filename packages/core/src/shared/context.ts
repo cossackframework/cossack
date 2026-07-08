@@ -2,7 +2,7 @@
 import type { Context } from 'hono';
 import { createContext } from '@cossackframework/renderer';
 import { parseFormData } from './forms';
-import { StoreRuleMap, validateObject } from './validation';
+import { StoreRuleMap, validateObject, type ObjectValidationResult } from './validation';
 
 export const EnvContext = createContext<any>(undefined);
 export const UserContext = createContext<any>(undefined);
@@ -33,14 +33,11 @@ export type GetFormDataOptions<T> = {
 export interface CossackContext {
     getFormData<T>(): Promise<T>;
     /**
-     * `getFormData<T>({ rules })` parses AND validates. Returns the typed data
-     * plus a map of dot-path → error message and an aggregate `valid` flag.
+     * `getFormData<T>({ rules })` parses AND validates. Returns the typed data,
+     * a nested `errors` object mirroring the form shape, a flat dot-path-keyed
+     * `flatErrors` map, and an aggregate `valid` flag (see ObjectValidationResult).
      */
-    getFormData<T>(opts: GetFormDataOptions<T>): Promise<{
-        data: T;
-        errors: Partial<Record<string, string>>;
-        valid: boolean;
-    }>;
+    getFormData<T>(opts: GetFormDataOptions<T>): Promise<ObjectValidationResult<T>>;
 }
 
 /**

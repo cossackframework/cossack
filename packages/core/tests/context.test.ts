@@ -76,9 +76,37 @@ describe('createCossackContext — getFormData', () => {
       name: 'Name is required',
       email: 'Bad email',
     });
+    // flatErrors mirrors the rule keys (dot-path keyed).
+    expect(result.flatErrors).toEqual({
+      name: 'Name is required',
+      email: 'Bad email',
+    });
     // data is still returned (parsed shape), typed as MyForm.
     expect(result.data.name).toBe('');
     expect(result.data.email).toBe('not-an-email');
+  });
+
+  it('nests errors by dot-path so errors.address.city works', async () => {
+    // Regression for the ObjectValidationResult shape: getFormData({ rules })
+    // must return nested errors (option-chaining friendly) AND flatErrors.
+    interface NestedForm {
+      name: string;
+      address: { city: string };
+    }
+    const ctx = createCossackContext(
+      mockContext([['address[city]', '']]),
+      true,
+    );
+    const result = await (ctx as unknown as CossackContext).getFormData<NestedForm>({
+      rules: {
+        'address.city': { required: true, message: 'City is required' },
+      },
+    });
+    expect(result.valid).toBe(false);
+    // Nested shape: errors.address.city (NOT errors['address.city']).
+    expect((result.errors as any).address.city).toBe('City is required');
+    // Flat shape: dot-path keyed.
+    expect(result.flatErrors['address.city']).toBe('City is required');
   });
 
   it('returns valid=true when all rules pass', async () => {

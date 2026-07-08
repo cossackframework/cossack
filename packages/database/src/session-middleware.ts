@@ -56,28 +56,36 @@ export function createSessionMiddleware(
         const store = new SessionStore(db());
 
         // 1. Resolve an existing session ID: auth cookie first, then anonymous.
+        //    `authProvidedId` tracks whether auth handed us an ID so we know
+        //    not to set the anonymous cookie in that case (auth manages its own).
         let sessionId: string | undefined;
+        let authProvidedId = false;
         if (options.authCookieReader) {
             sessionId = await options.authCookieReader(c);
+            if (sessionId) authProvidedId = true;
         }
         if (!sessionId) {
             sessionId = getCookie(c, cookieName);
         }
 
-        // 2. If none, create an anonymous session and issue the cookie. We set
-        //    the cookie on the response after `next()` so it survives redirects.
-        let issuedNewCookie = false;
+        // 2. If neither auth nor the anonymous cookie gave us an ID, create a
+        //    fresh anonymous session. We set its cookie after `next()` so it
+        //    survives redirects.
+        let issuedNewAnonymousId = false;
         if (!sessionId) {
             sessionId = await store.create(ttl);
-            issuedNewCookie = true;
+            issuedNewAnonymousId = true;
         }
 
         // 3. Scope the session for downstream handlers.
         await runWithSession({ sessionId, store }, () => next());
 
-        // 4. If we issued a new anonymous ID, persist it as a cookie. (Auth-
-        //    managed IDs set their own cookie via the auth module.)
-        if (issuedNewCookie && !options.authCookieReader) {
+        // 4. Persist a newly-issued ANONYMOUS ID as a cookie. We must NOT skip
+        //    this when `authCookieReader` is configured but returned undefined
+        //    (an unauthenticated request) — otherwise the new anonymous session
+        //    is orphaned and lost on the next request. Only an auth-provided ID
+        //    is excluded, because the auth module sets its own cookie.
+        if (issuedNewAnonymousId && !authProvidedId) {
             setCookie(c, cookieName, sessionId, {
                 httpOnly,
                 secure: c.req.url.startsWith('https://'),

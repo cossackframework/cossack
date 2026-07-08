@@ -869,8 +869,12 @@ class SpreadPart implements Part {
           const formEl = this.element instanceof HTMLFormElement
             ? this.element
             : (this.element as Element).closest('form');
-          if (val.novalidate && formEl instanceof HTMLFormElement) {
-            formEl.setAttribute('novalidate', '');
+          if (formEl instanceof HTMLFormElement) {
+            if (val.novalidate) {
+              formEl.setAttribute('novalidate', '');
+            } else {
+              formEl.removeAttribute('novalidate');
+            }
           }
           handler = (e: Event) => {
             e.preventDefault();
@@ -1016,14 +1020,21 @@ class AttributePart implements Part {
       // wrap it so the event's default is prevented first. `novalidate` (on by
       // default for the directive) disables browser-native validation on the
       // bound <form> since Cossack encourages custom `@Validate` validation.
+      // Toggling { novalidate } across re-renders sets/removes the attribute so
+      // the latest value always wins (a form previously rendered with the
+      // default must have native validation restored when switched to false).
       let resolved = value;
       if (resolved instanceof PreventDefaultResult) {
         const inner = resolved.handler;
         const formEl = this.element instanceof HTMLFormElement
           ? this.element
           : (this.element as Element).closest('form');
-        if (resolved.novalidate && formEl instanceof HTMLFormElement) {
-          formEl.setAttribute('novalidate', '');
+        if (formEl instanceof HTMLFormElement) {
+          if (resolved.novalidate) {
+            formEl.setAttribute('novalidate', '');
+          } else {
+            formEl.removeAttribute('novalidate');
+          }
         }
         resolved = (e: Event) => {
           e.preventDefault();

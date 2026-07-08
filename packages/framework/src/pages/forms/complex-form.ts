@@ -14,7 +14,7 @@ import { html } from '@cossackframework/renderer';
 //   - typed + validated nested form data (`getFormData<T>()` + `storeRules<T>`)
 //   - flash messages (`flash` / `flashed`) — one-shot data carried across the redirect
 //   - old input repopulation (`flashInput` / `old`) — keeps field values on validation failure
-//   - NESTED validation errors — `errors.address.city` works (option chaining),
+//   - NESTED validation errors — `errors.address.city` works (optional chaining),
 //     matching the form's type shape. Flat-key access is available via `flatErrors`.
 //
 // Flash data is signed-cookie-backed (stateless) and lives for exactly one
@@ -32,7 +32,7 @@ interface ComplexFormShape {
 }
 
 @Page({ transport: 'http' })
-export default class FormIndex extends Cossack {
+export default class ComplexForm extends Cossack {
   @State()
   success: string | undefined;
 

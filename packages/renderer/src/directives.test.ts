@@ -172,6 +172,33 @@ describe('preventDefault directive', () => {
     document.body.removeChild(container);
   });
 
+  it('removes novalidate on re-render when switching to { novalidate: false }', () => {
+    // Regression: a form rendered with the default (novalidate: true) then
+    // re-rendered with { novalidate: false } must end up WITHOUT the attribute,
+    // so native validation is actually restored. The renderer rebuilds form
+    // elements across re-renders, so we re-query the form each time and assert
+    // the resulting DOM reflects the latest directive option. This pins both
+    // the "set when true" and "remove when false" branches.
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+    const query = () => container.querySelector('form')!;
+
+    // First render: default → novalidate set.
+    render(html`<form @submit="${preventDefault(handler)}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(true);
+
+    // Re-render with novalidate explicitly false → attribute absent.
+    render(html`<form @submit="${preventDefault(handler, { novalidate: false })}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(false);
+
+    // Switching back re-applies it (idempotent toggle both ways).
+    render(html`<form @submit="${preventDefault(handler)}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(true);
+
+    document.body.removeChild(container);
+  });
+
   it('works on a child element (novalidate targets the ancestor form)', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
