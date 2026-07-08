@@ -33,7 +33,7 @@ import {
     mergeHead as mergeHeadFn,
     applyHeadTags as applyHeadTagsFn,
 } from './head';
-import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext } from './context';
+import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext, CossackContext } from './context';
 import {
     getError as getErrorFn,
     hasError as hasErrorFn,
@@ -122,11 +122,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _user?: User;
     private _env!: Env;
 
-    protected get c(): Context { 
-        return this._c || this.consume(RequestContext) as Context; 
+    protected get c(): Context & CossackContext {
+        // The context is wrapped by `createCossackContext`, whose proxy adds
+        // `getFormData` at runtime. Cast through to the augmented type so
+        // `this.c.getFormData` type-checks for developers.
+        return (this._c || this.consume(RequestContext)) as Context & CossackContext;
     }
-    protected set c(val: Context) { 
-        this._c = val; 
+    protected set c(val: Context) {
+        this._c = val;
     }
 
     protected get user(): User | undefined { return this._user || this.consume(UserContext); }
@@ -1588,13 +1591,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     public static SSR_HYDRATABLE = true;
 
-    public redirect(url: string, status?: RedirectStatusCode): void;
-    public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): void;
+    public redirect(url: string, status?: RedirectStatusCode): Response | void;
+    public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): Response | void;
     @Server()
     public redirect(
         url: string,
         statusOrOptions: RedirectStatusCode | { status?: RedirectStatusCode; types?: string[] } = 302,
-    ): void {
+    ): Response | void {
         if (!this.isServer) {
             const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
             const types = opts.types;
@@ -1609,7 +1612,34 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
         const status = typeof statusOrOptions === 'object' ? (statusOrOptions.status ?? 302) : statusOrOptions;
-        this.c.redirect(url, status);
+        // Return the Response so API/HTTP handlers (createApiHandler) propagate
+        // the redirect. The CRPC path also reads c.res.headers Location.
+        return this.c.redirect(url, status);
+    }
+
+    /**
+     * Redirect back to the previous page (the request's `Referer`), with an
+     * optional fallback if there is no referer. Pairs naturally with `flash()`
+     * for the POST→redirect→GET pattern:
+     *
+     *   async post() {
+     *     flash('success', 'Saved!');
+     *     return this.back('/forms');   // must `return` to propagate the redirect
+     *   }
+     *
+     * Returns the redirect Response on the server (like `redirect()`); performs
+     * client-side `history.back()` on the client, falling back to the URL.
+     */
+    public back(fallback = '/'): Response | void {
+        if (!this.isServer) {
+            if (typeof history !== 'undefined' && history.length > 1) {
+                history.back();
+                return;
+            }
+            return this.redirect(fallback);
+        }
+        const referer = this.c.req.header('referer') || fallback;
+        return this.c.redirect(referer, 302);
     }
 
     /**

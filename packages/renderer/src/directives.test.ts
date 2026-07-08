@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { html, renderToString, render } from './cossack-html';
-import { repeat, classMap, styleMap, key } from './directives';
+import { repeat, classMap, styleMap, key, preventDefault } from './directives';
 
 describe('Directives', () => {
   it('repeat renders items', () => {
@@ -100,5 +100,145 @@ describe('Directives', () => {
     render(tpl(), container);
     // Same key (undefined) -> no rebuild, same node.
     expect(container.querySelector('.m')).toBe(first);
+  });
+});
+
+describe('preventDefault directive', () => {
+  it('is transparent in SSR (event attr is stripped)', () => {
+    const handler = vi.fn();
+    const template = html`<form @submit="${preventDefault(handler)}"></form>`;
+    // `@submit` is always stripped during SSR; the directive value must not be
+    // serialized and must not throw.
+    expect(renderToString(template).trim()).toBe('<form></form>');
+  });
+
+  it('prevents the default and invokes the wrapped handler', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+
+    render(
+      html`<form @submit="${preventDefault(handler)}"><button type="submit"></button></form>`,
+      container,
+    );
+    const form = container.querySelector('form')!;
+    const event = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+    const dispatched = form.dispatchEvent(event);
+
+    // preventDefault() was called, so dispatchEvent returns false.
+    expect(dispatched).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    // Inner handler ran exactly once, with the event.
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0]).toBe(event);
+
+    document.body.removeChild(container);
+  });
+
+  it('disables native validation by default (sets novalidate on the form)', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+
+    render(
+      html`<form @submit="${preventDefault(handler)}"></form>`,
+      container,
+    );
+    const form = container.querySelector('form')!;
+    expect(form.hasAttribute('novalidate')).toBe(true);
+
+    document.body.removeChild(container);
+  });
+
+  it('restores native validation with { novalidate: false }', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+
+    render(
+      html`<form @submit="${preventDefault(handler, { novalidate: false })}"></form>`,
+      container,
+    );
+    const form = container.querySelector('form')!;
+    // Native validation kept: no novalidate attribute, but default still
+    // prevented (that part of the directive is unconditional).
+    expect(form.hasAttribute('novalidate')).toBe(false);
+
+    const event = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+    form.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    document.body.removeChild(container);
+  });
+
+  it('removes novalidate on re-render when switching to { novalidate: false }', () => {
+    // Regression: a form rendered with the default (novalidate: true) then
+    // re-rendered with { novalidate: false } must end up WITHOUT the attribute,
+    // so native validation is actually restored. The renderer rebuilds form
+    // elements across re-renders, so we re-query the form each time and assert
+    // the resulting DOM reflects the latest directive option. This pins both
+    // the "set when true" and "remove when false" branches.
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+    const query = () => container.querySelector('form')!;
+
+    // First render: default → novalidate set.
+    render(html`<form @submit="${preventDefault(handler)}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(true);
+
+    // Re-render with novalidate explicitly false → attribute absent.
+    render(html`<form @submit="${preventDefault(handler, { novalidate: false })}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(false);
+
+    // Switching back re-applies it (idempotent toggle both ways).
+    render(html`<form @submit="${preventDefault(handler)}"></form>`, container);
+    expect(query().hasAttribute('novalidate')).toBe(true);
+
+    document.body.removeChild(container);
+  });
+
+  it('works on a child element (novalidate targets the ancestor form)', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+
+    render(
+      html`<form>
+        <button type="submit" @click="${preventDefault(handler)}">go</button>
+      </form>`,
+      container,
+    );
+    const form = container.querySelector('form')!;
+    const button = container.querySelector('button')!;
+    expect(form.hasAttribute('novalidate')).toBe(true);
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    button.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    document.body.removeChild(container);
+  });
+
+  it('unwraps correctly when used via a spread binding', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const handler = vi.fn();
+
+    render(
+      html`<form ...=${{ '@submit': preventDefault(handler) }}></form>`,
+      container,
+    );
+    const form = container.querySelector('form')!;
+    expect(form.hasAttribute('novalidate')).toBe(true);
+
+    const event = new SubmitEvent('submit', { bubbles: true, cancelable: true });
+    form.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    document.body.removeChild(container);
   });
 });

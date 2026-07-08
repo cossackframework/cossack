@@ -652,7 +652,12 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable('sessions')
     .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('user_id', 'text', (c) => c.notNull())
+    // user_id is nullable so anonymous sessions (carts, wizards, A/B) work
+    // without auth. Authenticated sessions set it on login.
+    .addColumn('user_id', 'text')
+    // data holds a JSON key/value bag for general-purpose session storage
+    // (the session() helper). Nullable until first write.
+    .addColumn('data', 'text')
     .addColumn('expires_at', 'text', (c) => c.notNull())
     .execute();
 }
@@ -734,10 +739,12 @@ export async function down(db: Kysely<any>): Promise<void> {
 export function sessionModelTemplate() {
   return `/**
  * The \`sessions\` table row shape (snake_case to match the migration).
+ * user_id is nullable for anonymous sessions; data is a JSON key/value bag.
  */
 export interface SessionRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  data: string | null;
   expires_at: string;
 }
 

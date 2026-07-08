@@ -1,6 +1,6 @@
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { LiveResult, RepeatResult, KeyResult, BindResult } from './directives';
+import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult } from './directives';
 
 export class TemplateResult {
   public readonly _cossack_template_result = true;
@@ -856,13 +856,35 @@ class SpreadPart implements Part {
     }
 
     for (const [key, val] of Object.entries(props)) {
-      if (key.startsWith('@') && typeof val === 'function') {
+      if (key.startsWith('@') && (typeof val === 'function' || val instanceof PreventDefaultResult)) {
         const eventName = key.slice(1);
         const propName = `__crp_handler_${eventName}`;
         const oldHandler = (this.element as any)[propName];
         if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
-        (this.element as any)[propName] = val;
-        this.element.addEventListener(eventName, val as EventListener);
+        // Unwrap `preventDefault(handler)` into a wrapper that prevents the
+        // event default first and applies `novalidate` to the bound <form>.
+        let handler: EventListener;
+        if (val instanceof PreventDefaultResult) {
+          const inner = val.handler;
+          const formEl = this.element instanceof HTMLFormElement
+            ? this.element
+            : (this.element as Element).closest('form');
+          if (formEl instanceof HTMLFormElement) {
+            if (val.novalidate) {
+              formEl.setAttribute('novalidate', '');
+            } else {
+              formEl.removeAttribute('novalidate');
+            }
+          }
+          handler = (e: Event) => {
+            e.preventDefault();
+            inner.call(e.currentTarget, e);
+          };
+        } else {
+          handler = val as EventListener;
+        }
+        (this.element as any)[propName] = handler;
+        this.element.addEventListener(eventName, handler);
       } else if (key.startsWith('.')) {
         (this.element as any)[key.slice(1)] = val;
       } else if (key.startsWith('?')) {
@@ -994,7 +1016,32 @@ class AttributePart implements Part {
         (this.element as any)[wrapperProp] = wrapper;
         this.element.addEventListener(eventName, wrapper);
       }
-      (this.element as any)[handlerProp] = typeof value === 'function' ? value : undefined;
+      // Unwrap `preventDefault(handler)` into the inner handler; when present,
+      // wrap it so the event's default is prevented first. `novalidate` (on by
+      // default for the directive) disables browser-native validation on the
+      // bound <form> since Cossack encourages custom `@Validate` validation.
+      // Toggling { novalidate } across re-renders sets/removes the attribute so
+      // the latest value always wins (a form previously rendered with the
+      // default must have native validation restored when switched to false).
+      let resolved = value;
+      if (resolved instanceof PreventDefaultResult) {
+        const inner = resolved.handler;
+        const formEl = this.element instanceof HTMLFormElement
+          ? this.element
+          : (this.element as Element).closest('form');
+        if (formEl instanceof HTMLFormElement) {
+          if (resolved.novalidate) {
+            formEl.setAttribute('novalidate', '');
+          } else {
+            formEl.removeAttribute('novalidate');
+          }
+        }
+        resolved = (e: Event) => {
+          e.preventDefault();
+          inner.call(e.currentTarget, e);
+        };
+      }
+      (this.element as any)[handlerProp] = typeof resolved === 'function' ? resolved : undefined;
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);

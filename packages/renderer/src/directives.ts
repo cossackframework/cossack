@@ -29,6 +29,16 @@ export class BindResult {
   ) {}
 }
 
+export class PreventDefaultResult {
+  constructor(
+    // The wrapped event handler.
+    public readonly handler: EventListener,
+    // Whether the bound <form> should get `novalidate` to disable the
+    // browser's native validation. Resolved from options at the call site.
+    public readonly novalidate: boolean,
+  ) {}
+}
+
 // --- Directives ---
 
 /**
@@ -100,6 +110,27 @@ export const key = (value: unknown, template: unknown) => new KeyResult(value, t
  */
 export const bind = (component: unknown, fieldName: string) =>
   new BindResult(component, fieldName);
+
+/**
+ * Wraps an event handler so the event's default is prevented before it runs.
+ *
+ * Browser-native (HTML5 constraint) validation is ALSO disabled by default —
+ * the bound <form> gets `novalidate` — because Cossack encourages custom
+ * `@Validate` validation. Pass `{ novalidate: false }` to restore native
+ * validation.
+ *
+ * Usage:
+ *   <form @submit="${preventDefault(this.serverHandle)}"></form>
+ *   <!-- keep native validation -->
+ *   <form @submit="${preventDefault(this.serverHandle, { novalidate: false })}"></form>
+ *
+ * @param handler  The event handler to invoke after preventing default.
+ * @param options  Optional. `novalidate` (default `true`) toggles `novalidate`.
+ */
+export const preventDefault = (
+  handler: EventListener,
+  options?: { novalidate?: boolean },
+) => new PreventDefaultResult(handler, options?.novalidate ?? true);
 
 // Ref is usually just a function, but we can verify it
 export type RefCallback = (el: Element | undefined) => void;

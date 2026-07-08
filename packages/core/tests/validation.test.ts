@@ -1,7 +1,7 @@
 // tests/validation.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
+import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, validateObject, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
 import { Validate, Store } from '../src/shared/decorators';
 
 describe('Validation', () => {
@@ -654,6 +654,113 @@ describe('Validation', () => {
             // validateAll covers the storeRules-registered paths.
             const allValid = await validateAll(comp);
             expect(allValid).toBe(false);
+        });
+    });
+
+    describe('validateObject (standalone, component-free)', () => {
+        interface MyForm {
+            name: string;
+            email: string;
+            address: { zip: string };
+            tags: string[];
+        }
+
+        it('returns valid=true and no errors when all rules pass', async () => {
+            const data: MyForm = {
+                name: 'Alice',
+                email: 'alice@example.com',
+                address: { zip: '12345' },
+                tags: ['a'],
+            };
+            const { valid, errors, data: out } = await validateObject(data, {
+                name: { required: true },
+                email: { required: true, email: true },
+                'address.zip': { required: true, pattern: /^\d{5}$/ },
+            });
+            expect(valid).toBe(true);
+            expect(errors).toEqual({});
+            // data is echoed back, unchanged.
+            expect(out).toBe(data);
+        });
+
+        it('collects the first failing message per dot-path key (nested + flat)', async () => {
+            const data: MyForm = {
+                name: '',
+                email: 'not-an-email',
+                address: { zip: 'abc' },
+                tags: [],
+            };
+            const { valid, errors, flatErrors } = await validateObject(data, {
+                name: { required: true, message: 'Name is required' },
+                email: { email: true, message: 'Bad email' },
+                'address.zip': { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' },
+            });
+            expect(valid).toBe(false);
+            // Nested shape: option-chaining / destructuring friendly.
+            expect((errors as any).name).toBe('Name is required');
+            expect((errors as any).email).toBe('Bad email');
+            expect((errors as any).address.zip).toBe('Bad ZIP');
+            // Flat shape: dot-path keyed (for rule-key lookup).
+            expect(flatErrors['name']).toBe('Name is required');
+            expect(flatErrors['email']).toBe('Bad email');
+            expect(flatErrors['address.zip']).toBe('Bad ZIP');
+        });
+
+        it('nested errors mirror the form type structure (option chaining)', async () => {
+            const data: MyForm = {
+                name: 'ok', email: 'a@b.com', address: { zip: '' }, tags: [],
+            };
+            const { errors } = await validateObject(data, {
+                'address.zip': { required: true, message: 'ZIP required' },
+            });
+            // errors.address.zip — not errors['address.zip'].
+            expect((errors as any)?.address?.zip).toBe('ZIP required');
+            // Top-level keys without rules are absent.
+            expect((errors as any)?.name).toBeUndefined();
+        });
+
+        it('resolves nested dot-paths and reports missing intermediate keys', async () => {
+            const data = { address: {} } as unknown as MyForm;
+            const { valid, flatErrors } = await validateObject(data, {
+                'address.zip': { required: true, message: 'ZIP required' },
+            });
+            expect(valid).toBe(false);
+            expect(flatErrors['address.zip']).toBe('ZIP required');
+        });
+
+        it('returns valid=true when no rules are provided', async () => {
+            const data: MyForm = {
+                name: '', email: '', address: { zip: '' }, tags: [],
+            };
+            const { valid, errors } = await validateObject(data, {});
+            expect(valid).toBe(true);
+            expect(errors).toEqual({});
+        });
+
+        it('supports customAsync rules (no component passed)', async () => {
+            const data: MyForm = {
+                name: 'x', email: 'a@b.com', address: { zip: '12345' }, tags: [],
+            };
+            const check = vi.fn(async (value: string) => value === 'ok');
+            const { valid } = await validateObject(data, {
+                name: { customAsync: check, message: 'must be ok' },
+            });
+            expect(valid).toBe(false);
+            // customAsync was invoked with the value and no component.
+            expect(check).toHaveBeenCalledWith('x', undefined);
+        });
+
+        it('works on null-proto objects (from parseFormData)', async () => {
+            // Simulate a parsed form result: null-proto containers.
+            const data = Object.assign(Object.create(null), {
+                name: 'Alice',
+                address: Object.assign(Object.create(null), { zip: '12345' }),
+            }) as unknown as MyForm;
+            const { valid } = await validateObject(data, {
+                name: { required: true },
+                'address.zip': { required: true, pattern: /^\d{5}$/ },
+            });
+            expect(valid).toBe(true);
         });
     });
 });

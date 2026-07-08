@@ -31,6 +31,7 @@
   // APP_LOCALE sets the default locale for `__()`. See `cossack lang publish`.
   "vars": {
     "BASE_URL": "https://example.com",
-    "APP_LOCALE": "en"
+    "APP_LOCALE": "en",
+    "COSSACK_SECRET": "PLEASE_CHANGE_THIS_SECRET"
   }
 }

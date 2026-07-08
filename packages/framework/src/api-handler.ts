@@ -2,7 +2,7 @@
 import 'reflect-metadata';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { Cossack, enforceMethodRateLimit } from '@cossackframework/core';
+import { Cossack, enforceMethodRateLimit, createCossackContext } from '@cossackframework/core';
 
 /**
  * Create an API handler for a Cossack class method.
@@ -43,8 +43,9 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             if (rateLimited) return rateLimited;
 
             const instance = new ComponentClass();
-            // Manually set the context for the instance
-            (instance as any).c = c;
+            // Wrap the raw Hono context with the Cossack proxy so API handlers
+            // get the same augmented context as pages (e.g. `getFormData<T>()`).
+            (instance as any).c = createCossackContext(c, true);
 
             // Call the designated API method (get, post, etc.)
             const result = await (instance as any)[methodName]();
