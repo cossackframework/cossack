@@ -363,6 +363,15 @@ describe('DurableObjectCacheStore', () => {
         const store = new DurableObjectCacheStore(ns);
         await expect(store.get('a')).rejects.toThrow(/500/);
     });
+
+    it('set(key, undefined) deletes the key', async () => {
+        const store = new DurableObjectCacheStore(makeFakeNamespace());
+        await store.set('a', 1);
+        expect(await store.has('a')).toBe(true);
+        await store.set('a', undefined);
+        expect(await store.has('a')).toBe(false);
+        expect(await store.get('a')).toBeUndefined();
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -453,6 +453,15 @@ export class DurableObjectCacheStore implements CacheStore {
 
     async set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void> {
         const url = `https://cache/${encodeURIComponent(key)}`;
+        // set(key, undefined) === delete(key) — the CacheStore contract. Must
+        // short-circuit here because JSON.stringify(undefined) produces no body,
+        // which would break request.json() in the DO handler.
+        if (value === undefined) {
+            const res = await this.stub.fetch(url, { method: 'DELETE' });
+            await res.body?.cancel();
+            if (!res.ok) throw new Error(`[Cossack] CacheDurableObject DELETE returned ${res.status}`);
+            return;
+        }
         const fullUrl = ttlSeconds !== undefined ? `${url}?ttl=${ttlSeconds}` : url;
         const res = await this.stub.fetch(fullUrl, {
             method: 'PUT',
@@ -635,11 +644,17 @@ function resolveNamedStore(name: string): CacheStore {
 
 function buildStore(spec: CacheStoreSpec): CacheStore {
     ensureBuiltinDrivers();
-    // Cache key: include all config that changes store behavior for safe reuse.
-    // driver + binding + namespace distinguish e.g. two KV stores on the same
-    // binding but different prefixes. The separator is always present so the
-    // extendCacheDriver() invalidation (which keys on `${driver}:`) works even
-    // for unbound drivers.
+    // Instance-cache key. Covers driver + binding + namespace — the built-in
+    // fields that change store behavior — so e.g. two KV stores on the same
+    // binding but different prefixes get separate instances. The separator is
+    // always present so extendCacheDriver() invalidation (which keys on
+    // `${driver}:`) works even for unbound drivers.
+    //
+    // NOTE: custom drivers that read additional spec fields (e.g. host, region,
+    // prefix) are not reflected in this key. Two such stores sharing the same
+    // driver/binding/namespace would reuse one instance. Call
+    // `cache.setDefaultStore()` to bypass the cache when that matters, or keep
+    // each distinct config under a different driver name.
     const cacheKey = `${spec.driver}:${spec.binding ?? ''}:${spec.namespace ?? ''}`;
     const cached = instanceCache.get(cacheKey);
     if (cached) return cached;

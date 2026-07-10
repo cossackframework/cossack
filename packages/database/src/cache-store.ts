@@ -49,10 +49,10 @@ declare module './types' {
 }
 
 /**
- * The subset of core's `CacheStore` we satisfy, declared locally so this package
- * stays free of a core dependency. Structurally identical to
- * `@cossackframework/core`'s `CacheStore`, so a `DatabaseCacheStore` is
- * assignable wherever a `CacheStore` is expected.
+ * A local `CacheStore`-compatible interface, declared locally so this package
+ * stays free of a framework dependency. Structurally identical to
+ * `@cossackframework/framework/cache`'s `CacheStore`, so a `DatabaseCacheStore`
+ * is assignable wherever a `CacheStore` is expected.
  */
 export interface CacheStoreLike {
     get<T = unknown>(key: string): Promise<T | undefined>;
