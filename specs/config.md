@@ -7,7 +7,7 @@ This document specifies the architecture of Cossack's configuration system: how 
 1. **Workers-correct by default.** Environment bindings (`c.env`) on Cloudflare Workers are only available inside the request handler, not at module-load time. Config must therefore be evaluated per request, not once at startup.
 2. **Per-request isolation.** A single Worker isolate serves many concurrent requests. Config values are scoped to the current request via AsyncLocalStorage (ALS), the same pattern used by `__()` (locale), `db()` (database client), `flash()` (flash data), and `getRequestContext()`.
 3. **Server-only.** Config files call `env()` to read secrets and bindings. They must never ship to the client bundle. Two enforcement layers guarantee this (see [Client-side exclusion](#client-side-exclusion)).
-4. **Library/application separation.** The `config()` and `env()` accessors live in `@cossackframework/core` (the leaf library). The ALS instance and per-request wiring live in `@cossackframework/framework` (the application). This mirrors the established injection-point pattern.
+4. **Library/application separation.** The config system (ALS store + `config()` / `env()` accessors) lives in `@cossackframework/framework` and is exported from `@cossackframework/framework/config`.
 
 ## Package Responsibilities
 
@@ -46,7 +46,6 @@ The config middleware is registered **first** in `createApp()` (before user midd
 
 ```typescript
 app.use('*', async (c, next) => {
-    ensureConfigAlsWired();
     const envBindings = c.env as unknown as Record<string, unknown>;
     const envFn = (key, def) => {
         const v = envBindings?.[key];
@@ -54,6 +53,9 @@ app.use('*', async (c, next) => {
     };
     const built = {};
     for (const [name, factory] of Object.entries(configFactories)) {
+        if (typeof factory !== 'function') {
+            throw new Error(`[Cossack] Config file "${name}" must default-export a factory function.`);
+        }
         built[name] = factory({ env: envFn });
     }
     return runWithConfig({ env: envBindings, config: built }, () => next());
@@ -61,10 +63,9 @@ app.use('*', async (c, next) => {
 ```
 
 Steps:
-1. `ensureConfigAlsWired()` — one-time wiring of the ALS store getter into core's `config()` / `env()` helpers via `setConfigStoreGetter`.
-2. Build an `env` function that reads from `c.env` (the request's Cloudflare bindings).
-3. Evaluate every config factory, building a `Record<fileName, configObject>` tree.
-4. Wrap the remainder of the request (`next()`) inside `runWithConfig`, which enters the `AsyncLocalStorage` scope.
+1. Build an `env` function that reads from `c.env` (the request's Cloudflare bindings).
+2. Evaluate every config factory, building a `Record<fileName, configObject>` tree. Each factory is validated to be a function — a misconfigured config file throws a clear error naming the offending file.
+3. Wrap the remainder of the request (`next()`) inside `runWithConfig`, which enters the `AsyncLocalStorage` scope.
 
 Because the scope wraps `next()`, all downstream middleware, route handlers, component `bootstrap()` / `init()` / `render()` / `head()` calls, and their async descendants resolve `config()` and `env()` against this request's values.
 

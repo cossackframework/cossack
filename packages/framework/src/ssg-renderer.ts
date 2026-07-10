@@ -206,7 +206,12 @@ export async function renderSsgPage(
   const builtConfig: Record<string, unknown> = {};
   if (configFactories) {
     for (const [name, factory] of Object.entries(configFactories)) {
-      builtConfig[name] = factory({ env: envFn });
+      if (typeof factory !== 'function') {
+        throw new Error(
+          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
+        );
+      }
+      builtConfig[name] = (factory as ConfigFactory)({ env: envFn });
     }
   }
   const configStore: ConfigStore = { env: envBindings, config: builtConfig };

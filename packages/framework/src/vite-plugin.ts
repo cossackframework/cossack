@@ -321,10 +321,9 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * Virtual module exposing the project's config factories from `src/config/*.ts`.
  *
  * Each config file default-exports a factory `({ env }) => ({...})` that is
- * evaluated per request inside the config ALS scope (see `config-context.ts`
- * and core's `config()` / `env()` helpers). This is Workers-correct: env
- * bindings (`c.env`) are only available inside the request handler, so config
- * cannot be evaluated once at module load — it must run per request.
+ * evaluated per request inside the framework's config ALS scope (see `src/config.ts`). 
+ * This is Workers-correct: env bindings (`c.env`) are only available inside the request handler, 
+ * so config cannot be evaluated once at module load — it must run per request.
  *
  * `createApp()` imports this module, evaluates each factory with the request's
  * env bindings, and stores the resulting tree in the ALS store where

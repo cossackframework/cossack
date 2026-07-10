@@ -334,8 +334,13 @@ export function createApp(options: CreateAppOptions = {}) {
       return v !== undefined && v !== null ? String(v) : def ?? '';
     };
     const built: Record<string, unknown> = {};
-    for (const [name, factory] of Object.entries(configFactories as Record<string, ConfigFactory>)) {
-      built[name] = factory({ env: envFn });
+    for (const [name, factory] of Object.entries(configFactories as Record<string, unknown>)) {
+      if (typeof factory !== 'function') {
+        throw new Error(
+          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
+        );
+      }
+      built[name] = (factory as ConfigFactory)({ env: envFn });
     }
     return runWithConfig({ env: envBindings, config: built }, () => next());
   });
