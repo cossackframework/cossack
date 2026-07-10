@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Server, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { config, env } from '@cossackframework/framework/config';
+import { config, env } from '@/config';
 import { Layout } from '@/components/Layout';
 
 // Demonstrates the config() / env() helpers backed by src/config/app.ts.
