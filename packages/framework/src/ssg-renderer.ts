@@ -15,7 +15,9 @@ import {
 } from '@cossackframework/core';
 import { App } from './App';
 import { renderRoot, TemplateHelpers } from './root';
+import { ensureConfigAlsWired, runWithConfig } from './config-context';
 import type { Context } from 'hono';
+import type { ConfigFactory, ConfigStore, EnvFunction } from '@cossackframework/core';
 
 // Re-export the PageOptions and SsgOptions for convenience
 export type { PageOptions, SsgOptions } from '@cossackframework/core';
@@ -181,6 +183,7 @@ export async function renderSsgPage(
   htmlTemplate?: HtmlTemplate,
   pageFilePath?: string,
   componentRouteId?: string,
+  configFactories?: Record<string, ConfigFactory>,
 ): Promise<string> {
   // Seed the i18n runtime from `src/lang/*.json` (one-time) so SSG output
   // renders in the default locale. Reads the project root from cwd.
@@ -194,6 +197,29 @@ export async function renderSsgPage(
 
   const user: User = { id: 'ssg-user' };
   const env = {};
+
+  // Build the config store from the provided factories so `config()` / `env()`
+  // resolve the same way as in SSR. SSG has no live request bindings, so `env()`
+  // reads from an empty record and config factories fall back to their defaults
+  // — matching the SSR behavior when no bindings are set.
+  const envBindings = env as Record<string, unknown>;
+  const envFn: EnvFunction = (key, def) => {
+    const v = envBindings?.[key];
+    return v !== undefined && v !== null ? String(v) : def ?? '';
+  };
+  const builtConfig: Record<string, unknown> = {};
+  if (configFactories) {
+    for (const [name, factory] of Object.entries(configFactories)) {
+      builtConfig[name] = factory({ env: envFn });
+    }
+  }
+  const configStore: ConfigStore = { env: envBindings, config: builtConfig };
+
+  // Wire the ALS store getter once, then wrap the entire render in the config
+  // ALS scope so any `config()` / `env()` calls during bootstrap/render resolve
+  // correctly (mirrors the SSR middleware).
+  ensureConfigAlsWired();
+  return runWithConfig(configStore, async () => {
 
   // Bootstrap App
   if (!AppComponent) {
@@ -316,6 +342,7 @@ export async function renderSsgPage(
   });
 
   return html;
+  }); // end runWithConfig
 }
 
 /**

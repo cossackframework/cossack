@@ -153,7 +153,7 @@ async function addAuth(ctx) {
   }
 
   // 4. register global middleware (auth session + guard) in
-  //    src/config/middlewares.ts (the registry createApp auto-loads).
+  //    src/bootstrap/middlewares.ts (the registry createApp auto-loads).
   await registerMiddleware(root, {
     importLine: "import { auth } from '../auth';\nimport { authGuard } from '../middlewares/auth';",
     entry: '  auth.middleware,\n  authGuard,',
@@ -183,7 +183,7 @@ async function addAuth(ctx) {
 async function ensureRootLayout(root, ctx) {
   const target = path.resolve(root, 'src/pages/layout.ts');
   if (await exists(target)) {
-    console.log('  exists   src/pages/layout.ts (auth middleware is registered in src/config/middlewares.ts)');
+    console.log('  exists   src/pages/layout.ts (auth middleware is registered in src/bootstrap/middlewares.ts)');
     return;
   }
   const result = await writeFile(target, rootLayoutWithAuthTemplate(), ctx);
@@ -316,7 +316,7 @@ async function ensureDatabase(root, { dialect, ctx }) {
     await wireD1Binding(root, ctx);
   }
 
-  // 4. register the db middleware in src/config/middlewares.ts (the registry
+  // 4. register the db middleware in src/bootstrap/middlewares.ts (the registry
   //    createApp auto-loads). Clean append — no src/index.ts surgery.
   await registerMiddleware(root, {
     importLine: "import { dbMiddleware } from '../middlewares/db';",
@@ -386,7 +386,7 @@ async function wireD1Binding(root, ctx) {
  * print guidance.
  */
 /**
- * Register a middleware in `src/config/middlewares.ts` (the registry
+ * Register a middleware in `src/bootstrap/middlewares.ts` (the registry
  * `createApp()` auto-loads). Clean, idempotent append to a small, stable
  * file — far more robust than editing the user's `src/index.ts`.
  *
@@ -402,7 +402,7 @@ async function wireD1Binding(root, ctx) {
  * @param label      human label for log lines
  */
 async function registerMiddleware(root, { importLine, entry, marker, label, ctx }) {
-  const target = path.resolve(root, 'src/config/middlewares.ts');
+  const target = path.resolve(root, 'src/bootstrap/middlewares.ts');
 
   if (!(await exists(target))) {
     const content =
@@ -412,11 +412,11 @@ async function registerMiddleware(root, { importLine, entry, marker, label, ctx 
       entry +
       '\n];\n\nexport default middlewares;\n';
     if (ctx.dryRun) {
-      console.log(`  would create  src/config/middlewares.ts (with ${label})`);
+      console.log(`  would create  src/bootstrap/middlewares.ts (with ${label})`);
       return;
     }
     await writeFile(target, content, ctx);
-    console.log(`  created  src/config/middlewares.ts (registered ${label})`);
+    console.log(`  created  src/bootstrap/middlewares.ts (registered ${label})`);
     return;
   }
 
@@ -427,7 +427,7 @@ async function registerMiddleware(root, { importLine, entry, marker, label, ctx 
     return;
   }
   if (content.includes(marker)) {
-    console.log(`  exists   src/config/middlewares.ts already registers ${label}`);
+    console.log(`  exists   src/bootstrap/middlewares.ts already registers ${label}`);
     return;
   }
 
@@ -443,18 +443,18 @@ async function registerMiddleware(root, { importLine, entry, marker, label, ctx 
   // Insert the entry right after the array's opening bracket.
   if (!/\[/.test(updated)) {
     console.log(
-      `  note     src/config/middlewares.ts has no array — add ${label} manually.`,
+      `  note     src/bootstrap/middlewares.ts has no array — add ${label} manually.`,
     );
     return;
   }
   updated = updated.replace('[', `[\n${entry}`);
 
   if (ctx.dryRun) {
-    console.log(`  would register  ${label} in src/config/middlewares.ts`);
+    console.log(`  would register  ${label} in src/bootstrap/middlewares.ts`);
     return;
   }
   await fs.writeFile(target, updated, 'utf8');
-  console.log(`  registered  ${label} in src/config/middlewares.ts`);
+  console.log(`  registered  ${label} in src/bootstrap/middlewares.ts`);
 }
 
 function reportFile(rel, result, ctx) {
@@ -521,13 +521,13 @@ Features:
             hashing, a createAuth() module (src/auth.ts), Session model, real
             login/register/forgot-password/reset-password pages (validated forms with
             @Server methods), an auth guard middleware, and registers everything in
-            src/config/middlewares.ts. Also ensures database support (D1/Turso) and
+            src/bootstrap/middlewares.ts. Also ensures database support (D1/Turso) and
             wires the send_email binding for password-reset emails.
             Routes default to (auth)/{login,register,forgot-password,reset-password}.
   database  Adds @cossackframework/database (Kysely + D1/Turso dialects), a default
             User model, starter migrations (users, sessions, roles, permissions,
             oauth_accounts), a seeder, src/db/config.ts, and registers the dbMiddleware
-            in src/config/middlewares.ts. Prompts for the dialect (default: D1).
+            in src/bootstrap/middlewares.ts. Prompts for the dialect (default: D1).
 
 Options:
   --force, -f              Overwrite existing files.

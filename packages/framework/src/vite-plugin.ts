@@ -273,10 +273,10 @@ const resolvedMiddlewaresVirtualModuleId = '\0' + middlewaresVirtualModuleId;
 /**
  * Virtual module exposing the project's global request middleware registry.
  *
- * Loads `src/config/middlewares.ts` (if present) — an ordered array of Hono
+ * Loads `src/bootstrap/middlewares.ts` (if present) — an ordered array of Hono
  * `MiddlewareHandler`s (db client, auth session, feature flags, ...). This is
  * the Laravel-style "kernel" list: middleware definitions live in
- * `src/middlewares/*.ts`, and `src/config/middlewares.ts` only holds the
+ * `src/middlewares/*.ts`, and `src/bootstrap/middlewares.ts` only holds the
  * ordered references. `createApp()` imports this module and registers each
  * handler with `app.use('*', ...)` in array order.
  *
@@ -303,12 +303,67 @@ export function cossackMiddlewares(): Plugin {
         return `const middlewares = [];\nexport default middlewares;\n`;
       }
       return `
-        // Loads src/config/middlewares.ts (if present). Globs a single
+        // Loads src/bootstrap/middlewares.ts (if present). Globs a single
         // well-known path so the absence of the file resolves to [].
-        const modules = import.meta.glob('/src/config/middlewares.ts', { eager: true });
-        const mod = modules['/src/config/middlewares.ts'];
+        const modules = import.meta.glob('/src/bootstrap/middlewares.ts', { eager: true });
+        const mod = modules['/src/bootstrap/middlewares.ts'];
         const middlewares = (mod && mod.default) || [];
         export default middlewares;
+      `;
+    },
+  };
+}
+
+const configVirtualModuleId = 'virtual:cossack-config';
+const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
+
+/**
+ * Virtual module exposing the project's config factories from `src/config/*.ts`.
+ *
+ * Each config file default-exports a factory `({ env }) => ({...})` that is
+ * evaluated per request inside the config ALS scope (see `config-context.ts`
+ * and core's `config()` / `env()` helpers). This is Workers-correct: env
+ * bindings (`c.env`) are only available inside the request handler, so config
+ * cannot be evaluated once at module load — it must run per request.
+ *
+ * `createApp()` imports this module, evaluates each factory with the request's
+ * env bindings, and stores the resulting tree in the ALS store where
+ * `config('app.name')` resolves it.
+ *
+ * Absent `src/config/` folder → empty object (existing apps are unaffected).
+ * Client environment → empty object (config is server-only — it reads env
+ * bindings and must never ship to the browser).
+ *
+ * Emits (SSR):
+ * ```ts
+ * const configs: Record<string, ConfigFactory>; // keyed by file name (no ext)
+ * export default configs;
+ * ```
+ */
+export function cossackConfig(): Plugin {
+  return {
+    name: 'cossack-config',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === configVirtualModuleId) return resolvedConfigVirtualModuleId;
+    },
+    load(id) {
+      if (id !== resolvedConfigVirtualModuleId) return;
+      const isSsrEnvironment = this.environment?.name !== 'client';
+      if (!isSsrEnvironment) {
+        // Config reads env bindings — server-only. Never ship to the client.
+        return `const configs = {};\nexport default configs;\n`;
+      }
+      return `
+        // Loads src/config/*.ts (if present). Globs the well-known config
+        // directory so an absent folder resolves to {} (no-op).
+        const modules = import.meta.glob('/src/config/*.ts', { eager: true });
+        const configs = {};
+        for (const [filePath, mod] of Object.entries(modules)) {
+          const name = filePath.split('/').pop().replace(/\\.ts$/, '');
+          configs[name] = mod.default;
+        }
+        export default configs;
       `;
     },
   };

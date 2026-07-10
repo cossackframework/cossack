@@ -74,8 +74,8 @@ describe('add database (d1)', () => {
     const entry = fs.readFileSync(path.join(tmp, 'src/index.ts'), 'utf8');
     expect(entry).not.toContain('dbMiddleware');
 
-    // ...instead the db middleware is registered in src/config/middlewares.ts
-    const registry = fs.readFileSync(path.join(tmp, 'src/config/middlewares.ts'), 'utf8');
+    // ...instead the db middleware is registered in src/bootstrap/middlewares.ts
+    const registry = fs.readFileSync(path.join(tmp, 'src/bootstrap/middlewares.ts'), 'utf8');
     expect(registry).toContain('dbMiddleware');
     expect(registry).toContain("from '../middlewares/db'");
   });
@@ -100,11 +100,11 @@ describe('add database (d1)', () => {
     expect(pkg.dependencies['@tursodatabase/serverless']).toBeTruthy();
   });
 
-  it('appends to an existing src/config/middlewares.ts without duplicating', async () => {
+  it('appends to an existing src/bootstrap/middlewares.ts without duplicating', async () => {
     // Pre-create the registry with another (dummy) middleware already present.
-    fs.mkdirSync(path.join(tmp, 'src/config'), { recursive: true });
+    fs.mkdirSync(path.join(tmp, 'src/bootstrap'), { recursive: true });
     fs.writeFileSync(
-      path.join(tmp, 'src/config/middlewares.ts'),
+      path.join(tmp, 'src/bootstrap/middlewares.ts'),
       [
         "import type { MiddlewareHandler } from 'hono';",
         "import { loggingMiddleware } from '../middlewares/logging';",
@@ -120,7 +120,7 @@ describe('add database (d1)', () => {
 
     await addCommand(['database'], ctx);
 
-    const registry = fs.readFileSync(path.join(tmp, 'src/config/middlewares.ts'), 'utf8');
+    const registry = fs.readFileSync(path.join(tmp, 'src/bootstrap/middlewares.ts'), 'utf8');
     // Original entry preserved...
     expect(registry).toContain('loggingMiddleware');
     // ...and db appended, with the import added.
@@ -133,7 +133,7 @@ describe('add database (d1)', () => {
     // Re-running is idempotent (doesn't add a second import).
     ctx.force = true;
     await addCommand(['database'], ctx);
-    const after2 = fs.readFileSync(path.join(tmp, 'src/config/middlewares.ts'), 'utf8');
+    const after2 = fs.readFileSync(path.join(tmp, 'src/bootstrap/middlewares.ts'), 'utf8');
     expect((after2.match(/import \{ dbMiddleware \}/g) || []).length).toBe(1);
   });
 });

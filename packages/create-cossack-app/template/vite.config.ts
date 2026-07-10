@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 // @cossack:cloudflare-start
 import { cloudflare } from '@cloudflare/vite-plugin';
 // @cossack:cloudflare-end
-import { cossackPages, cossackLang, cossackMiddlewares } from '@cossackframework/framework/vite-plugin';
+import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 
 export default defineConfig({
@@ -19,6 +19,7 @@ export default defineConfig({
     cossackPages(),
     cossackLang(),
     cossackMiddlewares(),
+    cossackConfig(),
   ],
   resolve: {
     alias: {
