@@ -4,18 +4,19 @@
 // storage with TTL) but for general-purpose cache data instead of per-session
 // bags.
 //
-// This package intentionally does NOT depend on @cossackframework/core (see the
-// note in session-store.ts). So instead of importing the `CacheStore` interface
-// from core, we declare a structurally-compatible local interface
-// (`CacheStoreLike`). TypeScript's structural typing means a `DatabaseCacheStore`
-// is assignable to core's `CacheStore` at the call site —
+// This package intentionally does NOT depend on @cossackframework/framework
+// (see the note in session-store.ts). So instead of importing the `CacheStore`
+// interface from the framework, we declare a structurally-compatible local
+// interface (`CacheStoreLike`). TypeScript's structural typing means a
+// `DatabaseCacheStore` is assignable to the framework's `CacheStore` at the
+// call site —
 //
-//   import { setCacheStore } from '@cossackframework/core';
+//   import { extendCacheDriver } from '@cossackframework/framework/cache';
 //   import { DatabaseCacheStore } from '@cossackframework/database';
-//   setCacheStore(new DatabaseCacheStore()); // ✓ structurally compatible
+//   extendCacheDriver('database', () => new DatabaseCacheStore()); // ✓
 //
-// Register it manually from your Worker entry (core cannot build it, and it
-// needs the per-request `db()` client from the database ALS scope). See
+// Register it once at startup. The store resolves the per-request `db()` client
+// lazily on each operation, so a single instance serves every request. See
 // docs/cache.md.
 //
 // Expected schema (shipped via `cossack cache:make-table`):
@@ -216,15 +217,21 @@ export class DatabaseCacheStore implements CacheStoreLike {
             await c.deleteFrom('cache_items').where('key', 'in', expiredKeys).execute();
             for (const k of expiredKeys) byKey.delete(k);
         }
-        return keys.map((k) => {
+        const corruptKeys: string[] = [];
+        const out = keys.map((k) => {
             const entry = byKey.get(k);
             if (!entry) return undefined;
             try {
                 return JSON.parse(entry.value) as T;
             } catch {
+                corruptKeys.push(k);
                 return undefined;
             }
         });
+        if (corruptKeys.length > 0) {
+            await c.deleteFrom('cache_items').where('key', 'in', corruptKeys).execute();
+        }
+        return out;
     }
 
     async setMany<T = unknown>(

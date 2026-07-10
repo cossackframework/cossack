@@ -193,7 +193,7 @@ export default ({ env }) => ({
 | Method | Description |
 | --- | --- |
 | `cache.get<T>(key)` | Read a value from the default store. Returns `undefined` if missing or expired. |
-| `cache.set<T>(key, value, ttlSeconds?)` | Write a value. TTL defaults to 3600s (1 hour); omit it to store indefinitely. |
+| `cache.set<T>(key, value, ttlSeconds?)` | Write a value. TTL defaults to 3600s (1 hour). |
 | `cache.has(key)` | `true` if the key exists and hasn't expired. |
 | `cache.delete(key)` / `cache.forget(key)` | Remove a key (Laravel naming). |
 | `cache.flush()` | Remove every key. |

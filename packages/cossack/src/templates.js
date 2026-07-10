@@ -742,8 +742,10 @@ export function createCacheTableMigration() {
 
 // Table for the database cache driver (@cossackframework/database's
 // DatabaseCacheStore). Values are JSON text; expires_at is epoch milliseconds
-// (NULL = never expires). Register it from your entry:
-//   setCacheStore(new DatabaseCacheStore());
+// (NULL = never expires). Register the driver at startup:
+//   import { extendCacheDriver } from '@cossackframework/framework/cache';
+//   import { DatabaseCacheStore } from '@cossackframework/database';
+//   extendCacheDriver('database', () => new DatabaseCacheStore());
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable('cache_items')

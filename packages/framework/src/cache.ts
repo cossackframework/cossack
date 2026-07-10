@@ -254,18 +254,24 @@ export class KvCacheStore implements CacheStore {
 
     async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
         if (typeof this.kv.getMany === 'function') {
-            const raws = (await this.kv.getMany(
-                keys.map((k) => this.k(k)),
-                { type: 'text' },
-            )) as (string | null | undefined)[];
-            return raws.map((raw) => {
-                if (raw === null || raw === undefined) return undefined;
-                try {
-                    return JSON.parse(raw) as T;
-                } catch {
-                    return undefined;
-                }
-            });
+            const kvKeys = keys.map((k) => this.k(k));
+            const raws = (await this.kv.getMany(kvKeys, { type: 'text' })) as (
+                | string
+                | null
+                | undefined
+            )[];
+            return Promise.all(
+                raws.map(async (raw, i) => {
+                    if (raw === null || raw === undefined) return undefined;
+                    try {
+                        return JSON.parse(raw) as T;
+                    } catch {
+                        // Corrupt value — delete it so it doesn't keep failing.
+                        await this.kv.delete(kvKeys[i]);
+                        return undefined;
+                    }
+                }),
+            );
         }
         return Promise.all(keys.map((k) => this.get<T>(k)));
     }
@@ -329,41 +335,49 @@ export class CacheDurableObject {
         const path = decodeURIComponent(url.pathname.replace(/^\//, ''));
 
         try {
-            switch (path) {
-                case 'has': {
-                    const keys = (await request.json()) as string[];
-                    const results = await Promise.all(keys.map((k) => this.exists(k)));
-                    return Response.json(results);
+            // Special-case RPC endpoints (POST only). These are matched on
+            // method + path so they never collide with cache keys — e.g. a key
+            // named "flush" is still GET/PUT/DELETE-able as a normal key.
+            if (request.method === 'POST') {
+                switch (path) {
+                    case 'has': {
+                        const keys = (await request.json()) as string[];
+                        const results = await Promise.all(keys.map((k) => this.exists(k)));
+                        return Response.json(results);
+                    }
+                    case 'get-many': {
+                        const keys = (await request.json()) as string[];
+                        const values = await Promise.all(keys.map((k) => this.read(k)));
+                        return Response.json(values);
+                    }
+                    case 'set-many': {
+                        const entries = (await request.json()) as {
+                            key: string;
+                            value: unknown;
+                            ttlSeconds?: number;
+                        }[];
+                        await Promise.all(
+                            entries.map((e) => this.write(e.key, e.value, e.ttlSeconds)),
+                        );
+                        return Response.json({ ok: true });
+                    }
+                    case 'delete-many': {
+                        const keys = (await request.json()) as string[];
+                        await Promise.all(keys.map((k) => this.state.storage.delete(k)));
+                        return Response.json({ ok: true });
+                    }
+                    case 'flush': {
+                        await this.state.storage.deleteAll();
+                        return Response.json({ ok: true });
+                    }
                 }
-                case 'get-many': {
-                    const keys = (await request.json()) as string[];
-                    const values = await Promise.all(keys.map((k) => this.read(k)));
-                    return Response.json(values);
-                }
-                case 'set-many': {
-                    const entries = (await request.json()) as {
-                        key: string;
-                        value: unknown;
-                        ttlSeconds?: number;
-                    }[];
-                    await Promise.all(
-                        entries.map((e) => this.write(e.key, e.value, e.ttlSeconds)),
-                    );
-                    return Response.json({ ok: true });
-                }
-                case 'delete-many': {
-                    const keys = (await request.json()) as string[];
-                    await Promise.all(keys.map((k) => this.state.storage.delete(k)));
-                    return Response.json({ ok: true });
-                }
-                case 'flush': {
-                    await this.state.storage.deleteAll();
-                    return Response.json({ ok: true });
-                }
-                case '':
-                    return new Response('Cossack CacheDurableObject', { status: 200 });
             }
 
+            if (path === '') {
+                return new Response('Cossack CacheDurableObject', { status: 200 });
+            }
+
+            // Key-level REST: /<key>
             switch (request.method) {
                 case 'GET': {
                     const value = await this.read(path);
@@ -408,7 +422,7 @@ export class CacheDurableObject {
     }
 
     private async write(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
-        if (value === undefined || value === null) {
+        if (value === undefined) {
             await this.state.storage.delete(key);
             return;
         }
@@ -452,7 +466,9 @@ export class DurableObjectCacheStore implements CacheStore {
         const res = await this.stub.fetch(`https://cache/${encodeURIComponent(key)}`);
         // Drain the body so the DO-stub connection doesn't linger until GC.
         await res.body?.cancel();
-        return res.status !== 404;
+        if (res.status === 404) return false;
+        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject HAS returned ${res.status}`);
+        return true;
     }
 
     async delete(key: string): Promise<void> {
@@ -619,8 +635,12 @@ function resolveNamedStore(name: string): CacheStore {
 
 function buildStore(spec: CacheStoreSpec): CacheStore {
     ensureBuiltinDrivers();
-    // Cache key: driver + binding (the only binding-dependent fields).
-    const cacheKey = spec.binding ? `${spec.driver}:${spec.binding}` : spec.driver;
+    // Cache key: include all config that changes store behavior for safe reuse.
+    // driver + binding + namespace distinguish e.g. two KV stores on the same
+    // binding but different prefixes. The separator is always present so the
+    // extendCacheDriver() invalidation (which keys on `${driver}:`) works even
+    // for unbound drivers.
+    const cacheKey = `${spec.driver}:${spec.binding ?? ''}:${spec.namespace ?? ''}`;
     const cached = instanceCache.get(cacheKey);
     if (cached) return cached;
 
