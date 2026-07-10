@@ -30,6 +30,10 @@ export type { SessionMiddlewareOptions } from './session-middleware';
 export { runWithSession, ensureSessionAlsWired } from './session-als';
 export type { SessionScope } from './session-als';
 
+// Cache (database-backed driver; structurally compatible with core's CacheStore)
+export { DatabaseCacheStore } from './cache-store';
+export type { CacheItemRow, CacheStoreLike } from './cache-store';
+
 // Dialects (advanced — for custom Kysely instances)
 export { D1Dialect } from './dialects/d1';
 export { LibsqlDialect } from './dialects/libsql';

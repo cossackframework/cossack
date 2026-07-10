@@ -15,6 +15,7 @@ import { addCommand } from './commands/add.js';
 import { langCommand } from './commands/lang.js';
 import { migrationCommand } from './commands/migration.js';
 import { seederCommand } from './commands/seeder.js';
+import { cacheCommand } from './commands/cache.js';
 import { devCommand } from './commands/dev.js';
 import { buildCommand } from './commands/build.js';
 import { startCommand } from './commands/start.js';
@@ -36,6 +37,7 @@ const COMMANDS = {
   lang: { run: langCommand, aliases: [] },
   migration: { run: migrationCommand, aliases: ['migrate'] },
   seeder: { run: seederCommand, aliases: ['seed'] },
+  cache: { run: cacheCommand, aliases: [] },
   // introspection
   routes: { run: routesCommand, aliases: [] },
   info: { run: infoCommand, aliases: [] },
@@ -116,6 +118,7 @@ Commands:
   migration <sub> (migrate)    Run Kysely migrations under src/migrations/.
                                Subcommands: up, down, status.
   seeder <sub> (seed)          Run seeders under src/seeders/. Subcommands: run.
+  cache <subcommand>           Cache tooling. Subcommands: make-table.
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.

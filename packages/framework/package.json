@@ -18,6 +18,10 @@
       "types": "./dist/esm/config.d.ts",
       "import": "./dist/esm/config.js"
     },
+    "./cache": {
+      "types": "./dist/esm/cache.d.ts",
+      "import": "./dist/esm/cache.js"
+    },
     "./client": {
       "types": "./dist/esm/client/index.d.ts",
       "import": "./dist/esm/client/index.js"

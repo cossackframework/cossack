@@ -107,12 +107,14 @@ You don't need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.js
 }
 ```
 
-> **Durable Object mode requires one export.** Cloudflare mandates that DO classes be exported from the Worker entry, so add a single line to your `src/index.ts`:
+> **Durable Object mode requires one export.** Cloudflare mandates that DO classes be exported from the Worker entry, so add `RateLimitDurableObject` to the exports in your `src/index.ts`:
 > ```ts
-> export { AppDurableObject, RateLimitDurableObject } from '@cossackframework/core';
-> // (AppDurableObject is your existing app DO; RateLimitDurableObject is from core)
+> import { AppDurableObject } from '@cossackframework/framework/DurableObject'; // already there
+> import { RateLimitDurableObject } from '@cossackframework/core';
+>
+> export { AppDurableObject, RateLimitDurableObject };
 > ```
-> `"redis"` and `"kv"` modes need **no code changes at all** — bindings/vars only.
+> (Keep `AppDurableObject`'s existing import from the framework — only `RateLimitDurableObject` comes from core.) `"redis"` and `"kv"` modes need **no code changes at all** — bindings/vars only.
 
 A manual `setRateLimitStore(...)` call, if present, always takes precedence over this var.
 

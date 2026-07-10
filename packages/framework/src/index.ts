@@ -11,6 +11,9 @@ const app = createApp();
 
 // Export the Durable Object and the app fetch handler for the Cloudflare runtime
 export { AppDurableObject };
+// CacheDurableObject must be re-exported by apps using the durable-object cache
+// driver (Cloudflare requires DO classes in the Worker entry's export graph).
+export { CacheDurableObject } from './cache';
 export default {
   fetch: app.fetch,
 };
