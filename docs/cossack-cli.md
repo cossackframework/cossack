@@ -159,7 +159,7 @@ cossack d component UserCard
 
 ### `cossack add <feature>`
 
-Add an opinionated, working feature to the current project. Each feature wires its dependencies, scaffolds the necessary files, and registers middleware in `src/config/middlewares.ts`.
+Add an opinionated, working feature to the current project. Each feature wires its dependencies, scaffolds the necessary files, and registers middleware in `src/bootstrap/middlewares.ts`.
 
 ```bash
 cossack add <feature> [options]
@@ -176,7 +176,7 @@ cossack add database --dialect turso
 
 #### `cossack add auth`
 
-Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. Generates a `createAuth`-backed `src/auth.ts` (PBKDF2 password hashing, session create/validate/resolve, password-reset helpers), a `Session` model, a real auth guard middleware, and functional login/register/forgot-password/reset-password pages using `@Server` methods and `@Validate` form fields. Registers `auth.middleware` and `authGuard` in `src/config/middlewares.ts` and wires the Cloudflare `send_email` binding for password-reset emails.
+Adds full working session authentication: `@cossackframework/auth` plus the `database` support it depends on. Generates a `createAuth`-backed `src/auth.ts` (PBKDF2 password hashing, session create/validate/resolve, password-reset helpers), a `Session` model, a real auth guard middleware, and functional login/register/forgot-password/reset-password pages using `@Server` methods and `@Validate` form fields. Registers `auth.middleware` and `authGuard` in `src/bootstrap/middlewares.ts` and wires the Cloudflare `send_email` binding for password-reset emails.
 
 ```bash
 cossack add auth

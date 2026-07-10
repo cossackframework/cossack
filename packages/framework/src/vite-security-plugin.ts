@@ -88,9 +88,10 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (!isClientEnvironment) return;
       if (id.includes('node_modules')) return;
 
-      // Match any path containing a `/config/` segment ending in .ts/.mts.
-      // Covers both `/src/config/app.ts` and nested project paths.
-      if (/(^|\/)config\/[^/]+\.m?ts$/.test(id)) {
+      // Match files in the project's `src/config/` directory. Anchored to
+      // `/src/config/` so it doesn't catch unrelated `/config/` paths in
+      // dependencies or other project subdirectories.
+      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(id)) {
         return `export default {};\n`;
       }
     },

@@ -47,7 +47,7 @@ It also:
 
 - Adds `@cossackframework/database` to `package.json`.
 - (D1) injects a `[[d1_databases]]` binding block into `wrangler.jsonc`.
-- Registers `dbMiddleware` in `src/config/middlewares.ts` (the global request middleware registry).
+- Registers `dbMiddleware` in `src/bootstrap/middlewares.ts` (the global request middleware registry).
 
 Then install deps and apply the migrations:
 
@@ -89,10 +89,10 @@ For **D1**, `getCliClient()` opens the same SQLite file dialect locally with `be
 
 ## Wiring the middleware
 
-`cossack add database` registers the database middleware in **`src/config/middlewares.ts`** — the project's global request middleware registry (Laravel-style "kernel" list). `createApp()` auto-loads this file and runs each middleware on every request. You never edit `src/index.ts`:
+`cossack add database` registers the database middleware in **`src/bootstrap/middlewares.ts`** — the project's global request middleware registry (Laravel-style "kernel" list). `createApp()` auto-loads this file and runs each middleware on every request. You never edit `src/index.ts`:
 
 ```ts
-// src/config/middlewares.ts (maintained by the CLI; edit freely)
+// src/bootstrap/middlewares.ts (maintained by the CLI; edit freely)
 import type { MiddlewareHandler } from 'hono';
 import { dbMiddleware } from '../middlewares/db';
 
@@ -115,7 +115,7 @@ export const dbMiddleware = createDbMiddleware({
 });
 ```
 
-> **Why a registry?** It decouples *defining* a middleware (in `src/middlewares/`) from *registering* it (one line in `src/config/middlewares.ts`). Adding/removing a feature is a clean one-line edit instead of surgery on your `createApp()` call. See [Middlewares](/docs/middlewares.md).
+> **Why a registry?** It decouples *defining* a middleware (in `src/middlewares/`) from *registering* it (one line in `src/bootstrap/middlewares.ts`). Adding/removing a feature is a clean one-line edit instead of surgery on your `createApp()` call. See [Middlewares](/docs/middlewares.md).
 
 For **stateless HTTP clients** (Turso), you can pass a single shared instance instead of a factory in `src/middlewares/db.ts`:
 

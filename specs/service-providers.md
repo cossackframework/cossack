@@ -30,7 +30,7 @@ So a Service Provider bundles four jobs: **DI registration + middleware/route re
 | Laravel SP job | Cossack equivalent | Where |
 |---|---|---|
 | DI container bindings | `@Service()` decorator + `DIContainer` (singleton cache, ctor injection) | `packages/core/src/shared/container.ts` — see [service.md](./service.md) |
-| Register global request middleware | `src/config/middlewares.ts` registry, auto-loaded via `virtual:cossack-middlewares` | `packages/framework/src/vite-plugin.ts`, `router.ts` |
+| Register global request middleware | `src/bootstrap/middlewares.ts` registry, auto-loaded via `virtual:cossack-middlewares` | `packages/framework/src/vite-plugin.ts`, `router.ts` |
 | Register routes | File-based `src/pages/` (auto-discovered via `import.meta.glob`) | `packages/framework/src/vite-plugin.ts` (`cossackPages`) |
 | One-time boot/lifecycle logic | Vite plugins (build-time) + request middleware + `src/index.ts` module top-level (once per isolate) | `vite.config.ts`, `src/index.ts` |
 | Package / feature integration | `cossack add <feature>` CLI scaffolds files + registry entries | `packages/cossack/src/commands/add.js` |
@@ -50,7 +50,7 @@ Laravel scans installed packages and boots their providers on every process star
 A provider layer would overlap with three existing registration systems:
 
 - `@Service` / `DIContainer` (DI)
-- `src/config/middlewares.ts` (request middleware)
+- `src/bootstrap/middlewares.ts` (request middleware)
 - Vite plugins (build-time discovery/generation)
 
 Adding a fourth — a `register()`/`boot()` registry — increases conceptual surface area with marginal payoff and forces a "which mechanism do I use?" decision on every integration. The existing three have clear, non-overlapping roles.
@@ -83,7 +83,7 @@ export const providers = [
 ];
 ```
 
-This would be auto-loaded the same way as `src/config/middlewares.ts`. It is deliberately smaller than Laravel's SPs (no per-package auto-discovery, no deferred providers, no event system) and should only be added when the triggers below fire.
+This would be auto-loaded the same way as `src/bootstrap/middlewares.ts`. It is deliberately smaller than Laravel's SPs (no per-package auto-discovery, no deferred providers, no event system) and should only be added when the triggers below fire.
 
 ---
 
@@ -101,5 +101,5 @@ Until then, a Service Provider system would add abstraction without solving a co
 ## Related
 
 - [service.md](./service.md) — the DI / `@Service()` system that replaces `register()` bindings.
-- [middleware.md](./middleware.md) — global request middleware registry (`src/config/middlewares.ts`) + route-level `@Page({ middlewares })`.
+- [middleware.md](./middleware.md) — global request middleware registry (`src/bootstrap/middlewares.ts`) + route-level `@Page({ middlewares })`.
 - [architecture.md](./architecture.md) — package separation and request lifecycle.

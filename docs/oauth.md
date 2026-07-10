@@ -92,11 +92,11 @@ The `secret` signs the state cookie. Generate one with, for example,
 
 ## 3. Mount the routes
 
-Register `auth.middleware` in `src/config/middlewares.ts` (the registry
+Register `auth.middleware` in `src/bootstrap/middlewares.ts` (the registry
 `createApp()` auto-loads), then mount the OAuth routes in `src/index.ts`:
 
 ```ts
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono';
 import { auth } from '../auth';
 const middlewares: MiddlewareHandler[] = [auth.middleware];

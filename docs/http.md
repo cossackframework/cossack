@@ -453,14 +453,14 @@ async post() {
 ### Setup
 
 Sessions require the database package and its middleware. Run `cossack add
-database`, then register the session middleware in `src/config/middlewares.ts`:
+database`, then register the session middleware in `src/bootstrap/middlewares.ts`:
 
 ```typescript
 // src/middlewares/session.ts
 import { createSessionMiddleware } from '@cossackframework/database';
 export const sessionMiddleware = createSessionMiddleware();
 
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import { sessionMiddleware } from '../middlewares/session';
 export const middlewares = [sessionMiddleware];
 ```
