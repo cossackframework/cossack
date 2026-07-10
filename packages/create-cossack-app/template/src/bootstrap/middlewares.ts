@@ -1,4 +1,4 @@
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 //
 // Global request middleware registry (Laravel-style "kernel" list).
 // `createApp()` auto-loads this file and registers each middleware with

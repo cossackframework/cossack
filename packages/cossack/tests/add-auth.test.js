@@ -87,9 +87,9 @@ describe('add auth', () => {
     expect(register).toContain('registerUser');
   });
 
-  it('registers auth middleware in src/config/middlewares.ts', async () => {
+  it('registers auth middleware in src/bootstrap/middlewares.ts', async () => {
     await addCommand(['auth'], ctx);
-    const mw = fs.readFileSync(path.join(tmp, 'src/config/middlewares.ts'), 'utf8');
+    const mw = fs.readFileSync(path.join(tmp, 'src/bootstrap/middlewares.ts'), 'utf8');
     expect(mw).toContain('auth.middleware');
     expect(mw).toContain('authGuard');
   });

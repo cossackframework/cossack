@@ -28,24 +28,20 @@ function writeFile(dir: string, name: string, content: string): void {
 
 describe('ssg-config', () => {
   let dir: string;
-  const savedBaseUrl = process.env.BASE_URL;
-  const savedLegacy = process.env.VITE_SSG_BASE_URL;
+  const savedAppUrl = process.env.APP_URL;
 
   beforeEach(() => {
     dir = tempDir();
-    delete process.env.BASE_URL;
-    delete process.env.VITE_SSG_BASE_URL;
+    delete process.env.APP_URL;
   });
 
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
-    if (savedBaseUrl === undefined) delete process.env.BASE_URL;
-    else process.env.BASE_URL = savedBaseUrl;
-    if (savedLegacy === undefined) delete process.env.VITE_SSG_BASE_URL;
-    else process.env.VITE_SSG_BASE_URL = savedLegacy;
+    if (savedAppUrl === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = savedAppUrl;
   });
 
-  it('reads BASE_URL from wrangler.jsonc (with comments)', () => {
+  it('reads APP_URL from wrangler.jsonc (with comments)', () => {
     writeFile(
       dir,
       'wrangler.jsonc',
@@ -54,7 +50,7 @@ describe('ssg-config', () => {
         "name": "app",
         /* block comment */
         "vars": {
-          "BASE_URL": "https://wrangler-jsonc.test"
+          "APP_URL": "https://wrangler-jsonc.test"
         }
       }`
     );
@@ -70,7 +66,7 @@ describe('ssg-config', () => {
         // leading comment
         "name": "https://not-this.test", // trailing comment
         "vars": {
-          "BASE_URL": "https://preserved.test" // inline
+          "APP_URL": "https://preserved.test" // inline
         }
       }`
     );
@@ -84,7 +80,7 @@ describe('ssg-config', () => {
       'wrangler.jsonc',
       `{
         "vars": {
-          "BASE_URL": "https://trailing.test",
+          "APP_URL": "https://trailing.test",
         }
       }`
     );
@@ -92,14 +88,14 @@ describe('ssg-config', () => {
     expect(getSiteUrl({ projectRoot: dir })).toBe('https://trailing.test');
   });
 
-  it('reads BASE_URL from wrangler.toml when no .jsonc', () => {
+  it('reads APP_URL from wrangler.toml when no .jsonc', () => {
     writeFile(
       dir,
       'wrangler.toml',
       `name = "app"
       # a comment
       [vars]
-      BASE_URL = "https://wrangler-toml.test"
+      APP_URL = "https://wrangler-toml.test"
       `
     );
 
@@ -111,61 +107,38 @@ describe('ssg-config', () => {
       dir,
       'wrangler.toml',
       `[vars]
-      BASE_URL = https://bare.test
+      APP_URL = https://bare.test
       `
     );
 
     expect(getSiteUrl({ projectRoot: dir })).toBe('https://bare.test');
   });
 
-  it('reads BASE_URL from .env when no wrangler file', () => {
-    writeFile(dir, '.env', `# comment\nBASE_URL=https://dotenv.test\n`);
+  it('reads APP_URL from .env when no wrangler file', () => {
+    writeFile(dir, '.env', `# comment\nAPP_URL=https://dotenv.test\n`);
 
     expect(getSiteUrl({ projectRoot: dir })).toBe('https://dotenv.test');
   });
 
   it('strips quotes in .env values', () => {
-    writeFile(dir, '.env', `BASE_URL="https://quoted.test"\n`);
+    writeFile(dir, '.env', `APP_URL="https://quoted.test"\n`);
 
     expect(getSiteUrl({ projectRoot: dir })).toBe('https://quoted.test');
   });
 
-  it('process.env.BASE_URL overrides wrangler.jsonc', () => {
+  it('process.env.APP_URL overrides wrangler.jsonc', () => {
     writeFile(
       dir,
       'wrangler.jsonc',
-      `{ "vars": { "BASE_URL": "https://wrangler.test" } }`
+      `{ "vars": { "APP_URL": "https://wrangler.test" } }`
     );
-    process.env.BASE_URL = 'https://shell.test';
+    process.env.APP_URL = 'https://shell.test';
 
     expect(getSiteUrl({ projectRoot: dir })).toBe('https://shell.test');
-  });
-
-  it('falls back to legacy VITE_SSG_BASE_URL when nothing else is set', () => {
-    process.env.VITE_SSG_BASE_URL = 'https://legacy.test';
-
-    expect(getSiteUrl({ projectRoot: dir })).toBe('https://legacy.test');
-  });
-
-  it('falls back to legacy VITE_SSG_BASE_URL in .env', () => {
-    writeFile(dir, '.env', `VITE_SSG_BASE_URL=https://legacy-env.test\n`);
-
-    expect(getSiteUrl({ projectRoot: dir })).toBe('https://legacy-env.test');
   });
 
   it('returns DEFAULT_SITE_URL when nothing is configured', () => {
     expect(getSiteUrl({ projectRoot: dir })).toBe(DEFAULT_SITE_URL);
     expect(DEFAULT_SITE_URL).toBe('https://example.com');
-  });
-
-  it('prefers wrangler.jsonc BASE_URL over legacy VITE_SSG_BASE_URL', () => {
-    writeFile(
-      dir,
-      'wrangler.jsonc',
-      `{ "vars": { "BASE_URL": "https://wrangler.test" } }`
-    );
-    process.env.VITE_SSG_BASE_URL = 'https://legacy.test';
-
-    expect(getSiteUrl({ projectRoot: dir })).toBe('https://wrangler.test');
   });
 });

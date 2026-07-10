@@ -27,11 +27,11 @@
     "R2_ACCOUNT_API_TOKEN": "kr62M5tudIRqs8jIU3Z2BU4vc6OMVq273W4BbAiV",
     "R2_BUCKET_NAME": "serverdash",
     "R2_PUBLIC_URL": "https://data.serverdash.org",
-    "BASE_URL": "https://cossack.dev",
+    "APP_URL": "https://cossack.dev",
     // Default locale for localization (`__('key')`). Override per-request via
     // the `cossack_locale` cookie or Accept-Language (when autoDetectBrowser
     // is enabled in createApp({ i18n: { ... } })). Defaults to "en" in code.
     "APP_LOCALE": "en",
-    "COSSACK_SECRET": "PLEASE_CHANGE_THIS_SECRET"
+    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET"
   }
 }

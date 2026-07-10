@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import url from 'url';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { cossackPages, cossackLang, cossackMiddlewares } from './src/vite-plugin';
+import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin';
 import { cossackSecurityPlugin } from './src/vite-security-plugin';
 
 function cossackDevTools(): Plugin {
@@ -85,6 +85,7 @@ export default defineConfig({
     cossackPages(),
     cossackLang(),
     cossackMiddlewares(),
+    cossackConfig(),
     cossackDevTools(),
   ],
   resolve: {

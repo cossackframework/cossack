@@ -37,3 +37,4 @@ Thumbs.db
 test-results
 .last-run.json
 .claude
+reasonix.toml

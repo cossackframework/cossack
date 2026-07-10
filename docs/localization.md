@@ -245,7 +245,7 @@ Pluralization also works with translation-strings-as-keys.
 
 On Cloudflare Workers, a single isolate serves many concurrent requests. To prevent locale races, the framework wraps each request in an `AsyncLocalStorage` scope:
 
-1. The **locale middleware** runs before SSR and resolves the locale (cookie → `Accept-Language` → `APP_LOCALE` → `en`).
+1. The **locale middleware** runs before SSR and resolves the locale (cookie → `Accept-Language` → `config('app.locale')` → `en`).
 2. It loads the catalog and runs the rest of the request inside the ALS scope.
 3. `__()` and `getLocale()` read from the scope, so every visitor gets the right locale.
 

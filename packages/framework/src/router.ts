@@ -30,6 +30,7 @@ import { App } from './App';
 import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
+import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
@@ -46,6 +47,7 @@ import { createLocaleMiddleware } from './middlewares/locale';
 import { createFlashMiddleware } from './middlewares/flash';
 import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
+import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -317,7 +319,33 @@ export function createApp(options: CreateAppOptions = {}) {
   // work from anywhere downstream (including the user middlewares below).
   app.use('*', createRequestContextMiddleware());
 
-  // Global request middlewares from `src/config/middlewares.ts` (db client,
+  // Config middleware — evaluates each config factory from `src/config/*.ts`
+  // with the request's env bindings and wraps the remainder of the request in
+  // a per-request AsyncLocalStorage scope so `config()` / `env()` resolve the
+  // right values for each visitor. Registered early so every downstream
+  // middleware and handler can read config. Absent `src/config/` → no-op
+  // (the factories object is empty). Workers-correct: env bindings (`c.env`)
+  // are only available inside the request handler, so config is built per
+  // request, not once at module load.
+  app.use('*', async (c, next) => {
+    const envBindings = c.env as unknown as Record<string, unknown>;
+    const envFn: EnvFunction = (key, def) => {
+      const v = envBindings?.[key];
+      return v !== undefined && v !== null ? String(v) : def ?? '';
+    };
+    const built: Record<string, unknown> = {};
+    for (const [name, factory] of Object.entries(configFactories as Record<string, unknown>)) {
+      if (typeof factory !== 'function') {
+        throw new Error(
+          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
+        );
+      }
+      built[name] = (factory as ConfigFactory)({ env: envFn });
+    }
+    return runWithConfig({ env: envBindings, config: built }, () => next());
+  });
+
+  // Global request middlewares from `src/bootstrap/middlewares.ts` (db client,
   // auth session, feature flags, ...). Each is registered in array order,
   // before the locale middleware. The registry is the Laravel-style "kernel"
   // list — definitions live in `src/middlewares/*.ts`. Absent file → no-op.
@@ -332,7 +360,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   // Flash middleware — two-phase signed-cookie lifecycle for flash data
   // (POST writes → GET reads once). No-op (no cookie, no outgoing data) when
-  // flash isn't used; throws only if flash is used without a COSSACK_SECRET.
+  // flash isn't used; throws only if flash is used without an APP_SECRET.
   app.use('*', createFlashMiddleware());
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {

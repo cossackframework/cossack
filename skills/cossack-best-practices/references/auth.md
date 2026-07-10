@@ -85,13 +85,13 @@ export const loginHandler = auth.createLoginHandler({
 
 ## 4. Integrate
 
-Register `auth.middleware` in `src/config/middlewares.ts` (the registry
+Register `auth.middleware` in `src/bootstrap/middlewares.ts` (the registry
 `createApp()` auto-loads — there is **no** `createApp({ authMiddleware })`
 option). Then either use a `@Server` method on the login page (recommended) or
 mount a raw login route in `src/index.ts`:
 
 ```typescript
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono';
 import { auth } from '../auth';
 const middlewares: MiddlewareHandler[] = [auth.middleware];

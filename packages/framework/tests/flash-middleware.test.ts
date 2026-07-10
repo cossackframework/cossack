@@ -11,10 +11,10 @@ const SECRET = 'flash-test-secret-16-chars-min';
 /**
  * Build a Hono app with the flash middleware + a couple of test routes that
  * exercise the two-phase cookie lifecycle. Env (with the secret) is passed via
- * app.fetch's second argument so the middleware's `c.env.COSSACK_SECRET` resolves.
+ * app.fetch's second argument so the middleware's `c.env.APP_SECRET` resolves.
  */
 function makeApp() {
-    const app = new Hono<{ Bindings: { COSSACK_SECRET?: string } }>();
+    const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
     app.use('*', createFlashMiddleware());
 
     // POST handler: accumulates flash data, then redirects.
@@ -57,7 +57,7 @@ async function dispatch(
         method: init.method ?? 'GET',
         headers,
     });
-    return app.fetch(req, { COSSACK_SECRET: SECRET });
+    return app.fetch(req, { APP_SECRET: SECRET });
 }
 
 /** Extract the Set-Cookie value for a given name from a Response. */
@@ -98,7 +98,7 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
             method: 'POST',
             headers: { referer: 'https://test/form' },
         });
-        const res = await app.fetch(req, { COSSACK_SECRET: SECRET });
+        const res = await app.fetch(req, { APP_SECRET: SECRET });
         expect(res.status).toBe(302);
         expect(res.headers.get('Location')).toBe('https://test/form');
         // Flash cookie was set (the whole point of the redirect-with-flash flow).
@@ -132,11 +132,11 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
     });
 
     it('does not set a flash cookie when the handler flashes nothing', async () => {
-        const app = new Hono<{ Bindings: { COSSACK_SECRET?: string } }>();
+        const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
         app.use('*', createFlashMiddleware());
         app.get('/noop', async (c) => c.text('ok'));
 
-        const res = await app.fetch(new Request('https://test/noop'), { COSSACK_SECRET: SECRET });
+        const res = await app.fetch(new Request('https://test/noop'), { APP_SECRET: SECRET });
         expect(res.headers.getSetCookie?.() ?? []).toEqual([]);
     });
 });

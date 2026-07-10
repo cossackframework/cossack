@@ -52,9 +52,16 @@ declare module 'virtual:cossack-lang' {
 
 declare module 'virtual:cossack-middlewares' {
   import type { MiddlewareHandler } from 'hono';
-  /** Ordered list of global request middlewares from `src/config/middlewares.ts`. */
+  /** Ordered list of global request middlewares from `src/bootstrap/middlewares.ts`. */
   const middlewares: MiddlewareHandler[];
   export default middlewares;
+}
+
+declare module 'virtual:cossack-config' {
+  import type { ConfigFactory } from './config';
+  /** Config factories from `src/config/*.ts`, keyed by file name (no extension). */
+  const configs: Record<string, ConfigFactory>;
+  export default configs;
 }
 
 // Programmatic TS loader used by the `cossack ssg` CLI to import user `.ts`

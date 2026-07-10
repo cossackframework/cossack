@@ -15,6 +15,7 @@ import {
 } from '@cossackframework/core';
 import { App } from './App';
 import { renderRoot, TemplateHelpers } from './root';
+import { runWithConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config';
 import type { Context } from 'hono';
 
 // Re-export the PageOptions and SsgOptions for convenience
@@ -53,11 +54,11 @@ import { filePathToRoutePath, getModulePreloads } from './route-ids';
  * the `virtual:cossack-lang` module isn't available — read `src/lang/*.json`
  * directly from disk and seed the i18n runtime.
  *
- * The rendered locale is `process.env.APP_LOCALE` (or `'en'`). Per-locale
+ * The rendered locale is `config('app.locale')` (or `'en'`). Per-locale
  * static output is a follow-up; today every page renders once in the default.
  */
 let ssgLocaleInitialized = false;
-function ensureSsgLocaleInitialized(projectRoot: string): void {
+function ensureSsgLocaleInitialized(projectRoot: string, requestedDefault?: string): void {
     if (ssgLocaleInitialized) return;
     ssgLocaleInitialized = true;
     const langDir = path.resolve(projectRoot, 'src', 'lang');
@@ -75,12 +76,13 @@ function ensureSsgLocaleInitialized(projectRoot: string): void {
     }
     setSupportedLocales(locales.length > 0 ? locales : [DEFAULT_LOCALE]);
     // Resolve a default that is guaranteed to have a catalog on disk. Prefer
-    // APP_LOCALE when it exists; otherwise the first discovered locale; only
-    // fall back to 'en' when there are no catalogs at all. This ensures the
-    // `__()` missing-key fallback chain always targets a real catalog.
-    const requestedDefault = process.env.APP_LOCALE || DEFAULT_LOCALE;
-    const resolvedDefault = locales.includes(requestedDefault)
-        ? requestedDefault
+    // the passed-in locale (from config('app.locale'), which reads APP_LOCALE);
+    // otherwise the first discovered locale; only fall back to 'en' when there
+    // are no catalogs at all. This ensures the `__()` missing-key fallback
+    // chain always targets a real catalog.
+    const requested = requestedDefault || DEFAULT_LOCALE;
+    const resolvedDefault = locales.includes(requested)
+        ? requested
         : locales[0] || DEFAULT_LOCALE;
     setDefaultLocale(resolvedDefault);
     for (const locale of locales) {
@@ -181,11 +183,8 @@ export async function renderSsgPage(
   htmlTemplate?: HtmlTemplate,
   pageFilePath?: string,
   componentRouteId?: string,
+  configFactories?: Record<string, ConfigFactory>,
 ): Promise<string> {
-  // Seed the i18n runtime from `src/lang/*.json` (one-time) so SSG output
-  // renders in the default locale. Reads the project root from cwd.
-  ensureSsgLocaleInitialized(process.cwd());
-
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
 
@@ -193,7 +192,42 @@ export async function renderSsgPage(
   const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
 
   const user: User = { id: 'ssg-user' };
-  const env = {};
+
+  // Build the config store from the provided factories so `config()` / `env()`
+  // resolve the same way as in SSR. SSG has no live request bindings, so we
+  // inject the resolved `baseUrl` as `APP_URL` (the same binding SSR reads from
+  // `c.env`) so `config('app.url')` returns the correct value. Other bindings
+  // default to empty — config factories fall back to their defaults.
+  const envBindings: Record<string, unknown> = { APP_URL: baseUrl };
+  const envFn: EnvFunction = (key, def) => {
+    const v = envBindings?.[key];
+    return v !== undefined && v !== null ? String(v) : def ?? '';
+  };
+  const builtConfig: Record<string, unknown> = {};
+  if (configFactories) {
+    for (const [name, factory] of Object.entries(configFactories)) {
+      if (typeof factory !== 'function') {
+        throw new Error(
+          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
+        );
+      }
+      builtConfig[name] = (factory as ConfigFactory)({ env: envFn });
+    }
+  }
+  const configStore: ConfigStore = { env: envBindings, config: builtConfig };
+
+  // Seed the i18n runtime from `src/lang/*.json` (one-time) so SSG output
+  // renders in the default locale. Done AFTER building the config store so the
+  // default locale can be read from `config('app.locale')` (which in turn reads
+  // the `APP_LOCALE` env var via `src/config/app.ts`). Reads the project root
+  // from cwd. Note: this runs outside `runWithConfig` because it is a one-time
+  // init — we pass the resolved locale explicitly.
+  const configLocale = (builtConfig.app as Record<string, unknown> | undefined)?.locale;
+  ensureSsgLocaleInitialized(process.cwd(), typeof configLocale === 'string' ? configLocale : undefined);
+
+  // Wrap the entire render in the config ALS scope so any `config()` / `env()`
+  // calls during bootstrap/render resolve correctly (mirrors the SSR middleware).
+  return runWithConfig(configStore, async () => {
 
   // Bootstrap App
   if (!AppComponent) {
@@ -207,7 +241,7 @@ export async function renderSsgPage(
     );
   }
   const appInstance = new (AppComponent ?? App)();
-  await appInstance.bootstrap({ context: mockContext, user, env, page: routePath });
+  await appInstance.bootstrap({ context: mockContext, user, env: envBindings, page: routePath });
 
   // Bootstrap Layouts
   const layoutInstances: Cossack[] = [];
@@ -217,7 +251,7 @@ export async function renderSsgPage(
   for (const layoutItem of layoutPaths) {
     const LComp = layouts[layoutItem.path].default;
     const lInst = new LComp();
-    await lInst.bootstrap({ context: mockContext, user, env, page: routePath });
+    await lInst.bootstrap({ context: mockContext, user, env: envBindings, page: routePath });
     layoutInstances.push(lInst);
     layoutStates[layoutItem.path] = lInst.getInitialState();
   }
@@ -234,7 +268,7 @@ export async function renderSsgPage(
   await pageInstance.bootstrap({
     context: mockContext,
     user,
-    env,
+    env: envBindings,
     page: routePath,
     initialState,
   });
@@ -316,6 +350,7 @@ export async function renderSsgPage(
   });
 
   return html;
+  }); // end runWithConfig
 }
 
 /**

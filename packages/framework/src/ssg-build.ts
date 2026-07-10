@@ -5,6 +5,7 @@ import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } f
 import { generateSitemapFromUrls } from './sitemap-generator';
 import { getSiteUrl } from './ssg-config';
 import type { RoutesManifest } from './route-ids';
+import type { ConfigFactory } from './config';
 
 /** Native dynamic import (the tsx loader registered by the CLI resolves `.ts`). */
 const importModule = (absPath: string) => import(pathToFileURL(absPath).href);
@@ -76,6 +77,10 @@ export async function buildSsg(options: BuildSsgOptions = {}): Promise<void> {
     }
   }
 
+  // --- Load config factories from `src/config/*.ts` (mirrors the Vite virtual
+  // module, since SSG runs through tsx outside of Vite) ---
+  const configFactories = await loadConfigFactories(projectRoot);
+
   // --- Collect SSG routes ---
   const ssgRoutes = collectSsgRoutes(loadedPages, loadedLayouts as Record<string, { default: new () => any }>);
   console.log(`Found ${ssgRoutes.length} SSG routes`);
@@ -108,6 +113,7 @@ export async function buildSsg(options: BuildSsgOptions = {}): Promise<void> {
           htmlTemplate,
           route.filePath,
           manifest.filePathToId[route.filePath],
+          configFactories,
         );
 
         const outputFilePath = getOutputFilePath(routePath, outDir);
@@ -178,6 +184,39 @@ async function loadHtmlTemplate(
     console.warn(`[cossack/ssg] Could not load html template from ${resolved}: ${e}`);
     return undefined;
   }
+}
+
+/**
+ * Loads config factories from `src/config/*.ts` (if present). Each file's
+ * default export is a factory `({ env }) => ({...})` evaluated per render.
+ * Mirrors the `virtual:cossack-config` Vite module, since SSG runs outside of
+ * Vite (via tsx). Absent `src/config/` → empty record (no-op).
+ */
+async function loadConfigFactories(
+  projectRoot: string,
+): Promise<Record<string, ConfigFactory>> {
+  const configDir = path.resolve(projectRoot, 'src', 'config');
+  const factories: Record<string, ConfigFactory> = {};
+  if (!fs.existsSync(configDir)) return factories;
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(configDir).filter((f) => f.endsWith('.ts'));
+  } catch {
+    return factories;
+  }
+  for (const file of entries) {
+    const fullPath = path.join(configDir, file);
+    try {
+      const mod: any = await importModule(fullPath);
+      if (typeof mod.default === 'function') {
+        const name = file.replace(/\.ts$/, '');
+        factories[name] = mod.default as ConfigFactory;
+      }
+    } catch (e) {
+      console.warn(`[cossack/ssg] Could not load config: ${file} from ${fullPath}: ${e}`);
+    }
+  }
+  return factories;
 }
 
 export function getOutputFilePath(routePath: string, outputDir: string): string {

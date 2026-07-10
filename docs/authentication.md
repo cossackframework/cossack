@@ -106,10 +106,10 @@ export const auth = createAuth<User>({
 
 ### 3. Register the Session Middleware
 
-`createApp()` auto-loads global middleware from `src/config/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request — you do **not** pass it to `createApp`:
+`createApp()` auto-loads global middleware from `src/bootstrap/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request — you do **not** pass it to `createApp`:
 
 ```typescript
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono';
 import { auth } from '../auth';
 

@@ -8,5 +8,5 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "worker-configuration.d.ts"],
-  "exclude": ["src/pages/**", "src/components/**", "src/config/**"]
+  "exclude": ["src/pages/**", "src/components/**"]
 }

@@ -373,13 +373,13 @@ request (read-once semantics) and seeds a per-request store so `flashed()` /
 the response after the handler returns.
 
 **Signing secret required.** Because flash messages render into HTML, the
-cookie is HMAC-signed to prevent tampering. Set `COSSACK_SECRET` (min 16 chars)
+cookie is HMAC-signed to prevent tampering. Set `APP_SECRET` (min 16 chars)
 in your wrangler env:
 
 ```jsonc
 // wrangler.jsonc
 {
-  "vars": { "COSSACK_SECRET": "your-long-random-secret-here" }
+  "vars": { "APP_SECRET": "your-long-random-secret-here" }
 }
 ```
 
@@ -453,14 +453,14 @@ async post() {
 ### Setup
 
 Sessions require the database package and its middleware. Run `cossack add
-database`, then register the session middleware in `src/config/middlewares.ts`:
+database`, then register the session middleware in `src/bootstrap/middlewares.ts`:
 
 ```typescript
 // src/middlewares/session.ts
 import { createSessionMiddleware } from '@cossackframework/database';
 export const sessionMiddleware = createSessionMiddleware();
 
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import { sessionMiddleware } from '../middlewares/session';
 export const middlewares = [sessionMiddleware];
 ```
@@ -501,7 +501,7 @@ export const sessionMiddleware = createSessionMiddleware({
 | **Lifetime** | One redirect (read-once) | Long-lived (until logout/expiry) |
 | **Storage** | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
 | **Best for** | Success/error messages, old form input | Carts, wizards, prefs, A/B |
-| **Requires** | `COSSACK_SECRET` | `cossack add database` |
+| **Requires** | `APP_SECRET` | `cossack add database` |
 
 ## Sending Responses
 

@@ -118,12 +118,10 @@ cossack ssg \
 ### Custom Base URL
 
 The base URL used for sitemap and canonical URLs is read automatically from
-your project config (`wrangler.jsonc` `vars.BASE_URL`, `.env`, or the `BASE_URL`
+your project config (`wrangler.jsonc` `vars.APP_URL`, `.env`, or the `APP_URL`
 shell env). See [Sitemap → Base URL](./sitemap.md#base-url) for the full
 resolution order. You can also override it per-build with
 `cossack ssg --base-url …`.
-
-The legacy `VITE_SSG_BASE_URL` env var is still respected as a fallback.
 
 ## How SSG resolves your App + html template
 

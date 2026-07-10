@@ -7,13 +7,11 @@
  * template.
  *
  * Resolution order (first match wins):
- *   1. process.env.BASE_URL                    — explicit shell/CI override
- *   2. wrangler.jsonc -> vars.BASE_URL
- *   3. wrangler.toml  -> [vars] BASE_URL
- *   4. .env            -> BASE_URL
- *   5. process.env.VITE_SSG_BASE_URL           — legacy shell env
- *   6. .env            -> VITE_SSG_BASE_URL     — legacy .env
- *   7. DEFAULT_SITE_URL                        — final fallback
+ *   1. process.env.APP_URL                     — explicit shell/CI override
+ *   2. wrangler.jsonc -> vars.APP_URL
+ *   3. wrangler.toml  -> [vars] APP_URL
+ *   4. .env            -> APP_URL
+ *   5. DEFAULT_SITE_URL                        — final fallback
  */
 
 import { createRequire } from 'node:module';
@@ -21,9 +19,10 @@ import * as path from 'node:path';
 
 /**
  * Obtain the real Node.js `fs`. The framework's vitest configuration inherits
- * the Cloudflare SSR/Workers environment which replaces `node:fs` with an
- * unenv shim; using `createRequire` bypasses Vite's resolver so the real
- * built-in is used both in tests and under `tsx` (where this is a no-op).
+ * the Cloudflare SSR/Workers environment, which replaces `node:fs` with an
+ * unenv shim that does not implement the file system. Going through
+ * `createRequire` bypasses Vite's SSR resolver so we get the real Node.js
+ * built-in.
  */
 const require = createRequire(import.meta.url);
 const fs: typeof import('node:fs') = require('node:fs');
@@ -43,8 +42,8 @@ export function getSiteUrl(options?: GetSiteUrlOptions): string {
   const root = options?.projectRoot ?? process.cwd();
 
   // 1. Explicit shell/CI override (highest precedence).
-  if (process.env.BASE_URL) {
-    return process.env.BASE_URL;
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
   }
 
   // 2. wrangler.jsonc
@@ -55,23 +54,13 @@ export function getSiteUrl(options?: GetSiteUrlOptions): string {
   const fromToml = readWranglerToml(root);
   if (fromToml) return fromToml;
 
-  // 4. .env -> BASE_URL
+  // 4. .env -> APP_URL
   const dotEnv = readDotEnv(root);
-  if (dotEnv.BASE_URL) {
-    return dotEnv.BASE_URL;
+  if (dotEnv.APP_URL) {
+    return dotEnv.APP_URL;
   }
 
-  // 5. Legacy shell env
-  if (process.env.VITE_SSG_BASE_URL) {
-    return process.env.VITE_SSG_BASE_URL;
-  }
-
-  // 6. Legacy .env
-  if (dotEnv.VITE_SSG_BASE_URL) {
-    return dotEnv.VITE_SSG_BASE_URL;
-  }
-
-  // 7. Final fallback
+  // 5. Final fallback
   return DEFAULT_SITE_URL;
 }
 
@@ -155,7 +144,7 @@ function stripJsonComments(str: string): string {
 }
 
 /**
- * Read `vars.BASE_URL` from `wrangler.jsonc` at the given root.
+ * Read `vars.APP_URL` from `wrangler.jsonc` at the given root.
  * Returns the value or `undefined` if not present / file missing / parse error.
  */
 function readWranglerJsonc(root: string): string | undefined {
@@ -177,7 +166,7 @@ function readWranglerJsonc(root: string): string | undefined {
   if (parsed && typeof parsed === 'object') {
     const vars = (parsed as { vars?: unknown }).vars;
     if (vars && typeof vars === 'object') {
-      const value = (vars as Record<string, unknown>).BASE_URL;
+      const value = (vars as Record<string, unknown>).APP_URL;
       if (typeof value === 'string' && value.length > 0) {
         return value;
       }
@@ -187,7 +176,7 @@ function readWranglerJsonc(root: string): string | undefined {
 }
 
 /**
- * Read `BASE_URL` from the `[vars]` table of `wrangler.toml` at the given root.
+ * Read `APP_URL` from the `[vars]` table of `wrangler.toml` at the given root.
  * Minimal TOML parser — only handles the `vars` table and quoted/unquoted
  * scalar values, which is all we need for this config. Returns the value or
  * `undefined` if not present / file missing.
@@ -209,7 +198,7 @@ function readWranglerToml(root: string): string | undefined {
 }
 
 /**
- * Extract `BASE_URL` from the `[vars]` table of TOML content.
+ * Extract `APP_URL` from the `[vars]` table of TOML content.
  * Strips `#` line comments and supports quoted (`"..."`/`'...'`) and bare
  * scalar values.
  */
@@ -234,7 +223,7 @@ function parseTomlVars(content: string): string | undefined {
     if (eq === -1) continue;
 
     const key = line.slice(0, eq).trim();
-    if (key !== 'BASE_URL') continue;
+    if (key !== 'APP_URL') continue;
 
     let value = line.slice(eq + 1).trim();
     // Strip surrounding quotes.

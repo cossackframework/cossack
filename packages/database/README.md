@@ -49,10 +49,10 @@ The generated `src/db/config.ts` also exports a `getCliClient()` for the migrati
 
 ### Wiring the middleware
 
-`cossack add database` registers the middleware in `src/config/middlewares.ts` — the project's global request middleware registry, which `createApp()` auto-loads. No `src/index.ts` edits:
+`cossack add database` registers the middleware in `src/bootstrap/middlewares.ts` — the project's global request middleware registry, which `createApp()` auto-loads. No `src/index.ts` edits:
 
 ```ts
-// src/config/middlewares.ts
+// src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono'
 import { dbMiddleware } from '../middlewares/db'
 
