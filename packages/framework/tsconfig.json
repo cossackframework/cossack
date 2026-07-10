@@ -24,6 +24,9 @@
       ],
       "@cossackframework/framework/config": [
         "./src/config.ts"
+      ],
+      "@cossackframework/framework/cache": [
+        "./src/cache.ts"
       ]
     }
   },

@@ -731,6 +731,45 @@ export async function down(db: Kysely<any>): Promise<void> {
 `;
 }
 
+// --- Cache table migration (`cossack cache:make-table`) ---------------------
+
+/**
+ * Migration stub for the database cache driver's `cache_items` table.
+ * Run it afterwards with `cossack migration up`.
+ */
+export function createCacheTableMigration() {
+  return `import type { Kysely } from '@cossackframework/database';
+
+// Table for the database cache driver (@cossackframework/database's
+// DatabaseCacheStore). Values are JSON text; expires_at is epoch milliseconds
+// (NULL = never expires). Register the driver at startup:
+//   import { extendCacheDriver } from '@cossackframework/framework/cache';
+//   import { DatabaseCacheStore } from '@cossackframework/database';
+//   extendCacheDriver('database', () => new DatabaseCacheStore());
+export async function up(db: Kysely<any>): Promise<void> {
+  await db.schema
+    .createTable('cache_items')
+    .addColumn('key', 'text', (c) => c.primaryKey().notNull())
+    .addColumn('value', 'text', (c) => c.notNull())
+    .addColumn('expires_at', 'integer')
+    .addColumn('updated_at', 'integer', (c) => c.notNull())
+    .execute();
+
+  // Speed up purgeExpired() (WHERE expires_at < now).
+  await db.schema
+    .createIndex('cache_items_expires_at_index')
+    .on('cache_items')
+    .column('expires_at')
+    .execute();
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await db.schema.dropIndex('cache_items_expires_at_index').ifExists().execute();
+  await db.schema.dropTable('cache_items').ifExists().execute();
+}
+`;
+}
+
 // ===========================================================================
 // Auth feature templates (`cossack add auth`)
 // ===========================================================================
