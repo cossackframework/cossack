@@ -74,6 +74,27 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     name: 'cossack-security',
     enforce: 'pre', // Run before other plugins to ensure we process raw source
 
+    /**
+     * Server-only config files (`src/config/*.ts`) must never reach the client
+     * bundle — they call `env()` to read secrets and bindings. The only server
+     * entry point to them is `virtual:cossack-config` (which stubs to `{}` on
+     * the client). This guard catches the case where user code accidentally
+     * imports a config file directly (e.g. `import { dbConfig } from
+     * '../config/database'`) — on the client such an import resolves to an
+     * empty default export instead of leaking the file's contents.
+     */
+    load(id) {
+      const isClientEnvironment = this.environment?.name === 'client';
+      if (!isClientEnvironment) return;
+      if (id.includes('node_modules')) return;
+
+      // Match any path containing a `/config/` segment ending in .ts/.mts.
+      // Covers both `/src/config/app.ts` and nested project paths.
+      if (/(^|\/)config\/[^/]+\.m?ts$/.test(id)) {
+        return `export default {};\n`;
+      }
+    },
+
     transform(code, id) {
       // Only strip in client environment
       const isClientEnvironment = this.environment?.name === 'client';

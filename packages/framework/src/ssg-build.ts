@@ -5,7 +5,7 @@ import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } f
 import { generateSitemapFromUrls } from './sitemap-generator';
 import { getSiteUrl } from './ssg-config';
 import type { RoutesManifest } from './route-ids';
-import type { ConfigFactory } from '@cossackframework/core';
+import type { ConfigFactory } from './config';
 
 /** Native dynamic import (the tsx loader registered by the CLI resolves `.ts`). */
 const importModule = (absPath: string) => import(pathToFileURL(absPath).href);

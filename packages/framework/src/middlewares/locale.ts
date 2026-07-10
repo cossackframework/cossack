@@ -9,8 +9,9 @@
 //      by `setLocale()`).
 //   2. `Accept-Language` header — only when `autoDetectBrowser` is enabled
 //      (opt-in; can affect caching/SEO so it's off by default).
-//   3. `env.APP_LOCALE`         — the deployment-wide default from wrangler vars.
-//   4. `'en'`                    — hard-coded last-resort fallback.
+//   3. config('app.locale')    — the deployment-wide default (from `src/config/app.ts`,
+//                               which reads the `APP_LOCALE` env var).
+//   4. 'en'                     — hard-coded last-resort fallback.
 //
 // When the project has no `src/lang/` folder, the middleware is a no-op:
 // supported locales is empty and `__()` returns keys unchanged.
@@ -32,6 +33,7 @@ import {
     loadCatalog,
 } from 'virtual:cossack-lang';
 import { ensureLocaleAlsWired, runWithLocale } from '../i18n-context';
+import { config } from '../config';
 
 export interface LocaleMiddlewareOptions {
     /** Resolve from `Accept-Language` when no cookie is set. Default: false. */
@@ -107,12 +109,12 @@ export function createLocaleMiddleware(
     const autoDetect = options.autoDetectBrowser === true;
     return async (c, next) => {
         ensureLocaleAlsWired();
-        seedCoreI18n((c.env as any)?.APP_LOCALE);
+        seedCoreI18n(config('app.locale'));
 
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
         if (supportedLocales.length === 0) {
-            const fallback = (c.env as any)?.APP_LOCALE || DEFAULT_LOCALE;
+            const fallback = config('app.locale') || DEFAULT_LOCALE;
             return runWithLocale({ locale: fallback, messages: {} }, () => next());
         }
 
@@ -134,9 +136,10 @@ export function createLocaleMiddleware(
             if (isSupported(detected)) locale = detected;
         }
 
-        // 3. env.APP_LOCALE (deployment default).
+        // 3. config('app.locale') — the deployment default (reads APP_LOCALE
+        //    via src/config/app.ts, but config values can be overridden there).
         if (!locale) {
-            const envLocale = (c.env as any)?.APP_LOCALE;
+            const envLocale = config('app.locale');
             if (envLocale) locale = normalizeLocale(envLocale);
         }
 

@@ -21,6 +21,9 @@
       ],
       "~/*": [
         "./*"
+      ],
+      "@cossackframework/framework/config": [
+        "./src/config.ts"
       ]
     }
   },

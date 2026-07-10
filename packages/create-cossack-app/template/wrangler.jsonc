@@ -26,12 +26,14 @@
     "binding": "ASSETS"
   },
   // Replace with your production domain. Used for sitemap generation, canonical
-  // URLs, and OG tags. Also exposed to the Worker at runtime as env.BASE_URL.
+  // URLs, and OG tags. Also exposed to the Worker at runtime as env.APP_URL
+  // (read via config('app.url')).
   //
   // APP_LOCALE sets the default locale for `__()`. See `cossack lang publish`.
+  // APP_SECRET signs flash-data cookies (min 16 chars); set a real secret.
   "vars": {
-    "BASE_URL": "https://example.com",
+    "APP_URL": "https://example.com",
     "APP_LOCALE": "en",
-    "COSSACK_SECRET": "PLEASE_CHANGE_THIS_SECRET"
+    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET"
   }
 }

@@ -48,24 +48,22 @@ The sitemap is automatically generated during SSG build and includes:
 
 The base URL is resolved in the following order (first match wins):
 
-1. **`BASE_URL` shell env** — explicit override, useful for CI:
+1. **`APP_URL` shell env** — explicit override, useful for CI:
    ```bash
-   BASE_URL=https://my-site.com pnpm run build:ssg
+   APP_URL=https://my-site.com pnpm run build:ssg
    ```
-2. **`vars.BASE_URL` in `wrangler.jsonc`** (or `BASE_URL` in the `[vars]`
+2. **`vars.APP_URL` in `wrangler.jsonc`** (or `APP_URL` in the `[vars]`
    table of `wrangler.toml`). This is the recommended approach — the value
-   is also available to your Worker at runtime as `env.BASE_URL`:
+   is also available to your Worker at runtime via `config('app.url')`:
    ```jsonc
    {
      "vars": {
-       "BASE_URL": "https://my-site.com"
+       "APP_URL": "https://my-site.com"
      }
    }
    ```
-3. **`BASE_URL` in `.env`**.
-4. **`VITE_SSG_BASE_URL`** — legacy variable (shell env or `.env`), kept for
-   backward compatibility.
-5. **`https://example.com`** — final default.
+3. **`APP_URL` in `.env`**.
+4. **`https://example.com`** — final default.
 
 Because the SSG build script reads these sources directly, no extra CLI flags
 are required.

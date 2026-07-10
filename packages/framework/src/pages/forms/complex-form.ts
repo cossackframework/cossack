@@ -18,7 +18,7 @@ import { html } from '@cossackframework/renderer';
 //     matching the form's type shape. Flat-key access is available via `flatErrors`.
 //
 // Flash data is signed-cookie-backed (stateless) and lives for exactly one
-// redirect. It requires a `COSSACK_SECRET` env var. See the /http docs.
+// redirect. It requires an `APP_SECRET` env var. See the /http docs.
 
 interface AddressForm {
   street: string;

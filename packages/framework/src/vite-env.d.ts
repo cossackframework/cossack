@@ -58,7 +58,7 @@ declare module 'virtual:cossack-middlewares' {
 }
 
 declare module 'virtual:cossack-config' {
-  import type { ConfigFactory } from '@cossackframework/core';
+  import type { ConfigFactory } from './config';
   /** Config factories from `src/config/*.ts`, keyed by file name (no extension). */
   const configs: Record<string, ConfigFactory>;
   export default configs;

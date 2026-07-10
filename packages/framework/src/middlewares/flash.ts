@@ -14,10 +14,11 @@
 // and signed (HMAC-SHA256) so it can't be tampered with. Because flash
 // messages render into HTML, signing is required, not optional.
 //
-// Requires a signing secret from the environment (`COSSACK_SECRET`, or the
-// legacy `SECRET`). The middleware throws a clear error only when flash is
-// actually used (a cookie is present OR the handler wrote outgoing data) —
-// apps that never use flash pay no cost and need no secret.
+// Requires a signing secret from the environment (`APP_SECRET`, with legacy
+// fallbacks to `COSSACK_SECRET` and bare `SECRET`). The middleware throws a
+// clear error only when flash is actually used (a cookie is present OR the
+// handler wrote outgoing data) — apps that never use flash pay no cost and
+// need no secret.
 
 import type { MiddlewareHandler } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -30,7 +31,7 @@ const COOKIE_NAME = 'cossack_flash';
 const DEFAULT_MAX_AGE = 30;
 
 export interface FlashMiddlewareOptions {
-    /** Env var name to read the signing secret from. Defaults to COSSACK_SECRET. */
+    /** Env var name to read the signing secret from. Defaults to APP_SECRET. */
     secretEnvName?: string;
     /** Cookie max-age in seconds. Defaults to 30. */
     maxAge?: number;
@@ -42,13 +43,13 @@ export interface FlashMiddlewareOptions {
  * apps that never use flash aren't forced to configure a secret.
  */
 function resolveSecret(c: any, envName: string): string | undefined {
-    return c.env?.[envName] ?? c.env?.SECRET;
+    return c.env?.[envName] ?? c.env?.COSSACK_SECRET ?? c.env?.SECRET;
 }
 
 export function createFlashMiddleware(
     options: FlashMiddlewareOptions = {},
 ): MiddlewareHandler {
-    const secretEnvName = options.secretEnvName ?? 'COSSACK_SECRET';
+    const secretEnvName = options.secretEnvName ?? 'APP_SECRET';
     const maxAge = options.maxAge ?? DEFAULT_MAX_AGE;
 
     return async (c, next) => {
@@ -81,7 +82,7 @@ export function createFlashMiddleware(
             const secret = resolveSecret(c, secretEnvName);
             if (!secret) {
                 throw new Error(
-                    '[Cossack] Flash data requires a signing secret. Set COSSACK_SECRET ' +
+                    '[Cossack] Flash data requires a signing secret. Set APP_SECRET ' +
                         '(min 16 chars) in your wrangler env to use flash().',
                 );
             }

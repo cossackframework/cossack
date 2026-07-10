@@ -47,8 +47,7 @@ import { createLocaleMiddleware } from './middlewares/locale';
 import { createFlashMiddleware } from './middlewares/flash';
 import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { ensureConfigAlsWired, runWithConfig } from './config-context';
-import type { ConfigFactory, EnvFunction } from '@cossackframework/core';
+import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -329,7 +328,6 @@ export function createApp(options: CreateAppOptions = {}) {
   // are only available inside the request handler, so config is built per
   // request, not once at module load.
   app.use('*', async (c, next) => {
-    ensureConfigAlsWired();
     const envBindings = c.env as unknown as Record<string, unknown>;
     const envFn: EnvFunction = (key, def) => {
       const v = envBindings?.[key];
@@ -357,7 +355,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   // Flash middleware — two-phase signed-cookie lifecycle for flash data
   // (POST writes → GET reads once). No-op (no cookie, no outgoing data) when
-  // flash isn't used; throws only if flash is used without a COSSACK_SECRET.
+  // flash isn't used; throws only if flash is used without an APP_SECRET.
   app.use('*', createFlashMiddleware());
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {

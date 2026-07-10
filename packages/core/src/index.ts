@@ -27,7 +27,6 @@ export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy'
 export { isOriginAllowed } from './shared/origin-security';
 export * from './shared/rate-limit';
 export * from './shared/i18n';
-export * from './shared/config';
 
 export * from './client/navigation';
 
