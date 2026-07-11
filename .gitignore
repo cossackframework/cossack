@@ -1,6 +1,10 @@
 # Dependencies
 **/node_modules
 /.pnpm-store
+# A pnpm workspace has exactly one lockfile at the root.
+# Sub-package lockfiles are created accidentally (e.g. running `pnpm install`
+# inside a package directory) and must not be tracked.
+packages/*/pnpm-lock.yaml
 
 # Build artifacts
 **/dist
