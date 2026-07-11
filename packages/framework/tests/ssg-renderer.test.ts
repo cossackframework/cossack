@@ -58,8 +58,10 @@ describe('ssg-renderer', () => {
       const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
       // No manifest on disk in test env -> dev fallback path is used, which
       // still emits the module script tag pointing at the dev entry-client.
+      // When a build manifest IS present (e.g. after `vite build`), the
+      // production asset path is used instead. Accept either form.
       expect(html).toContain('<script type="module"');
-      expect(html).toMatch(/src=["']\/src\/client\/entry-client\.ts["']/);
+      expect(html).toMatch(/src=["']?(\/src\/client\/entry-client\.ts|\/assets\/entry-client\.[\w.]+\.js)["']?/);
     });
 
     it('produces HTML containing window.__INITIAL_STATE__', async () => {
@@ -88,8 +90,8 @@ describe('ssg-renderer', () => {
         '/src/pages/ssg-test/index.ts',
       );
 
-      expect(html).toContain('<html lang="zz">');
-      expect(html).toContain('<body class="custom">');
+      expect(html).toMatch(/<html lang=["']?zz["']?>/);
+      expect(html).toMatch(/<body class=["']?custom["']?>/);
       // Template helpers are still invoked inside the custom template:
       expect(html).toContain('<script type="module"');
       expect(html).toContain('window.__INITIAL_STATE__');
@@ -101,7 +103,7 @@ describe('ssg-renderer', () => {
       // that fallback is present — the production path is covered by the
       // build integration test (ssg-build.test.ts).
       const html = await renderSsgPage(SsgTestPage, '/ssg-test', undefined, {}, 'https://example.com', TestApp);
-      expect(html).toContain('rel="stylesheet"');
+      expect(html).toMatch(/rel=["']?stylesheet["']?/);
     });
 
     it('uses the route PATTERN (not concrete path) in initial state for dynamic routes', async () => {

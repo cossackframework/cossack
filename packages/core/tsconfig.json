@@ -3,7 +3,7 @@
   "compilerOptions": {
     "composite": true,
     "moduleResolution": "Bundler",
-    "types": ["vite/client", "@cloudflare/workers-types", "node"],
+    "types": ["vite/client", "node"],
     "paths": {
       "@/*": ["./src/*"]
     },
@@ -12,5 +12,5 @@
     // Let the build script handle output dirs
     "declaration": true
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "worker-configuration.d.ts"]
 }

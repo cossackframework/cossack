@@ -17,19 +17,18 @@
     "@cossackframework/renderer": "^0.6.0",
     "cossack": "^0.1.0",
     "gray-matter": "^4.0.3",
-    "hono": "^4.12.25",
+    "hono": "^4.12.29",
     "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.42.2",
-    "@cloudflare/workers-types": "^4.20260624.1",
+    "@cloudflare/vite-plugin": "^1.44.0",
     "@tailwindcss/vite": "^4.1.0",
     "prettier": "^3.4.0",
     "tailwindcss": "^4.1.0",
-    "tsx": "^4.7.0",
-    "vite": "^8.1.0",
-    "vitest": "^4.1.9",
-    "wrangler": "^4.104.0"
+    "tsx": "^4.23.0",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.110.0"
   }
 }

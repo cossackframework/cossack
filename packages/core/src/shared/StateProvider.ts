@@ -1,5 +1,4 @@
 import type { Cossack } from './cossack';
-import type { DurableObjectId, DurableObjectNamespace } from '@cloudflare/workers-types';
 
 export abstract class StateProvider {
   // This will be set by the Cossack instance after it's constructed.

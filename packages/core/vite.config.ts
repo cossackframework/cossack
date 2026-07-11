@@ -1,17 +1,11 @@
-// @ts-expect-error - vite types require bundler module resolution
 import { defineConfig } from 'vite'
 import path from 'path'
-import dts from 'vite-plugin-dts'
-import tsconfigPaths from 'vite-tsconfig-paths'
 
-// https://vitejs.dev/config/
+// https://vite.dev/config/
 export default defineConfig({
-  plugins: [
-    dts({
-      insertTypesEntry: true,
-    }),
-    tsconfigPaths(),
-  ],
+  resolve: {
+    tsconfigPaths: true,
+  },
   build: {
     sourcemap: true,
     lib: {
@@ -26,8 +20,7 @@ export default defineConfig({
         '@cossackframework/renderer',
         'hono',
         'reflect-metadata',
-        '@cloudflare/workers-types'
-      ]
-    }
+      ],
+    },
   },
 });
