@@ -18,8 +18,8 @@ const __dirname = path.dirname(__filename);
 /**
  * Pinned `better-sqlite3` version — used in the template's devDependencies
  * (for Cloudflare projects' local migration dev) and moved to runtime
- * dependencies for Node.js projects. Single source of truth so the two
- * stays in sync.
+ * dependencies for Node.js projects. Single source of truth so both
+ * versions stay in sync.
  */
 const BETTER_SQLITE3_VERSION = '^11.0.0';
 
@@ -100,11 +100,9 @@ async function configureNodeAdapter(projectDir) {
 
   // better-sqlite3 is a runtime dependency for Node.js (used by the database
   // config as the default SQLite connection — D1 doesn't exist outside Workers).
-  // Source the version from the template's devDependencies (where it ships for
-  // Cloudflare projects' local migration dev); fall back to a pinned range.
-  const betterSqliteVersion = packageJson.devDependencies['better-sqlite3'] || BETTER_SQLITE3_VERSION;
-  packageJson.dependencies['better-sqlite3'] = betterSqliteVersion;
-  delete packageJson.devDependencies['better-sqlite3'];
+  // Cloudflare projects install it optionally (for local migration dev only);
+  // Node.js projects need it at runtime.
+  packageJson.dependencies['better-sqlite3'] = BETTER_SQLITE3_VERSION;
 
   packageJson.devDependencies['@types/ws'] = '^8.18.0';
   packageJson.devDependencies['@types/node'] = '^22.0.0';
@@ -161,7 +159,6 @@ export async function getCliClient(): Promise<DbClient> {
   const indexTsContent = `import { serve } from '@hono/node-server';
 import { CossackNodeAdapter, createNodeEmailSender } from '@cossackframework/node-adapter';
 import { createApp } from '@cossackframework/framework/router';
-import { createClient } from './db/config';
 
 const app = createApp();
 

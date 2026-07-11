@@ -1,8 +1,9 @@
 // src/config/database.ts
 //
 // Database configuration. Included by default in new Cossack apps — the
-// framework depends on @cossackframework/database, and a dbMiddleware is
-// registered in src/bootstrap/middlewares.ts.
+// project template wires @cossackframework/database (the framework itself
+// stays decoupled), and a dbMiddleware is registered in
+// src/bootstrap/middlewares.ts.
 //
 // The default connection is 'd1' (Cloudflare D1). Set DB_CONNECTION=turso
 // and swap src/db/config.ts for the Turso variant to use Turso/libSQL.
