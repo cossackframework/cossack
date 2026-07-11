@@ -668,7 +668,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             const wrapped = async (...args: any[]) => {
                 this.loading.init = (this.loading.init || 0) + 1;
-                if (!this.isServer && this.container) {
+                if (!this.isServer) {
                     this.requestUpdate();
                 }
                 try {

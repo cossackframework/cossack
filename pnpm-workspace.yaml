@@ -3,6 +3,7 @@ packages:
   - examples/*
 
 allowBuilds:
+  esbuild: true
   workerd: true
 
 # TODO: remove once hono@4.12.29 passes the minimum release-age window (~24h after publish)

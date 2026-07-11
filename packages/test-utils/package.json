@@ -4,7 +4,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && tsc -p tsconfig.declarations.json",
     "test": "vitest"
   },
   "dependencies": {
@@ -14,8 +14,7 @@
     "vitest": "^4.1.0"
   },
   "devDependencies": {
-    "vite": "^8.1.0",
-    "vite-plugin-dts": "^3.0.0",
-    "vitest": "^4.1.9"
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
   }
 }

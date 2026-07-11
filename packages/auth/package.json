@@ -20,9 +20,9 @@
     "test": "vitest"
   },
   "dependencies": {
-    "hono": "^4.12.25"
+    "hono": "^4.12.29"
   },
   "devDependencies": {
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }
