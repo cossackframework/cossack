@@ -51,3 +51,28 @@ Used in conjunction with the `@PreventNavigation` decorator to resolve a blocked
 *   `this.confirmNavigation(false)`: Stay on the current page and clear the pending navigation state.
 
 See the [Prevent Navigation](./prevent-navigation.md) documentation for more details.
+
+
+###  `this.back()`
+
+Redirects the user back to the previous page in their browser history. This is a convenient way to handle form submissions or other actions that should return the user to where they came from.
+
+```typescript
+post() {
+  // Handle form submission logic here
+
+  this.back(); // Redirect back to the previous page
+}
+```
+
+### `this.redirect(url, status = 302)`
+
+Redirects the user to a specified URL with an optional HTTP status code (default is 302 for temporary redirects).
+
+```typescript
+post() {
+  // Handle form submission logic here
+
+  this.redirect('/thank-you', 303); // Redirect to a thank you page
+}
+
