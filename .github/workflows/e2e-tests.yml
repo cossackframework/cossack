@@ -30,8 +30,8 @@ jobs:
 
       - name: Build core packages
         run: |
-          pnpm --filter @cossackframework/core build
           pnpm --filter @cossackframework/renderer build
+          pnpm --filter @cossackframework/core build
           pnpm --filter @cossackframework/node-adapter build
 
       - name: Install Playwright browsers
