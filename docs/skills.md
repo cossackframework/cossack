@@ -13,7 +13,7 @@ Cossack Skills are instruction packs that teach AI coding assistants (Claude Cod
 |-------|------|-------------|
 | `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` (multi-file workflow) |
 | `/setup-websocket` | Task | Set up real-time features — pick SSE or Durable Object transport |
-| `cossack-best-practices` | Background | Auto-loaded guardrails: use built-in features (`@Server()` RPC, `@Validate`, `db()`, `cache.remember()`, `Image()`, `this.loading`, `@Ref()`, etc.) instead of reinventing them. Includes deep-dive references for server/client RPC, validation, loading, database, cache, realtime, auth, and error handling |
+| `cossack-best-practices` | Background | Auto-loaded guardrails: use built-in features (`@Server()` RPC, `@Validate`, `db()`, `cache.remember()`, `Image()`, `this.loading`, `@Ref()`, etc.) instead of reinventing them. Includes deep-dive references for server/client RPC, validation, forms, loading, database, cache, realtime, auth, and error handling |
 
 The `cossack-best-practices` skill is not user-invocable. It auto-loads when you work on Cossack-specific files (`src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, `src/root.ts`) and steers the AI toward framework built-ins.
 

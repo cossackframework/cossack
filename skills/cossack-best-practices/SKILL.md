@@ -56,6 +56,7 @@ See `references/server-client-rpc.md` for the full mechanism (transports, transp
 | Query a database | `db()` from `@cossackframework/database` (Kysely, re-exported) | Inside `@Server()` only; see `references/database.md` |
 | Cache an expensive result | `cache.remember(key, ttl, fn)` from `@cossackframework/framework/cache` | Server-only; KV recommended; see `references/cache.md` |
 | Validate a form field | `@Validate({ rules, config })` + `getError()` / `hasError()` / `validateAll()` | See `references/validation.md` |
+| Handle a form submission | Progressive: `<form method="post">` + `post()` + `flash`/`old`. Reactive: `@Store` + `@Validate` + `@Server` submit. | No `fetch()`; see `references/forms.md` |
 | Track "is loading" | `this.loading['methodName']` (counter), `loadingTemplate()`, `loading.ts`, `clientInit()` | Auto-tracked; see `references/loading.md` |
 | Show a route-level skeleton | `loading.ts` next to `index.ts` in the route dir | Auto-rendered during navigation |
 | Render an image | `Image({ src, width, height, alt, ... })` | Cloudflare Image Resizing aware; never raw `<img>` for hero/feature images |
@@ -193,6 +194,7 @@ render() {
 - `references/server-client-rpc.md` — the RPC mechanism: `@Server`/`@Client`/`@Shared`, transports, server→client calls, security
 - `references/decorators.md` — full decorator API (class, property, method decorators, helpers)
 - `references/validation.md` — `@Validate` deep dive (rules, config, async validators, full form, `@Store` rule maps)
+- `references/forms.md` — the two form patterns: progressive (`post()` + `flash`/`old`) vs reactive (`@Store` + `@Validate` + `@Server`)
 - `references/loading.md` — the four loading mechanisms (`loading.ts`, `loadingTemplate()`, `this.loading`, `clientInit()`)
 - `references/database.md` — `db()` / `getDb()`, Kysely queries, request scoping, setup
 - `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation

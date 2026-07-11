@@ -54,9 +54,9 @@ flash('success', 'Form submitted successfully!');
 flash('errors', 'There was an error submitting the form. Please try again.');
 ```
 
-Now display the flash message in your page component by checking for the flash message in the `render()` method.
+Now display the flash message in your page component by reading it back with `flashed()` and checking for it in the `render()` method.
 
-Since the `render()` method is a shared method, which also used in the client, and we need to get the flash message from the server, we need to retrieve them in the `init()` method. We also need to define states for them.
+Since the `render()` method is a shared method, which is also used in the client, and we need to get the flash message from the server, we need to retrieve them in the `init()` method using `flashed()`. We also need to define states for them.
 
 ```typescript
 @State()
@@ -69,8 +69,8 @@ errors: {
 } | null = null;
 
 init() {
-    this.success = flash('success');
-    this.errors = flash('errors');
+    this.success = flashed('success');
+    this.errors = flashed('errors');
 }
 
 render() {  
@@ -153,7 +153,7 @@ async post() {
 }
 ```
 
-Remember to retrieve the flashed input in the `init()` method and use it in the `render()` method to pre-fill the form fields.
+Remember to retrieve the flashed input in the `init()` method using `old()` and use it in the `render()` method to pre-fill the form fields.
 
 ```typescript
 @State()
@@ -163,11 +163,10 @@ email: string | null = null;
 name: string | null = null;
 
 init() {
-    this.success = flash('success');
-    this.errors = flash('errors');
-    const oldInput = flashInput();
-    this.name = oldInput?.name || '';
-    this.email = oldInput?.email || '';
+    this.success = flashed('success');
+    this.errors = flashed('errors');
+    this.name = old<string>('name') ?? '';
+    this.email = old<string>('email') ?? '';
 }
 
 render() {
