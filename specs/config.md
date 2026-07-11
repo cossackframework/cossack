@@ -13,7 +13,7 @@ This document specifies the architecture of Cossack's configuration system: how 
 
 | Package | Role |
 |---------|------|
-| `@cossackframework/framework` | Owns the entire config system: the `AsyncLocalStorage` instance, the `config()` / `env()` accessors, the `runWithConfig()` scope function, the config-building middleware (in `router.ts`), the `cossackConfig()` Vite plugin, the type inference machinery (`CossackConfigRegistry`, `DottedPaths`, `GetByPath`), and the SSG config wiring (`ssg-renderer.ts`, `ssg-build.ts`). All exported from `@cossackframework/framework/config`. |
+| `@cossackframework/framework` | Owns the entire config system: the `AsyncLocalStorage` instance, the `config()` / `env()` accessors, the `runWithConfig()` scope function, the config-building middleware (in `router.ts`), the `cossackConfig()` Vite plugin, the type inference machinery (`CossackConfigRegistry`, `DottedPaths`, `GetByPath`), and the SSG config wiring (`ssg-renderer.ts`, `ssg-entry.ts`). All exported from `@cossackframework/framework/config`. |
 
 Unlike locale (`__()`) and the database client (`db()`), which use the injection-point pattern (leaf accessors in core, ALS in framework), config lives entirely in the framework. This eliminates the `setConfigStoreGetter` indirection — `config()` calls `configAls.getStore()` directly.
 
@@ -71,11 +71,11 @@ Because the scope wraps `next()`, all downstream middleware, route handlers, com
 
 ### 2. SSG (static site generation)
 
-SSG runs through `tsx` (not Vite), so the `virtual:cossack-config` module is unavailable. The SSG build compensates:
+SSG runs inside `vite build` via the `cossackSsg()` Vite plugin (`vite-ssg-plugin.ts`), which uses Vite's `runnerImport()` to load `ssg-entry.ts` through an ephemeral Vite environment. Because SSG loads through Vite, the `virtual:cossack-config` module (and the `virtual:cossack-pages` / `virtual:cossack-lang` modules) resolve the same way they do in SSR — no disk-based reimplementation is needed.
 
-- `ssg-build.ts` loads config factories from `src/config/*.ts` via `fs` (`loadConfigFactories()`), mirroring the Vite plugin's glob.
+- `ssg-entry.ts` imports `virtual:cossack-config` directly, so config factories are available during static generation without reading `src/config/*.ts` from disk.
 - `ssg-renderer.ts` injects the resolved site URL (from `getSiteUrl()`) as `APP_URL` into the SSG env bindings, so `config('app.url')` returns the correct value during static generation. Other bindings are empty — config factories use their fallback values.
-- The config store is built before locale initialization, so `ensureSsgLocaleInitialized()` can read `config('app.locale')`.
+- The config store is built before locale initialization, so `ensureSsgLocaleInitialized()` can read `config('app.locale')`. Locale catalogs are resolved from `virtual:cossack-lang` (not read from disk).
 
 ### 3. Client-side
 

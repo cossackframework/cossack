@@ -19,10 +19,11 @@ const RESPAWN_FLAG = '__COSSACK_SSG_RESPAWNED';
 
 const argv = process.argv.slice(2);
 
-// `ssg`, `migration`, and `seeder` import the user's `.ts` App/config and the
-// framework/database engine, so they need the tsx loader.
+// `migration` and `seeder` import the user's `.ts` App/config and the
+// framework/database engine, so they need the tsx loader. (`ssg` now runs
+// inside `vite build` via the cossackSsg plugin — no tsx respawn needed.)
 const [command] = argv;
-const needsTsx = command === 'ssg' || command === 'migration' || command === 'migrate' ||
+const needsTsx = command === 'migration' || command === 'migrate' ||
   command === 'seeder' || command === 'seed';
 
 if (needsTsx && !process.env[RESPAWN_FLAG]) {

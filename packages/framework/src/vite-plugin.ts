@@ -38,7 +38,7 @@ export function cossackPages(): Plugin {
         const isSsrEnvironment = this.environment?.name !== 'client';
 
         return `
-          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${isSsrEnvironment ? ', { eager: true }' : ''});
+          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '/src/pages/**/*.md', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Layouts: always eager (small, shared, needed immediately)
           const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
@@ -94,8 +94,11 @@ export function cossackPages(): Plugin {
             }
 
             // Manually define metadata since decorators require extra build steps
-            // when generated from a plugin transform hook
-            Reflect.defineMetadata('page:options', { transport: 'http' }, MdxPage);
+            // when generated from a plugin transform hook. .md/.mdx pages are
+            // static content (no server logic), so pre-render them by default —
+            // they can't opt in via @Page({ ssg: true }) like .ts pages because
+            // they aren't TypeScript.
+            Reflect.defineMetadata('page:options', { transport: 'http', ssg: true }, MdxPage);
 
             export default MdxPage;
           `,
