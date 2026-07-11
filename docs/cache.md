@@ -159,25 +159,17 @@ export default ({ env }) => ({
 
 ### Database (strongly consistent)
 
-`DatabaseCacheStore` stores cache data in your app's database (D1 or Turso) via the per-request `db()` client. It's part of `@cossackframework/database` — run `cossack add database` first if you haven't.
+`DatabaseCacheStore` stores cache data in your app's database (D1 or Turso) via the per-request `db()` client. It's part of `@cossackframework/database`, which is included by default in new Cossack apps.
 
-**1. Generate the `cache_items` table migration:**
+New projects ship with the database cache driver pre-registered in `src/middlewares/db.ts` and the `cache_items` migration included as a default (`0006_create_cache_table.ts`). To use it:
+
+**1. Apply the migration** (if not already applied):
 
 ```sh
-cossack cache:make-table
 cossack migration up
 ```
 
-**2. Register the driver** (once, at startup — e.g. in `src/index.ts`):
-
-```ts
-import { extendCacheDriver } from '@cossackframework/framework/cache';
-import { DatabaseCacheStore } from '@cossackframework/database';
-
-extendCacheDriver('database', () => new DatabaseCacheStore());
-```
-
-**3. Declare the store** in `config/cache.ts`:
+**2. Set `CACHE_DRIVER=database`** in your wrangler vars or `.dev.vars`, or declare the store in `config/cache.ts`:
 
 ```typescript
 export default ({ env }) => ({
@@ -186,7 +178,16 @@ export default ({ env }) => ({
 });
 ```
 
-`DatabaseCacheStore()` resolves the per-request `db()` client lazily on each operation, so a single instance serves every request. Expired rows are reaped lazily on read; call `store.purgeExpired()` opportunistically to reclaim space.
+The driver registration lives in `src/middlewares/db.ts`:
+
+```ts
+import { DatabaseCacheStore } from '@cossackframework/database';
+import { extendCacheDriver } from '@cossackframework/framework/cache';
+
+extendCacheDriver('database', () => new DatabaseCacheStore());
+```
+
+Remove that call (and the `'database'` store in `config/cache.ts`) if you don't use database-backed caching, or swap it for your own driver (Redis, R2, …). `DatabaseCacheStore()` resolves the per-request `db()` client lazily on each operation, so a single instance serves every request. Expired rows are reaped lazily on read; call `store.purgeExpired()` opportunistically to reclaim space.
 
 ## API
 

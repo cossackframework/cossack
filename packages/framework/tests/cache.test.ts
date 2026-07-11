@@ -477,6 +477,35 @@ describe('cache facade — config-driven resolution', () => {
         });
     });
 
+    it("'database' driver throws a helpful error when not registered", async () => {
+        const cfg: CacheConfig = {
+            default: 'database',
+            stores: { database: { driver: 'database' } },
+        };
+        await withCacheScope(cfg, {}, async () => {
+            // The framework doesn't hard-depend on @cossackframework/database.
+            // The 'database' driver ships as a stub that throws a clear error
+            // guiding the user to register it via extendCacheDriver() (the
+            // default template does this in src/middlewares/db.ts).
+            await expect(cache.get('a')).rejects.toThrow(
+                /not registered[\s\S]*extendCacheDriver|not registered[\s\S]*src\/middlewares\/db\.ts/,
+            );
+        });
+    });
+
+    it("'database' driver works after manual extendCacheDriver registration", async () => {
+        const custom = new InMemoryCacheStore();
+        extendCacheDriver('database', () => custom);
+        const cfg: CacheConfig = {
+            default: 'database',
+            stores: { database: { driver: 'database' } },
+        };
+        await withCacheScope(cfg, {}, async () => {
+            await cache.set('a', 1);
+            expect(await custom.get('a')).toBe(1);
+        });
+    });
+
     it('setDefaultStore() overrides config-driven default', async () => {
         const manual = new InMemoryCacheStore();
         cache.setDefaultStore(manual);

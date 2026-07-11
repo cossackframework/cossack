@@ -19,7 +19,7 @@
 // lazily on each operation, so a single instance serves every request. See
 // docs/cache.md.
 //
-// Expected schema (shipped via `cossack cache:make-table`):
+// Expected schema (shipped as a default migration — 0006_create_cache_table.ts):
 //   create table cache_items (
 //     key         text primary key not null,
 //     value       text not null,             -- JSON
@@ -109,8 +109,8 @@ function isExpired(expiresAt: number | null): boolean {
  * });
  * ```
  *
- * Requires the `cache_items` table — run `cossack cache:make-table` then
- * `cossack migration up`.
+ * Requires the `cache_items` table — included as a default migration
+ * (0006_create_cache_table.ts). Apply with `cossack migration up`.
  */
 export class DatabaseCacheStore implements CacheStoreLike {
     /**

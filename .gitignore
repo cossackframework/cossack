@@ -42,3 +42,6 @@ test-results
 .last-run.json
 .claude
 reasonix.toml
+
+# Planning documents (local scratch)
+plan-*.md

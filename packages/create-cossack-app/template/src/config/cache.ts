@@ -21,6 +21,9 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
     // env var, defaulting to in-memory (zero-config, per-process).
     // For most apps, set CACHE_DRIVER=kv and add a CACHE KV binding in
     // wrangler.jsonc — see docs/cache.md.
+    // Set CACHE_DRIVER=database to use D1/Turso-backed caching (the 'database'
+    // driver is registered in src/middlewares/db.ts; the cache_items table is
+    // created by the default migration 0006_create_cache_table.ts).
     default: env('CACHE_DRIVER', 'memory'),
 
     // Named stores. Access a specific one with `cache.store('name').get(...)`.

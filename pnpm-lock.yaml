@@ -3084,9 +3084,9 @@ snapshots:
     dependencies:
       is-extendable: 0.1.1
 
-  fdir@6.5.0(picomatch@4.0.4):
+  fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
-      picomatch: 4.0.4
+      picomatch: 4.0.5
 
   fetch-blob@3.2.0:
     dependencies:
@@ -3114,7 +3114,7 @@ snapshots:
 
   happy-dom@20.4.0:
     dependencies:
-      '@types/node': 26.0.0
+      '@types/node': 22.20.1
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       entities: 4.5.0
@@ -3433,8 +3433,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
 
   tinyrainbow@3.1.0: {}
 

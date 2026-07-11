@@ -42,7 +42,7 @@ export const loggingMiddleware = defineServerMiddleware(async (c, next) => {
 });
 ```
 
-Feature commands add to the registry for you — for example `cossack add database` registers `dbMiddleware` (see [Database](/docs/database.md)). The locale middleware is framework-built-in and always runs (a no-op without `src/lang/`); it doesn't need an entry in this file.
+Feature commands add to the registry for you — for example `cossack add auth` registers the auth middleware. New projects ship with `dbMiddleware` already registered (see [Database](/docs/database.md)). The locale middleware is framework-built-in and always runs (a no-op without `src/lang/`); it doesn't need an entry in this file.
 
 > If `src/bootstrap/middlewares.ts` is absent, no global middlewares run — existing apps are unaffected.
 

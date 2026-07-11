@@ -452,8 +452,9 @@ async post() {
 
 ### Setup
 
-Sessions require the database package and its middleware. Run `cossack add
-database`, then register the session middleware in `src/bootstrap/middlewares.ts`:
+Sessions use the database (included by default). Register the session middleware
+in `src/bootstrap/middlewares.ts` and apply the `sessions` table migration
+(`cossack migration up`):
 
 ```typescript
 // src/middlewares/session.ts
@@ -501,7 +502,7 @@ export const sessionMiddleware = createSessionMiddleware({
 | **Lifetime** | One redirect (read-once) | Long-lived (until logout/expiry) |
 | **Storage** | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
 | **Best for** | Success/error messages, old form input | Carts, wizards, prefs, A/B |
-| **Requires** | `APP_SECRET` | `cossack add database` |
+| **Requires** | `APP_SECRET` | Database (included by default) |
 
 ## Sending Responses
 
