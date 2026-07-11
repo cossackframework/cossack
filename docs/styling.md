@@ -1,6 +1,6 @@
 ---
 title: "Styling"
-description: "Tailwind CSS 4.x integration as the default styling solution with pre-configured Vite plugin and utility class support."
+description: "Styling in Cossack is powered by Tailwind CSS 4.x, providing a utility-first approach to design. This guide covers how to use Tailwind classes, conditional styling, dynamic values, component styling, built-in animations, and custom CSS options."
 ---
 
 # Styling
@@ -88,6 +88,7 @@ export class Button extends Cossack {
 
     render() {
         const { variant = 'primary', ...rest } = this.props;
+        
         return html`
             <button class="bg-blue-500 hover:bg-blue-700 text-white py-2.5 px-5 cursor-pointer" ...=${rest}>
                 ${this.children}

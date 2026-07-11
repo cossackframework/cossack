@@ -35,8 +35,8 @@ export class LoginForm extends Cossack {
 ```
 
 Key points:
-- `@Validate()` **must stack on top of** `@State()` or `@ClientState()`. It is not standalone.
-- Declare an `errors` state property (default `errorProperty: 'errors'`) — the framework writes messages there.
+- `@Validate()` **must stack on top of** `@State()`, `@ClientState()`, `@Store()`, or `@ClientStore()`. It is not standalone.
+- You **must declare** an `errors` state property yourself (default `errorProperty: 'errors'`) — the framework writes messages there, but does not create the property for you. If you omit it, errors are silently swallowed.
 - Read errors via `getError()` / `hasError()` in `render()`.
 
 ## Validation rules
@@ -199,3 +199,68 @@ export class RegistrationForm extends Cossack {
     }
 }
 ```
+
+## Validating a `@Store` (nested objects & arrays)
+
+When `@Validate` is stacked on `@Store` / `@ClientStore`, `rules` is a **map** whose keys are paths relative to the store property. The framework auto-prefixes them at runtime — you write `'email'`, not `'form.email'`. Deep paths use dot notation (`'address.zip'`), and array fields are addressable by key (`'tags'`).
+
+For compile-time-checked keys, wrap the map in `storeRules<T>()` — a typo like `emial` then fails to compile.
+
+```typescript
+import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+interface FormState {
+    email: string;
+    address: { zip: string; country: string };
+    tags: string[];
+}
+
+@Page({ transport: 'http' })
+export class StoreFormDemo extends Cossack {
+    @Store()
+    @Validate({
+        rules: storeRules<FormState>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            'address.country': { required: true, minLength: 2, message: 'Enter your country' },
+            tags: { required: true, minLength: 1, message: 'Add at least one tag' },
+        }),
+        config: { trigger: 'all', runOn: 'both' },
+    })
+    form: FormState = { email: '', address: { zip: '', country: '' }, tags: [] };
+
+    // errors must be declared — @Store works here too for nested error maps.
+    @Store() errors: Record<string, string> = {};
+
+    @Client()
+    handleInput(path: string, event: Event) {
+        // Deep assignment is reactive — @Store wraps the value in a Proxy.
+        const parts = path.split('.');
+        let target: any = this.form;
+        for (const p of parts.slice(0, -1)) target = target[p];
+        target[parts[parts.length - 1]] = (event.target as HTMLInputElement).value;
+        this.validateProperty(`form.${path}`, 'input');
+    }
+
+    @Client()
+    async handleSubmit(event: Event) {
+        event.preventDefault();
+        const isValid = await this.validateAll(); // validates every registered path
+        if (isValid) { /* submit */ }
+    }
+
+    render() {
+        return html`
+            <input .value="${this.form.email}"
+                   @input="${(e: Event) => this.handleInput('email', e)}"
+                   @blur="${(e: Event) => this.validateProperty('form.email', 'blur')}" />
+            ${this.hasError('form.email') ? html`<span>${this.getError('form.email')}</span>` : ''}
+        `;
+    }
+}
+```
+
+Notes:
+- `validateProperty` / `hasError` / `getError` take the **full** runtime path (`'form.email'`, `'form.address.zip'`) — the prefix is the store property name.
+- `@Store` makes nested mutations (`this.form.address.zip = ...`, `this.form.tags.push(...)`) reactive without reassigning the whole object. See `references/decorators.md` for the `@Store` / `@ClientStore` API.

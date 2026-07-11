@@ -33,6 +33,11 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Images](/docs/images.md)
 - [Links](/docs/links.md)
 
+## Forms
+
+- [Standard Form](/docs/forms.md)
+- [Advanced Form](/docs/forms-advanced.md)
+
 ## Database
 
 - [Database](/docs/database.md)

@@ -21,7 +21,7 @@ A full-stack TypeScript framework for building edge first, real-time web applica
 
 Write client and server logic in the same class seamlessly. Cossack automatically handles state management, SSR, and security.
 
-Think of it like Phoenix LiveView, or Laravel Livewire, but TypeScript native and edge deployment ready.
+Think of it like Laravel + Next.js + Phoenix LiveView, but TypeScript native and edge deployment ready.
 
 ## Quick Start
 

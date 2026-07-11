@@ -25,11 +25,38 @@ A method with **no decorator** is treated as server-only and its body is **strip
 
 See `references/decorators.md` for the full decorator API.
 
+## Server/client method calling — no `fetch()`
+
+This is the framework's core feature. A `@Server()` method runs on the server only; on the client its body is replaced with an **automatic RPC proxy**. You call it as `this.method(args)` — the framework handles the wire call. **Never write `fetch('/api/...')` to reach a server method.**
+
+```typescript
+// ❌ Reinventing the RPC the framework already gives you:
+async loadUser(id: number) {
+    const res = await fetch(`/api/users/${id}`);
+    this.user = await res.json();
+}
+
+// ✅ The built-in: define @Server(), call it directly.
+@Server()
+async loadUser(id: number) {
+    this.user = await db().selectFrom('users')…;  // runs on server, state syncs back
+}
+// client: await this.loadUser(42)  — no fetch, no API route
+```
+
+The reverse works too: inside a `@Server()` method, calling `this.someClientMethod(args)` runs it on **every connected client** (toasts, alerts, UI resets). `@Shared()` retains the body in both bundles for logic that must run identically on both sides.
+
+See `references/server-client-rpc.md` for the full mechanism (transports, transportable arguments, security, server→client calls).
+
 ## Use the built-in (don't reinvent)
 
 | If you're about to… | Use the built-in | Notes |
 |---|---|---|
+| Call the server from the client | `@Server()` method, called as `this.method()` — **no `fetch()`** | Auto RPC proxy; see `references/server-client-rpc.md` |
+| Query a database | `db()` from `@cossackframework/database` (Kysely, re-exported) | Inside `@Server()` only; see `references/database.md` |
+| Cache an expensive result | `cache.remember(key, ttl, fn)` from `@cossackframework/framework/cache` | Server-only; KV recommended; see `references/cache.md` |
 | Validate a form field | `@Validate({ rules, config })` + `getError()` / `hasError()` / `validateAll()` | See `references/validation.md` |
+| Handle a form submission | Progressive: `<form method="post">` + `post()` + `flash`/`old`. Reactive: `@Store` + `@Validate` + `@Server` submit. | No `fetch()`; see `references/forms.md` |
 | Track "is loading" | `this.loading['methodName']` (counter), `loadingTemplate()`, `loading.ts`, `clientInit()` | Auto-tracked; see `references/loading.md` |
 | Show a route-level skeleton | `loading.ts` next to `index.ts` in the route dir | Auto-rendered during navigation |
 | Render an image | `Image({ src, width, height, alt, ... })` | Cloudflare Image Resizing aware; never raw `<img>` for hero/feature images |
@@ -37,6 +64,7 @@ See `references/decorators.md` for the full decorator API.
 | Run code after mount | `onMount()` / `@Task()` / `@VisibleTask()` | No manual `setTimeout`/`IntersectionObserver` |
 | Listen to window/doc events | `@OnWindow('resize', { debounce })` / `@OnDocument('keydown')` | Auto-bound + auto-cleaned; supports throttle/debounce |
 | Derive a value from state | `@Computed()` getter | Memoized; don't recompute inline in `render()` |
+| Mutate nested objects/arrays reactively | `@Store()` / `@ClientStore()` (deep Proxy) | No manual reassign for `obj.field = x` / `arr.push()`; see `references/decorators.md` |
 | Bind a method as a handler | nothing — methods are auto-bound | No arrow-function class fields, no `.bind(this)` |
 | Redirect | `this.redirect(url)` | Client-intercepted as soft SPA navigation |
 | Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadContext` | `description`/`image` auto-expand to OG/Twitter |
@@ -72,7 +100,7 @@ render() {
 }
 ```
 
-`@Validate` stacks **on top of** `@State`/`@ClientState`. Use `validateAll()` before submit, `validateProperty(name)` on blur/input. Built-in rules: `required`, `minLength`, `maxLength`, `min`, `max`, `pattern`, `email`, `url`, `custom`, `customAsync`. Full API in `references/validation.md`.
+`@Validate` stacks **on top of** `@State`/`@ClientState`/`@Store`/`@ClientStore`. Declare an `errors` state property yourself — the framework writes messages there but does not create it. Use `validateAll()` before submit, `validateProperty(name)` on blur/input. Built-in rules: `required`, `minLength`, `maxLength`, `min`, `max`, `pattern`, `email`, `url`, `custom`, `customAsync`. Full API in `references/validation.md`.
 
 ### 2. Loading — use `this.loading` and `loadingTemplate()`
 
@@ -87,7 +115,7 @@ render() {
 }
 ```
 
-The framework auto-tracks pending `@Server()` calls by method name and `init`/`get` automatically. For full-page skeletons on navigation, add a `loading.ts` file in the route directory.
+The framework auto-tracks pending `@Server()` / `@Client()` / `@Shared()` calls by method name (a reference counter — truthy when `> 0`) and `init`/`get` automatically. For full-page skeletons on navigation, add a `loading.ts` file in the route directory.
 
 ### 3. Images — use `Image()`, not `<img>`
 
@@ -150,8 +178,11 @@ render() {
 
 ## Common mistakes to avoid
 
+- **Writing `fetch('/api/...')` to call the server.** Use a `@Server()` method and call it as `this.method()`. The framework installs an automatic RPC proxy — no API route, no serialization boilerplate. See `references/server-client-rpc.md`.
+- **Calling `db()` or `cache` from a `@Client()` / `@Shared()` / `render()`.** Both are server-only. Put database queries and cache reads inside `@Server()` methods. See `references/database.md` and `references/cache.md`.
 - **Stripped method ran as no-op on client.** Add `@Client()` / `@Shared()` / `@Optimistic()`.
-- **`@Validate()` used alone.** It must stack on `@State()` or `@ClientState()`.
+- **`@Validate()` used alone.** It must stack on `@State()` / `@ClientState()` / `@Store()` / `@ClientStore()`.
+- **Forgetting to declare the `errors` property.** `@Validate` writes to `config.errorProperty` (default `'errors'`), but does **not** create the property for you. Declare `@State() errors: Record<string, string> = {};` or errors are silently swallowed.
 - **Arrow-function class fields for handlers.** Unnecessary — methods are auto-bound during bootstrap.
 - **Manual `addEventListener` / `removeEventListener`.** Use `@OnWindow` / `@OnDocument` / `@On` (auto-cleaned).
 - **Mutating state server-side without `@Server()`.** Changes won't broadcast to clients.
@@ -160,9 +191,13 @@ render() {
 
 ## References
 
+- `references/server-client-rpc.md` — the RPC mechanism: `@Server`/`@Client`/`@Shared`, transports, server→client calls, security
 - `references/decorators.md` — full decorator API (class, property, method decorators, helpers)
-- `references/validation.md` — `@Validate` deep dive (rules, config, async validators, full form)
+- `references/validation.md` — `@Validate` deep dive (rules, config, async validators, full form, `@Store` rule maps)
+- `references/forms.md` — the two form patterns: progressive (`post()` + `flash`/`old`) vs reactive (`@Store` + `@Validate` + `@Server`)
 - `references/loading.md` — the four loading mechanisms (`loading.ts`, `loadingTemplate()`, `this.loading`, `clientInit()`)
+- `references/database.md` — `db()` / `getDb()`, Kysely queries, request scoping, setup
+- `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation
 - `references/realtime.md` — SSE vs Durable Object transports, scope, channels, streaming, event-driven re-fetch
 - `references/auth.md` — `createAuth()` flow, login handler, guards, `this.user`
 - `references/errors.md` — `404/index.ts` and `error/index.ts` hierarchical boundaries

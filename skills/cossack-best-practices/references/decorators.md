@@ -69,32 +69,55 @@ Client-only reactive state. Triggers re-renders locally. Never sent to the serve
 isOpen: boolean = false;
 ```
 
-### Component inputs (`this.props`)
+### `@Store(options?)`
 
-Inputs passed from a parent component are not decorated — they arrive on `this.props`. Declare their shape with an interface plus a type-only `declare props` override so destructuring is typed:
+Deep reactive state for objects and arrays. Like `@State`, it is server-synced and isomorphic (serialized into initial state, hydrated on the client, broadcast when mutated on the server) — but it wraps the value in a deep `Proxy` so **nested mutations** trigger the same broadcast / re-render path as a top-level setter:
 
 ```typescript
-interface ButtonProps {
-  variant?: 'primary' | 'secondary';
-  [key: string]: any; // allow spreading the rest as HTML attributes
-}
+@Store()
+form = {
+    email: '',
+    address: { zip: '', country: '' },
+    tags: [] as string[],
+};
 
-@Component()
-export class Button extends Cossack {
-  declare props: ButtonProps;
-
-  render() {
-    const { variant = 'primary', ...rest } = this.props;
-    // ...
-  }
-}
+// All of these are reactive — no manual reassignment needed:
+this.form.email = 'a@b.com';
+this.form.address.zip = '12345';
+this.form.tags.push('new-tag');     // array mutation
+this.form.tags.splice(0, 1);
 ```
 
-> Reactive, component-owned state still uses `@ClientState` (or `@State`). `this.props` is for parent-provided inputs.
+Use `@Store` when you mutate nested fields in place. For a single scalar value, `@State` is the right choice. Options are identical to `@State`:
+
+- `channel?: string` — Channel for partial updates (default: `'global'`)
+- `provider?: string` — State provider name (default: `'page'`)
+
+`@Validate` can be stacked on a `@Store` with a **rule map** (keys are paths relative to the store). See `validation.md`.
+
+### `@ClientStore()`
+
+Client-only deep reactive state. Like `@ClientState` but with the same deep-`Proxy` reactivity as `@Store`. Nested mutations trigger client re-renders, but the value is **never serialized or sent over the wire**. Use for ephemeral grouped UI state (multi-step form drafts, collapsible panel trees, transient filters).
+
+```typescript
+@ClientStore()
+ui = { panel: { open: false, tab: 'details' } };
+
+togglePanel() { this.ui.panel.open = !this.ui.panel.open; }
+```
+
+### `@Prop()`
+
+Semantic equivalent to `@ClientState()`. Indicates a component input from a parent. Use in reusable components.
+
+```typescript
+@Prop()
+variant: 'primary' | 'secondary' = 'primary';
+```
 
 ### `@Validate(options?)`
 
-Adds validation rules to a `@State` or `@ClientState` property. Must be stacked on top of the state decorator. See `validation.md` for the full guide.
+Adds validation rules to a `@State`, `@ClientState`, `@Store`, or `@ClientStore` property. Must be stacked on top of the state/store decorator. For `@State`/`@ClientState` pass a single rule; for `@Store`/`@ClientStore` pass a map of rules keyed by path (or use `storeRules<T>()` for compile-time-checked keys). See `validation.md` for the full guide.
 
 ```typescript
 @State()
@@ -320,6 +343,22 @@ Creates typed versions of `@State` and `@Server` with channel name autocomplete.
 
 ```typescript
 const { State, Server } = createTypedDecorators<{ Channels: 'feeds' | 'notifications' }>();
+```
+
+### `storeRules<T>(rules)`
+
+Type-safe rule map for `@Validate` on a `@Store` / `@ClientStore`. Keys are checked against the store type `T` at compile time, so a typo like `emial` fails to compile. Keys are **relative** to the store property — the decorator auto-prefixes them with the property name at runtime. See `validation.md`.
+
+```typescript
+@Store()
+@Validate({
+    rules: storeRules<SubmitFormState>({
+        email: { required: true, email: true, message: 'Enter a valid email' },
+        'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+        tags: { required: true, minLength: 1, message: 'Add at least one tag' },
+    }),
+})
+form: SubmitFormState = { email: '', address: { zip: '' }, tags: [] };
 ```
 
 ### `createAuth<User>(provider)`

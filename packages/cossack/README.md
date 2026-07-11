@@ -11,7 +11,7 @@ The official command-line interface for the [Cossack Framework](https://cossack.
 The CLI is installed automatically when you scaffold a project:
 
 ```bash
-pnpm create cossack-app my-app
+pnpm cossack create my-app
 cd my-app
 ```
 
