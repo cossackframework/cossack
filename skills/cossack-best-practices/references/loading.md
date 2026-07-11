@@ -11,7 +11,7 @@ Cossack has **four** built-in loading mechanisms. **Do not hand-roll `isLoading`
 
 ## 1. Route-level skeleton (`loading.ts`)
 
-Create a `loading.ts` in any route directory. The router renders it **instantly** on navigation while the main page's `init()` runs.
+Create a `loading.ts` (or `loading.tsx`) in any route directory. The router renders it **instantly** on navigation while the main page's `init()` runs.
 
 ```
 src/pages/dashboard/
@@ -53,7 +53,15 @@ export default class UserProfile extends Cossack {
 
 ## 3. Per-action loading (`this.loading`)
 
-The framework tracks every pending `@Server()` call by method name in the `this.loading` object. Use it in `render()`:
+`this.loading` is a `Record<string, number>` — a **reference counter** keyed by method name. The framework increments it when an RPC call starts and decrements when it finishes, deleting the key when it reaches `0`. A key is truthy (pending) when `> 0`, so concurrent calls stack correctly.
+
+The framework auto-tracks:
+- Every `@Server()`, `@Client()`, and `@Shared()` RPC call — keyed by method name.
+- The `init()`, `get()`, and `clientInit()` lifecycle hooks — keyed as `'init'`, `'get'`.
+
+It does **not** track `@Task()` or `@VisibleTask()` methods — those run as background tasks without a loading flag. If you need loading state for a task, track it manually.
+
+Use it in `render()`:
 
 ```typescript
 async save() { await this.performSave(); }
