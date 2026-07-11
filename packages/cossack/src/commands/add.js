@@ -27,6 +27,7 @@ import {
   createRolesMigration,
   createPermissionsMigration,
   createOauthAccountsMigration,
+  createCacheTableMigration,
   seederTemplate,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
@@ -292,6 +293,7 @@ async function ensureDatabase(root, { dialect, ctx }) {
     ['0003_create_roles.ts', createRolesMigration()],
     ['0004_create_permissions.ts', createPermissionsMigration()],
     ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
+    ['0006_create_cache_table.ts', createCacheTableMigration()],
   ];
 
   const files = [
@@ -526,8 +528,10 @@ Features:
             Routes default to (auth)/{login,register,forgot-password,reset-password}.
   database  Adds @cossackframework/database (Kysely + D1/Turso dialects), a default
             User model, starter migrations (users, sessions, roles, permissions,
-            oauth_accounts), a seeder, src/db/config.ts, and registers the dbMiddleware
-            in src/bootstrap/middlewares.ts. Prompts for the dialect (default: D1).
+            oauth_accounts, cache_items), a seeder, src/db/config.ts, and registers
+            the dbMiddleware in src/bootstrap/middlewares.ts. Prompts for the dialect
+            (default: D1). Note: database support is included by default in new
+            projects — use this only to add it to an existing project that predates it.
 
 Options:
   --force, -f              Overwrite existing files.

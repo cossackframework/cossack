@@ -6,18 +6,12 @@
 //
 // Middleware *definitions* live in `src/middlewares/*.ts`; this file only
 // holds the ordered references so you can add/remove features cleanly.
-// Example (after running `cossack add database`):
-//
-//   import type { MiddlewareHandler } from 'hono';
-//   import { dbMiddleware } from '../middlewares/db';
-//
-//   const middlewares: MiddlewareHandler[] = [
-//     dbMiddleware,
-//   ];
-//   export default middlewares;
 
 import type { MiddlewareHandler } from 'hono';
+import { dbMiddleware } from '../middlewares/db';
 
-const middlewares: MiddlewareHandler[] = [];
+const middlewares: MiddlewareHandler[] = [
+  dbMiddleware,
+];
 
 export default middlewares;

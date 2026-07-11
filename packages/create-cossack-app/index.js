@@ -16,6 +16,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
+ * Pinned `better-sqlite3` version — used in the template's devDependencies
+ * (for Cloudflare projects' local migration dev) and moved to runtime
+ * dependencies for Node.js projects. Single source of truth so the two
+ * stays in sync.
+ */
+const BETTER_SQLITE3_VERSION = '^11.0.0';
+
+/**
  * @param {string} projectName
  * @param {{ adapter?: 'cloudflare' | 'node' }} [options]
  * @returns {Promise<{ projectDir: string, adapter: string, manifestPath: string }>}
@@ -90,6 +98,14 @@ async function configureNodeAdapter(projectDir) {
   packageJson.dependencies['@hono/node-server'] = '^1.13.0';
   packageJson.dependencies['ws'] = '^8.18.0';
 
+  // better-sqlite3 is a runtime dependency for Node.js (used by the database
+  // config as the default SQLite connection — D1 doesn't exist outside Workers).
+  // Source the version from the template's devDependencies (where it ships for
+  // Cloudflare projects' local migration dev); fall back to a pinned range.
+  const betterSqliteVersion = packageJson.devDependencies['better-sqlite3'] || BETTER_SQLITE3_VERSION;
+  packageJson.dependencies['better-sqlite3'] = betterSqliteVersion;
+  delete packageJson.devDependencies['better-sqlite3'];
+
   packageJson.devDependencies['@types/ws'] = '^8.18.0';
   packageJson.devDependencies['@types/node'] = '^22.0.0';
 
@@ -100,21 +116,62 @@ async function configureNodeAdapter(projectDir) {
 
   await fs.rm(path.join(projectDir, 'wrangler.jsonc'), { force: true });
 
+  // The Cloudflare-specific worker-configuration.d.ts (D1Database, Fetcher, etc.)
+  // isn't applicable to Node.js. The tsconfig below switches to `node` types.
+  await fs.rm(path.join(projectDir, 'worker-configuration.d.ts'), { force: true });
+
   const tsconfigPath = path.join(projectDir, 'tsconfig.json');
   const tsconfig = JSON.parse(await fs.readFile(tsconfigPath, 'utf-8'));
   tsconfig.compilerOptions.types = ['vite/client', 'node'];
   await fs.writeFile(tsconfigPath, JSON.stringify(tsconfig, null, 2));
 
+  // Rewrite src/db/config.ts for Node.js — use better-sqlite3 as the default
+  // connection (D1 bindings only exist inside Cloudflare Workers).
+  const dbConfigContent = `import {
+  Kysely,
+  SqliteDialect,
+  type DbClient,
+} from '@cossackframework/database';
+import Database from 'better-sqlite3';
+
+/**
+ * Build a per-request Kysely client from a local SQLite database.
+ * Used by src/middlewares/db.ts which is registered in src/bootstrap/middlewares.ts.
+ *
+ * On Node.js, the default is a local SQLite file (better-sqlite3). Set
+ * DB_PATH to point at a custom path. Defaults to ./database.sqlite.
+ */
+export function createClient(env: { DB_PATH?: string } = {}): DbClient {
+  const localPath = env.DB_PATH ?? process.env.DB_PATH ?? './database.sqlite';
+  return new Kysely({
+    dialect: new SqliteDialect({ database: new Database(localPath) }),
+  }) as DbClient;
+}
+
+/**
+ * Build a Kysely client for the CLI (migrations & seeders). Reads the same
+ * DB_PATH env var (defaults to ./database.sqlite).
+ */
+export async function getCliClient(): Promise<DbClient> {
+  return createClient();
+}
+`;
+  await fs.writeFile(path.join(projectDir, 'src/db/config.ts'), dbConfigContent);
+
   const indexTsContent = `import { serve } from '@hono/node-server';
 import { CossackNodeAdapter, createNodeEmailSender } from '@cossackframework/node-adapter';
 import { createApp } from '@cossackframework/framework/router';
+import { createClient } from './db/config';
 
 const app = createApp();
 
 // Runtime bindings — mirrors Cloudflare's \`env\` so application code stays
-// identical across runtimes. The email sender polyfills the \`send_email\`
-// binding via SMTP (configure SMTP_* env vars when you add auth/email).
-const env: Record<string, unknown> = {};
+// identical across runtimes. The database client uses a local SQLite file
+// (better-sqlite3); set DB_PATH to customize. The email sender polyfills the
+// \`send_email\` binding via SMTP (configure SMTP_* env vars when you add auth/email).
+const env: Record<string, unknown> = {
+    DB_PATH: process.env.DB_PATH ?? './database.sqlite',
+};
 if (process.env.SMTP_HOST) {
     env.EMAIL = createNodeEmailSender({
         host: process.env.SMTP_HOST,

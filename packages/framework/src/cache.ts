@@ -563,14 +563,20 @@ let defaultStoreOverride: CacheStore | null = null;
 
 /**
  * Register a custom driver factory (e.g. for the database driver from
- * `@cossackframework/database`, or Redis). Once registered, the driver name can
- * be used in `config/cache.ts` store declarations.
+ * `@cossackframework/database`, Redis, or another backend). Once registered,
+ * the driver name can be used in `config/cache.ts` store declarations.
+ *
+ * The default project template registers the `'database'` driver in
+ * `src/middlewares/db.ts`. If you removed that file or use a different
+ * database client, register your own store here.
  *
  * @example
  * ```ts
  * import { extendCacheDriver } from '@cossackframework/framework/cache';
  * import { DatabaseCacheStore } from '@cossackframework/database';
  * extendCacheDriver('database', () => new DatabaseCacheStore());
+ * // or a custom backend:
+ * extendCacheDriver('redis', (spec, env) => new RedisCacheStore(env.REDIS));
  * ```
  */
 export function extendCacheDriver(driver: string, factory: CacheStoreFactory): void {
@@ -602,6 +608,23 @@ function ensureBuiltinDrivers(): void {
         if (!binding) throw missingBindingError(spec.binding ?? 'CACHE_DO', 'durable-object');
         return new DurableObjectCacheStore(binding);
     });
+    // The 'database' driver is not wired by the framework (which stays free of
+    // a database-package dependency). It ships as a default in new projects —
+    // `src/middlewares/db.ts` registers it via `extendCacheDriver('database',
+    // () => new DatabaseCacheStore())`. If that file was removed or the
+    // database package uninstalled, give a clear, actionable error.
+    // Only set the stub if the user hasn't already registered a real driver.
+    if (!driverFactories.has('database')) {
+        driverFactories.set('database', () => {
+            throw new Error(
+                "[Cossack] Cache driver 'database' is not registered. " +
+                    "The default project template registers it in src/middlewares/db.ts — " +
+                    'make sure that file is imported from src/bootstrap/middlewares.ts and that ' +
+                    "@cossackframework/database is installed. To use a different cache backend, " +
+                    "call extendCacheDriver('database', () => yourStore) or change CACHE_DRIVER.",
+            );
+        });
+    }
 }
 
 function resolveBinding(name: string, env: Record<string, any>): any {

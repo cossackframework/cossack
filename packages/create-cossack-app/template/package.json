@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@cossackframework/core": "^0.6.0",
+    "@cossackframework/database": "^0.1.0",
     "@cossackframework/framework": "^0.6.0",
     "@cossackframework/renderer": "^0.6.0",
     "cossack": "^0.1.0",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.44.0",
     "@tailwindcss/vite": "^4.1.0",
+    "better-sqlite3": "^11.0.0",
     "prettier": "^3.4.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.23.0",

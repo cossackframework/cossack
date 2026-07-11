@@ -6,6 +6,15 @@
   ],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
+  // Cloudflare D1 binding. Replace <database_id> with the output of
+  // `npx wrangler d1 create <name>`, then run `cossack migration up`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "app-db",
+      "database_id": "<database_id>"
+    }
+  ],
   // "durable_objects": {
   //   "bindings": [
   //     {

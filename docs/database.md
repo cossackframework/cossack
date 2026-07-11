@@ -5,14 +5,14 @@ description: 'Type-safe database support for Cossack — a Kysely-based query bu
 
 # Database
 
-Cossack ships an optional database layer built on [Kysely](https://kysely.dev) — a type-safe SQL query builder that runs on Cloudflare Workers, Node.js, and the browser. It ships with first-class dialects for **Cloudflare D1** and **Turso** (libSQL), plus migrations and seeders driven by the `cossack` CLI.
+Cossack ships a database layer built on [Kysely](https://kysely.dev) — a type-safe SQL query builder that runs on Cloudflare Workers, Node.js, and the browser. It ships with first-class dialects for **Cloudflare D1** and **Turso** (libSQL), plus migrations and seeders driven by the `cossack` CLI.
 
 - **Re-exports Kysely** — no need to install it separately. `import { Kysely, Generated, sql } from '@cossackframework/database'`.
 - **Custom dialects** for D1 and Turso, written against Kysely 0.29's `Dialect` interface (the community `kysely-d1`/`kysely-libsql` packages are stale).
 - **Per-request client** via Hono middleware **and** a global `db()` helper (AsyncLocalStorage) — same pattern as `__()`.
 - **Migrations & seeders** under `src/migrations/` and `src/seeders/`, run with `cossack migration` / `cossack seeder`.
 
-> Database support is **optional**. Apps that don't need a database pay nothing for it — the framework never imports the database package.
+> Database support is **included by default** in new Cossack apps — the project template ships default migrations, wires the `dbMiddleware`, and registers the database cache driver. The framework itself stays decoupled (no hard dependency on `@cossackframework/database`), so apps that don't need a database — or want a different client (Drizzle, SurrealDB, …) — can remove the package and middleware cleanly.
 
 ## In this section
 
@@ -22,7 +22,7 @@ Cossack ships an optional database layer built on [Kysely](https://kysely.dev) �
 
 ## Quick start
 
-Add database support to your project:
+Database support ships with every new project created via `create-cossack-app`. To add it to an existing project that predates it:
 
 ```sh
 npx cossack add database
@@ -33,12 +33,13 @@ This prompts for a **dialect** (default: D1) and scaffolds everything you need:
 ```
 src/
 ├── models/User.ts                 # default User model + schema augmentations
-├── migrations/                    # 5 starter migrations
+├── migrations/                    # 6 starter migrations
 │   ├── 0001_create_users.ts
 │   ├── 0002_create_sessions.ts
 │   ├── 0003_create_roles.ts
 │   ├── 0004_create_permissions.ts
-│   └── 0005_create_oauth_accounts.ts
+│   ├── 0005_create_oauth_accounts.ts
+│   └── 0006_create_cache_table.ts
 ├── seeders/database.seeder.ts     # example seeder
 └── db/config.ts                   # client factory for requests + the CLI
 ```

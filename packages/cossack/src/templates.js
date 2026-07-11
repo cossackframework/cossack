@@ -541,7 +541,8 @@ export default {
 
 /** `src/middlewares/db.ts` — the database request middleware (instantiated + exported). */
 export function dbMiddlewareFileTemplate() {
-  return `import { createDbMiddleware } from '@cossackframework/database';
+  return `import { createDbMiddleware, DatabaseCacheStore } from '@cossackframework/database';
+import { extendCacheDriver } from '@cossackframework/framework/cache';
 import { createClient } from '../db/config';
 
 // Exposes the Kysely client on the request (\`c.get('db')\` / \`getDb(c)\`) and
@@ -549,6 +550,11 @@ import { createClient } from '../db/config';
 export const dbMiddleware = createDbMiddleware({
   client: (c) => createClient(c.env),
 });
+
+// Register the database cache driver so \`CACHE_DRIVER=database\` works.
+// Remove this (and the 'database' store in config/cache.ts) if you don't use
+// database-backed caching, or swap it for your own driver (Redis, R2, …).
+extendCacheDriver('database', () => new DatabaseCacheStore());
 `;
 }
 
@@ -731,21 +737,20 @@ export async function down(db: Kysely<any>): Promise<void> {
 `;
 }
 
-// --- Cache table migration (`cossack cache:make-table`) ---------------------
+// --- Cache table migration (shipped by default via `cossack add database`) ----
 
 /**
  * Migration stub for the database cache driver's `cache_items` table.
- * Run it afterwards with `cossack migration up`.
+ * Included as migration 0006 in the default set; apply with `cossack migration up`.
  */
 export function createCacheTableMigration() {
   return `import type { Kysely } from '@cossackframework/database';
 
 // Table for the database cache driver (@cossackframework/database's
 // DatabaseCacheStore). Values are JSON text; expires_at is epoch milliseconds
-// (NULL = never expires). Register the driver at startup:
-//   import { extendCacheDriver } from '@cossackframework/framework/cache';
-//   import { DatabaseCacheStore } from '@cossackframework/database';
-//   extendCacheDriver('database', () => new DatabaseCacheStore());
+// (NULL = never expires). The 'database' cache driver is registered by the
+// default project template in src/middlewares/db.ts — set CACHE_DRIVER=database
+// to use it.
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable('cache_items')

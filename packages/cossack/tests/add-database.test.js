@@ -51,15 +51,20 @@ describe('add database (d1)', () => {
 
     // models
     expect(fs.existsSync(path.join(tmp, 'src/models/User.ts'))).toBe(true);
-    // migrations (5 default)
+    // migrations (6 default)
     const migs = fs.readdirSync(path.join(tmp, 'src/migrations'));
-    expect(migs).toHaveLength(5);
+    expect(migs).toHaveLength(6);
     expect(migs.some((f) => f.endsWith('create_users.ts'))).toBe(true);
     expect(migs.some((f) => f.endsWith('create_oauth_accounts.ts'))).toBe(true);
+    expect(migs.some((f) => f.endsWith('create_cache_table.ts'))).toBe(true);
     // seeder + config + db middleware
     expect(fs.existsSync(path.join(tmp, 'src/seeders/database.seeder.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/db/config.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/middlewares/db.ts'))).toBe(true);
+    // db.ts registers the database cache driver via extendCacheDriver
+    const dbMiddleware = fs.readFileSync(path.join(tmp, 'src/middlewares/db.ts'), 'utf8');
+    expect(dbMiddleware).toContain('extendCacheDriver');
+    expect(dbMiddleware).toContain('DatabaseCacheStore');
 
     // dependency added
     const pkg = JSON.parse(fs.readFileSync(path.join(tmp, 'package.json'), 'utf8'));

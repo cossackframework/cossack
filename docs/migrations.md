@@ -130,7 +130,7 @@ For multi-statement schema changes that must be atomic, split them into separate
 
 ## Default migrations
 
-`cossack add database` scaffolds five starter migrations:
+New Cossack projects ship six starter migrations (also scaffolded by `cossack add database` for existing projects):
 
 | File | Tables |
 |---|---|
@@ -139,8 +139,9 @@ For multi-statement schema changes that must be atomic, split them into separate
 | `0003_create_roles.ts` | `roles` |
 | `0004_create_permissions.ts` | `permissions`, `role_permissions` (join) |
 | `0005_create_oauth_accounts.ts` | `oauth_accounts` |
+| `0006_create_cache_table.ts` | `cache_items` (for the database cache driver) |
 
-These are the foundation for [Authentication](/docs/authentication.md), [Authorization](/docs/authorization.md), and [Social Login](/docs/oauth.md). Edit them freely to match your schema before you run `migration up` for the first time.
+These are the foundation for [Authentication](/docs/authentication.md), [Authorization](/docs/authorization.md), [Social Login](/docs/oauth.md), and database-backed caching. Edit them freely to match your schema before you run `migration up` for the first time.
 
 ## API reference
 
