@@ -29,11 +29,22 @@ const LEGACY_FLAGS = new Set([
 export async function ssgCommand(args, ctx) {
   const { viteArgs, legacy } = splitArgs(args);
   if (legacy.length > 0) {
+    const hasConfigurable = legacy.some((f) =>
+      ['--base-url', '--baseUrl', '--out-dir', '--outDir'].includes(f.flag),
+    );
     console.warn(
       '[cossack/ssg] The following flags are no longer supported and were ignored:\n' +
-        legacy.map((f) => `  ${f.flag}${f.value ? ` ${f.value}` : ''}`).join('\n') +
-        '\nSSG now runs inside `vite build` via the `cossackSsg()` plugin. Configure ' +
-        'these in vite.config.ts instead, e.g. cossackSsg({ baseUrl, outDir }).',
+        legacy.map((f) => `  ${f.flag}${f.value !== undefined ? ` ${f.value}` : ''}`).join('\n') +
+        '\nSSG now runs inside `vite build` via the `cossackSsg()` plugin.' +
+        (hasConfigurable
+          ? ' Configure `baseUrl` and `outDir` in vite.config.ts: cossackSsg({ baseUrl, outDir }).'
+          : '') +
+        // --app, --template, --project-root have no plugin equivalent: the App
+        // and template are always discovered from their conventional locations
+        // (src/App.ts, src/root.ts), and the project root is process.cwd().
+        '\nNote: `--app`, `--template`, and `--project-root` have no equivalent — ' +
+        'the App is loaded from `src/App.ts`, the template from `src/root.ts`, ' +
+        'and the project root is the current working directory.',
     );
   }
   console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');

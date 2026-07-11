@@ -59,8 +59,8 @@ describe('cossackSsg() plugin', () => {
 
 // ---------------------------------------------------------------------------
 // getOutputFilePath (path-traversal guard + route resolution)
-// (Moved here from ssg-build.test.ts concerns; the legacy test file keeps its
-// own copy for backward compatibility.)
+// `ssg-build.test.ts` also imports and tests this function from the same
+// source; the cases here extend that coverage with additional edge cases.
 // ---------------------------------------------------------------------------
 
 describe('getOutputFilePath (vite-ssg-plugin)', () => {

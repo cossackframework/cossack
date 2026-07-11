@@ -171,7 +171,7 @@ function scanPagesDir(pagesDir: string): { pageKeys: string[]; layoutKeys: strin
           layoutKeys.push(key);
         } else if (entry.name === 'loading.ts') {
           // Excluded — matches the glob's `!/src/pages/**/loading.ts`.
-        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx')) {
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
           pageKeys.push(key);
         }
       }
