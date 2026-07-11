@@ -6,6 +6,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 // @cossack:cloudflare-end
 import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
+import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
 export default defineConfig({
   plugins: [
@@ -20,6 +21,9 @@ export default defineConfig({
     cossackLang(),
     cossackMiddlewares(),
     cossackConfig(),
+    // SSG: renders pages marked `@Page({ ssg: true })` to static HTML during
+    // `vite build`. Remove or set `enabled: false` if you don't use SSG.
+    cossackSsg(),
   ],
   resolve: {
     alias: {

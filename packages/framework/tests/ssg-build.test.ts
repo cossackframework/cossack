@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
-import { getOutputFilePath } from '../src/ssg-build';
+import { getOutputFilePath } from '../src/vite-ssg-plugin';
 
 /**
  * Use createRequire to obtain the real, unshimmed `node:fs`.

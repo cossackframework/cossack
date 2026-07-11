@@ -38,6 +38,10 @@
       "types": "./dist/esm/vite-security-plugin.d.ts",
       "import": "./dist/esm/vite-security-plugin.js"
     },
+    "./vite-ssg-plugin": {
+      "types": "./dist/esm/vite-ssg-plugin.d.ts",
+      "import": "./dist/esm/vite-ssg-plugin.js"
+    },
     "./router": {
       "types": "./dist/esm/router.d.ts",
       "import": "./dist/esm/router.js"
@@ -61,10 +65,6 @@
     "./ssg-config": {
       "types": "./dist/esm/ssg-config.d.ts",
       "import": "./dist/esm/ssg-config.js"
-    },
-    "./ssg-build": {
-      "types": "./dist/esm/ssg-build.d.ts",
-      "import": "./dist/esm/ssg-build.js"
     },
     "./route-ids": {
       "types": "./dist/esm/route-ids.d.ts",
@@ -91,10 +91,10 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:types": "tsc -p tsconfig.declarations.json",
-    "build:ssg": "pnpm run build:types && vite build && cossack ssg",
-    "build:all": "pnpm run build:types && pnpm run build && cossack ssg",
+    "build:ssg": "pnpm run build:types && vite build",
+    "build:all": "pnpm run build:types && pnpm run build",
     "preview": "pnpm run build:ssg && vite preview",
-    "deploy": "pnpm run build:types && vite build && cossack ssg && wrangler deploy",
+    "deploy": "pnpm run build:types && vite build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "test": "vitest",
     "test:e2e": "playwright test",
