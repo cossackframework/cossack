@@ -2,6 +2,13 @@ packages:
   - packages/*
   - examples/*
 
+allowBuilds:
+  workerd: true
+
+# TODO: remove once hono@4.12.29 passes the minimum release-age window (~24h after publish)
+minimumReleaseAgeExclude:
+  - hono@4.12.29
+
 onlyBuiltDependencies:
   - esbuild
   - sharp
