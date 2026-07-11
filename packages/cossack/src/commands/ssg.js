@@ -43,8 +43,10 @@ export async function ssgCommand(args, ctx) {
 /**
  * Separate legacy SSG flags (and their values) from args meant for vite.
  * Each legacy flag takes a single value (e.g. `--base-url <url>`).
+ *
+ * Exported for unit testing.
  */
-function splitArgs(args) {
+export function splitArgs(args) {
   const viteArgs = [];
   const legacy = [];
   for (let i = 0; i < args.length; i++) {
