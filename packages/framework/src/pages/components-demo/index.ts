@@ -18,12 +18,32 @@ import {
     Switch,
     Select,
     Spinner,
+    Avatar,
+    Separator,
+    Skeleton,
+    Progress,
+    Tabs,
+    Tooltip,
+    Popover,
+    RadioGroup,
+    Slider,
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+    Toaster,
+    toast,
+    DropdownMenu,
+    Sheet,
     Icon,
 } from '@cossackframework/ui';
 
 @Page()
 export class ComponentsDemo extends Cossack {
     @ClientState() modalOpen = false;
+    @ClientState() sheetOpen = false;
 
     public head(_context: HeadContext): HeadValue {
         return {
@@ -175,6 +195,141 @@ export class ComponentsDemo extends Cossack {
                         </div>
                     </div>
                 </section>
+
+                <!-- Avatar, Separator, Skeleton -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Avatar · Separator · Skeleton</h2>
+                    <div class="flex items-center gap-4">
+                        ${component(Avatar, { src: 'https://avatars.githubusercontent.com/u/9919?v=4', alt: 'GitHub', size: 48 })}
+                        ${component(Avatar, { alt: 'Tan Nguyen', size: 48 })}
+                        ${component(Separator, { orientation: 'vertical' })}
+                        ${component(Skeleton, { width: '120px', height: '12px' })}
+                    </div>
+                </section>
+
+                <!-- Progress -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Progress</h2>
+                    <div class="space-y-2 max-w-md">
+                        ${component(Progress, { value: 25, size: 'sm' })}
+                        ${component(Progress, { value: 60, size: 'md' })}
+                        ${component(Progress, { value: 90, size: 'lg' })}
+                    </div>
+                </section>
+
+                <!-- Tabs -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Tabs</h2>
+                    ${component(Tabs, {
+                        items: [
+                            { value: 'account', label: 'Account', content: html`<p class="text-sm">Account settings content.</p>` },
+                            { value: 'password', label: 'Password', content: html`<p class="text-sm">Password settings content.</p>` },
+                        ],
+                    })}
+                </section>
+
+                <!-- Tooltip -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Tooltip</h2>
+                    <div class="flex items-center gap-4">
+                        ${component(Tooltip, { label: 'Save changes', side: 'top' }, component(Button, { variant: 'primary' }, 'Hover me'))}
+                    </div>
+                </section>
+
+                <!-- Popover -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Popover</h2>
+                    ${component(Popover, { trigger: 'Open popover', side: 'bottom' }, html`
+                        <h3 class="text-base font-semibold mb-1">Popover title</h3>
+                        <p class="text-sm text-muted-foreground">This uses the native <code>popover</code> attribute — top-layer rendering, light dismiss, no portal.</p>
+                    `)}
+                </section>
+
+                <!-- Radio Group + Slider -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Radio Group · Slider</h2>
+                    <div class="space-y-4 max-w-md">
+                        ${component(RadioGroup, {
+                            name: 'plan',
+                            value: 'pro',
+                            items: [
+                                { value: 'free', label: 'Free' },
+                                { value: 'pro', label: 'Pro' },
+                                { value: 'enterprise', label: 'Enterprise' },
+                            ],
+                        })}
+                        ${component(Slider, { value: 40, label: 'Volume' })}
+                    </div>
+                </section>
+
+                <!-- Table -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Table</h2>
+                    ${component(Table, { striped: true }, html`
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Name</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Role</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border">
+                                <td class="px-4 py-3 text-sm">Tan Nguyen</td>
+                                <td class="px-4 py-3 text-sm">Admin</td>
+                                <td class="px-4 py-3 text-sm">${component(Badge, { variant: 'success' }, 'Active')}</td>
+                            </tr>
+                            <tr class="border-b border-border">
+                                <td class="px-4 py-3 text-sm">Jane Doe</td>
+                                <td class="px-4 py-3 text-sm">Editor</td>
+                                <td class="px-4 py-3 text-sm">${component(Badge, { variant: 'warning' }, 'Pending')}</td>
+                            </tr>
+                        </tbody>
+                    `)}
+                </section>
+
+                <!-- Toast + Dropdown Menu + Sheet -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Toast · Dropdown · Sheet</h2>
+                    <div class="flex flex-wrap items-center gap-3">
+                        ${component(Button, { '@click': () => toast.success('Saved successfully!') }, 'Toast: Success')}
+                        ${component(Button, { variant: 'secondary', '@click': () => toast.warning('This is a warning.') }, 'Toast: Warning')}
+                        ${component(Button, { variant: 'destructive', '@click': () => toast.error('Something went wrong.') }, 'Toast: Error')}
+                        ${component(DropdownMenu, {
+                            trigger: 'Dropdown',
+                            side: 'bottom',
+                            items: [
+                                { label: 'Profile' },
+                                { label: 'Settings' },
+                                { separator: true },
+                                { label: 'Sign out', onClick: () => toast.show('Signed out') },
+                            ],
+                        })}
+                        ${component(Button, { variant: 'outline', '@click': () => { this.sheetOpen = true; } }, 'Open Sheet')}
+                    </div>
+                </section>
+
+                <!-- Sheet -->
+                ${component(
+                    Sheet,
+                    {
+                        open: this.sheetOpen,
+                        side: 'right',
+                        onClose: () => { this.sheetOpen = false; },
+                    },
+                    html`
+                        <div class="p-6">
+                            <h3 class="text-lg font-semibold mb-3">Sheet Panel</h3>
+                            <p class="text-sm text-muted-foreground mb-5">This slides in from the right edge using the native <code>&lt;dialog&gt;</code> top layer.</p>
+                            <div class="flex justify-end gap-2">
+                                ${component(Button, { variant: 'ghost', size: 'sm', '@click': () => { this.sheetOpen = false; } }, 'Close')}
+                            </div>
+                        </div>
+                    `,
+                )}
+
+                <!-- Toaster (mount once — renders toasts from the global store) -->
+                ${component(Toaster, {})}
             </div>
         `);
     }

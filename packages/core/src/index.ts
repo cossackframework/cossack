@@ -31,4 +31,16 @@ export * from './shared/i18n';
 export * from './client/navigation';
 
 export { CossackDurableObject } from './shared/CossackDurableObject';
+export {
+    focusTrap,
+    focusFirst,
+    focusLast,
+    focusNext,
+    getTabbable,
+} from './shared/focus-trap';
+export {
+    createStore,
+    connectStore,
+    type ReactiveStore,
+} from './shared/reactive-store';
 export { html, TemplateResult } from '@cossackframework/renderer';

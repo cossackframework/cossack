@@ -265,6 +265,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.registerSelf();
             this.initializeState();
             super.connectedCallback();
+
+            // Child components rendered via component() go through
+            // connectedCallback() but NOT bootstrap(). Without this, their
+            // onMount() / @On('mount') / setupEventListeners() / @VisibleTask
+            // observers would never fire. Root/page components call
+            // _frameworkMount() from bootstrap() (guarded by isMounted), so
+            // this is a no-op for them.
+            if (!this.isServer && !this.isMounted) {
+                this.isMounted = true;
+                this._frameworkMount();
+            }
         } finally {
             // Restore phase after lifecycle complete
             this._restorePhase();

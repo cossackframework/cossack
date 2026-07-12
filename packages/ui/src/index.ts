@@ -31,6 +31,27 @@ export { Checkbox, type CheckboxProps } from "./components/Checkbox";
 export { Switch, type SwitchProps } from "./components/Switch";
 export { Select, type SelectProps } from "./components/Select";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
+export { Avatar, type AvatarProps } from "./components/Avatar";
+export { Separator, type SeparatorProps } from "./components/Separator";
+export { Skeleton, type SkeletonProps } from "./components/Skeleton";
+export { Progress, type ProgressProps } from "./components/Progress";
+export { Tabs, type TabsProps } from "./components/Tabs";
+export { Tooltip, type TooltipProps } from "./components/Tooltip";
+export { Popover, type PopoverProps } from "./components/Popover";
+export { RadioGroup, type RadioGroupProps } from "./components/RadioGroup";
+export { Slider, type SliderProps } from "./components/Slider";
+export {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+    type TableProps,
+} from "./components/Table";
+export { Toaster, toast, type ToastItem, type ToasterProps } from "./components/Toast";
+export { DropdownMenu, type DropdownMenuProps } from "./components/DropdownMenu";
+export { Sheet, type SheetProps } from "./components/Sheet";
 
 // Icons
 export { Icon, type IconProps } from "./icons/Icon";

@@ -30,7 +30,7 @@ test.describe('Components Demo Page', () => {
 
   test('renders all badge variants', async ({ page }) => {
     for (const label of ['Active', 'Pending', 'Failed', 'Recommended']) {
-      await expect(page.locator(`span.cs-badge:has-text("${label}")`)).toBeVisible();
+      await expect(page.locator(`span.cs-badge:has-text("${label}")`).first()).toBeVisible();
     }
   });
 
@@ -191,5 +191,90 @@ test.describe('Components Demo Page', () => {
 
     // Spinner uses animate-spin
     await expect(page.locator('span.cs-spinner.animate-spin')).toBeVisible();
+  });
+
+  test('avatar, separator, skeleton, progress render', async ({ page }) => {
+    await expect(page.locator('.cs-avatar')).toHaveCount(2);
+    await expect(page.locator('.cs-separator--vertical')).toBeVisible();
+    await expect(page.locator('.cs-skeleton.animate-pulse')).toBeVisible();
+    const bars = page.locator('.cs-progress[role="progressbar"]');
+    expect(await bars.count()).toBeGreaterThanOrEqual(3);
+  });
+
+  test('tabs switch panels on click', async ({ page }) => {
+    // Default tab shows account content.
+    await expect(page.locator('.cs-tabs__panel:has-text("Account settings")')).toBeVisible();
+
+    // Click the Password tab.
+    await page.locator('[role="tab"]:has-text("Password")').click();
+
+    // Account panel should be unmounted; Password panel visible.
+    await expect(page.locator('.cs-tabs__panel:has-text("Password settings")')).toBeVisible();
+  });
+
+  test('popover opens via native popovertarget button', async ({ page }) => {
+    const trigger = page.locator('button[popovertarget]:has-text("Open popover")');
+    await expect(trigger).toBeVisible();
+
+    // Click opens the popover (native popover API).
+    await trigger.click();
+    // The popover content appears in the top layer.
+    await expect(page.locator('[popover] :text("Popover title")')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('radio group renders native radios and slider renders range input', async ({ page }) => {
+    const radios = page.locator('.cs-radio-group input[type="radio"]');
+    expect(await radios.count()).toBeGreaterThanOrEqual(3);
+
+    // The "pro" radio should be checked.
+    await expect(page.locator('.cs-radio-group input[value="pro"]')).toBeChecked();
+
+    // Slider is a native range input.
+    await expect(page.locator('input.cs-slider[type="range"]')).toBeVisible();
+  });
+
+  test('table renders with striped styling', async ({ page }) => {
+    const table = page.locator('table.cs-table__element');
+    await expect(table).toBeVisible();
+    expect(await table.locator('tbody tr').count()).toBeGreaterThanOrEqual(2);
+    // Badge inside table cell.
+    await expect(table.locator('.cs-badge--success:has-text("Active")')).toBeVisible();
+  });
+
+  test('toast appears when triggered and auto-dismisses', async ({ page }) => {
+    // Click the "Toast: Success" button.
+    await page.locator('button:has-text("Toast: Success")').click();
+
+    // The toast message appears in the aria-live region.
+    await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeVisible();
+
+    // Wait for auto-dismiss (default 4s; use a shorter timeout to avoid flakiness).
+    await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeHidden({ timeout: 6000 });
+  });
+
+  test('dropdown menu opens and lists items via native popover', async ({ page }) => {
+    const trigger = page.locator('button[popovertarget]:has-text("Dropdown")');
+    await trigger.click();
+
+    // Menu items appear in the top layer.
+    await expect(page.locator('[popover] button:has-text("Profile")')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[popover] button:has-text("Settings")')).toBeVisible();
+
+    // Clicking an item closes the menu.
+    await page.locator('[popover] button:has-text("Settings")').click();
+    await expect(page.locator('[popover] button:has-text("Settings")')).toBeHidden({ timeout: 5000 });
+  });
+
+  test('sheet opens from the right edge and closes', async ({ page }) => {
+    // Open the sheet.
+    await page.locator('button:has-text("Open Sheet")').click();
+
+    // The sheet dialog should be open.
+    await expect(page.locator('dialog.cs-sheet')).toHaveAttribute('open', '', { timeout: 5000 });
+    await expect(page.locator('dialog.cs-sheet h3:has-text("Sheet Panel")')).toBeVisible();
+
+    // Click Close inside the sheet.
+    await page.locator('dialog.cs-sheet button:has-text("Close")').click();
+    await expect(page.locator('dialog.cs-sheet')).not.toHaveAttribute('open', '', { timeout: 5000 });
   });
 });

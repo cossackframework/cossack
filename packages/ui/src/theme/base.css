@@ -35,3 +35,42 @@ body {
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
 }
+
+/*
+ * Cossack UI Tooltip — pure-CSS hover/focus reveal (no JS).
+ * The bubble is hidden by default and shown when the wrapper is hovered or
+ * focused (keyboard accessible via :focus-within). Position offsets are per-side.
+ */
+.cs-tooltip__bubble {
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%) scale(0.95);
+}
+.cs-tooltip__bubble--bottom {
+    bottom: auto;
+    top: calc(100% + 0.5rem);
+}
+.cs-tooltip__bubble--left {
+    bottom: auto;
+    top: 50%;
+    right: calc(100% + 0.5rem);
+    left: auto;
+    transform: translateY(-50%) scale(0.95);
+}
+.cs-tooltip__bubble--right {
+    bottom: auto;
+    top: 50%;
+    left: calc(100% + 0.5rem);
+    transform: translateY(-50%) scale(0.95);
+}
+.cs-tooltip:hover .cs-tooltip__bubble,
+.cs-tooltip:focus-within .cs-tooltip__bubble {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+.cs-tooltip:hover .cs-tooltip__bubble--left,
+.cs-tooltip:focus-within .cs-tooltip__bubble--left,
+.cs-tooltip:hover .cs-tooltip__bubble--right,
+.cs-tooltip:focus-within .cs-tooltip__bubble--right {
+    transform: translateY(-50%) scale(1);
+}

@@ -1034,578 +1034,70 @@ ${oauthBlock}
 // ---------------------------------------------------------------------------
 // `cossack add ui` — UI component catalog + barrel
 //
-// Each entry mirrors the source in packages/ui/src/components/*.ts so an
-// ejected copy matches the package. Templates are pure `() => string`.
+// All entries use `fromPackage()`, which reads the component source directly
+// from the installed @cossackframework/ui package at eject time. This avoids
+// duplicating ~600 lines of template strings and eliminates drift between the
+// catalog and the package source.
 // ---------------------------------------------------------------------------
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 
-export function buttonComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
+const requireFromCli = createRequire(import.meta.url);
 
-export interface ButtonProps {
-    variant?: 'primary' | 'secondary' | 'destructive' | 'ghost' | 'outline';
-    size?: 'sm' | 'md' | 'lg';
-    block?: boolean;
-    [key: string]: any;
+/**
+ * Read a component's source directly from the installed
+ * @cossackframework/ui package. Falls back to a stub if the file can't be
+ * resolved (e.g. package not yet installed during `cossack add ui` before
+ * `pnpm install`).
+ */
+function ejectFromPackage(className) {
+  try {
+    const pkgJsonPath = requireFromCli.resolve('@cossackframework/ui/package.json');
+    const pkgDir = path.dirname(pkgJsonPath);
+    const srcPath = path.join(pkgDir, 'src', 'components', `${className}.ts`);
+    return fs.readFileSync(srcPath, 'utf8');
+  } catch {
+    return `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
+// to eject the full source from @cossackframework/ui.
+export {};\n`;
+  }
 }
 
-const VARIANTS = {
-    primary: 'bg-primary text-primary-foreground hover:opacity-90',
-    secondary: 'bg-secondary text-secondary-foreground hover:opacity-80',
-    destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
-    outline: 'border border-border bg-transparent text-foreground hover:bg-muted',
-    ghost: 'bg-transparent text-foreground hover:bg-muted',
-};
-
-const SIZES = {
-    sm: 'text-sm px-3 py-1.5',
-    md: 'text-base px-4 py-2',
-    lg: 'text-lg px-5 py-2.5',
-};
-
-@Component()
-export class Button extends Cossack {
-    declare props: ButtonProps;
-
-    render() {
-        const { variant = 'primary', size = 'md', block = false, ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-button': true,
-            ['cs-button--' + variant]: true,
-            ['cs-button--' + size]: true,
-            'inline-flex items-center justify-center gap-2 font-medium': true,
-            'rounded-md cursor-pointer select-none': true,
-            'transition-opacity transition-colors duration-150': true,
-            'disabled:opacity-50 disabled:cursor-not-allowed': true,
-            'w-full': block,
-            [VARIANTS[variant]]: true,
-            [SIZES[size]]: true,
-        });
-
-        return html\`
-            <button class="\${classes}" ...=\${rest}>\${this.children}</button>
-        \`;
-    }
-}
-`;
-}
-
-export function inputComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface InputProps {
-    variant?: 'default' | 'error';
-    size?: 'sm' | 'md' | 'lg';
-    [key: string]: any;
-}
-
-const VARIANTS = {
-    default: 'border-border bg-background text-foreground',
-    error: 'border-destructive bg-background text-foreground',
-};
-
-const SIZES = {
-    sm: 'text-sm px-2.5 py-1.5',
-    md: 'text-base px-3 py-2',
-    lg: 'text-lg px-4 py-2.5',
-};
-
-@Component()
-export class Input extends Cossack {
-    declare props: InputProps;
-
-    render() {
-        const { variant = 'default', size = 'md', ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-input': true,
-            ['cs-input--' + variant]: true,
-            ['cs-input--' + size]: true,
-            'w-full rounded-md border outline-none transition-colors duration-150': true,
-            'focus:border-ring focus:ring-2 focus:ring-ring/30': true,
-            'placeholder:text-muted-foreground': true,
-            'disabled:opacity-50 disabled:cursor-not-allowed': true,
-            [VARIANTS[variant]]: true,
-            [SIZES[size]]: true,
-        });
-
-        return html\`<input class="\${classes}" ...=\${rest} />\`;
-    }
-}
-`;
-}
-
-export function cardComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface CardProps {
-    interactive?: boolean;
-    padding?: 'none' | 'sm' | 'md' | 'lg';
-    [key: string]: any;
-}
-
-const PADDINGS = { none: '', sm: 'p-3', md: 'p-5', lg: 'p-7' };
-
-@Component()
-export class Card extends Cossack {
-    declare props: CardProps;
-
-    render() {
-        const { interactive = false, padding = 'md', ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-card': true,
-            'rounded-lg border border-border bg-background text-foreground shadow-sm': true,
-            'transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer': interactive,
-            [PADDINGS[padding]]: !!PADDINGS[padding],
-        });
-
-        return html\`<div class="\${classes}" ...=\${rest}>\${this.children}</div>\`;
-    }
-}
-`;
-}
-
-export function badgeComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface BadgeProps {
-    variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline';
-    [key: string]: any;
-}
-
-const VARIANTS = {
-    primary: 'bg-primary text-primary-foreground',
-    secondary: 'bg-secondary text-secondary-foreground',
-    success: 'bg-success text-success-foreground',
-    warning: 'bg-warning text-warning-foreground',
-    destructive: 'bg-destructive text-destructive-foreground',
-    outline: 'border border-border bg-transparent text-foreground',
-};
-
-@Component()
-export class Badge extends Cossack {
-    declare props: BadgeProps;
-
-    render() {
-        const { variant = 'primary', ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-badge': true,
-            ['cs-badge--' + variant]: true,
-            'inline-flex items-center gap-1': true,
-            'text-xs font-medium px-2 py-0.5 rounded-full': true,
-            [VARIANTS[variant]]: true,
-        });
-
-        return html\`<span class="\${classes}" ...=\${rest}>\${this.children}</span>\`;
-    }
-}
-`;
-}
-
-export function labelComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface LabelProps {
-    for?: string;
-    muted?: boolean;
-    [key: string]: any;
-}
-
-@Component()
-export class Label extends Cossack {
-    declare props: LabelProps;
-
-    render() {
-        const { muted = false, ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-label': true,
-            'inline-block text-sm font-medium leading-none': true,
-            'text-muted-foreground': muted,
-            'text-foreground': !muted,
-        });
-
-        return html\`<label class="\${classes}" ...=\${rest}>\${this.children}</label>\`;
-    }
-}
-`;
-}
-
-export function alertComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface AlertProps {
-    variant?: 'info' | 'success' | 'warning' | 'destructive';
-    accent?: boolean;
-    [key: string]: any;
-}
-
-const VARIANTS = {
-    info: 'bg-secondary text-secondary-foreground border-border',
-    success: 'bg-success/10 text-foreground border-success/40',
-    warning: 'bg-warning/10 text-foreground border-warning/40',
-    destructive: 'bg-destructive/10 text-foreground border-destructive/40',
-};
-
-@Component()
-export class Alert extends Cossack {
-    declare props: AlertProps;
-
-    render() {
-        const { variant = 'info', accent = false, ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-alert': true,
-            ['cs-alert--' + variant]: true,
-            'relative w-full rounded-md border p-4 text-sm': true,
-            'border-l-4': accent,
-            [VARIANTS[variant]]: true,
-        });
-
-        return html\`<div class="\${classes}" role="alert" ...=\${rest}>\${this.children}</div>\`;
-    }
-}
-`;
-}
-
-export function modalComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component, Task, createRef, type RefObject } from '@cossackframework/core';
-
-export interface ModalProps {
-    open?: boolean;
-    closeOnBackdrop?: boolean;
-    closeOnEscape?: boolean;
-    size?: string;
-    onClose?: () => void;
-    [key: string]: any;
-}
-
-@Component()
-export class Modal extends Cossack {
-    declare props: ModalProps;
-
-    dialogRef: RefObject<HTMLDialogElement> = createRef<HTMLDialogElement>();
-
-    render() {
-        const { closeOnBackdrop = true, closeOnEscape = true, size } = this.props;
-        const panelClass = size || 'max-w-lg';
-
-        const panelClasses = classMap({
-            'cs-modal__panel': true,
-            [panelClass]: true,
-            'w-full bg-background text-foreground rounded-lg shadow-xl border border-border p-6': true,
-        });
-
-        return html\`
-            <dialog
-                ref=\${this.dialogRef}
-                class="cs-modal m-auto p-0 bg-transparent max-w-none max-h-none"
-                @close=\${() => {
-                    const onClose = this.props.onClose ?? this.props['@close'];
-                    if (typeof onClose === 'function') onClose();
-                }}
-                @cancel=\${(e) => { if (!closeOnEscape) e.preventDefault(); }}
-                @click=\${(e) => { if (closeOnBackdrop && e.target === this.dialogRef.value) { const d = this.dialogRef.value; if (d && d.open) d.close(); } }}
-            >
-                <div class=\${panelClasses}>\${this.children}</div>
-            </dialog>
-        \`;
-    }
-
-    @Task()
-    syncOpenState() {
-        if (this.isServer) return;
-        const dlg = this.dialogRef.value;
-        if (!dlg) return;
-        const wantOpen = !!this.props.open;
-        if (wantOpen && !dlg.open) {
-            try { dlg.showModal(); } catch {}
-        } else if (!wantOpen && dlg.open) {
-            dlg.close();
-        }
-    }
-}
-`;
-}
-
-export function accordionComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface AccordionItemProps {
-    open?: boolean;
-    [key: string]: any;
-}
-
-@Component()
-export class AccordionItem extends Cossack {
-    declare props: AccordionItemProps & { summary?: unknown };
-
-    render() {
-        const { open = false, summary } = this.props;
-
-        const classes = classMap({
-            'cs-accordion': true,
-            'cs-accordion--open': open,
-            'rounded-md border border-border bg-background text-foreground': true,
-        });
-
-        const summaryClasses = classMap({
-            'cs-accordion__summary': true,
-            'cursor-pointer select-none px-4 py-3 font-medium text-sm hover:bg-muted': true,
-        });
-
-        return html\`
-            <details class=\${classes} ?open=\${open}>
-                <summary class=\${summaryClasses}>\${summary ?? this.props['summary']}</summary>
-                <div class="cs-accordion__content px-4 py-3">\${this.children}</div>
-            </details>
-        \`;
-    }
-}
-
-export { AccordionItem as Accordion };
-`;
-}
-
-export function textareaComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface TextareaProps {
-    variant?: 'default' | 'error';
-    size?: 'sm' | 'md' | 'lg';
-    rows?: number;
-    [key: string]: any;
-}
-
-const VARIANTS = {
-    default: 'border-border bg-background text-foreground',
-    error: 'border-destructive bg-background text-foreground',
-};
-
-const SIZES = {
-    sm: 'text-sm px-2.5 py-1.5',
-    md: 'text-base px-3 py-2',
-    lg: 'text-lg px-4 py-2.5',
-};
-
-@Component()
-export class Textarea extends Cossack {
-    declare props: TextareaProps;
-
-    render() {
-        const { variant = 'default', size = 'md', rows = 4, ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-textarea': true,
-            ['cs-textarea--' + variant]: true,
-            ['cs-textarea--' + size]: true,
-            'w-full rounded-md border outline-none transition-colors duration-150': true,
-            'focus:border-ring focus:ring-2 focus:ring-ring/30 placeholder:text-muted-foreground': true,
-            'disabled:opacity-50 disabled:cursor-not-allowed resize-y': true,
-            [VARIANTS[variant]]: true,
-            [SIZES[size]]: true,
-        });
-
-        return html\`<textarea class=\${classes} rows=\${rows} ...=\${rest}></textarea>\`;
-    }
-}
-`;
-}
-
-export function checkboxComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface CheckboxProps {
-    checked?: boolean;
-    indeterminate?: boolean;
-    label?: string;
-    [key: string]: any;
-}
-
-@Component()
-export class Checkbox extends Cossack {
-    declare props: CheckboxProps;
-
-    render() {
-        const { checked = false, indeterminate = false, ...rest } = this.props;
-
-        const wrapperClasses = classMap({
-            'cs-checkbox': true,
-            'inline-flex items-center gap-2 text-sm text-foreground': true,
-            'disabled:opacity-50': !!rest.disabled,
-        });
-
-        return html\`
-            <label class=\${wrapperClasses}>
-                <input
-                    type="checkbox"
-                    class="cs-checkbox__input h-4 w-4 rounded border-border text-primary accent-[var(--color-primary)] focus:ring-2 focus:ring-ring/30"
-                    ?checked=\${checked}
-                    ?indeterminate=\${indeterminate}
-                    ...=\${rest}
-                />\${this.children}
-            </label>
-        \`;
-    }
-}
-`;
-}
-
-export function switchComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface SwitchProps {
-    checked?: boolean;
-    [key: string]: any;
-}
-
-@Component()
-export class Switch extends Cossack {
-    declare props: SwitchProps;
-
-    render() {
-        const { checked = false, ...rest } = this.props;
-
-        const wrapperClasses = classMap({
-            'cs-switch': true,
-            'relative inline-flex items-center cursor-pointer': true,
-            'disabled:opacity-50 disabled:cursor-not-allowed': !!rest.disabled,
-        });
-
-        return html\`
-            <label class=\${wrapperClasses} role="switch" aria-checked=\${checked}>
-                <input type="checkbox" class="cs-switch__input peer sr-only" ?checked=\${checked} ...=\${rest} />
-                <span class="cs-switch__track inline-block h-6 w-11 rounded-full bg-muted border border-border transition-colors duration-150 peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring/30"></span>
-                <span class="cs-switch__thumb absolute left-0.5 top-0.5 inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform duration-150 peer-checked:translate-x-5"></span>
-            </label>
-        \`;
-    }
-}
-`;
-}
-
-export function selectComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface SelectProps {
-    variant?: 'default' | 'error';
-    size?: 'sm' | 'md' | 'lg';
-    [key: string]: any;
-}
-
-const VARIANTS = {
-    default: 'border-border bg-background text-foreground',
-    error: 'border-destructive bg-background text-foreground',
-};
-
-const SIZES = {
-    sm: 'text-sm px-2.5 py-1.5',
-    md: 'text-base px-3 py-2',
-    lg: 'text-lg px-4 py-2.5',
-};
-
-@Component()
-export class Select extends Cossack {
-    declare props: SelectProps;
-
-    render() {
-        const { variant = 'default', size = 'md', ...rest } = this.props;
-
-        const wrapperClasses = classMap({ 'cs-select': true, 'relative inline-block w-full': true });
-
-        const selectClasses = classMap({
-            'cs-select__input': true,
-            ['cs-select--' + variant]: true,
-            ['cs-select--' + size]: true,
-            'appearance-none w-full rounded-md border outline-none transition-colors duration-150': true,
-            'focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-50 disabled:cursor-not-allowed pr-9': true,
-            [VARIANTS[variant]]: true,
-            [SIZES[size]]: true,
-        });
-
-        return html\`
-            <div class=\${wrapperClasses}>
-                <select class=\${selectClasses} ...=\${rest}>\${this.children}</select>
-                <span class="cs-select__icon pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground inline-flex">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </span>
-            </div>
-        \`;
-    }
-}
-`;
-}
-
-export function spinnerComponentTemplate() {
-  return `import { html, classMap } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-export interface SpinnerProps {
-    size?: number;
-    stroke?: number;
-    color?: string;
-    label?: string;
-    [key: string]: any;
-}
-
-@Component()
-export class Spinner extends Cossack {
-    declare props: SpinnerProps;
-
-    render() {
-        const { size = 20, stroke = 2, color = 'text-primary', label, ...rest } = this.props;
-
-        const classes = classMap({
-            'cs-spinner': true,
-            'animate-spin inline-block rounded-full border-current border-t-transparent': true,
-            [color]: true,
-        });
-
-        const a11y = label ? { role: 'status', 'aria-label': label } : { 'aria-hidden': 'true' };
-
-        return html\`
-            <span class=\${classes} style=\${'width:' + size + 'px;height:' + size + 'px;border-width:' + stroke + 'px;'} ...=\${{ ...a11y, ...rest }}></span>
-        \`;
-    }
-}
-`;
-}
+/** Wrapper so the catalog entry shape stays consistent: { className, template }. */
+const fromPackage = (className) => () => ejectFromPackage(className);
 
 /**
  * Catalog of ejectable UI components. Keys are the names accepted by
- * `cossack add ui <name>`; values map to a className (for path resolution
- * fall-through) and a pure template function returning the component source.
+ * `cossack add ui <name>`.
  */
 export const UI_COMPONENTS = {
-  button: { className: 'Button', template: buttonComponentTemplate },
-  input: { className: 'Input', template: inputComponentTemplate },
-  card: { className: 'Card', template: cardComponentTemplate },
-  badge: { className: 'Badge', template: badgeComponentTemplate },
-  label: { className: 'Label', template: labelComponentTemplate },
-  alert: { className: 'Alert', template: alertComponentTemplate },
-  modal: { className: 'Modal', template: modalComponentTemplate },
-  accordion: { className: 'Accordion', template: accordionComponentTemplate },
-  textarea: { className: 'Textarea', template: textareaComponentTemplate },
-  checkbox: { className: 'Checkbox', template: checkboxComponentTemplate },
-  switch: { className: 'Switch', template: switchComponentTemplate },
-  select: { className: 'Select', template: selectComponentTemplate },
-  spinner: { className: 'Spinner', template: spinnerComponentTemplate },
+  button: { className: 'Button', template: fromPackage('Button') },
+  input: { className: 'Input', template: fromPackage('Input') },
+  card: { className: 'Card', template: fromPackage('Card') },
+  badge: { className: 'Badge', template: fromPackage('Badge') },
+  label: { className: 'Label', template: fromPackage('Label') },
+  alert: { className: 'Alert', template: fromPackage('Alert') },
+  modal: { className: 'Modal', template: fromPackage('Modal') },
+  accordion: { className: 'Accordion', template: fromPackage('Accordion') },
+  textarea: { className: 'Textarea', template: fromPackage('Textarea') },
+  checkbox: { className: 'Checkbox', template: fromPackage('Checkbox') },
+  switch: { className: 'Switch', template: fromPackage('Switch') },
+  select: { className: 'Select', template: fromPackage('Select') },
+  spinner: { className: 'Spinner', template: fromPackage('Spinner') },
+  avatar: { className: 'Avatar', template: fromPackage('Avatar') },
+  separator: { className: 'Separator', template: fromPackage('Separator') },
+  skeleton: { className: 'Skeleton', template: fromPackage('Skeleton') },
+  progress: { className: 'Progress', template: fromPackage('Progress') },
+  tabs: { className: 'Tabs', template: fromPackage('Tabs') },
+  tooltip: { className: 'Tooltip', template: fromPackage('Tooltip') },
+  popover: { className: 'Popover', template: fromPackage('Popover') },
+  'radio-group': { className: 'RadioGroup', template: fromPackage('RadioGroup') },
+  slider: { className: 'Slider', template: fromPackage('Slider') },
+  table: { className: 'Table', template: fromPackage('Table') },
+  toaster: { className: 'Toaster', template: fromPackage('Toaster') },
+  'dropdown-menu': { className: 'DropdownMenu', template: fromPackage('DropdownMenu') },
+  sheet: { className: 'Sheet', template: fromPackage('Sheet') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1630,6 +1122,21 @@ export {
     Switch,
     Select,
     Spinner,
+    Avatar,
+    Separator,
+    Skeleton,
+    Progress,
+    Tabs,
+    Tooltip,
+    Popover,
+    RadioGroup,
+    Slider,
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
     Icon,
 } from '@cossackframework/ui';
 `;
