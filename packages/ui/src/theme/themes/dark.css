@@ -1,0 +1,34 @@
+/*
+ * @cossackframework/ui — dark palette
+ *
+ * Import after theme.css to apply a dark scheme globally, OR scope it under
+ * a `.dark` selector for toggleable themes:
+ *
+ *   @import "@cossackframework/ui/theme/themes/dark.css";
+ *
+ * To make it opt-in via a `.dark` class on <html>, wrap the tokens yourself:
+ *
+ *   .dark {
+ *     @theme {
+ *       --color-background: oklch(0.15 0.01 285);
+ *       ...
+ *     }
+ *   }
+ *
+ * (Tailwind v4 supports `@theme` inside a selector for scoped overrides.)
+ */
+
+@theme {
+    --color-background: oklch(0.15 0.01 285);
+    --color-foreground: oklch(0.95 0.005 285);
+    --color-primary: oklch(0.65 0.18 260);
+    --color-primary-foreground: oklch(0.15 0.01 285);
+    --color-secondary: oklch(0.25 0.01 285);
+    --color-secondary-foreground: oklch(0.95 0.005 285);
+    --color-muted: oklch(0.22 0.01 285);
+    --color-muted-foreground: oklch(0.65 0.01 285);
+    --color-destructive: oklch(0.62 0.22 25);
+    --color-destructive-foreground: oklch(0.98 0 0);
+    --color-border: oklch(0.28 0.01 285);
+    --color-ring: oklch(0.65 0.18 260);
+}
