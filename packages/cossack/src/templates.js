@@ -1039,7 +1039,7 @@ ${oauthBlock}
 // ---------------------------------------------------------------------------
 
 export function buttonComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface ButtonProps {
@@ -1049,6 +1049,20 @@ export interface ButtonProps {
     [key: string]: any;
 }
 
+const VARIANTS = {
+    primary: 'bg-primary text-primary-foreground hover:opacity-90',
+    secondary: 'bg-secondary text-secondary-foreground hover:opacity-80',
+    destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
+    outline: 'border border-border bg-transparent text-foreground hover:bg-muted',
+    ghost: 'bg-transparent text-foreground hover:bg-muted',
+};
+
+const SIZES = {
+    sm: 'text-sm px-3 py-1.5',
+    md: 'text-base px-4 py-2',
+    lg: 'text-lg px-5 py-2.5',
+};
+
 @Component()
 export class Button extends Cossack {
     declare props: ButtonProps;
@@ -1056,29 +1070,18 @@ export class Button extends Cossack {
     render() {
         const { variant = 'primary', size = 'md', block = false, ...rest } = this.props;
 
-        const variants = {
-            primary: 'bg-primary text-primary-foreground hover:opacity-90',
-            secondary: 'bg-secondary text-secondary-foreground hover:opacity-80',
-            destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
-            outline: 'border border-border bg-transparent text-foreground hover:bg-muted',
-            ghost: 'bg-transparent text-foreground hover:bg-muted',
-        };
-
-        const sizes = {
-            sm: 'text-sm px-3 py-1.5',
-            md: 'text-base px-4 py-2',
-            lg: 'text-lg px-5 py-2.5',
-        };
-
-        const classes = [
-            'cs-button', 'cs-button--' + variant, 'cs-button--' + size,
-            'inline-flex items-center justify-center gap-2 font-medium',
-            'rounded-md cursor-pointer border-none select-none',
-            'transition-opacity transition-colors duration-150',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-            block ? 'w-full' : '',
-            variants[variant], sizes[size],
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-button': true,
+            ['cs-button--' + variant]: true,
+            ['cs-button--' + size]: true,
+            'inline-flex items-center justify-center gap-2 font-medium': true,
+            'rounded-md cursor-pointer select-none': true,
+            'transition-opacity transition-colors duration-150': true,
+            'disabled:opacity-50 disabled:cursor-not-allowed': true,
+            'w-full': block,
+            [VARIANTS[variant]]: true,
+            [SIZES[size]]: true,
+        });
 
         return html\`
             <button class="\${classes}" ...=\${rest}>\${this.children}</button>
@@ -1089,7 +1092,7 @@ export class Button extends Cossack {
 }
 
 export function inputComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface InputProps {
@@ -1098,6 +1101,17 @@ export interface InputProps {
     [key: string]: any;
 }
 
+const VARIANTS = {
+    default: 'border-border bg-background text-foreground',
+    error: 'border-destructive bg-background text-foreground',
+};
+
+const SIZES = {
+    sm: 'text-sm px-2.5 py-1.5',
+    md: 'text-base px-3 py-2',
+    lg: 'text-lg px-4 py-2.5',
+};
+
 @Component()
 export class Input extends Cossack {
     declare props: InputProps;
@@ -1105,24 +1119,17 @@ export class Input extends Cossack {
     render() {
         const { variant = 'default', size = 'md', ...rest } = this.props;
 
-        const variants = {
-            default: 'border-border bg-background text-foreground',
-            error: 'border-destructive bg-background text-foreground',
-        };
-
-        const sizes = {
-            sm: 'text-sm px-2.5 py-1.5',
-            md: 'text-base px-3 py-2',
-            lg: 'text-lg px-4 py-2.5',
-        };
-
-        const classes = [
-            'cs-input', 'cs-input--' + variant, 'cs-input--' + size,
-            'w-full rounded-md border outline-none transition-colors duration-150',
-            'focus:border-ring focus:ring-2 focus:ring-ring/30',
-            'placeholder:text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed',
-            variants[variant], sizes[size],
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-input': true,
+            ['cs-input--' + variant]: true,
+            ['cs-input--' + size]: true,
+            'w-full rounded-md border outline-none transition-colors duration-150': true,
+            'focus:border-ring focus:ring-2 focus:ring-ring/30': true,
+            'placeholder:text-muted-foreground': true,
+            'disabled:opacity-50 disabled:cursor-not-allowed': true,
+            [VARIANTS[variant]]: true,
+            [SIZES[size]]: true,
+        });
 
         return html\`<input class="\${classes}" ...=\${rest} />\`;
     }
@@ -1131,7 +1138,7 @@ export class Input extends Cossack {
 }
 
 export function cardComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface CardProps {
@@ -1140,6 +1147,8 @@ export interface CardProps {
     [key: string]: any;
 }
 
+const PADDINGS = { none: '', sm: 'p-3', md: 'p-5', lg: 'p-7' };
+
 @Component()
 export class Card extends Cossack {
     declare props: CardProps;
@@ -1147,14 +1156,12 @@ export class Card extends Cossack {
     render() {
         const { interactive = false, padding = 'md', ...rest } = this.props;
 
-        const paddings = { none: '', sm: 'p-3', md: 'p-5', lg: 'p-7' };
-
-        const classes = [
-            'cs-card',
-            'rounded-lg border border-border bg-background text-foreground shadow-sm',
-            interactive ? 'transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : '',
-            paddings[padding],
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-card': true,
+            'rounded-lg border border-border bg-background text-foreground shadow-sm': true,
+            'transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer': interactive,
+            [PADDINGS[padding]]: !!PADDINGS[padding],
+        });
 
         return html\`<div class="\${classes}" ...=\${rest}>\${this.children}</div>\`;
     }
@@ -1163,13 +1170,22 @@ export class Card extends Cossack {
 }
 
 export function badgeComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface BadgeProps {
     variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline';
     [key: string]: any;
 }
+
+const VARIANTS = {
+    primary: 'bg-primary text-primary-foreground',
+    secondary: 'bg-secondary text-secondary-foreground',
+    success: 'bg-success text-success-foreground',
+    warning: 'bg-warning text-warning-foreground',
+    destructive: 'bg-destructive text-destructive-foreground',
+    outline: 'border border-border bg-transparent text-foreground',
+};
 
 @Component()
 export class Badge extends Cossack {
@@ -1178,20 +1194,13 @@ export class Badge extends Cossack {
     render() {
         const { variant = 'primary', ...rest } = this.props;
 
-        const variants = {
-            primary: 'bg-primary text-primary-foreground',
-            secondary: 'bg-secondary text-secondary-foreground',
-            success: 'bg-success text-success-foreground',
-            warning: 'bg-warning text-warning-foreground',
-            destructive: 'bg-destructive text-destructive-foreground',
-            outline: 'border border-border bg-transparent text-foreground',
-        };
-
-        const classes = [
-            'cs-badge', 'cs-badge--' + variant,
-            'inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full',
-            variants[variant],
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-badge': true,
+            ['cs-badge--' + variant]: true,
+            'inline-flex items-center gap-1': true,
+            'text-xs font-medium px-2 py-0.5 rounded-full': true,
+            [VARIANTS[variant]]: true,
+        });
 
         return html\`<span class="\${classes}" ...=\${rest}>\${this.children}</span>\`;
     }
@@ -1200,7 +1209,7 @@ export class Badge extends Cossack {
 }
 
 export function labelComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface LabelProps {
@@ -1216,11 +1225,12 @@ export class Label extends Cossack {
     render() {
         const { muted = false, ...rest } = this.props;
 
-        const classes = [
-            'cs-label',
-            'inline-block text-sm font-medium leading-none',
-            muted ? 'text-muted-foreground' : 'text-foreground',
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-label': true,
+            'inline-block text-sm font-medium leading-none': true,
+            'text-muted-foreground': muted,
+            'text-foreground': !muted,
+        });
 
         return html\`<label class="\${classes}" ...=\${rest}>\${this.children}</label>\`;
     }
@@ -1229,7 +1239,7 @@ export class Label extends Cossack {
 }
 
 export function alertComponentTemplate() {
-  return `import { html } from '@cossackframework/renderer';
+  return `import { html, classMap } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface AlertProps {
@@ -1238,6 +1248,13 @@ export interface AlertProps {
     [key: string]: any;
 }
 
+const VARIANTS = {
+    info: 'bg-secondary text-secondary-foreground border-border',
+    success: 'bg-success/10 text-foreground border-success/40',
+    warning: 'bg-warning/10 text-foreground border-warning/40',
+    destructive: 'bg-destructive/10 text-foreground border-destructive/40',
+};
+
 @Component()
 export class Alert extends Cossack {
     declare props: AlertProps;
@@ -1245,19 +1262,13 @@ export class Alert extends Cossack {
     render() {
         const { variant = 'info', accent = false, ...rest } = this.props;
 
-        const variants = {
-            info: 'bg-secondary text-secondary-foreground border-border',
-            success: 'bg-success/10 text-foreground border-success/40',
-            warning: 'bg-warning/10 text-foreground border-warning/40',
-            destructive: 'bg-destructive/10 text-foreground border-destructive/40',
-        };
-
-        const classes = [
-            'cs-alert', 'cs-alert--' + variant,
-            'relative w-full rounded-md border p-4 text-sm',
-            accent ? 'border-l-4' : '',
-            variants[variant],
-        ].filter(Boolean).join(' ');
+        const classes = classMap({
+            'cs-alert': true,
+            ['cs-alert--' + variant]: true,
+            'relative w-full rounded-md border p-4 text-sm': true,
+            'border-l-4': accent,
+            [VARIANTS[variant]]: true,
+        });
 
         return html\`<div class="\${classes}" role="alert" ...=\${rest}>\${this.children}</div>\`;
     }

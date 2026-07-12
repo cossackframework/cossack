@@ -6,20 +6,18 @@
  * stacks, etc.). It MUST be imported after `@import "tailwindcss";` and
  * before `theme.css` so token utilities resolve against the right values.
  *
+ * Do NOT replicate Tailwind's preflight here — Tailwind v4 already ships a
+ * modern reset that handles box-sizing, margins, borders, etc. Layering a
+ * second reset on top fights with the utilities (e.g. a global `border-width:0`
+ * here would override `border` width utilities and make outlines/cards render
+ * borderless). Only add genuinely additive base styles below.
+ *
  * Consumers wire it from their src/style.css:
  *
  *   @import "tailwindcss";
  *   @import "@cossackframework/ui/theme/base.css";
  *   @import "@cossackframework/ui/theme/theme.css";
  */
-
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-    border-width: 0;
-    border-style: solid;
-}
 
 html {
     -webkit-text-size-adjust: 100%;
@@ -28,7 +26,6 @@ html {
 }
 
 body {
-    margin: 0;
     min-height: 100vh;
     background-color: var(--color-background);
     color: var(--color-foreground);

@@ -25,7 +25,17 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ```css
 @import "@cossackframework/ui/theme/base.css";
 @import "@cossackframework/ui/theme/theme.css";
+
+/* Tailwind v4 excludes node_modules by default. These @source lines tell it to
+   scan the package's component/icon source so every utility class referenced
+   inside the components (bg-secondary, bg-destructive, bg-success, ...) is
+   generated. Without them, only classes that also appear in your own source
+   will be emitted and most variants will render unstyled. */
+@source "../node_modules/@cossackframework/ui/src/components";
+@source "../node_modules/@cossackframework/ui/src/icons";
 ```
+
+`cossack add ui` wires all of the above automatically.
 
 ## Usage
 

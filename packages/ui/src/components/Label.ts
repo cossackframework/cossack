@@ -1,4 +1,4 @@
-import { html } from "@cossackframework/renderer";
+import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface LabelProps {
@@ -22,13 +22,12 @@ export class Label extends Cossack {
     render() {
         const { muted = false, ...rest } = this.props;
 
-        const classes = [
-            "cs-label",
-            "inline-block text-sm font-medium leading-none",
-            muted ? "text-muted-foreground" : "text-foreground",
-        ]
-            .filter(Boolean)
-            .join(" ");
+        const classes = classMap({
+            "cs-label": true,
+            "inline-block text-sm font-medium leading-none": true,
+            "text-muted-foreground": muted,
+            "text-foreground": !muted,
+        });
 
         return html`
             <label class="${classes}" ...=${rest}>

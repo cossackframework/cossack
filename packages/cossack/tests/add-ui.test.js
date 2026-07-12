@@ -48,10 +48,13 @@ describe('add ui (no component arg)', () => {
     expect(barrel).toContain('Button');
     expect(barrel).toContain('Icon');
 
-    // theme imports wired into style.css
+    // theme imports + @source directives wired into style.css
     const css = fs.readFileSync(path.join(tmp, 'src/style.css'), 'utf8');
     expect(css).toContain('@cossackframework/ui/theme/base.css');
     expect(css).toContain('@cossackframework/ui/theme/theme.css');
+    // @source is required so Tailwind v4 scans the package's component classes
+    expect(css).toContain('@source "../node_modules/@cossackframework/ui/src/components"');
+    expect(css).toContain('@source "../node_modules/@cossackframework/ui/src/icons"');
   });
 
   it('is idempotent on style.css (does not duplicate the imports)', async () => {

@@ -532,21 +532,32 @@ function resolveUiVersion() {
 const UI_THEME_MARKER = '@cossackframework/ui/theme';
 
 /**
- * Wire the two @cossackframework/ui CSS imports into the project's
- * src/style.css. Idempotent (skips if the marker is present), dryRun-aware.
- * Mirrors the registerMiddleware string-surgery style: if there's no style.css
- * yet, synthesize a minimal one.
+ * The CSS block appended to src/style.css by `cossack add ui`.
+ *
+ * - Two @import lines pull the base reset + @theme token layer.
+ * - Two @source lines tell Tailwind v4 to scan the package's component/icon
+ *   source. Tailwind v4 excludes node_modules by default, so without these the
+ *   variant utilities (bg-secondary, bg-destructive, bg-success, ...) would
+ *   never be generated and the components would render unstyled.
+ */
+const UI_THEME_BLOCK = `@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+
+@source "../node_modules/@cossackframework/ui/src/components";
+@source "../node_modules/@cossackframework/ui/src/icons";`;
+
+/**
+ * Wire the @cossackframework/ui CSS imports + @source directives into the
+ * project's src/style.css. Idempotent (skips if the marker is present),
+ * dryRun-aware. Mirrors the registerMiddleware string-surgery style: if there's
+ * no style.css yet, synthesize a minimal one.
  */
 async function wireUiTheme(root, ctx) {
   const target = path.resolve(root, 'src/style.css');
-  const importLines = [
-    '@import "tailwindcss";',
-    '@import "@cossackframework/ui/theme/base.css";',
-    '@import "@cossackframework/ui/theme/theme.css";',
-  ].join('\n');
+  const fullBlock = `@import "tailwindcss";\n${UI_THEME_BLOCK}\n`;
 
   if (!(await exists(target))) {
-    const result = await writeFile(target, `${importLines}\n`, ctx);
+    const result = await writeFile(target, fullBlock, ctx);
     reportFile('src/style.css', result, ctx);
     return;
   }
@@ -557,24 +568,24 @@ async function wireUiTheme(root, ctx) {
     return;
   }
   if (ctx.dryRun) {
-    console.log('  would edit  src/style.css (insert ui theme imports)');
+    console.log('  would edit  src/style.css (insert ui theme imports + @source)');
     return;
   }
 
-  // Ensure @import "tailwindcss"; is present at the top, then append ui imports
-  // right after it so theme tokens load before any app overrides.
+  // Inject the ui block right after @import "tailwindcss"; so theme tokens load
+  // before any app overrides. If there's no tailwindcss import, prepend the
+  // whole block (including the tailwind import) — a Cossack app always needs it.
   let updated;
   if (/^\s*@import\s+["']tailwindcss["'];?\s*$/m.test(content)) {
     updated = content.replace(
       /(@import\s+["']tailwindcss["'];?\s*\n)/,
-      `$1@import "@cossackframework/ui/theme/base.css";\n@import "@cossackframework/ui/theme/theme.css";\n`,
+      `$1${UI_THEME_BLOCK}\n`,
     );
   } else {
-    // No tailwindcss import at all — prepend all three imports.
-    updated = `${importLines}\n${content}`;
+    updated = `${fullBlock}\n${content}`;
   }
   await fs.writeFile(target, updated, 'utf8');
-  console.log('  edited  src/style.css (added ui theme imports)');
+  console.log('  edited  src/style.css (added ui theme imports + @source)');
 }
 
 /**

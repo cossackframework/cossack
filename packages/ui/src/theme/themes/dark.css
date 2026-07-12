@@ -10,25 +10,28 @@
  *
  *   .dark {
  *     @theme {
- *       --color-background: oklch(0.15 0.01 285);
+ *       --color-background: var(--color-zinc-950);
  *       ...
  *     }
  *   }
  *
  * (Tailwind v4 supports `@theme` inside a selector for scoped overrides.)
+ *
+ * Mapped to Tailwind's default palette — deeper shades for surfaces,
+ * lightened accents for contrast on dark backgrounds.
  */
 
 @theme {
-    --color-background: oklch(0.15 0.01 285);
-    --color-foreground: oklch(0.95 0.005 285);
-    --color-primary: oklch(0.65 0.18 260);
-    --color-primary-foreground: oklch(0.15 0.01 285);
-    --color-secondary: oklch(0.25 0.01 285);
-    --color-secondary-foreground: oklch(0.95 0.005 285);
-    --color-muted: oklch(0.22 0.01 285);
-    --color-muted-foreground: oklch(0.65 0.01 285);
-    --color-destructive: oklch(0.62 0.22 25);
-    --color-destructive-foreground: oklch(0.98 0 0);
-    --color-border: oklch(0.28 0.01 285);
-    --color-ring: oklch(0.65 0.18 260);
+    --color-background: var(--color-zinc-950);
+    --color-foreground: var(--color-zinc-100);
+    --color-primary: var(--color-blue-500);
+    --color-primary-foreground: var(--color-zinc-950);
+    --color-secondary: var(--color-zinc-800);
+    --color-secondary-foreground: var(--color-zinc-100);
+    --color-muted: var(--color-zinc-900);
+    --color-muted-foreground: var(--color-zinc-400);
+    --color-destructive: var(--color-red-500);
+    --color-destructive-foreground: var(--color-white);
+    --color-border: var(--color-zinc-800);
+    --color-ring: var(--color-blue-500);
 }

@@ -5,38 +5,39 @@
  *   - CSS custom properties (e.g. var(--color-primary))
  *   - Tailwind utilities (e.g. bg-primary, text-foreground, rounded-md)
  *
- * Users override by redefining these variables in their own `@theme` block,
+ * The semantic tokens (primary, secondary, destructive, …) are NOT custom
+ * colors — they map to Tailwind v4's default palette (var(--color-blue-600),
+ * …) so the library rides on a battle-tested scale instead of inventing
+ * hues. Override by redefining a semantic token in your own `@theme` block,
  * or by importing a named palette from `@cossackframework/ui/theme/themes/`.
- *
- * Colors use OKLCH for perceptually-uniform lightness across the palette.
  */
 
 @theme {
-    /* --- Semantic colors --- */
-    --color-background: oklch(1 0 0);
-    --color-foreground: oklch(0.15 0.005 285);
+    /* --- Semantic surfaces --- */
+    --color-background: var(--color-white);
+    --color-foreground: var(--color-zinc-900);
 
-    --color-primary: oklch(0.55 0.2 260);
-    --color-primary-foreground: oklch(0.98 0 0);
+    --color-primary: var(--color-blue-600);
+    --color-primary-foreground: var(--color-white);
 
-    --color-secondary: oklch(0.92 0.01 285);
-    --color-secondary-foreground: oklch(0.22 0.01 285);
+    --color-secondary: var(--color-zinc-100);
+    --color-secondary-foreground: var(--color-zinc-900);
 
-    --color-muted: oklch(0.96 0.005 285);
-    --color-muted-foreground: oklch(0.52 0.01 285);
+    --color-muted: var(--color-zinc-100);
+    --color-muted-foreground: var(--color-zinc-500);
 
-    --color-destructive: oklch(0.58 0.22 25);
-    --color-destructive-foreground: oklch(0.98 0 0);
+    --color-destructive: var(--color-red-500);
+    --color-destructive-foreground: var(--color-white);
 
-    --color-success: oklch(0.6 0.13 150);
-    --color-success-foreground: oklch(0.98 0 0);
+    --color-success: var(--color-emerald-500);
+    --color-success-foreground: var(--color-white);
 
-    --color-warning: oklch(0.75 0.16 75);
-    --color-warning-foreground: oklch(0.2 0.02 75);
+    --color-warning: var(--color-amber-500);
+    --color-warning-foreground: var(--color-zinc-900);
 
-    --color-border: oklch(0.9 0.005 285);
-    --color-input: oklch(0.9 0.005 285);
-    --color-ring: oklch(0.55 0.2 260);
+    --color-border: var(--color-zinc-200);
+    --color-input: var(--color-zinc-200);
+    --color-ring: var(--color-blue-600);
 
     /* --- Radius scale --- */
     --radius-sm: 0.25rem;
@@ -49,9 +50,4 @@
         "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
         "Liberation Mono", "Courier New", monospace;
-
-    /* --- Component sizing tokens (referenced by utility classes) --- */
-    --spacing-control-sm: 0.375rem;
-    --spacing-control-md: 0.625rem;
-    --spacing-control-lg: 0.875rem;
 }

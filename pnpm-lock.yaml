@@ -120,6 +120,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../ui
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3

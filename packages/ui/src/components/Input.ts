@@ -1,4 +1,4 @@
-import { html } from "@cossackframework/renderer";
+import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface InputProps {
@@ -9,6 +9,17 @@ export interface InputProps {
     /** Pass-through HTML input attributes (type, placeholder, value, name, ...). */
     [key: string]: any;
 }
+
+const VARIANTS: Record<NonNullable<InputProps["variant"]>, string> = {
+    default: "border-border bg-background text-foreground",
+    error: "border-destructive bg-background text-foreground",
+};
+
+const SIZES: Record<NonNullable<InputProps["size"]>, string> = {
+    sm: "text-sm px-2.5 py-1.5",
+    md: "text-base px-3 py-2",
+    lg: "text-lg px-4 py-2.5",
+};
 
 /**
  * Cossack UI Input — token-driven text control.
@@ -22,31 +33,17 @@ export class Input extends Cossack {
     render() {
         const { variant = "default", size = "md", ...rest } = this.props;
 
-        const variants: Record<NonNullable<InputProps["variant"]>, string> = {
-            default: "border-border bg-background text-foreground",
-            error: "border-destructive bg-background text-foreground",
-        };
-
-        const sizes: Record<NonNullable<InputProps["size"]>, string> = {
-            sm: "text-sm px-2.5 py-1.5",
-            md: "text-base px-3 py-2",
-            lg: "text-lg px-4 py-2.5",
-        };
-
-        const classes = [
-            "cs-input",
-            `cs-input--${variant}`,
-            `cs-input--${size}`,
-            "w-full rounded-md border",
-            "outline-none transition-colors duration-150",
-            "focus:border-ring focus:ring-2 focus:ring-ring/30",
-            "placeholder:text-muted-foreground",
-            "disabled:opacity-50 disabled:cursor-not-allowed",
-            variants[variant],
-            sizes[size],
-        ]
-            .filter(Boolean)
-            .join(" ");
+        const classes = classMap({
+            "cs-input": true,
+            [`cs-input--${variant}`]: true,
+            [`cs-input--${size}`]: true,
+            "w-full rounded-md border outline-none transition-colors duration-150": true,
+            "focus:border-ring focus:ring-2 focus:ring-ring/30": true,
+            "placeholder:text-muted-foreground": true,
+            "disabled:opacity-50 disabled:cursor-not-allowed": true,
+            [VARIANTS[variant]]: true,
+            [SIZES[size]]: true,
+        });
 
         return html`
             <input class="${classes}" ...=${rest} />

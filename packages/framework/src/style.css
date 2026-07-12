@@ -1,4 +1,15 @@
 @import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+
+/*
+ * Tailwind v4 does not scan node_modules by default, so the utility classes
+ * referenced inside @cossackframework/ui components would never be generated.
+ * @source points the scanner at the package's component source so every
+ * variant/size class (bg-secondary, bg-destructive, bg-success, ...) is emitted.
+ */
+@source "../node_modules/@cossackframework/ui/src/components";
+@source "../node_modules/@cossackframework/ui/src/icons";
 
 /*
  * View Transition animations.

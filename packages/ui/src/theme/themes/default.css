@@ -6,21 +6,22 @@
  *
  *   @import "@cossackframework/ui/theme/themes/default.css";
  *
- * The values below mirror theme.css — this file exists as the documented
- * starting point for forks and is intentionally explicit.
+ * The values below mirror theme.css (semantic tokens mapped to Tailwind's
+ * default palette) — this file exists as the documented starting point for
+ * forks and is intentionally explicit.
  */
 
 @theme {
-    --color-background: oklch(1 0 0);
-    --color-foreground: oklch(0.15 0.005 285);
-    --color-primary: oklch(0.55 0.2 260);
-    --color-primary-foreground: oklch(0.98 0 0);
-    --color-secondary: oklch(0.92 0.01 285);
-    --color-secondary-foreground: oklch(0.22 0.01 285);
-    --color-muted: oklch(0.96 0.005 285);
-    --color-muted-foreground: oklch(0.52 0.01 285);
-    --color-destructive: oklch(0.58 0.22 25);
-    --color-destructive-foreground: oklch(0.98 0 0);
-    --color-border: oklch(0.9 0.005 285);
-    --color-ring: oklch(0.55 0.2 260);
+    --color-background: var(--color-white);
+    --color-foreground: var(--color-zinc-900);
+    --color-primary: var(--color-blue-600);
+    --color-primary-foreground: var(--color-white);
+    --color-secondary: var(--color-zinc-100);
+    --color-secondary-foreground: var(--color-zinc-900);
+    --color-muted: var(--color-zinc-100);
+    --color-muted-foreground: var(--color-zinc-500);
+    --color-destructive: var(--color-red-500);
+    --color-destructive-foreground: var(--color-white);
+    --color-border: var(--color-zinc-200);
+    --color-ring: var(--color-blue-600);
 }

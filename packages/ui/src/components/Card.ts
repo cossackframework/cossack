@@ -1,4 +1,4 @@
-import { html } from "@cossackframework/renderer";
+import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface CardProps {
@@ -9,6 +9,13 @@ export interface CardProps {
     /** Allow arbitrary HTML attributes to spread onto the root. */
     [key: string]: any;
 }
+
+const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
+    none: "",
+    sm: "p-3",
+    md: "p-5",
+    lg: "p-7",
+};
 
 /**
  * Cossack UI Card — surface container with optional header/footer slots.
@@ -21,30 +28,14 @@ export class Card extends Cossack {
     declare props: CardProps;
 
     render() {
-        const {
-            interactive = false,
-            padding = "md",
-            ...rest
-        } = this.props;
+        const { interactive = false, padding = "md", ...rest } = this.props;
 
-        const paddings: Record<NonNullable<CardProps["padding"]>, string> = {
-            none: "",
-            sm: "p-3",
-            md: "p-5",
-            lg: "p-7",
-        };
-
-        const classes = [
-            "cs-card",
-            "rounded-lg border border-border bg-background text-foreground",
-            "shadow-sm",
-            interactive
-                ? "transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
-                : "",
-            paddings[padding],
-        ]
-            .filter(Boolean)
-            .join(" ");
+        const classes = classMap({
+            "cs-card": true,
+            "rounded-lg border border-border bg-background text-foreground shadow-sm": true,
+            "transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer": interactive,
+            [PADDINGS[padding]]: !!PADDINGS[padding],
+        });
 
         return html`
             <div class="${classes}" ...=${rest}>
@@ -89,10 +80,7 @@ export class CardFooter extends Cossack {
 
     render() {
         return html`
-            <div
-                class="cs-card-footer border-t border-border p-5"
-                ...=${this.props}
-            >
+            <div class="cs-card-footer border-t border-border p-5" ...=${this.props}>
                 ${this.children}
             </div>
         `;

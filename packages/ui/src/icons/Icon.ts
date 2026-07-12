@@ -18,6 +18,30 @@ export interface IconProps {
 }
 
 /**
+ * Build the full <svg>...</svg> markup string for an icon.
+ *
+ * The whole <svg> is emitted as a single unsafeHTML blob (rather than wrapping
+ * an inner path in unsafeHTML) because the HTML parser only enters the SVG
+ * namespace when it encounters a literal <svg> start tag. If we rendered
+ * <svg>${unsafeHTML(path)}</svg>, the inner path would be parsed in the XHTML
+ * namespace and never become a real SVGPathElement — so it wouldn't render.
+ */
+function buildSvg(
+    inner: string,
+    size: number,
+    label: string | undefined,
+): string {
+    const a11y = label
+        ? ` role="img" aria-label="${escapeAttr(label)}"`
+        : ` aria-hidden="true"`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" class="cs-icon"${a11y}>${inner}</svg>`;
+}
+
+function escapeAttr(s: string): string {
+    return String(s).replace(/"/g, "&quot;");
+}
+
+/**
  * Cossack UI Icon — renders a Solar icon from the registry by name.
  *
  *   component(Icon, { name: 'arrow-right', style: 'duotone', size: 20, label: 'Next' })
@@ -35,7 +59,6 @@ export class Icon extends Cossack {
             style = "line",
             size = 24,
             label,
-            ...rest
         } = this.props;
 
         const entry = iconRegistry[name];
@@ -52,22 +75,6 @@ export class Icon extends Cossack {
         const inner = entry[normalized] ?? entry.line;
         if (!inner) return null;
 
-        const a11y = label
-            ? { role: "img", "aria-label": label }
-            : { "aria-hidden": "true" };
-
-        return html`
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="${size}"
-                height="${size}"
-                viewBox="0 0 24 24"
-                fill="none"
-                class="cs-icon"
-                ...=${{ ...a11y, ...rest }}
-            >
-                ${unsafeHTML(inner)}
-            </svg>
-        `;
+        return html`${unsafeHTML(buildSvg(inner, size, label))}`;
     }
 }
