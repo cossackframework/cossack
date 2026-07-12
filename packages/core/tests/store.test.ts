@@ -335,14 +335,14 @@ describe('@Store / @ClientStore decorator metadata', () => {
     });
 });
 
-describe('@Validate with store (dot-path rule map)', () => {
-    it('registers each dot-path as its own validation entry', () => {
+describe('@Validate with store (nested rule map)', () => {
+    it('registers each nested leaf as its own validation entry', () => {
         class Comp {
             @Store()
             @Validate({
                 rules: {
-                    'form.email': { required: true, email: true, message: 'bad email' },
-                    'form.address.zip': { required: true, pattern: /^\d{5}$/ },
+                    email: { required: true, email: true, message: 'bad email' },
+                    address: { zip: { required: true, pattern: /^\d{5}$/ } },
                 },
                 config: { trigger: 'all', runOn: 'both' },
             })
@@ -352,15 +352,17 @@ describe('@Validate with store (dot-path rule map)', () => {
         expect(rules['form.email']).toBeDefined();
         expect(rules['form.email'].rules.email).toBe(true);
         expect(rules['form.address.zip']).toBeDefined();
-        // 'form' itself should NOT be a rule entry (the map shape produces per-path entries).
+        // 'form' itself should NOT be a rule entry (the tree produces per-leaf entries).
         expect(rules['form']).toBeUndefined();
+        // Intermediate object nodes are not entries either.
+        expect(rules['form.address']).toBeUndefined();
     });
 
-    it('applies default config to each dot-path entry', () => {
+    it('applies default config to each flattened entry', () => {
         class Comp {
             @Store()
             @Validate({
-                rules: { 'form.email': { required: true } },
+                rules: { email: { required: true } },
             })
             form = { email: '' };
         }
@@ -370,11 +372,11 @@ describe('@Validate with store (dot-path rule map)', () => {
         expect(rules['form.email'].config.errorProperty).toBe('errors');
     });
 
-    it('merges stacked @Validate decorators on the same store', () => {
+    it('merges stacked @Validate decorators on the same store leaf', () => {
         class Comp {
             @Store()
-            @Validate({ rules: { 'form.email': { required: true } } })
-            @Validate({ rules: { 'form.email': { email: true, message: 'bad' } } })
+            @Validate({ rules: { email: { required: true } } })
+            @Validate({ rules: { email: { email: true, message: 'bad' } } })
             form = { email: '' };
         }
         const rules = getValidationRules(new Comp());
@@ -384,7 +386,7 @@ describe('@Validate with store (dot-path rule map)', () => {
         expect(rules['form.email'].rules.message).toBe('bad');
     });
 
-    it('still supports single-rule shape (backward compat) when no key has a dot', () => {
+    it('still supports single-rule shape for @State fields', () => {
         class Comp {
             @Validate({ rules: { required: true, email: true, message: 'bad email' } })
             email = '';
@@ -417,16 +419,16 @@ describe('storeRules<T>()', () => {
         tags: string[];
     }
 
-    it('type-checks relative keys at compile time (valid keys)', () => {
-        // Top-level + deep + array keys all accepted by DeepKeysOf<FormShape>.
+    it('type-checks nested keys at compile time (valid keys)', () => {
+        // Top-level + nested + array fields all accepted by StoreRuleMap<FormShape>.
         const out = storeRules<FormShape>({
             email: { required: true, email: true },
             age: { min: 18 },
-            'address.zip': { pattern: /^\d{5}$/ },
+            address: { zip: { pattern: /^\d{5}$/ } },
             tags: { minLength: 1 },
         });
         expect(out.email).toBeDefined();
-        expect(out['address.zip']).toBeDefined();
+        expect(out.address).toBeDefined();
         expect(out.tags).toBeDefined();
     });
 
@@ -436,15 +438,14 @@ describe('storeRules<T>()', () => {
         void _out;
     });
 
-    it('treats built-in non-plain objects (Date/RegExp/Map) as scalar (no recursion)', () => {
+    it('treats built-in non-plain objects (Date/RegExp/Map) as scalar leaves (no recursion)', () => {
         interface WithBuiltins {
             createdAt: Date;
             pattern: RegExp;
             counts: Map<string, number>;
             name: string;
         }
-        // Only the top-level keys are valid — methods on Date/RegExp/Map are
-        // not exposed as validation paths.
+        // Built-in non-plain fields take a ValidationRule directly (no nesting).
         const out = storeRules<WithBuiltins>({
             createdAt: { required: true },
             pattern: { required: true },
@@ -453,75 +454,42 @@ describe('storeRules<T>()', () => {
         });
         expect(out.createdAt).toBeDefined();
         expect(out.name).toBeDefined();
-        // @ts-expect-error — 'createdAt.getTime' is NOT a valid path (Date is scalar).
-        const _bad: any = storeRules<WithBuiltins>({ 'createdAt.getTime': { required: true } });
+        // @ts-expect-error — 'createdAt' is a scalar leaf; it takes a rule, not a sub-tree.
+        const _bad: any = storeRules<WithBuiltins>({ createdAt: { getTime: { required: true } } });
         void _bad;
     });
 
-    it('auto-prefixes relative keys to full paths via @Validate', () => {
+    it('auto-prefixes nested keys to full paths via @Validate', () => {
         class Comp {
             @Store()
             @Validate({
                 rules: storeRules<FormShape>({
                     email: { required: true, email: true, message: 'bad email' },
-                    'address.zip': { required: true, pattern: /^\d{5}$/ },
+                    address: { zip: { required: true, pattern: /^\d{5}$/ } },
                 }),
                 config: { trigger: 'all', runOn: 'both' },
             })
             form: FormShape = { email: '', age: 0, address: { zip: '' }, tags: [] };
         }
         const rules = getValidationRules(new Comp());
-        // Relative keys are registered under the FULL prefixed path.
+        // Nested keys are registered under the FULL prefixed dot-path.
         expect(rules['form.email']).toBeDefined();
         expect(rules['form.email'].rules.email).toBe(true);
         expect(rules['form.address.zip']).toBeDefined();
-        // The relative key itself is NOT a separate entry.
+        // No per-segment entries for intermediate nodes or bare relative keys.
         expect(rules['email']).toBeUndefined();
         expect(rules['address.zip']).toBeUndefined();
-    });
-
-    it('keeps full-path keys verbatim (no double-prefix)', () => {
-        class Comp {
-            @Store()
-            @Validate({
-                rules: { 'form.email': { required: true } } as any,
-                config: { trigger: 'all', runOn: 'both' },
-            })
-            form: FormShape = { email: '', age: 0, address: { zip: '' }, tags: [] };
-        }
-        const rules = getValidationRules(new Comp());
-        expect(rules['form.email']).toBeDefined();
-        // No accidental 'form.form.email'.
-        expect(rules['form.form.email']).toBeUndefined();
-    });
-
-    it('mixes relative and full-path keys in the same map', () => {
-        class Comp {
-            @Store()
-            @Validate({
-                rules: {
-                    email: { required: true },            // relative -> form.email
-                    'form.age': { min: 18 },              // full path -> verbatim
-                } as any,
-                config: { trigger: 'all', runOn: 'both' },
-            })
-            form: FormShape = { email: '', age: 0, address: { zip: '' }, tags: [] };
-        }
-        const rules = getValidationRules(new Comp());
-        expect(rules['form.email']).toBeDefined();
-        expect(rules['form.age']).toBeDefined();
-        expect(rules['form.age'].rules.min).toBe(18);
+        expect(rules['form.address']).toBeUndefined();
     });
 });
 
 describe('@Validate value-shape discrimination (regression: collisions with rule key names)', () => {
     /**
      * A store may have fields literally named 'required', 'message', 'pattern',
-     * etc. (collisions with ValidationRule keys). The old key-name heuristic
-     * misclassified these as single-rule; the new value-shape check treats a
-     * map of plain-object values as a rule-map regardless of the key names.
+     * etc. (collisions with ValidationRule keys). The value-shape check treats a
+     * map of plain-object values as a rule-tree regardless of the key names.
      */
-    it('registers relative keys named after rule properties (required/message)', () => {
+    it('registers keys named after rule properties (required/message)', () => {
         interface CollidingShape { required: string; message: string; pattern: string }
         class Comp {
             @Store()

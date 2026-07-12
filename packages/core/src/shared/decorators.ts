@@ -5,7 +5,7 @@ import { isServer } from './environment';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
-import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules } from './validation';
+import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -248,25 +248,21 @@ export function ClientStore(): PropertyDecorator {
 
 export interface ValidateDecoratorOptions {
   /**
-   * Validation rules. Three shapes are supported:
+   * Validation rules. Two shapes are supported:
    *
    * 1. **Single-rule** (for `@State`/`@ClientState` fields): a `ValidationRule`
    *    applied to the decorated property itself.
-   * 2. **Untyped rule-map** (for `@Store`/`@ClientStore`): a
-   *    `Record<string, ValidationRule>` map whose keys are dotted paths to
-   *    nested fields. Keys may be written **relative** to the store
-   *    (`'email'`, `'address.zip'`) — the decorator auto-prefixes them with
-   *    the decorated property name (`'form.email'`). A key that already starts
-   *    with `${propertyName}.` is treated as a full path and used verbatim.
-   * 3. **Typed rule-map** via `storeRules<T>()`: same as (2) but the keys are
-   *    compile-time checked against the store type `T`. Typos like `'emial'`
-   *    fail to compile. See {@link storeRules}.
+   * 2. **Nested rule tree** (for `@Store`/`@ClientStore`): a map whose keys are
+   *    the store's fields, mirroring the store shape. Primitive, array, and
+   *    built-in (Date/RegExp/…) fields take a `ValidationRule`; object fields
+   *    nest a sub-tree. Use the type-safe {@link storeRules}`<T>()` helper to
+   *    compile-time-check the field paths.
    *
-   * The map shape is selected whenever `rules` is an object with at least one
-   * own key; the single-rule shape applies when `rules` is a flat
-   * `ValidationRule` (no map keys).
+   * The two shapes are distinguished by VALUE: a single rule never carries a
+   * plain-object value (its `pattern` is a `RegExp`, its `custom` a function);
+   * a rule tree has at least one plain-object value (a nested child node).
    */
-  rules?: ValidationRule | Record<string, ValidationRule> | StoreRuleMap;
+  rules?: ValidationRule | StoreRuleMap;
   config?: ValidationConfig;
 }
 
@@ -275,9 +271,9 @@ export interface ValidateDecoratorOptions {
  * Works with @State, @ClientState, @Store, and @ClientStore decorated properties.
  *
  * - On a `@State`/`@ClientState` property, pass a single `ValidationRule`.
- * - On a `@Store`/`@ClientStore` property, pass a map of rules — either inline
- *   or via the type-safe `storeRules<T>()` helper. Keys are RELATIVE to the
- *   store and auto-prefixed to full runtime paths.
+ * - On a `@Store`/`@ClientStore` property, pass a NESTED rule tree — either
+ *   inline or via the type-safe `storeRules<T>()` helper. The tree mirrors the
+ *   store shape; relative keys are auto-prefixed to full runtime paths.
  *
  * @example single field
  * ```typescript
@@ -286,7 +282,7 @@ export interface ValidateDecoratorOptions {
  * email = '';
  * ```
  *
- * @example store with typed, relative keys (recommended)
+ * @example store with typed, nested rules (recommended)
  * ```typescript
  * interface FormState { email: string; address: { zip: string }; tags: string[] }
  *
@@ -294,7 +290,7 @@ export interface ValidateDecoratorOptions {
  * @Validate({
  *   rules: storeRules<FormState>({
  *     email: { required: true, email: true, message: '...' },
- *     'address.zip': { required: true, pattern: /^\d{5}$/, message: '...' },
+ *     address: { zip: { required: true, pattern: /^\d{5}$/, message: '...' } },
  *     tags: { required: true, minLength: 1, message: 'Add at least one tag' },
  *   }),
  *   config: { trigger: 'all', runOn: 'both' },
@@ -302,7 +298,7 @@ export interface ValidateDecoratorOptions {
  * form: FormState = { email: '', address: { zip: '' }, tags: [] };
  * ```
  *
- * At runtime, validators and `errors` use the full prefixed paths
+ * At runtime, validators and `errors` use the full prefixed dot-paths
  * (`'form.email'`, `'form.address.zip'`), so `validateProperty('form.email')`,
  * `hasError('form.address.zip')`, and `getError('form.tags')` all work.
  */
@@ -332,13 +328,13 @@ export function Validate(options: ValidateDecoratorOptions = {}): PropertyDecora
     const isRuleMap = !!(rules && typeof rules === 'object' && isValidationRuleMap(rules as Record<string, unknown>));
 
     if (isRuleMap) {
-      // Map shape: each key is a path into the store. RELATIVE keys
-      // ('email', 'address.zip') are prefixed with the decorated property
-      // name → 'form.email'. Keys already starting with `${propertyName}.`
-      // are treated as full paths and used verbatim (backward compatible).
-      const prefix = `${propertyName}.`;
-      for (const [key, pathRules] of Object.entries(rules as Record<string, ValidationRule>)) {
-        const fullPath = key.startsWith(prefix) ? key : `${prefix}${key}`;
+      // Map shape (a nested rule tree): flatten it to full prefixed dot-paths.
+      // Each top-level key is RELATIVE to the store ('email', 'address.zip'),
+      // so `flattenRuleTree(rules, propertyName)` emits the full runtime paths
+      // ('form.email', 'form.address.zip'). Stacked @Validate decorators on
+      // the same store merge into the same path entry.
+      const flatRules = flattenRuleTree(rules, propertyName);
+      for (const [fullPath, pathRules] of Object.entries(flatRules)) {
         const existingPathRules = existingRules[fullPath]?.rules || {};
         existingRules[fullPath] = {
           rules: { ...existingPathRules, ...pathRules },

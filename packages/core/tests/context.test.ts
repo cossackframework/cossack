@@ -99,7 +99,7 @@ describe('createCossackContext — getFormData', () => {
     );
     const result = await (ctx as unknown as CossackContext).getFormData<NestedForm>({
       rules: {
-        'address.city': { required: true, message: 'City is required' },
+        address: { city: { required: true, message: 'City is required' } },
       },
     });
     expect(result.valid).toBe(false);

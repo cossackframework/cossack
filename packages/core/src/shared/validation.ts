@@ -16,29 +16,53 @@ export interface ValidationRule {
   url?: boolean;
   custom?: (value: any) => boolean;
   customAsync?: (value: any, component?: any) => Promise<boolean>;
+  /**
+   * Coerce the value before running the remaining checks. Intended for
+   * `getFormData` / `validateObject`, where every `FormData` value arrives as a
+   * string: `coerce: 'number'` turns `"25"` into `25` in the returned `data`.
+   *
+   * Runs AFTER the `required` / emptiness check, so empty values (`null`,
+   * `undefined`, `''`) are never coerced — `""` stays `""` (it does not become
+   * `0` / `false`). A coercion that cannot succeed (`Number("abc")` → `NaN`,
+   * `new Date("xyz")` → Invalid Date) is a validation failure.
+   *
+   * - `'number'`  → `Number(value)`; `NaN` fails.
+   * - `'boolean'` → `"true"` / `"1"` / `"on"` / `"yes"` (case-insensitive) →
+   *   `true`, anything else → `false`. Matches checkbox/form values and avoids
+   *   `Boolean("false") === true`.
+   * - `'date'`    → `new Date(value)`; `Invalid Date` fails.
+   *
+   * On the reactive `@Validate` path the coerced value is used for validation
+   * (more correct) but is NOT written back to the store.
+   */
+  coerce?: 'number' | 'boolean' | 'date';
   message?: string;
 }
 
 // ============================================================================
-// Type-safe store rules
+// Type-safe store rules (nested)
 // ============================================================================
-// `storeRules<T>()` lets you write validation rules for a @Store property with
-// compile-time checking of the (relative) field paths against the store type T.
+// `storeRules<T>()` lets you write validation rules for a @Store property as a
+// NESTED tree that mirrors the store type T — so the rules shape matches the
+// field shape, and matches the `errors` shape returned from validation.
 //
 //   @Store()
 //   @Validate({
 //     rules: storeRules<SubmissionState>({
 //       email: { required: true, email: true, message: '...' },
-//       'address.zip': { required: true, pattern: /^\d{5}$/ },
+//       address: {
+//         zip: { required: true, pattern: /^\d{5}$/ },
+//       },
 //       tags: { required: true, minLength: 1 },
 //     }),
 //   })
 //   submission: SubmissionState = { email: '', address: { zip: '' }, tags: [] };
 //
-// Keys are RELATIVE to the store ('email', 'address.zip') and are auto-prefixed
-// by @Validate to the full runtime paths ('submission.email',
-// 'submission.address.zip'). Passing <T> is optional — omit it for an untyped
-// Record<string, ValidationRule>.
+// Object fields nest a sub-tree; primitive, array, and built-in (Date/RegExp)
+// fields take a `ValidationRule` directly. Keys are RELATIVE to the store and
+// are auto-prefixed by @Validate to the full runtime paths
+// ('submission.email', 'submission.address.zip'). Passing <T> is optional —
+// omit it for an untyped map (no compile-time path checking).
 
 /**
  * Built-in non-plain object types that should NOT be recursed into when
@@ -96,22 +120,47 @@ export type DeepKeysOf<T> = T extends object
   : never;
 
 /**
- * A rule map whose keys are relative dotted paths into the store type T.
- * Use `keyof T` (top-level only) when you don't want deep paths typed.
+ * The validation-rules shape for a single field of type `T`.
+ *
+ * - Primitive leaves (`string`, `number`, …), arrays (`string[]`), and
+ *   built-in non-plain objects (`Date`, `RegExp`, `Map`, …) take a
+ *   {@link ValidationRule} directly — they are validated as a whole.
+ * - Plain object fields nest a sub-tree: each own key takes a
+ *   `StoreRuleNode<value>`, so the rules tree mirrors the field shape at any
+ *   depth.
+ *
+ * This is the per-field counterpart of {@link StoreRuleMap}; it lets the rules
+ * you write match the structure of `T` (and of the `errors` output).
  */
-export type StoreRuleMap<T = any> = Partial<Record<DeepKeysOf<T>, ValidationRule>>;
+export type StoreRuleNode<T> = T extends object
+  ? T extends (infer _U)[]
+    ? ValidationRule // array: validate the whole array (minLength/maxLength/required)
+    : T extends NonRecurableObject
+      ? ValidationRule // built-in non-plain object: validate as a whole
+      : { [K in keyof T]?: StoreRuleNode<T[K]> } // plain object: recurse per key
+  : ValidationRule; // primitive: a ValidationRule
 
 /**
- * Identity helper that type-checks a map of RELATIVE store field paths against
- * the store type `T`. Returns the map unchanged at runtime; the type parameter
- * is purely for compile-time validation.
+ * A nested rule tree that mirrors the store type `T`. Each top-level key is a
+ * field of `T`; object fields recurse (per {@link StoreRuleNode}), while
+ * primitive/array/built-in fields take a {@link ValidationRule}. At runtime
+ * the tree is flattened to dot-path keys (`'address.zip'`) before validation,
+ * so the output (`errors`, `flatErrors`) is unchanged.
+ */
+export type StoreRuleMap<T = any> = { [K in keyof T]?: StoreRuleNode<T[K]> };
+
+/**
+ * Identity helper that type-checks a NESTED rule tree against the store type
+ * `T`. Returns the tree unchanged at runtime; the type parameter is purely for
+ * compile-time validation of the field shape.
  *
- * Omit `<T>` to get an untyped `Record<string, ValidationRule>` (no path
- * checking, but still usable with @Validate on a @Store).
+ * The tree mirrors `T`: object fields nest a sub-tree, while primitive, array,
+ * and built-in (Date/RegExp/…) fields take a {@link ValidationRule} directly.
+ * The `@Validate` decorator flattens the tree to the full runtime dot-paths
+ * (`'submission.email'`, `'submission.address.zip'`).
  *
- * The keys you write are relative to the store ('email', 'address.zip'); the
- * `@Validate` decorator auto-prefixes them with the decorated property name to
- * produce the full runtime paths ('submission.email').
+ * Omit `<T>` for an untyped map (no compile-time path checking, but still
+ * usable with @Validate on a @Store).
  *
  * @example
  * ```ts
@@ -120,7 +169,7 @@ export type StoreRuleMap<T = any> = Partial<Record<DeepKeysOf<T>, ValidationRule
  * @Store()
  * @Validate({ rules: storeRules<Form>({
  *   email: { required: true, email: true },
- *   'address.zip': { required: true, pattern: /^\d{5}$/ },
+ *   address: { zip: { required: true, pattern: /^\d{5}$/ } },
  *   tags: { required: true, minLength: 1 },
  * }) })
  * form: Form = { email: '', address: { zip: '' }, tags: [] };
@@ -130,6 +179,69 @@ export function storeRules<T = any>(
     rules: StoreRuleMap<T>,
 ): StoreRuleMap<T> {
     return rules;
+}
+
+/**
+ * Test whether a node is a LEAF {@link ValidationRule} (rather than a nested
+ * rule group). Mirrors the value-shape heuristic used by the `@Validate`
+ * decorator's `isValidationRuleMap`: a leaf rule never carries a plain-object
+ * value — its `pattern` is a `RegExp`, its `custom`/`customAsync` are functions,
+ * and the rest are primitives. A nested group (the rules for an object field)
+ * has at least one plain-object value: a child rule node.
+ *
+ * Discriminating by value (not key name) is robust against field names that
+ * collide with rule keys (e.g. a field literally named `required`).
+ */
+function isLeafRule(value: unknown): boolean {
+  if (value == null || typeof value !== 'object' || value instanceof RegExp) {
+    // A primitive, null, a RegExp, or a function is not a nested group. (A bare
+    // rule never appears here in well-typed usage; treating it as leaf-like is
+    // safe — it won't be recursed into.)
+    return true;
+  }
+  // A plain object (or array) is a LEAF rule when none of its values is itself
+  // a plain object; it is a GROUP when at least one value is a plain object
+  // (a child rule node). An empty object is treated as a leaf (a no-op rule).
+  return !Object.values(value).some(
+    v => v != null && typeof v === 'object' && !(v instanceof RegExp),
+  );
+}
+
+/**
+ * Flatten a nested {@link StoreRuleMap} tree into a flat `Record<dotPath,
+ * ValidationRule>` — the shape consumed by `validateObject` and the runtime
+ * metadata store. `prefix` is prepended to every emitted path (used by the
+ * `@Validate` decorator to prefix relative keys with the store property name).
+ *
+ * Leaf-vs-group discrimination is value-based via {@link isLeafRule}, so an
+ * object field whose children are all rules is still recursed correctly.
+ *
+ * @example
+ *   flattenRuleTree({ address: { zip: { required: true } } }, 'form')
+ *   // => { 'form.address.zip': { required: true } }
+ */
+export function flattenRuleTree(
+  node: unknown,
+  prefix: string,
+  out: Record<string, ValidationRule> = {},
+): Record<string, ValidationRule> {
+  if (node == null || typeof node !== 'object' || node instanceof RegExp) {
+    // Not a tree node (a primitive, null, a RegExp, or a bare rule). A bare
+    // rule at the root has no key to flatten under — ignore it.
+    return out;
+  }
+  for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+    if (child == null) continue; // optional slot left empty
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (isLeafRule(child)) {
+      // Leaf: emit as a ValidationRule (RegExp values inside are preserved).
+      out[path] = child as ValidationRule;
+    } else {
+      // Group: recurse into the sub-tree.
+      flattenRuleTree(child, path, out);
+    }
+  }
+  return out;
 }
 
 
@@ -152,22 +264,28 @@ export interface ValidateOptions {
 }
 
 /**
- * Result of a validation check
+ * Result of a validation check.
+ *
+ * `value` is the value that was validated — the coerced value when a `coerce`
+ * rule applied, otherwise the original input. Used by `validateObject` to write
+ * coerced values back into the returned `data`.
  */
 export interface ValidationResult {
   valid: boolean;
   message?: string;
+  value?: any;
 }
 
 /**
  * Nesting of error messages that mirrors the validated type `T`: each object
  * key becomes an object with `NestedErrors` children, each scalar leaf becomes
  * `string | undefined`. So for `{ address: { city: string } }`, the error type
- * is `{ address?: { city?: string } }` — usable with optional chaining and
- * destructuring (`errors?.address?.city`).
+ * is `{ address?: { city?: string | undefined } }` — usable with optional
+ * chaining and destructuring (`errors?.address?.city`).
  *
- * `string | undefined` is also permitted at any node (a rule may target a path
- * that also has deeper rules), so callers should prefer optional chaining.
+ * Under the nested `storeRules<T>()` API, an object field always nests a
+ * sub-tree (it cannot also carry a direct rule for itself), so an object node
+ * is never itself a `string` — only primitive, array, and built-in leaves are.
  */
 export type NestedErrors<T> = T extends object
   ? T extends (infer _U)[]
@@ -175,7 +293,7 @@ export type NestedErrors<T> = T extends object
     : T extends NonRecurableObject
       ? string | undefined
       : {
-          [K in keyof T]?: NestedErrors<T[K]> | string;
+          [K in keyof T]?: NestedErrors<T[K]>;
         }
   : string | undefined;
 
@@ -273,16 +391,54 @@ function getDefaultMessage(rule: ValidationRule, ruleName: string): string {
       return 'Invalid value';
     case 'customAsync':
       return 'Validation failed';
+    case 'coerce':
+      return 'Invalid value';
     default:
       return 'Invalid value';
   }
 }
 
 /**
- * Validate a value against a set of rules (synchronous)
+ * Coerce a value per a `coerce` rule. Returns `ok: false` (a validation
+ * failure) when the coercion cannot produce a valid value — `Number('abc')`
+ * yielding `NaN`, or `new Date('xyz')` yielding an Invalid Date. Boolean
+ * coercion always succeeds (it maps any input to `true`/`false`).
+ *
+ * Callers MUST ensure `value` is non-empty (`null`/`undefined`/`''` excluded)
+ * before calling — those are handled by the `required`/emptiness check.
+ */
+function coerceValue(
+  value: any,
+  coerce: NonNullable<ValidationRule['coerce']>,
+): { ok: boolean; value: any } {
+  switch (coerce) {
+    case 'number': {
+      const num = Number(value);
+      return { ok: !isNaN(num), value: num };
+    }
+    case 'boolean': {
+      const truthy = value === true
+        || (typeof value === 'string' && ['true', '1', 'on', 'yes'].includes(value.toLowerCase()));
+      return { ok: true, value: truthy };
+    }
+    case 'date': {
+      const d = new Date(value);
+      return { ok: !isNaN(d.getTime()), value: d };
+    }
+    default:
+      return { ok: true, value };
+  }
+}
+
+/**
+ * Validate a value against a set of rules (synchronous).
+ *
+ * The returned `value` is the value that was validated: the coerced value when
+ * a `coerce` rule applied, otherwise the original input. `validateObject` uses
+ * it to write coerced values back into the returned `data`.
  */
 export function validateValue(value: any, rules: ValidationRule): ValidationResult {
-  // Check required first
+  // Check required first (against the raw input — emptiness is never coerced).
   if (rules.required) {
     if (!validators.required(value)) {
       return {
@@ -292,9 +448,24 @@ export function validateValue(value: any, rules: ValidationRule): ValidationResu
     }
   }
 
-  // Skip other validations if value is empty and not required
+  // Skip other validations if value is empty and not required. Coercion does
+  // NOT run here, so `""` stays `""` (it never becomes `0` / `false`).
   if (value === null || value === undefined || value === '') {
-    return { valid: true };
+    return { valid: true, value };
+  }
+
+  // Coerce (after the emptiness check) so the remaining checks run against the
+  // value the caller will actually receive. A coercion that cannot produce a
+  // valid value (NaN / Invalid Date) is a validation failure.
+  if (rules.coerce) {
+    const result = coerceValue(value, rules.coerce);
+    if (!result.ok) {
+      return {
+        valid: false,
+        message: rules.message || getDefaultMessage(rules, 'coerce'),
+      };
+    }
+    value = result.value;
   }
 
   // minLength
@@ -384,7 +555,7 @@ export function validateValue(value: any, rules: ValidationRule): ValidationResu
     }
   }
 
-  return { valid: true };
+  return { valid: true, value };
 }
 
 /**
@@ -395,17 +566,17 @@ export async function validateValueAsync(
   rules: ValidationRule,
   component?: any
 ): Promise<ValidationResult> {
-  // First run sync validations
+  // First run sync validations (syncResult.value is the coerced value, if any).
   const syncResult = validateValue(value, rules);
   if (!syncResult.valid) {
     return syncResult;
   }
 
-  // Check customAsync
+  // Check customAsync against the coerced value (syncResult.value).
   if (rules.customAsync) {
     try {
       // Pass component as second argument for access to component methods
-      const isValid = await rules.customAsync(value, component);
+      const isValid = await rules.customAsync(syncResult.value, component);
       if (!isValid) {
         return {
           valid: false,
@@ -420,7 +591,7 @@ export async function validateValueAsync(
     }
   }
 
-  return { valid: true };
+  return { valid: true, value: syncResult.value };
 }
 
 /**
@@ -431,7 +602,9 @@ export async function validateValueAsync(
  *   the dot-path rule keys (e.g. `'address.city'` → `errors.address.city`).
  * - `flatErrors`: the same data as a flat `Record<dotPath, string>` — useful if
  *   you need to look up a message by its exact rule key.
- * - `data`: the input echoed back (typed `T`), untouched.
+ * - `data`: the input typed `T`, with any `coerce` rules applied — fields with
+ *   `coerce: 'number'` come back as numbers, etc. Fields without a rule are
+ *   echoed unchanged.
  */
 export interface ObjectValidationResult<T> {
   data: T;
@@ -477,6 +650,28 @@ function resolveDotPath(obj: unknown, path: string): unknown {
 }
 
 /**
+ * Write a value into a plain object at a dot-path
+ * (`setDotPath(root, 'address.zip', x)` → `root.address.zip = x`). Reuses
+ * existing intermediate object nodes (creating none) — intended for writing
+ * coerced values back into data produced by `parseFormData`, so it never
+ * restructures the tree. Silently no-ops if an intermediate segment is missing
+ * or non-object.
+ */
+function setDotPath(root: unknown, path: string, value: unknown): void {
+  const parts = path.split('.');
+  let current: unknown = root;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (current == null || typeof current !== 'object') return;
+    const next = (current as Record<string, unknown>)[parts[i]];
+    if (next == null || typeof next !== 'object') return;
+    current = next;
+  }
+  if (current != null && typeof current === 'object') {
+    (current as Record<string, unknown>)[parts[parts.length - 1]] = value;
+  }
+}
+
+/**
  * Validate a plain object against a `storeRules<T>()` map WITHOUT a component
  * instance — the component-free counterpart to `validateAll(component)`.
  *
@@ -492,20 +687,23 @@ function resolveDotPath(obj: unknown, path: string): unknown {
  * - `customAsync` callbacks that expect a `component` argument receive
  *   `undefined` here — component-coupled async rules are a component-lifecycle
  *   feature, not a plain-object one.
+ * - `coerce` rules transform the returned `data`: e.g. `age: { coerce: 'number',
+ *   min: 18 }` turns the FormData string `"20"` into the number `20`.
  *
  * @example
  *   const { data, errors, valid } = await validateObject<MyForm>(parsed, {
  *     email: { required: true, email: true },
- *     'address.zip': { required: true, pattern: /^\d{5}$/ },
+ *     address: { zip: { required: true, pattern: /^\d{5}$/ } },
  *   });
  */
 export async function validateObject<T>(
   data: T,
   rules: StoreRuleMap<T>,
 ): Promise<ObjectValidationResult<T>> {
+  const flatRules = flattenRuleTree(rules, '');
   const flatErrors: Partial<Record<DeepKeysOf<T>, string>> = {};
   const nestedErrors: Record<string, unknown> = {};
-  for (const [dotPath, rule] of Object.entries(rules)) {
+  for (const [dotPath, rule] of Object.entries(flatRules)) {
     if (!rule) continue;
     const value = resolveDotPath(data, dotPath);
     const result = await validateValueAsync(value, rule);
@@ -513,6 +711,10 @@ export async function validateObject<T>(
       const message = result.message || getDefaultMessage(rule, 'custom');
       (flatErrors as Record<string, string>)[dotPath] = message;
       setNested(nestedErrors, dotPath, message);
+    } else if (rule.coerce) {
+      // Write the coerced value back into `data` so the returned data carries
+      // typed values (e.g. `Number` instead of the original FormData string).
+      setDotPath(data, dotPath, result.value);
     }
   }
   const valid = Object.keys(flatErrors).length === 0;

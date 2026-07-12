@@ -59,14 +59,13 @@ Now display the flash message in your page component by reading it back with `fl
 Since the `render()` method is a shared method, which is also used in the client, and we need to get the flash message from the server, we need to retrieve them in the `init()` method using `flashed()`. We also need to define states for them.
 
 ```typescript
+// NestedErrors<T> is derived from your form type T, so you never have to spell
+// out the errors shape by hand. See the Server-Side Validation section below.
 @State()
 success: string | null = null;
 
 @State()
-errors: {
-    name?: string | null;
-    email?: string | null;
-} | null = null;
+errors: NestedErrors<{ name: string; email: string }> | null = null;
 
 init() {
     this.success = flashed('success');
@@ -85,6 +84,8 @@ render() {
 ## Server-Side Validation
 
 The `flash()` method can also be used to flash validation errors back to the form. We might use `this.c.getFormData()` to get the form data and validate it in the `post()` method. 
+
+> **Tip:** `FormData` values are always strings. Add a `coerce` rule to produce typed `data` — e.g. `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
 
 ```typescript
 post() {
@@ -198,6 +199,7 @@ import {
   flashInput,
   old,
   State,
+  type NestedErrors,
 } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
@@ -210,11 +212,10 @@ export default class ContactForm extends Cossack {
   @State()
   success: string | undefined;
 
+  // NestedErrors<ContactFormFields> mirrors the form type, so optional-chaining
+  // (this.errors?.name) is fully typed without spelling out the shape.
   @State()
-  errors: {
-    name?: string;
-    email?: string;
-  } | undefined;
+  errors: NestedErrors<ContactFormFields> | undefined;
 
   @State()
   name: string = '';
@@ -231,8 +232,8 @@ export default class ContactForm extends Cossack {
   }
 
   async post() {
-    const { data, errors, valid } = await this.c.getFormData<ComplexFormShape>({
-      rules: storeRules<ComplexFormShape>({
+    const { data, errors, valid } = await this.c.getFormData<ContactFormFields>({
+      rules: storeRules<ContactFormFields>({
         name: { required: true, message: 'Name is required' },
         email: { required: true, message: 'Email is required' },
       }),
@@ -301,8 +302,10 @@ async post() {
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
         email: { required: true, email: true, message: 'Email is required and must be valid' },
-        'address.street': { required: true, message: 'Street is required' },
-        'address.city': { required: true, message: 'City is required' },
+        address: {
+          street: { required: true, message: 'Street is required' },
+          city: { required: true, message: 'City is required' },
+        },
       }),
     });
 

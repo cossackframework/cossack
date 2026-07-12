@@ -161,7 +161,7 @@ export class StoreFormDemo extends Cossack {
     @Validate({
         rules: storeRules<FormState>({
             email: { required: true, email: true, message: 'Enter a valid email' },
-            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            address: { zip: { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' } },
             tags: { required: true, minLength: 1, message: 'Add at least one tag' },
         }),
         config: { trigger: 'all', runOn: 'both' },
@@ -171,14 +171,14 @@ export class StoreFormDemo extends Cossack {
     @Client()
     onZipInput(event: Event) {
         this.form.address.zip = (event.target as HTMLInputElement).value;
-        // At runtime, validate by the full prefixed path:
+        // At runtime, validate by the full prefixed dot-path:
         this.validateProperty('form.address.zip', 'input');
         this.hasError('form.address.zip');
     }
 }
 ```
 
-`storeRules<T>()` is optional — omit `<T>` for an untyped map, or write full-path keys (`'form.email'`) directly to skip the helper entirely.
+`storeRules<T>()` is optional — omit `<T>` for an untyped nested map (no compile-time path checking).
 
 > Note: `@Store` / `@ClientStore` fully interoperate with `@State` / `@ClientState` and `@Computed` — mix and match whichever best fits each piece of state.
 

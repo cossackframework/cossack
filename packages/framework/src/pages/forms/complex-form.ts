@@ -7,6 +7,7 @@ import {
   flashInput,
   old,
   State,
+  type NestedErrors,
 } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
@@ -37,14 +38,7 @@ export default class ComplexForm extends Cossack {
   success: string | undefined;
 
   @State()
-  errors: {
-    name?: string;
-    address?: {
-      street?: string;
-      city?: string;
-      state?: string;
-    };
-  } | undefined;
+  errors: NestedErrors<ComplexFormShape> | undefined;
 
   @State()
   name: string = '';
@@ -64,9 +58,11 @@ export default class ComplexForm extends Cossack {
     const { data, errors, valid } = await this.c.getFormData<ComplexFormShape>({
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
-        'address.street': { required: true, message: 'Street is required' },
-        'address.city': { required: true, message: 'City is required' },
-        'address.state': { required: true, minLength: 2, message: 'State is required (min 2 chars)' },
+        address: {
+          street: { required: true, message: 'Street is required' },
+          city: { required: true, message: 'City is required' },
+          state: { required: true, minLength: 2, message: 'State is required (min 2 chars)' },
+        },
       }),
     });
 
