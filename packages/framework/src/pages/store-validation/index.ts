@@ -34,9 +34,9 @@ interface SubmitFormState {
 export class StoreValidationDemo extends Cossack {
     @Store()
     @Validate({
-        // Type-safe store rules: keys are RELATIVE to the store and
-        // compile-time checked against SubmitFormState. The decorator
-        // auto-prefixes them to full runtime paths
+        // Type-safe store rules: a NESTED tree that mirrors the store shape.
+        // Object fields nest a sub-tree; primitive/array fields take a rule.
+        // The decorator flattens relative keys to full runtime paths
         // ('submitFormStore.email', 'submitFormStore.address.zip', ...).
         // A typo like `emial: { ... }` would fail to compile.
         rules: storeRules<SubmitFormState>({
@@ -60,18 +60,20 @@ export class StoreValidationDemo extends Cossack {
                 },
                 message: 'Invalid discount code',
             },
-            // Deep dot-path into a nested object (relative form: 'address.zip').
-            'address.zip': {
-                required: true,
-                pattern: /^\d{4,10}$/,
-                message: 'Please enter a valid ZIP code (4-10 digits)',
+            // Nested object — rules mirror the field shape (relative: 'address.zip').
+            address: {
+                zip: {
+                    required: true,
+                    pattern: /^\d{4,10}$/,
+                    message: 'Please enter a valid ZIP code (4-10 digits)',
+                },
+                country: {
+                    required: true,
+                    minLength: 2,
+                    message: 'Please enter your country',
+                },
             },
-            'address.country': {
-                required: true,
-                minLength: 2,
-                message: 'Please enter your country',
-            },
-            // Array field — validates non-empty (arrays are addressable by key).
+            // Array field — validated as a whole (arrays are addressable by key).
             tags: {
                 required: true,
                 minLength: 1,

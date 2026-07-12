@@ -223,9 +223,11 @@ async post() {
     const { data, errors, valid } = await this.c.getFormData<MyFormData>({
         rules: storeRules<MyFormData>({
             name: { required: true, minLength: 2 },
-            'address.street': { required: true },
-            'address.city': { required: true },
-            'address.state': { required: true, minLength: 2 },
+            address: {
+                street: { required: true },
+                city: { required: true },
+                state: { required: true, minLength: 2 },
+            },
         }),
     });
     if (!valid) return this.c.json({ errors }, 400);

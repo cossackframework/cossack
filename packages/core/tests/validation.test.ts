@@ -1,7 +1,7 @@
 // tests/validation.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, validateObject, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
+import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, validateObject, flattenRuleTree, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
 import { Validate, Store } from '../src/shared/decorators';
 
 describe('Validation', () => {
@@ -180,6 +180,94 @@ describe('Validation', () => {
                 expect(validateValue('ab', rules).valid).toBe(false);
                 expect(validateValue('abc', rules).valid).toBe(true);
                 expect(validateValue('abcdefghijkl', rules).valid).toBe(false);
+            });
+        });
+    });
+
+    describe('coerce', () => {
+        describe('number coercion', () => {
+            it('coerces a numeric string to a number in result.value', () => {
+                const result = validateValue('25', { coerce: 'number' });
+                expect(result.valid).toBe(true);
+                expect(result.value).toBe(25);
+                expect(typeof result.value).toBe('number');
+            });
+
+            it('fails for a non-numeric string (NaN)', () => {
+                const result = validateValue('abc', { coerce: 'number', message: 'Not a number' });
+                expect(result.valid).toBe(false);
+                expect(result.message).toBe('Not a number');
+            });
+
+            it('never coerces empty strings (stays empty, passes when not required)', () => {
+                const result = validateValue('', { coerce: 'number' });
+                expect(result.valid).toBe(true);
+                expect(result.value).toBe('');
+            });
+
+            it('still fails required for an empty string before coercion', () => {
+                const result = validateValue('', { required: true, coerce: 'number' });
+                expect(result.valid).toBe(false);
+            });
+
+            it('feeds the coerced value to min/max', () => {
+                // "20" coerced to 20, passes min: 18.
+                expect(validateValue('20', { coerce: 'number', min: 18 }).valid).toBe(true);
+                // "15" coerced to 15, fails min: 18.
+                expect(validateValue('15', { coerce: 'number', min: 18 }).valid).toBe(false);
+                expect(validateValue('30', { coerce: 'number', max: 25 }).valid).toBe(false);
+            });
+        });
+
+        describe('boolean coercion', () => {
+            it('maps common truthy form values to true', () => {
+                for (const v of ['true', '1', 'on', 'yes', 'TRUE', 'On']) {
+                    const result = validateValue(v, { coerce: 'boolean' });
+                    expect(result.valid).toBe(true);
+                    expect(result.value).toBe(true);
+                }
+            });
+
+            it('maps everything else to false (not a failure)', () => {
+                for (const v of ['false', '0', 'off', 'no', 'random']) {
+                    const result = validateValue(v, { coerce: 'boolean' });
+                    expect(result.valid).toBe(true);
+                    expect(result.value).toBe(false);
+                }
+            });
+
+            it('passes through a native boolean', () => {
+                expect(validateValue(true, { coerce: 'boolean' }).value).toBe(true);
+                expect(validateValue(false, { coerce: 'boolean' }).value).toBe(false);
+            });
+        });
+
+        describe('date coercion', () => {
+            it('coerces an ISO date string to a Date', () => {
+                const result = validateValue('2024-01-15', { coerce: 'date' });
+                expect(result.valid).toBe(true);
+                expect(result.value).toBeInstanceOf(Date);
+                expect((result.value as Date).toISOString()).toBe('2024-01-15T00:00:00.000Z');
+            });
+
+            it('fails for an invalid date string', () => {
+                const result = validateValue('not-a-date', { coerce: 'date' });
+                expect(result.valid).toBe(false);
+            });
+        });
+
+        describe('custom validators run against the coerced value', () => {
+            it('passes the coerced number to a sync custom validator', () => {
+                const isEven = (v: any) => typeof v === 'number' && v % 2 === 0;
+                expect(validateValue('4', { coerce: 'number', custom: isEven }).valid).toBe(true);
+                expect(validateValue('3', { coerce: 'number', custom: isEven }).valid).toBe(false);
+            });
+
+            it('passes the coerced value to customAsync', async () => {
+                const seen: any[] = [];
+                const check = async (v: any) => { seen.push(v); return v > 0; };
+                await validateValueAsync('7', { coerce: 'number', customAsync: check });
+                expect(seen[0]).toBe(7);
             });
         });
     });
@@ -500,13 +588,11 @@ describe('Validation', () => {
         class StoreValidationComponent {
             @Validate({
                 rules: {
-                    'form.email': { required: true, email: true, message: 'Bad email' },
-                    'form.address.zip': {
-                        required: true,
-                        pattern: /^\d{5}$/,
-                        message: 'Bad ZIP',
+                    email: { required: true, email: true, message: 'Bad email' },
+                    address: {
+                        zip: { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' },
                     },
-                    'form.tags': { required: true, minLength: 1, message: 'Add a tag' },
+                    tags: { required: true, minLength: 1, message: 'Add a tag' },
                 },
                 config: { trigger: 'all', runOn: 'both' },
             })
@@ -579,7 +665,7 @@ describe('Validation', () => {
             class AsyncStoreComponent {
                 @Validate({
                     rules: {
-                        'form.code': {
+                        code: {
                             required: true,
                             customAsync: async (value: string, component: any) => {
                                 return component.check(value);
@@ -625,14 +711,14 @@ describe('Validation', () => {
             expect(comp.getProperty('errors').email).toBe('Required');
         });
 
-        it('end-to-end: storeRules relative keys validate via the full prefixed path', async () => {
+        it('end-to-end: nested storeRules validate via the full prefixed path', async () => {
             interface FormShape { email: string; address: { zip: string } }
             class StoreRulesComponent {
                 @Store()
                 @Validate({
                     rules: storeRules<FormShape>({
                         email: { required: true, email: true, message: 'Bad email' },
-                        'address.zip': { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' },
+                        address: { zip: { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' } },
                     }),
                     config: { trigger: 'all', runOn: 'both' },
                 })
@@ -675,7 +761,7 @@ describe('Validation', () => {
             const { valid, errors, data: out } = await validateObject(data, {
                 name: { required: true },
                 email: { required: true, email: true },
-                'address.zip': { required: true, pattern: /^\d{5}$/ },
+                address: { zip: { required: true, pattern: /^\d{5}$/ } },
             });
             expect(valid).toBe(true);
             expect(errors).toEqual({});
@@ -693,7 +779,7 @@ describe('Validation', () => {
             const { valid, errors, flatErrors } = await validateObject(data, {
                 name: { required: true, message: 'Name is required' },
                 email: { email: true, message: 'Bad email' },
-                'address.zip': { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' },
+                address: { zip: { required: true, pattern: /^\d{5}$/, message: 'Bad ZIP' } },
             });
             expect(valid).toBe(false);
             // Nested shape: option-chaining / destructuring friendly.
@@ -711,7 +797,7 @@ describe('Validation', () => {
                 name: 'ok', email: 'a@b.com', address: { zip: '' }, tags: [],
             };
             const { errors } = await validateObject(data, {
-                'address.zip': { required: true, message: 'ZIP required' },
+                address: { zip: { required: true, message: 'ZIP required' } },
             });
             // errors.address.zip — not errors['address.zip'].
             expect((errors as any)?.address?.zip).toBe('ZIP required');
@@ -722,7 +808,7 @@ describe('Validation', () => {
         it('resolves nested dot-paths and reports missing intermediate keys', async () => {
             const data = { address: {} } as unknown as MyForm;
             const { valid, flatErrors } = await validateObject(data, {
-                'address.zip': { required: true, message: 'ZIP required' },
+                address: { zip: { required: true, message: 'ZIP required' } },
             });
             expect(valid).toBe(false);
             expect(flatErrors['address.zip']).toBe('ZIP required');
@@ -758,9 +844,177 @@ describe('Validation', () => {
             }) as unknown as MyForm;
             const { valid } = await validateObject(data, {
                 name: { required: true },
-                'address.zip': { required: true, pattern: /^\d{5}$/ },
+                address: { zip: { required: true, pattern: /^\d{5}$/ } },
             });
             expect(valid).toBe(true);
+        });
+
+        it('writes coerced values back into data', async () => {
+            interface CoerceForm { age: string; active: string; name: string }
+            const data: CoerceForm = { age: '25', active: 'on', name: 'Alice' };
+            const { valid, data: out } = await validateObject(data, {
+                age: { coerce: 'number', min: 18 },
+                active: { coerce: 'boolean' },
+                // No rule on `name` — echoed unchanged.
+            });
+            expect(valid).toBe(true);
+            expect(out.age).toBe(25);
+            expect(typeof out.age).toBe('number');
+            expect(out.active).toBe(true);
+            expect(out.name).toBe('Alice');
+        });
+
+        it('coerces nested fields', async () => {
+            interface NestedCoerce { profile: { age: string } }
+            const data: NestedCoerce = { profile: { age: '42' } };
+            const { valid, data: out } = await validateObject(data, {
+                profile: { age: { coerce: 'number' } },
+            });
+            expect(valid).toBe(true);
+            expect(out.profile.age).toBe(42);
+        });
+
+        it('retains the original value when coercion fails', async () => {
+            interface CoerceForm { age: string }
+            const data: CoerceForm = { age: 'abc' };
+            const { valid, data: out } = await validateObject(data, {
+                age: { coerce: 'number' },
+            });
+            expect(valid).toBe(false);
+            // The failed field keeps its original (un-coerced) value.
+            expect(out.age).toBe('abc');
+        });
+
+        it('does not coerce empty optional fields', async () => {
+            interface CoerceForm { age: string }
+            const data: CoerceForm = { age: '' };
+            const { valid, data: out } = await validateObject(data, {
+                age: { coerce: 'number' },
+            });
+            expect(valid).toBe(true);
+            // Empty string is not coerced to 0.
+            expect(out.age).toBe('');
+        });
+    });
+
+    describe('coerce on the reactive path (@Validate)', () => {
+        /**
+         * The reactive path uses validateValueAsync for checks but must NOT
+         * write the coerced value back into the store. Build a minimal mock and
+         * assert the store value is unchanged after validation.
+         */
+        function makeStoreComponent<T extends new (...args: any[]) => any>(
+            Klass: T,
+            initialValues: Record<string, any> = {},
+        ): InstanceType<T> & {
+            getProperty(name: string): any;
+            setProperty(name: string, value: any): void;
+            requestUpdate(): void;
+            isServer: boolean;
+        } {
+            const comp = new Klass() as any;
+            const store: Record<string, any> = { errors: {}, ...initialValues };
+            comp.getProperty = (name: string) => store[name];
+            comp.setProperty = (name: string, value: any) => { store[name] = value; };
+            comp.requestUpdate = vi.fn();
+            comp.isServer = false;
+            return comp;
+        }
+
+        it('validates with coercion but leaves the store value untouched', async () => {
+            class CoerceComponent {
+                @Validate({
+                    rules: { age: { coerce: 'number', min: 18 } },
+                    config: { trigger: 'all', runOn: 'both' },
+                })
+                form: any;
+            }
+            const comp = makeStoreComponent(CoerceComponent, { form: { age: '20' } });
+            const valid = await validateProperty(comp, 'form.age');
+            expect(valid).toBe(true);
+            // The store still holds the original string — coercion is not written back.
+            expect(comp.getProperty('form').age).toBe('20');
+            expect(typeof comp.getProperty('form').age).toBe('string');
+        });
+
+        it('fails validation when coercion produces NaN', async () => {
+            class CoerceComponent {
+                @Validate({
+                    rules: { age: { coerce: 'number' } },
+                    config: { trigger: 'all', runOn: 'both' },
+                })
+                form: any;
+            }
+            const comp = makeStoreComponent(CoerceComponent, { form: { age: 'abc' } });
+            const valid = await validateProperty(comp, 'form.age');
+            expect(valid).toBe(false);
+            // Still not mutated.
+            expect(comp.getProperty('form').age).toBe('abc');
+        });
+    });
+
+    describe('flattenRuleTree', () => {
+        it('flattens a nested rule tree into dot-path keys', () => {
+            const out = flattenRuleTree({
+                email: { required: true, email: true },
+                address: { zip: { required: true, pattern: /^\d{5}$/ } },
+            }, 'form');
+            expect(out).toEqual({
+                'form.email': { required: true, email: true },
+                'form.address.zip': { required: true, pattern: /^\d{5}$/ },
+            });
+        });
+
+        it('flattens with no prefix (relative keys) at the root', () => {
+            const out = flattenRuleTree({
+                name: { required: true },
+                address: { city: { required: true } },
+            }, '');
+            expect(out).toEqual({
+                name: { required: true },
+                'address.city': { required: true },
+            });
+        });
+
+        it('keeps a RegExp pattern value on a leaf rule (not treated as a group)', () => {
+            const out = flattenRuleTree({
+                code: { required: true, pattern: /^[a-z]+$/ },
+            }, 'form');
+            expect(out['form.code']).toEqual({ required: true, pattern: /^[a-z]+$/ });
+            // The leaf rule is NOT split into per-key entries.
+            expect(out['form.code.required']).toBeUndefined();
+            expect(out['form.code.pattern']).toBeUndefined();
+        });
+
+        it('treats an array-valued field as a leaf rule (no element recursion)', () => {
+            const out = flattenRuleTree({
+                tags: { required: true, minLength: 1 },
+            }, 'form');
+            expect(out['form.tags']).toEqual({ required: true, minLength: 1 });
+        });
+
+        it('skips null/undefined optional slots', () => {
+            const out = flattenRuleTree({
+                email: { required: true },
+                name: undefined,
+                address: null,
+            }, 'form');
+            expect(out).toEqual({ 'form.email': { required: true } });
+        });
+
+        it('recurses at arbitrary depth', () => {
+            const out = flattenRuleTree({
+                a: { b: { c: { required: true } } },
+            }, 'form');
+            expect(out).toEqual({ 'form.a.b.c': { required: true } });
+        });
+
+        it('preserves function values (custom/customAsync) on a leaf rule', () => {
+            const fn = async () => true;
+            const out = flattenRuleTree({
+                code: { customAsync: fn, message: 'bad' },
+            }, 'form');
+            expect(out['form.code']).toEqual({ customAsync: fn, message: 'bad' });
         });
     });
 });

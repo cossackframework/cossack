@@ -53,7 +53,43 @@ export class LoginForm extends Cossack {
 | `url` | `boolean` | Must be valid URL (http/https) |
 | `custom` | `(value: any) => boolean` | Custom synchronous validator |
 | `customAsync` | `(value: any, component?: any) => Promise<boolean>` | Custom async validator |
+| `coerce` | `'number' \| 'boolean' \| 'date'` | Coerce the value before validating (see [Coercion](#coercion)) |
 | `message` | `string` | Custom error message |
+
+## Coercion
+
+Form submissions arrive as strings — `FormData` values are always strings, so a field you think of as a number comes through as `"25"`. The `coerce` rule transforms the value before the other checks run, and (for `getFormData` / `validateObject`) writes the transformed value back into the returned `data`, so the runtime type matches your declared form type.
+
+| Mode | Result | Failure |
+| :--- | :--- | :--- |
+| `'number'` | `Number(value)` | `NaN` (e.g. `"abc"`) |
+| `'boolean'` | `"true"` / `"1"` / `"on"` / `"yes"` (case-insensitive) → `true`, else `false` | never |
+| `'date'` | `new Date(value)` | `Invalid Date` (e.g. `"xyz"`) |
+
+```typescript
+interface SignupForm { age: number; tos: boolean; birthday: Date }
+
+const { data, valid } = await this.c.getFormData<SignupForm>({
+    rules: storeRules<SignupForm>({
+        age:      { coerce: 'number', min: 18, message: 'Must be 18+' },
+        tos:      { coerce: 'boolean', required: true, message: 'You must accept the terms' },
+        birthday: { coerce: 'date', message: 'Enter a valid date' },
+    }),
+});
+
+if (valid) {
+    data.age;       // number  (e.g. 25, not "25")
+    data.tos;       // boolean
+    data.birthday;  // Date
+}
+```
+
+**Two important behaviors:**
+
+- **Coercion runs after the `required` check.** Empty values (`null`, `undefined`, `''`) are never coerced — `""` stays `""`, it does not become `0` or `false`. This keeps `required` meaningful.
+- **A coercion that cannot succeed is a validation failure.** `Number("abc")` produces `NaN`, and `new Date("xyz")` produces an Invalid Date — both fail validation (and the original value is retained in `data`).
+
+> **Note on `@Validate` stores:** the coerced value is used for the validation checks (so `min`/`max`/`custom` run against the typed value), but it is **not** written back to your store — store fields keep whatever value you assigned them. Coercion's write-back only happens in the `getFormData` / `validateObject` pipeline.
 
 ## Validation Config
 
@@ -152,11 +188,11 @@ Note: The `customAsync` function receives a `component` parameter that gives you
 
 ## Validating Stores
 
-When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **map of field paths to rules** — one entry per nested field you want validated. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `'emial'` fail to compile.
+When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **nested rule tree** that mirrors the store shape — each field of the store takes a rule, and object fields nest a sub-tree. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `emial` fail to compile.
 
 ### Type-safe rules with `storeRules<T>()` (recommended)
 
-Pass `storeRules<T>(...)` as the `rules`. The keys are written **relative** to the store (`email`, `address.zip`) and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional — omit it for an untyped map.
+Pass `storeRules<T>(...)` as the `rules`. The tree mirrors `T`: primitive fields (and arrays, `Date`, `RegExp`, etc.) take a `ValidationRule` directly, while object fields nest a sub-tree. The keys you write are **relative** to the store and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional — omit it for an untyped map.
 
 ```typescript
 import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
@@ -175,8 +211,8 @@ export class StoreFormDemo extends Cossack {
         rules: storeRules<FormState>({
             email: { required: true, email: true, message: 'Please enter a valid email' },
             password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
-            // Deep nested path — relative form ('address.zip'), type-checked.
-            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            // Nested object — rules mirror the field shape (relative: 'address.zip').
+            address: { zip: { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' } },
             // Array field — validated as a whole (minLength/required).
             tags: { required: true, minLength: 1, message: 'Add at least one tag' },
         }),
@@ -199,12 +235,12 @@ export class StoreFormDemo extends Cossack {
 A typo in a key is caught at compile time:
 
 ```typescript
-// ❌ Type error: 'emial' is not assignable to 'email' | 'password' | 'address.zip' | ...
+// ❌ Type error: 'emial' is not assignable to keyof FormState
 rules: storeRules<FormState>({ emial: { required: true } })
 ```
 
 ### Addressing fields at runtime
-At runtime, `validateProperty`, `hasError`, and `getError` always take the **full prefixed path** (the store name + the relative key you wrote). The framework resolves the path on the component instance (walking into the store), so it works at any depth.
+At runtime, `validateProperty`, `hasError`, and `getError` always take the **full prefixed dot-path** (the store name + the dotted path to the leaf you wrote). The framework flattens the rule tree to these paths and resolves each on the component instance (walking into the store), so it works at any depth.
 
 ```typescript
 await this.validateProperty('form.address.zip', 'input');
@@ -212,25 +248,8 @@ this.hasError('form.address.zip');   // => true | false
 this.getError('form.address.zip');   // => 'Invalid ZIP' | undefined
 ```
 
-### Untyped / full-path form (manual)
-If you prefer not to declare a type, write the keys as **full paths** (prefixed with the store name) and the decorator uses them verbatim. This is the most explicit form:
-
-```typescript
-@Store()
-@Validate({
-    rules: {
-        'form.email': { required: true, email: true, message: '...' },
-        'form.address.zip': { required: true, pattern: /^\d{5}$/ },
-    },
-    config: { trigger: 'all', runOn: 'both' },
-})
-form = { email: '', address: { zip: '' } };
-```
-
-> Relative keys (no store prefix) are auto-prefixed; full paths (already starting with the store name) are used verbatim. You can mix them, but `storeRules<T>()` with relative keys is the recommended, type-safe style.
-
 ### How errors are stored
-The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed path**. There is no nesting in `errors` itself — `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered path (including nested ones) and `clearErrors()` clears them all in one call.
+The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed dot-path**. There is no nesting in `errors` itself — `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered leaf (including nested ones) and `clearErrors()` clears them all in one call.
 
 ### Mixing stores and individual states
 You can freely mix `@Store` with `@State`/`@ClientState` on the same component. A `@Validate` on a store property produces dot-path rules; a `@Validate` on a `@State` property produces a single-rule entry keyed by the property name. Both coexist in the same `errors` object.
