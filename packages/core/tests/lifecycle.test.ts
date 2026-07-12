@@ -47,6 +47,13 @@ class LifecycleComponent extends Cossack<{}> {
     public visibleTaskRunCount = 0;
     public renderCount = 0;
 
+    // performUpdate() calls shouldUpdate() from the CossackElement base, which
+    // is stubbed out by the renderer mock. Override to return true so the
+    // @Task-during-performUpdate regression test enters the render branch.
+    shouldUpdate(): boolean {
+        return true;
+    }
+
     @Task()
     runTask() {
         this.taskRunCount++;
@@ -124,10 +131,28 @@ describe('Lifecycle Hooks', () => {
         it('should execute tasks during render', async () => {
             await component.bootstrap(); // runs once
             component.taskRunCount = 0;
-            
-            // Calling _render directly simulates a re-render
+
+            // Calling _render directly simulates an SSR re-render
             component._render();
             expect(component.taskRunCount).toBe(1);
+        });
+
+        it('should execute tasks during performUpdate (client prop-driven re-render)', async () => {
+            // Regression guard: performUpdate() is the client update path
+            // (triggered by requestUpdate on prop/state change). Tasks were
+            // previously only wired into _render() (SSR) and bootstrap(), so
+            // prop-driven client re-renders silently skipped @Task methods.
+            await component.bootstrap();
+            component.taskRunCount = 0;
+
+            // performUpdate reads __changedProperties / __controllers from the
+            // CossackElement internal. shouldUpdate() defaults to true, so a
+            // non-empty changed map is enough to enter the render branch where
+            // runTasks() now fires.
+            (component as any).__changedProperties = new Map([['open', false]]);
+            (component as any).__controllers = [];
+            await (component as any).performUpdate();
+            expect(component.taskRunCount).toBeGreaterThanOrEqual(1);
         });
     });
 

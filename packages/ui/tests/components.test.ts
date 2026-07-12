@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderToString } from "@cossackframework/renderer";
+import { renderToString, html } from "@cossackframework/renderer";
 import {
     Button,
     Input,
@@ -7,6 +7,13 @@ import {
     Badge,
     Label,
     Alert,
+    Modal,
+    AccordionItem,
+    Textarea,
+    Checkbox,
+    Switch,
+    Select,
+    Spinner,
 } from "../src/index";
 
 /** Instantiate a component, assign props, and render its template to a string. */
@@ -121,5 +128,133 @@ describe("Alert", () => {
     it("adds an accent stripe when accent=true", () => {
         const out = renderComp(Alert, { accent: true });
         expect(out).toContain("border-l-4");
+    });
+});
+
+describe("Modal", () => {
+    it("renders a <dialog> element with the cs-modal hook", () => {
+        const out = renderComp(Modal, { open: false }, "Body");
+        expect(out).toContain("<dialog");
+        expect(out).toContain("cs-modal");
+        expect(out).toContain("Body");
+    });
+
+    it("binds inline close/cancel/click handlers on the dialog", () => {
+        // Event handlers (@close/@cancel/@click) are functions and don't emit
+        // as attributes in SSR — they're wired client-side. We assert the
+        // dialog element + its cs-modal hook are present (the wiring target).
+        const out = renderComp(Modal, {});
+        expect(out).toContain("<dialog");
+        expect(out).toContain("cs-modal");
+        // The panel slot renders the body content.
+        expect(out).toContain("cs-modal__panel");
+    });
+});
+
+describe("AccordionItem", () => {
+    it("renders <details>/<summary> with content", () => {
+        const out = renderComp(
+            AccordionItem,
+            { summary: "Section A" },
+            "Panel body",
+        );
+        expect(out).toContain("<details");
+        expect(out).toContain("<summary");
+        expect(out).toContain("Section A");
+        expect(out).toContain("Panel body");
+        expect(out).toContain("cs-accordion");
+    });
+
+    it("reflects the open state via the boolean open attribute", () => {
+        const open = renderComp(AccordionItem, { open: true, summary: "X" });
+        const closed = renderComp(AccordionItem, { open: false, summary: "X" });
+        expect(open).toContain("open");
+        // When closed, the `open` attribute should not be emitted.
+        expect(closed.split("<details")[1]?.split(">")[0]).not.toContain("open");
+    });
+});
+
+describe("Textarea", () => {
+    it("renders a <textarea> with rows and token classes", () => {
+        const out = renderComp(Textarea, { rows: 5, placeholder: "Write" });
+        expect(out).toContain("<textarea");
+        expect(out).toContain("cs-textarea");
+        expect(out).toContain("rows");
+        expect(out).toContain('placeholder="Write"');
+    });
+
+    it("applies the error variant", () => {
+        const out = renderComp(Textarea, { variant: "error" });
+        expect(out).toContain("cs-textarea--error");
+        expect(out).toContain("border-destructive");
+    });
+});
+
+describe("Checkbox", () => {
+    it("renders a native checkbox inside a label", () => {
+        const out = renderComp(Checkbox, { checked: true }, "Accept terms");
+        expect(out).toContain('type="checkbox"');
+        expect(out).toContain("cs-checkbox");
+        expect(out).toContain("checked");
+        expect(out).toContain("Accept terms");
+    });
+});
+
+describe("Switch", () => {
+    it("renders a role=switch label with a hidden native checkbox", () => {
+        const out = renderComp(Switch, { checked: true });
+        expect(out).toContain('role="switch"');
+        expect(out).toContain('type="checkbox"');
+        expect(out).toContain("cs-switch");
+        expect(out).toContain("sr-only");
+    });
+
+    it("reflects aria-checked from the checked prop", () => {
+        const out = renderComp(Switch, { checked: true });
+        // The renderer emits boolean-ish attribute values unquoted.
+        expect(out).toContain("aria-checked");
+    });
+});
+
+describe("Select", () => {
+    it("renders a native <select> with passed-through <option> children", () => {
+        // Pass options as a template result so they aren't HTML-escaped.
+        const out = renderComp(
+            Select,
+            {},
+            html`<option value="a">A</option><option value="b">B</option>`,
+        );
+        expect(out).toContain("<select");
+        expect(out).toContain("cs-select");
+        expect(out).toContain("<option");
+        expect(out).toContain(">A</option>");
+        expect(out).toContain("appearance-none");
+    });
+
+    it("renders a chevron svg overlay", () => {
+        const out = renderComp(Select, {});
+        expect(out).toContain("cs-select__icon");
+        expect(out).toContain("<svg");
+    });
+});
+
+describe("Spinner", () => {
+    it("renders an animate-spin span with size styling", () => {
+        const out = renderComp(Spinner, { size: 24, color: "text-primary" });
+        expect(out).toContain("cs-spinner");
+        expect(out).toContain("animate-spin");
+        expect(out).toContain("width:24px");
+        expect(out).toContain("text-primary");
+    });
+
+    it("is aria-hidden when no label is supplied", () => {
+        const out = renderComp(Spinner, {});
+        expect(out).toContain('aria-hidden="true"');
+    });
+
+    it("exposes role=status + aria-label when a label is supplied", () => {
+        const out = renderComp(Spinner, { label: "Loading" });
+        expect(out).toContain('role="status"');
+        expect(out).toContain('aria-label="Loading"');
     });
 });

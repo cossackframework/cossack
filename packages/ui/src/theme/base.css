@@ -1,16 +1,19 @@
 /*
  * @cossackframework/ui — base.css
  *
- * Reset + base typography. This is the file users are expected to edit to
- * customize global element styling (link colors, body background, font
- * stacks, etc.). It MUST be imported after `@import "tailwindcss";` and
- * before `theme.css` so token utilities resolve against the right values.
+ * Additive base styles only. Tailwind v4's preflight (pulled in by
+ * `@import "tailwindcss";`) already handles the CSS reset: box-sizing, margin
+ * and padding normalization, border reset, the html font/line-height/tap
+ * defaults, form element inheritance, replaced-element display, etc.
  *
- * Do NOT replicate Tailwind's preflight here — Tailwind v4 already ships a
- * modern reset that handles box-sizing, margins, borders, etc. Layering a
- * second reset on top fights with the utilities (e.g. a global `border-width:0`
- * here would override `border` width utilities and make outlines/cards render
- * borderless). Only add genuinely additive base styles below.
+ * DO NOT re-add reset rules here — they fight with Tailwind's utilities (a
+ * global `border-width: 0` here, for instance, would override `border` width
+ * utilities and make outlines/cards render borderless).
+ *
+ * This file only adds what preflight does NOT: applying the theme tokens to
+ * the document, a full-height body, font smoothing, and a token-driven focus
+ * ring. Edit freely to customize global element styling (link colors, body
+ * background, font stacks, …).
  *
  * Consumers wire it from their src/style.css:
  *
@@ -19,18 +22,10 @@
  *   @import "@cossackframework/ui/theme/theme.css";
  */
 
-html {
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-    -webkit-tap-highlight-color: transparent;
-}
-
 body {
     min-height: 100vh;
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: var(--font-sans);
-    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }

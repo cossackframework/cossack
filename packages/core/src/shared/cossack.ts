@@ -1471,6 +1471,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Controller hostUpdate
                 controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
 
+                // Run @Task methods before willUpdate/render, mirroring the SSR
+                // path (`_render()` calls `runTasks()` at the top). Without this,
+                // tasks only fire on mount (bootstrap) and on the component's own
+                // `@State` broadcasts — never on a prop-driven client re-render.
+                // That made prop-driven side effects (e.g. a Modal reacting to an
+                // `open` prop) silently no-op on the client.
+                if (!this.skipRenderTasks) {
+                    this.runTasks();
+                }
+
                 this.willUpdate(changedProperties);
 
                 this.resetRenderState();

@@ -1,4 +1,4 @@
-import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
+import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Layout } from '@/components/Layout';
 import {
@@ -11,11 +11,20 @@ import {
     Badge,
     Label,
     Alert,
+    Modal,
+    AccordionItem,
+    Textarea,
+    Checkbox,
+    Switch,
+    Select,
+    Spinner,
     Icon,
 } from '@cossackframework/ui';
 
 @Page()
 export class ComponentsDemo extends Cossack {
+    @ClientState() modalOpen = false;
+
     public head(_context: HeadContext): HeadValue {
         return {
             title: 'Components Demo',
@@ -115,6 +124,55 @@ export class ComponentsDemo extends Cossack {
                         ${component(Icon, { name: 'check', style: 'duotone', size: 32 })}
                         ${component(Icon, { name: 'check', style: 'bold', size: 32 })}
                         ${component(Icon, { name: 'check', style: 'broken', size: 32 })}
+                    </div>
+                </section>
+
+                <!-- Modal -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Modal</h2>
+                    <div class="flex items-center gap-3">
+                        ${component(Button, { '@click': () => { this.modalOpen = true; } }, 'Open modal')}
+                        ${component(Spinner, { size: 20, label: 'Loading' })}
+                    </div>
+                    ${component(
+                        Modal,
+                        {
+                            open: this.modalOpen,
+                            onClose: () => { this.modalOpen = false; },
+                        },
+                        html`
+                            <h3 class="text-lg font-semibold mb-2">Confirm action</h3>
+                            <p class="text-sm text-muted-foreground mb-5">Are you sure you want to continue? This cannot be undone.</p>
+                            <div class="flex justify-end gap-2">
+                                ${component(Button, { variant: 'ghost', size: 'sm', '@click': () => { this.modalOpen = false; } }, 'Cancel')}
+                                ${component(Button, { variant: 'primary', size: 'sm', '@click': () => { this.modalOpen = false; } }, 'Confirm')}
+                            </div>
+                        `,
+                    )}
+                </section>
+
+                <!-- Accordion -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Accordion</h2>
+                    <div class="space-y-2">
+                        ${component(AccordionItem, { open: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
+                        ${component(AccordionItem, { summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
+                        ${component(AccordionItem, { summary: 'Does this need JavaScript?' }, html`<p class="text-sm">No — the <code>&lt;details&gt;</code> element toggles natively.</p>`)}
+                    </div>
+                </section>
+
+                <!-- Form controls (extended) -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Form Controls (Extended)</h2>
+                    <div class="space-y-3 max-w-md">
+                        ${component(Label, { for: 'bio' }, 'Bio')}
+                        ${component(Textarea, { id: 'bio', rows: 4, placeholder: 'Tell us about yourself' })}
+                        ${component(Label, { for: 'country' }, 'Country')}
+                        ${component(Select, { id: 'country' }, html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
+                        <div class="flex items-center gap-6 pt-2">
+                            ${component(Checkbox, { checked: true }, 'Subscribe to newsletter')}
+                            ${component(Switch, { checked: true })}
+                        </div>
                     </div>
                 </section>
             </div>

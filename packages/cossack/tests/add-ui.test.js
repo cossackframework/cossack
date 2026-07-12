@@ -95,6 +95,13 @@ describe('add ui <component>', () => {
       ['badge', 'Badge'],
       ['label', 'Label'],
       ['alert', 'Alert'],
+      ['modal', 'Modal'],
+      ['accordion', 'Accordion'],
+      ['textarea', 'Textarea'],
+      ['checkbox', 'Checkbox'],
+      ['switch', 'Switch'],
+      ['select', 'Select'],
+      ['spinner', 'Spinner'],
     ]) {
       const code = await addCommand(['ui', name], ctx);
       expect(code).toBe(0);

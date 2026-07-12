@@ -146,4 +146,50 @@ test.describe('Components Demo Page', () => {
       expect(value, `${name} should not be transparent`).not.toBe('transparent');
     }
   });
+
+  test('modal opens via button and closes via Cancel', async ({ page }) => {
+    // The <dialog> starts closed (no [open] attribute).
+    await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
+
+    // Click "Open modal" → dialog should be open.
+    await page.locator('button:has-text("Open modal")').click();
+    await expect(page.locator('dialog.cs-modal')).toHaveAttribute('open', '');
+
+    // The confirm body is visible inside the dialog.
+    await expect(page.locator('dialog.cs-modal h3:has-text("Confirm action")')).toBeVisible();
+
+    // Click Cancel → dialog closes.
+    await page.locator('dialog.cs-modal button:has-text("Cancel")').click();
+    await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
+  });
+
+  test('accordion renders <details> and toggles open state natively', async ({ page }) => {
+    const items = page.locator('details.cs-accordion');
+    expect(await items.count()).toBeGreaterThanOrEqual(3);
+
+    // First item starts open (open prop was true).
+    await expect(items.nth(0)).toHaveAttribute('open', '');
+
+    // A closed item opens when its <summary> is clicked (native behavior).
+    const closed = items.filter({ hasNotText: '' }).nth(1);
+    await closed.locator('summary').click();
+    await expect(closed).toHaveAttribute('open', '');
+  });
+
+  test('extended form primitives render their native elements', async ({ page }) => {
+    // Textarea
+    await expect(page.locator('textarea.cs-textarea#bio')).toBeVisible();
+
+    // Select with options
+    const select = page.locator('select.cs-select__input#country');
+    await expect(select).toBeVisible();
+    expect(await select.locator('option').count()).toBeGreaterThanOrEqual(3);
+
+    // Checkbox (native input type=checkbox) + Switch (role=switch)
+    await expect(page.locator('.cs-checkbox input[type="checkbox"]')).toBeChecked();
+    await expect(page.locator('label.cs-switch[role="switch"]')).toBeVisible();
+
+    // Spinner uses animate-spin
+    await expect(page.locator('span.cs-spinner.animate-spin')).toBeVisible();
+  });
 });
