@@ -35,7 +35,7 @@ export class InputGroup extends Cossack {
         const { prefix, suffix, ...inputAttrs } = this.props;
 
         return html`
-            <div class="cs-input-group flex items-center w-full rounded-md border border-border bg-background transition-colors focus-within:border-muted-foreground">
+            <div class="cs-input-group flex items-center w-full rounded-md border border-border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
                 ${prefix != null
                     ? html`<span class="cs-input-group__prefix inline-flex items-center pl-3 text-sm text-muted-foreground shrink-0">${prefix}</span>`
                     : null}

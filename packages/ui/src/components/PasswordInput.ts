@@ -60,8 +60,9 @@ export class PasswordInput extends Cossack {
                     class=${classMap({
                         "cs-password-input__field": true,
                         [`cs-password-input--${size}`]: true,
-                        "w-full rounded-md border border-border bg-background text-foreground outline-none transition-colors": true,
-                        "focus:border-muted-foreground": true,
+                        "w-full rounded-md border border-border bg-background text-foreground outline-none": true,
+                        "transition-colors transition-shadow duration-150": true,
+                        "focus:border-primary focus:ring-2 focus:ring-primary/20": true,
                         "disabled:opacity-50 disabled:cursor-not-allowed": true,
                         "pr-10": true,
                         [SIZES[size]]: true,

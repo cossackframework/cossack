@@ -310,6 +310,21 @@ test.describe('Components Demo Page', () => {
     await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeHidden({ timeout: 6000 });
   });
 
+  test('toggle group slides indicator between items', async ({ page }) => {
+    const group = page.locator('.cs-toggle-group').first();
+    await expect(group).toBeVisible();
+    // The sliding indicator exists and has an initial position.
+    const indicator = group.locator('.cs-toggle-group__indicator');
+    await expect(indicator).toBeAttached();
+    const initialLeft = await indicator.evaluate((el) => el.style.left);
+
+    // Click "Center" — indicator should move.
+    await group.locator('button:has-text("Center")').click();
+    await expect.poll(async () => {
+      return await indicator.evaluate((el) => el.style.left);
+    }, { timeout: 5000 }).not.toBe(initialLeft);
+  });
+
   test('dropdown menu opens and lists items via native popover', async ({ page }) => {
     const trigger = page.locator('button[popovertarget]:has-text("Dropdown")');
     await trigger.click();
