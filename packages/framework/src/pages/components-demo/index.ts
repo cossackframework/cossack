@@ -307,9 +307,9 @@ export class ComponentsDemo extends Cossack {
                         ${component(Tabs, {
                             variant: 'pill',
                             items: [
-                                { value: 'account', label: 'Account', content: html`<p class="text-sm">Account settings content. The pill indicator slides smoothly.</p>` },
-                                { value: 'password', label: 'Password', content: html`<p class="text-sm">Password settings content.</p>` },
-                                { value: 'team', label: 'Team', content: html`<p class="text-sm">Team settings content.</p>` },
+                                { value: 'account', label: 'Account', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">Account settings content. The pill indicator slides smoothly.</p>` },
+                                { value: 'password', label: 'Password', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="4" y="11" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">Password settings content.</p>` },
+                                { value: 'team', label: 'Team', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zm14 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`, content: html`<p class="text-sm">Team settings content.</p>` },
                             ],
                         })}
                     </div>
@@ -331,10 +331,10 @@ export class ComponentsDemo extends Cossack {
                             ${component(Tabs, {
                                 orientation: 'vertical',
                                 items: [
-                                    { value: 'general', label: 'General', content: html`<p class="text-sm">General settings. Vertical tabs are great for settings pages.</p>` },
-                                    { value: 'security', label: 'Security', content: html`<p class="text-sm">Security settings — 2FA, password, sessions.</p>` },
-                                    { value: 'billing', label: 'Billing', content: html`<p class="text-sm">Billing settings — plan, invoices, payment.</p>` },
-                                    { value: 'api', label: 'API Keys', content: html`<p class="text-sm">API key management.</p>` },
+                                    { value: 'general', label: 'General', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">General settings. Vertical tabs are great for settings pages.</p>` },
+                                    { value: 'security', label: 'Security', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v6c0 5 3.5 8.5 9 10 5.5-1.5 9-5 9-10V7l-9-5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`, content: html`<p class="text-sm">Security settings — 2FA, password, sessions.</p>` },
+                                    { value: 'billing', label: 'Billing', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">Billing settings — plan, invoices, payment.</p>` },
+                                    { value: 'api', label: 'API Keys', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`, content: html`<p class="text-sm">API key management.</p>` },
                                 ],
                             })}
                         </div>

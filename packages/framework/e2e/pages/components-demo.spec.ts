@@ -260,6 +260,11 @@ test.describe('Components Demo Page', () => {
     const verticalTabs = page.locator('.cs-tabs').nth(2);
     await expect(verticalTabs.locator('[role="tablist"]')).toHaveAttribute('aria-orientation', 'vertical');
 
+    // Icons render inside tab triggers.
+    expect(await verticalTabs.locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(4);
+    // Pill variant tabs also have icons.
+    expect(await page.locator('.cs-tabs').first().locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(1);
+
     // Switching a vertical tab works.
     await verticalTabs.locator('[role="tab"]:has-text("Security")').click();
     await expect(page.locator('.cs-tabs__panel:has-text("Security settings")')).toBeVisible();

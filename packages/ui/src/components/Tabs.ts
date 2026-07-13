@@ -11,8 +11,8 @@ import {
 export interface TabsProps {
     /** The currently active tab value. */
     value?: string;
-    /** Tab list items: [{ value, label, content }]. */
-    items?: Array<{ value: string; label: unknown; content?: unknown }>;
+    /** Tab list items: [{ value, label, icon?, content? }]. */
+    items?: Array<{ value: string; label: unknown; icon?: unknown; content?: unknown }>;
     /** Layout direction. "horizontal" (default) or "vertical". */
     orientation?: "horizontal" | "vertical";
     /** Visual variant. "pill" (default, rounded bg) or "underline". */
@@ -30,6 +30,8 @@ export interface TabsProps {
  *     tab list on the left with panels on the right.
  *   - **Variants**: `"pill"` (rounded background, default) or `"underline"`
  *     (bottom-border indicator).
+ *   - **Icons**: pass an `icon` (SVG template or `Icon` component) per tab item;
+ *     rendered before the label.
  *   - ARIA tablist/tab/tabpanel semantics with roving tabindex.
  *   - Arrow-key navigation (Left/Right for horizontal, Up/Down for vertical).
  *   - Panel fade/slide animation on switch.
@@ -37,8 +39,8 @@ export interface TabsProps {
  *   ${component(Tabs, {
  *       variant: 'underline',
  *       items: [
- *           { value: 'account', label: 'Account', content: html\`<p>…</p>\` },
- *           { value: 'password', label: 'Password', content: html\`<p>…</p>\` },
+ *           { value: 'account', label: 'Account', icon: html\`<svg…/>\`, content: html\`<p>…</p>\` },
+ *           { value: 'password', label: 'Password', icon: html\`<svg…/>\`, content: html\`<p>…</p>\` },
  *       ],
  *   })}
  *
@@ -96,6 +98,7 @@ export class Tabs extends Cossack {
                                 class=${classMap({
                                     "cs-tabs__trigger": true,
                                     "relative z-10 text-sm font-medium transition-colors": true,
+                                    "inline-flex items-center gap-2": !!item.icon,
                                     "px-3 py-1.5 rounded-sm": !isVertical,
                                     "px-3 py-2 rounded-sm w-full text-left": isVertical,
                                     "text-foreground": current === item.value,
@@ -103,6 +106,7 @@ export class Tabs extends Cossack {
                                 })}
                                 @click=${() => { this.selectTab(item.value); }}
                             >
+                                ${item.icon ? html`<span class="cs-tabs__icon inline-flex items-center justify-center w-4 h-4 shrink-0">${item.icon}</span>` : null}
                                 ${item.label}
                             </button>
                         `,
