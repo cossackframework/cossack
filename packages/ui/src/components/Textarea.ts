@@ -45,7 +45,7 @@ export class Textarea extends Cossack {
             [`cs-textarea--${variant}`]: true,
             [`cs-textarea--${size}`]: true,
             "w-full rounded-md border outline-none transition-colors duration-150": true,
-            "focus:border-primary": true,
+            "focus:border-muted-foreground": true,
             "placeholder:text-muted-foreground": true,
             "disabled:opacity-50 disabled:cursor-not-allowed": true,
             "resize-y": true,

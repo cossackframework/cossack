@@ -167,25 +167,34 @@ describe("Modal", () => {
 });
 
 describe("AccordionItem", () => {
-    it("renders <details>/<summary> with content", () => {
+    it("renders a button + content div (not <details>/<summary>)", () => {
         const out = renderComp(
             AccordionItem,
             { summary: "Section A" },
             "Panel body",
         );
-        expect(out).toContain("<details");
-        expect(out).toContain("<summary");
+        expect(out).toContain("<button");
         expect(out).toContain("Section A");
         expect(out).toContain("Panel body");
         expect(out).toContain("cs-accordion");
+        expect(out).toContain("cs-accordion__content-wrapper");
     });
 
-    it("reflects the open state via the boolean open attribute", () => {
+    it("reflects the open state via max-height style and aria-expanded", () => {
         const open = renderComp(AccordionItem, { open: true, summary: "X" });
         const closed = renderComp(AccordionItem, { open: false, summary: "X" });
-        expect(open).toContain("open");
-        // When closed, the `open` attribute should not be emitted.
-        expect(closed.split("<details")[1]?.split(">")[0]).not.toContain("open");
+        // Open: max-height is a positive value (200px fallback before measurement)
+        expect(open).toContain("max-height: 200px");
+        // Closed: max-height is 0
+        expect(closed).toContain("max-height: 0");
+        // aria-expanded reflects state
+        expect(open).toContain("aria-expanded");
+    });
+
+    it("renders a chevron svg that rotates when open", () => {
+        const open = renderComp(AccordionItem, { open: true, summary: "X" });
+        expect(open).toContain("cs-accordion__chevron");
+        expect(open).toContain("rotate(180deg)");
     });
 });
 

@@ -1,31 +1,73 @@
 import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import {
+    Cossack,
+    Component,
+    ClientState,
+    Client,
+    createRef,
+    type RefObject,
+} from "@cossackframework/core";
 
 export interface AccordionItemProps {
-    /** Initial/collapsed state. Native <details> handles toggle with zero JS. */
+    /** Controlled open state. When passed, the parent owns the state. */
     open?: boolean;
-    /** Allow arbitrary HTML attributes to spread onto the <details>. */
+    /** Summary/trigger text. */
+    summary?: unknown;
+    /** Default open state for uncontrolled usage. */
+    defaultOpen?: boolean;
+    /** Callback fired when the open state changes. */
+    onToggle?: (open: boolean) => void;
+    /** Allow arbitrary HTML attributes. */
     [key: string]: any;
 }
 
 /**
- * Cossack UI Accordion — built on native `<details>`/`<summary>`.
+ * Cossack UI Accordion — collapsible section with smooth height animation.
  *
- * Zero-JS by default: the browser handles open/close, accessibility
- * (aria-expanded), and keyboard. Pass the trigger text as `summary` (a string
- * or template) and the body as children.
+ * Uses a `<button>` trigger + `<div>` content with `@ClientState` for open/close
+ * state, NOT native `<details>`/`<summary>`. The reason: `<details>` internally
+ * hides content via the browser's own mechanism when closed, which CSS
+ * transitions can't override. The div+button+state approach gives full control.
  *
- *   ${component(AccordionItem, { open: true, summary: 'Section 1' },
- *       html\`<p>Content</p>\`)}
+ * The height animation uses JS to measure the exact content height via
+ * `scrollHeight`, then animates `max-height` between `0` and that exact value.
+ * This avoids the "fixed 500px overshoot" problem where a 40px-tall content
+ * appears to open instantly (because it reaches 40px in ~8% of the animation).
+ *
+ * Uncontrolled:
+ *   ${component(AccordionItem, { summary: 'Section 1' }, html\`<p>Content</p>\`)}
+ *   ${component(AccordionItem, { summary: 'Section 2', defaultOpen: true }, ...)}
+ *
+ * Controlled:
+ *   ${component(AccordionItem, {
+ *       summary: 'Section 1', open: this.open, onToggle: (v) => { this.open = v; },
+ *   }, ...)}
  */
 @Component()
 export class AccordionItem extends Cossack {
-    declare props: AccordionItemProps & { summary?: unknown };
+    declare props: AccordionItemProps;
+
+    @ClientState() private internalOpen: boolean = false;
+    @ClientState() private userInteracted: boolean = false;
+    /** Measured content height in px (set on mount / when content changes). */
+    @ClientState() private contentHeight: number = 0;
+
+    contentRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
     render() {
-        const { open = false, summary } = this.props;
+        const { summary } = this.props;
 
-        const classes = classMap({
+        let open: boolean;
+        if (this.props.open !== undefined) {
+            open = !!this.props.open;
+        } else if (this.userInteracted) {
+            open = this.internalOpen;
+        } else {
+            open = !!this.props.defaultOpen;
+            this.internalOpen = open;
+        }
+
+        const containerClasses = classMap({
             "cs-accordion": true,
             "cs-accordion--open": open,
             "rounded-md border border-border bg-background text-foreground": true,
@@ -33,22 +75,74 @@ export class AccordionItem extends Cossack {
 
         const summaryClasses = classMap({
             "cs-accordion__summary": true,
-            "cursor-pointer select-none px-4 py-3 font-medium text-sm": true,
+            "w-full flex items-center justify-between gap-2 px-4 py-3 font-medium text-sm cursor-pointer select-none bg-transparent border-none text-left": true,
             "hover:bg-muted": true,
         });
 
+        // Use the measured height for a precise animation. Fall back to 200px
+        // before measurement completes (first render).
+        const targetHeight = this.contentHeight > 0 ? this.contentHeight : 200;
+        const contentWrapperStyle = `max-height: ${open ? targetHeight + "px" : "0"}; transition: max-height 300ms cubic-bezier(0.16, 1, 0.3, 1);`;
+
         return html`
-            <details class=${classes} ?open=${open}>
-                <summary class=${summaryClasses}>
-                    ${summary ?? this.props["summary"]}
-                </summary>
-                <div class="cs-accordion__content-wrapper">
-                    <div class="cs-accordion__content px-4 py-3">
+            <div class=${containerClasses}>
+                <button
+                    type="button"
+                    class=${summaryClasses}
+                    aria-expanded=${open ? "true" : "false"}
+                    @click=${() => this.toggle()}
+                >
+                    <span>${summary ?? this.props["summary"]}</span>
+                    <svg
+                        class="cs-accordion__chevron w-4 h-4 text-muted-foreground shrink-0"
+                        style=${`transform: rotate(${open ? 180 : 0}deg); transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                    >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+                <div
+                    class="cs-accordion__content-wrapper overflow-hidden"
+                    style=${contentWrapperStyle}
+                >
+                    <div ref=${this.contentRef} class="cs-accordion__content px-4 py-3">
                         ${this.children}
                     </div>
                 </div>
-            </details>
+            </div>
         `;
+    }
+
+    @Client()
+    toggle() {
+        const currentOpen = this.props.open !== undefined
+            ? !!this.props.open
+            : this.userInteracted
+                ? this.internalOpen
+                : !!this.props.defaultOpen;
+
+        if (this.props.open !== undefined) {
+            this.props.onToggle?.(!currentOpen);
+            return;
+        }
+        this.userInteracted = true;
+        this.internalOpen = !currentOpen;
+        this.props.onToggle?.(this.internalOpen);
+    }
+
+    /** Measure the content height after mount so the animation is precise. */
+    @Client()
+    onMount() {
+        // Use rAF to wait for layout.
+        requestAnimationFrame(() => {
+            const el = this.contentRef.value;
+            if (el) {
+                this.contentHeight = el.scrollHeight;
+            }
+        });
     }
 }
 

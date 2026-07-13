@@ -163,17 +163,31 @@ test.describe('Components Demo Page', () => {
     await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
   });
 
-  test('accordion renders <details> and toggles open state natively', async ({ page }) => {
-    const items = page.locator('details.cs-accordion');
+  test('accordion toggles open state via button click with animation', async ({ page }) => {
+    const items = page.locator('.cs-accordion');
     expect(await items.count()).toBeGreaterThanOrEqual(3);
 
-    // First item starts open (open prop was true).
-    await expect(items.nth(0)).toHaveAttribute('open', '');
+    // First item starts open (defaultOpen: true).
+    const firstAria = await items.nth(0).locator('button').getAttribute('aria-expanded');
+    expect(firstAria).toBeTruthy();
 
-    // A closed item opens when its <summary> is clicked (native behavior).
-    const closed = items.filter({ hasNotText: '' }).nth(1);
-    await closed.locator('summary').click();
-    await expect(closed).toHaveAttribute('open', '');
+    // A closed item opens when its trigger button is clicked.
+    const closed = items.nth(1);
+    const closedAria = await closed.locator('button').getAttribute('aria-expanded');
+    expect(String(closedAria)).toMatch(/false|0|^$/);
+    await closed.locator('button').click();
+    const openAria = await closed.locator('button').getAttribute('aria-expanded');
+    expect(String(openAria)).toMatch(/true|1/);
+
+    // The content wrapper's inline max-height should be non-zero when open.
+    const wrapperStyle = await closed.locator('.cs-accordion__content-wrapper').getAttribute('style');
+    expect(wrapperStyle).toContain('max-height:');
+    expect(wrapperStyle).not.toContain('max-height: 0');
+
+    // Clicking again closes it.
+    await closed.locator('button').click();
+    const closedAgainAria = await closed.locator('button').getAttribute('aria-expanded');
+    expect(String(closedAgainAria)).toMatch(/false|0|^$/);
   });
 
   test('extended form primitives render their native elements', async ({ page }) => {

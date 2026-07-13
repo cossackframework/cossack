@@ -45,7 +45,7 @@ export class Select extends Cossack {
             [`cs-select--${variant}`]: true,
             [`cs-select--${size}`]: true,
             "appearance-none w-full rounded-md border outline-none transition-colors duration-150": true,
-            "focus:border-primary": true,
+            "focus:border-muted-foreground": true,
             "disabled:opacity-50 disabled:cursor-not-allowed": true,
             "pr-9": true,
             [VARIANTS[variant]]: true,

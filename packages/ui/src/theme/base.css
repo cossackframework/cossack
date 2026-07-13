@@ -192,55 +192,53 @@ body {
     }
 }
 
-/* --- Sheet (<dialog>): slide enter/exit from edge --- */
+/* --- Sheet (<dialog>): slide-in panel from screen edge ---
+ *
+ * The dialog element is transparent + borderless + full-viewport. The actual
+ * panel is a child div positioned at an edge. The slide animation uses CSS
+ * @starting-style (enter) + :not([open]) (exit) on the panel's transform.
+ *
+ * We do NOT manipulate body overflow/padding — the top-layer dialog handles
+ * background scroll-locking natively, and manual compensation causes jitter.
+ */
+.cs-sheet {
+    /* Transparent full-viewport container — the panel is the visible part. */
+    background: transparent;
+    border: none;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+    max-height: none;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+/* Backdrop fade */
 .cs-sheet::backdrop {
     background-color: rgba(0, 0, 0, 0.5);
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
+    transition: opacity 250ms ease, overlay 250ms ease allow-discrete,
+        display 250ms ease allow-discrete;
 }
 @starting-style {
-    .cs-sheet::backdrop {
-        opacity: 0;
-    }
+    .cs-sheet::backdrop { opacity: 0; }
 }
-.cs-sheet:not([open])::backdrop {
-    opacity: 0;
-}
-.cs-sheet {
-    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
-        display 200ms ease allow-discrete;
-    /* Cover the viewport without w-screen/h-screen (which causes scrollbar
-       flashes). The top-layer dialog already fills the viewport; we just need
-       the dimensions to match without triggering overflow. */
-    width: 100vw;
-    height: 100vh;
-    max-width: 100vw;
-    max-height: 100vh;
-}
-.cs-sheet:not([open]) {
-    opacity: 0;
-}
-@starting-style {
-    .cs-sheet[open] {
-        opacity: 0;
-    }
-}
+.cs-sheet:not([open])::backdrop { opacity: 0; }
+
+/* Panel slide transitions (enter + exit) */
 .cs-sheet__panel {
-    transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+/* Exit state: panel slides back off-screen when dialog closes */
+.cs-sheet:not([open]) .cs-sheet--right  { transform: translateX(100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--left   { transform: translateX(-100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--top    { transform: translateY(-100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--bottom { transform: translateY(100%) !important; }
+/* Enter state: panel starts off-screen, animates to translateX(0) */
 @starting-style {
-    .cs-sheet[open] .cs-sheet--right { transform: translateX(100%); }
-    .cs-sheet[open] .cs-sheet--left { transform: translateX(-100%); }
-    .cs-sheet[open] .cs-sheet--top { transform: translateY(-100%); }
+    .cs-sheet[open] .cs-sheet--right  { transform: translateX(100%); }
+    .cs-sheet[open] .cs-sheet--left   { transform: translateX(-100%); }
+    .cs-sheet[open] .cs-sheet--top    { transform: translateY(-100%); }
     .cs-sheet[open] .cs-sheet--bottom { transform: translateY(100%); }
-}
-.cs-sheet:not([open]) .cs-sheet--right { transform: translateX(100%); }
-.cs-sheet:not([open]) .cs-sheet--left { transform: translateX(-100%); }
-.cs-sheet:not([open]) .cs-sheet--top { transform: translateY(-100%); }
-.cs-sheet:not([open]) .cs-sheet--bottom { transform: translateY(100%); }
-@keyframes cs-sheet-overlay-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
 }
 
 /* --- Popover + DropdownMenu: scale + fade enter/exit --- */
@@ -294,43 +292,18 @@ body {
     }
 }
 
-/* --- Accordion (<details>): smooth height expand/collapse --- */
-/*
- * Override the native <details> content hiding. By default, <details> uses
- * display:none on its non-summary content when closed. We keep the content in
- * the DOM and animate height via the grid 0fr→1fr technique + opacity.
+/* --- Accordion: smooth height expand/collapse (div+button, not <details>) ---
  *
- * Note: this requires the summary's default triangle marker to be hidden
- * (the component styles its own), and the content to be wrapped in a
- * cs-accordion__content-wrapper div (which the component emits).
+ * The accordion uses a div+button+@ClientState pattern instead of native
+ * <details>/<summary>. This is intentional: <details> internally hides content
+ * when closed at the browser level, which CSS transitions can't override.
+ * The div approach gives full control over the max-height animation.
+ *
+ * The animation is driven by inline styles on the component (max-height
+ * transition between 0 and 500px). Here we only add the chevron rotation.
  */
-.cs-accordion {
-    transition: border-color 150ms ease;
-}
-.cs-accordion__summary {
-    transition: background-color 150ms ease;
-    list-style: none;          /* hide native triangle */
-}
-.cs-accordion__summary::-webkit-details-marker {
-    display: none;             /* hide native triangle (Safari) */
-}
-/* Use max-height for a reliable smooth expand/collapse. The 500px cap is
-   generous enough for typical accordion content; for taller content it'll
-   still open (just without the transition catching the full height). */
-.cs-accordion__content-wrapper {
-    overflow: hidden;
-    max-height: 500px;
-    transition: max-height 280ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-details:not([open]) > .cs-accordion__content-wrapper {
-    max-height: 0;
-}
-.cs-accordion__content {
-    opacity: 1;
-    transition: opacity 200ms ease;
-}
-details:not([open]) > .cs-accordion__content-wrapper .cs-accordion__content {
-    opacity: 0;
+.cs-accordion__chevron {
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* --- Spinner: respect existing animate-spin (built-in Tailwind) --- */
@@ -341,7 +314,8 @@ details:not([open]) > .cs-accordion__content-wrapper .cs-accordion__content {
 
 /* --- Switch: smooth thumb slide --- */
 .cs-switch__thumb {
-    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+        translate 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cs-switch__track {
     transition: background-color 200ms ease, border-color 200ms ease;

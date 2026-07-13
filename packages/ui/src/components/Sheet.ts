@@ -22,11 +22,18 @@ export interface SheetProps {
     [key: string]: any;
 }
 
-const SIDE_CLASSES: Record<string, string> = {
-    left: "cs-sheet--left top-0 left-0 h-full",
-    right: "cs-sheet--right top-0 right-0 h-full",
-    top: "cs-sheet--top top-0 left-0 w-full",
-    bottom: "cs-sheet--bottom bottom-0 left-0 w-full",
+const SIDE_TRANSFORMS: Record<string, { enter: string; rest: string }> = {
+    right: { enter: "translateX(100%)", rest: "translateX(0)" },
+    left: { enter: "translateX(-100%)", rest: "translateX(0)" },
+    top: { enter: "translateY(-100%)", rest: "translateY(0)" },
+    bottom: { enter: "translateY(100%)", rest: "translateY(0)" },
+};
+
+const SIDE_POSITION: Record<string, string> = {
+    left: "top:0;left:0;height:100%",
+    right: "top:0;right:0;height:100%",
+    top: "top:0;left:0;width:100%",
+    bottom: "bottom:0;left:0;width:100%",
 };
 
 const SIDE_DIMENSIONS: Record<string, { dim: string; val: string }> = {
@@ -39,9 +46,11 @@ const SIDE_DIMENSIONS: Record<string, { dim: string; val: string }> = {
 /**
  * Cossack UI Sheet (Drawer) — slide-in panel built on native `<dialog>`.
  *
- * Uses `dialog.showModal()` for top-layer rendering + focus + ESC dismiss.
- * The `@Task syncOpenState` drives open/close when the controlled `open` prop
- * changes (same pattern as Modal).
+ * The panel slides in from the specified edge (right by default) using a CSS
+ * transform transition. Uses `dialog.showModal()` for top-layer rendering,
+ * focus management, and ESC dismiss — but does NOT manipulate body scroll
+ * (the top layer handles that natively, and manual `overflow: hidden` +
+ * `paddingRight` compensation causes layout jitter).
  *
  *   ${component(Sheet, {
  *       open: this.showSheet,
@@ -66,13 +75,20 @@ export class Sheet extends Cossack {
 
         const dims = SIDE_DIMENSIONS[side];
         const dimValue = size || dims.val;
-        const panelStyle =
+        const transform = SIDE_TRANSFORMS[side];
+        const position = SIDE_POSITION[side];
+        const dimStyle =
             dims.dim === "width" ? `width:${dimValue};max-width:90vw;` : `height:${dimValue};max-height:85vh;`;
+
+        // The panel slides via inline transform transition. When open, it's at
+        // translateX(0). The CSS @starting-style sets the initial transform to
+        // the enter position (e.g. translateX(100%)) so it animates in.
+        const panelStyle = `${position};${dimStyle}transform:${transform.rest};transition:transform 300ms cubic-bezier(0.16,1,0.3,1);`;
 
         const panelClasses = classMap({
             "cs-sheet__panel": true,
-            [SIDE_CLASSES[side]]: true,
-            "absolute bg-background text-foreground shadow-2xl border-border flex flex-col": true,
+            [`cs-sheet--${side}`]: true,
+            "fixed bg-background text-foreground shadow-2xl border-border flex flex-col z-[100]": true,
             "border-r": side === "left",
             "border-l": side === "right",
             "border-b": side === "top",
@@ -82,7 +98,7 @@ export class Sheet extends Cossack {
         return html`
             <dialog
                 ref=${this.dialogRef}
-                class="cs-sheet m-0 p-0 bg-transparent max-w-none max-h-none overflow-hidden"
+                class="cs-sheet"
                 @close=${() => {
                     const onClose = this.props.onClose ?? this.props["@close"];
                     if (typeof onClose === "function") onClose();

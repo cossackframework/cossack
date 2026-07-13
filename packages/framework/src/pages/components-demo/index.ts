@@ -176,9 +176,9 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Accordion</h2>
                     <div class="space-y-2">
-                        ${component(AccordionItem, { open: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
+                        ${component(AccordionItem, { defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
                         ${component(AccordionItem, { summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
-                        ${component(AccordionItem, { summary: 'Does this need JavaScript?' }, html`<p class="text-sm">No — the <code>&lt;details&gt;</code> element toggles natively.</p>`)}
+                        ${component(AccordionItem, { summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
                     </div>
                 </section>
 
