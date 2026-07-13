@@ -1124,6 +1124,14 @@ export const UI_COMPONENTS = {
   typography: { className: 'Typography', template: fromPackage('Typography') },
   drawer: { className: 'Drawer', template: fromPackage('Drawer') },
   sidebar: { className: 'Sidebar', template: fromPackage('Sidebar') },
+  'native-select': { className: 'NativeSelect', template: fromPackage('NativeSelect') },
+  'input-group': { className: 'InputGroup', template: fromPackage('InputGroup') },
+  item: { className: 'Item', template: fromPackage('Item') },
+  bubble: { className: 'Bubble', template: fromPackage('Bubble') },
+  message: { className: 'Message', template: fromPackage('Message') },
+  'message-scroller': { className: 'MessageScroller', template: fromPackage('MessageScroller') },
+  marker: { className: 'Marker', template: fromPackage('Marker') },
+  attachment: { className: 'Attachment', template: fromPackage('Attachment') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1192,6 +1200,14 @@ export {
     Typography,
     Drawer,
     Sidebar,
+    NativeSelect,
+    InputGroup,
+    Item,
+    Bubble,
+    Message,
+    MessageScroller,
+    Marker,
+    Attachment,
     Icon,
 } from '@cossackframework/ui';
 `;

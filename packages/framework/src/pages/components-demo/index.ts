@@ -64,6 +64,14 @@ import {
     Typography,
     Drawer,
     Sidebar,
+    NativeSelect,
+    InputGroup,
+    Item,
+    Bubble,
+    Message,
+    MessageScroller,
+    Marker,
+    Attachment,
     Icon,
 } from '@cossackframework/ui';
 
@@ -703,6 +711,91 @@ export class ComponentsDemo extends Cossack {
                                 </button>
                             `),
                         })}
+                    </div>
+                </section>
+
+                <!-- NativeSelect + InputGroup -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">NativeSelect · InputGroup</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        <div class="w-48">
+                            <span class="text-sm text-muted-foreground mb-2 block">Native select</span>
+                            ${component(NativeSelect, {},
+                                html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
+                        </div>
+                        <div class="w-56 space-y-3">
+                            <div>
+                                <span class="text-sm text-muted-foreground mb-2 block">@username</span>
+                                ${component(InputGroup, { prefix: '@', placeholder: 'username' })}
+                            </div>
+                            <div>
+                                <span class="text-sm text-muted-foreground mb-2 block">Price</span>
+                                ${component(InputGroup, { prefix: '$', suffix: 'USD', type: 'number', placeholder: '0.00' })}
+                            </div>
+                            <div>
+                                <span class="text-sm text-muted-foreground mb-2 block">Website</span>
+                                ${component(InputGroup, {
+                                    prefix: html`<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+                                    placeholder: 'cossack.dev',
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Item -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Item</h2>
+                    <div class="border border-border rounded-lg divide-y divide-border max-w-sm">
+                        ${component(Item, {
+                            media: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 36 }),
+                            trailing: component(Badge, { variant: 'primary' }, 'Admin'),
+                            divider: false,
+                        }, html`<div><p class="text-sm font-medium text-foreground">Alice Johnson</p><p class="text-xs text-muted-foreground">alice@cossack.dev</p></div>`)}
+                        ${component(Item, {
+                            media: component(Avatar, { src: 'https://i.pravatar.cc/80?img=8', alt: 'Bob', size: 36 }),
+                            trailing: html`<svg class="w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+                            divider: false,
+                            interactive: true,
+                        }, html`<div><p class="text-sm font-medium text-foreground">Bob Smith</p><p class="text-xs text-muted-foreground">bob@cossack.dev</p></div>`)}
+                        ${component(Item, {
+                            media: html`<span class="w-9 h-9 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/></svg></span>`,
+                            divider: false,
+                        }, html`<div><p class="text-sm font-medium text-foreground">report.pdf</p><p class="text-xs text-muted-foreground">2.4 MB · 2 hours ago</p></div>`)}
+                    </div>
+                </section>
+
+                <!-- Chat: Bubble · Message · MessageScroller · Marker · Attachment -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Chat — Bubble · Message · Attachment</h2>
+                    <div class="border border-border rounded-lg overflow-hidden" style="height: 360px;">
+                        ${component(MessageScroller, {},
+                            html`
+                                ${component(Marker, {}, 'Today')}
+                                ${component(Message, {
+                                    name: 'Alice',
+                                    time: '10:30 AM',
+                                    variant: 'received',
+                                    avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
+                                }, component(Bubble, { variant: 'received' }, 'Hey! Did you see the new components?'))}
+                                ${component(Bubble, { variant: 'sent', time: '10:31 AM' }, 'Yes! They look great.')}
+                                ${component(Message, {
+                                    name: 'Alice',
+                                    time: '10:32 AM',
+                                    variant: 'received',
+                                    avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
+                                }, html`
+                                    ${component(Bubble, { variant: 'received' }, 'I attached the design file.')}
+                                    ${component(Attachment, { name: 'design-system.fig', size: '8.2 MB', type: 'file' })}
+                                `)}
+                                ${component(Bubble, { variant: 'sent', time: '10:33 AM' }, html`<img src="https://picsum.photos/200/120" class="rounded-lg" alt="" />`)}
+                                ${component(Message, {
+                                    name: 'Alice',
+                                    time: '10:34 AM',
+                                    variant: 'received',
+                                    avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
+                                }, component(Bubble, { variant: 'received' }, html`Nice! 🎉 Let me check it out.`))}
+                            `)}
                     </div>
                 </section>
 

@@ -51,6 +51,8 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Input** | `<input>` | Token-driven text input with variant/size |
 | **Textarea** | `<textarea>` | Multiline text input |
 | **Select** | `<select>` | Native select with chevron overlay |
+| **NativeSelect** | `<select>` | Styled native select (no JS, no popover — mobile-friendly) |
+| **InputGroup** | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
 | **Checkbox** | `<input type="checkbox">` | Checkbox with label wrapper |
 | **Switch** | `<input type="checkbox">` | Toggle switch (role="switch") |
 | **RadioGroup** | `<input type="radio">` | Radio button group |
@@ -75,6 +77,16 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **ContextMenu** | `popover` attribute | Right-click menu with separators and destructive items |
 | **Sidebar** | `<aside>` | Collapsible nav rail (icon / offcanvas) with nested groups + agnostic footer slot |
 | **Drawer** | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
+| **Item** | `<div>` | Generic list-row primitive with media/content/trailing slots |
+
+### Chat
+| Component | Native element | Description |
+|---|---|---|
+| **Bubble** | `<div>` | Chat message bubble (sent/received variants, tail, timestamp) |
+| **Message** | `<div>` | Chat message wrapper (avatar + name + bubble grouping) |
+| **MessageScroller** | `<div>` | Auto-stick-to-bottom scroll container with "new messages" affordance |
+| **Marker** | `<div>` | Date/section divider inside a message list ("Today", "New messages") |
+| **Attachment** | `<div>` | Chat file-attachment card with auto-detected type icon + status |
 
 ### Overlay & Interactive
 | Component | Native element | Description |

@@ -60,15 +60,18 @@ export class NavigationMenu extends Cossack {
                                 type="button"
                                 ref=${this.sectionRefs[i]}
                                 class=${classMap({
-                                    "cs-navigation-menu__trigger": true,
-                                    "px-3 py-2 text-sm font-medium rounded-md cursor-pointer border-none transition-colors": true,
+                                    "cs-navigation-menu__trigger group": true,
+                                    "px-3 py-2 text-sm font-medium rounded-md cursor-pointer border-none transition-colors inline-flex items-center": true,
                                     "text-foreground bg-muted": isActive,
                                     "text-muted-foreground hover:text-foreground": !isActive,
                                 })}
                                 @click=${trigger === "click" ? () => this.handleClickSection(i, popoverId) : undefined}
                                 @mouseenter=${trigger === "hover" ? () => this.scheduleOpen(i, popoverId) : undefined}
                                 @mouseleave=${trigger === "hover" ? () => this.scheduleClose(popoverId) : undefined}
-                            >${section.label}</button>
+                            >${section.label}<svg
+                                  class="relative top-[1px] ml-1 w-3 h-3 transition-transform duration-300 ${isActive ? "rotate-180" : ""}"
+                                  viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                              ><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                             <div
                                 id=${popoverId}
                                 popover="manual"

@@ -421,4 +421,35 @@ test.describe('Components Demo Page', () => {
     await expect(popoverContent.locator('button:has-text("Upgrade to Pro")')).toBeAttached();
     await expect(popoverContent.locator('button:has-text("Log out")')).toBeAttached();
   });
+
+  test('native select and input group render their native elements', async ({ page }) => {
+    await expect(page.locator('select.cs-native-select__input')).toBeVisible();
+    expect(await page.locator('select.cs-native-select__input option').count()).toBeGreaterThanOrEqual(3);
+    await expect(page.locator('.cs-input-group__input')).toHaveCount(3);
+    // Prefix @ and suffix USD are present.
+    await expect(page.locator('.cs-input-group__prefix:has-text("@")')).toBeAttached();
+    await expect(page.locator('.cs-input-group__suffix:has-text("USD")')).toBeAttached();
+  });
+
+  test('item primitive renders media, content, and trailing slots', async ({ page }) => {
+    const items = page.locator('.cs-item');
+    expect(await items.count()).toBe(3);
+    // First item has an avatar media + badge trailing.
+    await expect(items.first().locator('.cs-avatar')).toBeAttached();
+    await expect(items.first().locator('.cs-item__trailing .cs-badge')).toBeAttached();
+  });
+
+  test('chat components render bubbles, messages, marker, and attachments', async ({ page }) => {
+    // Marker divider.
+    await expect(page.locator('.cs-marker__label:has-text("Today")')).toBeAttached();
+    // Sent + received bubbles.
+    expect(await page.locator('.cs-bubble--sent').count()).toBeGreaterThanOrEqual(2);
+    expect(await page.locator('.cs-bubble--received').count()).toBeGreaterThanOrEqual(2);
+    // Message wrapper with avatar + name.
+    await expect(page.locator('.cs-message__meta:has-text("Alice")')).toHaveCount(3);
+    // Attachment card.
+    await expect(page.locator('.cs-attachment__info:has-text("design-system.fig")')).toBeAttached();
+    // MessageScroller viewport.
+    await expect(page.locator('.cs-message-scroller__viewport')).toBeVisible();
+  });
 });

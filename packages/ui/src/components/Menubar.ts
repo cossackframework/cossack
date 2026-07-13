@@ -6,6 +6,8 @@ export interface MenubarProps {
         label: string;
         items?: Array<{ label?: unknown; onClick?: () => void; separator?: boolean; disabled?: boolean }>;
     }>;
+    /** Show a rotating chevron indicator on each trigger (default false). */
+    chevron?: boolean;
     [key: string]: any;
 }
 
@@ -22,7 +24,7 @@ export class Menubar extends Cossack {
     private triggerRefs: RefObject<HTMLButtonElement>[] = [];
 
     render() {
-        const { menus = [] } = this.props;
+        const { menus = [], chevron = false } = this.props;
         while (this.triggerRefs.length < menus.length) {
             this.triggerRefs.push(createRef<HTMLButtonElement>());
         }
@@ -38,13 +40,16 @@ export class Menubar extends Cossack {
                                 role="menuitem"
                                 ref=${this.triggerRefs[i]}
                                 class=${classMap({
-                                    "cs-menubar__trigger": true,
-                                    "px-3 py-1.5 text-sm font-medium rounded-sm cursor-pointer border-none transition-colors": true,
+                                    "cs-menubar__trigger group": true,
+                                    "px-3 py-1.5 text-sm font-medium rounded-sm cursor-pointer border-none transition-colors inline-flex items-center": true,
                                     "bg-background text-foreground shadow-sm": this.openMenu === i,
                                     "text-muted-foreground hover:text-foreground bg-transparent": this.openMenu !== i,
                                 })}
                                 @click=${() => { this.openMenu = this.openMenu === i ? -1 : i; this.togglePanel(i, popoverId); }}
-                            >${menu.label}</button>
+                            >${menu.label}${chevron ? html`<svg
+                                  class="relative top-[1px] ml-1 w-3 h-3 transition-transform duration-300 ${this.openMenu === i ? "rotate-180" : ""}"
+                                  viewBox="0 0 24 24" fill="none" aria-hidden="true"
+                              ><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>` : null}</button>
                             <div
                                 id=${popoverId}
                                 popover="auto"
