@@ -1117,6 +1117,13 @@ export const UI_COMPONENTS = {
   menubar: { className: 'Menubar', template: fromPackage('Menubar') },
   command: { className: 'Command', template: fromPackage('Command') },
   combobox: { className: 'Combobox', template: fromPackage('Combobox') },
+  calendar: { className: 'Calendar', template: fromPackage('Calendar') },
+  'date-picker': { className: 'DatePicker', template: fromPackage('DatePicker') },
+  'context-menu': { className: 'ContextMenu', template: fromPackage('ContextMenu') },
+  'input-otp': { className: 'InputOTP', template: fromPackage('InputOTP') },
+  typography: { className: 'Typography', template: fromPackage('Typography') },
+  drawer: { className: 'Drawer', template: fromPackage('Drawer') },
+  sidebar: { className: 'Sidebar', template: fromPackage('Sidebar') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1178,6 +1185,13 @@ export {
     Menubar,
     Command,
     Combobox,
+    Calendar,
+    DatePicker,
+    ContextMenu,
+    InputOTP,
+    Typography,
+    Drawer,
+    Sidebar,
     Icon,
 } from '@cossackframework/ui';
 `;

@@ -71,6 +71,13 @@ export { NavigationMenu, type NavigationMenuProps } from "./components/Navigatio
 export { Menubar, type MenubarProps } from "./components/Menubar";
 export { Command, type CommandProps } from "./components/Command";
 export { Combobox, type ComboboxProps } from "./components/Combobox";
+export { Calendar, type CalendarProps } from "./components/Calendar";
+export { DatePicker, type DatePickerProps } from "./components/DatePicker";
+export { ContextMenu, type ContextMenuProps } from "./components/ContextMenu";
+export { InputOTP, type InputOTPProps } from "./components/InputOTP";
+export { Typography, type TypographyProps } from "./components/Typography";
+export { Drawer, type DrawerProps } from "./components/Drawer";
+export { Sidebar, type SidebarProps, type SidebarItem } from "./components/Sidebar";
 
 // Icons
 export { Icon, type IconProps } from "./icons/Icon";

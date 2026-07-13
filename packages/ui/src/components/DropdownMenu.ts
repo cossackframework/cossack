@@ -3,7 +3,7 @@ import {
     Cossack,
     Component,
     Client,
-    On,
+    OnWindow,
     createRef,
     focusFirst,
     focusNext,
@@ -14,10 +14,17 @@ import {
 export interface DropdownMenuProps {
     /** Trigger content (a label or icon). */
     trigger?: unknown;
-    /** Preferred side for the menu to open. */
-    side?: "bottom" | "top";
+    /** Preferred side for the menu to open. Default "bottom".
+     *  - "top"/"bottom": menu opens above/below the trigger (align = start/center/end).
+     *  - "left"/"right": menu opens to the side of the trigger (align = start/center/end on the vertical axis). */
+    side?: "bottom" | "top" | "left" | "right";
+    /** Alignment on the cross axis. For top/bottom side this is horizontal;
+     *  for left/right side this is vertical. Default "start". */
+    align?: "start" | "center" | "end";
     /** Menu items. Use { separator: true } for a divider (label not required). */
     items?: Array<{ label?: unknown; onClick?: () => void; disabled?: boolean; separator?: boolean }>;
+    /** When true, the trigger stretches to fill its container (block layout). */
+    block?: boolean;
     /** Allow arbitrary HTML attributes. */
     [key: string]: any;
 }
@@ -30,8 +37,14 @@ export interface DropdownMenuProps {
  * activate. Focus is managed via the framework's `focusFirst` / `focusNext`
  * utilities.
  *
+ * Positioning is collision-aware: if the menu would overflow the viewport on
+ * the preferred `side`, it flips to the opposite side; if it overflows on the
+ * cross axis, it shifts into view. Repositions on scroll and resize while open.
+ *
  *   ${component(DropdownMenu, {
  *       trigger: 'Actions',
+ *       side: 'bottom',
+ *       align: 'start',
  *       items: [
  *           { label: 'Edit', onClick: () => this.edit() },
  *           { label: 'Delete', onClick: () => this.del() },
@@ -54,12 +67,18 @@ export class DropdownMenu extends Cossack {
             "bg-background border border-border rounded-md shadow-lg p-1 min-w-[180px]": true,
         });
 
+        const { block = false } = this.props;
+
         return html`
-            <span class="cs-dropdown-menu__wrapper relative inline-flex">
+            <span class=${classMap({
+                "cs-dropdown-menu__wrapper": true,
+                "relative inline-flex": !block,
+                "relative flex w-full": block,
+            })}>
                 <button
                     type="button"
                     popovertarget=${this.popoverId}
-                    class="cs-dropdown-menu__trigger inline-flex items-center justify-center cursor-pointer"
+                    class="cs-dropdown-menu__trigger flex items-center cursor-pointer w-full text-left"
                     @click=${() => this.handleOpen()}
                 >
                     ${trigger}
@@ -71,6 +90,7 @@ export class DropdownMenu extends Cossack {
                     class=${menuClasses}
                     @toggle=${(e: Event) => this.handleToggleEvent(e)}
                     @keydown=${(e: KeyboardEvent) => this.handleKeydown(e)}
+                    @click=${(e: MouseEvent) => this.handleContentClick(e)}
                 >
                     ${items.map(
                         (item) =>
@@ -121,6 +141,15 @@ export class DropdownMenu extends Cossack {
         }
     }
 
+    /** Close the menu when any button inside the popover content is clicked,
+     *  so children-slot items (not just the `items` prop) dismiss on select. */
+    @Client()
+    private handleContentClick(e: MouseEvent) {
+        const target = e.target as HTMLElement;
+        const btn = target.closest("button,[data-menu-close]");
+        if (btn) this.closeMenu();
+    }
+
     @Client()
     private handleKeydown(e: KeyboardEvent) {
         const menu = this.menuRef.value;
@@ -150,7 +179,24 @@ export class DropdownMenu extends Cossack {
         el?.hidePopover?.();
     }
 
-    /** Position the menu relative to the trigger button. */
+    /** Reposition on scroll/resize while open. */
+    @OnWindow("scroll", { throttle: 100 })
+    @OnWindow("resize")
+    onViewportChange() {
+        const menu = this.menuRef.value;
+        if (menu && menu.matches(":popover-open")) {
+            this.position();
+        }
+    }
+
+    /**
+     * Position the menu relative to the trigger, collision-aware.
+     *
+     * The `side`/`align` props are *preferences*: if the menu would overflow
+     * the viewport, it flips side and/or shifts on the cross axis. Supports all
+     * four sides — for "left"/"right" the menu opens beside the trigger (handy
+     * for sidebar user-menus) and the `align` prop controls vertical placement.
+     */
     @Client()
     private position() {
         const menu = this.menuRef.value;
@@ -162,22 +208,49 @@ export class DropdownMenu extends Cossack {
 
         const rect = trigger.getBoundingClientRect();
         const mw = menu.offsetWidth;
-        const side = this.props.side || "bottom";
+        const mh = menu.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
         const gap = 4;
+        const side = this.props.side || "bottom";
+        const align = this.props.align || "start";
 
-        let top = side === "bottom" ? rect.bottom + gap : rect.top - menu.offsetHeight - gap;
-        let left = rect.left;
+        let top: number;
+        let left: number;
 
-        // Collision: flip vertically if overflowing bottom.
-        if (top + menu.offsetHeight > window.innerHeight - gap && side === "bottom") {
-            top = rect.top - menu.offsetHeight - gap;
+        if (side === "top" || side === "bottom") {
+            // --- Vertical side: position on Y, align on X ---
+            const spaceBelow = vh - rect.bottom - gap;
+            const spaceAbove = rect.top - gap;
+            let actualSide = side;
+            if (side === "bottom" && mh > spaceBelow && mh <= spaceAbove) actualSide = "top";
+            else if (side === "top" && mh > spaceAbove && mh <= spaceBelow) actualSide = "bottom";
+
+            top = actualSide === "bottom" ? rect.bottom + gap : rect.top - mh - gap;
+
+            if (align === "center") left = rect.left + rect.width / 2 - mw / 2;
+            else if (align === "end") left = rect.right - mw;
+            else left = rect.left;
+        } else {
+            // --- Horizontal side: position on X, align on Y ---
+            const spaceRight = vw - rect.right - gap;
+            const spaceLeft = rect.left - gap;
+            let actualSide = side;
+            if (side === "right" && mw > spaceRight && mw <= spaceLeft) actualSide = "left";
+            else if (side === "left" && mw > spaceLeft && mw <= spaceRight) actualSide = "right";
+
+            left = actualSide === "right" ? rect.right + gap : rect.left - mw - gap;
+
+            if (align === "center") top = rect.top + rect.height / 2 - mh / 2;
+            else if (align === "end") top = rect.bottom - mh;
+            else top = rect.top;
         }
 
-        // Collision: keep in viewport horizontally.
-        if (left + mw > window.innerWidth - gap) {
-            left = window.innerWidth - mw - gap;
-        }
+        // Clamp into viewport on both axes.
+        if (left + mw > vw - gap) left = vw - mw - gap;
         if (left < gap) left = gap;
+        if (top + mh > vh - gap) top = vh - mh - gap;
+        if (top < gap) top = gap;
 
         menu.style.position = "fixed";
         menu.style.top = `${top}px`;

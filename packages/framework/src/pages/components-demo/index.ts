@@ -57,6 +57,13 @@ import {
     Menubar,
     Command,
     Combobox,
+    Calendar,
+    DatePicker,
+    ContextMenu,
+    InputOTP,
+    Typography,
+    Drawer,
+    Sidebar,
     Icon,
 } from '@cossackframework/ui';
 
@@ -65,6 +72,10 @@ export class ComponentsDemo extends Cossack {
     @ClientState() modalOpen = false;
     @ClientState() sheetOpen = false;
     @ClientState() alertOpen = false;
+    @ClientState() drawerOpen = false;
+    @ClientState() calendarDate = '2025-07-04';
+    @ClientState() datePickerDate: string | undefined = undefined;
+    @ClientState() otpValue = '';
 
     public head(_context: HeadContext): HeadValue {
         return {
@@ -518,6 +529,180 @@ export class ComponentsDemo extends Cossack {
                                 onChange: (v: string) => toast.show('Country: ' + v),
                             })}
                         </div>
+                    </div>
+                </section>
+
+                <!-- Calendar + DatePicker -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Calendar · DatePicker</h2>
+                    <div class="flex flex-wrap items-start gap-8">
+                        <div class="flex flex-col gap-2">
+                            <span class="text-sm text-muted-foreground">Selected: ${this.calendarDate}</span>
+                            ${component(Calendar, {
+                                value: this.calendarDate,
+                                onChange: (iso: string) => { this.calendarDate = iso; },
+                            })}
+                        </div>
+                        <div class="w-56">
+                            <span class="text-sm text-muted-foreground mb-2 block">Pick a due date</span>
+                            ${component(DatePicker, {
+                                value: this.datePickerDate,
+                                placeholder: 'Select date...',
+                                onChange: (iso: string) => { this.datePickerDate = iso; },
+                            })}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ContextMenu -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">ContextMenu</h2>
+                    <p class="text-sm text-muted-foreground">Right-click the box below.</p>
+                    ${component(ContextMenu, {
+                        items: [
+                            { label: 'Copy', onClick: () => toast.show('Copied') },
+                            { label: 'Paste', onClick: () => toast.show('Pasted') },
+                            { separator: true },
+                            { label: 'Archive', onClick: () => toast.show('Archived') },
+                            { label: 'Delete', destructive: true, onClick: () => toast.error('Deleted') },
+                        ],
+                    }, html`<div class="border-2 border-dashed border-border rounded-lg p-8 text-center text-muted-foreground w-full max-w-sm">Right-click here</div>`)}
+                </section>
+
+                <!-- InputOTP -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">InputOTP</h2>
+                    <p class="text-sm text-muted-foreground">Type or paste a 6-digit code. Current: <code class="text-xs bg-muted px-1.5 py-0.5 rounded">${this.otpValue || '—'}</code></p>
+                    ${component(InputOTP, {
+                        length: 6,
+                        onChange: (v: string) => { this.otpValue = v; },
+                        onComplete: (v: string) => toast.success('Code entered: ' + v),
+                    })}
+                </section>
+
+                <!-- Typography -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Typography</h2>
+                    <div class="space-y-4">
+                        ${component(Typography, { variant: 'h1' }, 'The quick brown fox')}
+                        ${component(Typography, { variant: 'h2' }, 'Jumps over the lazy dog')}
+                        ${component(Typography, { variant: 'h3' }, 'A sub-heading')}
+                        ${component(Typography, { variant: 'lead' }, 'A short, friendly lead paragraph that sets the tone.')}
+                        ${component(Typography, { variant: 'p' }, html`Body copy with an <strong>inline emphasis</strong> and <code class="bg-muted px-1 rounded">inline code</code>.`)}
+                        ${component(Typography, { variant: 'blockquote' }, '"Good design is as little design as possible." — Dieter Rams')}
+                        ${component(Typography, { variant: 'ul' }, html`<li>First bullet point</li><li>Second bullet point</li><li>Third bullet point</li>`)}
+                    </div>
+                </section>
+
+                <!-- Drawer -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Drawer</h2>
+                    <div class="flex flex-wrap items-center gap-3">
+                        ${component(Button, { '@click': () => { this.drawerOpen = true; } }, 'Open Drawer')}
+                        ${component(Button, { variant: 'outline', '@click': () => { this.drawerOpen = true; } }, 'Filters')}
+                    </div>
+                    ${component(Drawer, {
+                        open: this.drawerOpen,
+                        side: 'right',
+                        title: 'Settings',
+                        onClose: () => { this.drawerOpen = false; },
+                    }, html`
+                        <div class="space-y-4">
+                            <p class="text-sm text-muted-foreground">Configure your preferences.</p>
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Email notifications</span>
+                                    ${component(Switch, { checked: true })}
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Dark mode</span>
+                                    ${component(Switch, { checked: false })}
+                                </div>
+                            </div>
+                        </div>
+                    `)}
+                </section>
+
+                <!-- Sidebar -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Sidebar</h2>
+                    <p class="text-sm text-muted-foreground">
+                        Collapsible navigation. The footer slot is agnostic — here it renders a
+                        user-menu trigger composed from <code>Avatar</code> + <code>DropdownMenu</code>.
+                        On mobile the menu opens upward (collision-aware positioning).
+                    </p>
+                    <div class="border border-border rounded-lg overflow-hidden" style="height: 380px;">
+                        ${component(Sidebar, {
+                            title: 'Acme Inc',
+                            items: [
+                                { label: 'Dashboard', href: '#', icon: 'home', active: true },
+                                { label: 'Projects', href: '#', icon: 'folder', children: [
+                                    { label: 'Active', href: '#' },
+                                    { label: 'Archived', href: '#' },
+                                ]},
+                                { label: 'Team', href: '#', icon: 'users' },
+                                { label: 'Settings', href: '#', icon: 'settings' },
+                            ],
+                            collapsible: 'icon',
+                            onNavigate: (item: any) => toast.show('Navigate: ' + item.label),
+                            // Footer slot: arbitrary content. Here a user-menu trigger.
+                            // side:'right' opens the menu beside the trigger (desktop);
+                            // collision-aware flip handles tight/mobile viewports.
+                            // group-[.is-collapsed] classes hide the name/email/chevron
+                            // when the sidebar collapses to its icon rail.
+                            footer: component(DropdownMenu, {
+                                block: true,
+                                side: 'right',
+                                align: 'start',
+                                trigger: html`
+                                    <span class="flex items-center gap-2.5 w-full px-1.5 py-1 rounded-md text-left group-[.is-collapsed]:justify-center">
+                                        ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 32 })}
+                                        <span class="flex-1 min-w-0 group-[.is-collapsed]:hidden">
+                                            <span class="block text-sm font-medium text-foreground truncate">Tan Nguyen</span>
+                                            <span class="block text-xs text-muted-foreground truncate">tan@cossack.dev</span>
+                                        </span>
+                                        <svg class="w-4 h-4 text-muted-foreground shrink-0 group-[.is-collapsed]:hidden" viewBox="0 0 24 24" fill="none">
+                                            <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </span>
+                                `,
+                            }, html`
+                                <!-- Identity header -->
+                                <div class="flex items-center gap-2.5 px-3 py-2">
+                                    ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 36 })}
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-medium text-foreground truncate">Tan Nguyen</div>
+                                        <div class="text-xs text-muted-foreground truncate">tan@cossack.dev</div>
+                                    </div>
+                                </div>
+                                <hr class="border-t border-border my-1" />
+                                <!-- Upgrade banner -->
+                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                    <svg class="w-4 h-4 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 16.5 5.5 21l2-7.5L2 9h7l3-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                                    <span class="flex-1">Upgrade to Pro</span>
+                                </button>
+                                <hr class="border-t border-border my-1" />
+                                <!-- Account links -->
+                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                    <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                    <span class="flex-1">Account</span>
+                                </button>
+                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                    <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.5"/></svg>
+                                    <span class="flex-1">Billing</span>
+                                </button>
+                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                    <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 0112 0c0 5 2 6 2 6H4s2-1 2-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                    <span class="flex-1">Notifications</span>
+                                </button>
+                                <hr class="border-t border-border my-1" />
+                                <!-- Log out -->
+                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-destructive hover:bg-destructive/10 text-left">
+                                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    <span class="flex-1">Log out</span>
+                                </button>
+                            `),
+                        })}
                     </div>
                 </section>
 

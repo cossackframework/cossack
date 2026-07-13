@@ -201,14 +201,17 @@ test.describe('Components Demo Page', () => {
 
     // Checkbox (native input type=checkbox) + Switch (role=switch)
     await expect(page.locator('.cs-checkbox input[type="checkbox"]')).toBeChecked();
-    await expect(page.locator('label.cs-switch[role="switch"]')).toBeVisible();
+    // Multiple Switch instances exist on the page (demo + drawer); assert at least one is visible.
+    const switches = page.locator('label.cs-switch[role="switch"]');
+    expect(await switches.count()).toBeGreaterThanOrEqual(1);
+    await expect(switches.first()).toBeVisible();
 
     // Spinner uses animate-spin
     await expect(page.locator('span.cs-spinner.animate-spin')).toBeVisible();
   });
 
   test('avatar, separator, skeleton, progress render', async ({ page }) => {
-    await expect(page.locator('.cs-avatar')).toHaveCount(2);
+    expect(await page.locator('.cs-avatar').count()).toBeGreaterThanOrEqual(2);
     await expect(page.locator('.cs-separator--vertical')).toBeVisible();
     await expect(page.locator('.cs-skeleton.animate-pulse')).toBeVisible();
     const bars = page.locator('.cs-progress[role="progressbar"]');
@@ -290,5 +293,132 @@ test.describe('Components Demo Page', () => {
     // Click Close inside the sheet.
     await page.locator('dialog.cs-sheet button:has-text("Close")').click();
     await expect(page.locator('dialog.cs-sheet')).not.toHaveAttribute('open', '', { timeout: 5000 });
+  });
+
+  test('calendar renders a month grid and supports date selection', async ({ page }) => {
+    const calendar = page.locator('.cs-calendar');
+    await expect(calendar).toBeVisible();
+    // 7 weekday headers (Su..Sa)
+    expect(await calendar.locator('.cs-calendar__weekdays span').count()).toBe(7);
+    // Pick the 15th day cell
+    await calendar.locator('.cs-calendar__day:has-text("15")').click();
+    // The selected status text updates with an ISO date ending in -15.
+    await expect(page.locator('text=/Selected: \\d{4}-\\d{2}-15/')).toBeVisible();
+  });
+
+  test('date-picker popover opens on trigger click', async ({ page }) => {
+    await page.locator('.cs-datepicker__trigger').click();
+    // Native popovers live in the top layer; assert open state via JS (the
+    // element reports "hidden" to Playwright's visibility checks).
+    await expect.poll(async () => {
+      return await page.evaluate(() => {
+        const el = document.querySelector('.cs-datepicker__panel') as HTMLElement | null;
+        return el ? el.matches(':popover-open') : false;
+      });
+    }).toBe(true);
+  });
+
+  test('context menu opens on right-click', async ({ page }) => {
+    // Playwright's right-click dispatches real OS-level contextmenu; trigger the
+    // event directly to exercise the component's @contextmenu handler.
+    await page.locator('.cs-context-menu').hover();
+    await page.locator('.cs-context-menu').evaluate((el: HTMLElement) => {
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
+    });
+    await expect.poll(async () => {
+      return await page.evaluate(() => {
+        const el = document.querySelector('.cs-context-menu__panel') as HTMLElement | null;
+        return el ? el.matches(':popover-open') : false;
+      });
+    }).toBe(true);
+    // The Copy item is present inside the open popover.
+    const hasCopy = await page.evaluate(() => {
+      return !!document.querySelector('.cs-context-menu__item');
+    });
+    expect(hasCopy).toBe(true);
+  });
+
+  test('input-otp renders the configured number of boxes', async ({ page }) => {
+    const boxes = page.locator('.cs-input-otp__box');
+    await expect(boxes).toHaveCount(6);
+    // Typing a digit fills the first box and the live status updates.
+    await boxes.first().click();
+    await page.keyboard.type('4');
+    // The OTP status <code> reflects the joined value (starts with "4").
+    await expect(page.locator('code.text-xs')).toContainText(/^4/, { timeout: 5000 });
+  });
+
+  test('typography renders semantic heading and blockquote elements', async ({ page }) => {
+    await expect(page.locator('.cs-typography--h1')).toBeVisible();
+    await expect(page.locator('.cs-typography--blockquote')).toBeVisible();
+    await expect(page.locator('.cs-typography--ul')).toBeVisible();
+  });
+
+  test('drawer opens via button and renders the title header', async ({ page }) => {
+    await page.locator('button:has-text("Open Drawer")').click();
+    await expect(page.locator('dialog.cs-drawer')).toHaveAttribute('open', '', { timeout: 5000 });
+    await expect(page.locator('.cs-drawer__header:has-text("Settings")')).toBeVisible();
+
+    // The panel must be pinned to the right edge (not stuck at 0,0).
+    const panelBox = await page.locator('.cs-drawer__panel').boundingBox();
+    expect(panelBox).toBeTruthy();
+    expect(panelBox!.x).toBeGreaterThan(100); // not at left edge (0,0)
+
+    // Close it via the X button.
+    await page.locator('.cs-drawer__close').click();
+    await expect(page.locator('dialog.cs-drawer')).not.toHaveAttribute('open', '', { timeout: 5000 });
+  });
+
+  test('sidebar renders nav items and collapses to icon rail', async ({ page }) => {
+    const sidebar = page.locator('.cs-sidebar');
+    await expect(sidebar).toBeVisible();
+    // Initial width ~260px.
+    expect(await sidebar.locator('.cs-sidebar__link').count()).toBeGreaterThanOrEqual(3);
+    // Toggle collapse.
+    await sidebar.locator('.cs-sidebar__toggle').click();
+    // Icon-rail mode: links become centered + body labels hidden.
+    await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
+  });
+
+  test('sidebar footer collapses to avatar-only in icon-rail mode', async ({ page }) => {
+    const footer = page.locator('.cs-sidebar__footer');
+    await expect(footer).toBeVisible();
+    // The trigger's name span (the first .text-sm.font-medium inside the trigger button).
+    const nameInTrigger = footer.locator(
+      '.cs-dropdown-menu__trigger span.text-sm.font-medium'
+    );
+    // Expanded: name is visible.
+    await expect(nameInTrigger).toBeVisible();
+    await expect(nameInTrigger).toHaveText('Tan Nguyen');
+    // Collapse the sidebar.
+    await page.locator('.cs-sidebar__toggle').click();
+    await expect(page.locator('.cs-sidebar')).toHaveClass(/cs-sidebar--collapsed/);
+    // The footer carries the is-collapsed class so slotted content adapts.
+    await expect(footer).toHaveClass(/is-collapsed/);
+    // Avatar still visible; name hidden via group variant.
+    await expect(footer.locator('.cs-avatar').first()).toBeVisible();
+    await expect(nameInTrigger).toBeHidden();
+  });
+
+  test('sidebar footer user menu opens a dropdown with identity + actions', async ({ page }) => {
+    // The footer trigger is composed from Avatar + DropdownMenu.
+    const trigger = page.locator('.cs-sidebar__footer .cs-dropdown-menu__trigger');
+    await expect(trigger).toBeVisible();
+    // Resolve the popover id tied to this trigger, then open.
+    const popoverId = await trigger.getAttribute('popovertarget');
+    expect(popoverId).toBeTruthy();
+    await trigger.click();
+    // That specific popover opens in the top layer.
+    await expect.poll(async () => {
+      return await page.evaluate((id) => {
+        const el = document.getElementById(id!) as HTMLElement | null;
+        return el ? el.matches(':popover-open') : false;
+      }, popoverId);
+    }, { timeout: 10000 }).toBe(true);
+    // Identity header shows the user's name + action rows render inside the popover.
+    const popoverContent = page.locator(`#${popoverId}`);
+    await expect(popoverContent.locator('text=Tan Nguyen').first()).toBeAttached();
+    await expect(popoverContent.locator('button:has-text("Upgrade to Pro")')).toBeAttached();
+    await expect(popoverContent.locator('button:has-text("Log out")')).toBeAttached();
   });
 });

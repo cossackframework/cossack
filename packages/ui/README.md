@@ -55,6 +55,9 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Switch** | `<input type="checkbox">` | Toggle switch (role="switch") |
 | **RadioGroup** | `<input type="radio">` | Radio button group |
 | **Slider** | `<input type="range">` | Range slider with token accent-color |
+| **InputOTP** | `<input>` ×N | Segmented one-time-password input (paste, auto-advance, arrows) |
+| **Calendar** | `<div>` grid | Month-grid date picker with min/max bounds and ISO onChange |
+| **DatePicker** | `popover` + calendar | Calendar in a native popover; emits ISO date on pick |
 | **Label** | `<label>` | Accessible form label |
 
 ### Layout & Display
@@ -68,13 +71,17 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Skeleton** | `<div>` | Loading placeholder with `animate-pulse` |
 | **Progress** | `<div role="progressbar">` | Progress bar with aria values |
 | **Tooltip** | CSS `:hover` | Pure-CSS hover tooltip (no JS, no portal) |
+| **Typography** | semantic tags | Typographic primitives (h1–h4, p, lead, blockquote, code, ul, ol) |
+| **ContextMenu** | `popover` attribute | Right-click menu with separators and destructive items |
+| **Sidebar** | `<aside>` | Collapsible nav rail (icon / offcanvas) with nested groups + agnostic footer slot |
+| **Drawer** | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
 
 ### Overlay & Interactive
 | Component | Native element | Description |
 |---|---|---|
 | **Modal** | `<dialog>` | Controlled modal via `dialog.showModal()` + `@Task` |
 | **Popover** | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
-| **DropdownMenu** | `popover` attribute | Menu with keyboard navigation (Arrow/Escape) + focus management |
+| **DropdownMenu** | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
 | **Sheet** | `<dialog>` | Slide-in panel (drawer) from any edge |
 | **Accordion** | `<details>` | Zero-JS collapsible sections |
 | **Tabs** | conditional render | Accessible tabbed interface with ARIA tablist |
