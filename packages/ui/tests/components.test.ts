@@ -28,6 +28,16 @@ import {
     toast,
     DropdownMenu,
     Sheet,
+    Collapsible,
+    Toggle,
+    ToggleGroup,
+    Breadcrumb,
+    Pagination,
+    AspectRatio,
+    Field,
+    Empty,
+    Kbd,
+    ButtonGroup,
 } from "../src/index";
 import { toastStore } from "../src/components/Toast";
 
@@ -524,5 +534,128 @@ describe("Sheet", () => {
     it("applies the size prop as inline width for left/right", () => {
         const out = renderComp(Sheet, { side: "left", size: "500px" });
         expect(out).toContain("width:500px");
+    });
+});
+
+describe("Collapsible", () => {
+    it("renders a trigger and hidden content", () => {
+        const out = renderComp(Collapsible, { trigger: "Toggle" }, "Hidden text");
+        expect(out).toContain("cs-collapsible");
+        expect(out).toContain("Toggle");
+        expect(out).toContain("Hidden text");
+        expect(out).toContain("max-height: 0");
+    });
+
+    it("shows content when defaultOpen is true", () => {
+        const out = renderComp(Collapsible, { trigger: "T", defaultOpen: true }, "X");
+        expect(out).toContain("max-height: 200px");
+    });
+});
+
+describe("Toggle", () => {
+    it("renders a button with aria-pressed", () => {
+        const out = renderComp(Toggle, { pressed: true }, "B");
+        expect(out).toContain("cs-toggle");
+        expect(out).toContain("aria-pressed");
+        expect(out).toContain("B");
+        expect(out).toContain("bg-primary");
+    });
+
+    it("renders unpressed state", () => {
+        const out = renderComp(Toggle, { pressed: false }, "I");
+        expect(out).toContain("bg-transparent");
+    });
+});
+
+describe("ToggleGroup", () => {
+    it("renders a group of toggle buttons", () => {
+        const out = renderComp(ToggleGroup, {
+            type: "single",
+            value: "bold",
+            items: [{ value: "bold", label: "B" }, { value: "italic", label: "I" }],
+        });
+        expect(out).toContain("cs-toggle-group");
+        expect(out).toContain("B");
+        expect(out).toContain("I");
+    });
+});
+
+describe("Breadcrumb", () => {
+    it("renders nav with items and separators", () => {
+        const out = renderComp(Breadcrumb, {
+            items: [
+                { label: "Home", href: "/" },
+                { label: "Settings" },
+            ],
+        });
+        expect(out).toContain("cs-breadcrumb");
+        expect(out).toContain("Home");
+        expect(out).toContain("Settings");
+        expect(out).toContain("href=/");
+        expect(out).toContain("/");
+    });
+});
+
+describe("Pagination", () => {
+    it("renders page buttons with current page highlighted", () => {
+        const out = renderComp(Pagination, { page: 3, totalPages: 10 });
+        expect(out).toContain("cs-pagination");
+        expect(out).toContain("3");
+        expect(out).toContain("‹");
+        expect(out).toContain("›");
+        expect(out).toContain("aria-current");
+    });
+});
+
+describe("AspectRatio", () => {
+    it("renders a container with padding-top for ratio", () => {
+        const out = renderComp(AspectRatio, { ratio: 16 / 9 }, "Content");
+        const pct = (9 / 16) * 100;
+        expect(out).toContain("cs-aspect-ratio");
+        expect(out).toContain(`padding-top:${pct}%`);
+    });
+});
+
+describe("Field", () => {
+    it("renders label, control, and hint", () => {
+        const out = renderComp(Field, { label: "Email", hint: "We never share" }, "input");
+        expect(out).toContain("cs-field");
+        expect(out).toContain("Email");
+        expect(out).toContain("We never share");
+        expect(out).toContain("input");
+    });
+
+    it("renders error in destructive color when present", () => {
+        const out = renderComp(Field, { label: "X", error: "Required" });
+        expect(out).toContain("text-destructive");
+        expect(out).toContain("Required");
+    });
+});
+
+describe("Empty", () => {
+    it("renders title and description", () => {
+        const out = renderComp(Empty, { title: "No data", description: "Add something" });
+        expect(out).toContain("cs-empty");
+        expect(out).toContain("No data");
+        expect(out).toContain("Add something");
+    });
+});
+
+describe("Kbd", () => {
+    it("renders a kbd element with classes", () => {
+        const out = renderComp(Kbd, {}, "⌘");
+        expect(out).toContain("<kbd");
+        expect(out).toContain("cs-kbd");
+        expect(out).toContain("⌘");
+    });
+});
+
+describe("ButtonGroup", () => {
+    it("renders a group container with role", () => {
+        const out = renderComp(ButtonGroup, {}, "buttons");
+        expect(out).toContain("cs-button-group");
+        expect(out).toContain("role=");
+        expect(out).toContain("group");
+        expect(out).toContain("buttons");
     });
 });

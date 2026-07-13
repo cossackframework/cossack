@@ -1098,6 +1098,16 @@ export const UI_COMPONENTS = {
   toaster: { className: 'Toaster', template: fromPackage('Toaster') },
   'dropdown-menu': { className: 'DropdownMenu', template: fromPackage('DropdownMenu') },
   sheet: { className: 'Sheet', template: fromPackage('Sheet') },
+  collapsible: { className: 'Collapsible', template: fromPackage('Collapsible') },
+  toggle: { className: 'Toggle', template: fromPackage('Toggle') },
+  'toggle-group': { className: 'ToggleGroup', template: fromPackage('ToggleGroup') },
+  breadcrumb: { className: 'Breadcrumb', template: fromPackage('Breadcrumb') },
+  pagination: { className: 'Pagination', template: fromPackage('Pagination') },
+  'aspect-ratio': { className: 'AspectRatio', template: fromPackage('AspectRatio') },
+  field: { className: 'Field', template: fromPackage('Field') },
+  empty: { className: 'Empty', template: fromPackage('Empty') },
+  kbd: { className: 'Kbd', template: fromPackage('Kbd') },
+  'button-group': { className: 'ButtonGroup', template: fromPackage('ButtonGroup') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1137,6 +1147,19 @@ export {
     TableRow,
     TableHead,
     TableCell,
+    Toaster,
+    DropdownMenu,
+    Sheet,
+    Collapsible,
+    Toggle,
+    ToggleGroup,
+    Breadcrumb,
+    Pagination,
+    AspectRatio,
+    Field,
+    Empty,
+    Kbd,
+    ButtonGroup,
     Icon,
 } from '@cossackframework/ui';
 `;

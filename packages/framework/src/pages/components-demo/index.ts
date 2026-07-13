@@ -38,6 +38,16 @@ import {
     toast,
     DropdownMenu,
     Sheet,
+    Collapsible,
+    Toggle,
+    ToggleGroup,
+    Breadcrumb,
+    Pagination,
+    AspectRatio,
+    Field,
+    Empty,
+    Kbd,
+    ButtonGroup,
     Icon,
 } from '@cossackframework/ui';
 
@@ -328,6 +338,68 @@ export class ComponentsDemo extends Cossack {
                         </div>
                     `,
                 )}
+
+                <!-- Collapsible + Toggle + ToggleGroup -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Collapsible · Toggle · ToggleGroup</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        ${component(Collapsible, { trigger: component(Button, { variant: 'outline', size: 'sm' }, 'Toggle Collapsible') }, html`<p class="text-sm py-3">Content that can be shown or hidden.</p>`)}
+                        ${component(Toggle, { defaultPressed: true }, 'Bold')}
+                        ${component(ToggleGroup, {
+                            type: 'single',
+                            value: 'left',
+                            items: [
+                                { value: 'left', label: 'Left' },
+                                { value: 'center', label: 'Center' },
+                                { value: 'right', label: 'Right' },
+                            ],
+                        })}
+                    </div>
+                </section>
+
+                <!-- Breadcrumb + Pagination + Kbd -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Breadcrumb · Pagination · Kbd</h2>
+                    <div class="space-y-4">
+                        ${component(Breadcrumb, { items: [
+                            { label: 'Home', href: '/' },
+                            { label: 'Components', href: '/components-demo' },
+                            { label: 'Current' },
+                        ]})}
+                        ${component(Pagination, { page: 3, totalPages: 10 })}
+                        <div class="flex items-center gap-1">
+                            <span class="text-sm text-muted-foreground mr-2">Press</span>
+                            ${component(Kbd, {}, '⌘')}
+                            ${component(Kbd, {}, 'K')}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- AspectRatio + Field + Empty -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">AspectRatio · Field · Empty</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        <div class="w-48">
+                            ${component(AspectRatio, { ratio: 16 / 9 }, html`<div class="w-full h-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-xs">16:9</div>`)}
+                        </div>
+                        <div class="flex-1 min-w-[200px] max-w-xs">
+                            ${component(Field, { label: 'Username', hint: '3-20 characters', for: 'username-demo' },
+                                component(Input, { id: 'username-demo', placeholder: 'username' }))}
+                        </div>
+                        <div class="border border-border rounded-lg w-56">
+                            ${component(Empty, { title: 'No items', description: 'Add your first item to get started.' })}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ButtonGroup -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">ButtonGroup</h2>
+                    ${component(ButtonGroup, {},
+                        html`<button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-l-md">Left</button>
+                             <button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer">Center</button>
+                             <button class="px-3 py-1.5 text-sm border border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-r-md">Right</button>`)}
+                </section>
 
                 <!-- Toaster (mount once — renders toasts from the global store) -->
                 ${component(Toaster, {})}

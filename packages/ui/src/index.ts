@@ -52,6 +52,16 @@ export {
 export { Toaster, toast, type ToastItem, type ToasterProps } from "./components/Toast";
 export { DropdownMenu, type DropdownMenuProps } from "./components/DropdownMenu";
 export { Sheet, type SheetProps } from "./components/Sheet";
+export { Collapsible, type CollapsibleProps } from "./components/Collapsible";
+export { Toggle, type ToggleProps } from "./components/Toggle";
+export { ToggleGroup, type ToggleGroupProps } from "./components/ToggleGroup";
+export { Breadcrumb, type BreadcrumbProps } from "./components/Breadcrumb";
+export { Pagination, type PaginationProps } from "./components/Pagination";
+export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";
+export { Field, type FieldProps } from "./components/Field";
+export { Empty, type EmptyProps } from "./components/Empty";
+export { Kbd, type KbdProps } from "./components/Kbd";
+export { ButtonGroup, type ButtonGroupProps } from "./components/ButtonGroup";
 
 // Icons
 export { Icon, type IconProps } from "./icons/Icon";
