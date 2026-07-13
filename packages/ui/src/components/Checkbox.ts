@@ -36,7 +36,7 @@ export class Checkbox extends Cossack {
             <label class=${wrapperClasses}>
                 <input
                     type="checkbox"
-                    class="cs-checkbox__input h-4 w-4 rounded border-border text-primary accent-[var(--color-primary)] focus:ring-2 focus:ring-ring/30"
+                    class="cs-checkbox__input h-4 w-4 rounded border-border text-primary accent-[var(--color-primary)] focus:ring-1 focus:ring-ring/20"
                     ?checked=${checked}
                     ?indeterminate=${indeterminate}
                     ...=${rest}

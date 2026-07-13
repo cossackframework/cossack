@@ -59,7 +59,7 @@ export class Modal extends Cossack {
         return html`
             <dialog
                 ref=${this.dialogRef}
-                class="cs-modal m-auto p-0 bg-transparent max-w-none max-h-none"
+                class="cs-modal m-auto p-0 bg-transparent max-w-none max-h-none overflow-hidden"
                 @close=${() => {
                     const onClose = this.props.onClose ?? this.props["@close"];
                     if (typeof onClose === "function") onClose();

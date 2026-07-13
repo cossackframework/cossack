@@ -16,8 +16,8 @@ export interface DropdownMenuProps {
     trigger?: unknown;
     /** Preferred side for the menu to open. */
     side?: "bottom" | "top";
-    /** Menu items: [{ label, onClick, disabled }]. */
-    items?: Array<{ label: unknown; onClick?: () => void; disabled?: boolean; separator?: boolean }>;
+    /** Menu items. Use { separator: true } for a divider (label not required). */
+    items?: Array<{ label?: unknown; onClick?: () => void; disabled?: boolean; separator?: boolean }>;
     /** Allow arbitrary HTML attributes. */
     [key: string]: any;
 }

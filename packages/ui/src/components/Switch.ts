@@ -37,10 +37,10 @@ export class Switch extends Cossack {
                     ...=${rest}
                 />
                 <span
-                    class="cs-switch__track inline-block h-6 w-11 rounded-full bg-muted border border-border transition-colors duration-150 peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring/30"
+                    class="cs-switch__track inline-block h-6 w-11 rounded-full bg-muted border border-border transition-colors duration-200 peer-checked:bg-primary peer-focus-visible:ring-1 peer-focus-visible:ring-ring/20"
                 ></span>
                 <span
-                    class="cs-switch__thumb absolute left-0.5 top-0.5 inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform duration-150 peer-checked:translate-x-5"
+                    class="cs-switch__thumb absolute left-0.5 top-0.5 inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform duration-200 ease-out peer-checked:translate-x-5"
                 ></span>
             </label>
         `;

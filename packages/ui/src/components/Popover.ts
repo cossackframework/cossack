@@ -39,7 +39,7 @@ export class Popover extends Cossack {
     private popoverId = `cs-popover-${Math.random().toString(36).slice(2, 9)}`;
 
     render() {
-        const { trigger, side = "bottom", align = "center" } = this.props;
+        const { trigger, side = "top", align = "center" } = this.props;
 
         const popoverClasses = classMap({
             "cs-popover": true,
@@ -125,7 +125,7 @@ export class Popover extends Cossack {
         if (!popover.matches(":popover-open")) return;
 
         const rect = trigger.getBoundingClientRect();
-        const side = this.props.side || "bottom";
+        const side = this.props.side || "top";
         const align = this.props.align || "center";
         const gap = 8;
         const pw = popover.offsetWidth;

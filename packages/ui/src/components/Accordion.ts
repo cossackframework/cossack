@@ -42,8 +42,10 @@ export class AccordionItem extends Cossack {
                 <summary class=${summaryClasses}>
                     ${summary ?? this.props["summary"]}
                 </summary>
-                <div class="cs-accordion__content px-4 py-3">
-                    ${this.children}
+                <div class="cs-accordion__content-wrapper">
+                    <div class="cs-accordion__content px-4 py-3">
+                        ${this.children}
+                    </div>
                 </div>
             </details>
         `;

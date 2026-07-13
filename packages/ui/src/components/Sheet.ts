@@ -82,7 +82,7 @@ export class Sheet extends Cossack {
         return html`
             <dialog
                 ref=${this.dialogRef}
-                class="cs-sheet m-0 p-0 bg-transparent max-w-none max-h-none w-screen h-screen"
+                class="cs-sheet m-0 p-0 bg-transparent max-w-none max-h-none overflow-hidden"
                 @close=${() => {
                     const onClose = this.props.onClose ?? this.props["@close"];
                     if (typeof onClose === "function") onClose();

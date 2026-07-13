@@ -1,4 +1,5 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
+// Note: ClientState for sheetOpen is declared on the class below.
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Layout } from '@/components/Layout';
 import {
@@ -239,7 +240,7 @@ export class ComponentsDemo extends Cossack {
                 <!-- Popover -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Popover</h2>
-                    ${component(Popover, { trigger: 'Open popover', side: 'bottom' }, html`
+                    ${component(Popover, { trigger: 'Open popover' }, html`
                         <h3 class="text-base font-semibold mb-1">Popover title</h3>
                         <p class="text-sm text-muted-foreground">This uses the native <code>popover</code> attribute — top-layer rendering, light dismiss, no portal.</p>
                     `)}
