@@ -36,10 +36,12 @@ export class ToggleGroup extends Cossack {
         }
     }
 
+    @Client()
     isSelected(value: string): boolean {
         return this.selected.includes(value);
     }
 
+    @Client()
     toggle(value: string) {
         const type = this.props.type || "single";
         if (type === "single") {

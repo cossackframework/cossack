@@ -62,6 +62,15 @@ export { Field, type FieldProps } from "./components/Field";
 export { Empty, type EmptyProps } from "./components/Empty";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ButtonGroup, type ButtonGroupProps } from "./components/ButtonGroup";
+export { AlertDialog, type AlertDialogProps } from "./components/AlertDialog";
+export { HoverCard, type HoverCardProps } from "./components/HoverCard";
+export { ScrollArea, type ScrollAreaProps } from "./components/ScrollArea";
+export { Resizable, type ResizableProps } from "./components/Resizable";
+export { Carousel, type CarouselProps } from "./components/Carousel";
+export { NavigationMenu, type NavigationMenuProps } from "./components/NavigationMenu";
+export { Menubar, type MenubarProps } from "./components/Menubar";
+export { Command, type CommandProps } from "./components/Command";
+export { Combobox, type ComboboxProps } from "./components/Combobox";
 
 // Icons
 export { Icon, type IconProps } from "./icons/Icon";

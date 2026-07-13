@@ -102,10 +102,12 @@ export class DropdownMenu extends Cossack {
         `;
     }
 
+    @Client()
     private handleOpen() {
         requestAnimationFrame(() => this.position());
     }
 
+    @Client()
     private handleToggleEvent(e: Event) {
         const el = e.target as HTMLElement;
         if (el === this.menuRef.value && el.matches(":popover-open")) {
@@ -119,6 +121,7 @@ export class DropdownMenu extends Cossack {
         }
     }
 
+    @Client()
     private handleKeydown(e: KeyboardEvent) {
         const menu = this.menuRef.value;
         if (!menu) return;
@@ -148,6 +151,7 @@ export class DropdownMenu extends Cossack {
     }
 
     /** Position the menu relative to the trigger button. */
+    @Client()
     private position() {
         const menu = this.menuRef.value;
         if (!menu || !menu.matches(":popover-open")) return;

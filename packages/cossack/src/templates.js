@@ -1108,6 +1108,15 @@ export const UI_COMPONENTS = {
   empty: { className: 'Empty', template: fromPackage('Empty') },
   kbd: { className: 'Kbd', template: fromPackage('Kbd') },
   'button-group': { className: 'ButtonGroup', template: fromPackage('ButtonGroup') },
+  'alert-dialog': { className: 'AlertDialog', template: fromPackage('AlertDialog') },
+  'hover-card': { className: 'HoverCard', template: fromPackage('HoverCard') },
+  'scroll-area': { className: 'ScrollArea', template: fromPackage('ScrollArea') },
+  resizable: { className: 'Resizable', template: fromPackage('Resizable') },
+  carousel: { className: 'Carousel', template: fromPackage('Carousel') },
+  'navigation-menu': { className: 'NavigationMenu', template: fromPackage('NavigationMenu') },
+  menubar: { className: 'Menubar', template: fromPackage('Menubar') },
+  command: { className: 'Command', template: fromPackage('Command') },
+  combobox: { className: 'Combobox', template: fromPackage('Combobox') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1160,6 +1169,15 @@ export {
     Empty,
     Kbd,
     ButtonGroup,
+    AlertDialog,
+    HoverCard,
+    ScrollArea,
+    Resizable,
+    Carousel,
+    NavigationMenu,
+    Menubar,
+    Command,
+    Combobox,
     Icon,
 } from '@cossackframework/ui';
 `;

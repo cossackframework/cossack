@@ -71,12 +71,14 @@ export class Popover extends Cossack {
         `;
     }
 
+    @Client()
     private handleToggle() {
         // After the browser opens/closes the popover, position it.
         // Use rAF to wait for the top-layer element to be visible.
         requestAnimationFrame(() => this.position());
     }
 
+    @Client()
     private handleToggleEvent(e: Event) {
         const el = e.target as HTMLElement;
         if (el.classList.contains("cs-popover") && el.matches(":popover-open")) {
@@ -115,6 +117,7 @@ export class Popover extends Cossack {
     }
 
     /** Compute position from the trigger button's bounding rect. */
+    @Client()
     private position() {
         const popover = this.popoverRef.value;
         if (!popover) return;

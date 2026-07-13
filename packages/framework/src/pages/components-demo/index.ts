@@ -48,6 +48,15 @@ import {
     Empty,
     Kbd,
     ButtonGroup,
+    AlertDialog,
+    HoverCard,
+    ScrollArea,
+    Resizable,
+    Carousel,
+    NavigationMenu,
+    Menubar,
+    Command,
+    Combobox,
     Icon,
 } from '@cossackframework/ui';
 
@@ -55,6 +64,7 @@ import {
 export class ComponentsDemo extends Cossack {
     @ClientState() modalOpen = false;
     @ClientState() sheetOpen = false;
+    @ClientState() alertOpen = false;
 
     public head(_context: HeadContext): HeadValue {
         return {
@@ -399,6 +409,116 @@ export class ComponentsDemo extends Cossack {
                         html`<button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-l-md">Left</button>
                              <button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer">Center</button>
                              <button class="px-3 py-1.5 text-sm border border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-r-md">Right</button>`)}
+                </section>
+
+                <!-- AlertDialog + HoverCard -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">AlertDialog · HoverCard</h2>
+                    <div class="flex flex-wrap items-center gap-4">
+                        ${component(Button, { variant: 'destructive', '@click': () => { this.alertOpen = true; } }, 'Delete Account')}
+                        ${component(HoverCard, {
+                            content: html`<div><p class="text-sm font-medium mb-1">Hover details</p><p class="text-xs text-muted-foreground">This card appears on hover with a 300ms delay.</p></div>`,
+                        }, component(Button, { variant: 'outline' }, 'Hover me'))}
+                    </div>
+                    ${component(AlertDialog, {
+                        open: this.alertOpen,
+                        title: 'Delete account?',
+                        description: 'This will permanently delete your account and all associated data. This action cannot be undone.',
+                        cancelLabel: 'Cancel',
+                        actionLabel: 'Delete',
+                        actionVariant: 'destructive',
+                        onAction: () => { toast.error('Account deleted.'); this.alertOpen = false; },
+                        onClose: () => { this.alertOpen = false; },
+                    })}
+                </section>
+
+                <!-- ScrollArea + Resizable -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">ScrollArea · Resizable</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        <div class="border border-border rounded-lg w-64">
+                            ${component(ScrollArea, { height: '120px' }, html`
+                                <div class="p-3 space-y-1">
+                                    <p class="text-sm">Scroll me!</p>
+                                    ${[1,2,3,4,5,6,7,8,9,10].map(i => html`<p class="text-xs text-muted-foreground">Item ${i}</p>`)}
+                                </div>
+                            `)}
+                        </div>
+                        <div class="border border-border rounded-lg w-96 h-32">
+                            ${component(Resizable, { defaultWidth: 150 },
+                                html`<div class="p-3 text-sm">Left panel — drag the handle →</div>`)}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Carousel -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Carousel</h2>
+                    ${component(Carousel, {},
+                        html`${[1,2,3,4,5].map(i => html`
+                            <div class="snap-start shrink-0 w-48 h-32 rounded-lg bg-muted flex items-center justify-center text-muted-foreground text-lg font-medium border border-border">Slide ${i}</div>
+                        `)}`)}
+                </section>
+
+                <!-- NavigationMenu + Menubar -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">NavigationMenu · Menubar</h2>
+                    <div class="space-y-4">
+                        ${component(NavigationMenu, { sections: [
+                            { label: 'Products', items: [
+                                { label: 'Core', href: '#', description: 'The framework' },
+                                { label: 'UI', href: '#', description: 'Components library' },
+                            ]},
+                            { label: 'Docs', items: [
+                                { label: 'Getting Started', href: '#' },
+                                { label: 'API Reference', href: '#' },
+                            ]},
+                        ]})}
+                        ${component(Menubar, { menus: [
+                            { label: 'File', items: [
+                                { label: 'New File', onClick: () => toast.show('New File') },
+                                { label: 'Open...', onClick: () => toast.show('Open') },
+                                { separator: true },
+                                { label: 'Exit', onClick: () => toast.show('Exit') },
+                            ]},
+                            { label: 'Edit', items: [
+                                { label: 'Undo', onClick: () => toast.show('Undo') },
+                                { label: 'Redo', onClick: () => toast.show('Redo') },
+                            ]},
+                        ]})}
+                    </div>
+                </section>
+
+                <!-- Command (⌘K) + Combobox -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Command · Combobox</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        <div class="flex flex-col gap-2">
+                            <p class="text-sm text-muted-foreground">Press <kbd class="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1 text-xs font-medium rounded border border-border bg-muted">⌘</kbd> <kbd class="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1 text-xs font-medium rounded border border-border bg-muted">K</kbd> anywhere</p>
+                            ${component(Command, {
+                                items: [
+                                    { id: 'home', label: 'Go to Home', group: 'Navigation' },
+                                    { id: 'settings', label: 'Open Settings', group: 'Navigation' },
+                                    { id: 'profile', label: 'View Profile', group: 'Account' },
+                                    { id: 'logout', label: 'Log Out', group: 'Account' },
+                                ],
+                                onSelect: (id: string) => toast.show('Selected: ' + id),
+                            })}
+                        </div>
+                        <div class="w-56">
+                            ${component(Combobox, {
+                                options: [
+                                    { value: 'us', label: 'United States' },
+                                    { value: 'vn', label: 'Vietnam' },
+                                    { value: 'de', label: 'Germany' },
+                                    { value: 'jp', label: 'Japan' },
+                                    { value: 'au', label: 'Australia' },
+                                ],
+                                placeholder: 'Select a country...',
+                                onChange: (v: string) => toast.show('Country: ' + v),
+                            })}
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Toaster (mount once — renders toasts from the global store) -->

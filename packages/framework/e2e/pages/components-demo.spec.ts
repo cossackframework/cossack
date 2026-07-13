@@ -24,7 +24,7 @@ test.describe('Components Demo Page', () => {
     expect(count).toBeGreaterThanOrEqual(5);
 
     // Variant class flows through classMap.
-    await expect(page.locator('button.cs-button--destructive:has-text("Delete")')).toBeVisible();
+    await expect(page.locator('button.cs-button--destructive:has-text("Delete")').first()).toBeVisible();
     await expect(page.locator('button.cs-button--outline:has-text("Outline")')).toBeVisible();
   });
 
