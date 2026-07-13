@@ -231,15 +231,38 @@ test.describe('Components Demo Page', () => {
     await expect(squareGroup.locator('.cs-avatar-group__overflow')).toHaveText('+2');
   });
 
-  test('tabs switch panels on click', async ({ page }) => {
+  test('tabs switch panels on click with sliding indicator', async ({ page }) => {
     // Default tab shows account content.
     await expect(page.locator('.cs-tabs__panel:has-text("Account settings")')).toBeVisible();
+
+    // The sliding indicator element exists and has a position.
+    const indicator = page.locator('.cs-tabs__indicator').first();
+    await expect(indicator).toBeAttached();
+    const initialLeft = await indicator.evaluate((el) => el.style.left);
 
     // Click the Password tab.
     await page.locator('[role="tab"]:has-text("Password")').click();
 
     // Account panel should be unmounted; Password panel visible.
     await expect(page.locator('.cs-tabs__panel:has-text("Password settings")')).toBeVisible();
+
+    // The indicator moved to a new position (slid to the right).
+    const newLeft = await indicator.evaluate((el) => el.style.left);
+    expect(newLeft).not.toBe(initialLeft);
+  });
+
+  test('tabs underline variant and vertical orientation render', async ({ page }) => {
+    // Underline variant: the indicator is 2px tall (bottom border style).
+    const underlineTabs = page.locator('.cs-tabs').nth(1);
+    await expect(underlineTabs.locator('[role="tab"]:has-text("Overview")')).toBeVisible();
+
+    // Vertical orientation: tablist has aria-orientation="vertical".
+    const verticalTabs = page.locator('.cs-tabs').nth(2);
+    await expect(verticalTabs.locator('[role="tablist"]')).toHaveAttribute('aria-orientation', 'vertical');
+
+    // Switching a vertical tab works.
+    await verticalTabs.locator('[role="tab"]:has-text("Security")').click();
+    await expect(page.locator('.cs-tabs__panel:has-text("Security settings")')).toBeVisible();
   });
 
   test('popover opens via native popovertarget button', async ({ page }) => {

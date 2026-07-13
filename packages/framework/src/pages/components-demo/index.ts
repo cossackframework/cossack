@@ -300,14 +300,45 @@ export class ComponentsDemo extends Cossack {
                 </section>
 
                 <!-- Tabs -->
-                <section class="space-y-3">
+                <section class="space-y-4">
                     <h2 class="text-lg font-semibold">Tabs</h2>
-                    ${component(Tabs, {
-                        items: [
-                            { value: 'account', label: 'Account', content: html`<p class="text-sm">Account settings content.</p>` },
-                            { value: 'password', label: 'Password', content: html`<p class="text-sm">Password settings content.</p>` },
-                        ],
-                    })}
+                    <div class="space-y-2">
+                        <span class="text-xs text-muted-foreground">Pill variant (animated slide)</span>
+                        ${component(Tabs, {
+                            variant: 'pill',
+                            items: [
+                                { value: 'account', label: 'Account', content: html`<p class="text-sm">Account settings content. The pill indicator slides smoothly.</p>` },
+                                { value: 'password', label: 'Password', content: html`<p class="text-sm">Password settings content.</p>` },
+                                { value: 'team', label: 'Team', content: html`<p class="text-sm">Team settings content.</p>` },
+                            ],
+                        })}
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-xs text-muted-foreground">Underline variant</span>
+                        ${component(Tabs, {
+                            variant: 'underline',
+                            items: [
+                                { value: 'overview', label: 'Overview', content: html`<p class="text-sm">Overview content. The underline indicator slides between tabs.</p>` },
+                                { value: 'analytics', label: 'Analytics', content: html`<p class="text-sm">Analytics content.</p>` },
+                                { value: 'reports', label: 'Reports', content: html`<p class="text-sm">Reports content.</p>` },
+                                { value: 'notifications', label: 'Notifications', content: html`<p class="text-sm">Notifications content.</p>` },
+                            ],
+                        })}
+                    </div>
+                    <div class="space-y-2">
+                        <span class="text-xs text-muted-foreground">Vertical orientation</span>
+                        <div class="border border-border rounded-lg p-4" style="min-height: 180px;">
+                            ${component(Tabs, {
+                                orientation: 'vertical',
+                                items: [
+                                    { value: 'general', label: 'General', content: html`<p class="text-sm">General settings. Vertical tabs are great for settings pages.</p>` },
+                                    { value: 'security', label: 'Security', content: html`<p class="text-sm">Security settings — 2FA, password, sessions.</p>` },
+                                    { value: 'billing', label: 'Billing', content: html`<p class="text-sm">Billing settings — plan, invoices, payment.</p>` },
+                                    { value: 'api', label: 'API Keys', content: html`<p class="text-sm">API key management.</p>` },
+                                ],
+                            })}
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Tooltip -->

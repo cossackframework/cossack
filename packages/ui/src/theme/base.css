@@ -389,7 +389,18 @@ body {
     transition: background-color 200ms ease, border-color 200ms ease;
 }
 
-/* --- Tabs: panel fade-in on switch --- */
+/* --- Tabs: sliding indicator + panel transitions ---
+ *
+ * The active-tab highlight (`.cs-tabs__indicator`) is absolutely positioned
+ * and animated via JS-measured offsetLeft/offsetWidth + CSS transition.
+ * The pill variant slides a rounded bg; the underline variant slides a 2px
+ * bottom border. Vertical orientation slides vertically.
+ */
+.cs-tabs__indicator {
+    will-change: left, width, top, height;
+}
+
+/* Panel fade/slide on switch */
 .cs-tabs__panel {
     animation: cs-tab-in 200ms ease-out;
 }
@@ -402,4 +413,10 @@ body {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* Vertical tabs: slide-in from the left instead of from below */
+.cs-tabs[style] .cs-tabs__panel,
+.cs-tabs > div + div .cs-tabs__panel {
+    /* fallback for non-vertical */
 }
