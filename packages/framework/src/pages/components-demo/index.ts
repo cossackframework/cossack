@@ -20,6 +20,7 @@ import {
     Select,
     Spinner,
     Avatar,
+    AvatarGroup,
     Separator,
     Skeleton,
     Progress,
@@ -248,6 +249,43 @@ export class ComponentsDemo extends Cossack {
                         ${component(Avatar, { alt: 'Tan Nguyen', size: 48 })}
                         ${component(Separator, { orientation: 'vertical' })}
                         ${component(Skeleton, { width: '120px', height: '12px' })}
+                    </div>
+                </section>
+
+                <!-- AvatarGroup -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">AvatarGroup</h2>
+                    <div class="flex flex-col gap-4">
+                        <div class="flex items-center gap-6">
+                            ${component(AvatarGroup, {
+                                max: 4,
+                                size: 36,
+                                items: [
+                                    { src: 'https://i.pravatar.cc/80?img=1', alt: 'Alice' },
+                                    { src: 'https://i.pravatar.cc/80?img=2', alt: 'Bob' },
+                                    { src: 'https://i.pravatar.cc/80?img=3', alt: 'Carol' },
+                                    { src: 'https://i.pravatar.cc/80?img=4', alt: 'Dan' },
+                                    { src: 'https://i.pravatar.cc/80?img=5', alt: 'Eve' },
+                                    { src: 'https://i.pravatar.cc/80?img=6', alt: 'Frank' },
+                                ],
+                            })}
+                            <span class="text-sm text-muted-foreground">6 members, max 4 shown</span>
+                        </div>
+                        <div class="flex items-center gap-6">
+                            ${component(AvatarGroup, {
+                                max: 3,
+                                size: 28,
+                                shape: 'square',
+                                items: [
+                                    { src: 'https://i.pravatar.cc/80?img=7', alt: 'Grace' },
+                                    { src: 'https://i.pravatar.cc/80?img=8', alt: 'Henry' },
+                                    { src: 'https://i.pravatar.cc/80?img=9', alt: 'Ivy' },
+                                    { src: 'https://i.pravatar.cc/80?img=10', alt: 'Jack' },
+                                    { alt: 'KL' },
+                                ],
+                            })}
+                            <span class="text-sm text-muted-foreground">Square, max 3, initials fallback</span>
+                        </div>
                     </div>
                 </section>
 

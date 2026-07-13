@@ -32,6 +32,7 @@ export { Switch, type SwitchProps } from "./components/Switch";
 export { Select, type SelectProps } from "./components/Select";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
 export { Avatar, type AvatarProps } from "./components/Avatar";
+export { AvatarGroup, type AvatarGroupProps, type AvatarGroupItem } from "./components/AvatarGroup";
 export { Separator, type SeparatorProps } from "./components/Separator";
 export { Skeleton, type SkeletonProps } from "./components/Skeleton";
 export { Progress, type ProgressProps } from "./components/Progress";

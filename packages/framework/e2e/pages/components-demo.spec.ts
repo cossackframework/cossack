@@ -218,6 +218,19 @@ test.describe('Components Demo Page', () => {
     expect(await bars.count()).toBeGreaterThanOrEqual(3);
   });
 
+  test('avatar group stacks avatars with overflow counter', async ({ page }) => {
+    const group = page.locator('.cs-avatar-group').first();
+    await expect(group).toBeVisible();
+    // 4 visible avatars + 1 overflow counter = 5 children.
+    const avatars = group.locator('.cs-avatar-group__item .cs-avatar');
+    expect(await avatars.count()).toBe(4);
+    // Overflow shows "+2" (6 items, max 4).
+    await expect(group.locator('.cs-avatar-group__overflow')).toHaveText('+2');
+    // Second group uses square shape.
+    const squareGroup = page.locator('.cs-avatar-group').nth(1);
+    await expect(squareGroup.locator('.cs-avatar-group__overflow')).toHaveText('+2');
+  });
+
   test('tabs switch panels on click', async ({ page }) => {
     // Default tab shows account content.
     await expect(page.locator('.cs-tabs__panel:has-text("Account settings")')).toBeVisible();

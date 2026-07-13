@@ -69,6 +69,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Separator** | `<hr>` / `<div>` | Horizontal or vertical divider |
 | **Table** | `<table>` | Token-styled table with sub-components (TableHeader, TableBody, TableRow, TableHead, TableCell) |
 | **Avatar** | `<img>` / `<span>` | Image with initials fallback, circle/square |
+| **AvatarGroup** | `<div>` | Stacked avatar set with "+N" overflow counter |
 | **Badge** | `<span>` | Status/label pill with semantic variants |
 | **Skeleton** | `<div>` | Loading placeholder with `animate-pulse` |
 | **Progress** | `<div role="progressbar">` | Progress bar with aria values |
