@@ -81,11 +81,13 @@ export { Sidebar, type SidebarProps, type SidebarItem } from "./components/Sideb
 export { NativeSelect, type NativeSelectProps } from "./components/NativeSelect";
 export { InputGroup, type InputGroupProps } from "./components/InputGroup";
 export { Item, type ItemProps } from "./components/Item";
-export { Bubble, type BubbleProps } from "./components/Bubble";
+export { Bubble, type BubbleProps, type BubbleReaction } from "./components/Bubble";
 export { Message, type MessageProps } from "./components/Message";
 export { MessageScroller, type MessageScrollerProps } from "./components/MessageScroller";
 export { Marker, type MarkerProps } from "./components/Marker";
 export { Attachment, type AttachmentProps } from "./components/Attachment";
+export { PasswordInput, type PasswordInputProps } from "./components/PasswordInput";
+export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 
 // Icons
 export { Icon, type IconProps } from "./icons/Icon";

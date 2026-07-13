@@ -1,0 +1,232 @@
+import { html, classMap } from "@cossackframework/renderer";
+import {
+    Cossack,
+    Component,
+    Client,
+    ClientState,
+    createRef,
+    type RefObject,
+} from "@cossackframework/core";
+
+export interface MultiSelectProps {
+    /** Predefined options to pick from. */
+    options?: string[];
+    /** Currently selected values. */
+    value?: string[];
+    /** Placeholder for the input. */
+    placeholder?: string;
+    /** Allow creating new values not in `options`. Default true. */
+    allowCreate?: boolean;
+    /** Max number of selections. 0 = unlimited. */
+    max?: number;
+    /** Called whenever the selection changes. */
+    onChange?: (value: string[]) => void;
+    /** Validation: returns an error message if a new value is invalid, else null. */
+    validate?: (value: string) => string | null;
+    [key: string]: any;
+}
+
+/**
+ * Cossack UI MultiSelect — tag input with search and create-new capability.
+ *
+ * Type to filter predefined options, click to select, or press Enter to add a
+ * new tag (if `allowCreate` is true). Selected values appear as removable
+ * chips. Backspace on an empty input removes the last chip.
+ *
+ *   ${component(MultiSelect, {
+ *       options: ['TypeScript', 'React', 'Vue', 'Angular', 'Svelte'],
+ *       value: this.skills,
+ *       onChange: (v) => { this.skills = v; },
+ *   })}
+ */
+@Component()
+export class MultiSelect extends Cossack {
+    declare props: MultiSelectProps;
+
+    @ClientState() private query = "";
+    @ClientState() private activeIndex = -1;
+
+    inputRef: RefObject<HTMLInputElement> = createRef<HTMLInputElement>();
+    private popoverId = `cs-multiselect-${Math.random().toString(36).slice(2, 9)}`;
+
+    /** The selected values — fully controlled from props.value. */
+    private get selected(): string[] {
+        return this.props.value || [];
+    }
+
+    render() {
+        const { options = [], placeholder = "Add tag..." } = this.props;
+        const selected = this.selected;
+
+        const filtered = this.query
+            ? options.filter((o) => o.toLowerCase().includes(this.query.toLowerCase()) && !selected.includes(o))
+            : options.filter((o) => !selected.includes(o));
+
+        const canCreate =
+            this.props.allowCreate !== false &&
+            this.query.trim().length > 0 &&
+            !options.some((o) => o.toLowerCase() === this.query.toLowerCase()) &&
+            !selected.includes(this.query.trim());
+
+        return html`
+            <div class="cs-multiselect relative w-full">
+                <!-- Tag chips + input -->
+                <div
+                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-[40px] w-full rounded-md border border-border bg-background px-2 py-1.5 cursor-text transition-colors focus-within:border-muted-foreground"
+                    @click=${() => this.inputRef.value?.focus()}
+                >
+                    ${selected.map((tag, i) => html`
+                        <span class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-sm text-foreground">
+                            ${tag}
+                            <button
+                                type="button"
+                                class="cs-multiselect__tag-remove inline-flex items-center justify-center w-4 h-4 rounded-sm hover:bg-border text-muted-foreground cursor-pointer border-none bg-transparent"
+                                aria-label=${`Remove ${tag}`}
+                                @click=${(e: MouseEvent) => { e.stopPropagation(); this.removeTag(i); }}
+                            >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                            </button>
+                        </span>
+                    `)}
+                    <input
+                        ref=${this.inputRef}
+                        type="text"
+                        class="cs-multiselect__input flex-1 min-w-[80px] border-none outline-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground py-0.5"
+                        placeholder=${selected.length === 0 ? placeholder : ""}
+                        .value=${this.query}
+                        @input=${(e: InputEvent) => { this.query = (e.target as HTMLInputElement).value; this.activeIndex = -1; this.openIfHasResults(); }}
+                        @keydown=${(e: KeyboardEvent) => this.handleKeydown(e, filtered, canCreate)}
+                        @focus=${() => this.openIfHasResults()}
+                    />
+                </div>
+                <!-- Dropdown -->
+                <div
+                    id=${this.popoverId}
+                    popover="auto"
+                    class="cs-multiselect__dropdown bg-background border border-border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto"
+                    style="position:fixed;margin:0;"
+                >
+                    ${filtered.length === 0 && !canCreate
+                        ? html`<div class="px-3 py-2 text-sm text-muted-foreground">No options.</div>`
+                        : html`
+                            ${filtered.map((opt, i) => html`
+                                <button
+                                    type="button"
+                                    class=${classMap({
+                                        "cs-multiselect__option": true,
+                                        "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
+                                        "bg-muted": i === this.activeIndex,
+                                        "bg-transparent hover:bg-muted": i !== this.activeIndex,
+                                    })}
+                                    @click=${() => this.addTag(opt)}
+                                    @mouseenter=${() => { this.activeIndex = i; }}
+                                >${opt}</button>
+                            `)}
+                            ${canCreate
+                                ? html`<button
+                                    type="button"
+                                    class=${classMap({
+                                        "cs-multiselect__create": true,
+                                        "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
+                                        "bg-muted": filtered.length === this.activeIndex,
+                                        "bg-transparent hover:bg-muted": filtered.length !== this.activeIndex,
+                                    })}
+                                    @click=${() => this.createTag()}
+                                    @mouseenter=${() => { this.activeIndex = filtered.length; }}
+                                >+ Create <span class="font-medium">"${this.query.trim()}"</span></button>`
+                                : null}
+                        `}
+                </div>
+            </div>
+        `;
+    }
+
+    @Client()
+    private handleKeydown(e: KeyboardEvent, filtered: string[], canCreate: boolean) {
+        const total = filtered.length + (canCreate ? 1 : 0);
+        if (e.key === "Backspace" && !this.query && this.selected.length > 0) {
+            this.removeTag(this.selected.length - 1);
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (this.activeIndex >= 0 && this.activeIndex < filtered.length) {
+                this.addTag(filtered[this.activeIndex]);
+            } else if (this.activeIndex === filtered.length && canCreate) {
+                this.createTag();
+            } else if (canCreate) {
+                this.createTag();
+            } else if (filtered.length > 0) {
+                this.addTag(filtered[0]);
+            }
+        } else if (e.key === "ArrowDown" && total > 0) {
+            e.preventDefault();
+            this.activeIndex = Math.min(this.activeIndex + 1, total - 1);
+        } else if (e.key === "ArrowUp" && total > 0) {
+            e.preventDefault();
+            this.activeIndex = Math.max(this.activeIndex - 1, 0);
+        } else if (e.key === "Escape") {
+            this.query = "";
+            this.hideDropdown();
+        }
+    }
+
+    @Client()
+    private addTag(tag: string) {
+        if (this.selected.includes(tag)) return;
+        if (this.props.max && this.selected.length >= this.props.max) return;
+        this.props.onChange?.([...this.selected, tag]);
+        this.query = "";
+        this.activeIndex = -1;
+        this.inputRef.value?.focus();
+    }
+
+    @Client()
+    private createTag() {
+        const tag = this.query.trim();
+        if (!tag) return;
+        if (this.props.validate) {
+            const err = this.props.validate(tag);
+            if (err) return;
+        }
+        this.addTag(tag);
+    }
+
+    @Client()
+    private removeTag(index: number) {
+        this.props.onChange?.(this.selected.filter((_, i) => i !== index));
+    }
+
+    @Client()
+    private openIfHasResults() {
+        const el = document.getElementById(this.popoverId) as any;
+        const { options = [] } = this.props;
+        const hasFiltered = this.query
+            ? options.some((o) => o.toLowerCase().includes(this.query.toLowerCase()) && !this.selected.includes(o))
+            : options.some((o) => !this.selected.includes(o));
+        const canCreate = this.props.allowCreate !== false && this.query.trim().length > 0;
+        if (hasFiltered || canCreate) {
+            el?.showPopover?.();
+            requestAnimationFrame(() => this.positionDropdown());
+        } else {
+            el?.hidePopover?.();
+        }
+    }
+
+    @Client()
+    private hideDropdown() {
+        const el = document.getElementById(this.popoverId) as any;
+        el?.hidePopover?.();
+    }
+
+    @Client()
+    private positionDropdown() {
+        const field = this.inputRef.value?.closest(".cs-multiselect__field") as HTMLElement;
+        const popover = document.getElementById(this.popoverId);
+        if (!field || !popover || !popover.matches(":popover-open")) return;
+        const rect = field.getBoundingClientRect();
+        popover.style.position = "fixed";
+        popover.style.top = `${rect.bottom + 4}px`;
+        popover.style.left = `${rect.left}px`;
+        popover.style.width = `${rect.width}px`;
+        popover.style.margin = "0";
+    }
+}

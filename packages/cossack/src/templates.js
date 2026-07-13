@@ -1132,6 +1132,8 @@ export const UI_COMPONENTS = {
   'message-scroller': { className: 'MessageScroller', template: fromPackage('MessageScroller') },
   marker: { className: 'Marker', template: fromPackage('Marker') },
   attachment: { className: 'Attachment', template: fromPackage('Attachment') },
+  'password-input': { className: 'PasswordInput', template: fromPackage('PasswordInput') },
+  'multi-select': { className: 'MultiSelect', template: fromPackage('MultiSelect') },
 };
 
 /** src/components/ui barrel re-exporting everything from the package. */
@@ -1208,6 +1210,8 @@ export {
     MessageScroller,
     Marker,
     Attachment,
+    PasswordInput,
+    MultiSelect,
     Icon,
 } from '@cossackframework/ui';
 `;

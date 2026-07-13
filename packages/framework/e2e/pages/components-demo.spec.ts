@@ -445,11 +445,42 @@ test.describe('Components Demo Page', () => {
     // Sent + received bubbles.
     expect(await page.locator('.cs-bubble--sent').count()).toBeGreaterThanOrEqual(2);
     expect(await page.locator('.cs-bubble--received').count()).toBeGreaterThanOrEqual(2);
+    // Reaction badges on bubbles.
+    expect(await page.locator('.cs-bubble__reactions').count()).toBeGreaterThanOrEqual(2);
     // Message wrapper with avatar + name.
     await expect(page.locator('.cs-message__meta:has-text("Alice")')).toHaveCount(3);
     // Attachment card.
     await expect(page.locator('.cs-attachment__info:has-text("design-system.fig")')).toBeAttached();
     // MessageScroller viewport.
     await expect(page.locator('.cs-message-scroller__viewport')).toBeVisible();
+  });
+
+  test('password input has show/hide toggle that changes input type', async ({ page }) => {
+    const field = page.locator('.cs-password-input__field');
+    await expect(field).toBeVisible();
+    // Initially password type.
+    await expect(field).toHaveAttribute('type', 'password');
+    // Click the eye toggle.
+    await page.locator('.cs-password-input__toggle').click();
+    // Now text type (revealed).
+    await expect(field).toHaveAttribute('type', 'text');
+    // Toggle back.
+    await page.locator('.cs-password-input__toggle').click();
+    await expect(field).toHaveAttribute('type', 'password');
+  });
+
+  test('multi-select renders selected tags and allows adding new ones', async ({ page }) => {
+    // Pre-selected tags from the demo.
+    const tags = page.locator('.cs-multiselect__tag');
+    expect(await tags.count()).toBeGreaterThanOrEqual(2);
+    // Type to add a new tag (keypress by keypress so @input fires).
+    const input = page.locator('.cs-multiselect__input');
+    await input.click();
+    await page.keyboard.type('GraphQL');
+    await page.keyboard.press('Enter');
+    // The new tag appears.
+    await expect(page.locator('.cs-multiselect__tag').filter({ hasText: 'GraphQL' })).toBeVisible({ timeout: 10000 });
+    // Tag count increased by 1.
+    expect(await tags.count()).toBeGreaterThanOrEqual(3);
   });
 });

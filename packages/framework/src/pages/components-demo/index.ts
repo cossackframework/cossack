@@ -72,6 +72,8 @@ import {
     MessageScroller,
     Marker,
     Attachment,
+    PasswordInput,
+    MultiSelect,
     Icon,
 } from '@cossackframework/ui';
 
@@ -84,6 +86,8 @@ export class ComponentsDemo extends Cossack {
     @ClientState() calendarDate = '2025-07-04';
     @ClientState() datePickerDate: string | undefined = undefined;
     @ClientState() otpValue = '';
+    @ClientState() password = '';
+    @ClientState() skills: string[] = ['TypeScript', 'React'];
 
     public head(_context: HeadContext): HeadValue {
         return {
@@ -661,7 +665,7 @@ export class ComponentsDemo extends Cossack {
                             footer: component(DropdownMenu, {
                                 block: true,
                                 side: 'right',
-                                align: 'start',
+                                align: 'end',
                                 trigger: html`
                                     <span class="flex items-center gap-2.5 w-full px-1.5 py-1 rounded-md text-left group-[.is-collapsed]:justify-center">
                                         ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 32 })}
@@ -777,8 +781,15 @@ export class ComponentsDemo extends Cossack {
                                     time: '10:30 AM',
                                     variant: 'received',
                                     avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
-                                }, component(Bubble, { variant: 'received' }, 'Hey! Did you see the new components?'))}
-                                ${component(Bubble, { variant: 'sent', time: '10:31 AM' }, 'Yes! They look great.')}
+                                }, component(Bubble, {
+                                    variant: 'received',
+                                    reactions: [{ emoji: '👀', count: 2 }],
+                                }, 'Hey! Did you see the new components?'))}
+                                ${component(Bubble, {
+                                    variant: 'sent',
+                                    time: '10:31 AM',
+                                    reactions: [{ emoji: '👍', count: 1 }, { emoji: '🎉' }],
+                                }, 'Yes! They look great.')}
                                 ${component(Message, {
                                     name: 'Alice',
                                     time: '10:32 AM',
@@ -788,7 +799,11 @@ export class ComponentsDemo extends Cossack {
                                     ${component(Bubble, { variant: 'received' }, 'I attached the design file.')}
                                     ${component(Attachment, { name: 'design-system.fig', size: '8.2 MB', type: 'file' })}
                                 `)}
-                                ${component(Bubble, { variant: 'sent', time: '10:33 AM' }, html`<img src="https://picsum.photos/200/120" class="rounded-lg" alt="" />`)}
+                                ${component(Bubble, {
+                                    variant: 'sent',
+                                    time: '10:33 AM',
+                                    reactions: [{ emoji: '❤️', count: 3 }],
+                                }, html`<img src="https://picsum.photos/200/120" class="rounded-lg" alt="" />`)}
                                 ${component(Message, {
                                     name: 'Alice',
                                     time: '10:34 AM',
@@ -796,6 +811,30 @@ export class ComponentsDemo extends Cossack {
                                     avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
                                 }, component(Bubble, { variant: 'received' }, html`Nice! 🎉 Let me check it out.`))}
                             `)}
+                    </div>
+                </section>
+
+                <!-- PasswordInput + MultiSelect -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">PasswordInput · MultiSelect</h2>
+                    <div class="flex flex-wrap items-start gap-6">
+                        <div class="w-56">
+                            <span class="text-sm text-muted-foreground mb-2 block">Password (click the eye to reveal)</span>
+                            ${component(PasswordInput, {
+                                value: this.password,
+                                placeholder: 'Enter password',
+                                onChange: (v: string) => { this.password = v; },
+                            })}
+                        </div>
+                        <div class="w-72">
+                            <span class="text-sm text-muted-foreground mb-2 block">Skills (type to search or add new)</span>
+                            ${component(MultiSelect, {
+                                options: ['TypeScript', 'JavaScript', 'React', 'Vue', 'Angular', 'Svelte', 'Node.js', 'Python', 'Go', 'Rust'],
+                                value: this.skills,
+                                placeholder: 'Add a skill...',
+                                onChange: (v: string[]) => { this.skills = v; },
+                            })}
+                        </div>
                     </div>
                 </section>
 
