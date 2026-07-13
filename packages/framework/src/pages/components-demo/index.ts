@@ -737,10 +737,10 @@ export class ComponentsDemo extends Cossack {
                                 align: 'end',
                                 trigger: html`
                                     <span class="flex items-center gap-2.5 w-full px-1.5 py-1 rounded-md text-left group-[.is-collapsed]:justify-center">
-                                        ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 32 })}
+                                        ${component(Avatar, { src: 'https://avatars.githubusercontent.com/u/9004445?v=4', alt: 'Tan Nguyen', size: 32 })}
                                         <span class="flex-1 min-w-0 group-[.is-collapsed]:hidden">
                                             <span class="block text-sm font-medium text-foreground truncate">Tan Nguyen</span>
-                                            <span class="block text-xs text-muted-foreground truncate">tan@cossack.dev</span>
+                                            <span class="block text-xs text-muted-foreground truncate">hi@tan.ng</span>
                                         </span>
                                         <svg class="w-4 h-4 text-muted-foreground shrink-0 group-[.is-collapsed]:hidden" viewBox="0 0 24 24" fill="none">
                                             <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -750,10 +750,10 @@ export class ComponentsDemo extends Cossack {
                             }, html`
                                 <!-- Identity header -->
                                 <div class="flex items-center gap-2.5 px-3 py-2">
-                                    ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 36 })}
+                                    ${component(Avatar, { src: 'https://avatars.githubusercontent.com/u/9004445?v=4', alt: 'Tan Nguyen', size: 36 })}
                                     <div class="min-w-0">
                                         <div class="text-sm font-medium text-foreground truncate">Tan Nguyen</div>
-                                        <div class="text-xs text-muted-foreground truncate">tan@cossack.dev</div>
+                                        <div class="text-xs text-muted-foreground truncate">hi@tan.ng</div>
                                     </div>
                                 </div>
                                 <hr class="border-t border-border my-1" />

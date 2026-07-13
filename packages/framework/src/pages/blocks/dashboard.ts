@@ -208,17 +208,17 @@ export default class DashboardBlocks extends Cossack {
                         align: 'end',
                         trigger: html`
                             <span class="flex items-center gap-2.5 w-full px-1.5 py-1 rounded-md text-left group-[.is-collapsed]:justify-center">
-                                ${component(Avatar, { src: 'https://i.pravatar.cc/80?img=12', alt: 'Tan Nguyen', size: 32 })}
+                                ${component(Avatar, { src: 'https://avatars.githubusercontent.com/u/9004445?v=4', alt: 'Tan Nguyen', size: 32 })}
                                 <span class="flex-1 min-w-0 group-[.is-collapsed]:hidden">
                                     <span class="block text-sm font-medium text-foreground truncate">Tan Nguyen</span>
-                                    <span class="block text-xs text-muted-foreground truncate">admin@acme.dev</span>
+                                    <span class="block text-xs text-muted-foreground truncate">hi@tan.ng</span>
                                 </span>
                             </span>
                         `,
                     }, html`
                         <div class="px-3 py-2">
                             <div class="text-sm font-medium">Tan Nguyen</div>
-                            <div class="text-xs text-muted-foreground">admin@acme.dev</div>
+                            <div class="text-xs text-muted-foreground">hi@tan.ng</div>
                         </div>
                         <div class="h-px bg-border my-1"></div>
                         <button class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left">Account</button>
