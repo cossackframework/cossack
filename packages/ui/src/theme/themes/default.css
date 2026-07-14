@@ -1,0 +1,18 @@
+/*
+ * @cossackframework/ui — default palette (alias)
+ *
+ * The default light scheme is defined in theme.css under `:root`. You do NOT
+ * need to import this file — it is kept for backward compatibility with the
+ * pre-shadcn import path:
+ *
+ *   @import "@cossackframework/ui/theme/themes/default.css";
+ *
+ * Historically this file redeclared the light token set. Those values now live
+ * in theme.css so the default scheme works out of the box. To retint, import
+ * one of the named palettes (zinc, stone, gray, slate, neutral, blue, green,
+ * red) instead, or override individual tokens in your own `:root` block.
+ */
+
+/* Intentionally empty — see comment above. The `:root` rules in theme.css
+   provide the default light palette. This file is a no-op import kept for
+   compat. */

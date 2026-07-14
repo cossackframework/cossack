@@ -16,13 +16,13 @@ export const html = (strings: TemplateStringsArray, ...values: unknown[]) => {
 
 export const component = <T extends CossackElement>(
   clazz: new () => T,
-  props: Record<string, unknown> = {},
+  props?: T['props'] & Record<string, unknown>,
   children?: unknown,
 ): TemplateResult => {
   const raw: ComponentResult = {
     _type: 'COMPONENT',
     clazz,
-    props,
+    props: props ?? {},
     children,
   };
   return html`${raw}`;

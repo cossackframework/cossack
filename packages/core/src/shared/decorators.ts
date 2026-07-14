@@ -664,6 +664,51 @@ export function Task(): MethodDecorator {
   };
 }
 
+/**
+ * Like `@Task()`, but the method runs **only on the server**. Its body is
+ * stripped from the client bundle by the security plugin (like `@Server`).
+ *
+ * This replaces the manual `if (this.isServer) return;` guard at the top of a
+ * `@Task` method. The task executes during `runTasks()` on the server
+ * (bootstrap, state broadcasts) and is a no-op on the client.
+ *
+ *   @ServerTask()
+ *   syncOpenState() {
+ *       if (!this.isServer) return;  // ← NOT needed, decorator handles it
+ *       // server-only logic here
+ *   }
+ */
+export function ServerTask(): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const tasks = Reflect.getOwnMetadata('cossack:server-tasks', target.constructor) || [];
+    tasks.push(propertyKey);
+    Reflect.defineMetadata('cossack:server-tasks', tasks, target.constructor);
+    return descriptor;
+  };
+}
+
+/**
+ * Like `@Task()`, but the method runs **only on the client**. Its body is
+ * preserved in the client bundle (like `@Client`) and skipped by `runTasks()`
+ * when running on the server.
+ *
+ * This replaces the manual `if (!this.isServer) { ... }` guard inside a
+ * `@Task` method.
+ *
+ *   @ClientTask()
+ *   attachListeners() {
+ *       // client-only logic: DOM measurements, event setup, etc.
+ *   }
+ */
+export function ClientTask(): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    const tasks = Reflect.getOwnMetadata('cossack:client-tasks', target.constructor) || [];
+    tasks.push(propertyKey);
+    Reflect.defineMetadata('cossack:client-tasks', tasks, target.constructor);
+    return descriptor;
+  };
+}
+
 export interface VisibleTaskOptions {
     strategy?: 'intersection-observer' | 'document-ready';
     threshold?: number;

@@ -120,6 +120,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../ui
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
@@ -197,6 +200,9 @@ importers:
       oxlint:
         specifier: ^1.41.0
         version: 1.41.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)
@@ -216,6 +222,24 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0))
+
+  packages/ui:
+    devDependencies:
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@types/node':
+        specifier: ^22.19.0
+        version: 22.20.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@22.20.1)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0))
 
 packages:
 

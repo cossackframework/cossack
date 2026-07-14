@@ -1,0 +1,11 @@
+import { Service, State, Server } from '@cossackframework/core';
+
+@Service()
+export class {{className}} {
+  @State() count = 0;
+
+  @Server()
+  increment() {
+    this.count++;
+  }
+}

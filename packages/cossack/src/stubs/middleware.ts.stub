@@ -1,0 +1,6 @@
+import { defineServerMiddleware } from '@cossackframework/core';
+
+export const {{exportName}} = defineServerMiddleware(async (c, next) => {
+  // TODO: implement your middleware here.
+  await next();
+});

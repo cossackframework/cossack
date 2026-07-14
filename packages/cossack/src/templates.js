@@ -1,6 +1,9 @@
 /**
  * Stub content generators for `cossack generate` and `cossack add`.
- * Kept as pure functions (string in, string out) so they are trivially testable.
+ *
+ * Simple templates (page, component, middleware, migrations, etc.) are loaded
+ * from `.stub` files in `src/stubs/` via `loadStub()`. Complex templates with
+ * conditional sections (auth pages, auth module) remain as JS functions.
  *
  * Conventions mirror the framework's own source:
  *   pages    : @Page() class extends Cossack, default export
@@ -10,133 +13,65 @@
  *   middleware: defineServerMiddleware, named camelCase export
  */
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Load a `.stub` file and substitute `{{variable}}` placeholders.
+ * @param {string} name  — filename within `src/stubs/` (e.g. `'page.ts.stub'`)
+ * @param {Record<string, string>} [vars]  — values to inject
+ * @returns {string} the file content with placeholders replaced
+ */
+export function loadStub(name, vars = {}) {
+  const raw = readFileSync(join(__dirname, 'stubs', name), 'utf-8');
+  return raw.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+}
+
+// --- core generators (loaded from .stub files) ------------------------------
+
 export function pageTemplate({ className, title, description, withHead }) {
   const headMethod = withHead
-    ? `\n  head() {\n    return {\n      title: ${JSON.stringify(
-        title,
-      )},\n      description: ${JSON.stringify(description)},\n    };\n  }\n`
+    ? `\n  head() {\n    return {\n      title: ${JSON.stringify(title)},\n      description: ${JSON.stringify(description)},\n    };\n  }\n`
     : '';
-
   const body = withHead
     ? `<div class="p-8">\n        <h1 class="text-2xl font-bold">${title}</h1>${
         description ? `\n        <p class="mt-2 text-gray-600">${description}</p>` : ''
       }\n      </div>`
     : `<div class="p-8">\n        <h1 class="text-2xl font-bold">${title}</h1>\n      </div>`;
-
-  return `import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-
-@Page()
-export default class ${className} extends Cossack {${headMethod}
-  render() {
-    return html\`
-      ${body}
-    \`;
-  }
-}
-`;
+  return loadStub('page.ts.stub', { className, headMethod, body });
 }
 
 export function pageMdxTemplate({ title, description }) {
+  // MDX frontmatter is too simple to warrant a .stub file — inline is clearer.
   const frontmatter = description
     ? `---\ntitle: ${title}\ndescription: ${description}\n---`
     : `---\ntitle: ${title}\n---`;
-  return `${frontmatter}
-
-# ${title}
-
-Edit this page at \`src/pages/<name>/index.mdx\`.
-`;
+  return `${frontmatter}\n\n# ${title}\n\nEdit this page at \`src/pages/<name>/index.mdx\`.\n`;
 }
 
 export function componentTemplate({ className, propsName }) {
-  return `import { html } from '@cossackframework/renderer';
-import { Cossack, Component } from '@cossackframework/core';
-
-interface ${propsName} {
-  [key: string]: any;
-}
-
-@Component()
-export class ${className} extends Cossack {
-  declare props: ${propsName};
-
-  render() {
-    return html\`
-      <div>
-        \${this.children}
-      </div>
-    \`;
-  }
-}
-`;
+  return loadStub('component.ts.stub', { className, propsName });
 }
 
 export function layoutTemplate({ className, kebab }) {
-  return `import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-
-@Page({ transport: 'http' })
-export default class ${className} extends Cossack {
-  render() {
-    return html\`
-      <div class="${kebab}-layout">
-        \${this.children}
-      </div>
-    \`;
-  }
-}
-`;
+  return loadStub('layout.ts.stub', { className, kebab });
 }
 
 export function middlewareTemplate({ exportName }) {
-  return `import { defineServerMiddleware } from '@cossackframework/core';
-
-export const ${exportName} = defineServerMiddleware(async (c, next) => {
-  // TODO: implement your middleware here.
-  await next();
-});
-`;
+  return loadStub('middleware.ts.stub', { exportName });
 }
 
 export function serviceTemplate({ className }) {
-  return `import { Service, State, Server } from '@cossackframework/core';
-
-@Service()
-export class ${className} {
-  @State() count = 0;
-
-  @Server()
-  increment() {
-    this.count++;
-  }
-}
-`;
+  return loadStub('service.ts.stub', { className });
 }
 
 // --- auth feature stubs -----------------------------------------------------
 
 export function authLayoutTemplate() {
-  return `import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-
-@Page({ transport: 'http' })
-export default class AuthLayout extends Cossack {
-  render() {
-    return html\`
-      <div class="auth-layout flex justify-center items-center min-h-[80vh] bg-gray-100">
-        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-[400px]">
-          <h2 class="text-center text-gray-800 mb-6">Cossack Auth</h2>
-          \${this.children}
-          <div class="mt-6 text-center text-sm">
-            <a href="/" class="text-gray-500">&larr; Back to Home</a>
-          </div>
-        </div>
-      </div>
-    \`;
-  }
-}
-`;
+  return loadStub('auth-layout.ts.stub');
 }
 
 export function loginPageTemplate({ loginPath, registerPath, oauthProviders }) {
@@ -433,20 +368,7 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
  * `src/bootstrap/middlewares.ts`, so this layout only renders children.
  */
 export function rootLayoutWithAuthTemplate() {
-  return `import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-
-@Page({ transport: 'http' })
-export default class RootLayout extends Cossack {
-  render() {
-    return html\`
-      <div class="min-h-screen">
-        \${this.children}
-      </div>
-    \`;
-  }
-}
-`;
+  return loadStub('root-layout-auth.ts.stub');
 }
 
 /**
@@ -480,300 +402,60 @@ export function langJsonTemplate(entries) {
 
 /** `src/models/User.ts` — default User model + Database/User augmentations. */
 export function userModelTemplate() {
-  return `import type { Generated } from '@cossackframework/database';
-
-/**
- * The \`users\` table row shape. Column names match the migration (snake_case).
- * Add columns here as your app grows.
- */
-export interface UserRow {
-  id: Generated<string>;
-  email: string;
-  name: string | null;
-  password_hash: string | null;
-  created_at: Generated<string>;
-}
-
-// Map the table name -> row type so Kysely's query builder is fully typed.
-declare module '@cossackframework/database' {
-  interface Database {
-    users: UserRow;
-  }
-}
-
-// Expose a safe subset as \`this.user\` / \`c.get('user')\`.
-// \`password_hash\` is intentionally excluded from the request context.
-declare module '@cossackframework/core' {
-  interface User {
-    id: string;
-    email: string;
-    name: string;
-  }
-}
-`;
+  return loadStub('user-model.ts.stub');
 }
 
 /** A blank migration file generated by `cossack generate migration <name>`. */
 export function migrationTemplate() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // TODO: forward migration — e.g. db.schema.createTable(...).execute()
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  // TODO: reverse the migration above.
-}
-`;
+  return loadStub('migration.ts.stub');
 }
 
 /** A blank seeder file generated by `cossack generate seeder <name>`. */
 export function seederTemplate() {
-  return `import type { DbClient } from '@cossackframework/database';
-
-export default {
-  async run(db: DbClient) {
-    // TODO: seed your database — e.g.
-    // await db.insertInto('users').values({ email: 'demo@cossack.dev' }).execute();
-  },
-};
-`;
+  return loadStub('seeder.ts.stub');
 }
 
 /** `src/middlewares/db.ts` — the database request middleware (instantiated + exported). */
 export function dbMiddlewareFileTemplate() {
-  return `import { createDbMiddleware, DatabaseCacheStore } from '@cossackframework/database';
-import { extendCacheDriver } from '@cossackframework/framework/cache';
-import { createClient } from '../db/config';
-
-// Exposes the Kysely client on the request (\`c.get('db')\` / \`getDb(c)\`) and
-// scopes the global \`db()\` helper to it. Register it from src/bootstrap/middlewares.ts.
-export const dbMiddleware = createDbMiddleware({
-  client: (c) => createClient(c.env),
-});
-
-// Register the database cache driver so \`CACHE_DRIVER=database\` works.
-// Remove this (and the 'database' store in config/cache.ts) if you don't use
-// database-backed caching, or swap it for your own driver (Redis, R2, …).
-extendCacheDriver('database', () => new DatabaseCacheStore());
-`;
+  return loadStub('db-middleware.ts.stub');
 }
 
 /** `src/db/config.ts` for the Cloudflare D1 dialect. */
 export function dbConfigD1Template() {
-  return `import {
-  createDatabase,
-  type DbClient,
-} from '@cossackframework/database';
-
-/**
- * Build a per-request Kysely client from the D1 binding.
- * Used by src/middlewares/db.ts which is registered in src/bootstrap/middlewares.ts.
- */
-export function createClient(env: { DB: D1Database }): DbClient {
-  return createDatabase({ dialect: 'd1', binding: env.DB });
-}
-
-/**
- * Build a Kysely client for the CLI (migrations & seeders).
- *
- * D1 itself only exists inside a Worker, so for local migration development we
- * open a local SQLite file (same dialect) with better-sqlite3. Install it once:
- *
- *   pnpm add -D better-sqlite3
- *
- * Set D1_LOCAL_PATH to point at your wrangler local D1 file (under
- * .wrangler/state/v3/d1/...) or any scratch path. Defaults to ./local.db.
- *
- * The same migration files run unchanged against D1 in production.
- */
-export async function getCliClient(): Promise<DbClient> {
-  const localPath = process.env.D1_LOCAL_PATH ?? './local.db';
-  const { Kysely, SqliteDialect } = await import('@cossackframework/database');
-  const Database = (await import('better-sqlite3')).default;
-  return new Kysely({ dialect: new SqliteDialect({ database: new Database(localPath) }) }) as DbClient;
-}
-`;
+  return loadStub('db-config-d1.ts.stub');
 }
 
 /** `src/db/config.ts` for the Turso / libSQL dialect. */
 export function dbConfigTursoTemplate() {
-  return `import {
-  createDatabase,
-  type DbClient,
-} from '@cossackframework/database';
-import { createClient as createTursoClient } from '@tursodatabase/serverless/compat';
-// Fallback driver (battle-tested, same API):
-// import { createClient as createTursoClient } from '@libsql/client/web';
-
-/**
- * Build a per-request Kysely client.
- * Used by src/middlewares/db.ts which is registered in src/bootstrap/middlewares.ts.
- */
-export function createClient(env: { TURSO_URL: string; TURSO_TOKEN?: string }): DbClient {
-  return createDatabase({
-    dialect: 'libsql',
-    client: createTursoClient({ url: env.TURSO_URL, authToken: env.TURSO_TOKEN }),
-  });
+  return loadStub('db-config-turso.ts.stub');
 }
 
-/**
- * Build a Kysely client for the CLI (migrations & seeders). Reads the same
- * TURSO_URL / TURSO_TOKEN env vars (set them in .dev.vars or your shell).
- */
-export async function getCliClient(): Promise<DbClient> {
-  return createClient({
-    TURSO_URL: process.env.TURSO_URL!,
-    TURSO_TOKEN: process.env.TURSO_TOKEN,
-  });
-}
-`;
-}
-
-// --- Default migrations shipped by \`cossack add database\` -------------------
+// --- Default migrations shipped by `cossack add database` -------------------
 
 export function createUsersMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('users')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('email', 'text', (c) => c.notNull().unique())
-    .addColumn('name', 'text')
-    .addColumn('password_hash', 'text')
-    .addColumn('created_at', 'text', (c) => c.notNull())
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('users').ifExists().execute();
-}
-`;
+  return loadStub('migration-users.ts.stub');
 }
 
 export function createSessionsMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('sessions')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    // user_id is nullable so anonymous sessions (carts, wizards, A/B) work
-    // without auth. Authenticated sessions set it on login.
-    .addColumn('user_id', 'text')
-    // data holds a JSON key/value bag for general-purpose session storage
-    // (the session() helper). Nullable until first write.
-    .addColumn('data', 'text')
-    .addColumn('expires_at', 'text', (c) => c.notNull())
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('sessions').ifExists().execute();
-}
-`;
+  return loadStub('migration-sessions.ts.stub');
 }
 
 export function createRolesMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('roles')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('name', 'text', (c) => c.notNull().unique())
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('roles').ifExists().execute();
-}
-`;
+  return loadStub('migration-roles.ts.stub');
 }
 
 export function createPermissionsMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('permissions')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('name', 'text', (c) => c.notNull().unique())
-    .execute();
-
-  await db.schema
-    .createTable('role_permissions')
-    .addColumn('role_id', 'text', (c) => c.notNull())
-    .addColumn('permission_id', 'text', (c) => c.notNull())
-    .addPrimaryKeyConstraint('role_permissions_pkey', ['role_id', 'permission_id'])
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('role_permissions').ifExists().execute();
-  await db.schema.dropTable('permissions').ifExists().execute();
-}
-`;
+  return loadStub('migration-permissions.ts.stub');
 }
 
 export function createOauthAccountsMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('oauth_accounts')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('user_id', 'text', (c) => c.notNull())
-    .addColumn('provider', 'text', (c) => c.notNull())
-    .addColumn('provider_user_id', 'text', (c) => c.notNull())
-    .addColumn('created_at', 'text', (c) => c.notNull())
-    .addUniqueConstraint('oauth_accounts_provider_user_unique', ['provider', 'provider_user_id'])
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('oauth_accounts').ifExists().execute();
-}
-`;
+  return loadStub('migration-oauth-accounts.ts.stub');
 }
 
 // --- Cache table migration (shipped by default via `cossack add database`) ----
 
-/**
- * Migration stub for the database cache driver's `cache_items` table.
- * Included as migration 0006 in the default set; apply with `cossack migration up`.
- */
 export function createCacheTableMigration() {
-  return `import type { Kysely } from '@cossackframework/database';
-
-// Table for the database cache driver (@cossackframework/database's
-// DatabaseCacheStore). Values are JSON text; expires_at is epoch milliseconds
-// (NULL = never expires). The 'database' cache driver is registered by the
-// default project template in src/middlewares/db.ts — set CACHE_DRIVER=database
-// to use it.
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('cache_items')
-    .addColumn('key', 'text', (c) => c.primaryKey().notNull())
-    .addColumn('value', 'text', (c) => c.notNull())
-    .addColumn('expires_at', 'integer')
-    .addColumn('updated_at', 'integer', (c) => c.notNull())
-    .execute();
-
-  // Speed up purgeExpired() (WHERE expires_at < now).
-  await db.schema
-    .createIndex('cache_items_expires_at_index')
-    .on('cache_items')
-    .column('expires_at')
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropIndex('cache_items_expires_at_index').ifExists().execute();
-  await db.schema.dropTable('cache_items').ifExists().execute();
-}
-`;
+  return loadStub('migration-cache-table.ts.stub');
 }
 
 // ===========================================================================
@@ -782,23 +464,7 @@ export async function down(db: Kysely<any>): Promise<void> {
 
 /** `src/models/Session.ts` — sessions table row + Database augmentation. */
 export function sessionModelTemplate() {
-  return `/**
- * The \`sessions\` table row shape (snake_case to match the migration).
- * user_id is nullable for anonymous sessions; data is a JSON key/value bag.
- */
-export interface SessionRow {
-  id: string;
-  user_id: string | null;
-  data: string | null;
-  expires_at: string;
-}
-
-declare module '@cossackframework/database' {
-  interface Database {
-    sessions: SessionRow;
-  }
-}
-`;
+  return loadStub('session-model.ts.stub');
 }
 
 /**
@@ -1029,4 +695,115 @@ export async function resetPassword(c: Context, token: string, newPassword: stri
 }
 ${oauthBlock}
 `;
+}
+
+// ---------------------------------------------------------------------------
+// `cossack add ui` — UI component catalog + barrel
+//
+// All entries use `fromPackage()`, which reads the component source directly
+// from the installed @cossackframework/ui package at eject time. This avoids
+// duplicating ~600 lines of template strings and eliminates drift between the
+// catalog and the package source.
+// ---------------------------------------------------------------------------
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const requireFromCli = createRequire(import.meta.url);
+
+/**
+ * Read a component's source directly from the installed
+ * @cossackframework/ui package. Falls back to a stub if the file can't be
+ * resolved (e.g. package not yet installed during `cossack add ui` before
+ * `pnpm install`).
+ */
+function ejectFromPackage(className) {
+  try {
+    const pkgJsonPath = requireFromCli.resolve('@cossackframework/ui/package.json');
+    const pkgDir = path.dirname(pkgJsonPath);
+    const srcPath = path.join(pkgDir, 'src', 'components', `${className}.ts`);
+    return fs.readFileSync(srcPath, 'utf8');
+  } catch {
+    return `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
+// to eject the full source from @cossackframework/ui.
+export {};\n`;
+  }
+}
+
+/** Wrapper so the catalog entry shape stays consistent: { className, template }. */
+const fromPackage = (className) => () => ejectFromPackage(className);
+
+/**
+ * Catalog of ejectable UI components. Keys are the names accepted by
+ * `cossack add ui <name>`.
+ */
+export const UI_COMPONENTS = {
+  button: { className: 'Button', template: fromPackage('Button') },
+  input: { className: 'Input', template: fromPackage('Input') },
+  card: { className: 'Card', template: fromPackage('Card') },
+  badge: { className: 'Badge', template: fromPackage('Badge') },
+  label: { className: 'Label', template: fromPackage('Label') },
+  alert: { className: 'Alert', template: fromPackage('Alert') },
+  modal: { className: 'Modal', template: fromPackage('Modal') },
+  accordion: { className: 'Accordion', template: fromPackage('Accordion') },
+  textarea: { className: 'Textarea', template: fromPackage('Textarea') },
+  checkbox: { className: 'Checkbox', template: fromPackage('Checkbox') },
+  switch: { className: 'Switch', template: fromPackage('Switch') },
+  select: { className: 'Select', template: fromPackage('Select') },
+  spinner: { className: 'Spinner', template: fromPackage('Spinner') },
+  avatar: { className: 'Avatar', template: fromPackage('Avatar') },
+  'avatar-group': { className: 'AvatarGroup', template: fromPackage('AvatarGroup') },
+  separator: { className: 'Separator', template: fromPackage('Separator') },
+  skeleton: { className: 'Skeleton', template: fromPackage('Skeleton') },
+  progress: { className: 'Progress', template: fromPackage('Progress') },
+  tabs: { className: 'Tabs', template: fromPackage('Tabs') },
+  tooltip: { className: 'Tooltip', template: fromPackage('Tooltip') },
+  popover: { className: 'Popover', template: fromPackage('Popover') },
+  'radio-group': { className: 'RadioGroup', template: fromPackage('RadioGroup') },
+  slider: { className: 'Slider', template: fromPackage('Slider') },
+  table: { className: 'Table', template: fromPackage('Table') },
+  toaster: { className: 'Toaster', template: fromPackage('Toaster') },
+  'dropdown-menu': { className: 'DropdownMenu', template: fromPackage('DropdownMenu') },
+  sheet: { className: 'Sheet', template: fromPackage('Sheet') },
+  collapsible: { className: 'Collapsible', template: fromPackage('Collapsible') },
+  toggle: { className: 'Toggle', template: fromPackage('Toggle') },
+  'toggle-group': { className: 'ToggleGroup', template: fromPackage('ToggleGroup') },
+  breadcrumb: { className: 'Breadcrumb', template: fromPackage('Breadcrumb') },
+  pagination: { className: 'Pagination', template: fromPackage('Pagination') },
+  'aspect-ratio': { className: 'AspectRatio', template: fromPackage('AspectRatio') },
+  field: { className: 'Field', template: fromPackage('Field') },
+  empty: { className: 'Empty', template: fromPackage('Empty') },
+  kbd: { className: 'Kbd', template: fromPackage('Kbd') },
+  'button-group': { className: 'ButtonGroup', template: fromPackage('ButtonGroup') },
+  'alert-dialog': { className: 'AlertDialog', template: fromPackage('AlertDialog') },
+  'hover-card': { className: 'HoverCard', template: fromPackage('HoverCard') },
+  'scroll-area': { className: 'ScrollArea', template: fromPackage('ScrollArea') },
+  resizable: { className: 'Resizable', template: fromPackage('Resizable') },
+  carousel: { className: 'Carousel', template: fromPackage('Carousel') },
+  'navigation-menu': { className: 'NavigationMenu', template: fromPackage('NavigationMenu') },
+  menubar: { className: 'Menubar', template: fromPackage('Menubar') },
+  command: { className: 'Command', template: fromPackage('Command') },
+  combobox: { className: 'Combobox', template: fromPackage('Combobox') },
+  calendar: { className: 'Calendar', template: fromPackage('Calendar') },
+  'date-picker': { className: 'DatePicker', template: fromPackage('DatePicker') },
+  'context-menu': { className: 'ContextMenu', template: fromPackage('ContextMenu') },
+  'input-otp': { className: 'InputOTP', template: fromPackage('InputOTP') },
+  typography: { className: 'Typography', template: fromPackage('Typography') },
+  drawer: { className: 'Drawer', template: fromPackage('Drawer') },
+  sidebar: { className: 'Sidebar', template: fromPackage('Sidebar') },
+  'native-select': { className: 'NativeSelect', template: fromPackage('NativeSelect') },
+  'input-group': { className: 'InputGroup', template: fromPackage('InputGroup') },
+  item: { className: 'Item', template: fromPackage('Item') },
+  bubble: { className: 'Bubble', template: fromPackage('Bubble') },
+  message: { className: 'Message', template: fromPackage('Message') },
+  'message-scroller': { className: 'MessageScroller', template: fromPackage('MessageScroller') },
+  marker: { className: 'Marker', template: fromPackage('Marker') },
+  attachment: { className: 'Attachment', template: fromPackage('Attachment') },
+  'password-input': { className: 'PasswordInput', template: fromPackage('PasswordInput') },
+  'multi-select': { className: 'MultiSelect', template: fromPackage('MultiSelect') },
+};
+
+/** src/components/ui barrel re-exporting everything from the package. */
+export function uiBarrelTemplate() {
+  return loadStub('ui-barrel.ts.stub');
 }

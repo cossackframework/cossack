@@ -1,0 +1,490 @@
+/*
+ * @cossackframework/ui — base.css
+ *
+ * Additive base styles only. Tailwind v4's preflight (pulled in by
+ * `@import "tailwindcss";`) already handles the CSS reset: box-sizing, margin
+ * and padding normalization, border reset, the html font/line-height/tap
+ * defaults, form element inheritance, replaced-element display, etc.
+ *
+ * DO NOT re-add reset rules here — they fight with Tailwind's utilities (a
+ * global `border-width: 0` here, for instance, would override `border` width
+ * utilities and make outlines/cards render borderless).
+ *
+ * This file only adds what preflight does NOT: applying the theme tokens to
+ * the document, a full-height body, font smoothing, and a token-driven focus
+ * ring. Edit freely to customize global element styling (link colors, body
+ * background, font stacks, …).
+ *
+ * Consumers wire it from their src/style.css:
+ *
+ *   @import "tailwindcss";
+ *   @import "@cossackframework/ui/theme/base.css";
+ *   @import "@cossackframework/ui/theme/theme.css";
+ */
+
+/*
+ * Base element defaults. Tailwind v4 preflight handles the reset; this layer
+ * only sets token-driven defaults that preflight does NOT.
+ *
+ * The default border + outline color is set inside `@layer base` (matching
+ * the selector list Tailwind's preflight uses) so bare `border` utilities
+ * read as the themed border token. Because this lives in `@layer base`,
+ * Tailwind utility classes like `border-transparent` / `border-input` (in
+ * the higher-priority `utilities` layer) can still override it per-element.
+ */
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-border);
+        outline-color: color-mix(in oklch, var(--color-ring) 50%, transparent);
+    }
+}
+
+body {
+    min-height: 100vh;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Themed text selection. */
+::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+}
+
+/* Accessible focus ring driven by the --color-ring token. */
+:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+}
+
+/* Subtle press feedback on native controls (matches shadcn's a:active/button:active). */
+button:active:not(:disabled),
+a:active {
+    opacity: 0.85;
+}
+
+/*
+ * Cossack UI Tooltip — pure-CSS hover/focus reveal (no JS).
+ * The bubble is hidden by default and shown when the wrapper is hovered or
+ * focused (keyboard accessible via :focus-within). Position offsets are per-side.
+ */
+.cs-tooltip__bubble {
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%) scale(0.95);
+}
+.cs-tooltip__bubble--bottom {
+    bottom: auto;
+    top: calc(100% + 0.5rem);
+}
+.cs-tooltip__bubble--left {
+    bottom: auto;
+    top: 50%;
+    right: calc(100% + 0.5rem);
+    left: auto;
+    transform: translateY(-50%) scale(0.95);
+}
+.cs-tooltip__bubble--right {
+    bottom: auto;
+    top: 50%;
+    left: calc(100% + 0.5rem);
+    transform: translateY(-50%) scale(0.95);
+}
+.cs-tooltip:hover .cs-tooltip__bubble,
+.cs-tooltip:focus-within .cs-tooltip__bubble {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+.cs-tooltip:hover .cs-tooltip__bubble--left,
+.cs-tooltip:focus-within .cs-tooltip__bubble--left,
+.cs-tooltip:hover .cs-tooltip__bubble--right,
+.cs-tooltip:focus-within .cs-tooltip__bubble--right {
+    transform: translateY(-50%) scale(1);
+}
+
+/* ==========================================================================
+ * Cossack UI — Component Animations
+ *
+ * Centralized animation styles so components stay clean and users can override
+ * timing/easing in one place. Uses modern CSS:
+ *   - @starting-style + transition-behavior: allow-discrete for <dialog>/popover
+ *     enter AND exit transitions (the standard way to animate top-layer elements)
+ *   - grid-template-rows: 0fr → 1fr for accordion smooth height
+ *   - Standard transitions for hover/active micro-interactions
+ * =========================================================================*/
+
+/* Respect reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* --- Button: smooth color fade on hover/active (no position change) ---
+   The active-state opacity dip is handled globally above (button:active). */
+.cs-button {
+    transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+/* --- Card interactive: hover lift --- */
+.cs-card {
+    transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+/* --- Progress: shimmer overlay on the bar --- */
+.cs-progress__bar {
+    position: relative;
+    overflow: hidden;
+}
+.cs-progress__bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.3) 50%,
+        transparent 100%
+    );
+    transform: translateX(-100%);
+    animation: cs-shimmer 1.8s ease-in-out infinite;
+}
+@keyframes cs-shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* --- Modal (<dialog>): scale + fade enter/exit --- */
+/* The backdrop gets a dark overlay; the dialog itself is transparent.
+   overflow:hidden prevents transient scrollbars during the animation. */
+.cs-modal::backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
+        display 200ms ease allow-discrete;
+}
+@starting-style {
+    .cs-modal::backdrop {
+        opacity: 0;
+    }
+}
+.cs-modal:not([open])::backdrop {
+    opacity: 0;
+}
+.cs-modal {
+    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
+        display 200ms ease allow-discrete;
+    opacity: 1;
+}
+.cs-modal[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cs-modal:not([open]) {
+    opacity: 0;
+}
+@starting-style {
+    .cs-modal[open] {
+        opacity: 0;
+    }
+}
+.cs-modal__panel {
+    animation: cs-panel-in 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@starting-style {
+    .cs-modal__panel {
+        animation: none;
+        opacity: 0;
+        transform: scale(0.92) translateY(10px);
+    }
+}
+.cs-modal__panel {
+    transition: opacity 200ms ease, transform 200ms ease;
+}
+@keyframes cs-panel-in {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* --- AlertDialog (<dialog>): same scale/fade as Modal --- */
+.cs-alert-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
+        display 200ms ease allow-discrete;
+}
+@starting-style { .cs-alert-dialog::backdrop { opacity: 0; } }
+.cs-alert-dialog:not([open])::backdrop { opacity: 0; }
+.cs-alert-dialog {
+    transition: opacity 200ms ease, overlay 200ms ease allow-discrete,
+        display 200ms ease allow-discrete;
+}
+.cs-alert-dialog:not([open]) { opacity: 0; }
+@starting-style { .cs-alert-dialog[open] { opacity: 0; } }
+.cs-alert-dialog[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cs-alert-dialog__panel {
+    animation: cs-panel-in 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 200ms ease, transform 200ms ease;
+}
+@starting-style {
+    .cs-alert-dialog__panel {
+        animation: none;
+        opacity: 0;
+        transform: scale(0.92) translateY(10px);
+    }
+}
+
+/* --- HoverCard: fade + slight slide-up --- */
+.cs-hover-card {
+    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
+        display 180ms ease allow-discrete;
+    transform-origin: bottom center;
+}
+@starting-style {
+    .cs-hover-card:popover-open {
+        opacity: 0;
+        transform: translateY(6px) scale(0.96);
+    }
+}
+.cs-hover-card:not(:popover-open) {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+}
+
+/* --- NavigationMenu + Menubar dropdowns: fade + slide-down --- */
+.cs-nav-popover,
+.cs-menu-popover {
+    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
+        display 180ms ease allow-discrete;
+    transform-origin: top center;
+}
+@starting-style {
+    .cs-nav-popover:popover-open,
+    .cs-menu-popover:popover-open {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.96);
+    }
+}
+.cs-nav-popover:not(:popover-open),
+.cs-menu-popover:not(:popover-open) {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+}
+
+/* --- Sheet (<dialog>): slide-in panel from screen edge ---
+ *
+ * The dialog element is transparent + borderless + full-viewport. The actual
+ * panel is a child div positioned at an edge. The slide animation uses CSS
+ * @starting-style (enter) + :not([open]) (exit) on the panel's transform.
+ *
+ * We do NOT manipulate body overflow/padding — the top-layer dialog handles
+ * background scroll-locking natively, and manual compensation causes jitter.
+ */
+.cs-sheet {
+    /* Transparent full-viewport container — the panel is the visible part. */
+    background: transparent;
+    border: none;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+    max-height: none;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* allow-discrete lets the exit transition run before display:none kicks in */
+    transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
+}
+/* Backdrop fade */
+.cs-sheet::backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+    transition: opacity 300ms ease, overlay 300ms ease allow-discrete,
+        display 300ms ease allow-discrete;
+}
+@starting-style {
+    .cs-sheet::backdrop { opacity: 0; }
+    .cs-sheet { opacity: 0; }
+}
+.cs-sheet:not([open])::backdrop { opacity: 0; }
+
+/* Panel slide transitions (enter + exit) */
+.cs-sheet__panel {
+    transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+}
+/* Exit state: panel slides back off-screen when dialog closes */
+.cs-sheet:not([open]) .cs-sheet--right  { transform: translateX(100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--left   { transform: translateX(-100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--top    { transform: translateY(-100%) !important; }
+.cs-sheet:not([open]) .cs-sheet--bottom { transform: translateY(100%) !important; }
+/* Enter state: panel starts off-screen, animates to translateX(0) */
+@starting-style {
+    .cs-sheet[open] .cs-sheet--right  { transform: translateX(100%); }
+    .cs-sheet[open] .cs-sheet--left   { transform: translateX(-100%); }
+    .cs-sheet[open] .cs-sheet--top    { transform: translateY(-100%); }
+    .cs-sheet[open] .cs-sheet--bottom { transform: translateY(100%); }
+}
+
+/* --- Drawer (<dialog>): same slide mechanism as Sheet --- */
+.cs-drawer {
+    transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
+}
+.cs-drawer::backdrop {
+    background-color: rgba(0, 0, 0, 0.4);
+    transition: opacity 300ms ease, overlay 300ms ease allow-discrete,
+        display 300ms ease allow-discrete;
+}
+@starting-style {
+    .cs-drawer::backdrop { opacity: 0; }
+    .cs-drawer { opacity: 0; }
+}
+.cs-drawer:not([open])::backdrop { opacity: 0; }
+
+.cs-drawer__panel {
+    transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+}
+/* Exit state: panel slides back off-screen when dialog closes */
+.cs-drawer:not([open]) .cs-drawer--right  { transform: translateX(100%) !important; }
+.cs-drawer:not([open]) .cs-drawer--left   { transform: translateX(-100%) !important; }
+.cs-drawer:not([open]) .cs-drawer--top    { transform: translateY(-100%) !important; }
+.cs-drawer:not([open]) .cs-drawer--bottom { transform: translateY(100%) !important; }
+/* Enter state: panel starts off-screen */
+@starting-style {
+    .cs-drawer[open] .cs-drawer--right  { transform: translateX(100%); }
+    .cs-drawer[open] .cs-drawer--left   { transform: translateX(-100%); }
+    .cs-drawer[open] .cs-drawer--top    { transform: translateY(-100%); }
+    .cs-drawer[open] .cs-drawer--bottom { transform: translateY(100%); }
+}
+
+/* --- Popover + DropdownMenu: scale + fade enter/exit --- */
+.cs-popover,
+.cs-dropdown-menu {
+    transition: opacity 180ms ease, transform 180ms ease, overlay 180ms ease allow-discrete,
+        display 180ms ease allow-discrete;
+    transform-origin: top center;
+    opacity: 1;
+    transform: scale(1);
+}
+.cs-popover:popover-open,
+.cs-dropdown-menu:popover-open {
+    animation: cs-popover-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@starting-style {
+    .cs-popover:popover-open,
+    .cs-dropdown-menu:popover-open {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+}
+.cs-popover:not(:popover-open),
+.cs-dropdown-menu:not(:popover-open) {
+    opacity: 0;
+    transform: scale(0.92);
+}
+@keyframes cs-popover-in {
+    from {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* --- Toast: slide-in from bottom-right --- */
+.cs-toast {
+    animation: cs-toast-in 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cs-toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(100%) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+/* --- Accordion: smooth height expand/collapse (div+button, not <details>) ---
+ *
+ * The accordion uses a div+button+@ClientState pattern instead of native
+ * <details>/<summary>. This is intentional: <details> internally hides content
+ * when closed at the browser level, which CSS transitions can't override.
+ * The div approach gives full control over the max-height animation.
+ *
+ * The animation is driven by inline styles on the component (max-height
+ * transition between 0 and 500px). Here we only add the chevron rotation.
+ */
+.cs-accordion__chevron {
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* --- Spinner: respect existing animate-spin (built-in Tailwind) --- */
+/* No additional CSS needed — Tailwind's animate-spin handles it. */
+
+/* --- Skeleton: respect existing animate-pulse (built-in Tailwind) --- */
+/* No additional CSS needed. */
+
+/* --- Switch: smooth thumb slide --- */
+.cs-switch__thumb {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+        translate 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-switch__track {
+    transition: background-color 200ms ease, border-color 200ms ease;
+}
+
+/* --- Tabs: sliding indicator + panel transitions ---
+ *
+ * The active-tab highlight (`.cs-tabs__indicator`) is absolutely positioned
+ * and animated via JS-measured offsetLeft/offsetWidth + CSS transition.
+ * The pill variant slides a rounded bg; the underline variant slides a 2px
+ * bottom border. Vertical orientation slides vertically.
+ */
+.cs-tabs__indicator {
+    will-change: left, width, top, height;
+}
+
+/* Panel fade/slide on switch */
+.cs-tabs__panel {
+    animation: cs-tab-in 200ms ease-out;
+}
+@keyframes cs-tab-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Vertical tabs: slide-in from the left instead of from below */
+.cs-tabs[style] .cs-tabs__panel,
+.cs-tabs > div + div .cs-tabs__panel {
+    /* fallback for non-vertical */
+}

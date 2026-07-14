@@ -31,6 +31,7 @@ Bind event listeners using Lit's `@` syntax.
 
 ```typescript
 html`<button @click="${(e) => this.handleClick(e)}">Click Me</button>`;
+html`<form @submit="${this.handleSubmit}">...</form>`;
 ```
 
 ### Property Binding

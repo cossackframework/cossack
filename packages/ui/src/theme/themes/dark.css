@@ -1,0 +1,18 @@
+/*
+ * @cossackframework/ui — dark palette (opt-in convenience)
+ *
+ * The dark scheme is defined in theme.css under `.dark` and activates when a
+ * `class="dark"` is present on `<html>` (or any ancestor of the UI). You do
+ * NOT need to import this file for dark mode to work — it is kept for
+ * backward compatibility with the pre-shadcn import path:
+ *
+ *   @import "@cossackframework/ui/theme/themes/dark.css";
+ *
+ * Historically this file held the full dark token set. Those values now live
+ * in theme.css so the `.dark` toggle works out of the box. To force a
+ * permanently-dark UI without toggling a class, override the `:root` tokens
+ * yourself by copying the `.dark { … }` block from theme.css into `:root`.
+ */
+
+/* Intentionally empty — see comment above. The `.dark` rules in theme.css
+   provide the dark palette. This file is a no-op import kept for compat. */

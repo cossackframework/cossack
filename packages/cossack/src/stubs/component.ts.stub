@@ -1,0 +1,19 @@
+import { html } from '@cossackframework/renderer';
+import { Cossack, Component } from '@cossackframework/core';
+
+interface {{propsName}} {
+  [key: string]: any;
+}
+
+@Component()
+export class {{className}} extends Cossack {
+  declare props: {{propsName}};
+
+  render() {
+    return html`
+      <div>
+        ${this.children}
+      </div>
+    `;
+  }
+}

@@ -1,0 +1,40 @@
+/*
+ * @cossackframework/ui — green accent palette
+ *
+ * Overrides only the accent tokens (primary, ring, chart-*, sidebar-primary-*)
+ * keeping the neutral surfaces from theme.css. Import AFTER theme.css:
+ *
+ *   @import "@cossackframework/ui/theme/themes/green.css";
+ */
+
+:root {
+    --primary: oklch(0.527 0.154 150.069);
+    --primary-foreground: oklch(0.982 0.018 155.826);
+
+    --ring: oklch(0.527 0.154 150.069);
+
+    --chart-1: oklch(0.871 0.15 154.449);
+    --chart-2: oklch(0.723 0.219 149.579);
+    --chart-3: oklch(0.627 0.194 149.214);
+    --chart-4: oklch(0.527 0.154 150.069);
+    --chart-5: oklch(0.448 0.119 151.328);
+
+    --sidebar-primary: oklch(0.627 0.194 149.214);
+    --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
+}
+
+.dark {
+    --primary: oklch(0.448 0.119 151.328);
+    --primary-foreground: oklch(0.982 0.018 155.826);
+
+    --ring: oklch(0.448 0.119 151.328);
+
+    --chart-1: oklch(0.871 0.15 154.449);
+    --chart-2: oklch(0.723 0.219 149.579);
+    --chart-3: oklch(0.627 0.194 149.214);
+    --chart-4: oklch(0.527 0.154 150.069);
+    --chart-5: oklch(0.448 0.119 151.328);
+
+    --sidebar-primary: oklch(0.723 0.219 149.579);
+    --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
+}

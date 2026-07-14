@@ -29,16 +29,20 @@ import {
   createOauthAccountsMigration,
   createCacheTableMigration,
   seederTemplate,
+  UI_COMPONENTS,
+  uiBarrelTemplate,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
+import { resolveFileTarget } from '../names.js';
 
 const FEATURES = {
   auth: addAuth,
   database: addDatabase,
+  ui: addUi,
 };
 
 export async function addCommand(args, ctx) {
-  const [feature] = args;
+  const [feature, ...rest] = args;
   const fn = FEATURES[feature];
   if (!fn) {
     console.error(
@@ -46,7 +50,7 @@ export async function addCommand(args, ctx) {
     );
     return 1;
   }
-  return fn(ctx);
+  return fn(rest, ctx);
 }
 
 const SUPPORTED_OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
@@ -112,7 +116,7 @@ async function resolveOauthProviders(ctx) {
   return list;
 }
 
-async function addAuth(ctx) {
+async function addAuth(_args, ctx) {
   const root = await findProjectRoot(ctx.cwd);
 
   // 0. resolve options
@@ -257,7 +261,7 @@ async function resolveDialect(ctx) {
   return dialect;
 }
 
-async function addDatabase(ctx) {
+async function addDatabase(_args, ctx) {
   const root = await findProjectRoot(ctx.cwd);
   const dialect = await resolveDialect(ctx);
   await ensureDatabase(root, { dialect, ctx });
@@ -513,6 +517,159 @@ function resolveDatabaseVersion() {
   return '^0.1.0';
 }
 
+function resolveUiVersion() {
+  const installed = resolvePackageVersion('@cossackframework/ui');
+  if (installed) return `^${installed}`;
+  const fw = resolvePackageVersion('@cossackframework/framework');
+  if (fw) return `^${fw}`;
+  return '^0.1.0';
+}
+
+// ---------------------------------------------------------------------------
+// `cossack add ui` / `cossack add ui <component>`
+// ---------------------------------------------------------------------------
+
+const UI_THEME_MARKER = '@cossackframework/ui/theme';
+
+/** Palettes that can be selected via `cossack add ui --theme=<name>`. */
+const UI_PALETTES = [
+  'neutral', 'zinc', 'stone', 'gray', 'slate',
+  'blue', 'green', 'red',
+];
+
+/**
+ * Build the CSS block appended to src/style.css by `cossack add ui`.
+ *
+ * - Two @import lines pull the base reset + @theme token layer.
+ * - An optional palette @import (when `palette` is set) retints the UI.
+ * - Two @source lines tell Tailwind v4 to scan the package's component/icon
+ *   source. Tailwind v4 excludes node_modules by default, so without these the
+ *   variant utilities (bg-secondary, bg-destructive, bg-success, ...) would
+ *   never be generated and the components would render unstyled.
+ */
+function uiThemeBlock(palette) {
+  const lines = [
+    `@import "@cossackframework/ui/theme/base.css";`,
+    `@import "@cossackframework/ui/theme/theme.css";`,
+  ];
+  if (palette) {
+    lines.push(
+      `@import "@cossackframework/ui/theme/themes/${palette}.css";`,
+    );
+  }
+  lines.push(
+    ``,
+    `@source "../node_modules/@cossackframework/ui/src/components";`,
+    `@source "../node_modules/@cossackframework/ui/src/icons";`,
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Wire the @cossackframework/ui CSS imports + @source directives into the
+ * project's src/style.css. Idempotent (skips if the marker is present),
+ * dryRun-aware. Mirrors the registerMiddleware string-surgery style: if there's
+ * no style.css yet, synthesize a minimal one.
+ */
+async function wireUiTheme(root, ctx, palette) {
+  const target = path.resolve(root, 'src/style.css');
+  const block = uiThemeBlock(palette);
+  const fullBlock = `@import "tailwindcss";\n${block}\n`;
+
+  if (!(await exists(target))) {
+    const result = await writeFile(target, fullBlock, ctx);
+    reportFile('src/style.css', result, ctx);
+    return;
+  }
+
+  const content = await fs.readFile(target, 'utf8');
+  if (content.includes(UI_THEME_MARKER)) {
+    console.log('  exists   src/style.css (ui theme already imported)');
+    return;
+  }
+  if (ctx.dryRun) {
+    console.log('  would edit  src/style.css (insert ui theme imports + @source)');
+    return;
+  }
+
+  // Inject the ui block right after @import "tailwindcss"; so theme tokens load
+  // before any app overrides. If there's no tailwindcss import, prepend the
+  // whole block (including the tailwind import) — a Cossack app always needs it.
+  let updated;
+  if (/^\s*@import\s+["']tailwindcss["'];?\s*$/m.test(content)) {
+    updated = content.replace(
+      /(@import\s+["']tailwindcss["'];?\s*\n)/,
+      `$1${block}\n`,
+    );
+  } else {
+    updated = `${fullBlock}\n${content}`;
+  }
+  await fs.writeFile(target, updated, 'utf8');
+  console.log('  edited  src/style.css (added ui theme imports + @source)');
+}
+
+/**
+ * `cossack add ui` — adds the @cossackframework/ui dependency, a
+ * src/components/ui barrel re-exporting from the package, and wires the two
+ * CSS @import lines into src/style.css. Consumers then import from the package.
+ *
+ * `cossack add ui <component>` — ejects a single customizable copy of the
+ * named component into src/components/ui/<Component>.ts. The user owns it.
+ */
+async function addUi(args, ctx) {
+  const root = await findProjectRoot(ctx.cwd);
+  const [component] = Array.isArray(args) ? args : [];
+
+  await addDependency(root, '@cossackframework/ui', resolveUiVersion(), ctx);
+
+  // Barrel re-export so `import { Button } from './components/ui'` works
+  // whether or not individual components are ejected.
+  const barrelPath = path.resolve(root, 'src/components/ui/index.ts');
+  const barrelResult = await writeFile(barrelPath, uiBarrelTemplate(), ctx);
+  reportFile('src/components/ui/index.ts', barrelResult, ctx);
+
+  if (component) {
+    const key = String(component).toLowerCase();
+    const entry = UI_COMPONENTS[key];
+    if (!entry) {
+      console.error(
+        `Unknown UI component: ${component}.\nAvailable components: ${Object.keys(UI_COMPONENTS).join(', ')}`,
+      );
+      return 1;
+    }
+    const target = resolveFileTarget(component, 'components/ui', { pascal: true });
+    const fileAbs = path.resolve(root, `${target.full}.ts`);
+    const result = await writeFile(fileAbs, entry.template(), ctx);
+    reportFile(`${target.full}.ts`, result, ctx);
+
+    console.log(
+      `\nUI component ejected: ${target.file}.ts\n` +
+        'You now own this file — edit it freely. Re-run with --force to overwrite.\n' +
+        'Next:\n  1. Run `pnpm install`.',
+    );
+    return 0;
+  }
+
+  // No component arg: wire the global theme imports.
+  const palette = flagString(ctx.flags.theme) || flagString(ctx.flags.t);
+  if (palette && !UI_PALETTES.includes(palette)) {
+    console.error(
+      `Unknown theme: ${palette}.\nAvailable themes: ${UI_PALETTES.join(', ')}`,
+    );
+    return 1;
+  }
+  await wireUiTheme(root, ctx, palette);
+
+  console.log(
+    '\nUI support added. Components are available via `import { Button, ... } from "./components/ui"`.\n' +
+      (palette ? `Theme: ${palette} (wired into src/style.css).\n` : '') +
+      'Next:\n  1. Run `pnpm install`.\n' +
+      '  2. Confirm the @import lines are present in src/style.css.\n' +
+      '  3. (Optional) Eject a component for customization: `cossack add ui button`.',
+  );
+  return 0;
+}
+
 export function addHelp() {
   return `cossack add <feature>
 
@@ -532,9 +689,19 @@ Features:
             the dbMiddleware in src/bootstrap/middlewares.ts. Prompts for the dialect
             (default: D1). Note: database support is included by default in new
             projects — use this only to add it to an existing project that predates it.
+  ui        Adds @cossackframework/ui (token-driven, themeable components + Solar
+            icons), a src/components/ui barrel, and wires the base.css + theme.css
+            @import lines into src/style.css. Components are then importable from
+            "./components/ui". Pass a component name to eject a customizable copy:
+            \`cossack add ui button\` writes src/components/ui/Button.ts that you own.
+            Use --theme to select a color palette (neutral families retint the
+            whole surface scale; accent palettes retint the primary/ring/chart):
+            \`cossack add ui --theme=blue\`. Default is the shadcn neutral.
+            Themes: neutral, zinc, stone, gray, slate, blue, green, red.
 
 Options:
   --force, -f              Overwrite existing files.
+  --theme=<name>           (ui) Color palette: neutral, zinc, stone, gray, slate, blue, green, red.
   --dialect=<d1|turso>     Skip the database dialect prompt (used by both features).
   --path <route-group>     (auth) Custom route group, e.g. --path admin/auth.
   --oauth <providers>      (auth) OAuth providers: github,google,gitlab,facebook,microsoft.

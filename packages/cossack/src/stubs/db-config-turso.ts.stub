@@ -1,0 +1,29 @@
+import {
+  createDatabase,
+  type DbClient,
+} from '@cossackframework/database';
+import { createClient as createTursoClient } from '@tursodatabase/serverless/compat';
+// Fallback driver (battle-tested, same API):
+// import { createClient as createTursoClient } from '@libsql/client/web';
+
+/**
+ * Build a per-request Kysely client.
+ * Used by src/middlewares/db.ts which is registered in src/bootstrap/middlewares.ts.
+ */
+export function createClient(env: { TURSO_URL: string; TURSO_TOKEN?: string }): DbClient {
+  return createDatabase({
+    dialect: 'libsql',
+    client: createTursoClient({ url: env.TURSO_URL, authToken: env.TURSO_TOKEN }),
+  });
+}
+
+/**
+ * Build a Kysely client for the CLI (migrations & seeders). Reads the same
+ * TURSO_URL / TURSO_TOKEN env vars (set them in .dev.vars or your shell).
+ */
+export async function getCliClient(): Promise<DbClient> {
+  return createClient({
+    TURSO_URL: process.env.TURSO_URL!,
+    TURSO_TOKEN: process.env.TURSO_TOKEN,
+  });
+}

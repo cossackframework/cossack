@@ -265,6 +265,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.registerSelf();
             this.initializeState();
             super.connectedCallback();
+
+            // Child components rendered via component() go through
+            // connectedCallback() but NOT bootstrap(). Without this, their
+            // onMount() / @On('mount') / setupEventListeners() / @VisibleTask
+            // observers would never fire. Root/page components call
+            // _frameworkMount() from bootstrap() (guarded by isMounted), so
+            // this is a no-op for them.
+            if (!this.isServer && !this.isMounted) {
+                this.isMounted = true;
+                this._frameworkMount();
+            }
         } finally {
             // Restore phase after lifecycle complete
             this._restorePhase();
@@ -633,8 +644,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // wiping the SSR DOM and flashing an empty main (a major CLS source).
         if (this.container && !this.isServer && !deferMount) {
             this.skipRenderTasks = true;
-            this.mount(this.container as HTMLElement);
-            this.skipRenderTasks = false;
+            try {
+                this.mount(this.container as HTMLElement);
+            } finally {
+                this.skipRenderTasks = false;
+            }
         }
 
         // Call onMount() and clientInit() for all components (not just those with containers)
@@ -785,8 +799,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.isRunningTasks) return;
         this.isRunningTasks = true;
         try {
+            // Regular @Task — always runs (both server and client).
             const tasks = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
-            for (const task of tasks) {
+            // @ServerTask — only runs on the server (body stripped on client).
+            const serverTasks = this.isServer
+                ? (Reflect.getMetadata('cossack:server-tasks', this.constructor) || [])
+                : [];
+            // @ClientTask — only runs on the client (skipped on server).
+            const clientTasks = !this.isServer
+                ? (Reflect.getMetadata('cossack:client-tasks', this.constructor) || [])
+                : [];
+            const allTasks = [...tasks, ...serverTasks, ...clientTasks];
+            for (const task of allTasks) {
                 if (this.hasMethod(task)) {
                     try {
                         const taskMethod = this.getMethod(task);
@@ -1470,6 +1494,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (shouldUpdate) {
                 // Controller hostUpdate
                 controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
+
+                // Run @Task methods before willUpdate/render. On the server,
+                // tasks run during `bootstrap()` and state broadcasts. On the
+                // client, `_render()` also calls `runTasks()` — this block
+                // ensures the same happens during client-side prop-driven
+                // re-renders via `performUpdate()`. Without it, tasks only fire
+                // on mount and on the component's own @State broadcasts, never
+                // on a prop change (e.g. a Modal reacting to an `open` prop).
+                if (!this.skipRenderTasks) {
+                    this.runTasks();
+                }
 
                 this.willUpdate(changedProperties);
 

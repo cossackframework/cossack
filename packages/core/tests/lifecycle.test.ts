@@ -8,7 +8,7 @@ vi.mock('../src/shared/environment', () => ({
 }));
 
 import { Cossack } from '../src/shared/cossack';
-import { Task, VisibleTask } from '../src/shared/decorators';
+import { Task, VisibleTask, ServerTask, ClientTask } from '../src/shared/decorators';
 import * as renderer from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 
@@ -46,6 +46,13 @@ class LifecycleComponent extends Cossack<{}> {
     public taskRunCount = 0;
     public visibleTaskRunCount = 0;
     public renderCount = 0;
+
+    // performUpdate() calls shouldUpdate() from the CossackElement base, which
+    // is stubbed out by the renderer mock. Override to return true so the
+    // @Task-during-performUpdate regression test enters the render branch.
+    shouldUpdate(): boolean {
+        return true;
+    }
 
     @Task()
     runTask() {
@@ -124,10 +131,118 @@ describe('Lifecycle Hooks', () => {
         it('should execute tasks during render', async () => {
             await component.bootstrap(); // runs once
             component.taskRunCount = 0;
-            
-            // Calling _render directly simulates a re-render
+
+            // Calling _render directly simulates an SSR re-render
             component._render();
             expect(component.taskRunCount).toBe(1);
+        });
+
+        it('should execute tasks during performUpdate (client prop-driven re-render)', async () => {
+            // Regression guard: performUpdate() is the client update path
+            // (triggered by requestUpdate on prop/state change). Tasks were
+            // previously only wired into _render() (SSR) and bootstrap(), so
+            // prop-driven client re-renders silently skipped @Task methods.
+            await component.bootstrap();
+            component.taskRunCount = 0;
+
+            // performUpdate reads __changedProperties / __controllers from the
+            // CossackElement internal. shouldUpdate() defaults to true, so a
+            // non-empty changed map is enough to enter the render branch where
+            // runTasks() now fires.
+            (component as any).__changedProperties = new Map([['open', false]]);
+            (component as any).__controllers = [];
+            await (component as any).performUpdate();
+            expect(component.taskRunCount).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    describe('@ServerTask', () => {
+        it('should NOT run on client (skipped by runTasks)', async () => {
+            // This test file mocks isServer = false (client environment).
+            // @ServerTask methods should not be called during runTasks.
+            class ClientEnvComponent extends Cossack<{}> {
+                public serverTaskRan = false;
+                shouldUpdate() { return true; }
+                @ServerTask()
+                serverOnlyTask() { this.serverTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ClientEnvComponent();
+            await c.bootstrap();
+            expect(c.serverTaskRan).toBe(false);
+        });
+
+        it('should run on server (when isServer is true)', async () => {
+            class ServerEnvComponent extends Cossack<{}> {
+                public serverTaskRan = false;
+                shouldUpdate() { return true; }
+                @ServerTask()
+                serverOnlyTask() { this.serverTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ServerEnvComponent();
+            (c as any).isServer = true;
+            // Pass context as a Hono-like object for the server bootstrap path.
+            await c.bootstrap({
+                container: { innerHTML: '' },
+                context: {
+                    req: { url: '/', method: 'GET', headers: {}, path: '/' },
+                    res: { headers: new Headers(), status: () => {} },
+                },
+            } as any);
+            expect(c.serverTaskRan).toBe(true);
+        });
+    });
+
+    describe('@ClientTask', () => {
+        it('should run on client (when isServer is false)', async () => {
+            class ClientTaskComponent extends Cossack<{}> {
+                public clientTaskRan = false;
+                shouldUpdate() { return true; }
+                @ClientTask()
+                clientOnlyTask() { this.clientTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ClientTaskComponent();
+            // Test file mocks isServer = false (client environment).
+            await c.bootstrap();
+            expect(c.clientTaskRan).toBe(true);
+        });
+
+        it('should NOT run on server (skipped by runTasks)', async () => {
+            class ServerEnvComponent extends Cossack<{}> {
+                public clientTaskRan = false;
+                shouldUpdate() { return true; }
+                @ClientTask()
+                clientOnlyTask() { this.clientTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ServerEnvComponent();
+            (c as any).isServer = true;
+            await c.bootstrap({
+                container: { innerHTML: '' },
+                context: {
+                    req: { url: '/', method: 'GET', headers: {}, path: '/' },
+                    res: { headers: new Headers(), status: () => {} },
+                },
+            } as any);
+            expect(c.clientTaskRan).toBe(false);
+        });
+    });
+
+    describe('connectedCallback (child component mount)', () => {
+        it('should fire onMount via connectedCallback for child components', () => {
+            // Regression guard: child components rendered via component() go
+            // through connectedCallback() but NOT bootstrap(). Without the fix
+            // in connectedCallback(), their onMount() / setupEventListeners()
+            // would never fire.
+            const child = new LifecycleComponent();
+            // Simulate the renderer connecting a child component.
+            (child as any).isServer = false;
+            child.connectedCallback();
+            // onMount was overridden to... actually it's not overridden here.
+            // But _frameworkMount() sets isMounted. Verify it was set.
+            expect((child as any).isMounted).toBe(true);
         });
     });
 

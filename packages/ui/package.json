@@ -1,0 +1,52 @@
+{
+  "name": "@cossackframework/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "UI component library for the Cossack Framework — token-driven, themeable components and Solar icons",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/ui"
+  },
+  "main": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./theme/base.css": "./src/theme/base.css",
+    "./theme/theme.css": "./src/theme/theme.css",
+    "./theme/themes/default.css": "./src/theme/themes/default.css",
+    "./theme/themes/dark.css": "./src/theme/themes/dark.css",
+    "./theme/themes/neutral.css": "./src/theme/themes/neutral.css",
+    "./theme/themes/zinc.css": "./src/theme/themes/zinc.css",
+    "./theme/themes/stone.css": "./src/theme/themes/stone.css",
+    "./theme/themes/gray.css": "./src/theme/themes/gray.css",
+    "./theme/themes/slate.css": "./src/theme/themes/slate.css",
+    "./theme/themes/blue.css": "./src/theme/themes/blue.css",
+    "./theme/themes/green.css": "./src/theme/themes/green.css",
+    "./theme/themes/red.css": "./src/theme/themes/red.css"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest",
+    "build:icons": "tsx src/scripts/build-icons.ts"
+  },
+  "peerDependencies": {
+    "@cossackframework/core": "^0.6.0",
+    "@cossackframework/renderer": "^0.6.0"
+  },
+  "devDependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "@types/node": "^22.19.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -47,8 +47,8 @@ test.describe('Tailwind Demo Page', () => {
   test('should render badges with rounded-full', async ({ page }) => {
     const badge = page.locator('.rounded-full').first();
     const borderRadius = await badge.evaluate((el) => parseFloat(getComputedStyle(el).borderRadius));
-    // rounded-full → very large value (Tailwind 4.x uses calc(infinity * 1px))
-    expect(borderRadius).toBeGreaterThan(9999);
+    // rounded-full → 9999px in the computed style
+    expect(borderRadius).toBeGreaterThanOrEqual(9999);
   });
 
   test('should preserve styles after client-side navigation', async ({ page }) => {

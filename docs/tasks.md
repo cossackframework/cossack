@@ -36,6 +36,56 @@ export default class MyComponent extends Cossack {
 }
 ```
 
+## @ServerTask
+
+The `@ServerTask` decorator is like `@Task`, but the method runs **only on the server**. Its body is stripped from the client bundle by the security plugin (like `@Server` methods), so there is no need for a manual `if (this.isServer) return;` guard.
+
+Use `@ServerTask` for logic that must run during server-side rendering or state broadcasts but should never execute in the browser — e.g. server-side data normalization, state seeding from environment variables, or logging analytics.
+
+```typescript
+import { Cossack, ServerTask, State } from '@cossackframework/core';
+
+export default class MyComponent extends Cossack {
+    @State()
+    serverTime = '';
+
+    @ServerTask()
+    setServerTime() {
+        // Runs only on server — body is stripped from the client bundle.
+        this.serverTime = new Date().toISOString();
+    }
+}
+```
+
+## @ClientTask
+
+The `@ClientTask` decorator is like `@Task`, but the method runs **only on the client**. Its body is preserved in the client bundle (like `@Client` methods), and `runTasks()` skips it when executing on the server.
+
+Use `@ClientTask` for logic that touches the DOM or browser APIs and needs to re-run on every render — e.g. reconciling a `<dialog>` open state, positioning a popover, or updating a scroll indicator. This replaces the manual `if (this.isServer) return;` guard that was previously needed inside `@Task`.
+
+```typescript
+import { Cossack, ClientTask } from '@cossackframework/core';
+
+export default class MyComponent extends Cossack {
+    @ClientTask()
+    syncDialogState() {
+        // Runs only on client — no isServer guard needed.
+        const dlg = this.dialogRef.value;
+        if (!dlg) return;
+        if (this.props.open && !dlg.open) dlg.showModal();
+        else if (!this.props.open && dlg.open) dlg.close();
+    }
+}
+```
+
+### @Task vs @ServerTask vs @ClientTask
+
+| Decorator | Server | Client | Use for |
+| --- | --- | --- | --- |
+| `@Task` | ✅ Runs | ✅ Runs | Logic safe on both sides (logging, derived state) |
+| `@ServerTask` | ✅ Runs | ❌ Body stripped | Server-only side effects (no `if (isServer)` guard needed) |
+| `@ClientTask` | ❌ Skipped | ✅ Runs | DOM/browser logic (no `if (!isServer)` guard needed) |
+
 ## @VisibleTask
 
 The `@VisibleTask` decorator marks a method to run **only on the client** when the component (or a specific element within it) becomes visible in the viewport. This is implemented using `IntersectionObserver`.
@@ -347,7 +397,7 @@ export default class SearchPage extends Cossack {
 Here is a comprehensive example combining these features:
 
 ```typescript
-import { Cossack, Page, State, ClientState, Task, VisibleTask, On, OnWindow } from '@cossackframework/core';
+import { Cossack, Page, State, ClientState, Task, ServerTask, ClientTask, VisibleTask, On, OnWindow } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
 @Page()
@@ -361,6 +411,18 @@ export default class FeatureDemo extends Cossack {
     @Task()
     logChange() {
         console.log('State changed:', this.serverCount);
+    }
+
+    @ServerTask()
+    logServerSide() {
+        // Runs on server only — body stripped from client bundle.
+        console.log('Server render, count:', this.serverCount);
+    }
+
+    @ClientTask()
+    measureLayout() {
+        // Runs on client only — safe to access the DOM.
+        this.windowWidth = window.innerWidth;
     }
 
     @VisibleTask()
@@ -398,6 +460,8 @@ With `@Task`, `@VisibleTask`, `@On`, and the `onMount()` / `onNavigateComplete()
 | You need to... | Use | Fires |
 | --- | --- | --- |
 | React to state changes on **both server and client** | `@Task` | Mount + every state update (SSR-safe) |
+| Run a task on **server only** (no manual `isServer` guard) | `@ServerTask` | Mount + every state update (server only) |
+| Run a task on **client only** (no manual `isServer` guard) | `@ClientTask` | Mount + every state update (client only) |
 | Run setup logic **once on the client** | `onMount()` or `@On('mount')` | Once after first client render |
 | Defer work until an element **enters the viewport** | `@VisibleTask` | Client-only, on intersection |
 | React to **SPA navigation** globally | `onNavigateComplete()` or `@On('navigate-complete')` | App component only, after each route change |
@@ -454,7 +518,7 @@ Use `@On('mount')` on a page for "this page just became active" logic. Use `@On(
 
 ### Common Pitfalls
 
-- **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `onMount()` or `@On('mount')` instead.
+- **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `@ClientTask` (if the logic must re-run on every render) or `onMount()` / `@On('mount')` (if it's one-time setup) instead. `@ClientTask` replaces the manual `if (this.isServer) return;` guard.
 - **Don't** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
 - **Don't** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` — they handle cleanup automatically.
 - **Don't** reach for `@VisibleTask` when `@Task` would do. `@VisibleTask` defers work until the element is scrolled into view; if the work is cheap or needed immediately, `@Task` (or `onMount()`) is simpler.
