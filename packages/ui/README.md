@@ -11,8 +11,13 @@ In a Cossack project:
 
 ```sh
 cossack add ui                 # wire the package + CSS imports + @source
+cossack add ui --theme=blue    # same, but pre-tint to the blue palette
 cossack add ui button          # (optional) eject a customizable copy of Button
 ```
+
+The `--theme` flag selects a color palette (see [Theming](#theming)) and wires
+the matching `themes/<name>.css` import into `src/style.css`. Available themes:
+`neutral` (default), `zinc`, `stone`, `gray`, `slate`, `blue`, `green`, `red`.
 
 Or install the package directly and wire the CSS by hand:
 
@@ -25,12 +30,14 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ```css
 @import "@cossackframework/ui/theme/base.css";
 @import "@cossackframework/ui/theme/theme.css";
+/* Optional: import a named palette AFTER theme.css to retint. */
+@import "@cossackframework/ui/theme/themes/blue.css";
 
 /* Tailwind v4 excludes node_modules by default. These @source lines tell it to
    scan the package's component/icon source so every utility class referenced
-   inside the components (bg-secondary, bg-destructive, bg-success, ...) is
-   generated. Without them, only classes that also appear in your own source
-   will be emitted and most variants will render unstyled. */
+   inside the components (bg-card, bg-popover, bg-accent, ...) is generated.
+   Without them, only classes that also appear in your own source will be
+   emitted and most variants will render unstyled. */
 @source "../node_modules/@cossackframework/ui/src/components";
 @source "../node_modules/@cossackframework/ui/src/icons";
 ```
@@ -163,6 +170,12 @@ surface scale; accent palettes retint only `--primary` / `--ring` / `--chart-*`
 @import "@cossackframework/ui/theme/themes/zinc.css";   /* neutral family */
 /* or: stone, gray, slate, neutral */
 /* accent palettes: blue, green, red */
+```
+
+When scaffolding with the CLI, pass `--theme` to do this automatically:
+
+```sh
+cossack add ui --theme=zinc     # wires themes/zinc.css into src/style.css
 ```
 
 | Palette | Type | Description |
