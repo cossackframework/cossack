@@ -74,7 +74,7 @@ export class MultiSelect extends Cossack {
             <div class="cs-multiselect relative w-full">
                 <!-- Tag chips + input -->
                 <div
-                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-9 w-full rounded-md border border-dashed border-input bg-background px-2 py-1 cursor-text transition-[color,box-shadow] shadow-xs focus-within:border-solid focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
+                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-9 w-full rounded-md border border-input bg-background px-2 py-1 cursor-text transition-[color,box-shadow] shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
                     @click=${() => this.inputRef.value?.focus()}
                 >
                     ${selected.map((tag, i) => html`
@@ -93,7 +93,7 @@ export class MultiSelect extends Cossack {
                     <input
                         ref=${this.inputRef}
                         type="text"
-                        class="cs-multiselect__input flex-1 min-w-[80px] border-none outline-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground py-0.5"
+                        class="cs-multiselect__input flex-1 min-w-[80px] rounded-sm border border-dashed border-input bg-transparent px-1 outline-none text-sm text-foreground placeholder:text-muted-foreground focus:border-solid focus:border-ring focus:ring-ring/50 focus:ring-[3px] py-0.5"
                         placeholder=${selected.length === 0 ? placeholder : ""}
                         .value=${this.query}
                         @input=${(e: InputEvent) => { this.query = (e.target as HTMLInputElement).value; this.activeIndex = -1; this.openIfHasResults(); }}
