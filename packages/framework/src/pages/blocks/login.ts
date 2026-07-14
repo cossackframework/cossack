@@ -119,7 +119,7 @@ export default class LoginBlocks extends Cossack {
                     @blur=${() => this.validateProperty('password', 'blur')} />
                 ${this.hasError('password') ? html`<p class="text-xs text-destructive mt-1">${this.getError('password')}</p>` : null}
             </div>
-            ${component(Button, { type: 'submit', variant: 'primary', block: true }, 'Login')}
+            ${component(Button, { type: 'submit', variant: 'default', block: true }, 'Login')}
         `;
     }
 

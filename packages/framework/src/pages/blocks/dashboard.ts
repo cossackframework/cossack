@@ -324,7 +324,7 @@ export default class DashboardBlocks extends Cossack {
                         <h2 class="text-xl font-bold text-foreground">Team</h2>
                         <p class="text-sm text-muted-foreground">${team.length} members in your organization</p>
                     </div>
-                    ${component(Button, { variant: 'primary' }, '+ Invite member')}
+                    ${component(Button, { variant: 'default' }, '+ Invite member')}
                 </div>
                 <div class="rounded-lg border border-border bg-background">
                     <div class="divide-y divide-border">

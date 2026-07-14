@@ -19,11 +19,16 @@ components.
 | Block | Description |
 |---|---|
 | **AuthForm** | Login + signup form with validation, password reveal, social buttons |
-| **DataTable** | Sortable, paginated table with search filter + row actions |
-| **SettingsPanel** | Tabs-based settings page (profile, notifications, billing) |
 | **DashboardStat** | Stat cards grid (KPI tiles with trend indicators) |
+| **SettingsPanel** | Card-section settings page (switch toggles, text inputs, action buttons) |
+| **CommandPalette** | ⌘K command palette with fuzzy search + keyboard navigation |
+
+## Planned Blocks
+
+| Block | Description |
+|---|---|
+| **DataTable** | Sortable, paginated table with search filter + row actions |
 | **CommentThread** | Nested comments with reply, upvote, and timestamps |
-| **CommandPalette** | ⌘K command palette with fuzzy search + navigation |
 
 ## Usage
 

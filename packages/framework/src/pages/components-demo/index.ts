@@ -109,7 +109,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Buttons</h2>
                     <div class="flex flex-wrap items-center gap-3">
-                        ${component(Button, { variant: 'primary' }, 'Primary')}
+                        ${component(Button, { variant: 'default' }, 'Primary')}
                         ${component(Button, { variant: 'secondary' }, 'Secondary')}
                         ${component(Button, { variant: 'outline' }, 'Outline')}
                         ${component(Button, { variant: 'ghost' }, 'Ghost')}
@@ -117,9 +117,9 @@ export class ComponentsDemo extends Cossack {
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         ${component(Button, { size: 'sm' }, 'Small')}
-                        ${component(Button, { size: 'md' }, 'Medium')}
+                        ${component(Button, { size: 'default' }, 'Medium')}
                         ${component(Button, { size: 'lg' }, 'Large')}
-                        ${component(Button, { variant: 'primary', block: false, disabled: true }, 'Disabled')}
+                        ${component(Button, { variant: 'default', block: false, disabled: true }, 'Disabled')}
                     </div>
                 </section>
 
@@ -127,7 +127,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Badges</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        ${component(Badge, { variant: 'primary' }, 'Primary')}
+                        ${component(Badge, { variant: 'default' }, 'Primary')}
                         ${component(Badge, { variant: 'secondary' }, 'Secondary')}
                         ${component(Badge, { variant: 'success' }, 'Active')}
                         ${component(Badge, { variant: 'warning' }, 'Pending')}
@@ -172,7 +172,7 @@ export class ComponentsDemo extends Cossack {
                         ${component(CardFooter, {}, html`
                             <div class="flex justify-end gap-2">
                                 ${component(Button, { variant: 'ghost', size: 'sm' }, 'Dismiss')}
-                                ${component(Button, { variant: 'primary', size: 'sm' }, 'Upgrade')}
+                                ${component(Button, { variant: 'default', size: 'sm' }, 'Upgrade')}
                             </div>
                         `)}
                     `)}
@@ -210,7 +210,7 @@ export class ComponentsDemo extends Cossack {
                             <p class="text-sm text-muted-foreground mb-5">Are you sure you want to continue? This cannot be undone.</p>
                             <div class="flex justify-end gap-2">
                                 ${component(Button, { variant: 'ghost', size: 'sm', '@click': () => { this.modalOpen = false; } }, 'Cancel')}
-                                ${component(Button, { variant: 'primary', size: 'sm', '@click': () => { this.modalOpen = false; } }, 'Confirm')}
+                                ${component(Button, { variant: 'default', size: 'sm', '@click': () => { this.modalOpen = false; } }, 'Confirm')}
                             </div>
                         `,
                     )}
@@ -345,7 +345,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Tooltip</h2>
                     <div class="flex items-center gap-4">
-                        ${component(Tooltip, { label: 'Save changes', side: 'top' }, component(Button, { variant: 'primary' }, 'Hover me'))}
+                        ${component(Tooltip, { label: 'Save changes', side: 'top' }, component(Button, { variant: 'default' }, 'Hover me'))}
                     </div>
                 </section>
 
@@ -822,7 +822,7 @@ export class ComponentsDemo extends Cossack {
                     <div class="border border-border rounded-lg divide-y divide-border max-w-sm">
                         ${component(Item, {
                             media: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 36 }),
-                            trailing: component(Badge, { variant: 'primary' }, 'Admin'),
+                            trailing: component(Badge, { variant: 'default' }, 'Admin'),
                             divider: false,
                         }, html`<div><p class="text-sm font-medium text-foreground">Alice Johnson</p><p class="text-xs text-muted-foreground">alice@cossack.dev</p></div>`)}
                         ${component(Item, {

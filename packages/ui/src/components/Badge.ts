@@ -20,7 +20,7 @@ const VARIANTS: Record<NonNullable<BadgeProps["variant"]>, string> = {
     success: "bg-success text-success-foreground",
     warning: "bg-warning text-warning-foreground",
     destructive: "bg-destructive text-destructive-foreground",
-    outline: "border border-border text-foreground",
+    outline: "border border-input text-foreground",
 };
 
 /**

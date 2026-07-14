@@ -48,7 +48,7 @@ export class Item extends Cossack {
                     "px-3": true,
                     "py-2.5": !compact,
                     "py-1.5": compact,
-                    "border-b border-border": divider,
+                    "border-b": divider,
                     "hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]": interactive,
                 })}
                 ...=${rest}
