@@ -531,20 +531,39 @@ function resolveUiVersion() {
 
 const UI_THEME_MARKER = '@cossackframework/ui/theme';
 
+/** Palettes that can be selected via `cossack add ui --theme=<name>`. */
+const UI_PALETTES = [
+  'neutral', 'zinc', 'stone', 'gray', 'slate',
+  'blue', 'green', 'red',
+];
+
 /**
- * The CSS block appended to src/style.css by `cossack add ui`.
+ * Build the CSS block appended to src/style.css by `cossack add ui`.
  *
  * - Two @import lines pull the base reset + @theme token layer.
+ * - An optional palette @import (when `palette` is set) retints the UI.
  * - Two @source lines tell Tailwind v4 to scan the package's component/icon
  *   source. Tailwind v4 excludes node_modules by default, so without these the
  *   variant utilities (bg-secondary, bg-destructive, bg-success, ...) would
  *   never be generated and the components would render unstyled.
  */
-const UI_THEME_BLOCK = `@import "@cossackframework/ui/theme/base.css";
-@import "@cossackframework/ui/theme/theme.css";
-
-@source "../node_modules/@cossackframework/ui/src/components";
-@source "../node_modules/@cossackframework/ui/src/icons";`;
+function uiThemeBlock(palette) {
+  const lines = [
+    `@import "@cossackframework/ui/theme/base.css";`,
+    `@import "@cossackframework/ui/theme/theme.css";`,
+  ];
+  if (palette) {
+    lines.push(
+      `@import "@cossackframework/ui/theme/themes/${palette}.css";`,
+    );
+  }
+  lines.push(
+    ``,
+    `@source "../node_modules/@cossackframework/ui/src/components";`,
+    `@source "../node_modules/@cossackframework/ui/src/icons";`,
+  );
+  return lines.join('\n');
+}
 
 /**
  * Wire the @cossackframework/ui CSS imports + @source directives into the
@@ -552,9 +571,10 @@ const UI_THEME_BLOCK = `@import "@cossackframework/ui/theme/base.css";
  * dryRun-aware. Mirrors the registerMiddleware string-surgery style: if there's
  * no style.css yet, synthesize a minimal one.
  */
-async function wireUiTheme(root, ctx) {
+async function wireUiTheme(root, ctx, palette) {
   const target = path.resolve(root, 'src/style.css');
-  const fullBlock = `@import "tailwindcss";\n${UI_THEME_BLOCK}\n`;
+  const block = uiThemeBlock(palette);
+  const fullBlock = `@import "tailwindcss";\n${block}\n`;
 
   if (!(await exists(target))) {
     const result = await writeFile(target, fullBlock, ctx);
@@ -579,7 +599,7 @@ async function wireUiTheme(root, ctx) {
   if (/^\s*@import\s+["']tailwindcss["'];?\s*$/m.test(content)) {
     updated = content.replace(
       /(@import\s+["']tailwindcss["'];?\s*\n)/,
-      `$1${UI_THEME_BLOCK}\n`,
+      `$1${block}\n`,
     );
   } else {
     updated = `${fullBlock}\n${content}`;
@@ -631,10 +651,18 @@ async function addUi(args, ctx) {
   }
 
   // No component arg: wire the global theme imports.
-  await wireUiTheme(root, ctx);
+  const palette = flagString(ctx.flags.theme) || flagString(ctx.flags.t);
+  if (palette && !UI_PALETTES.includes(palette)) {
+    console.error(
+      `Unknown theme: ${palette}.\nAvailable themes: ${UI_PALETTES.join(', ')}`,
+    );
+    return 1;
+  }
+  await wireUiTheme(root, ctx, palette);
 
   console.log(
     '\nUI support added. Components are available via `import { Button, ... } from "./components/ui"`.\n' +
+      (palette ? `Theme: ${palette} (wired into src/style.css).\n` : '') +
       'Next:\n  1. Run `pnpm install`.\n' +
       '  2. Confirm the @import lines are present in src/style.css.\n' +
       '  3. (Optional) Eject a component for customization: `cossack add ui button`.',
@@ -666,10 +694,14 @@ Features:
             @import lines into src/style.css. Components are then importable from
             "./components/ui". Pass a component name to eject a customizable copy:
             \`cossack add ui button\` writes src/components/ui/Button.ts that you own.
-            Available components: button, input, card, badge, label, alert.
+            Use --theme to select a color palette (neutral families retint the
+            whole surface scale; accent palettes retint the primary/ring/chart):
+            \`cossack add ui --theme=blue\`. Default is the shadcn neutral.
+            Themes: neutral, zinc, stone, gray, slate, blue, green, red.
 
 Options:
   --force, -f              Overwrite existing files.
+  --theme=<name>           (ui) Color palette: neutral, zinc, stone, gray, slate, blue, green, red.
   --dialect=<d1|turso>     Skip the database dialect prompt (used by both features).
   --path <route-group>     (auth) Custom route group, e.g. --path admin/auth.
   --oauth <providers>      (auth) OAuth providers: github,google,gitlab,facebook,microsoft.

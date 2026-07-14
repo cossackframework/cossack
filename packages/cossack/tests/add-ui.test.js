@@ -74,6 +74,31 @@ describe('add ui (no component arg)', () => {
     expect(css).toContain('@import "tailwindcss"');
     expect(css).toContain('@cossackframework/ui/theme/theme.css');
   });
+
+  it('wires the named palette when --theme is set', async () => {
+    ctx.flags = { theme: 'blue' };
+    const code = await addCommand(['ui'], ctx);
+    expect(code).toBe(0);
+    const css = fs.readFileSync(path.join(tmp, 'src/style.css'), 'utf8');
+    expect(css).toContain('@cossackframework/ui/theme/themes/blue.css');
+    // The palette import comes after theme.css.
+    const themeIdx = css.indexOf('theme/theme.css');
+    const paletteIdx = css.indexOf('themes/blue.css');
+    expect(paletteIdx).toBeGreaterThan(themeIdx);
+  });
+
+  it('does not wire a palette import when --theme is omitted', async () => {
+    const code = await addCommand(['ui'], ctx);
+    expect(code).toBe(0);
+    const css = fs.readFileSync(path.join(tmp, 'src/style.css'), 'utf8');
+    expect(css).not.toContain('themes/');
+  });
+
+  it('returns non-zero for an unknown --theme', async () => {
+    ctx.flags = { theme: 'bogus' };
+    const code = await addCommand(['ui'], ctx);
+    expect(code).toBe(1);
+  });
 });
 
 describe('add ui <component>', () => {
