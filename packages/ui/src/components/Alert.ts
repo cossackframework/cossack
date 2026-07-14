@@ -16,10 +16,10 @@ export interface AlertProps {
 }
 
 const VARIANTS: Record<NonNullable<AlertProps["variant"]>, string> = {
-    default: "bg-card text-card-foreground",
-    success: "bg-success/10 text-success border-success/20",
-    warning: "bg-warning/10 text-warning border-warning/20",
-    destructive: "bg-destructive/10 text-destructive border-destructive/20",
+    default: "bg-card text-card-foreground border",
+    success: "bg-success/10 text-success",
+    warning: "bg-warning/10 text-warning",
+    destructive: "bg-destructive/10 text-destructive",
 };
 
 const ICONS: Record<string, string> = {
@@ -49,7 +49,7 @@ export class Alert extends Cossack {
         const classes = classMap({
             "cs-alert": true,
             [`cs-alert--${variant}`]: true,
-            "relative w-full grid gap-0.5 rounded-lg border p-3 text-left text-sm [&_svg]:size-4 [&_svg]:translate-y-0.5 [&_svg]:text-current": true,
+            "relative w-full grid gap-0.5 rounded-lg p-3 text-left text-sm [&_svg]:size-4 [&_svg]:translate-y-0.5 [&_svg]:text-current": true,
             "has-[svg]:grid-cols-[auto_1fr] has-[svg]:gap-x-2": !!iconName,
             "border-l-4": accent,
             [VARIANTS[variant]]: true,
