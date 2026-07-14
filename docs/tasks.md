@@ -17,6 +17,8 @@ Cossack provides a set of decorators and lifecycle hooks to handle component lif
 
 The `@Task` decorator marks a method to run on component mount and every time the component's state updates. This method runs on **both the server and the client**.
 
+`@Task` accepts an optional options object: pass `{ track: [...] }` to run the task only when specific state fields change, and `return` a cleanup function for automatic teardown. See [Tracking Dependencies](#tracking-dependencies-the-track-option) and [Automatic Cleanup](#automatic-cleanup-react-useeffect-style) below.
+
 ### Usage
 
 Use `@Task` for logic that needs to run initially or react to state changes, such as logging, derived state calculations, or side effects that are safe to run in both environments.
@@ -85,6 +87,104 @@ export default class MyComponent extends Cossack {
 | `@Task` | ✅ Runs | ✅ Runs | Logic safe on both sides (logging, derived state) |
 | `@ServerTask` | ✅ Runs | ❌ Body stripped | Server-only side effects (no `if (isServer)` guard needed) |
 | `@ClientTask` | ❌ Skipped | ✅ Runs | DOM/browser logic (no `if (!isServer)` guard needed) |
+
+## Tracking Dependencies: the `track` option
+
+By default, a task runs on **every** state change — any `@State`, `@Store`, `@ClientState`, or `@ClientStore` mutation re-triggers it. When a task only cares about a few specific fields, re-running it on every change wastes work (and can cause unwanted side effects like refetching data when an unrelated counter changes).
+
+All three task decorators accept a `track` option to restrict *which* state changes re-run them. It works like React's `useEffect` dependency array: the task runs once on mount, and again **only** when one of the tracked dependencies changes.
+
+```typescript
+import { Cossack, Task, State } from '@cossackframework/core';
+
+export default class MyComponent extends Cossack {
+    @State() user = null;
+    @State() posts = [];
+    @State() darkMode = false;   // unrelated to the feed
+
+    // Runs on mount, and ONLY when `user` or `posts` change.
+    // Toggling `darkMode` will NOT re-run this.
+    @Task({ track: ['user', 'posts'] })
+    async reloadFeed() {
+        this.feed = await fetch(`/api/feed?u=${this.user.id}`).then(r => r.json());
+    }
+}
+```
+
+### Tracking nested store fields (dot-paths)
+
+For `@Store` / `@ClientStore`, you can address a specific nested field with a **dot-path**. This avoids re-running an expensive task when a *sibling* field in the same store changes.
+
+```typescript
+import { Cossack, Task, Store } from '@cossackframework/core';
+
+export default class CheckoutForm extends Cossack {
+    @Store()
+    form = {
+        email: '',
+        address: { zip: '' },
+        card: { number: '', cvc: '' },
+    };
+
+    // Runs only when the email field changes — NOT when card.number or
+    // address.zip change, even though they live in the same `form` store.
+    @Task({ track: ['form.email'] })
+    validateEmail() {
+        this.emailValid = /^[^@]+@[^@]+\.[^@]+$/.test(this.form.email);
+    }
+}
+```
+
+### How path matching works
+
+Matching is **segment-wise prefix in either direction**, so you get intuitive behavior:
+
+| `track` dep | Changed path | Runs? | Why |
+| --- | --- | --- | --- |
+| `'user'` | `'user'` | ✅ | Exact match |
+| `'user'` | `'user.name'` | ✅ | Ancestor of the change (the whole `user` is tracked) |
+| `'form.email'` | `'form.email'` | ✅ | Exact match |
+| `'form.email'` | `'form'` | ✅ | The whole `form` was reassigned, so `email` changed too |
+| `'form.email'` | `'form.password'` | ❌ | Sibling field — not tracked |
+| `'store'` | `'store.user.address.zip'` | ✅ | Tracking the whole store fires on any nested mutation |
+
+> **Tip:** Tracking the top-level store key (`track: ['form']`) fires on *any* nested mutation of that store. Tracking a deep path (`track: ['form.email']`) scopes the task to that specific field.
+
+### Notes on tracking
+
+- **Mount always runs.** A tracked task runs once during bootstrap (the initial mount run), regardless of `track`. This mirrors `useEffect`, which runs once on mount.
+- **Omitting `track` is legacy behavior.** A task with no `track` (or an empty array) runs on **every** state change, exactly as before.
+- **By name, not by value.** `track` takes property *names* (strings) or dot-paths — it cannot take runtime values like `track: [this.user]`, because decorators run at class-definition time, before any instance exists.
+- Symbols are supported and match only against their own top-level key.
+
+## Automatic Cleanup (React `useEffect` style)
+
+A task may **return a cleanup function**. The cleanup runs automatically:
+
+1. **Before the next re-run** of that task (so stale timers, listeners, and subscriptions from the previous run are torn down first).
+2. **Once when the component is destroyed** (`onCleanup()` / `destroy()`).
+
+This follows the React `useEffect` cleanup contract — no manual teardown bookkeeping needed.
+
+```typescript
+import { Cossack, Task, State } from '@cossackframework/core';
+
+export default class LiveTicker extends Cossack {
+    @State() symbol = 'AAPL';
+
+    // Re-subscribes whenever `symbol` changes; the previous subscription's
+    // cleanup runs first, and the final one runs on unmount.
+    @Task({ track: ['symbol'] })
+    subscribe() {
+        const ws = new WebSocket(`/quotes/${this.symbol}`);
+        ws.onmessage = (e) => (this.price = JSON.parse(e.data).price);
+        // Returned cleanup runs before the next re-run and on destroy().
+        return () => ws.close();
+    }
+}
+```
+
+This works for `@Task`, `@ServerTask`, and `@ClientTask`. Async tasks may return a cleanup function by returning it from the resolved promise. Errors thrown inside a cleanup function are logged and swallowed, so one failing cleanup can't prevent sibling cleanups from running.
 
 ## @VisibleTask
 
@@ -413,6 +513,14 @@ export default class FeatureDemo extends Cossack {
         console.log('State changed:', this.serverCount);
     }
 
+    // Tracked task: runs on mount, and ONLY when `serverCount` changes.
+    @Task({ track: ['serverCount'] })
+    syncCount() {
+        document.title = `Count: ${this.serverCount}`;
+        // Returned cleanup runs before the next re-run and on destroy().
+        return () => console.log('cleanup: syncCount');
+    }
+
     @ServerTask()
     logServerSide() {
         // Runs on server only — body stripped from client bundle.
@@ -460,8 +568,10 @@ With `@Task`, `@VisibleTask`, `@On`, and the `onMount()` / `onNavigateComplete()
 | You need to... | Use | Fires |
 | --- | --- | --- |
 | React to state changes on **both server and client** | `@Task` | Mount + every state update (SSR-safe) |
+| React to **specific** state fields only | `@Task({ track: [...] })` | Mount + when a tracked dep changes |
 | Run a task on **server only** (no manual `isServer` guard) | `@ServerTask` | Mount + every state update (server only) |
 | Run a task on **client only** (no manual `isServer` guard) | `@ClientTask` | Mount + every state update (client only) |
+| Tear down a task's side effects automatically | return a cleanup fn from a task | Before next re-run + on destroy |
 | Run setup logic **once on the client** | `onMount()` or `@On('mount')` | Once after first client render |
 | Defer work until an element **enters the viewport** | `@VisibleTask` | Client-only, on intersection |
 | React to **SPA navigation** globally | `onNavigateComplete()` or `@On('navigate-complete')` | App component only, after each route change |

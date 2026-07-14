@@ -741,11 +741,11 @@ export function setupServerMethodProxies(component: any): void {
 
     // Add @Task decorated methods as client-safe
     const taskMethods = Reflect.getMetadata('cossack:tasks', component.constructor) || [];
-    taskMethods.forEach((method: string) => clientSafeMethods.add(method));
+    taskMethods.forEach((reg: { propertyKey: string }) => clientSafeMethods.add(reg.propertyKey));
 
     // Add @ClientTask decorated methods as client-safe
     const clientTaskMethods = Reflect.getMetadata('cossack:client-tasks', component.constructor) || [];
-    clientTaskMethods.forEach((method: string) => clientSafeMethods.add(method));
+    clientTaskMethods.forEach((reg: { propertyKey: string }) => clientSafeMethods.add(reg.propertyKey));
 
     // Add @VisibleTask decorated methods as client-safe
     const visibleTaskMethods = Reflect.getMetadata('cossack:visible-tasks', component.constructor) || [];

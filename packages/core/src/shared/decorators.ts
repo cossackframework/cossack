@@ -655,12 +655,89 @@ export function Optimistic(actionName: string): MethodDecorator {
   };
 }
 
-export function Task(): MethodDecorator {
-  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
-    const tasks = Reflect.getOwnMetadata('cossack:tasks', target.constructor) || [];
-    tasks.push(propertyKey);
-    Reflect.defineMetadata('cossack:tasks', tasks, target.constructor);
+/**
+ * Options for `@Task`, `@ServerTask`, and `@ClientTask`.
+ */
+export interface TaskOptions {
+    /**
+     * Restrict this task to run only when one of the listed state/store
+     * properties changes. Each entry is a property name (`'user'`) or, for a
+     * `@Store` / `@ClientStore`, a dot-path addressing a nested field
+     * (`'form.address.zip'`).
+     *
+     * Prefix semantics (segment-wise): tracking `'store'` fires on ANY nested
+     * mutation of `store`; tracking `'store.user.zip'` also fires when
+     * `'store'` or `'store.user'` is reassigned wholesale.
+     *
+     * Omit `track` (or pass an empty array) to run on every state change —
+     * the legacy behavior. A tracked task also runs once during bootstrap
+     * (the mount run), regardless of `track`.
+     */
+    track?: (string | symbol)[];
+}
+
+/**
+ * Signature for a `@Task` / `@ServerTask` / `@ClientTask` method. It may be
+ * sync or async, and may optionally return a cleanup function.
+ *
+ * The cleanup function follows the React `useEffect` contract: it runs before
+ * the next tracked re-run of the task and once when the component is destroyed
+ * (via `destroy()` / `onCleanup`). Use it to release timers, subscriptions,
+ * observers, etc.
+ */
+export type TaskMethod = () => void | Promise<void> | (() => void | Promise<void>);
+
+/**
+ * Registry entry stored under the `cossack:tasks` / `cossack:server-tasks` /
+ * `cossack:client-tasks` metadata keys. Mirrors the `{ propertyKey, options }`
+ * shape already used by `@VisibleTask`.
+ */
+export interface TaskRegistration {
+    propertyKey: string | symbol;
+    track?: (string | symbol)[];
+}
+
+/** Shared registration body for the three task decorators. */
+function registerTask(
+    metadataKey: string,
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: PropertyDescriptor,
+    options: TaskOptions,
+): PropertyDescriptor {
+    const tasks: TaskRegistration[] =
+        Reflect.getOwnMetadata(metadataKey, target.constructor) || [];
+    tasks.push({ propertyKey, track: options.track });
+    Reflect.defineMetadata(metadataKey, tasks, target.constructor);
     return descriptor;
+}
+
+/**
+ * Marks a method as a *task*: it runs before each render (bootstrap, server
+ * state broadcasts, client prop/state-driven re-renders) on BOTH server and
+ * client.
+ *
+ * By default a task runs on EVERY state change. Pass `track` to restrict it to
+ * specific properties — see {@link TaskOptions}.
+ *
+ * A task may `return` a cleanup function; it is invoked before the next
+ * tracked re-run and on component destroy — see {@link TaskMethod}.
+ *
+ *   @Task()
+ *   syncDerived() { /* runs on every change *\/ }
+ *
+ *   @Task({ track: ['user', 'posts'] })
+ *   async reloadFeed() { /* runs only when user/posts change *\/ }
+ *
+ *   @Task({ track: ['form.email'] })
+ *   validateEmail() {
+ *       const id = setInterval(...);
+ *       return () => clearInterval(id);   // auto cleanup
+ *   }
+ */
+export function Task(options: TaskOptions = {}): MethodDecorator {
+  return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+    return registerTask('cossack:tasks', target, propertyKey, descriptor, options);
   };
 }
 
@@ -672,18 +749,17 @@ export function Task(): MethodDecorator {
  * `@Task` method. The task executes during `runTasks()` on the server
  * (bootstrap, state broadcasts) and is a no-op on the client.
  *
+ * Accepts the same {@link TaskOptions} as `@Task` (including `track`).
+ *
  *   @ServerTask()
  *   syncOpenState() {
  *       if (!this.isServer) return;  // ← NOT needed, decorator handles it
  *       // server-only logic here
  *   }
  */
-export function ServerTask(): MethodDecorator {
+export function ServerTask(options: TaskOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
-    const tasks = Reflect.getOwnMetadata('cossack:server-tasks', target.constructor) || [];
-    tasks.push(propertyKey);
-    Reflect.defineMetadata('cossack:server-tasks', tasks, target.constructor);
-    return descriptor;
+    return registerTask('cossack:server-tasks', target, propertyKey, descriptor, options);
   };
 }
 
@@ -695,17 +771,16 @@ export function ServerTask(): MethodDecorator {
  * This replaces the manual `if (!this.isServer) { ... }` guard inside a
  * `@Task` method.
  *
+ * Accepts the same {@link TaskOptions} as `@Task` (including `track`).
+ *
  *   @ClientTask()
  *   attachListeners() {
  *       // client-only logic: DOM measurements, event setup, etc.
  *   }
  */
-export function ClientTask(): MethodDecorator {
+export function ClientTask(options: TaskOptions = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
-    const tasks = Reflect.getOwnMetadata('cossack:client-tasks', target.constructor) || [];
-    tasks.push(propertyKey);
-    Reflect.defineMetadata('cossack:client-tasks', tasks, target.constructor);
-    return descriptor;
+    return registerTask('cossack:client-tasks', target, propertyKey, descriptor, options);
   };
 }
 

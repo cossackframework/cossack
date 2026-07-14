@@ -12,6 +12,7 @@ import {
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState } from './decorators';
+import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
@@ -53,7 +54,7 @@ import {
     getConstructorParamNames as getConstructorParamNamesFn,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
-import { createStoreProxy, isPlainObjectOrArray } from './store';
+import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
 import { LifecyclePhase } from './component-types';
 import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
@@ -234,6 +235,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isRunningTasks: boolean = false;
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
+    /**
+     * Dotted paths of state changes accumulated since the last task run, used
+     * to filter `@Task({ track })` deps. Top-level keys report as their own
+     * name; nested store mutations report `storeKey.a.b`.
+     */
+    private _dirtyPaths: Set<string> = new Set();
+    /**
+     * Cleanup functions returned by tracked/untracked tasks, keyed by task
+     * property key. Invoked before the next run of the task and on destroy().
+     */
+    private _taskCleanups: Map<string | symbol, () => unknown> = new Map();
     /**
      * Method keys registered via `@On('navigate-complete')`. Stored so the
      * framework can invoke them whenever `onNavigateComplete()` runs.
@@ -795,28 +807,53 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         proxyServerMethodsFn(this, serverMethods);
     }
 
-    private async runTasks() {
+    /**
+     * Runs every registered task (`@Task` always; `@ServerTask` on the server;
+     * `@ClientTask` on the client).
+     *
+     * When `changedPaths` is omitted (bootstrap mount run, SSR `_render`) all
+     * tasks run. When it is provided (state broadcasts, client re-renders) a
+     * task with a `track` list runs only if one of its tracked deps matches a
+     * changed path (segment-wise prefix either direction — see
+     * `matchesTrackedPath`); a task without `track` always runs (legacy
+     * behavior).
+     *
+     * A task may return a cleanup function (React `useEffect` style). The
+     * previous cleanup runs before each re-run, and all are drained on
+     * `destroy()`.
+     */
+    private async runTasks(changedPaths?: Set<string>) {
         if (this.isRunningTasks) return;
         this.isRunningTasks = true;
         try {
             // Regular @Task — always runs (both server and client).
-            const tasks = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
+            const tasks: TaskRegistration[] =
+                Reflect.getMetadata('cossack:tasks', this.constructor) || [];
             // @ServerTask — only runs on the server (body stripped on client).
-            const serverTasks = this.isServer
+            const serverTasks: TaskRegistration[] = this.isServer
                 ? (Reflect.getMetadata('cossack:server-tasks', this.constructor) || [])
                 : [];
             // @ClientTask — only runs on the client (skipped on server).
-            const clientTasks = !this.isServer
+            const clientTasks: TaskRegistration[] = !this.isServer
                 ? (Reflect.getMetadata('cossack:client-tasks', this.constructor) || [])
                 : [];
             const allTasks = [...tasks, ...serverTasks, ...clientTasks];
-            for (const task of allTasks) {
-                if (this.hasMethod(task)) {
+            const isFilteredRun = changedPaths !== undefined;
+            for (const { propertyKey: task, track } of allTasks) {
+                if (isFilteredRun && track && track.length > 0) {
+                    if (!track.some(dep => matchesTrackedPath(dep, changedPaths!))) {
+                        continue;
+                    }
+                }
+                if (this.hasMethod(task as string)) {
+                    // Run the previous cleanup before re-invoking (React style).
+                    this._runTaskCleanup(task);
                     try {
-                        const taskMethod = this.getMethod(task);
+                        const taskMethod = this.getMethod(task as string);
                         const result = (taskMethod as any)();
-                        if (result instanceof Promise) {
-                            await result;
+                        const resolved = result instanceof Promise ? await result : result;
+                        if (typeof resolved === 'function') {
+                            this._taskCleanups.set(task, resolved as () => unknown);
                         }
                     } catch (e) {
                         console.error(`[Cossack] Error in task '${String(task)}':`, e);
@@ -825,6 +862,26 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         } finally {
             this.isRunningTasks = false;
+        }
+    }
+
+    /**
+     * Invoke (and drop) the stored cleanup function for a task, if any.
+     * Swallows errors so one failing cleanup can't abort sibling tasks.
+     */
+    private _runTaskCleanup(task: string | symbol) {
+        const cleanup = this._taskCleanups.get(task);
+        if (!cleanup) return;
+        this._taskCleanups.delete(task);
+        try {
+            const result = cleanup();
+            if (result instanceof Promise) {
+                result.catch(e =>
+                    console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e),
+                );
+            }
+        } catch (e) {
+            console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e);
         }
     }
 
@@ -1073,12 +1130,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             // The reactive trigger shared by the plain setter and the store
             // Proxy. Routes to broadcast (server, public) or requestUpdate
-            // (client), honoring the bootstrapping suppression.
-            const triggerReactivity = () => {
+            // (client), honoring the bootstrapping suppression. `path` carries
+            // the dotted mutation path for `@Task({ track })` filtering.
+            const triggerReactivity = (path?: string) => {
                 const current = isPublic
                     ? this._stateContainer.getPublic(key)
                     : this._stateContainer.getInternal(key);
-                this._applyStateChange(key, current, current, isPublic);
+                this._applyStateChange(key, current, current, isPublic, path);
             };
 
             if (isStore) {
@@ -1103,7 +1161,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         cached = createStoreProxy(
                             raw as Record<PropertyKey, unknown>,
                             key,
-                            () => triggerReactivity(),
+                            (_storeKey, path) => triggerReactivity(path),
                         );
                         this._storeProxies.set(key, cached);
                     }
@@ -1199,7 +1257,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         oldValue: unknown,
         newValue: unknown,
         isPublic: boolean,
+        path?: string,
     ): void {
+        // Record the dotted path for `@Task({ track })` filtering. For nested
+        // store mutations `path` is `storeKey.a.b`; for plain state / top-level
+        // assignments it falls back to the property key.
+        this._dirtyPaths.add(path ?? String(key));
         if (isPublic) {
             if (this.isServer) {
                 this._scheduleStateBroadcast(key);
@@ -1228,7 +1291,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!this.broadcastScheduled) {
             this.broadcastScheduled = true;
             queueMicrotask(async () => {
-                await this.runTasks();
+                // Snapshot so async tasks don't observe paths added during the
+                // run, and clear so the next cycle starts fresh.
+                const paths = new Set(this._dirtyPaths);
+                this._dirtyPaths.clear();
+                await this.runTasks(paths);
                 const partialState: Record<string, any> = {};
                 for (const key of this.dirtyProperties) {
                     partialState[key] = this._stateContainer.getPublic(key);
@@ -1503,7 +1570,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // on mount and on the component's own @State broadcasts, never
                 // on a prop change (e.g. a Modal reacting to an `open` prop).
                 if (!this.skipRenderTasks) {
-                    this.runTasks();
+                    // Snapshot so tasks (some async) see a stable view; clear
+                    // so the next render cycle starts fresh.
+                    const paths = new Set(this._dirtyPaths);
+                    this._dirtyPaths.clear();
+                    void this.runTasks(paths);
                 }
 
                 this.willUpdate(changedProperties);
@@ -1790,6 +1861,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         try {
             this.onCleanup();
+            // Drain task cleanup functions (React `useEffect` style). Runs on
+            // both server and client since tasks themselves run on both.
+            for (const taskKey of [...this._taskCleanups.keys()]) {
+                this._runTaskCleanup(taskKey);
+            }
+            this._taskCleanups.clear();
             if (!this.isServer) {
                 this.websockets.forEach(ws => {
                     ws.close();
