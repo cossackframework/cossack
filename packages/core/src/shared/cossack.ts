@@ -644,8 +644,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // wiping the SSR DOM and flashing an empty main (a major CLS source).
         if (this.container && !this.isServer && !deferMount) {
             this.skipRenderTasks = true;
-            this.mount(this.container as HTMLElement);
-            this.skipRenderTasks = false;
+            try {
+                this.mount(this.container as HTMLElement);
+            } finally {
+                this.skipRenderTasks = false;
+            }
         }
 
         // Call onMount() and clientInit() for all components (not just those with containers)
@@ -1492,12 +1495,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Controller hostUpdate
                 controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
 
-                // Run @Task methods before willUpdate/render, mirroring the SSR
-                // path (`_render()` calls `runTasks()` at the top). Without this,
-                // tasks only fire on mount (bootstrap) and on the component's own
-                // `@State` broadcasts — never on a prop-driven client re-render.
-                // That made prop-driven side effects (e.g. a Modal reacting to an
-                // `open` prop) silently no-op on the client.
+                // Run @Task methods before willUpdate/render. On the server,
+                // tasks run during `bootstrap()` and state broadcasts. On the
+                // client, `_render()` also calls `runTasks()` — this block
+                // ensures the same happens during client-side prop-driven
+                // re-renders via `performUpdate()`. Without it, tasks only fire
+                // on mount and on the component's own @State broadcasts, never
+                // on a prop change (e.g. a Modal reacting to an `open` prop).
                 if (!this.skipRenderTasks) {
                     this.runTasks();
                 }
