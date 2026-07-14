@@ -4,6 +4,7 @@ import {
     Component,
     Client,
     ClientState,
+    OnWindow,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -73,7 +74,7 @@ export class MultiSelect extends Cossack {
             <div class="cs-multiselect relative w-full">
                 <!-- Tag chips + input -->
                 <div
-                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-[40px] w-full rounded-md border border-input bg-background px-2 py-1.5 cursor-text transition-colors shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
+                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-9 w-full rounded-md border border-dashed border-input bg-background px-2 py-1 cursor-text transition-[color,box-shadow] shadow-xs focus-within:border-solid focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
                     @click=${() => this.inputRef.value?.focus()}
                 >
                     ${selected.map((tag, i) => html`
@@ -103,7 +104,7 @@ export class MultiSelect extends Cossack {
                 <!-- Dropdown -->
                 <div
                     id=${this.popoverId}
-                    popover="auto"
+                    popover="manual"
                     class="cs-multiselect__dropdown bg-popover text-popover-foreground border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto"
                     style="position:fixed;margin:0;"
                 >
@@ -210,6 +211,18 @@ export class MultiSelect extends Cossack {
         } else {
             el?.hidePopover?.();
         }
+    }
+
+    /** Close on outside click (manual popover has no light dismiss). */
+    @OnWindow("pointerdown")
+    onPointerDown(e: PointerEvent) {
+        const el = document.getElementById(this.popoverId);
+        if (!el || !el.matches(":popover-open")) return;
+        // Don't close if clicking inside the dropdown or the field.
+        if (el.contains(e.target as Node)) return;
+        const field = this.inputRef.value?.closest(".cs-multiselect");
+        if (field && field.contains(e.target as Node)) return;
+        this.hideDropdown();
     }
 
     @Client()
