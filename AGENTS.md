@@ -31,6 +31,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`test-utils`**: Test helpers
 -   **`create-cossack-app`**: `create-cossack-app` CLI.
 -   **`cossack`**: Newer `cossack` CLI. Which also depends on `create-cossack-app` for scaffolding.
+-   **`ui`**: UI components package. shadcn-ui inspired components.
 
 ## 4. Development Workflow
 
