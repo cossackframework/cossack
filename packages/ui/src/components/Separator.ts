@@ -32,7 +32,7 @@ export class Separator extends Cossack {
             // Native <hr> is semantically horizontal.
             const classes = classMap({
                 "cs-separator": true,
-                "border-t border-border my-0": true,
+                "shrink-0 bg-border h-px w-full": true,
             });
             return html`<hr class=${classes} ?aria-hidden=${decorative} ...=${rest} />`;
         }
@@ -40,7 +40,7 @@ export class Separator extends Cossack {
         const classes = classMap({
             "cs-separator": true,
             "cs-separator--vertical": true,
-            "self-stretch border-l border-border": true,
+            "shrink-0 bg-border self-stretch w-px h-full": true,
         });
 
         return html`

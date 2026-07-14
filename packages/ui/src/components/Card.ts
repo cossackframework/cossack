@@ -5,16 +5,16 @@ export interface CardProps {
     /** Adds a hover lift effect (shadow + slight translate). */
     interactive?: boolean;
     /** Optional padding modifier for the body slot. */
-    padding?: "none" | "sm" | "md" | "lg";
+    padding?: "none" | "sm" | "default" | "lg";
     /** Allow arbitrary HTML attributes to spread onto the root. */
     [key: string]: any;
 }
 
 const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
     none: "",
-    sm: "p-3",
-    md: "p-5",
-    lg: "p-7",
+    sm: "p-4",
+    default: "p-6",
+    lg: "p-8",
 };
 
 /**
@@ -28,11 +28,11 @@ export class Card extends Cossack {
     declare props: CardProps;
 
     render() {
-        const { interactive = false, padding = "md", ...rest } = this.props;
+        const { interactive = false, padding = "default", ...rest } = this.props;
 
         const classes = classMap({
             "cs-card": true,
-            "rounded-lg border border-border bg-background text-foreground shadow-sm": true,
+            "rounded-xl border bg-card text-card-foreground shadow-xs": true,
             "transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer": interactive,
             [PADDINGS[padding]]: !!PADDINGS[padding],
         });
@@ -52,7 +52,7 @@ export class CardHeader extends Cossack {
 
     render() {
         return html`
-            <div class="cs-card-header border-b border-border p-5" ...=${this.props}>
+            <div class="cs-card-header flex flex-col gap-1.5 p-6" ...=${this.props}>
                 ${this.children}
             </div>
         `;
@@ -66,7 +66,7 @@ export class CardBody extends Cossack {
 
     render() {
         return html`
-            <div class="cs-card-body p-5" ...=${this.props}>
+            <div class="cs-card-body p-6 pt-0" ...=${this.props}>
                 ${this.children}
             </div>
         `;
@@ -80,7 +80,7 @@ export class CardFooter extends Cossack {
 
     render() {
         return html`
-            <div class="cs-card-footer border-t border-border p-5" ...=${this.props}>
+            <div class="cs-card-footer flex items-center p-6 pt-0" ...=${this.props}>
                 ${this.children}
             </div>
         `;

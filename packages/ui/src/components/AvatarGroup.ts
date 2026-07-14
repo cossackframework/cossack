@@ -69,7 +69,7 @@ export class AvatarGroup extends Cossack {
         const margin = overlap ?? -Math.round(size * 0.25);
         const radius = shape === "circle" ? "9999px" : "0.375rem";
         const ringStyle = ring
-            ? `box-shadow: 0 0 0 2px var(--color-background, #fff);`
+            ? `box-shadow: 0 0 0 2px var(--color-card, var(--color-background, #fff));`
             : "";
 
         return html`

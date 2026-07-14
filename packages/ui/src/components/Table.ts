@@ -32,12 +32,12 @@ export class Table extends Cossack {
         const wrapperClasses = classMap({
             "cs-table": true,
             "cs-table--striped": striped,
-            "w-full overflow-auto": true,
+            "w-full overflow-auto rounded-lg border bg-card text-card-foreground": true,
         });
 
         return html`
             <div class=${wrapperClasses} ...=${rest}>
-                <table class="cs-table__element w-full text-sm text-left">
+                <table class="cs-table__element w-full caption-bottom text-sm">
                     ${this.children}
                 </table>
             </div>
@@ -50,7 +50,7 @@ export class Table extends Cossack {
 export class TableHeader extends Cossack {
     declare props: { [key: string]: any };
     render() {
-        return html`<thead class="cs-table__header text-xs uppercase text-muted-foreground" ...=${this.props}>${this.children}</thead>`;
+        return html`<thead class="cs-table__header [&_tr]:border-b bg-muted/50" ...=${this.props}>${this.children}</thead>`;
     }
 }
 
@@ -68,7 +68,7 @@ export class TableBody extends Cossack {
 export class TableRow extends Cossack {
     declare props: { [key: string]: any };
     render() {
-        return html`<tr class="cs-table__row border-b border-border" ...=${this.props}>${this.children}</tr>`;
+        return html`<tr class="cs-table__row border-b transition-colors hover:bg-muted/50" ...=${this.props}>${this.children}</tr>`;
     }
 }
 
@@ -77,7 +77,7 @@ export class TableRow extends Cossack {
 export class TableHead extends Cossack {
     declare props: { [key: string]: any };
     render() {
-        return html`<th class="cs-table__head px-4 py-3 font-medium" ...=${this.props}>${this.children}</th>`;
+        return html`<th class="cs-table__head h-10 px-4 text-left align-middle font-medium text-muted-foreground" ...=${this.props}>${this.children}</th>`;
     }
 }
 

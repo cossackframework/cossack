@@ -30,8 +30,8 @@ const STYLES: Record<NonNullable<TypographyProps["variant"]>, string> = {
     small: "text-sm font-medium leading-none text-foreground",
     muted: "text-sm text-muted-foreground",
     blockquote: "mt-6 border-l-2 border-border pl-6 italic text-muted-foreground",
-    code: "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm text-foreground",
-    kbd: "inline-flex items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground",
+    code: "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-medium text-foreground",
+    kbd: "inline-flex items-center justify-center rounded border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground shadow-xs",
     ul: "my-6 ml-6 list-disc [&>li]:mt-2 text-foreground",
     ol: "my-6 ml-6 list-decimal [&>li]:mt-2 text-foreground",
 };
