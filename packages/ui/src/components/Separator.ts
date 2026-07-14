@@ -40,7 +40,7 @@ export class Separator extends Cossack {
         const classes = classMap({
             "cs-separator": true,
             "cs-separator--vertical": true,
-            "shrink-0 bg-border self-stretch w-px h-full": true,
+            "shrink-0 bg-border self-stretch w-px": true,
         });
 
         return html`

@@ -111,7 +111,7 @@ test.describe('Components Demo Page', () => {
   }) => {
     // The token chain resolves: bg-primary utility is generated from the
     // @theme --color-primary declared in @cossackframework/ui/theme/theme.css.
-    const primary = page.locator('button.cs-button--primary').first();
+    const primary = page.locator('button.cs-button--default').first();
     const bg = await primary.evaluate(
       (el) => getComputedStyle(el).backgroundColor,
     );
@@ -131,7 +131,7 @@ test.describe('Components Demo Page', () => {
       const bg = (el: Element | null) =>
         el ? getComputedStyle(el).backgroundColor : 'missing';
       return {
-        primary: bg(document.querySelector('button.cs-button--primary')),
+        primary: bg(document.querySelector('button.cs-button--default')),
         secondary: bg(document.querySelector('button.cs-button--secondary')),
         destructive: bg(document.querySelector('button.cs-button--destructive')),
         success: bg(document.querySelector('span.cs-badge--success')),
@@ -206,8 +206,8 @@ test.describe('Components Demo Page', () => {
     expect(await switches.count()).toBeGreaterThanOrEqual(1);
     await expect(switches.first()).toBeVisible();
 
-    // Spinner uses animate-spin
-    await expect(page.locator('span.cs-spinner.animate-spin')).toBeVisible();
+    // Spinner uses animate-spin (rendered as an inline SVG)
+    await expect(page.locator('svg.cs-spinner.animate-spin').first()).toBeVisible();
   });
 
   test('avatar, separator, skeleton, progress render', async ({ page }) => {
