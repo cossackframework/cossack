@@ -200,6 +200,9 @@ importers:
       oxlint:
         specifier: ^1.41.0
         version: 1.41.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)

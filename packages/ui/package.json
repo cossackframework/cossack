@@ -18,7 +18,15 @@
     "./theme/base.css": "./src/theme/base.css",
     "./theme/theme.css": "./src/theme/theme.css",
     "./theme/themes/default.css": "./src/theme/themes/default.css",
-    "./theme/themes/dark.css": "./src/theme/themes/dark.css"
+    "./theme/themes/dark.css": "./src/theme/themes/dark.css",
+    "./theme/themes/neutral.css": "./src/theme/themes/neutral.css",
+    "./theme/themes/zinc.css": "./src/theme/themes/zinc.css",
+    "./theme/themes/stone.css": "./src/theme/themes/stone.css",
+    "./theme/themes/gray.css": "./src/theme/themes/gray.css",
+    "./theme/themes/slate.css": "./src/theme/themes/slate.css",
+    "./theme/themes/blue.css": "./src/theme/themes/blue.css",
+    "./theme/themes/green.css": "./src/theme/themes/green.css",
+    "./theme/themes/red.css": "./src/theme/themes/red.css"
   },
   "files": [
     "src"

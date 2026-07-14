@@ -1,0 +1,41 @@
+/*
+ * @cossackframework/ui — blue accent palette
+ *
+ * Overrides only the accent tokens (primary, ring, chart-*, sidebar-primary-*)
+ * keeping the neutral surfaces from theme.css. This restores the pre-shadcn
+ * blue accent as an opt-in. Import AFTER theme.css:
+ *
+ *   @import "@cossackframework/ui/theme/themes/blue.css";
+ */
+
+:root {
+    --primary: oklch(0.488 0.243 264.376);
+    --primary-foreground: oklch(0.97 0.014 254.604);
+
+    --ring: oklch(0.488 0.243 264.376);
+
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+
+    --sidebar-primary: oklch(0.546 0.245 262.881);
+    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+}
+
+.dark {
+    --primary: oklch(0.424 0.199 265.638);
+    --primary-foreground: oklch(0.97 0.014 254.604);
+
+    --ring: oklch(0.424 0.199 265.638);
+
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+
+    --sidebar-primary: oklch(0.623 0.214 259.815);
+    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+}

@@ -22,18 +22,45 @@
  *   @import "@cossackframework/ui/theme/theme.css";
  */
 
+/*
+ * Base element defaults. Tailwind v4 preflight handles the reset; this layer
+ * only sets token-driven defaults that preflight does not. Kept as plain CSS
+ * (not `@apply`) where possible so the rules survive even if a consumer does
+ * not import Tailwind's utilities.
+ */
+
+/* Default border + outline color so `border` and `outline` utilities read as
+   themed without each component repeating it. */
+* {
+    border-color: var(--color-border);
+    outline-color: color-mix(in oklch, var(--color-ring) 50%, transparent);
+}
+
 body {
     min-height: 100vh;
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* Themed text selection. */
+::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
 }
 
 /* Accessible focus ring driven by the --color-ring token. */
 :focus-visible {
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
+}
+
+/* Subtle press feedback on native controls (matches shadcn's a:active/button:active). */
+button:active:not(:disabled),
+a:active {
+    opacity: 0.85;
 }
 
 /*
@@ -97,12 +124,10 @@ body {
     }
 }
 
-/* --- Button: smooth color fade on hover/active (no position change) --- */
+/* --- Button: smooth color fade on hover/active (no position change) ---
+   The active-state opacity dip is handled globally above (button:active). */
 .cs-button {
     transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
-}
-.cs-button:active {
-    opacity: 0.85;
 }
 
 /* --- Card interactive: hover lift --- */

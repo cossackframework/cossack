@@ -1,27 +1,18 @@
 /*
- * @cossackframework/ui — default palette
+ * @cossackframework/ui — default palette (alias)
  *
- * Optional named palette. Override any token here to retint the whole UI
- * without touching theme.css. Import in your style.css AFTER theme.css:
+ * The default light scheme is defined in theme.css under `:root`. You do NOT
+ * need to import this file — it is kept for backward compatibility with the
+ * pre-shadcn import path:
  *
  *   @import "@cossackframework/ui/theme/themes/default.css";
  *
- * The values below mirror theme.css (semantic tokens mapped to Tailwind's
- * default palette) — this file exists as the documented starting point for
- * forks and is intentionally explicit.
+ * Historically this file redeclared the light token set. Those values now live
+ * in theme.css so the default scheme works out of the box. To retint, import
+ * one of the named palettes (zinc, stone, gray, slate, neutral, blue, green,
+ * red) instead, or override individual tokens in your own `:root` block.
  */
 
-@theme {
-    --color-background: var(--color-white);
-    --color-foreground: var(--color-zinc-900);
-    --color-primary: var(--color-blue-600);
-    --color-primary-foreground: var(--color-white);
-    --color-secondary: var(--color-zinc-100);
-    --color-secondary-foreground: var(--color-zinc-900);
-    --color-muted: var(--color-zinc-100);
-    --color-muted-foreground: var(--color-zinc-500);
-    --color-destructive: var(--color-red-500);
-    --color-destructive-foreground: var(--color-white);
-    --color-border: var(--color-zinc-200);
-    --color-ring: var(--color-blue-600);
-}
+/* Intentionally empty — see comment above. The `:root` rules in theme.css
+   provide the default light palette. This file is a no-op import kept for
+   compat. */

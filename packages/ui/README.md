@@ -103,7 +103,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ### Icons
 | Component | Description |
 |---|---|
-| **Icon** | Solar icon set (4 styles: line, bold, duotone, broken) via `<Icon name="arrow-right" />` |
+| **Icon** | Solar icon set (6 styles: line, bold, duotone, broken, outline, line-duotone) via `<Icon name="arrow-right" />` |
 
 ## Usage
 
@@ -123,47 +123,96 @@ html`
 
 ## Theming
 
-Tokens live in `src/theme/theme.css` inside a Tailwind v4 `@theme { ... }`
-block. The semantic tokens (primary, secondary, destructive, …) map to
-Tailwind v4's default palette (`var(--color-blue-600)`, …) — they are NOT
-custom colors. Override any token in your own `@theme` block:
+The theme is a two-layer shadcn-style system in `src/theme/theme.css`:
+
+1. **Raw values** — `:root { … }` (light) and `.dark { … }` (dark) define OKLCH
+   color values for every semantic token (`--primary`, `--background`, `--card`,
+   `--popover`, `--accent`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, …).
+   The default palette is shadcn's **neutral** (black primary on light, near-white
+   on dark).
+2. **Tailwind mapping** — `@theme inline { … }` maps each raw variable into a
+   Tailwind utility (`--color-primary: var(--primary)` → `bg-primary`,
+   `text-primary`, `border-primary`, `ring-primary`, …) plus a radius scale
+   derived from a single `--radius` knob.
+
+### Dark mode
+
+Dark mode is **opt-in**: add `class="dark"` to `<html>` (or any ancestor of the
+UI). The `.dark` token overrides live in `theme.css`, so no extra import is
+needed.
+
+### Retinting
+
+Override any single token in your own `:root` / `.dark` blocks:
 
 ```css
 @import "@cossackframework/ui/theme/theme.css";
 
-@theme {
-  --color-primary: var(--color-violet-600);   /* retint to violet */
+:root {
+  --primary: oklch(0.488 0.243 264.376);   /* retint to blue */
+  --ring: oklch(0.488 0.243 264.376);
 }
 ```
 
-Named palettes ship under `theme/themes/`:
+Or import a named palette AFTER `theme.css`. Neutral families retint the whole
+surface scale; accent palettes retint only `--primary` / `--ring` / `--chart-*`
+/ `--sidebar-primary-*`, keeping neutral surfaces:
 
 ```css
-@import "@cossackframework/ui/theme/themes/dark.css";
+@import "@cossackframework/ui/theme/theme.css";
+@import "@cossackframework/ui/theme/themes/zinc.css";   /* neutral family */
+/* or: stone, gray, slate, neutral */
+/* accent palettes: blue, green, red */
 ```
+
+| Palette | Type | Description |
+|---|---|---|
+| `neutral` | neutral | Pure achromatic (the default) |
+| `zinc` | neutral | Cool gray with a subtle blue tint |
+| `stone` | neutral | Warm gray with a subtle brown/amber tint |
+| `gray` | neutral | Balanced, barely-tinted gray |
+| `slate` | neutral | Cool blue-gray |
+| `blue` | accent | Blue primary (the pre-shadcn default) |
+| `green` | accent | Green primary |
+| `red` | accent | Red primary |
+
+### Radius
+
+All corner radii derive from a single `--radius` token (default `0.625rem`):
+`--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-xl`. Override `--radius`
+to rescale every `rounded-*` utility at once.
+
+### Cossack extensions
+
+The token set extends shadcn's with `success` / `success-foreground` and
+`warning` / `warning-foreground` semantic colors, used by `Badge`, `Alert`,
+`Toast`, etc.
 
 ## Icons
 
-Solar icons (https://solar-icons.vercel.app/) across four styles: `line`,
-`bold`, `duotone`, `broken`.
+Solar icons (https://solar-icons.vercel.app/) across **six** styles: `line`,
+`bold`, `duotone`, `broken`, `outline`, `line-duotone`. Only a small curated
+set ships in the registry today; the `Icon` component falls back to `line`
+when a requested style is missing for an icon.
 
-The set is generated from SVG source under `vendor/solar-icons/`:
+```ts
+import { Icon } from "@cossackframework/ui";
 
-```
-vendor/solar-icons/
-  Line/<Name>.svg
-  Bold/<Name>.svg
-  Duotone/<Name>.svg
-  Broken/<Name>.svg
+html`${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}`;
 ```
 
-Regenerate the full set:
+The registry is generated from SVG source. The build script reads Solar's
+`${CATEGORY}/${STYLE}/${NAME}.svg` layout (styles: `Linear`, `Bold`,
+`BoldDuotone`, `Broken`, `Outline`, `LineDuotone`) and emits one module per
+icon plus an aggregated `registry.ts`:
 
 ```sh
 pnpm run build:icons
 # or point at a custom source:
-SRC_DIR=/path/to/solar pnpm run build:icons
+SRC_DIR=/path/to/solar-icons/packages/core/svgs pnpm run build:icons
 ```
+
+A standalone Solar icons package is planned for the future.
 
 ## Ejecting components
 
@@ -171,8 +220,16 @@ SRC_DIR=/path/to/solar pnpm run build:icons
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
 yours — re-run with `--force` to overwrite.
 
-Available component names: `button`, `input`, `card`, `badge`, `label`,
-`alert`, `modal`, `accordion`, `textarea`, `checkbox`, `switch`, `select`,
-`spinner`, `avatar`, `separator`, `skeleton`, `progress`, `tabs`, `tooltip`,
-`popover`, `radio-group`, `slider`, `table`, `toaster`, `dropdown-menu`,
-`sheet`.
+Available component names (kebab-case, passed to `cossack add ui <name>`):
+
+`button`, `input`, `textarea`, `select`, `native-select`, `input-group`,
+`label`, `checkbox`, `switch`, `radio-group`, `slider`, `input-otp`,
+`password-input`, `field`, `toggle`, `toggle-group`, `badge`, `kbd`, `card`,
+`separator`, `table`, `avatar`, `avatar-group`, `skeleton`, `progress`,
+`spinner`, `aspect-ratio`, `typography`, `empty`, `item`, `marker`, `modal`,
+`alert-dialog`, `popover`, `dropdown-menu`, `context-menu`, `sheet`, `drawer`,
+`tooltip`, `hover-card`, `accordion`, `collapsible`, `tabs`, `navigation-menu`,
+`menubar`, `command`, `combobox`, `multi-select`, `calendar`, `date-picker`,
+`carousel`, `resizable`, `scroll-area`, `sidebar`, `breadcrumb`, `pagination`,
+`button-group`, `toaster`, `bubble`, `message`, `message-scroller`,
+`attachment`.
