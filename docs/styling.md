@@ -142,7 +142,7 @@ render() {
 Add global styles to `src/style.css` alongside the Tailwind import:
 
 ```css
-...
+@import "tailwindcss";
 
 /* Custom global styles */
 @keyframes spin {
