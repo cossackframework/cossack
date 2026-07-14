@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref, Debounce, Throttle } from '../src/shared/decorators';
+import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref, Debounce, Throttle, Task, ServerTask, ClientTask } from '../src/shared/decorators';
 import * as environment from '../src/shared/environment';
 
 vi.mock('../src/shared/environment');
@@ -256,6 +256,69 @@ describe('Decorators', () => {
       }
       expect(Reflect.getMetadata('cossack:debounce', TestComponent)).toEqual({ search: 500 });
       expect(Reflect.getMetadata('cossack:throttle', TestComponent)).toEqual({ onScroll: 200 });
+    });
+  });
+
+  describe('@Task / @ServerTask / @ClientTask', () => {
+    it('registers @Task with the { propertyKey, track } shape and undefined track when omitted', () => {
+      class TestComponent {
+        @Task()
+        doWork() {}
+      }
+      const tasks = Reflect.getMetadata('cossack:tasks', TestComponent);
+      expect(tasks).toEqual([{ propertyKey: 'doWork', track: undefined }]);
+    });
+
+    it('registers @Task with the provided track list', () => {
+      class TestComponent {
+        @Task({ track: ['user', 'posts'] })
+        reloadFeed() {}
+      }
+      const tasks = Reflect.getMetadata('cossack:tasks', TestComponent);
+      expect(tasks).toEqual([{ propertyKey: 'reloadFeed', track: ['user', 'posts'] }]);
+    });
+
+    it('supports dot-path deps for nested store fields', () => {
+      class TestComponent {
+        @Task({ track: ['form.email'] })
+        validateEmail() {}
+      }
+      const tasks = Reflect.getMetadata('cossack:tasks', TestComponent);
+      expect(tasks[0].track).toEqual(['form.email']);
+    });
+
+    it('accumulates multiple @Task registrations in declaration order', () => {
+      class TestComponent {
+        @Task()
+        first() {}
+        @Task({ track: ['x'] })
+        second() {}
+      }
+      const tasks = Reflect.getMetadata('cossack:tasks', TestComponent);
+      expect(tasks).toEqual([
+        { propertyKey: 'first', track: undefined },
+        { propertyKey: 'second', track: ['x'] },
+      ]);
+    });
+
+    it('registers @ServerTask under its own metadata key with the same shape', () => {
+      class TestComponent {
+        @ServerTask({ track: ['session'] })
+        syncSession() {}
+      }
+      expect(Reflect.getMetadata('cossack:server-tasks', TestComponent)).toEqual([
+        { propertyKey: 'syncSession', track: ['session'] },
+      ]);
+    });
+
+    it('registers @ClientTask under its own metadata key with the same shape', () => {
+      class TestComponent {
+        @ClientTask({ track: ['viewport'] })
+        attachListeners() {}
+      }
+      expect(Reflect.getMetadata('cossack:client-tasks', TestComponent)).toEqual([
+        { propertyKey: 'attachListeners', track: ['viewport'] },
+      ]);
     });
   });
 

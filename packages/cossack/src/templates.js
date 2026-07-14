@@ -79,13 +79,14 @@ export function loginPageTemplate({ loginPath, registerPath, oauthProviders }) {
     ? oauthProviders
         .map(
           (p) =>
-            `        <a href="/auth/${p}/redirect" class="block w-full text-center bg-gray-700 hover:bg-gray-800 text-white py-2 px-4 rounded mb-2">Sign in with ${p.charAt(0).toUpperCase() + p.slice(1)}</a>`,
+            `        \${component(Button, { variant: 'outline', block: true, '?disabled': false }, html\`<a href="/auth/${p}/redirect" class="block w-full text-center">Sign in with ${p.charAt(0).toUpperCase() + p.slice(1)}</a>\`)}`,
         )
         .join('\n') +
-      '\n        <div class="my-4 text-center text-gray-400 text-sm">— or —</div>\n'
+      '\n        <div class="my-4 text-center text-muted-foreground text-sm">— or —</div>\n'
     : '';
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
+import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { auth, loginUser } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -127,23 +128,17 @@ export default class LoginPage extends Cossack {
 
   render() {
     return html\`
-      <h3 class="mb-4">Login</h3>
-${oauthButtons}      <form @submit="\${(e: Event) => this.handleSubmit(e)}">
-        <div class="mb-4">
-          <label class="block mb-2">Email</label>
-          <input type="email" .value="\${this.email}" @input="\${(e: any) => this.setProperty('email', e.target.value)}" class="w-full p-2 border rounded" placeholder="user@example.com" />
-          \${this.hasError('email') ? html\`<span class="text-red-500 text-sm">\${this.getError('email')}</span>\` : ''}
-        </div>
-        <div class="mb-4">
-          <label class="block mb-2">Password</label>
-          <input type="password" .value="\${this.password}" @input="\${(e: any) => this.setProperty('password', e.target.value)}" class="w-full p-2 border rounded" />
-          \${this.hasError('password') ? html\`<span class="text-red-500 text-sm">\${this.getError('password')}</span>\` : ''}
-        </div>
-        \${this.error ? html\`<div class="mb-4 text-red-500 text-sm">\${this.error}</div>\` : ''}
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Sign In</button>
+      <h3 class="mb-6 text-xl font-semibold text-foreground">Login</h3>
+${oauthButtons}      <form @submit="\${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
+        \${component(Field, { label: 'Email', for: 'email', error: this.getError('email') },
+          component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
+        \${component(Field, { label: 'Password', for: 'password', error: this.getError('password') },
+          component(PasswordInput, { value: this.password, onChange: (v: string) => this.setProperty('password', v) }))}
+        \${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+        \${component(Button, { type: 'submit', block: true }, 'Sign In')}
       </form>
-      <p class="mt-4 text-center">
-        Don't have an account? <a href="${registerPath}" class="text-blue-600">Register</a>
+      <p class="mt-6 text-center text-sm text-muted-foreground">
+        Don't have an account? <a href="${registerPath}" class="text-primary font-medium hover:underline">Register</a>
       </p>
     \`;
   }
@@ -153,7 +148,8 @@ ${oauthButtons}      <form @submit="\${(e: Event) => this.handleSubmit(e)}">
 
 export function registerPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
+import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { auth, registerUser } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -197,27 +193,19 @@ export default class RegisterPage extends Cossack {
 
   render() {
     return html\`
-      <h3 class="mb-4">Register</h3>
-      <form @submit="\${(e: Event) => this.handleSubmit(e)}">
-        <div class="mb-4">
-          <label class="block mb-2">Name</label>
-          <input type="text" .value="\${this.name}" @input="\${(e: any) => this.setProperty('name', e.target.value)}" class="w-full p-2 border rounded" />
-        </div>
-        <div class="mb-4">
-          <label class="block mb-2">Email</label>
-          <input type="email" .value="\${this.email}" @input="\${(e: any) => this.setProperty('email', e.target.value)}" class="w-full p-2 border rounded" />
-          \${this.hasError('email') ? html\`<span class="text-red-500 text-sm">\${this.getError('email')}</span>\` : ''}
-        </div>
-        <div class="mb-4">
-          <label class="block mb-2">Password</label>
-          <input type="password" .value="\${this.password}" @input="\${(e: any) => this.setProperty('password', e.target.value)}" class="w-full p-2 border rounded" />
-          \${this.hasError('password') ? html\`<span class="text-red-500 text-sm">\${this.getError('password')}</span>\` : ''}
-        </div>
-        \${this.error ? html\`<div class="mb-4 text-red-500 text-sm">\${this.error}</div>\` : ''}
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Create Account</button>
+      <h3 class="mb-6 text-xl font-semibold text-foreground">Register</h3>
+      <form @submit="\${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
+        \${component(Field, { label: 'Name', for: 'name' },
+          component(Input, { id: 'name', type: 'text', '.value': this.name, '@input': (e: any) => this.setProperty('name', e.target.value) }))}
+        \${component(Field, { label: 'Email', for: 'email', error: this.getError('email') },
+          component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
+        \${component(Field, { label: 'Password', for: 'password', error: this.getError('password') },
+          component(PasswordInput, { value: this.password, onChange: (v: string) => this.setProperty('password', v) }))}
+        \${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+        \${component(Button, { type: 'submit', block: true }, 'Create Account')}
       </form>
-      <p class="mt-4 text-center">
-        Already have an account? <a href="${loginPath}" class="text-blue-600">Login</a>
+      <p class="mt-6 text-center text-sm text-muted-foreground">
+        Already have an account? <a href="${loginPath}" class="text-primary font-medium hover:underline">Login</a>
       </p>
     \`;
   }
@@ -227,7 +215,8 @@ export default class RegisterPage extends Cossack {
 
 export function forgotPasswordPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
+import { Field, Input, Button, Alert } from '@cossackframework/ui';
 import { requestPasswordReset } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -257,19 +246,17 @@ export default class ForgotPasswordPage extends Cossack {
 
   render() {
     return html\`
-      <h3 class="mb-4">Forgot Password</h3>
+      <h3 class="mb-6 text-xl font-semibold text-foreground">Forgot Password</h3>
       \${this.submitted
-        ? html\`<p class="mb-4">If an account exists for that email, a reset link has been sent.</p>\`
-        : html\`<form @submit="\${(e: Event) => this.handleSubmit(e)}">
-            <div class="mb-4">
-              <label class="block mb-2">Email</label>
-              <input type="email" .value="\${this.email}" @input="\${(e: any) => this.setProperty('email', e.target.value)}" class="w-full p-2 border rounded" />
-              \${this.hasError('email') ? html\`<span class="text-red-500 text-sm">\${this.getError('email')}</span>\` : ''}
-            </div>
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Send Reset Link</button>
+        ? component(Alert, { variant: 'success', title: 'Check your email' },
+            'If an account exists for that email, a reset link has been sent.')
+        : html\`<form @submit="\${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
+            \${component(Field, { label: 'Email', for: 'email', error: this.getError('email') },
+              component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
+            \${component(Button, { type: 'submit', block: true }, 'Send Reset Link')}
           </form>\`}
-      <p class="mt-4 text-center">
-        <a href="${loginPath}" class="text-blue-600">&larr; Back to Login</a>
+      <p class="mt-6 text-center text-sm text-muted-foreground">
+        <a href="${loginPath}" class="text-primary font-medium hover:underline">&larr; Back to Login</a>
       </p>
     \`;
   }
@@ -279,7 +266,8 @@ export default class ForgotPasswordPage extends Cossack {
 
 export function resetPasswordPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { html, component } from '@cossackframework/renderer';
+import { Field, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { resetPassword } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -317,15 +305,12 @@ export default class ResetPasswordPage extends Cossack {
 
   render() {
     return html\`
-      <h3 class="mb-4">Reset Password</h3>
-      <form @submit="\${(e: Event) => this.handleSubmit(e)}">
-        <div class="mb-4">
-          <label class="block mb-2">New Password</label>
-          <input type="password" .value="\${this.password}" @input="\${(e: any) => this.setProperty('password', e.target.value)}" class="w-full p-2 border rounded" />
-          \${this.hasError('password') ? html\`<span class="text-red-500 text-sm">\${this.getError('password')}</span>\` : ''}
-        </div>
-        \${this.error ? html\`<div class="mb-4 text-red-500 text-sm">\${this.error}</div>\` : ''}
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Reset Password</button>
+      <h3 class="mb-6 text-xl font-semibold text-foreground">Reset Password</h3>
+      <form @submit="\${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
+        \${component(Field, { label: 'New Password', for: 'password', error: this.getError('password') },
+          component(PasswordInput, { value: this.password, placeholder: '••••••••', onChange: (v: string) => this.setProperty('password', v) }))}
+        \${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+        \${component(Button, { type: 'submit', block: true }, 'Reset Password')}
       </form>
     \`;
   }

@@ -17,10 +17,23 @@ vi.mock('@cossackframework/renderer', () => {
     const renderToString = vi.fn();
     const createContext = <T>(defaultValue: T) => ({ defaultValue, _id: Math.random().toString() });
     class CossackElement {
+        // Internals that Cossack.performUpdate() reads via getElementInternal().
+        // The real CossackElement initializes these in its constructor; the mock
+        // must too, or performUpdate() throws (e.g. "willUpdate is not a
+        // function", "__notifyListeners is not a function").
+        public __changedProperties: Map<string | number | symbol, unknown> = new Map();
+        public __controllers: any[] = [];
+        public __updatePromise: Promise<boolean> | null = null;
+        private __renderListeners: Set<(template: unknown) => void> = new Set();
+
         render() { return null; }
         requestUpdate() {}
         mount(container: any) { render(this.render(), container); }
-        updated() {}
+        shouldUpdate(_changedProperties: Map<string | number | symbol, unknown>): boolean {
+            return true;
+        }
+        willUpdate(_changedProperties: Map<string | number | symbol, unknown>) {}
+        updated(_changedProperties: Map<string | number | symbol, unknown>) {}
         connectedCallback() {}
         disconnectedCallback() {}
         static properties = {};
@@ -28,6 +41,9 @@ vi.mock('@cossackframework/renderer', () => {
         consume() { return undefined; }
         provide() {}
         resetRenderState() {}
+        __notifyListeners(template: unknown) {
+            this.__renderListeners.forEach(listener => listener(template));
+        }
     }
     return {
         render,
@@ -227,6 +243,190 @@ describe('Lifecycle Hooks', () => {
                 },
             } as any);
             expect(c.clientTaskRan).toBe(false);
+        });
+    });
+
+    describe('@Task({ track }) filtering', () => {
+        it('runs a tracked task when a tracked dep changes', async () => {
+            class TrackedComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['a'] })
+                reactsToA() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new TrackedComponent();
+            await c.bootstrap();
+            // Mount run fires once regardless of track.
+            expect(c.runCount).toBe(1);
+            c.runCount = 0;
+
+            // Simulate a state change to 'a' populating _dirtyPaths, then a
+            // client prop-driven re-render (the performUpdate path).
+            (c as any).__changedProperties = new Map([['a', 1]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['a']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(1);
+        });
+
+        it('does NOT run a tracked task when a non-tracked dep changes', async () => {
+            class TrackedComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['a'] })
+                reactsToA() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new TrackedComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            // 'b' changed, but the task only tracks 'a' → must not run.
+            (c as any).__changedProperties = new Map([['b', 2]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['b']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(0);
+        });
+
+        it('runs a tracked task when a tracked NESTED store path changes', async () => {
+            class NestedTrackComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['store.user.zip'] })
+                reactsToZip() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new NestedTrackComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            // A sibling nested field changed — must NOT run.
+            (c as any).__changedProperties = new Map([['store', {}]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['store.user.name']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(0);
+
+            // The tracked leaf changed — must run.
+            (c as any).__changedProperties = new Map([['store', {}]]);
+            (c as any)._dirtyPaths = new Set(['store.user.zip']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(1);
+        });
+
+        it('track on the whole store fires on ANY nested mutation (prefix-descendant)', async () => {
+            class StoreTrackComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['store'] })
+                reactsToStore() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new StoreTrackComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            (c as any).__changedProperties = new Map([['store', {}]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['store.user.address.zip']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(1);
+        });
+
+        it('an UNtracked task still runs on every change (legacy behavior)', async () => {
+            class LegacyComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task()
+                alwaysRuns() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new LegacyComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            // Any change should fire the untracked task.
+            (c as any).__changedProperties = new Map([['anything', true]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['anything']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(1);
+        });
+
+        it('preserves dirty paths when runTasks is re-entered (race guard)', async () => {
+            // Regression for the early-return-drops-paths bug: if runTasks is
+            // already in progress (isRunningTasks), a second run must NOT clear
+            // _dirtyPaths — the in-progress run should still observe them.
+            class RaceComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['a'] })
+                reactsToA() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new RaceComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            // Start a run and keep it in-flight by making the task await.
+            // Simulate: runTasks returns false (bail) because isRunningTasks is
+            // already true, and verify the paths are preserved in _dirtyPaths.
+            (c as any).isRunningTasks = true; // simulate an in-progress run
+            (c as any).__changedProperties = new Map([['a', 1]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['a']);
+            await (c as any).performUpdate();
+            // performUpdate's runTasks bailed; paths must survive for the
+            // in-progress run to pick up.
+            expect([...(c as any)._dirtyPaths]).toContain('a');
+        });
+    });
+
+    describe('@Task cleanup (React useEffect style)', () => {
+        it('runs the previous cleanup before re-running a tracked task', async () => {
+            const cleanups: string[] = [];
+            class CleanupComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['a'] })
+                reactsToA() {
+                    this.runCount++;
+                    const n = this.runCount;
+                    return () => { cleanups.push(`cleanup-${n}`); };
+                }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new CleanupComponent();
+            await c.bootstrap();
+            // Mount run registered cleanup-1 (not yet invoked).
+            expect(cleanups).toEqual([]);
+
+            // First tracked re-run: cleanup-1 fires, then task runs (runCount 2).
+            (c as any).__changedProperties = new Map([['a', 1]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['a']);
+            await (c as any).performUpdate();
+            expect(c.runCount).toBe(2);
+            expect(cleanups).toEqual(['cleanup-1']);
+        });
+
+        it('runs cleanup on destroy()', async () => {
+            const cleanups: string[] = [];
+            class DestroyComponent extends Cossack<{}> {
+                shouldUpdate() { return true; }
+                @Task()
+                withCleanup() {
+                    return () => { cleanups.push('destroyed'); };
+                }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new DestroyComponent();
+            await c.bootstrap();
+            expect(cleanups).toEqual([]);
+            c.destroy();
+            expect(cleanups).toEqual(['destroyed']);
         });
     });
 

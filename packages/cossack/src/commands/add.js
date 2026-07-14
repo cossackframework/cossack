@@ -139,6 +139,12 @@ async function addAuth(_args, ctx) {
   // 2. add auth dependency
   await addDependency(root, '@cossackframework/auth', resolveAuthVersion(), ctx);
 
+  // 2b. ensure UI package (the generated pages import from @cossackframework/ui)
+  if (!resolvePackageVersion('@cossackframework/ui')) {
+    console.log('  adding ui support (used by the auth pages)...');
+  }
+  await ensureUi(root, ctx);
+
   // 3. scaffold auth module + session model + pages + middleware
   const files = [
     ['src/models/Session.ts', sessionModelTemplate()],
@@ -331,6 +337,26 @@ async function ensureDatabase(root, { dialect, ctx }) {
     label: 'db',
     ctx,
   });
+}
+
+/**
+ * Ensure the @cossackframework/ui package is available: add the dependency,
+ * write the src/components/ui barrel, and wire the theme imports into
+ * src/style.css. Idempotent — safe to call from addAuth (which now generates
+ * pages that import from the UI package) even when `cossack add ui` was already
+ * run. Mirrors the dependency-ensure pattern of ensureDatabase().
+ */
+async function ensureUi(root, ctx) {
+  // 1. dependency
+  await addDependency(root, '@cossackframework/ui', resolveUiVersion(), ctx);
+
+  // 2. barrel re-export (same file addUi writes)
+  const barrelPath = path.resolve(root, 'src/components/ui/index.ts');
+  const barrelResult = await writeFile(barrelPath, uiBarrelTemplate(), ctx);
+  reportFile('src/components/ui/index.ts', barrelResult, ctx);
+
+  // 3. theme imports into src/style.css (idempotent via the marker check inside)
+  await wireUiTheme(root, ctx);
 }
 
 function resolveTursoVersion() {

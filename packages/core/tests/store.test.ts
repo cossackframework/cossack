@@ -1,7 +1,7 @@
 // tests/store.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import { createStoreProxy, resolveStatePath } from '../src/shared/store';
+import { createStoreProxy, resolveStatePath, matchesTrackedPath } from '../src/shared/store';
 import { Store, ClientStore, Validate } from '../src/shared/decorators';
 import { getValidationRules, storeRules } from '../src/shared/validation';
 
@@ -11,7 +11,7 @@ describe('createStoreProxy', () => {
         const store = createStoreProxy({ a: 1, b: 2 }, 'store', trigger);
         store.a = 2;
         expect(trigger).toHaveBeenCalledTimes(1);
-        expect(trigger).toHaveBeenCalledWith('store');
+        expect(trigger).toHaveBeenCalledWith('store', 'store.a');
     });
 
     it('does NOT fire the trigger when the value is unchanged (strict equality)', () => {
@@ -37,7 +37,8 @@ describe('createStoreProxy', () => {
         );
         (store.user as any).address.zip = '12345';
         expect(trigger).toHaveBeenCalledTimes(1);
-        expect(trigger).toHaveBeenCalledWith('store');
+        // The path now carries the full dotted location, not just the store key.
+        expect(trigger).toHaveBeenCalledWith('store', 'store.user.address.zip');
     });
 
     it('fires the trigger on array element writes', () => {
@@ -45,7 +46,8 @@ describe('createStoreProxy', () => {
         const store = createStoreProxy({ items: [1, 2, 3] }, 'store', trigger);
         (store.items as number[])[0] = 99;
         // push semantics aside, only the element write itself fires here.
-        expect(trigger).toHaveBeenCalledWith('store');
+        // Numeric index surfaces as a path segment.
+        expect(trigger).toHaveBeenCalledWith('store', 'store.items.0');
         const before = trigger.mock.calls.length;
         (store.items as number[])[0] = 99; // no-op
         expect(trigger.mock.calls.length).toBe(before);
@@ -68,7 +70,7 @@ describe('createStoreProxy', () => {
         const trigger = vi.fn();
         const store = createStoreProxy({ tags: ['a', 'b', 'c'] }, 'store', trigger);
         (store.tags as string[]).length = 0;
-        expect(trigger).toHaveBeenCalledWith('store');
+        expect(trigger).toHaveBeenCalledWith('store', 'store.tags.length');
         expect(store.tags).toEqual([]);
     });
 
@@ -133,7 +135,7 @@ describe('createStoreProxy', () => {
         const trigger = vi.fn();
         const store = createStoreProxy({ a: 1, b: 2 } as Record<string, number>, 'store', trigger);
         delete store.a;
-        expect(trigger).toHaveBeenCalledWith('store');
+        expect(trigger).toHaveBeenCalledWith('store', 'store.a');
         expect((store as any).a).toBeUndefined();
     });
 
@@ -209,11 +211,13 @@ describe('createStoreProxy does NOT wrap built-in non-plain objects (regression)
         // Plain object: proxied (different reference from raw), mutation reactive.
         expect(store.obj).not.toBe(rawObj);
         (store.obj as any).a = 2;
-        expect(trigger).toHaveBeenCalledWith('store');
+        expect(trigger).toHaveBeenCalledWith('store', 'store.obj.a');
         // Array: proxied (different reference from raw), mutation reactive.
+        // push(3) writes index 2 then length, so assert at least one call
+        // carried the store key and an array-indexed path.
         expect(store.arr).not.toBe(rawArr);
         (store.arr as number[]).push(3);
-        expect(trigger).toHaveBeenCalledWith('store');
+        expect(trigger).toHaveBeenCalledWith('store', 'store.arr.2');
     });
 });
 
@@ -242,12 +246,12 @@ describe('per-instance cache isolation (shared raw object across instances)', ()
 
         // Mutating through B must fire B's trigger, NOT A's.
         (storeB.user as any).name = 'y';
-        expect(triggerB).toHaveBeenCalledWith('form');
+        expect(triggerB).toHaveBeenCalledWith('form', 'form.user.name');
         expect(triggerA).not.toHaveBeenCalled();
 
         // And vice versa.
         (storeA.user as any).name = 'z';
-        expect(triggerA).toHaveBeenCalledWith('form');
+        expect(triggerA).toHaveBeenCalledWith('form', 'form.user.name');
     });
 
     it('returns the same child proxy within a single instance (identity stable)', () => {
@@ -608,7 +612,46 @@ describe('primitive @Store value reactivity (integration-style)', () => {
         const form = readStoreValue('form') as Record<string, unknown>;
         expect(form).not.toBe(container.get('form'));
         (form as any).email = 'a@b.com';
-        expect(trigger).toHaveBeenCalledWith('form');
+        expect(trigger).toHaveBeenCalledWith('form', 'form.email');
+    });
+});
+
+describe('matchesTrackedPath', () => {
+    it('matches an exact top-level name', () => {
+        expect(matchesTrackedPath('user', new Set(['user']))).toBe(true);
+    });
+
+    it('matches a descendant change when tracking the ancestor (track: store fires on nested)', () => {
+        // track: ['store'] should fire when store.user.address.zip changes
+        expect(matchesTrackedPath('store', new Set(['store.user.address.zip']))).toBe(true);
+    });
+
+    it('matches an ancestor change when tracking the descendant (track: nested fires on whole-store reassign)', () => {
+        // track: ['store.user.zip'] should fire when 'store' is reassigned
+        expect(matchesTrackedPath('store.user.zip', new Set(['store']))).toBe(true);
+        expect(matchesTrackedPath('store.user.zip', new Set(['store.user']))).toBe(true);
+    });
+
+    it('does NOT match a sibling path at the same depth', () => {
+        expect(matchesTrackedPath('form.email', new Set(['form.password']))).toBe(false);
+        expect(matchesTrackedPath('a', new Set(['b']))).toBe(false);
+    });
+
+    it('matches if ANY of several changed paths matches', () => {
+        expect(
+            matchesTrackedPath('form.email', new Set(['user.name', 'form.email', 'x'])),
+        ).toBe(true);
+    });
+
+    it('matches a symbol dep only against its top-level stringified key', () => {
+        const sym = Symbol('myState');
+        expect(matchesTrackedPath(sym, new Set([sym.toString()]))).toBe(true);
+        expect(matchesTrackedPath(sym, new Set(['other']))).toBe(false);
+    });
+
+    it('does not match when the first segment differs', () => {
+        // 'store.user' vs 'storeX.user' — different root
+        expect(matchesTrackedPath('store.user', new Set(['storeX.user']))).toBe(false);
     });
 });
 

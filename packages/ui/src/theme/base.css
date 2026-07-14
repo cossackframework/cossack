@@ -58,10 +58,21 @@ body {
     color: var(--color-primary-foreground);
 }
 
-/* Accessible focus ring driven by the --color-ring token. */
-:focus-visible {
-    outline: 2px solid var(--color-ring);
-    outline-offset: 2px;
+/*
+ * Accessible focus ring driven by the --color-ring token.
+ *
+ * Lives in `@layer base` (NOT unlayered) so Tailwind utility classes in the
+ * higher-priority `utilities` layer can override it per-element — e.g. composite
+ * inputs like InputGroup that use a `focus-within:ring-[3px]` wrapper as the
+ * sole focus indicator and need to suppress the native outline on the inner
+ * `<input>` via `focus-visible:outline-none`. An unlayered `:focus-visible`
+ * would beat every `@layer` rule regardless of specificity.
+ */
+@layer base {
+    :focus-visible {
+        outline: 2px solid var(--color-ring);
+        outline-offset: 2px;
+    }
 }
 
 /* Subtle press feedback on native controls (matches shadcn's a:active/button:active). */

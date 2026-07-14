@@ -13,7 +13,8 @@ export default class RootLayout extends Cossack {
             <a href="/contact" class="no-underline text-inherit ${this.isActive('/contact') ? 'font-bold text-blue-500 underline' : ''}">Contact</a> |
             <a href="/optimistic-counter" class="no-underline text-inherit ${this.isActive('/optimistic-counter') ? 'font-bold text-blue-500 underline' : ''}">Optimistic</a> |
             <a href="/prevent-navigation" class="no-underline text-inherit ${this.isActive('/prevent-navigation') ? 'font-bold text-blue-500 underline' : ''}">Prevent Nav</a> |
-            <a href="/lifecycle" class="no-underline text-inherit ${this.isActive('/lifecycle') ? 'font-bold text-blue-500 underline' : ''}">Loading UI</a>
+            <a href="/lifecycle" class="no-underline text-inherit ${this.isActive('/lifecycle') ? 'font-bold text-blue-500 underline' : ''}">Loading UI</a> |
+            <a href="/task-tracker" class="no-underline text-inherit ${this.isActive('/task-tracker') ? 'font-bold text-blue-500 underline' : ''}">Task Tracker</a>
           </nav>
         </header>
         <div class="p-8">

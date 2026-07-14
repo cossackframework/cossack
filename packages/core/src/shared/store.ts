@@ -18,8 +18,13 @@
  * depth). Implementations route to either `_scheduleStateBroadcast` (server)
  * or `requestUpdate` (client). Repeated synchronous mutations are coalesced
  * downstream (microtask for broadcasts; `__updatePromise` for renders).
+ *
+ * `storeKey` is the component property name that exposes this store (e.g.
+ * `'form'`). `path` is the full dotted path to the mutated field, starting at
+ * the store key (e.g. `'form.address.zip'`), so `@Task({ track: [...] })` can
+ * target nested fields. A top-level assignment reports `path === storeKey`.
  */
-export type StoreProxyTrigger = (storeKey: string) => void;
+export type StoreProxyTrigger = (storeKey: string, path: string) => void;
 
 /**
  * Per-trigger cache of child proxies, keyed outer by the store's `trigger`
@@ -41,6 +46,13 @@ export type StoreProxyTrigger = (storeKey: string) => void;
  * Both WeakMaps so dead triggers/targets are GC-eligible. Keyed on the RAW
  * target (never on a proxy) and on the trigger function (stable for the
  * lifetime of the store binding).
+ *
+ * Known limitation: because the cache is keyed by raw target, an object
+ * reachable via multiple paths (aliasing / shared references) reuses the proxy
+ * first created for it — so nested mutations report the FIRST path, not the
+ * path actually used to reach it. This affects `@Task({ track })` filtering for
+ * aliased objects but is an accepted tradeoff for identity stability and
+ * cycle-safety. Most stores have a tree shape (no aliasing) and are unaffected.
  */
 const childProxyCache = new WeakMap<StoreProxyTrigger, Map<object, object>>();
 
@@ -71,9 +83,11 @@ export function isPlainObjectOrArray(value: object): boolean {
  * - `get`: object/array values are returned through a cached child proxy;
  *   primitives are returned raw; functions (array methods etc.) are bound to
  *   the proxy receiver so they operate on the proxied collection.
- * - `set` / `deleteProperty`: invoke `trigger(storeKey)` after mutating. A
- *   strict equality check avoids firing on no-op writes at the top level; the
- *   trigger fires on any structural change for `deleteProperty`.
+ * - `set` / `deleteProperty`: invoke `trigger(storeKey, path)` after mutating,
+ *   where `path` is the full dotted path to the mutated field
+ *   (`'form.address.zip'`). A strict equality check avoids firing on no-op
+ *   writes at the top level; the trigger fires on any structural change for
+ *   `deleteProperty`.
  *
  * The top-level target is also registered in the shared child cache, so a
  * circular reference (`a.b = b; b.a = a`) returns the SAME proxy when reached
@@ -83,11 +97,15 @@ export function isPlainObjectOrArray(value: object): boolean {
  * @param storeKey The component property name that exposes this store.
  * @param trigger  Called once per qualifying mutation; routes to broadcast /
  *                 re-render by the host component.
+ * @param basePath The dotted path to this proxy's root (`storeKey` for the
+ *                 top level, `'storeKey.a.b'` for nested levels). Used to build
+ *                 the `path` reported to `trigger`.
  */
 export function createStoreProxy(
     target: Record<PropertyKey, unknown>,
     storeKey: string,
     trigger: StoreProxyTrigger,
+    basePath: string = storeKey,
 ): Record<PropertyKey, unknown> {
     const inner = childProxyCache.get(trigger) ?? new Map<object, object>();
     if (inner.size === 0) childProxyCache.set(trigger, inner);
@@ -111,11 +129,15 @@ export function createStoreProxy(
                     return value;
                 }
                 const raw = value as object;
+                // The child proxy carries the nested path so mutations report
+                // `storeKey.a.b`, not just `storeKey`.
+                const childPath = `${basePath}.${String(prop)}`;
                 const cached = inner.get(raw)
                     ?? createStoreProxy(
                         value as Record<PropertyKey, unknown>,
                         storeKey,
                         trigger,
+                        childPath,
                     );
                 return cached;
             }
@@ -134,14 +156,14 @@ export function createStoreProxy(
             // is true, so without this guard an unchanged NaN field would
             // fire the trigger every time).
             if (oldValue !== value && !(Number.isNaN(oldValue) && Number.isNaN(value))) {
-                trigger(storeKey);
+                trigger(storeKey, `${basePath}.${String(prop)}`);
             }
             return ok;
         },
         deleteProperty(obj, prop) {
             const ok = Reflect.deleteProperty(obj, prop);
             if (ok) {
-                trigger(storeKey);
+                trigger(storeKey, `${basePath}.${String(prop)}`);
             }
             return ok;
         },
@@ -179,4 +201,42 @@ export function resolveStatePath(component: any, path: string): unknown {
         current = current[parts[i]];
     }
     return current;
+}
+
+/**
+ * Test whether a `@Task({ track })` dependency matches any of the changed
+ * state paths reported during the current update cycle.
+ *
+ * The match is segment-wise prefix either direction, so:
+ *  - `track: ['user']` matches a change to `user` (exact) AND to `user.x`
+ *    (ancestor-changed: the whole user changed).
+ *  - `track: ['form.email']` matches a change to `form.email` (exact) AND to
+ *    `form` (descendant-changed: the whole form was reassigned, so the email
+ *    changed too) — but NOT to `form.password` (sibling).
+ *
+ * Symbols only match a top-level change whose key stringifies identically
+ * (no dot-path identity exists for symbols).
+ */
+export function matchesTrackedPath(
+    dep: string | symbol,
+    changedPaths: Set<string>,
+): boolean {
+    if (typeof dep === 'symbol') {
+        // Symbols only ever report at the top level (path === String(key)).
+        return changedPaths.has(dep.toString());
+    }
+    const depSegments = dep.split('.');
+    for (const changed of changedPaths) {
+        const changedSegments = changed.split('.');
+        const min = Math.min(depSegments.length, changedSegments.length);
+        let match = true;
+        for (let i = 0; i < min; i++) {
+            if (depSegments[i] !== changedSegments[i]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
 }
