@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -8,6 +8,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface DrawerProps {
     /** Controlled open state. */
@@ -82,7 +83,7 @@ export class Drawer extends Cossack {
         const panelClasses = classMap({
             "cs-drawer__panel": true,
             [`cs-drawer--${side}`]: true,
-            "fixed bg-background text-foreground shadow-2xl flex flex-col z-[100]": true,
+            "fixed bg-popover text-popover-foreground shadow-lg flex flex-col z-[100]": true,
             // Rounded corners away from the attached edge.
             "rounded-t-2xl": side === "bottom",
             "rounded-b-2xl": side === "top",
@@ -122,19 +123,19 @@ export class Drawer extends Cossack {
                         ? html`<div class="cs-drawer__handle pt-3 pb-2 flex flex-col items-center gap-2 cursor-grab">
                               <span class="block w-10 h-1.5 rounded-full bg-muted-foreground/30"></span>
                               ${showTitle
-                                  ? html`<span class="text-sm font-medium text-foreground px-4">${title}</span>`
+                                  ? html`<span class="text-sm font-medium text-popover-foreground px-4">${title}</span>`
                                   : null}
                           </div>`
                         : showTitle
-                            ? html`<div class="cs-drawer__header px-4 py-3 border-b border-border flex items-center justify-between">
-                                  <span class="text-sm font-semibold text-foreground">${title}</span>
+                            ? html`<div class="cs-drawer__header px-4 py-3 border-b flex items-center justify-between">
+                                  <span class="text-sm font-semibold text-popover-foreground">${title}</span>
                                   <button
                                       type="button"
-                                      class="cs-drawer__close w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-muted cursor-pointer border-none bg-transparent text-muted-foreground"
+                                      class="cs-drawer__close size-7 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent text-muted-foreground outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] [&_svg]:size-4 transition-colors"
                                       aria-label="Close"
                                       @click=${() => this.close()}
                                   >
-                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                                      ${component(Icon, { name: "close-circle", size: 16 })}
                                   </button>
                               </div>`
                             : null}

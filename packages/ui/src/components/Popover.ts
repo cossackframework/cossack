@@ -45,7 +45,7 @@ export class Popover extends Cossack {
             "cs-popover": true,
             [`cs-popover--${side}`]: true,
             [`cs-popover--align-${align}`]: true,
-            "bg-background border border-border rounded-lg shadow-lg p-4": true,
+            "bg-popover text-popover-foreground border rounded-lg shadow-lg p-4 outline-none": true,
         });
 
         return html`
@@ -53,7 +53,7 @@ export class Popover extends Cossack {
                 <button
                     type="button"
                     popovertarget=${this.popoverId}
-                    class="cs-popover__trigger inline-flex items-center justify-center cursor-pointer"
+                    class="cs-popover__trigger inline-flex items-center justify-center cursor-pointer outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md"
                     @click=${() => this.handleToggle()}
                 >
                     ${trigger}

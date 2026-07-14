@@ -1,5 +1,6 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface PaginationProps {
     /** Current page (1-based). */
@@ -40,13 +41,13 @@ export class Pagination extends Cossack {
             "cs-pagination__button": true,
             "inline-flex items-center justify-center w-9 h-9 text-sm rounded-md cursor-pointer border-none transition-colors": true,
             "bg-primary text-primary-foreground": active,
-            "text-foreground hover:bg-muted": !active,
+            "hover:bg-accent hover:text-accent-foreground": !active,
         });
 
         return html`
             <nav class="cs-pagination flex items-center gap-1" aria-label="Pagination">
                 <button type="button" class=${btnClass(false)} ?disabled=${page <= 1}
-                    @click=${() => this.props.onPageChange?.(page - 1)} aria-label="Previous page">‹</button>
+                    @click=${() => this.props.onPageChange?.(page - 1)} aria-label="Previous page"><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span></button>
                 ${start > 1 ? html`
                     <button type="button" class=${btnClass(false)} @click=${() => this.props.onPageChange?.(1)}>1</button>
                     ${start > 2 ? html`<span class="px-1 text-muted-foreground">…</span>` : null}
@@ -60,7 +61,7 @@ export class Pagination extends Cossack {
                     <button type="button" class=${btnClass(false)} @click=${() => this.props.onPageChange?.(totalPages)}>${totalPages}</button>
                 ` : null}
                 <button type="button" class=${btnClass(false)} ?disabled=${page >= totalPages}
-                    @click=${() => this.props.onPageChange?.(page + 1)} aria-label="Next page">›</button>
+                    @click=${() => this.props.onPageChange?.(page + 1)} aria-label="Next page"><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span></button>
             </nav>
         `;
     }

@@ -1,5 +1,6 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface NavigationMenuProps {
     sections?: Array<{
@@ -62,29 +63,26 @@ export class NavigationMenu extends Cossack {
                                 class=${classMap({
                                     "cs-navigation-menu__trigger group": true,
                                     "px-3 py-2 text-sm font-medium rounded-md cursor-pointer border-none transition-colors inline-flex items-center": true,
-                                    "text-foreground bg-muted": isActive,
-                                    "text-muted-foreground hover:text-foreground": !isActive,
+                                    "text-accent-foreground bg-accent": isActive,
+                                    "text-muted-foreground hover:bg-accent hover:text-accent-foreground": !isActive,
                                 })}
                                 @click=${trigger === "click" ? () => this.handleClickSection(i, popoverId) : undefined}
                                 @mouseenter=${trigger === "hover" ? () => this.scheduleOpen(i, popoverId) : undefined}
                                 @mouseleave=${trigger === "hover" ? () => this.scheduleClose(popoverId) : undefined}
-                            >${section.label}<svg
-                                  class="relative top-[1px] ml-1 w-3 h-3 transition-transform duration-300 ${isActive ? "rotate-180" : ""}"
-                                  viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                              ><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                            >${section.label}<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${isActive ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { name: "alt-arrow-down", size: 16 })}</span></button>
                             <div
                                 id=${popoverId}
                                 popover="manual"
-                                class="cs-navigation-menu__panel cs-nav-popover bg-background border border-border rounded-lg shadow-lg p-2 min-w-[200px]"
+                                class="cs-navigation-menu__panel cs-nav-popover bg-popover text-popover-foreground border rounded-lg shadow-lg p-2 min-w-[200px]"
                                 @mouseenter=${() => { this.clearHoverTimer(); this.activeSection = i; }}
                                 @mouseleave=${() => { this.scheduleClose(`cs-nav-menu-${i}`); }}
                             >
                                 ${(section.items || []).map((item) => html`
                                     <a
                                         href=${item.href}
-                                        class="cs-navigation-menu__link block px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                                        class="cs-navigation-menu__link block px-3 py-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
                                     >
-                                        <span class="text-sm font-medium text-foreground">${item.label}</span>
+                                        <span class="text-sm font-medium text-popover-foreground">${item.label}</span>
                                         ${item.description ? html`<span class="block text-xs text-muted-foreground mt-0.5">${item.description}</span>` : null}
                                     </a>
                                 `)}

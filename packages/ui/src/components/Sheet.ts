@@ -79,7 +79,7 @@ export class Sheet extends Cossack {
         const panelClasses = classMap({
             "cs-sheet__panel": true,
             [`cs-sheet--${side}`]: true,
-            "fixed bg-background text-foreground shadow-2xl border-border flex flex-col z-[100]": true,
+            "fixed bg-popover text-popover-foreground shadow-lg border flex flex-col z-[100]": true,
             "border-r": side === "left",
             "border-l": side === "right",
             "border-b": side === "top",

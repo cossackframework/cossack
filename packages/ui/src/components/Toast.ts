@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,6 +7,7 @@ import {
     connectStore,
     type ReactiveStore,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 // ---------------------------------------------------------------------------
 // Global toast store — a module-level singleton. Any code in the app can call
@@ -71,10 +72,10 @@ export const toast = {
 // ---------------------------------------------------------------------------
 
 const VARIANT_STYLES: Record<string, string> = {
-    default: "bg-background text-foreground border-border",
-    success: "bg-background text-foreground border-success/50",
-    warning: "bg-background text-foreground border-warning/50",
-    destructive: "bg-background text-foreground border-destructive/50",
+    default: "bg-popover text-popover-foreground border",
+    success: "bg-popover text-popover-foreground border-success/50",
+    warning: "bg-popover text-popover-foreground border-warning/50",
+    destructive: "bg-popover text-popover-foreground border-destructive/50",
 };
 
 export interface ToasterProps {
@@ -122,18 +123,18 @@ export class Toaster extends Cossack {
                             class=${classMap({
                                 "cs-toast": true,
                                 "cs-toast--animate-in": true,
-                                "pointer-events-auto rounded-lg border shadow-lg p-4 pr-10 min-w-[300px] max-w-[400px] text-sm relative": true,
+                                "pointer-events-auto rounded-md border shadow-lg p-4 pr-10 min-w-[300px] max-w-[400px] text-sm relative": true,
                                 [VARIANT_STYLES[t.variant || "default"] || VARIANT_STYLES.default]: true,
                             })}
                             role="status"
                         >
                             ${t.message}
                             <button
-                                class="cs-toast__close absolute top-2 right-2 text-muted-foreground hover:text-foreground cursor-pointer bg-transparent border-none"
+                                class="cs-toast__close absolute top-2 right-2 size-6 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer bg-transparent border-none [&_svg]:size-4 transition-colors"
                                 aria-label="Dismiss"
                                 @click=${() => dismissToast(t.id)}
                             >
-                                ✕
+                                ${component(Icon, { name: "close-circle", size: 16 })}
                             </button>
                         </div>
                     `,

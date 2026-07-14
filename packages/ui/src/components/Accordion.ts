@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface AccordionItemProps {
     /** Controlled open state. When passed, the parent owns the state. */
@@ -70,13 +71,14 @@ export class AccordionItem extends Cossack {
         const containerClasses = classMap({
             "cs-accordion": true,
             "cs-accordion--open": open,
-            "rounded-md border border-border bg-background text-foreground": true,
+            "rounded-md border bg-card text-card-foreground": true,
         });
 
         const summaryClasses = classMap({
             "cs-accordion__summary": true,
-            "w-full flex items-center justify-between gap-2 px-4 py-3 font-medium text-sm cursor-pointer select-none bg-transparent border-none text-left": true,
-            "hover:bg-muted": true,
+            "w-full flex items-center justify-between gap-2 px-4 py-3 font-medium text-sm cursor-pointer select-none bg-transparent border-none text-left outline-none": true,
+            "hover:bg-accent hover:text-accent-foreground": true,
+            "focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:rounded-md": true,
         });
 
         // Use the measured height for a precise animation. Fall back to 200px
@@ -93,16 +95,12 @@ export class AccordionItem extends Cossack {
                     @click=${() => this.toggle()}
                 >
                     <span>${summary ?? this.props["summary"]}</span>
-                    <svg
-                        class="cs-accordion__chevron w-4 h-4 text-muted-foreground shrink-0"
-                        style=${`transform: rotate(${open ? 180 : 0}deg); transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);`}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
+                    <span
+                        class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200"
+                        style=${`transform: rotate(${open ? 180 : 0}deg);`}
                     >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                    </svg>
+                        ${component(Icon, { name: "alt-arrow-down", size: 16 })}
+                    </span>
                 </button>
                 <div
                     class="cs-accordion__content-wrapper overflow-hidden"

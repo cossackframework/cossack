@@ -53,7 +53,7 @@ export class Modal extends Cossack {
         const panelClasses = classMap({
             "cs-modal__panel": true,
             [panelClass]: true,
-            "w-full bg-background text-foreground rounded-lg shadow-xl border border-border p-6": true,
+            "w-full bg-popover text-popover-foreground rounded-lg shadow-xl border p-6": true,
         });
 
         return html`

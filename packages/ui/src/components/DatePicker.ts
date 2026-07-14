@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface DatePickerProps {
     /** Selected date (ISO yyyy-mm-dd). */
@@ -67,18 +68,15 @@ export class DatePicker extends Cossack {
                     popovertarget=${this.popoverId}
                     class=${classMap({
                         "cs-datepicker__trigger": true,
-                        "w-full inline-flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm cursor-pointer transition-colors": true,
+                        "w-full inline-flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm cursor-pointer transition-colors shadow-xs": true,
                         "text-muted-foreground": !current,
                         "text-foreground": !!current,
-                        "hover:bg-muted": true,
+                        "hover:bg-accent hover:text-accent-foreground": true,
                     })}
                     @click=${() => this.position()}
                 >
                     <span>${current ? formatLabel(current) : placeholder}</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="text-muted-foreground">
-                        <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                        <path d="M3 10h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                    </svg>
+                    <span class="inline-flex items-center justify-center text-muted-foreground [&_svg]:size-4">${component(Icon, { name: "calendar", size: 16 })}</span>
                 </button>
                 <div
                     id=${this.popoverId}
@@ -87,7 +85,7 @@ export class DatePicker extends Cossack {
                     style="position:fixed;margin:0;background:transparent;border:none;padding:0;"
                     @toggle=${(e: Event) => this.onToggle(e)}
                 >
-                    <div class="bg-background border border-border rounded-lg shadow-lg p-2 mt-1">
+                    <div class="bg-popover text-popover-foreground border rounded-lg shadow-lg p-2 mt-1">
                         ${this.renderCalendar(current)}
                     </div>
                 </div>
@@ -111,12 +109,12 @@ export class DatePicker extends Cossack {
         return html`
             <div class="inline-block p-1 select-none">
                 <div class="flex items-center justify-between mb-2 px-1">
-                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-muted cursor-pointer border-none bg-transparent" @click=${() => this.prevMonth()}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.prevMonth()}>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span>
                     </button>
                     <span class="text-sm font-medium text-foreground">${MONTHS[this.viewMonth]} ${this.viewYear}</span>
-                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-muted cursor-pointer border-none bg-transparent" @click=${() => this.nextMonth()}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.nextMonth()}>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
                     </button>
                 </div>
                 <div class="grid grid-cols-7 gap-0.5 mb-1">
@@ -132,7 +130,7 @@ export class DatePicker extends Cossack {
                                 class=${classMap({
                                     "w-7 h-7 rounded-md text-xs cursor-pointer border-none transition-colors": true,
                                     "bg-primary text-primary-foreground": isSel,
-                                    "text-foreground hover:bg-muted": !isSel,
+                                    "hover:bg-accent hover:text-accent-foreground": !isSel,
                                 })}
                                 @click=${() => this.pick(c.date)}
                             >${c.d}</button>

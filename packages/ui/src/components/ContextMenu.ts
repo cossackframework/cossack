@@ -57,7 +57,7 @@ export class ContextMenu extends Cossack {
                 <div
                     id=${this.popoverId}
                     popover="auto"
-                    class="cs-context-menu__panel min-w-[160px] bg-background border border-border rounded-md shadow-lg p-1"
+                    class="cs-context-menu__panel min-w-[160px] bg-popover text-popover-foreground border rounded-md shadow-lg p-1"
                     style="position:fixed;margin:0;"
                 >
                     ${items.map((item) => html`
@@ -70,8 +70,8 @@ export class ContextMenu extends Cossack {
                             class=${classMap({
                                 "cs-context-menu__item": true,
                                 "w-full text-left px-2.5 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors bg-transparent": true,
-                                "text-destructive hover:bg-destructive/10": !!item.destructive && !item.disabled,
-                                "text-foreground hover:bg-muted": !item.destructive && !item.disabled,
+                                "text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive": !!item.destructive && !item.disabled,
+                                "text-popover-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground": !item.destructive && !item.disabled,
                                 "text-muted-foreground/40 cursor-not-allowed": !!item.disabled,
                             })}
                             @click=${() => this.handleClick(item)}

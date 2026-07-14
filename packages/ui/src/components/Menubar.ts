@@ -1,5 +1,6 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface MenubarProps {
     menus?: Array<{
@@ -42,23 +43,20 @@ export class Menubar extends Cossack {
                                 class=${classMap({
                                     "cs-menubar__trigger group": true,
                                     "px-3 py-1.5 text-sm font-medium rounded-sm cursor-pointer border-none transition-colors inline-flex items-center": true,
-                                    "bg-background text-foreground shadow-sm": this.openMenu === i,
-                                    "text-muted-foreground hover:text-foreground bg-transparent": this.openMenu !== i,
+                                    "bg-accent text-accent-foreground shadow-xs": this.openMenu === i,
+                                    "text-muted-foreground hover:bg-accent hover:text-foreground bg-transparent": this.openMenu !== i,
                                 })}
                                 @click=${() => { this.openMenu = this.openMenu === i ? -1 : i; this.togglePanel(i, popoverId); }}
-                            >${menu.label}${chevron ? html`<svg
-                                  class="relative top-[1px] ml-1 w-3 h-3 transition-transform duration-300 ${this.openMenu === i ? "rotate-180" : ""}"
-                                  viewBox="0 0 24 24" fill="none" aria-hidden="true"
-                              ><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>` : null}</button>
+                            >${menu.label}${chevron ? html`<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${this.openMenu === i ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { name: "alt-arrow-down", size: 16 })}</span>` : null}</button>
                             <div
                                 id=${popoverId}
                                 popover="auto"
-                                class="cs-menubar__dropdown cs-menu-popover bg-background border border-border rounded-md shadow-lg p-1 min-w-[160px]"
+                                class="cs-menubar__dropdown cs-menu-popover bg-popover text-popover-foreground border rounded-md shadow-lg p-1 min-w-[160px]"
                                 @toggle=${(e: Event) => this.handleToggle(e, i)}
                             >
                                 ${(menu.items || []).map((item) =>
                                     item.separator
-                                        ? html`<hr class="border-t border-border my-1" />`
+                                        ? html`<hr class="border-t my-1" />`
                                         : html`<button
                                             type="button"
                                             role="menuitem"
@@ -66,7 +64,7 @@ export class Menubar extends Cossack {
                                             class=${classMap({
                                                 "cs-menubar__dropdown-item": true,
                                                 "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
-                                                "hover:bg-muted focus:bg-muted focus:outline-none": !item.disabled,
+                                                "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none": !item.disabled,
                                                 "opacity-50 cursor-not-allowed": !!item.disabled,
                                             })}
                                             @click=${() => {

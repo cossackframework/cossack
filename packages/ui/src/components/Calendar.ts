@@ -1,5 +1,6 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface CalendarProps {
     /** Selected date (ISO yyyy-mm-dd). */
@@ -84,30 +85,26 @@ export class Calendar extends Cossack {
         today.setHours(0, 0, 0, 0);
 
         return html`
-            <div class="cs-calendar inline-block rounded-lg border border-border bg-background p-3 select-none">
+            <div class="cs-calendar inline-block rounded-lg border bg-popover text-popover-foreground p-3 select-none">
                 <div class="cs-calendar__header flex items-center justify-between mb-3">
                     <button
                         type="button"
-                        class="cs-calendar__prev inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-muted cursor-pointer border-none bg-transparent"
+                        class="cs-calendar__prev inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent"
                         aria-label="Previous month"
                         @click=${() => this.prevMonth()}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span>
                     </button>
                     <span class="cs-calendar__title text-sm font-medium text-foreground">
                         ${MONTHS[this.viewMonth]} ${this.viewYear}
                     </span>
                     <button
                         type="button"
-                        class="cs-calendar__next inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-muted cursor-pointer border-none bg-transparent"
+                        class="cs-calendar__next inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent"
                         aria-label="Next month"
                         @click=${() => this.nextMonth()}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
                     </button>
                 </div>
                 <div class="cs-calendar__weekdays grid grid-cols-7 gap-1 mb-1">
@@ -130,8 +127,8 @@ export class Calendar extends Cossack {
                                     "cs-calendar__day": true,
                                     "w-8 h-8 rounded-md text-sm cursor-pointer border-none transition-colors": true,
                                     "bg-primary text-primary-foreground": !!isSelected,
-                                    "bg-muted text-foreground": !isSelected && isToday,
-                                    "text-foreground hover:bg-muted": !isSelected && !isToday && !isDisabled,
+                                    "bg-accent text-accent-foreground": !isSelected && isToday,
+                                    "hover:bg-accent hover:text-accent-foreground": !isSelected && !isToday && !isDisabled,
                                     "text-muted-foreground/40 cursor-not-allowed": isDisabled,
                                 })}
                                 ?disabled=${!!isDisabled}

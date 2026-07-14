@@ -612,8 +612,9 @@ describe("Pagination", () => {
         const out = renderComp(Pagination, { page: 3, totalPages: 10 });
         expect(out).toContain("cs-pagination");
         expect(out).toContain("3");
-        expect(out).toContain("‹");
-        expect(out).toContain("›");
+        // Prev/next are now Icon components (arrows), not text glyphs.
+        expect(out).toContain('aria-label="Previous page"');
+        expect(out).toContain('aria-label="Next page"');
         expect(out).toContain("aria-current");
     });
 });

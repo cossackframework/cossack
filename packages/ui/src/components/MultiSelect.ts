@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface MultiSelectProps {
     /** Predefined options to pick from. */
@@ -72,19 +73,19 @@ export class MultiSelect extends Cossack {
             <div class="cs-multiselect relative w-full">
                 <!-- Tag chips + input -->
                 <div
-                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-[40px] w-full rounded-md border border-border bg-background px-2 py-1.5 cursor-text transition-colors focus-within:border-muted-foreground"
+                    class="cs-multiselect__field flex flex-wrap items-center gap-1.5 min-h-[40px] w-full rounded-md border border-input bg-background px-2 py-1.5 cursor-text transition-colors shadow-xs focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]"
                     @click=${() => this.inputRef.value?.focus()}
                 >
                     ${selected.map((tag, i) => html`
-                        <span class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-sm text-foreground">
+                        <span class="cs-multiselect__tag inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-sm text-secondary-foreground">
                             ${tag}
                             <button
                                 type="button"
-                                class="cs-multiselect__tag-remove inline-flex items-center justify-center w-4 h-4 rounded-sm hover:bg-border text-muted-foreground cursor-pointer border-none bg-transparent"
+                                class="cs-multiselect__tag-remove inline-flex items-center justify-center w-4 h-4 rounded-sm hover:text-foreground text-muted-foreground cursor-pointer border-none bg-transparent"
                                 aria-label=${`Remove ${tag}`}
                                 @click=${(e: MouseEvent) => { e.stopPropagation(); this.removeTag(i); }}
                             >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                                <span class="inline-flex items-center justify-center [&_svg]:size-2.5">${component(Icon, { name: "close-circle", size: 16 })}</span>
                             </button>
                         </span>
                     `)}
@@ -103,7 +104,7 @@ export class MultiSelect extends Cossack {
                 <div
                     id=${this.popoverId}
                     popover="auto"
-                    class="cs-multiselect__dropdown bg-background border border-border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto"
+                    class="cs-multiselect__dropdown bg-popover text-popover-foreground border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto"
                     style="position:fixed;margin:0;"
                 >
                     ${filtered.length === 0 && !canCreate
@@ -115,8 +116,8 @@ export class MultiSelect extends Cossack {
                                     class=${classMap({
                                         "cs-multiselect__option": true,
                                         "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
-                                        "bg-muted": i === this.activeIndex,
-                                        "bg-transparent hover:bg-muted": i !== this.activeIndex,
+                                        "bg-accent text-accent-foreground": i === this.activeIndex,
+                                        "bg-transparent hover:bg-accent hover:text-accent-foreground": i !== this.activeIndex,
                                     })}
                                     @click=${() => this.addTag(opt)}
                                     @mouseenter=${() => { this.activeIndex = i; }}
@@ -128,8 +129,8 @@ export class MultiSelect extends Cossack {
                                     class=${classMap({
                                         "cs-multiselect__create": true,
                                         "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
-                                        "bg-muted": filtered.length === this.activeIndex,
-                                        "bg-transparent hover:bg-muted": filtered.length !== this.activeIndex,
+                                        "bg-accent text-accent-foreground": filtered.length === this.activeIndex,
+                                        "bg-transparent hover:bg-accent hover:text-accent-foreground": filtered.length !== this.activeIndex,
                                     })}
                                     @click=${() => this.createTag()}
                                     @mouseenter=${() => { this.activeIndex = filtered.length; }}

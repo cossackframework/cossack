@@ -68,9 +68,9 @@ export class Command extends Cossack {
                 @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) { this.open = false; } }}
             >
                 <div class="absolute inset-0 bg-black/50"></div>
-                <div class="cs-command__panel relative w-full max-w-xl mx-4 bg-background text-foreground rounded-lg border border-border shadow-2xl overflow-hidden">
+                <div class="cs-command__panel relative w-full max-w-xl mx-4 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden">
                     <input
-                        class="cs-command__input w-full px-4 py-3 text-sm bg-transparent border-none outline-none border-b border-border placeholder:text-muted-foreground"
+                        class="cs-command__input w-full px-4 py-3 text-sm bg-transparent border-none outline-none border-b border placeholder:text-muted-foreground"
                         placeholder=${placeholder}
                         .value=${this.query}
                         @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; this.activeIndex = 0; }}
@@ -86,8 +86,8 @@ export class Command extends Cossack {
                                     class=${classMap({
                                         "cs-command__item": true,
                                         "w-full flex items-center px-3 py-2 text-sm rounded-md cursor-pointer border-none transition-colors text-left": true,
-                                        "bg-muted": i === this.activeIndex,
-                                        "bg-transparent hover:bg-muted": i !== this.activeIndex,
+                                        "bg-accent text-accent-foreground": i === this.activeIndex,
+                                        "bg-transparent hover:bg-accent hover:text-accent-foreground": i !== this.activeIndex,
                                     })}
                                     @click=${() => this.selectItem(item.id)}
                                     @mouseenter=${() => { this.activeIndex = i; }}

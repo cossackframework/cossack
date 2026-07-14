@@ -64,7 +64,7 @@ export class DropdownMenu extends Cossack {
 
         const menuClasses = classMap({
             "cs-dropdown-menu": true,
-            "bg-background border border-border rounded-md shadow-lg p-1 min-w-[180px]": true,
+            "bg-popover text-popover-foreground border rounded-md shadow-lg p-1 min-w-[180px] outline-none": true,
         });
 
         const { block = false } = this.props;
@@ -95,14 +95,14 @@ export class DropdownMenu extends Cossack {
                     ${items.map(
                         (item) =>
                             item.separator
-                                ? html`<hr class="cs-dropdown-menu__separator border-t border-border my-1" />`
+                                ? html`<hr class="cs-dropdown-menu__separator -mx-1 my-1 border-t" />`
                                 : html`
                                     <button
                                         type="button"
                                         class=${classMap({
                                             "cs-dropdown-menu__item": true,
-                                            "w-full text-left px-3 py-2 text-sm rounded-sm cursor-pointer border-none": true,
-                                            "hover:bg-muted focus:bg-muted focus:outline-none": !item.disabled,
+                                            "w-full text-left px-3 py-2 text-sm rounded-sm cursor-pointer border-none outline-none": true,
+                                            "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none": !item.disabled,
                                             "opacity-50 cursor-not-allowed": !!item.disabled,
                                         })}
                                         ?disabled=${!!item.disabled}

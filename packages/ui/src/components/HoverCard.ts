@@ -30,7 +30,7 @@ export class HoverCard extends Cossack {
 
         const popoverClasses = classMap({
             "cs-hover-card": true,
-            "bg-background border border-border rounded-lg shadow-lg p-4 w-64": true,
+            "bg-popover text-popover-foreground border rounded-lg shadow-lg p-4 w-64 outline-none": true,
         });
 
         return html`

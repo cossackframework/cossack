@@ -49,7 +49,7 @@ export class Combobox extends Cossack {
                 <input
                     ref=${this.inputRef}
                     type="text"
-                    class="cs-combobox__input w-full rounded-md border border-border bg-background text-foreground text-sm px-3 py-2 outline-none transition-colors focus:border-muted-foreground cursor-pointer"
+                    class="cs-combobox__input w-full rounded-md border border-input bg-background text-foreground text-sm px-3 py-2 outline-none transition-colors shadow-xs focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] cursor-pointer"
                     placeholder=${placeholder}
                     .value=${this.query || displayValue}
                     popovertarget=${this.popoverId}
@@ -64,7 +64,7 @@ export class Combobox extends Cossack {
                 <div
                     id=${this.popoverId}
                     popover="auto"
-                    class="cs-combobox__list bg-background border border-border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto w-full"
+                    class="cs-combobox__list bg-popover text-popover-foreground border rounded-md shadow-lg p-1 max-h-[200px] overflow-y-auto w-full"
                     style="position:fixed;margin:0;"
                     @toggle=${() => {}}
                 >
@@ -76,8 +76,8 @@ export class Combobox extends Cossack {
                                 class=${classMap({
                                     "cs-combobox__option": true,
                                     "w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer border-none transition-colors": true,
-                                    "bg-muted": i === this.activeIndex,
-                                    "bg-transparent hover:bg-muted": i !== this.activeIndex,
+                                    "bg-accent text-accent-foreground": i === this.activeIndex,
+                                    "bg-transparent hover:bg-accent hover:text-accent-foreground": i !== this.activeIndex,
                                 })}
                                 @click=${() => this.selectOption(opt.value, opt.label)}
                                 @mouseenter=${() => { this.activeIndex = i; }}

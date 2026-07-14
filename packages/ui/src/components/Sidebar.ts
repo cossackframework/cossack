@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface SidebarItem {
     label: string;
@@ -104,7 +105,7 @@ export class Sidebar extends Cossack {
                 ref=${this.sidebarRef}
                 class=${classMap({
                     "cs-sidebar": true,
-                    "flex flex-col h-full bg-background border-r border-border transition-all duration-300 ease-in-out": true,
+                    "flex flex-col h-full bg-sidebar border-r border transition-all duration-300 ease-in-out": true,
                     "cs-sidebar--collapsed": this.collapsed,
                     "cs-sidebar--icon-rail": isCollapsed,
                     "-translate-x-full": isHidden,
@@ -112,19 +113,17 @@ export class Sidebar extends Cossack {
                 style="width:${railWidth};min-width:${railWidth};"
             >
                 <!-- Header / brand -->
-                <div class="cs-sidebar__header flex items-center gap-2 px-4 h-14 border-b border-border shrink-0">
+                <div class="cs-sidebar__header flex items-center gap-2 px-4 h-14 border-b border shrink-0">
                     ${isCollapsed
                         ? html`<span class="w-8 h-8 rounded-md bg-primary text-primary-foreground inline-flex items-center justify-center text-sm font-bold shrink-0">${(title || "M").charAt(0)}</span>`
                         : html`<span class="text-sm font-semibold text-foreground truncate flex-1">${title}</span>`}
                     <button
                         type="button"
-                        class="cs-sidebar__toggle w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-muted cursor-pointer border-none bg-transparent text-muted-foreground shrink-0"
+                        class="cs-sidebar__toggle w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent text-muted-foreground shrink-0"
                         aria-label=${this.collapsed ? "Expand sidebar" : "Collapse sidebar"}
                         @click=${() => this.toggleCollapse()}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                        </svg>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "hamburger-menu", size: 16 })}</span>
                     </button>
                 </div>
 
@@ -137,7 +136,7 @@ export class Sidebar extends Cossack {
                      slotted content adapt to the icon rail via Tailwind group variants. -->
                 ${footer != null
                     ? html`<div class=${classMap({
-                          "cs-sidebar__footer group border-t border-border p-2 shrink-0": true,
+                          "cs-sidebar__footer group border-t border p-2 shrink-0": true,
                           "is-collapsed": isCollapsed,
                       })}>${footer}</div>`
                     : null}
@@ -156,7 +155,7 @@ export class Sidebar extends Cossack {
             "cs-sidebar__link": true,
             "flex items-center gap-2.5 rounded-md text-sm transition-colors cursor-pointer": true,
             "bg-primary/10 text-primary font-medium": !!item.active,
-            "text-muted-foreground hover:bg-muted hover:text-foreground": !item.active,
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground": !item.active,
             "px-3 py-2": !isCollapsed,
             "justify-center px-0 py-2": isCollapsed,
         });
@@ -189,23 +188,22 @@ export class Sidebar extends Cossack {
                         class=${classMap({
                             "cs-sidebar__group-trigger": true,
                             "w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors cursor-pointer border-none": true,
-                            "text-muted-foreground hover:bg-muted hover:text-foreground": true,
+                            "text-muted-foreground hover:bg-accent hover:text-accent-foreground": true,
                             "text-foreground": expanded,
                         })}
                         @click=${() => this.toggleGroup(index)}
                     >
                         ${iconMarkup}
                         <span class="flex-1 text-left truncate">${item.label}</span>
-                        <svg
+                        <span
                             class=${classMap({
-                                "cs-sidebar__chevron w-3.5 h-3.5 text-muted-foreground transition-transform": true,
+                                "cs-sidebar__chevron w-3.5 h-3.5 text-muted-foreground transition-transform inline-flex items-center justify-center [&_svg]:size-3.5": true,
                                 "rotate-90": expanded,
                             })}
-                            viewBox="0 0 24 24" fill="none"
-                        ><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        >${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
                     </button>
                     ${expanded
-                        ? html`<div class="cs-sidebar__group-items ml-4 mt-0.5 space-y-0.5 border-l border-border pl-2">
+                        ? html`<div class="cs-sidebar__group-items ml-4 mt-0.5 space-y-0.5 border-l border pl-2">
                               ${item.children!.map((child) => html`
                                   <a
                                       href=${child.href || "#"}
@@ -213,7 +211,7 @@ export class Sidebar extends Cossack {
                                           "cs-sidebar__sublink": true,
                                           "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer": true,
                                           "bg-primary/10 text-primary font-medium": !!child.active,
-                                          "text-muted-foreground hover:bg-muted hover:text-foreground": !child.active,
+                                          "text-muted-foreground hover:bg-accent hover:text-accent-foreground": !child.active,
                                       })}
                                       @click=${(e: MouseEvent) => this.handleClick(e, child)}
                                   >${child.label}</a>
