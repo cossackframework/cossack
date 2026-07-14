@@ -12,10 +12,12 @@
     "deploy": "vite build && cossack ssg && wrangler deploy"
   },
   "dependencies": {
+    "@cossackframework/auth": "^0.5.0",
     "@cossackframework/core": "^0.6.0",
     "@cossackframework/database": "^0.1.0",
     "@cossackframework/framework": "^0.6.0",
     "@cossackframework/renderer": "^0.6.0",
+    "@cossackframework/ui": "^0.1.0",
     "cossack": "^0.1.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.12.29",

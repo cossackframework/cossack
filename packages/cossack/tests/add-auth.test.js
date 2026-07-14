@@ -108,6 +108,35 @@ describe('add auth', () => {
     expect(pkg.dependencies['@cossackframework/database']).toBeDefined();
   });
 
+  it('adds the UI dependency (auth pages import from @cossackframework/ui)', async () => {
+    await addCommand(['auth'], ctx);
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmp, 'package.json'), 'utf8'));
+    expect(pkg.dependencies['@cossackframework/ui']).toBeDefined();
+    // barrel + theme wiring
+    expect(fs.existsSync(path.join(tmp, 'src/components/ui/index.ts'))).toBe(true);
+    const css = fs.readFileSync(path.join(tmp, 'src/style.css'), 'utf8');
+    expect(css).toContain('@cossackframework/ui/theme/theme.css');
+  });
+
+  it('login page uses UI components (Field, Input, PasswordInput, Button)', async () => {
+    await addCommand(['auth'], ctx);
+    const login = fs.readFileSync(path.join(tmp, 'src/pages/(auth)/login/index.ts'), 'utf8');
+    expect(login).toContain("from '@cossackframework/ui'");
+    expect(login).toContain('component(Field,');
+    expect(login).toContain('component(Input,');
+    expect(login).toContain('component(PasswordInput,');
+    expect(login).toContain('component(Button,');
+  });
+
+  it('auth layout uses Card components instead of raw divs', async () => {
+    await addCommand(['auth'], ctx);
+    const layout = fs.readFileSync(path.join(tmp, 'src/pages/(auth)/layout.ts'), 'utf8');
+    expect(layout).toContain("from '@cossackframework/ui'");
+    expect(layout).toContain('Card');
+    expect(layout).not.toContain('bg-gray-100');
+    expect(layout).not.toContain('bg-white');
+  });
+
   it('--path admin/auth routes pages under src/pages/admin/auth/', async () => {
     ctx.flags = { dialect: 'd1', path: 'admin/auth' };
     await addCommand(['auth'], ctx);

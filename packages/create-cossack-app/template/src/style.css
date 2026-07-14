@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+@source "../node_modules/@cossackframework/ui/src/components";
+@source "../node_modules/@cossackframework/ui/src/icons";
 
 /*
  * View Transition animations.
