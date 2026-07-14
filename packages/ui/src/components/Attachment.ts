@@ -1,5 +1,6 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface AttachmentProps {
     /** File name. */
@@ -51,11 +52,11 @@ export class Attachment extends Cossack {
         const resolvedType = type || detectType(name);
 
         return html`
-            <div class="cs-attachment flex items-center gap-3 rounded-lg border border-border bg-background p-3 max-w-sm">
+            <div class="cs-attachment flex items-center gap-3 rounded-lg border bg-card text-card-foreground p-3 max-w-sm">
                 <!-- Thumbnail or type icon -->
                 ${thumbnail
                     ? html`<img src=${thumbnail} alt="" class="cs-attachment__thumb w-10 h-10 rounded-md object-cover shrink-0" />`
-                    : html`<div class="cs-attachment__icon w-10 h-10 rounded-md bg-muted inline-flex items-center justify-center shrink-0 text-muted-foreground">
+                    : html`<div class="cs-attachment__icon w-10 h-10 rounded-md bg-muted inline-flex items-center justify-center shrink-0 text-muted-foreground [&_svg]:size-5">
                           ${this.renderTypeIcon(resolvedType)}
                       </div>`}
                 <!-- Name + size + status -->
@@ -80,11 +81,11 @@ export class Attachment extends Cossack {
                 ${onRemove
                     ? html`<button
                           type="button"
-                          class="cs-attachment__remove w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-muted cursor-pointer border-none bg-transparent text-muted-foreground shrink-0"
+                          class="cs-attachment__remove size-7 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent text-muted-foreground shrink-0 outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] [&_svg]:size-4 transition-colors"
                           aria-label="Remove attachment"
                           @click=${() => onRemove()}
                       >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                          ${component(Icon, { name: "close-circle", size: 14 })}
                       </button>`
                     : null}
             </div>

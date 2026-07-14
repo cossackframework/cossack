@@ -74,7 +74,7 @@ export class Bubble extends Cossack {
                               "right-2": isSent,
                           })}>
                               ${reactions.map((r) => html`
-                                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-background border border-border text-xs shadow-sm">
+                                  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-popover border text-xs shadow-sm">
                                       <span>${r.emoji}</span>
                                       ${r.count ? html`<span class="text-muted-foreground font-medium">${r.count}</span>` : null}
                                   </span>

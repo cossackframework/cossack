@@ -53,7 +53,7 @@ export class MessageScroller extends Cossack {
                 ${this.showJumpButton
                     ? html`<button
                           type="button"
-                          class="cs-message-scroller__jump absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm font-medium rounded-full bg-background border border-border shadow-lg cursor-pointer hover:bg-muted transition-colors z-10"
+                          class="cs-message-scroller__jump absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm font-medium rounded-full bg-popover text-popover-foreground border shadow-lg cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] transition-colors z-10"
                           @click=${() => this.scrollToBottom()}
                       >${newMessageLabel}</button>`
                     : null}
