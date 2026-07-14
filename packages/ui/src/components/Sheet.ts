@@ -22,13 +22,6 @@ export interface SheetProps {
     [key: string]: any;
 }
 
-const SIDE_TRANSFORMS: Record<string, { enter: string; rest: string }> = {
-    right: { enter: "translateX(100%)", rest: "translateX(0)" },
-    left: { enter: "translateX(-100%)", rest: "translateX(0)" },
-    top: { enter: "translateY(-100%)", rest: "translateY(0)" },
-    bottom: { enter: "translateY(100%)", rest: "translateY(0)" },
-};
-
 const SIDE_POSITION: Record<string, string> = {
     left: "top:0;left:0;height:100%",
     right: "top:0;right:0;height:100%",
@@ -75,15 +68,13 @@ export class Sheet extends Cossack {
 
         const dims = SIDE_DIMENSIONS[side];
         const dimValue = size || dims.val;
-        const transform = SIDE_TRANSFORMS[side];
         const position = SIDE_POSITION[side];
         const dimStyle =
             dims.dim === "width" ? `width:${dimValue};max-width:90vw;` : `height:${dimValue};max-height:85vh;`;
 
-        // The panel slides via inline transform transition. When open, it's at
-        // translateX(0). The CSS @starting-style sets the initial transform to
-        // the enter position (e.g. translateX(100%)) so it animates in.
-        const panelStyle = `${position};${dimStyle}transform:${transform.rest};transition:transform 300ms cubic-bezier(0.16,1,0.3,1);`;
+        // Transform + transition are managed by base.css (.cs-sheet__panel +
+        // side variant). Inline style only carries position + dimensions.
+        const panelStyle = `${position};${dimStyle}`;
 
         const panelClasses = classMap({
             "cs-sheet__panel": true,

@@ -39,13 +39,6 @@ const SIDE_POS: Record<string, string> = {
     bottom: "bottom:0;left:0;width:100%",
 };
 
-const SIDE_ENTER: Record<string, string> = {
-    left: "translateX(-100%)",
-    right: "translateX(100%)",
-    top: "translateY(-100%)",
-    bottom: "translateY(100%)",
-};
-
 /**
  * Cossack UI Drawer — slide-in panel built on native `<dialog>`.
  *
@@ -85,7 +78,6 @@ export class Drawer extends Cossack {
                 ? `width:${dimValue};max-width:90vw;`
                 : `max-height:85vh;`;
         const position = SIDE_POS[side];
-        const enter = SIDE_ENTER[side];
 
         const panelClasses = classMap({
             "cs-drawer__panel": true,
@@ -98,10 +90,9 @@ export class Drawer extends Cossack {
             "rounded-l-2xl": side === "right",
         });
 
-        // The slide uses inline transform + @starting-style for the enter.
-        const panelStyle =
-            `${position};${dimStyle}transform:translateX(0);` +
-            `transition:transform 300ms cubic-bezier(0.32,0.72,0,1);`;
+        // The panel transform is managed by base.css (.cs-drawer__panel + side
+        // variant). Inline style only carries position + dimensions.
+        const panelStyle = `${position};${dimStyle}`;
 
         const showHandle = side === "top" || side === "bottom";
         const showTitle = !!title;
@@ -152,24 +143,6 @@ export class Drawer extends Cossack {
                     </div>
                 </div>
             </dialog>
-            <style>
-                .cs-drawer__panel {
-                    will-change: transform;
-                }
-                @starting-style {
-                    .cs-drawer__panel {
-                        transform: ${enter};
-                    }
-                }
-                .cs-drawer[open]::backdrop {
-                    background-color: rgb(0 0 0 / 0.4);
-                    animation: cs-drawer-fade 200ms ease-out;
-                }
-                @keyframes cs-drawer-fade {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                }
-            </style>
         `;
     }
 
