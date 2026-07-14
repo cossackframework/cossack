@@ -4,6 +4,7 @@ import {
     Component,
     Client,
     ClientState,
+    OnWindow,
 } from "@cossackframework/core";
 
 export interface ContextMenuItem {
@@ -56,9 +57,10 @@ export class ContextMenu extends Cossack {
                 ${this.children}
                 <div
                     id=${this.popoverId}
-                    popover="auto"
+                    popover="manual"
                     class="cs-context-menu__panel min-w-[160px] bg-popover text-popover-foreground border rounded-md shadow-lg p-1"
                     style="position:fixed;margin:0;"
+                    @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this.hide(); }}
                 >
                     ${items.map((item) => html`
                         ${item.separator
@@ -92,11 +94,30 @@ export class ContextMenu extends Cossack {
         requestAnimationFrame(() => this.position());
     }
 
+    /** Close on outside click or Escape (manual popover has no light dismiss). */
+    @OnWindow("pointerdown")
+    onPointerDown(e: PointerEvent) {
+        const el = document.getElementById(this.popoverId);
+        if (!el || !el.matches(":popover-open")) return;
+        if (el.contains(e.target as Node)) return;
+        this.hide();
+    }
+
+    @OnWindow("keydown")
+    onKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape") this.hide();
+    }
+
+    @Client()
+    hide() {
+        const el = document.getElementById(this.popoverId) as any;
+        el?.hidePopover?.();
+    }
+
     @Client()
     private handleClick(item: ContextMenuItem) {
         if (item.disabled) return;
-        const el = document.getElementById(this.popoverId) as any;
-        el?.hidePopover?.();
+        this.hide();
         item.onClick?.();
     }
 

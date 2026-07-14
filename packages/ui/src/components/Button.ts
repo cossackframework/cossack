@@ -23,7 +23,7 @@ const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
     secondary:
         "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
     destructive:
-        "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20",
+        "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20 focus-visible:ring-destructive/20 focus-visible:border-destructive/40",
     outline:
         "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
     ghost: "hover:bg-accent hover:text-accent-foreground",

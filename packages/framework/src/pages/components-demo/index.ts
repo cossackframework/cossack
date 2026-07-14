@@ -114,12 +114,26 @@ export class ComponentsDemo extends Cossack {
                         ${component(Button, { variant: 'outline' }, 'Outline')}
                         ${component(Button, { variant: 'ghost' }, 'Ghost')}
                         ${component(Button, { variant: 'destructive' }, 'Delete')}
+                        ${component(Button, { variant: 'link' }, 'Link')}
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         ${component(Button, { size: 'sm' }, 'Small')}
                         ${component(Button, { size: 'default' }, 'Medium')}
                         ${component(Button, { size: 'lg' }, 'Large')}
                         ${component(Button, { variant: 'default', block: false, disabled: true }, 'Disabled')}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="text-xs text-muted-foreground self-center">Icon + text:</span>
+                        ${component(Button, { variant: 'default', size: 'sm' }, html`${component(Icon, { name: 'arrow-right', size: 16 })} Next`)}
+                        ${component(Button, { variant: 'outline', size: 'sm' }, html`${component(Icon, { name: 'settings', size: 16 })} Settings`)}
+                        ${component(Button, { variant: 'destructive', size: 'sm' }, html`${component(Icon, { name: 'trash-bin-minimalistic', size: 16 })} Delete`)}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="text-xs text-muted-foreground self-center">Icon only:</span>
+                        ${component(Button, { variant: 'outline', size: 'icon' }, component(Icon, { name: 'magnifier', size: 16 }))}
+                        ${component(Button, { variant: 'ghost', size: 'icon' }, component(Icon, { name: 'settings', size: 16 }))}
+                        ${component(Button, { variant: 'destructive', size: 'icon' }, component(Icon, { name: 'trash-bin-minimalistic', size: 16 }))}
+                        ${component(Button, { variant: 'default', size: 'icon' }, component(Icon, { name: 'add-circle', size: 16 }))}
                     </div>
                 </section>
 
@@ -152,11 +166,22 @@ export class ComponentsDemo extends Cossack {
                 <!-- Alerts -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Alerts</h2>
-                    <div class="space-y-2">
-                        ${component(Alert, { variant: 'info', accent: true }, html`<strong>Heads up.</strong> This is an informational alert.`)}
-                        ${component(Alert, { variant: 'success', accent: true }, html`<strong>Success.</strong> Your changes were saved.`)}
-                        ${component(Alert, { variant: 'warning', accent: true }, html`<strong>Warning.</strong> Review before continuing.`)}
-                        ${component(Alert, { variant: 'destructive', accent: true }, html`<strong>Error.</strong> Something went wrong.`)}
+                    <div class="space-y-2 max-w-md">
+                        ${component(Alert, { variant: 'default', title: 'Heads up' }, 'This is an informational alert.')}
+                        ${component(Alert, { variant: 'success', title: 'Success' }, 'Your changes were saved.')}
+                        ${component(Alert, { variant: 'warning', title: 'Warning' }, 'Review before continuing.')}
+                        ${component(Alert, { variant: 'destructive', title: 'Error' }, 'Something went wrong.')}
+                    </div>
+                </section>
+
+                <!-- Spinner -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-semibold">Spinner</h2>
+                    <div class="flex flex-wrap items-center gap-4">
+                        ${component(Spinner, { size: 16 })}
+                        ${component(Spinner, { size: 20 })}
+                        ${component(Spinner, { size: 24, color: 'text-muted-foreground' })}
+                        ${component(Spinner, { size: 32, color: 'text-destructive', label: 'Loading' })}
                     </div>
                 </section>
 

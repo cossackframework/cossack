@@ -17,9 +17,9 @@ export interface SpinnerProps {
 /**
  * Cossack UI Spinner — a CSS-driven loading indicator.
  *
- * Uses Tailwind v4's built-in `animate-spin` keyframes; no custom CSS needed.
- * The ring color is `currentColor` so it inherits text color (set via the
- * `color` prop token class).
+ * Renders an inline SVG with a circular track + a spinning arc (via
+ * `animate-spin`). The arc uses `currentColor` so it inherits text color
+ * (set via the `color` prop token class).
  *
  *   ${component(Spinner, { size: 24, color: 'text-primary', label: 'Loading' })}
  */
@@ -38,8 +38,7 @@ export class Spinner extends Cossack {
 
         const classes = classMap({
             "cs-spinner": true,
-            "animate-spin inline-block rounded-full": true,
-            "border-current border-t-transparent": true,
+            "animate-spin inline-block": true,
             [color]: true,
         });
 
@@ -47,12 +46,41 @@ export class Spinner extends Cossack {
             ? { role: "status", "aria-label": label }
             : { "aria-hidden": "true" };
 
+        // SVG spinner: a full circle track at low opacity + an arc that spins.
+        const r = (size - stroke) / 2;
+        const cx = size / 2;
+        const circumference = 2 * Math.PI * r;
+        // Show ~25% of the circle as the visible arc.
+        const arc = circumference * 0.25;
+
         return html`
-            <span
+            <svg
                 class=${classes}
-                style=${`width:${size}px;height:${size}px;border-width:${stroke}px;`}
+                width="${size}"
+                height="${size}"
+                viewBox="0 0 ${size} ${size}"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
                 ...=${{ ...a11y, ...rest }}
-            ></span>
+            >
+                <circle
+                    cx="${cx}"
+                    cy="${cx}"
+                    r="${r}"
+                    stroke="currentColor"
+                    stroke-width="${stroke}"
+                    class="opacity-20"
+                />
+                <circle
+                    cx="${cx}"
+                    cy="${cx}"
+                    r="${r}"
+                    stroke="currentColor"
+                    stroke-width="${stroke}"
+                    stroke-linecap="round"
+                    stroke-dasharray="${arc} ${circumference}"
+                />
+            </svg>
         `;
     }
 }

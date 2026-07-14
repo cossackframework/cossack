@@ -16,10 +16,10 @@ export interface BadgeProps {
 
 const VARIANTS: Record<NonNullable<BadgeProps["variant"]>, string> = {
     default: "bg-primary text-primary-foreground",
-    secondary: "bg-secondary text-secondary-foreground",
-    success: "bg-success text-success-foreground",
-    warning: "bg-warning text-warning-foreground",
-    destructive: "bg-destructive text-destructive-foreground",
+    secondary: "bg-secondary text-secondary-foreground border-transparent",
+    success: "bg-success/10 text-success border-success/20",
+    warning: "bg-warning/10 text-warning border-warning/20",
+    destructive: "bg-destructive/10 text-destructive border-destructive/20",
     outline: "border border-input text-foreground",
 };
 

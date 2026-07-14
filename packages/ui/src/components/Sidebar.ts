@@ -113,7 +113,11 @@ export class Sidebar extends Cossack {
                 style="width:${railWidth};min-width:${railWidth};"
             >
                 <!-- Header / brand -->
-                <div class="cs-sidebar__header flex items-center gap-2 px-4 h-14 border-b border shrink-0">
+                <div class=${classMap({
+                    "cs-sidebar__header flex items-center gap-2 border-b border shrink-0": true,
+                    "flex-col py-3 px-0 h-auto": isCollapsed,
+                    "px-4 h-14": !isCollapsed,
+                })}>
                     ${isCollapsed
                         ? html`<span class="w-8 h-8 rounded-md bg-primary text-primary-foreground inline-flex items-center justify-center text-sm font-bold shrink-0">${(title || "M").charAt(0)}</span>`
                         : html`<span class="text-sm font-semibold text-foreground truncate flex-1">${title}</span>`}
@@ -203,7 +207,7 @@ export class Sidebar extends Cossack {
                         >${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
                     </button>
                     ${expanded
-                        ? html`<div class="cs-sidebar__group-items ml-4 mt-0.5 space-y-0.5 border-l border pl-2">
+                        ? html`<div class="cs-sidebar__group-items ml-4 mt-0.5 space-y-0.5 border-l pl-2">
                               ${item.children!.map((child) => html`
                                   <a
                                       href=${child.href || "#"}

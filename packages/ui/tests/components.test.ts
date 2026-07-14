@@ -284,11 +284,12 @@ describe("Select", () => {
 });
 
 describe("Spinner", () => {
-    it("renders an animate-spin span with size styling", () => {
+    it("renders an animate-spin svg with size", () => {
         const out = renderComp(Spinner, { size: 24, color: "text-primary" });
         expect(out).toContain("cs-spinner");
         expect(out).toContain("animate-spin");
-        expect(out).toContain("width:24px");
+        expect(out).toContain("<svg");
+        expect(out).toContain('width="24"');
         expect(out).toContain("text-primary");
     });
 

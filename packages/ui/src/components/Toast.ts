@@ -73,9 +73,9 @@ export const toast = {
 
 const VARIANT_STYLES: Record<string, string> = {
     default: "bg-popover text-popover-foreground border",
-    success: "bg-popover text-popover-foreground border-success/50",
-    warning: "bg-popover text-popover-foreground border-warning/50",
-    destructive: "bg-popover text-popover-foreground border-destructive/50",
+    success: "bg-success/10 text-foreground border-success/30",
+    warning: "bg-warning/10 text-foreground border-warning/30",
+    destructive: "bg-destructive/10 text-foreground border-destructive/30",
 };
 
 export interface ToasterProps {
