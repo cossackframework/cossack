@@ -2,10 +2,16 @@ import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface ButtonProps {
-    /** Visual style. */
-    variant?: "primary" | "secondary" | "destructive" | "ghost" | "outline";
-    /** Control size. */
-    size?: "sm" | "md" | "lg";
+    /** Visual style. Defaults to "default" (primary fill). */
+    variant?:
+        | "default"
+        | "secondary"
+        | "destructive"
+        | "outline"
+        | "ghost"
+        | "link";
+    /** Control size. Defaults to "default". "icon" renders a square button. */
+    size?: "default" | "sm" | "lg" | "icon";
     /** Render as a block-level (full-width) button. */
     block?: boolean;
     /** Allow arbitrary HTML attributes / event handlers to spread onto the native button. */
@@ -13,41 +19,47 @@ export interface ButtonProps {
 }
 
 const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
-    primary: "bg-primary text-primary-foreground hover:opacity-90",
-    secondary: "bg-secondary text-secondary-foreground hover:opacity-80",
-    destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
+    default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+    secondary:
+        "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
+    destructive:
+        "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20",
     outline:
-        "border border-border bg-transparent text-foreground hover:bg-muted",
-    ghost: "bg-transparent text-foreground hover:bg-muted",
+        "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
+    ghost: "hover:bg-accent hover:text-accent-foreground",
+    link: "text-primary underline-offset-4 hover:underline",
 };
 
 const SIZES: Record<NonNullable<ButtonProps["size"]>, string> = {
-    sm: "text-sm px-3 py-1.5",
-    md: "text-base px-4 py-2",
-    lg: "text-lg px-5 py-2.5",
+    default: "h-9 px-4 py-2 has-[>svg]:px-3",
+    sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
+    lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+    icon: "size-9",
 };
 
 /**
  * Cossack UI Button — token-driven, themeable.
  *
- * Use via `component(Button, { variant: 'primary', '@click': handler }, 'Save')`.
+ * Use via `component(Button, { variant: 'default', '@click': handler }, 'Save')`.
  */
 @Component()
 export class Button extends Cossack {
     declare props: ButtonProps;
 
     render() {
-        const { variant = "primary", size = "md", block = false, ...rest } =
+        const { variant = "default", size = "default", block = false, ...rest } =
             this.props;
 
         const classes = classMap({
             "cs-button": true,
             [`cs-button--${variant}`]: true,
             [`cs-button--${size}`]: true,
-            "inline-flex items-center justify-center gap-2 font-medium": true,
-            "rounded-md cursor-pointer select-none": true,
-            "transition-opacity transition-colors duration-150": true,
-            "disabled:opacity-50 disabled:cursor-not-allowed": true,
+            "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium": true,
+            "transition-colors outline-none select-none": true,
+            "disabled:pointer-events-none disabled:opacity-50": true,
+            "[&_svg]:size-4 [&_svg]:shrink-0": true,
+            "focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring": true,
+            "aria-invalid:ring-destructive/20 aria-invalid:border-destructive": true,
             "w-full": block,
             [VARIANTS[variant]]: true,
             [SIZES[size]]: true,

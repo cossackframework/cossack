@@ -15,8 +15,9 @@ export interface ToggleProps {
 
 const SIZES: Record<string, string> = {
     sm: "h-8 px-2 text-sm",
-    md: "h-9 px-3 text-sm",
+    default: "h-9 px-3 text-sm",
     lg: "h-10 px-4 text-base",
+    icon: "size-9",
 };
 
 /**
@@ -33,7 +34,7 @@ export class Toggle extends Cossack {
     @ClientState() userInteracted = false;
 
     render() {
-        const { size = "md", ...rest } = this.props;
+        const { size = "default", ...rest } = this.props;
         let pressed: boolean;
         if (this.props.pressed !== undefined) pressed = !!this.props.pressed;
         else if (this.userInteracted) pressed = this.internalPressed;
@@ -42,9 +43,11 @@ export class Toggle extends Cossack {
         const classes = classMap({
             "cs-toggle": true,
             [SIZES[size]]: true,
-            "inline-flex items-center justify-center rounded-md border cursor-pointer select-none transition-colors": true,
-            "bg-primary text-primary-foreground border-primary": pressed,
-            "bg-transparent text-foreground border-border hover:bg-muted": !pressed,
+            "inline-flex items-center justify-center gap-2 rounded-md cursor-pointer select-none": true,
+            "transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+            "[&_svg]:size-4 [&_svg]:shrink-0": true,
+            "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90": pressed,
+            "bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground": !pressed,
         });
 
         return html`

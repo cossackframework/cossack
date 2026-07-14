@@ -59,7 +59,7 @@ export class RadioGroup extends Cossack {
                                 value=${item.value}
                                 ?checked=${value === item.value}
                                 ?disabled=${!!item.disabled}
-                                class="cs-radio-group__input h-4 w-4 border-border text-primary accent-[var(--color-primary)] focus:ring-2 focus:ring-ring/30"
+                                class="cs-radio-group__input size-4 shrink-0 border border-input text-primary accent-primary outline-none transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring"
                             />
                             ${item.label ?? item.value}
                         </label>

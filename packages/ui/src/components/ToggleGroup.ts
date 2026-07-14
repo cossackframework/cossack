@@ -119,8 +119,9 @@ export class ToggleGroup extends Cossack {
                             ?disabled=${!!item.disabled}
                             class=${classMap({
                                 "cs-toggle-group__item": true,
-                                "relative z-10 text-sm font-medium transition-colors border-none cursor-pointer": true,
+                                "relative z-10 text-sm font-medium transition-colors border-none cursor-pointer outline-none": true,
                                 "px-3 py-1.5 rounded-sm": true,
+                                "focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
                                 // In single mode, the indicator provides the bg.
                                 "text-foreground": active,
                                 "text-muted-foreground hover:text-foreground": !active,
@@ -135,7 +136,7 @@ export class ToggleGroup extends Cossack {
                 })}
                 ${isSingle
                     ? html`<span
-                          class="cs-toggle-group__indicator absolute z-0 transition-all duration-300 ease-in-out"
+                          class="cs-toggle-group__indicator absolute z-0 rounded-sm transition-all duration-300 ease-in-out"
                           style=${this.indicatorStyle}
                       ></span>`
                     : null}

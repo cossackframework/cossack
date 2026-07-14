@@ -1,24 +1,26 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface NativeSelectProps {
-    /** Control size. */
-    size?: "sm" | "md" | "lg";
-    /** Visual style. */
+    /** Control size. Defaults to "default". */
+    size?: "default" | "sm" | "lg";
+    /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
     /** Pass-through HTML select attributes (name, value, disabled, ...). */
     [key: string]: any;
 }
 
 const SIZES: Record<NonNullable<NativeSelectProps["size"]>, string> = {
-    sm: "text-sm px-2.5 py-1.5",
-    md: "text-base px-3 py-2",
-    lg: "text-lg px-4 py-2.5",
+    default: "h-9 px-3 py-1 text-base md:text-sm pr-9",
+    sm: "h-8 rounded-md px-2 text-sm pr-8",
+    lg: "h-10 rounded-md px-4 text-base pr-10",
 };
 
 const VARIANTS: Record<NonNullable<NativeSelectProps["variant"]>, string> = {
-    default: "border-border bg-background text-foreground",
-    error: "border-destructive bg-background text-foreground",
+    default: "",
+    error:
+        "border-destructive focus-visible:ring-destructive/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
 };
 
 /**
@@ -36,7 +38,7 @@ export class NativeSelect extends Cossack {
     declare props: NativeSelectProps;
 
     render() {
-        const { size = "md", variant = "default", ...rest } = this.props;
+        const { size = "default", variant = "default", ...rest } = this.props;
 
         return html`
             <div class="cs-native-select relative inline-block w-full">
@@ -45,10 +47,12 @@ export class NativeSelect extends Cossack {
                         "cs-native-select__input": true,
                         [`cs-native-select--${variant}`]: true,
                         [`cs-native-select--${size}`]: true,
-                        "appearance-none w-full rounded-md border outline-none transition-colors transition-shadow": true,
-                        "focus:border-primary focus:ring-2 focus:ring-primary/20": true,
-                        "disabled:opacity-50 disabled:cursor-not-allowed": true,
-                        "pr-9": true,
+                        "appearance-none w-full rounded-md border bg-transparent": true,
+                        "shadow-xs outline-none": true,
+                        "transition-[color,box-shadow]": true,
+                        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+                        "aria-invalid:border-destructive aria-invalid:ring-destructive/20": true,
+                        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50": true,
                         [VARIANTS[variant]]: true,
                         [SIZES[size]]: true,
                     })}
@@ -57,9 +61,7 @@ export class NativeSelect extends Cossack {
                     ${this.children}
                 </select>
                 <span class="cs-native-select__icon pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground inline-flex">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+                    ${component(Icon, { name: "alt-arrow-down", size: 16 })}
                 </span>
             </div>
         `;

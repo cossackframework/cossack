@@ -18,9 +18,10 @@ export class Kbd extends Cossack {
     render() {
         const classes = classMap({
             "cs-kbd": true,
-            "inline-flex items-center justify-center": true,
-            "min-w-[1.5rem] h-6 px-1.5 text-xs font-medium": true,
-            "rounded border border-border bg-muted text-muted-foreground": true,
+            "inline-flex items-center justify-center gap-1": true,
+            "h-5 min-w-5 px-1.5 text-xs font-medium font-mono": true,
+            "rounded border bg-muted text-muted-foreground shadow-xs": true,
+            "[&_svg]:size-3": true,
             "select-none": true,
         });
 

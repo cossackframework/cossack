@@ -1,4 +1,4 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, component } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -7,24 +7,25 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { Icon } from "../icons/Icon";
 
 export interface PasswordInputProps {
     /** Current password value. */
     value?: string;
     /** Placeholder text. */
     placeholder?: string;
-    /** Control size. */
-    size?: "sm" | "md" | "lg";
+    /** Control size. Defaults to "default". */
+    size?: "default" | "sm" | "lg";
     /** Called on every input change with the new value. */
     onChange?: (value: string) => void;
-    /** Pass-through HTML attributes (name, autocomplete, ...). */
+    /** Pass-through HTML Attributes (name, autocomplete, ...). */
     [key: string]: any;
 }
 
 const SIZES: Record<NonNullable<PasswordInputProps["size"]>, string> = {
-    sm: "text-sm px-2.5 py-1.5",
-    md: "text-base px-3 py-2",
-    lg: "text-lg px-4 py-2.5",
+    default: "h-9 px-3 py-1 text-base md:text-sm",
+    sm: "h-8 rounded-md px-2 text-sm",
+    lg: "h-10 rounded-md px-4 text-base",
 };
 
 /**
@@ -47,7 +48,7 @@ export class PasswordInput extends Cossack {
     inputRef: RefObject<HTMLInputElement> = createRef<HTMLInputElement>();
 
     render() {
-        const { value, placeholder, size = "md", ...rest } = this.props;
+        const { value, placeholder, size = "default", ...rest } = this.props;
 
         return html`
             <div class="cs-password-input relative inline-block w-full">
@@ -60,10 +61,12 @@ export class PasswordInput extends Cossack {
                     class=${classMap({
                         "cs-password-input__field": true,
                         [`cs-password-input--${size}`]: true,
-                        "w-full rounded-md border border-border bg-background text-foreground outline-none": true,
-                        "transition-colors transition-shadow duration-150": true,
-                        "focus:border-primary focus:ring-2 focus:ring-primary/20": true,
-                        "disabled:opacity-50 disabled:cursor-not-allowed": true,
+                        "w-full rounded-md border bg-transparent": true,
+                        "text-base shadow-xs outline-none md:text-sm": true,
+                        "transition-[color,box-shadow]": true,
+                        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+                        "aria-invalid:border-destructive aria-invalid:ring-destructive/20": true,
+                        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50": true,
                         "pr-10": true,
                         [SIZES[size]]: true,
                     })}
@@ -72,31 +75,15 @@ export class PasswordInput extends Cossack {
                 />
                 <button
                     type="button"
-                    class="cs-password-input__toggle absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer border-none bg-transparent transition-colors"
+                    class="cs-password-input__toggle absolute right-2 top-1/2 -translate-y-1/2 size-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer border-none bg-transparent transition-colors [&_svg]:size-4 [&_svg]:shrink-0"
                     aria-label=${this.revealed ? "Hide password" : "Show password"}
                     aria-pressed=${this.revealed}
                     @click=${() => this.toggleReveal()}
                 >
-                    ${this.revealed ? this.eyeOffIcon() : this.eyeIcon()}
+                    ${component(Icon, { name: this.revealed ? "eye-closed" : "eye", size: 16 })}
                 </button>
             </div>
         `;
-    }
-
-    private eyeIcon() {
-        return html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="1.5"/>
-            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
-        </svg>`;
-    }
-
-    private eyeOffIcon() {
-        return html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M9.9 4.24A9.12 9.12 0 0112 4c6.5 0 10 7 10 7a13.16 13.16 0 01-1.67 2.68" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M6.61 6.61A13.526 13.526 0 002 12s3.5 7 10 7a9.11 9.11 0 005.39-1.61" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M14.12 14.12A3 3 0 119.88 9.88" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M2 2l20 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>`;
     }
 
     @Client()

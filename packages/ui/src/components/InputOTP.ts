@@ -17,15 +17,15 @@ export interface InputOTPProps {
     onChange?: (value: string) => void;
     /** Called when all boxes are filled. */
     onComplete?: (value: string) => void;
-    /** Input box size. */
-    size?: "sm" | "md" | "lg";
+    /** Input box size. Defaults to "default". */
+    size?: "sm" | "default" | "lg";
     [key: string]: any;
 }
 
 const SIZES: Record<NonNullable<InputOTPProps["size"]>, string> = {
-    sm: "w-9 h-11 text-base",
-    md: "w-11 h-12 text-lg",
-    lg: "w-12 h-14 text-xl",
+    sm: "size-9 text-base",
+    default: "size-11 text-lg",
+    lg: "size-12 text-xl",
 };
 
 /**
@@ -51,7 +51,7 @@ export class InputOTP extends Cossack {
     inputsRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
     render() {
-        const { length = 6, size = "md" } = this.props;
+        const { length = 6, size = "default" } = this.props;
         const len = Math.max(1, length);
 
         // Initialize on first render.
@@ -76,8 +76,10 @@ export class InputOTP extends Cossack {
                         .value=${char}
                         class=${classMap({
                             "cs-input-otp__box": true,
-                            "rounded-md border border-border bg-background text-center font-medium text-foreground outline-none transition-colors": true,
-                            "focus:border-primary": true,
+                            "rounded-md border border-input bg-background text-center font-medium text-foreground outline-none shadow-xs": true,
+                            "transition-[color,box-shadow]": true,
+                            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+                            "aria-invalid:border-destructive aria-invalid:ring-destructive/20": true,
                             [SIZES[size]]: true,
                         })}
                         @input=${(e: InputEvent) => this.handleInput(e, i)}

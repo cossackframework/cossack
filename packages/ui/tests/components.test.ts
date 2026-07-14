@@ -61,8 +61,8 @@ describe("Button", () => {
     it("applies the default variant/size classes", () => {
         const out = renderComp(Button, {}, "Save");
         expect(out).toContain("cs-button");
-        expect(out).toContain("cs-button--primary");
-        expect(out).toContain("cs-button--md");
+        expect(out).toContain("cs-button--default");
+        expect(out).toContain("cs-button--default");
         expect(out).toContain("Save");
         expect(out).toContain("</button>");
     });
@@ -77,6 +77,17 @@ describe("Button", () => {
         expect(out).toContain("cs-button--lg");
         expect(out).toContain("w-full");
         expect(out).toContain("Delete");
+    });
+
+    it("renders the icon size variant", () => {
+        const out = renderComp(Button, { size: "icon" }, "X");
+        expect(out).toContain("cs-button--icon");
+    });
+
+    it("uses shadcn hover/focus conventions", () => {
+        const out = renderComp(Button, { variant: "default" }, "Save");
+        expect(out).toContain("hover:bg-primary/90");
+        expect(out).toContain("focus-visible:ring-ring/50");
     });
 
     it("forwards arbitrary attributes via spread", () => {

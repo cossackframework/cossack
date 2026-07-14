@@ -24,9 +24,11 @@ export class Label extends Cossack {
 
         const classes = classMap({
             "cs-label": true,
-            "inline-block text-sm font-medium leading-none": true,
+            "inline-block text-sm font-medium leading-none select-none": true,
             "text-muted-foreground": muted,
             "text-foreground": !muted,
+            // Dim the label when its peer control is disabled.
+            "peer-disabled:cursor-not-allowed peer-disabled:opacity-70": true,
         });
 
         return html`

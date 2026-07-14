@@ -2,10 +2,10 @@ import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface TextareaProps {
-    /** Visual style. */
+    /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
-    /** Control size (padding). */
-    size?: "sm" | "md" | "lg";
+    /** Control size. Defaults to "default". */
+    size?: "default" | "sm" | "lg";
     /** Number of visible text rows. */
     rows?: number;
     /** Pass-through HTML textarea attributes (placeholder, name, ...). */
@@ -13,14 +13,15 @@ export interface TextareaProps {
 }
 
 const VARIANTS: Record<NonNullable<TextareaProps["variant"]>, string> = {
-    default: "border-border bg-background text-foreground",
-    error: "border-destructive bg-background text-foreground",
+    default: "",
+    error:
+        "border-destructive focus-visible:ring-destructive/20 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
 };
 
 const SIZES: Record<NonNullable<TextareaProps["size"]>, string> = {
-    sm: "text-sm px-2.5 py-1.5",
-    md: "text-base px-3 py-2",
-    lg: "text-lg px-4 py-2.5",
+    default: "px-3 py-2 text-base md:text-sm",
+    sm: "rounded-md px-2 text-sm",
+    lg: "rounded-md px-4 text-base",
 };
 
 /**
@@ -35,7 +36,7 @@ export class Textarea extends Cossack {
     render() {
         const {
             variant = "default",
-            size = "md",
+            size = "default",
             rows = 4,
             ...rest
         } = this.props;
@@ -44,12 +45,13 @@ export class Textarea extends Cossack {
             "cs-textarea": true,
             [`cs-textarea--${variant}`]: true,
             [`cs-textarea--${size}`]: true,
-            "w-full rounded-md border outline-none": true,
-            "transition-colors transition-shadow duration-150": true,
-            "focus:border-primary": true,
-            "focus:ring-2 focus:ring-primary/20": true,
+            "w-full min-w-0 rounded-md border bg-transparent": true,
+            "shadow-xs outline-none": true,
+            "transition-[color,box-shadow]": true,
+            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+            "aria-invalid:border-destructive aria-invalid:ring-destructive/20": true,
             "placeholder:text-muted-foreground": true,
-            "disabled:opacity-50 disabled:cursor-not-allowed": true,
+            "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50": true,
             "resize-y": true,
             [VARIANTS[variant]]: true,
             [SIZES[size]]: true,

@@ -2,23 +2,24 @@ import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface InputProps {
-    /** Visual style. */
+    /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
-    /** Control size. */
-    size?: "sm" | "md" | "lg";
+    /** Control size. Defaults to "default" (h-9). */
+    size?: "default" | "sm" | "lg";
     /** Pass-through HTML input attributes (type, placeholder, value, name, ...). */
     [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<InputProps["variant"]>, string> = {
-    default: "border-border bg-background text-foreground",
-    error: "border-destructive bg-background text-foreground",
+    default: "",
+    error:
+        "aria-invalid:border-destructive aria-invalid:ring-destructive/20 border-destructive focus-visible:ring-destructive/20",
 };
 
 const SIZES: Record<NonNullable<InputProps["size"]>, string> = {
-    sm: "text-sm px-2.5 py-1.5",
-    md: "text-base px-3 py-2",
-    lg: "text-lg px-4 py-2.5",
+    default: "h-9 px-3 py-1 text-base md:text-sm",
+    sm: "h-8 rounded-md px-2 text-sm",
+    lg: "h-10 rounded-md px-4 text-base",
 };
 
 /**
@@ -31,18 +32,20 @@ export class Input extends Cossack {
     declare props: InputProps;
 
     render() {
-        const { variant = "default", size = "md", ...rest } = this.props;
+        const { variant = "default", size = "default", ...rest } = this.props;
 
         const classes = classMap({
             "cs-input": true,
             [`cs-input--${variant}`]: true,
             [`cs-input--${size}`]: true,
-            "w-full rounded-md border outline-none": true,
-            "transition-colors transition-shadow duration-150": true,
-            "focus:border-primary": true,
-            "focus:ring-2 focus:ring-primary/20": true,
+            "w-full min-w-0 rounded-md border bg-transparent": true,
+            "text-base shadow-xs outline-none md:text-sm": true,
+            "transition-[color,box-shadow]": true,
+            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
+            "aria-invalid:border-destructive aria-invalid:ring-destructive/20": true,
             "placeholder:text-muted-foreground": true,
-            "disabled:opacity-50 disabled:cursor-not-allowed": true,
+            "file:inline-flex file:border-0 file:bg-transparent file:text-foreground file:text-sm file:font-medium": true,
+            "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50": true,
             [VARIANTS[variant]]: true,
             [SIZES[size]]: true,
         });
