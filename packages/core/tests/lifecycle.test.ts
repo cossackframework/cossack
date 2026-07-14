@@ -8,7 +8,7 @@ vi.mock('../src/shared/environment', () => ({
 }));
 
 import { Cossack } from '../src/shared/cossack';
-import { Task, VisibleTask } from '../src/shared/decorators';
+import { Task, VisibleTask, ServerTask, ClientTask } from '../src/shared/decorators';
 import * as renderer from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 
@@ -153,6 +153,80 @@ describe('Lifecycle Hooks', () => {
             (component as any).__controllers = [];
             await (component as any).performUpdate();
             expect(component.taskRunCount).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    describe('@ServerTask', () => {
+        it('should NOT run on client (skipped by runTasks)', async () => {
+            // This test file mocks isServer = false (client environment).
+            // @ServerTask methods should not be called during runTasks.
+            class ClientEnvComponent extends Cossack<{}> {
+                public serverTaskRan = false;
+                shouldUpdate() { return true; }
+                @ServerTask()
+                serverOnlyTask() { this.serverTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ClientEnvComponent();
+            await c.bootstrap();
+            expect(c.serverTaskRan).toBe(false);
+        });
+
+        it('should run on server (when isServer is true)', async () => {
+            class ServerEnvComponent extends Cossack<{}> {
+                public serverTaskRan = false;
+                shouldUpdate() { return true; }
+                @ServerTask()
+                serverOnlyTask() { this.serverTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ServerEnvComponent();
+            (c as any).isServer = true;
+            // Pass context as a Hono-like object for the server bootstrap path.
+            await c.bootstrap({
+                container: { innerHTML: '' },
+                context: {
+                    req: { url: '/', method: 'GET', headers: {}, path: '/' },
+                    res: { headers: new Headers(), status: () => {} },
+                },
+            } as any);
+            expect(c.serverTaskRan).toBe(true);
+        });
+    });
+
+    describe('@ClientTask', () => {
+        it('should run on client (when isServer is false)', async () => {
+            class ClientTaskComponent extends Cossack<{}> {
+                public clientTaskRan = false;
+                shouldUpdate() { return true; }
+                @ClientTask()
+                clientOnlyTask() { this.clientTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ClientTaskComponent();
+            // Test file mocks isServer = false (client environment).
+            await c.bootstrap();
+            expect(c.clientTaskRan).toBe(true);
+        });
+
+        it('should NOT run on server (skipped by runTasks)', async () => {
+            class ServerEnvComponent extends Cossack<{}> {
+                public clientTaskRan = false;
+                shouldUpdate() { return true; }
+                @ClientTask()
+                clientOnlyTask() { this.clientTaskRan = true; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new ServerEnvComponent();
+            (c as any).isServer = true;
+            await c.bootstrap({
+                container: { innerHTML: '' },
+                context: {
+                    req: { url: '/', method: 'GET', headers: {}, path: '/' },
+                    res: { headers: new Headers(), status: () => {} },
+                },
+            } as any);
+            expect(c.clientTaskRan).toBe(false);
         });
     });
 

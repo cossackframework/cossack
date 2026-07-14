@@ -4,6 +4,7 @@ import {
     Component,
     Client,
     ClientState,
+    ClientTask,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -61,14 +62,13 @@ export class MessageScroller extends Cossack {
     }
 
     onMount() {
-        if (this.isServer) return;
         // Stick to bottom on initial load.
         requestAnimationFrame(() => this.scrollToBottom());
     }
 
-    onUpdate() {
-        if (this.isServer) return;
-        // If content grew and we were at the bottom, keep sticking.
+    /** If content grew and we were at the bottom, keep sticking. Client-only. */
+    @ClientTask()
+    private stickToBottom() {
         const vp = this.scrollRef.value;
         if (!vp) return;
         const grew = vp.scrollHeight > this.prevScrollHeight;

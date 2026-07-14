@@ -4,6 +4,7 @@ import {
     Component,
     ClientState,
     Client,
+    ClientTask,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -142,11 +143,7 @@ export class Tabs extends Cossack {
     }
 
     onMount() {
-        if (!this.isServer) this.updateIndicator();
-    }
-
-    onUpdate() {
-        if (!this.isServer) this.updateIndicator();
+        this.updateIndicator();
     }
 
     @Client()
@@ -156,7 +153,8 @@ export class Tabs extends Cossack {
         requestAnimationFrame(() => this.updateIndicator());
     }
 
-    /** Position the sliding indicator over the active tab. */
+    /** Position the sliding indicator over the active tab. Runs on client only. */
+    @ClientTask()
     @Client()
     private updateIndicator() {
         const list = this.tablistRef.value;

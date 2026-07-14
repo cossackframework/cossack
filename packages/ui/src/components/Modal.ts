@@ -2,7 +2,7 @@ import { html, classMap } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
-    Task,
+    ClientTask,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -83,11 +83,10 @@ export class Modal extends Cossack {
 
     /**
      * Reconcile the native <dialog> open state with the `open` prop.
-     * Runs on mount + every render. Guarded so SSR (no DOM) is a no-op.
+     * Runs on the client during mount + every re-render.
      */
-    @Task()
+    @ClientTask()
     syncOpenState() {
-        if (this.isServer) return;
         const dlg = this.dialogRef.value;
         if (!dlg) return;
         const wantOpen = !!this.props.open;

@@ -3,7 +3,7 @@ import {
     Cossack,
     Component,
     Client,
-    Task,
+    ClientTask,
     ClientState,
     createRef,
     type RefObject,
@@ -179,9 +179,8 @@ export class Drawer extends Cossack {
         if (dlg && dlg.open) dlg.close();
     }
 
-    @Task()
+    @ClientTask()
     syncOpenState() {
-        if (this.isServer) return;
         const dlg = this.dialogRef.value;
         if (!dlg) return;
         const wantOpen = !!this.props.open;

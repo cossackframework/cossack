@@ -1,5 +1,5 @@
 import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component, Task, createRef, type RefObject } from "@cossackframework/core";
+import { Cossack, Component, ClientTask, createRef, type RefObject } from "@cossackframework/core";
 
 export interface AlertDialogProps {
     open?: boolean;
@@ -83,9 +83,8 @@ export class AlertDialog extends Cossack {
         `;
     }
 
-    @Task()
+    @ClientTask()
     syncOpenState() {
-        if (this.isServer) return;
         const dlg = this.dialogRef.value;
         if (!dlg) return;
         const wantOpen = !!this.props.open;

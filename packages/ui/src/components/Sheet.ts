@@ -2,7 +2,7 @@ import { html, classMap } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
-    Task,
+    ClientTask,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -117,9 +117,8 @@ export class Sheet extends Cossack {
         `;
     }
 
-    @Task()
+    @ClientTask()
     syncOpenState() {
-        if (this.isServer) return;
         const dlg = this.dialogRef.value;
         if (!dlg) return;
         const wantOpen = !!this.props.open;

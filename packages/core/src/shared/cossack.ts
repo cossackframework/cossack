@@ -796,8 +796,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.isRunningTasks) return;
         this.isRunningTasks = true;
         try {
+            // Regular @Task — always runs (both server and client).
             const tasks = Reflect.getMetadata('cossack:tasks', this.constructor) || [];
-            for (const task of tasks) {
+            // @ServerTask — only runs on the server (body stripped on client).
+            const serverTasks = this.isServer
+                ? (Reflect.getMetadata('cossack:server-tasks', this.constructor) || [])
+                : [];
+            // @ClientTask — only runs on the client (skipped on server).
+            const clientTasks = !this.isServer
+                ? (Reflect.getMetadata('cossack:client-tasks', this.constructor) || [])
+                : [];
+            const allTasks = [...tasks, ...serverTasks, ...clientTasks];
+            for (const task of allTasks) {
                 if (this.hasMethod(task)) {
                     try {
                         const taskMethod = this.getMethod(task);

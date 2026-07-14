@@ -4,6 +4,7 @@ import {
     Component,
     ClientState,
     Client,
+    ClientTask,
     createRef,
     type RefObject,
 } from "@cossackframework/core";
@@ -52,8 +53,9 @@ export class ToggleGroup extends Cossack {
         requestAnimationFrame(() => this.updateIndicator());
     }
 
-    onUpdate() {
-        if (!this.isServer) requestAnimationFrame(() => this.updateIndicator());
+    @ClientTask()
+    private refreshIndicator() {
+        requestAnimationFrame(() => this.updateIndicator());
     }
 
     @Client()
