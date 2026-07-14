@@ -42,7 +42,7 @@ export class Resizable extends Cossack {
                         ? `height:${this.sizePct}%;flex-shrink:0;`
                         : `width:${this.sizePct}%;flex-shrink:0;`}
                 >
-                    ${this.children}
+                    ${Array.isArray(this.children) ? this.children[0] : this.children}
                 </div>
                 <div
                     class=${isVertical
@@ -56,7 +56,7 @@ export class Resizable extends Cossack {
                     class="cs-resizable__panel cs-resizable__panel--second overflow-auto"
                     style="flex: 1; min-width: 0;"
                 >
-                    <!-- second panel — children after the first -->
+                    ${Array.isArray(this.children) ? this.children[1] : null}
                 </div>
             </div>
         `;

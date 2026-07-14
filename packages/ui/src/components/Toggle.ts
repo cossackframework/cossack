@@ -6,8 +6,8 @@ export interface ToggleProps {
     pressed?: boolean;
     /** Default pressed for uncontrolled mode. */
     defaultPressed?: boolean;
-    /** Size. */
-    size?: "sm" | "md" | "lg";
+    /** Size. Defaults to "default". */
+    size?: "default" | "sm" | "lg" | "icon";
     /** Callback when pressed state changes. */
     onPressedChange?: (pressed: boolean) => void;
     [key: string]: any;

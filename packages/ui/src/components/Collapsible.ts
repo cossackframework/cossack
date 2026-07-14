@@ -6,6 +6,8 @@ export interface CollapsibleProps {
     defaultOpen?: boolean;
     /** Controlled open state. */
     open?: boolean;
+    /** Trigger content (usually a Button) that toggles the collapsible. */
+    trigger?: unknown;
     /** Callback fired when the open state changes. */
     onToggle?: (open: boolean) => void;
     [key: string]: any;
