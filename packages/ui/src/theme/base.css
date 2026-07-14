@@ -24,16 +24,23 @@
 
 /*
  * Base element defaults. Tailwind v4 preflight handles the reset; this layer
- * only sets token-driven defaults that preflight does not. Kept as plain CSS
- * (not `@apply`) where possible so the rules survive even if a consumer does
- * not import Tailwind's utilities.
+ * only sets token-driven defaults that preflight does NOT.
+ *
+ * The default border + outline color is set inside `@layer base` (matching
+ * the selector list Tailwind's preflight uses) so bare `border` utilities
+ * read as the themed border token. Because this lives in `@layer base`,
+ * Tailwind utility classes like `border-transparent` / `border-input` (in
+ * the higher-priority `utilities` layer) can still override it per-element.
  */
-
-/* Default border + outline color so `border` and `outline` utilities read as
-   themed without each component repeating it. */
-* {
-    border-color: var(--color-border);
-    outline-color: color-mix(in oklch, var(--color-ring) 50%, transparent);
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-border);
+        outline-color: color-mix(in oklch, var(--color-ring) 50%, transparent);
+    }
 }
 
 body {

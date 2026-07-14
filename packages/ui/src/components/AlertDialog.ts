@@ -53,9 +53,9 @@ export class AlertDialog extends Cossack {
 
         const actionClass = classMap({
             "cs-alert-dialog__action": true,
-            "inline-flex items-center justify-center h-9 px-4 py-2 text-sm font-medium rounded-md cursor-pointer border-none transition-colors outline-none": true,
-            "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:ring-[3px]": actionVariant === "destructive",
-            "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 focus-visible:ring-ring/50 focus-visible:ring-[3px]": actionVariant === "primary",
+            "inline-flex items-center justify-center h-9 px-4 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors outline-none": true,
+            "bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 focus-visible:ring-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-[3px]": actionVariant === "destructive",
+            "bg-primary text-primary-foreground border border-transparent shadow-xs hover:bg-primary/90 focus-visible:ring-ring/50 focus-visible:ring-[3px]": actionVariant === "primary",
         });
 
         return html`
