@@ -40,7 +40,7 @@ export class InputGroup extends Cossack {
                     ? html`<span class="cs-input-group__prefix inline-flex items-center pl-3 text-sm text-muted-foreground shrink-0 [&_svg]:size-4">${prefix}</span>`
                     : null}
                 <input
-                    class="cs-input-group__input flex-1 min-w-0 h-9 bg-transparent border-none outline-none px-3 text-sm text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    class="cs-input-group__input flex-1 min-w-0 h-9 bg-transparent border-none outline-none focus-visible:outline-none focus-visible:ring-0 px-3 text-sm text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     ...=${inputAttrs}
                 />
                 ${suffix != null
