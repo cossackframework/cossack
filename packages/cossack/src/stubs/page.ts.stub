@@ -1,0 +1,11 @@
+import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page()
+export default class {{className}} extends Cossack {{{headMethod}}
+  render() {
+    return html`
+      {{body}}
+    `;
+  }
+}

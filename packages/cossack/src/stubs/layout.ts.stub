@@ -1,0 +1,13 @@
+import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'http' })
+export default class {{className}} extends Cossack {
+  render() {
+    return html`
+      <div class="{{kebab}}-layout">
+        ${this.children}
+      </div>
+    `;
+  }
+}
