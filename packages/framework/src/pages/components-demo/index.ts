@@ -181,14 +181,23 @@ export class ComponentsDemo extends Cossack {
                 <!-- Icons -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Icons</h2>
+                    <p class="text-sm text-muted-foreground">Solar icons across six styles (line, bold, duotone, broken, outline, line-duotone).</p>
                     <div class="flex flex-wrap items-center gap-4 text-foreground">
                         ${component(Icon, { name: 'arrow-right', size: 24, label: 'Arrow right' })}
-                        ${component(Icon, { name: 'check', size: 24, label: 'Check' })}
-                        ${component(Icon, { name: 'close', size: 24, label: 'Close' })}
-                        ${component(Icon, { name: 'warning', size: 24, label: 'Warning' })}
-                        ${component(Icon, { name: 'check', style: 'duotone', size: 32 })}
-                        ${component(Icon, { name: 'check', style: 'bold', size: 32 })}
-                        ${component(Icon, { name: 'check', style: 'broken', size: 32 })}
+                        ${component(Icon, { name: 'alt-arrow-down', size: 24, label: 'Chevron down' })}
+                        ${component(Icon, { name: 'check-circle', size: 24, label: 'Check' })}
+                        ${component(Icon, { name: 'close-circle', size: 24, label: 'Close' })}
+                        ${component(Icon, { name: 'magnifier', size: 24, label: 'Search' })}
+                        ${component(Icon, { name: 'settings', size: 24, label: 'Settings' })}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-4 text-foreground">
+                        <span class="text-xs text-muted-foreground">check-circle styles:</span>
+                        ${component(Icon, { name: 'check-circle', style: 'line', size: 32 })}
+                        ${component(Icon, { name: 'check-circle', style: 'bold', size: 32 })}
+                        ${component(Icon, { name: 'check-circle', style: 'duotone', size: 32 })}
+                        ${component(Icon, { name: 'check-circle', style: 'broken', size: 32 })}
+                        ${component(Icon, { name: 'check-circle', style: 'outline', size: 32 })}
+                        ${component(Icon, { name: 'check-circle', style: 'line-duotone', size: 32 })}
                     </div>
                 </section>
 

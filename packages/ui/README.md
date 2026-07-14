@@ -42,7 +42,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ### Buttons & Actions
 | Component | Description |
 |---|---|
-| **Button** | Variant button (primary, secondary, destructive, outline, ghost) with sizes |
+| **Button** | Variant button (default, secondary, destructive, outline, ghost, link) with sizes (default, sm, lg, icon) |
 | **Spinner** | CSS-animated loading spinner using `animate-spin` |
 
 ### Forms & Inputs
@@ -115,7 +115,7 @@ import { html, component } from "@cossackframework/renderer";
 import { Button, Input, Icon, toast } from "@cossackframework/ui";
 
 html`
-  ${component(Button, { variant: "primary", "@click": this.save }, "Save")}
+  ${component(Button, { variant: "default", "@click": this.save }, "Save")}
   ${component(Input, { type: "email", placeholder: "you@ex.com" })}
   ${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}
 `;
