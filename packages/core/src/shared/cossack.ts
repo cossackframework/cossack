@@ -65,7 +65,6 @@ import type {
     DynamicFunction,
     CossackElementInternal,
     CossackInternalState,
-    DynamicPropertyAccess,
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
@@ -492,30 +491,30 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Get a method by name with type-safe function access.
      * Returns undefined if the method doesn't exist or isn't a function.
      */
-    protected getMethod(name: string): DynamicFunction | undefined {
-        const value = (this as unknown as DynamicPropertyAccess)[name];
+    protected getMethod(name: string | symbol): DynamicFunction | undefined {
+        const value = (this as any)[name];
         return typeof value === 'function' ? (value as DynamicFunction) : undefined;
     }
 
     /**
      * Check if a method exists on this component.
      */
-    protected hasMethod(name: string): boolean {
-        return typeof (this as unknown as DynamicPropertyAccess)[name] === 'function';
+    protected hasMethod(name: string | symbol): boolean {
+        return typeof (this as any)[name] === 'function';
     }
 
     /**
      * Get a property value by name.
      */
-    protected getProperty(name: string): unknown {
-        return (this as unknown as DynamicPropertyAccess)[name];
+    protected getProperty(name: string | symbol): unknown {
+        return (this as any)[name];
     }
 
     /**
      * Set a property value by name.
      */
-    protected setProperty(name: string, value: unknown): void {
-        (this as unknown as DynamicPropertyAccess)[name] = value;
+    protected setProperty(name: string | symbol, value: unknown): void {
+        (this as any)[name] = value;
     }
 
     /**
@@ -822,8 +821,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * previous cleanup runs before each re-run, and all are drained on
      * `destroy()`.
      */
-    private async runTasks(changedPaths?: Set<string>) {
-        if (this.isRunningTasks) return;
+    /**
+     * @returns `true` if the tasks ran, `false` if skipped (another run was in
+     *           progress). Callers use the return value to decide whether to
+     *           preserve accumulated paths for the in-progress run.
+     */
+    private async runTasks(changedPaths?: Set<string>): Promise<boolean> {
+        if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
             // Regular @Task — always runs (both server and client).
@@ -845,11 +849,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         continue;
                     }
                 }
-                if (this.hasMethod(task as string)) {
+                if (this.hasMethod(task)) {
                     // Run the previous cleanup before re-invoking (React style).
                     this._runTaskCleanup(task);
                     try {
-                        const taskMethod = this.getMethod(task as string);
+                        const taskMethod = this.getMethod(task);
                         const result = (taskMethod as any)();
                         const resolved = result instanceof Promise ? await result : result;
                         if (typeof resolved === 'function') {
@@ -863,6 +867,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         } finally {
             this.isRunningTasks = false;
         }
+        return true;
     }
 
     /**
@@ -1292,10 +1297,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.broadcastScheduled = true;
             queueMicrotask(async () => {
                 // Snapshot so async tasks don't observe paths added during the
-                // run, and clear so the next cycle starts fresh.
+                // run, and clear so the next cycle starts fresh. If runTasks
+                // early-returns (isRunningTasks), the snapshot is unused but
+                // _dirtyPaths was already cleared — so re-add the paths to keep
+                // them visible to the in-progress run.
                 const paths = new Set(this._dirtyPaths);
                 this._dirtyPaths.clear();
-                await this.runTasks(paths);
+                const ran = await this.runTasks(paths);
+                if (!ran) {
+                    // Another run was in progress; preserve these paths for it.
+                    for (const p of paths) this._dirtyPaths.add(p);
+                }
                 const partialState: Record<string, any> = {};
                 for (const key of this.dirtyProperties) {
                     partialState[key] = this._stateContainer.getPublic(key);
@@ -1571,10 +1583,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // on a prop change (e.g. a Modal reacting to an `open` prop).
                 if (!this.skipRenderTasks) {
                     // Snapshot so tasks (some async) see a stable view; clear
-                    // so the next render cycle starts fresh.
+                    // so the next render cycle starts fresh. If runTasks is
+                    // already in progress (early-returns), re-add the paths so
+                    // the in-progress run observes them instead of dropping them.
                     const paths = new Set(this._dirtyPaths);
                     this._dirtyPaths.clear();
-                    void this.runTasks(paths);
+                    void this.runTasks(paths).then(ran => {
+                        if (!ran) for (const p of paths) this._dirtyPaths.add(p);
+                    });
                 }
 
                 this.willUpdate(changedProperties);

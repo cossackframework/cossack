@@ -46,6 +46,13 @@ export type StoreProxyTrigger = (storeKey: string, path: string) => void;
  * Both WeakMaps so dead triggers/targets are GC-eligible. Keyed on the RAW
  * target (never on a proxy) and on the trigger function (stable for the
  * lifetime of the store binding).
+ *
+ * Known limitation: because the cache is keyed by raw target, an object
+ * reachable via multiple paths (aliasing / shared references) reuses the proxy
+ * first created for it — so nested mutations report the FIRST path, not the
+ * path actually used to reach it. This affects `@Task({ track })` filtering for
+ * aliased objects but is an accepted tradeoff for identity stability and
+ * cycle-safety. Most stores have a tree shape (no aliasing) and are unaffected.
  */
 const childProxyCache = new WeakMap<StoreProxyTrigger, Map<object, object>>();
 

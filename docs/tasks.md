@@ -157,6 +157,50 @@ Matching is **segment-wise prefix in either direction**, so you get intuitive be
 - **By name, not by value.** `track` takes property *names* (strings) or dot-paths — it cannot take runtime values like `track: [this.user]`, because decorators run at class-definition time, before any instance exists.
 - Symbols are supported and match only against their own top-level key.
 
+### Known limitations & workarounds
+
+#### Aliased objects in a `@Store` report the first-seen path
+
+When you track a nested store field with a dot-path, Cossack matches it against the **mutation path** — the dotted location of the field that changed (`form.address.zip`). For tree-shaped stores (the common case), this is always correct.
+
+The limitation arises when **the same object reference sits at two different paths** inside a store (aliasing). Because nested store objects are wrapped in reactive Proxies that are **cached by their raw target** (for identity stability and cycle-safety), an aliased object reuses the proxy created for the **first** path it was accessed through. Mutating it then reports that first path — not the one you used to reach it.
+
+**Example of the problem:**
+
+```typescript
+const shared = { name: 'Jane' };
+
+@Store()
+form = {
+    primary: shared,     // path: form.primary
+    secondary: shared,   // SAME object reference — path: form.secondary
+};
+
+// Mutate through form.secondary:
+this.form.secondary.name = 'Bob';
+// Trigger reports: 'form.primary.name' (the first path), NOT 'form.secondary.name'
+
+@Task({ track: ['form.secondary.name'] })
+watchSecondary() { /* ❌ NEVER fires — reported path is form.primary.name */ }
+```
+
+**When it matters:** almost never. Most stores are tree-shaped — each object has exactly one parent — so every field has a unique, stable path. The issue only appears if you deliberately alias the same object reference into two slots of a store.
+
+**Workaround — don't alias; use separate objects:**
+
+```typescript
+@Store()
+form = {
+    primary:   { name: 'Jane' },   // separate objects → separate proxies
+    secondary: { name: 'Jane' },   // each gets its own correct path
+};
+
+@Task({ track: ['form.secondary.name'] })
+watchSecondary() { /* ✅ fires correctly now */ }
+```
+
+With distinct objects, each gets its own proxy with the correct `basePath`, so mutation paths are always accurate and `track` filtering works as expected.
+
 ## Automatic Cleanup (React `useEffect` style)
 
 A task may **return a cleanup function**. The cleanup runs automatically:

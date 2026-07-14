@@ -354,6 +354,34 @@ describe('Lifecycle Hooks', () => {
             await (c as any).performUpdate();
             expect(c.runCount).toBe(1);
         });
+
+        it('preserves dirty paths when runTasks is re-entered (race guard)', async () => {
+            // Regression for the early-return-drops-paths bug: if runTasks is
+            // already in progress (isRunningTasks), a second run must NOT clear
+            // _dirtyPaths — the in-progress run should still observe them.
+            class RaceComponent extends Cossack<{}> {
+                public runCount = 0;
+                shouldUpdate() { return true; }
+                @Task({ track: ['a'] })
+                reactsToA() { this.runCount++; }
+                render() { return { strings: [''], values: [] } as any; }
+            }
+            const c = new RaceComponent();
+            await c.bootstrap();
+            c.runCount = 0;
+
+            // Start a run and keep it in-flight by making the task await.
+            // Simulate: runTasks returns false (bail) because isRunningTasks is
+            // already true, and verify the paths are preserved in _dirtyPaths.
+            (c as any).isRunningTasks = true; // simulate an in-progress run
+            (c as any).__changedProperties = new Map([['a', 1]]);
+            (c as any).__controllers = [];
+            (c as any)._dirtyPaths = new Set(['a']);
+            await (c as any).performUpdate();
+            // performUpdate's runTasks bailed; paths must survive for the
+            // in-progress run to pick up.
+            expect([...(c as any)._dirtyPaths]).toContain('a');
+        });
     });
 
     describe('@Task cleanup (React useEffect style)', () => {
