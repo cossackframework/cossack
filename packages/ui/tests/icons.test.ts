@@ -17,53 +17,75 @@ describe("icon registry", () => {
         expect(iconNames.length).toBeGreaterThan(0);
     });
 
-    it("includes the seeded sample icons", () => {
+    it("includes the curated sample icons", () => {
         expect(iconNames).toEqual(
             expect.arrayContaining([
                 "arrow-right",
-                "check",
-                "close",
-                "warning",
+                "alt-arrow-down",
+                "check-circle",
+                "close-circle",
+                "magnifier",
+                "settings",
             ]),
         );
     });
 
-    it("each seeded icon has all four Solar styles", () => {
-        for (const name of ["arrow-right", "check", "close", "warning"]) {
+    it("each curated icon has at least the line style", () => {
+        for (const name of [
+            "arrow-right",
+            "alt-arrow-down",
+            "check-circle",
+            "close-circle",
+        ]) {
             const entry = iconRegistry[name];
             expect(entry.line).toBeTruthy();
-            expect(entry.bold).toBeTruthy();
-            expect(entry.duotone).toBeTruthy();
-            expect(entry.broken).toBeTruthy();
         }
+    });
+
+    it("exposes the full six-style set where Solar provides them", () => {
+        // alt-arrow-down exists in all six Solar styles.
+        const entry = iconRegistry["alt-arrow-down"];
+        expect(entry.line).toBeTruthy();
+        expect(entry.bold).toBeTruthy();
+        expect(entry.duotone).toBeTruthy();
+        expect(entry.broken).toBeTruthy();
+        expect(entry.outline).toBeTruthy();
+        expect(entry["line-duotone"]).toBeTruthy();
     });
 });
 
 describe("Icon component", () => {
     it("renders an <svg> with the requested size", () => {
-        const out = renderIcon({ name: "check", size: 20 });
+        const out = renderIcon({ name: "check-circle", size: 20 });
         expect(out).toContain("<svg");
         expect(out).toContain('width="20"');
         expect(out).toContain('height="20"');
-        // line style emits a <path> with stroke
+        // line style emits a <path>
         expect(out).toContain("<path");
     });
 
     it("uses the requested style", () => {
         const out = renderIcon({ name: "arrow-right", style: "bold" });
-        // bold emits a fill-based path
+        // bold emits a fill-based path using currentColor
         expect(out).toContain('fill="currentColor"');
     });
 
+    it("falls back to line when a style is missing for an icon", () => {
+        // Request an outline style; the component falls back to line if absent.
+        const out = renderIcon({ name: "arrow-right", style: "outline" });
+        expect(out).toContain("<svg");
+        expect(out).toContain("<path");
+    });
+
     it("adds aria-label and role=img when a label is supplied", () => {
-        const out = renderIcon({ name: "check", label: "Confirm" });
+        const out = renderIcon({ name: "check-circle", label: "Confirm" });
         expect(out).toContain('role="img"');
         expect(out).toContain('aria-label="Confirm"');
         expect(out).not.toContain("aria-hidden");
     });
 
     it("hides from assistive tech when no label is supplied", () => {
-        const out = renderIcon({ name: "check" });
+        const out = renderIcon({ name: "check-circle" });
         expect(out).toContain('aria-hidden="true"');
     });
 
@@ -79,12 +101,16 @@ describe("normalizeStyle", () => {
         expect(normalizeStyle("bold")).toBe("bold");
         expect(normalizeStyle("duotone")).toBe("duotone");
         expect(normalizeStyle("broken")).toBe("broken");
+        expect(normalizeStyle("outline")).toBe("outline");
+        expect(normalizeStyle("line-duotone")).toBe("line-duotone");
     });
 
     it("maps aliases to canonical styles", () => {
         expect(normalizeStyle("solid")).toBe("bold");
         expect(normalizeStyle("d")).toBe("duotone");
         expect(normalizeStyle("brk")).toBe("broken");
+        expect(normalizeStyle("o")).toBe("outline");
+        expect(normalizeStyle("ld")).toBe("line-duotone");
     });
 
     it("falls back to line for unknown input", () => {

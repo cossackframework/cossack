@@ -1,13 +1,27 @@
 /*
  * @cossackframework/ui — icon type definitions
  *
- * Solar ships 4 visual styles. The registry maps a kebab-case icon name to a
- * per-style SVG-inner-content string (paths / elements, no outer <svg> wrapper).
- * The Icon component wraps the content in an <svg> sized via props.
+ * Solar ships six visual styles. The registry maps a kebab-case icon name to
+ * a per-style SVG-inner-content string (paths / elements, no outer <svg>
+ * wrapper). The Icon component wraps the content in an <svg> sized via props.
+ *
+ * Canonical style → Solar source folder:
+ *   line         → Linear
+ *   bold         → Bold
+ *   duotone      → BoldDuotone
+ *   broken       → Broken
+ *   outline      → Outline
+ *   line-duotone → LineDuotone
  */
 
-/** The four Solar visual styles. */
-export type IconStyle = "line" | "bold" | "duotone" | "broken";
+/** The six Solar visual styles. */
+export type IconStyle =
+    | "line"
+    | "bold"
+    | "duotone"
+    | "broken"
+    | "outline"
+    | "line-duotone";
 
 /**
  * Per-icon render record. Each value is the raw SVG inner markup (paths,
@@ -24,5 +38,8 @@ export function normalizeStyle(style: string): IconStyle {
     if (s === "bold" || s === "solid" || s === "b") return "bold";
     if (s === "duotone" || s === "d") return "duotone";
     if (s === "broken" || s === "brk") return "broken";
+    if (s === "outline" || s === "o") return "outline";
+    if (s === "line-duotone" || s === "ld" || s === "lineduotone")
+        return "line-duotone";
     return "line"; // default + fallback for unknown
 }
