@@ -757,6 +757,7 @@ export const UI_COMPONENTS = {
   pagination: { className: 'Pagination', template: fromPackage('Pagination') },
   'aspect-ratio': { className: 'AspectRatio', template: fromPackage('AspectRatio') },
   field: { className: 'Field', template: fromPackage('Field') },
+  form: { className: 'Form', template: fromPackage('Form') },
   empty: { className: 'Empty', template: fromPackage('Empty') },
   kbd: { className: 'Kbd', template: fromPackage('Kbd') },
   'button-group': { className: 'ButtonGroup', template: fromPackage('ButtonGroup') },

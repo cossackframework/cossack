@@ -203,6 +203,7 @@ export class ReactiveForm extends Cossack {
 Key points:
 
 - **`preventDefault(handler)`** — imported from `@cossackframework/renderer`. Wraps a `@submit` handler so the native form submission (full reload) is suppressed and your handler runs instead. Accepts an optional `{ novalidate?: boolean }` (defaults to `true`, disabling HTML5 native validation). Without it, `<form @submit>` will reload the page.
+- **`Form` component (UI package)** — ergonomic sugar over the above. `component(Form, { submit: this.handleSubmit }, html\`...\`)` prevents the native submit and adds `novalidate` for you, and spreads other attrs / projects children. Omit `submit` for a native `<form method="post">` (read with `getFormData()`). Thin wrapper only — it does not manage values or validation.
 - **`@Store()`** makes `this.form.email = …`, `this.form.address.zip = …`, and `this.form.tags.push(…)` all reactive without reassigning the whole object. See `references/decorators.md`.
 - **`storeRules<T>()`** gives compile-time-checked keys; keys are relative to the store property and auto-prefixed at runtime (`'email'` → `'form.email'`). See `references/validation.md`.
 - **`this.loading.handleSubmit`** — auto-tracked because `handleSubmit` is a `@Server()` method. See `references/loading.md`.

@@ -25,6 +25,55 @@ render() {
 
 That's it! You have defined a form with two input fields and a submit button. The `method="post"` attribute indicates that the form will be submitted using the POST method. Feel free to use GET method as well.
 
+## The `Form` component
+
+Cossack UI ships an optional `Form` component — a thin `<form>` wrapper that removes the `preventDefault` + `novalidate` boilerplate when you submit via a `@Server()` method (the RPC pattern). It does **not** manage field values or run validation; pair it with `bind()`/`@State`/`@Store` for data and `@Validate`/`hasError`/`getError` for validation, exactly as with a bare `<form>`.
+
+```typescript
+import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { html, bind, component } from '@cossackframework/renderer';
+import { Button, Form } from '@cossackframework/ui';
+
+@Page({ transport: 'http' })
+export default class ContactForm extends Cossack {
+  @State() name = 'Guest';
+
+  @Server()
+  handleSubmit() {
+    console.log(`Submitted: ${this.name}`);   // reads from @State
+  }
+
+  render() {
+    // Passing `submit` makes Form prevent the native submit + add `novalidate`.
+    return component(Form, { submit: this.handleSubmit },
+      html`
+        <input name="name" .value="${bind(this, 'name')}" />
+        ${component(Button, { type: 'submit' }, 'Submit')}
+      `,
+    );
+  }
+}
+```
+
+| Prop | Description |
+|---|---|
+| `submit` | Submit handler (typically a `@Server()` method). When set, the native submit is prevented and `novalidate` is added by default. Omit for a native `<form method="post">` submission (read with `getFormData()`). |
+| `novalidate` | Override the `novalidate` default. Defaults to `true` when `submit` is set, `false` otherwise. |
+| `...rest` | Any other props (`method`, `action`, `class`, …) spread onto the native `<form>`. |
+
+This is sugar over the equivalent bare form:
+
+```typescript
+// Same behavior, written by hand:
+<form @submit="${preventDefault(this.handleSubmit)}" novalidate>...</form>
+```
+
+For the native POST + `getFormData()` pattern, just omit `submit`:
+
+```typescript
+component(Form, { method: 'post' }, html`<input name="email" /> ...`)
+```
+
 ## Handling Form Submission
 
 As defined in the [API Routes](/docs/api-routes.md) section, you can handle form submissions by defining handlers for the HTTP methods in your page component. For example, to handle a POST request when the form is submitted, you can define a `post()` method in your page component.
