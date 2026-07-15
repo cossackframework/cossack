@@ -1,6 +1,6 @@
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult } from './directives';
+import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, resolveField, setField } from './directives';
 
 export class TemplateResult {
   public readonly _cossack_template_result = true;
@@ -90,8 +90,8 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     // name (value/checked) is determined by the attribute this BindResult is
     // attached to, which the SSR scanner handles via its `.startsWith('.')`
     // branch and calls valueToString here. Writeback listeners are a
-    // client-only concern.
-    const current = (value.component as any)?.[value.fieldName];
+    // client-only concern. Dot-paths resolve via property access.
+    const current = resolveField(value.component, value.fieldName);
     return valueToString(current, opts);
   }
   if (isComponentResult(value)) {
@@ -138,6 +138,15 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
   return escapeHtml(value);
 };
 
+// HTML attributes that serialize as presence attributes (emit the bare name
+// when truthy, omit when falsy) rather than name="value". Shared by the SSR
+// spread path (renderSpread) and the SSR direct property-binding path so the
+// two stay in sync.
+const BOOLEAN_ATTRS = new Set([
+  'checked', 'disabled', 'readonly', 'required', 'hidden', 'selected',
+  'multiple', 'autofocus', 'open',
+]);
+
 const renderSpread = (obj: unknown): string => {
   let output = '';
   if (typeof obj === 'object' && obj !== null) {
@@ -153,6 +162,20 @@ const renderSpread = (obj: unknown): string => {
       }
       if (k.startsWith('.')) {
         name = k.slice(1);
+        // Unwrap result-wrapper directives routed through the spread (e.g.
+        // component(Input, { '.value': bind(this, 'name') }) or
+        // { '.value': live(x) }) so SSR emits the underlying value instead of
+        // "[object Object]". Mirrors the direct SSR .value branch. Boolean-ish
+        // attrs (.checked/.disabled) render as presence attributes.
+        if (val instanceof BindResult) {
+          val = resolveField(val.component, val.fieldName);
+        } else if (val instanceof LiveResult) {
+          val = val.value;
+        }
+        if (BOOLEAN_ATTRS.has(name)) {
+          if (val) output += ` ${name}`;
+          continue;
+        }
       }
 
       if (typeof val === 'boolean') {
@@ -264,7 +287,7 @@ class SSRScanner {
             let propVal: unknown;
             const isBind = val instanceof BindResult;
             if (isBind) {
-              propVal = (val.component as any)?.[val.fieldName];
+              propVal = resolveField(val.component, val.fieldName);
             } else {
               propVal = val;
             }
@@ -273,11 +296,7 @@ class SSRScanner {
             // emit a bare attribute when truthy — matching how a checkbox
             // serializes. Plain (non-bind) property bindings keep their
             // original behavior (value="...") to avoid changing existing usage.
-            const isBooleanAttr =
-              isBind &&
-              (attrName === 'checked' || attrName === 'disabled' || attrName === 'readonly' ||
-                attrName === 'selected' || attrName === 'multiple' || attrName === 'required' ||
-                attrName === 'hidden');
+            const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
             if (isBooleanAttr) {
               this.result = this.result.trimEnd();
               if (propVal) this.result += ` ${attrName}`;
@@ -833,6 +852,16 @@ class NodePart implements Part {
 
 class SpreadPart implements Part {
   private previousValues: Record<string, unknown> = {};
+  // Per-key state for `bind()` directives routed through the spread (e.g.
+  // component(Input, { '.value': bind(this, 'name') })). Mirrors the per-part
+  // fields AttributePart uses for the direct .value="${bind(...)}" path.
+  private bindStates = new Map<string, {
+    listener: EventListener;
+    lastKind: 'value' | 'checked' | null;
+    lastValue: unknown;
+    boundComponent: unknown;
+    boundField: string;
+  }>();
   constructor(public element: Element) {}
   update(value: unknown) {
     if (typeof value !== 'object' || value === null) return;
@@ -846,7 +875,12 @@ class SpreadPart implements Part {
           const oldHandler = (this.element as any)[propName];
           if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
         } else if (key.startsWith('.')) {
-          // Prop
+          // Detach a previously-bound writeback listener when the key is dropped.
+          const state = this.bindStates.get(key);
+          if (state) {
+            this.element.removeEventListener((state.listener as any).__eventName, state.listener);
+            this.bindStates.delete(key);
+          }
         } else if (key.startsWith('?')) {
           this.element.removeAttribute(key.slice(1));
         } else {
@@ -886,7 +920,35 @@ class SpreadPart implements Part {
         (this.element as any)[propName] = handler;
         this.element.addEventListener(eventName, handler);
       } else if (key.startsWith('.')) {
-        (this.element as any)[key.slice(1)] = val;
+        const propName = key.slice(1);
+        // bind() via the spread — same two-way handling as the direct path so
+        // component(Input, { '.value': bind(this, 'name') }) works. Without
+        // this, element.value = BindResult renders "[object Object]".
+        if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
+          this.applySpreadBind(key, propName, val);
+        } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
+          // live() via the spread: compare against the live DOM value (not the
+          // last-rendered value) so an in-progress user edit isn't clobbered,
+          // and a divergent DOM value is corrected. Mirrors AttributePart.
+          const el = this.element as any;
+          if (propName === 'checked') {
+            const boolValue = Boolean(val.value);
+            if (el.checked !== boolValue) el.checked = boolValue;
+          } else {
+            const strValue = val.value == null ? '' : String(val.value);
+            if (el.value !== strValue) el.value = strValue;
+          }
+        } else if (val instanceof BindResult) {
+          // bind() on a non-form property (.disabled/.data-*) — read-only
+          // fallback: push the current field value, no writeback. Mirrors
+          // AttributePart.updateBind's unsupported-property branch. Without
+          // this, element.disabled = BindResult sets a truthy [object Object].
+          (this.element as any)[propName] = resolveField(val.component, val.fieldName);
+        } else if (val instanceof LiveResult) {
+          (this.element as any)[propName] = val.value;
+        } else {
+          (this.element as any)[propName] = val;
+        }
       } else if (key.startsWith('?')) {
         if (val) this.element.setAttribute(key.slice(1), '');
         else this.element.removeAttribute(key.slice(1));
@@ -898,6 +960,65 @@ class SpreadPart implements Part {
       }
     }
     this.previousValues = { ...props };
+  }
+
+  /**
+   * Two-way bind for a `.value`/`.checked` key routed through the spread.
+   * Mirrors AttributePart.updateBind: push the current field value into the
+   * DOM (dirty-checked) and attach the writeback listener once.
+   */
+  private applySpreadBind(key: string, propName: 'value' | 'checked', bind: BindResult) {
+    const el = this.element as any;
+    const component = bind.component;
+
+    // Render direction: dirty-checked push of the current field value.
+    const current = resolveField(component, bind.fieldName);
+    let state = this.bindStates.get(key);
+    if (propName === 'checked') {
+      const boolValue = Boolean(current);
+      if (!state || state.lastKind !== 'checked' || state.lastValue !== boolValue) {
+        el.checked = boolValue;
+      }
+    } else {
+      const strValue = current == null ? '' : String(current);
+      if (!state || state.lastKind !== 'value' || String(state.lastValue) !== strValue) {
+        el.value = strValue;
+      }
+    }
+
+    // Attach/recreate the writeback listener when the target changes.
+    const eventName = bindEventFor(this.element, propName);
+    const stale = !!state && (
+      state.boundComponent !== component ||
+      state.boundField !== bind.fieldName ||
+      (state.listener as any).__eventName !== eventName
+    );
+    if (state && stale) {
+      this.element.removeEventListener((state.listener as any).__eventName, state.listener);
+      this.bindStates.delete(key);
+      state = undefined;
+    }
+    if (!state) {
+      const listener = (e: Event) => {
+        const source = e.currentTarget as Element & Record<string, any>;
+        const next = propName === 'checked' ? !!source[propName] : source[propName];
+        if (component) setField(component, bind.fieldName, next);
+      };
+      (listener as any).__eventName = eventName;
+      this.element.addEventListener(eventName, listener);
+      state = {
+        listener,
+        lastKind: propName,
+        lastValue: propName === 'checked' ? Boolean(current) : (current == null ? '' : String(current)),
+        boundComponent: component,
+        boundField: bind.fieldName,
+      };
+      this.bindStates.set(key, state);
+    } else {
+      // Update the stored last-comitted value so the next render dirty-checks.
+      state.lastKind = propName;
+      state.lastValue = propName === 'checked' ? Boolean(current) : (current == null ? '' : String(current));
+    }
   }
 }
 
@@ -1110,7 +1231,7 @@ class AttributePart implements Part {
     if (propName !== 'value' && propName !== 'checked') {
       // Unsupported property: fall back to a plain property assignment so the
       // render still reflects the current field value, with no writeback.
-      (this.element as any)[propName] = (bind.component as any)?.[bind.fieldName];
+      (this.element as any)[propName] = resolveField(bind.component, bind.fieldName);
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
       // Detach any listener from a previous bind() — switching from .value to
       // .foo on the same part would otherwise leave the old listener attached.
@@ -1126,7 +1247,7 @@ class AttributePart implements Part {
     // Render direction: push current field value into the DOM (dirty-checked
     // against the last value we committed, so an unchanged field — e.g. the
     // user is mid-edit and nothing else changed — is left alone).
-    const current = component?.[bind.fieldName];
+    const current = resolveField(component, bind.fieldName);
     if (propName === 'checked') {
       const boolValue = Boolean(current);
       if (this.lastFormKind !== 'checked' || this.lastFormValue !== boolValue) {
@@ -1169,7 +1290,9 @@ class AttributePart implements Part {
         const next = propName === 'checked' ? !!source[propName] : source[propName];
         // Plain assignment on a `@State` field triggers requestUpdate on the
         // client (see cossack.ts setupStateProperty), driving the re-render.
-        if (component) component[bind.fieldName] = next;
+        // Dot-paths write through setField so @Store nested writes hit the
+        // reactive Proxy trap.
+        if (component) setField(component, bind.fieldName, next);
       };
       (listener as any).__eventName = eventName;
       this.bindListener = listener;

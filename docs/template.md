@@ -147,6 +147,8 @@ import { live } from '@cossackframework/renderer';
 html`<input .value="${live(this.email)}" />`;
 ```
 
+`live()` also works when routed through `component()` props (e.g. `component(Input, { '.value': live(this.email) })`), so it can be combined with UI components the same way `bind()` can.
+
 ### `bind`
 
 Two-way binding for a form element's value/checked against a component state

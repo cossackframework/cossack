@@ -106,10 +106,60 @@ export const key = (value: unknown, template: unknown) => new KeyResult(value, t
  * checkbox/radio/range inputs and `<select>`).
  *
  * @param component  The component instance owning the state field (usually `this`).
- * @param fieldName  The state field name to read from / write back to.
+ * @param fieldName  The state field name to read from / write back to. Supports
+ *                   dot-paths into nested state (e.g. `'address.street'`), so a
+ *                   `@Store` field can be bound at any depth.
  */
 export const bind = (component: unknown, fieldName: string) =>
   new BindResult(component, fieldName);
+
+/**
+ * Read a (possibly dotted) field path off a component, walking the object graph
+ * via property access (so `@Store` reactive proxies traverse correctly).
+ * Single-segment paths take the fast path; `null`/`undefined` short-circuits.
+ *
+ * @internal — used by the bind directive; lives here so the renderer stays
+ * dependency-free (it mirrors `resolveStatePath` in @cossackframework/core).
+ */
+export function resolveField(component: unknown, path: string): unknown {
+  const comp = component as any;
+  if (!path.includes('.')) return comp?.[path];
+  const parts = path.split('.');
+  let current: any = comp?.[parts[0]];
+  for (let i = 1; i < parts.length; i++) {
+    if (current == null) return undefined;
+    current = current[parts[i]];
+  }
+  return current;
+}
+
+/**
+ * Write a value into a (possibly dotted) field path. Resolves to the parent via
+ * property access (so the `@Store` Proxy trap fires on the final segment) and
+ * creates intermediate objects when a segment is missing.
+ *
+ * @internal — counterpart to {@link resolveField} for the bind writeback.
+ */
+export function setField(component: unknown, path: string, value: unknown): void {
+  const comp = component as any;
+  if (!comp) return;
+  if (!path.includes('.')) {
+    comp[path] = value;
+    return;
+  }
+  const parts = path.split('.');
+  let current: any = comp[parts[0]];
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (current == null || typeof current !== 'object') return;
+    if (current[parts[i]] == null || typeof current[parts[i]] !== 'object') {
+      current[parts[i]] = {};
+    }
+    current = current[parts[i]];
+  }
+  if (current != null && typeof current === 'object') {
+    current[parts[parts.length - 1]] = value;
+  }
+}
 
 /**
  * Wraps an event handler so the event's default is prevented before it runs.

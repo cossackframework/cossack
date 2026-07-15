@@ -30,30 +30,38 @@ That's it! You have defined a form with two input fields and a submit button. Th
 Cossack UI ships an optional `Form` component — a thin `<form>` wrapper that removes the `preventDefault` + `novalidate` boilerplate when you submit via a `@Server()` method (the RPC pattern). It does **not** manage field values or run validation; pair it with `bind()`/`@State`/`@Store` for data and `@Validate`/`hasError`/`getError` for validation, exactly as with a bare `<form>`.
 
 ```typescript
-import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { Cossack, Page, Server, State, Store } from '@cossackframework/core';
 import { html, bind, component } from '@cossackframework/renderer';
-import { Button, Form } from '@cossackframework/ui';
+import { Button, Form, Input } from '@cossackframework/ui';
+
+interface Address { street: string; city: string }
 
 @Page({ transport: 'http' })
 export default class ContactForm extends Cossack {
   @State() name = 'Guest';
+  @Store() address: Address = { street: '', city: '' };
 
   @Server()
   handleSubmit() {
-    console.log(`Submitted: ${this.name}`);   // reads from @State
+    console.log(`Submitted: ${this.name}, ${this.address.street}`);   // reads from state
   }
 
   render() {
     // Passing `submit` makes Form prevent the native submit + add `novalidate`.
+    // bind() two-way binds an input to state — works inside component() props
+    // and supports nested dot-paths (e.g. 'address.street').
     return component(Form, { submit: this.handleSubmit },
       html`
-        <input name="name" .value="${bind(this, 'name')}" />
+        ${component(Input, { name: 'name', '.value': bind(this, 'name') })}
+        ${component(Input, { name: 'street', '.value': bind(this, 'address.street') })}
         ${component(Button, { type: 'submit' }, 'Submit')}
       `,
     );
   }
 }
 ```
+
+> **`bind()` works with `component()` props.** Pass the directive as a `.value` (or `.checked`) prop: `component(Input, { '.value': bind(this, 'name') })`. It also supports nested state via dot-paths — `bind(this, 'address.street')` reads/writes the nested field, triggering `@Store` reactivity. The equivalent direct form `<input .value="${bind(this, 'name')}" />` works too.
 
 | Prop | Description |
 |---|---|

@@ -86,7 +86,7 @@ export default class ComplexForm extends Cossack {
         <form method="post" novalidate>
           <div>
             <label for="name">Name:</label>
-            ${component(Input, { name: 'name', value: this.name ?? '' })}
+            ${component(Input, { name: 'name', value: this.name })}
             ${this.hasError('name') ? html`<span class="text-red-500 text-sm">${this.getError('name')}</span>` : ''}
           </div>
 
@@ -94,19 +94,19 @@ export default class ComplexForm extends Cossack {
             <legend>Address</legend>
             <div>
               <label for="street">Street:</label>
-              ${component(Input, { name: 'address[street]', value: this.address?.street ?? '' })}
+              ${component(Input, { name: 'address[street]', value: this.address.street })}
               ${this.hasError('address.street') ? html`<span class="text-red-500 text-sm">${this.getError('address.street')}</span>` : ''}
             </div>
 
             <div>
               <label for="city">City:</label>
-              ${component(Input, { name: 'address[city]', value: this.address?.city ?? '' })}
+              ${component(Input, { name: 'address[city]', value: this.address.city })}
               ${this.hasError('address.city') ? html`<span class="text-red-500 text-sm">${this.getError('address.city')}</span>` : ''}
             </div>
 
             <div>
               <label for="state">State:</label>
-              ${component(Input, { name: 'address[state]', value: this.address?.state ?? '' })}
+              ${component(Input, { name: 'address[state]', value: this.address.state })}
               ${this.hasError('address.state') ? html`<span class="text-red-500 text-sm">${this.getError('address.state')}</span>` : ''}
             </div>
           </fieldset>

@@ -1,6 +1,6 @@
-import { Client, Cossack, Page, Server, State } from '@cossackframework/core';
+import { Client, Cossack, Page, Server, State, Store } from '@cossackframework/core';
 import { html, bind, component } from '@cossackframework/renderer';
-import { Button, Form } from '@cossackframework/ui';
+import { Button, Form, Input } from '@cossackframework/ui';
 
 // Want to have rich state management when submitting forms?
 // This page demonstrates how to use @State() and @Server() decorators to manage form state and handle server-side logic in a Cossack application.
@@ -14,11 +14,23 @@ export default class BasicState extends Cossack {
   @State()
   name: string = 'Guest';
 
+  @Store()
+  address: {
+    street: string;
+    city: string;
+    zip: string;
+  } = {
+    street: 'An Khanh',
+    city: 'Hanoi',
+    zip: '100000',
+  }
+
   @Server()
   serverHandle() {
     const name = this.name;
 
     console.log(`Form submitted with name: ${name}`);
+    console.log(`Form submitted with address: ${JSON.stringify(this.address)}`);
   }
 
   render() {
@@ -33,7 +45,11 @@ export default class BasicState extends Cossack {
           html`
             <div>
               <label for="name">Name:</label>
-              <input type="text" id="name" name="name" .value="${bind(this, 'name')}" required />
+              ${component(Input, { name: 'name', '.value': bind(this, 'name') })}
+            </div>
+            <div>
+              <label for="street">Street:</label>
+              ${component(Input, { name: 'street', '.value': bind(this, 'address.street') })}
             </div>
             ${component(
               Button,
