@@ -327,17 +327,21 @@ consumed — the classic Laravel `back()->with('success', 'Saved!')` pattern.
 Use it for success messages, validation errors, or repopulating form fields
 after a failed submission.
 
+When you pass `rules` to `getFormData()`, the submitted input and any
+validation errors are **auto-flashed** — so the common form flow needs no
+manual `flashInput()` / `flash('errors')`. Use `flash()` directly only for
+your own messages (e.g. a success banner).
+
 ```typescript
-import { flash, flashed, flashInput, old } from '@cossackframework/core';
+import { flash, flashed, old } from '@cossackframework/core';
 
 @Page({ transport: 'http' })
 export default class FormPage extends Cossack {
   async post() {
-    const { data, errors, valid } = await this.c.getFormData<MyForm>({ rules });
+    // getFormData() auto-flashes input (for old()) and errors (when invalid).
+    const { data, valid } = await this.c.getFormData<MyForm>({ rules });
     if (!valid) {
-      flashInput(data);              // repopulate fields on next render
-      flash('errors', errors);       // show what went wrong
-      return this.back('/form');     // redirect back to Referer
+      return this.back('/form');     // errors + old input already flashed
     }
     flash('success', 'Saved!');      // one-shot success message
     return this.c.redirect('/form');
@@ -355,6 +359,9 @@ export default class FormPage extends Cossack {
   }
 }
 ```
+
+See [Session & Flash](/docs/session.md) for the full flash API, the `flash`
+option on `getFormData()`, and the persistent DB-backed `session()`.
 
 ### API
 

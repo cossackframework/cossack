@@ -2,6 +2,7 @@
 import type { Context } from 'hono';
 import { createContext } from '@cossackframework/renderer';
 import { parseFormData } from './forms';
+import { flash, flashInput } from './flash';
 import { StoreRuleMap, validateObject, type ObjectValidationResult } from './validation';
 
 export const EnvContext = createContext<any>(undefined);
@@ -17,14 +18,43 @@ export type HydratedContext = {
 }
 
 /**
+ * Controls automatic flash-scoping of submitted input and validation errors.
+ *
+ * - `true` (default): flash both the parsed input (for `old()` repopulation) and
+ *   the validation `errors` (only when non-empty) to the next request.
+ * - `false`: flash nothing — you call `flashInput`/`flash` yourself.
+ * - object form: toggle each category independently. Unspecified keys default
+ *   to `true`.
+ *
+ *   getFormData(opts, { flash: { errors: false } })  // input only
+ */
+export type FlashOptions = boolean | { input?: boolean; errors?: boolean };
+
+/** Resolves `FlashOptions` to explicit `{ input, errors }` booleans. */
+function resolveFlashOptions(flash: FlashOptions | undefined): { input: boolean; errors: boolean } {
+    if (flash === false) return { input: false, errors: false };
+    if (flash === true || flash === undefined) return { input: true, errors: true };
+    return {
+        input: flash.input !== false,
+        errors: flash.errors !== false,
+    };
+}
+
+/**
  * Options for `getFormData<T>()`.
  *
  * Provide `rules` (typically built with `storeRules<T>()`) to run Cossack's
  * built-in validation over the parsed data. Omit it for a simple typed DTO
  * (parse + compile-time cast, no runtime validation).
+ *
+ * `flash` (default `true`) automatically flashes the submitted input and any
+ * validation errors to the next request, so you can skip the manual
+ * `flashInput(data)` / `flash('errors', errors)` calls before `return this.back()`.
+ * Flashing is a no-op when no flash store is wired (e.g. on the client).
  */
 export type GetFormDataOptions<T> = {
     rules?: StoreRuleMap<T>;
+    flash?: FlashOptions;
 };
 
 /**
@@ -65,8 +95,24 @@ export function createCossackContext(
                     // Context has a real `req.formData()`. Cast narrowly.
                     const req = (target as Context).req;
                     const data = parseFormData(await req.formData()) as T;
-                    if (!opts?.rules) return data;
-                    return validateObject(data, opts.rules);
+                    const { input: flashInputOn, errors: flashErrorsOn } = resolveFlashOptions(opts?.flash);
+                    if (!opts?.rules) {
+                        // No validation: flash the parsed input only (if enabled).
+                        if (flashInputOn) {
+                            flashInput(data as unknown as Record<string, unknown>);
+                        }
+                        return data;
+                    }
+                    const result = await validateObject(data, opts.rules);
+                    if (flashInputOn) {
+                        flashInput(result.data as unknown as Record<string, unknown>);
+                    }
+                    // Only flash errors when there are any — flashing `{}` would
+                    // make truthy-empty-object error banners render on success.
+                    if (flashErrorsOn && Object.keys(result.flatErrors).length > 0) {
+                        flash('errors', result.errors);
+                    }
+                    return result;
                 };
             }
 

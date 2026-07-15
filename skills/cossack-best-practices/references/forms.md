@@ -18,38 +18,32 @@ For full prose guides, see `docs/forms.md` (progressive) and `docs/forms-advance
 A plain HTML `<form>` POSTs to the same URL; a `post()` method on the page handles it server-side. This requires `transport: 'http'` on the `@Page` decorator.
 
 ```typescript
-import { Cossack, Page, State, flash, flashed, flashInput, old } from '@cossackframework/core';
+import { Cossack, Page, State, flash, type NestedErrors } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
 interface ContactFields { name: string; email: string; }
 
 @Page({ transport: 'http' })
 export default class ContactForm extends Cossack {
-    @State() success: string | undefined;
-    @State() errors: { name?: string; email?: string } | undefined;
-    @State() name = '';
-    @State() email = '';
-
-    async init() {
-        // Read flashed data on the GET that follows the redirect.
-        this.success = flashed<string>('success');
-        this.errors = flashed('errors');
-        this.name = old<string>('name') ?? '';
-        this.email = old<string>('email') ?? '';
-    }
+    // `flash` / `old` options auto-bind flashed values and old input during
+    // bootstrap — no init() boilerplate. Flashed value wins over initializer.
+    @State({ flash: true }) success: string | undefined;
+    @State({ flash: true }) errors: NestedErrors<ContactFields> | undefined;
+    @State({ old: true }) name = '';
+    @State({ old: true }) email = '';
 
     async post() {
-        const { data, errors, valid } = await this.c.getFormData<ContactFields>({
+        // getFormData() auto-flashes the submitted input (for old()) and the
+        // errors (when invalid) — no manual flashInput()/flash('errors') needed.
+        const { data, valid } = await this.c.getFormData<ContactFields>({
             rules: {
                 name: { required: true, message: 'Name is required' },
                 email: { required: true, email: true, message: 'Enter a valid email' },
             },
         });
 
-        flashInput(data);                      // repopulate fields on either branch
         if (!valid) {
-            flash('errors', errors);
-            return this.back();                // redirect to Referer
+            return this.back();                // errors + old input auto-flashed
         }
 
         // …persist data, send email, etc.…
@@ -59,11 +53,11 @@ export default class ContactForm extends Cossack {
 
     render() {
         return html`
-            <form method="post">
-                <input name="name" .value="${this.name}" required />
-                ${this.errors?.name ? html`<span>${this.errors.name}</span>` : ''}
-                <input name="email" type="email" .value="${this.email}" required />
-                ${this.errors?.email ? html`<span>${this.errors.email}</span>` : ''}
+            <form method="post" novalidate>
+                <input name="name" .value="${this.name}" />
+                ${this.hasError('name') ? html`<span>${this.getError('name')}</span>` : ''}
+                <input name="email" type="email" .value="${this.email}" />
+                ${this.hasError('email') ? html`<span>${this.getError('email')}</span>` : ''}
                 <button type="submit">Send</button>
             </form>
             ${this.success ? html`<p>${this.success}</p>` : ''}
@@ -72,9 +66,45 @@ export default class ContactForm extends Cossack {
 }
 ```
 
+### Auto-flash in `getFormData()`
+
+When `rules` are provided, `getFormData()` **auto-flashes** the submitted input and any validation errors to the next request by default — so the common POST→redirect→GET form flow needs no manual `flashInput()`/`flash('errors', …)`. Control it with the `flash` option:
+
+- `true` (default) — flash both input (for `old()`) and errors (only when non-empty).
+- `false` — flash nothing (do it yourself with the helpers below).
+- `{ input: false }` / `{ errors: false }` — toggle each category; unspecified keys default to `true`.
+
+Errors are only flashed when there actually are any, so truthy checks like `${this.errors ? …}` never render an error banner on a valid submit.
+
+### Error helpers
+
+`hasError(path)` / `getError(path)` read the flashed `errors` object. They accept **dot-paths**, so nested fields work the same as top-level ones — no optional-chaining into `errors.address.city`:
+
+```typescript
+this.hasError('name')            // top-level
+this.hasError('address.city')    // nested — works
+this.getError('address.city')    // → 'City is required'
+```
+
+They also resolve flat dot-path keys written by the `@Validate` reactive path (Pattern 2), so the same calls work in both patterns.
+
+### Auto-binding flash / old into state
+
+Instead of an `init()` that reads `flashed()`/`old()` into state, declare the binding with `flash`/`old` options on `@State` (and `@Store`). The framework populates the property during bootstrap; the flashed value wins over the class-field initializer:
+
+```typescript
+@State({ flash: true })  success: string | undefined;          // flashed('success')
+@State({ flash: true })  errors: NestedErrors<F> | undefined;  // flashed('errors')
+@State({ old: true })    name = '';                            // old('name'), falls back to ''
+@Store({ old: true })    address = { street: '', city: '' };   // old('address'), whole object
+@State({ old: 'address.street' }) street = '';                 // explicit dot-path key
+```
+
+`true` uses the property name as the key; a string is an explicit key (old-input keys support dot-paths). Keep the manual helpers below for computed/transformed values in `init()`. Server-only — the SSR-bound value reaches the client via normal state hydration.
+
 ### The flash / old-input helpers
 
-All imported from `@cossackframework/core`. **Writers** go in `post()`; **readers** go in `init()`.
+All imported from `@cossackframework/core`. **Writers** go in `post()`; **readers** go in `init()`. Use these directly only when you're not relying on `getFormData()`'s auto-flash (e.g. a success message, or `{ flash: false }`).
 
 | Helper | Direction | Signature | Purpose |
 |---|---|---|---|
@@ -93,9 +123,10 @@ Server-only (throws on the client). Parses `application/x-www-form-urlencoded` /
 // Parse only:
 const data = await this.c.getFormData<ContactFields>();
 
-// Parse + validate:
-const { data, errors, valid } = await this.c.getFormData<ContactFields>({
+// Parse + validate (auto-flashes input + errors by default):
+const { data, valid } = await this.c.getFormData<ContactFields>({
     rules: { /* StoreRuleMap<ContactFields> */ },
+    flash: false,   // opt out of auto-flash if you need manual control
 });
 ```
 
@@ -172,6 +203,7 @@ export class ReactiveForm extends Cossack {
 Key points:
 
 - **`preventDefault(handler)`** — imported from `@cossackframework/renderer`. Wraps a `@submit` handler so the native form submission (full reload) is suppressed and your handler runs instead. Accepts an optional `{ novalidate?: boolean }` (defaults to `true`, disabling HTML5 native validation). Without it, `<form @submit>` will reload the page.
+- **`Form` component (UI package)** — ergonomic sugar over the above. `component(Form, { submit: this.handleSubmit }, html\`...\`)` prevents the native submit and adds `novalidate` for you, and spreads other attrs / projects children. Omit `submit` for a native `<form method="post">` (read with `getFormData()`). Thin wrapper only — it does not manage values or validation.
 - **`@Store()`** makes `this.form.email = …`, `this.form.address.zip = …`, and `this.form.tags.push(…)` all reactive without reassigning the whole object. See `references/decorators.md`.
 - **`storeRules<T>()`** gives compile-time-checked keys; keys are relative to the store property and auto-prefixed at runtime (`'email'` → `'form.email'`). See `references/validation.md`.
 - **`this.loading.handleSubmit`** — auto-tracked because `handleSubmit` is a `@Server()` method. See `references/loading.md`.

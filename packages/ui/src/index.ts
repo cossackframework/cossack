@@ -60,6 +60,7 @@ export { Breadcrumb, type BreadcrumbProps } from "./components/Breadcrumb";
 export { Pagination, type PaginationProps } from "./components/Pagination";
 export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";
 export { Field, type FieldProps } from "./components/Field";
+export { Form, type FormProps } from "./components/Form";
 export { Empty, type EmptyProps } from "./components/Empty";
 export { Kbd, type KbdProps } from "./components/Kbd";
 export { ButtonGroup, type ButtonGroupProps } from "./components/ButtonGroup";

@@ -141,6 +141,7 @@ describe('add ui <component>', () => {
       ['radio-group', 'RadioGroup'],
       ['slider', 'Slider'],
       ['table', 'Table'],
+      ['form', 'Form'],
     ]) {
       const code = await addCommand(['ui', name], ctx);
       expect(code).toBe(0);

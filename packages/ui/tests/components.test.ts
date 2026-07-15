@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderToString, html } from "@cossackframework/renderer";
 import {
     Button,
@@ -35,6 +35,7 @@ import {
     Pagination,
     AspectRatio,
     Field,
+    Form,
     Empty,
     Kbd,
     ButtonGroup,
@@ -670,5 +671,82 @@ describe("ButtonGroup", () => {
         expect(out).toContain("role=");
         expect(out).toContain("group");
         expect(out).toContain("buttons");
+    });
+});
+
+describe("Form", () => {
+    it("renders a <form> that projects children", () => {
+        const out = renderComp(Form, {}, html`<input name="email" />`);
+        expect(out).toContain("<form");
+        expect(out).toContain("</form>");
+        expect(out).toContain('<input name="email"');
+    });
+
+    it("adds novalidate by default when a submit handler is provided (RPC path)", () => {
+        const out = renderComp(Form, { submit: () => {} }, "fields");
+        // novalidate is a boolean presence attribute.
+        expect(out).toContain("novalidate");
+    });
+
+    it("does NOT add novalidate by default for native POST (no submit handler)", () => {
+        const out = renderComp(Form, { method: "post" }, "fields");
+        expect(out).not.toContain("novalidate");
+        // method is forwarded via the spread.
+        expect(out).toContain('method="post"');
+    });
+
+    it("lets novalidate be opt-in for native POST", () => {
+        const out = renderComp(
+            Form,
+            { method: "post", novalidate: true },
+            "fields",
+        );
+        expect(out).toContain("novalidate");
+    });
+
+    it("lets novalidate be opt-out for the RPC path", () => {
+        const out = renderComp(
+            Form,
+            { submit: () => {}, novalidate: false },
+            "fields",
+        );
+        expect(out).not.toContain("novalidate");
+    });
+
+    it("does not leak the submit handler as a DOM attribute", () => {
+        const out = renderComp(Form, { submit: () => {} }, "fields");
+        expect(out).not.toContain("submit");
+        expect(out).not.toContain("function");
+    });
+
+    it("forwards arbitrary attributes via spread", () => {
+        const out = renderComp(
+            Form,
+            { action: "/save", class: "my-form", autocomplete: "off" },
+            "fields",
+        );
+        expect(out).toContain('action="/save"');
+        expect(out).toContain('class="my-form"');
+        expect(out).toContain('autocomplete="off"');
+    });
+
+    it("wraps the submit handler to prevent the default submit", () => {
+        // Exercise the real production wrapper (Form.wrapSubmit), not a
+        // reconstruction. The @submit handler is built in render() and bound
+        // client-side via the spread (so it isn't visible in SSR output); this
+        // calls the same wrapper render() installs and asserts that it prevents
+        // the default before delegating to the caller's submit handler.
+        let delegated: SubmitEvent | undefined;
+        const instance = new Form();
+        const submit = (e: SubmitEvent) => { delegated = e; };
+        // @ts-expect-error wrapSubmit is private but always present.
+        const wrapper = instance.wrapSubmit(submit) as (e: SubmitEvent) => void;
+
+        const preventDefault = vi.fn();
+        const event = { preventDefault } as unknown as SubmitEvent;
+        wrapper(event);
+
+        expect(preventDefault).toHaveBeenCalled();
+        expect(delegated).toBe(event);
     });
 });

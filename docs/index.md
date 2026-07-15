@@ -45,6 +45,10 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Migrations](/docs/migrations.md)
 - [Seeders](/docs/seeders.md)
 
+## Session & State
+
+- [Session & Flash](/docs/session.md)
+
 ## Security
 
 - [Authentication](/docs/authentication.md)

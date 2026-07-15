@@ -209,6 +209,141 @@ import { live } from '@cossackframework/renderer';
 html`<input .value="${live(inputValue)}" />`
 ```
 
+### `bind`
+
+Two-way binding for a form element's value/checked against a component state
+field. It reads the field for rendering and writes user edits back to it. The
+DOM property is inferred from the attribute it is attached to (`.value` →
+`value`, `.checked` → `checked`).
+
+```typescript
+import { bind } from '@cossackframework/renderer';
+
+html`<input .value="${bind(this, 'email')}" />`
+html`<input type="checkbox" .checked="${bind(this, 'active')}" />`
+```
+
+`bind` supports dot-paths into nested state, so a `@Store` field can be bound at
+any depth: `bind(this, 'address.street')`.
+
+### `key`
+
+Force a subtree to be recreated when the key changes. Useful for re-triggering
+CSS animations or remounting a child.
+
+```typescript
+import { key } from '@cossackframework/renderer';
+
+html`<div>${key(currentIndex, html`<div class="animate-fade-in">${child}</div>`)}</div>`
+```
+
+### `preventDefault`
+
+Wraps an event handler so the event's default is prevented before it runs. It
+also disables the browser's native validation on the bound `<form>` by default;
+pass `{ novalidate: false }` to keep native validation.
+
+```typescript
+import { preventDefault } from '@cossackframework/renderer';
+
+html`<form @submit="${preventDefault(this.onSave)}"></form>`
+html`<form @submit="${preventDefault(this.onSave, { novalidate: false })}"></form>`
+```
+
+### `when`
+
+Render one of two templates based on a condition. Pass the truthy case and an
+optional falsy case (both functions receive the condition).
+
+```typescript
+import { when } from '@cossackframework/renderer';
+
+html`${when(isOn, () => html`<p>On</p>`, () => html`<p>Off</p>`)}`
+```
+
+### `choose`
+
+Select a template by matching a value against an ordered list of cases, like a
+`switch`.
+
+```typescript
+import { choose } from '@cossackframework/renderer';
+
+html`${choose(status, [
+  ['idle', () => html`<i>Idle</i>`],
+  ['loading', () => html`<b>Loading…</b>`],
+], () => html`<span>Unknown</span>`)}`
+```
+
+### `ifDefined`
+
+Only omit an attribute when the value is `undefined`; render every other value
+(including `null`, `false`, `0`, `''`) as a normal attribute.
+
+```typescript
+import { ifDefined } from '@cossackframework/renderer';
+
+html`<a href="${ifDefined(url)}">link</a>`
+```
+
+### `guard`
+
+Defer re-evaluating a template until its dependencies change. Wrap expensive
+rendering so it is not recomputed on every render, only when the inputs it
+depends on change. Pass a single dependency or an array (compared shallowly).
+
+```typescript
+import { guard } from '@cossackframework/renderer';
+
+html`<ul>${guard(items, () => html`...expensive...`)}</ul>`
+html`${guard([query, page], () => renderResults(query, page))}`
+```
+
+### `cache`
+
+Keep previously-rendered template subtrees alive instead of destroying them
+when the rendered value switches templates. Toggling back to a cached template
+reattaches its existing DOM and part tree, preserving component state, scroll
+position, and focus.
+
+```typescript
+import { cache } from '@cossackframework/renderer';
+
+html`${cache(showA ? html`<a-component></a-component>` : html`<b-component></b-component>`)}`
+```
+
+### `map`
+
+Map an iterable to renderable values and render them as a list.
+
+```typescript
+import { map } from '@cossackframework/renderer';
+
+html`<ul>${map(items, (item) => html`<li>${item.name}</li>`)}</ul>`
+```
+
+### `join`
+
+Join renderable values with a separator interleaved between each pair. The
+separator can be a static value or a template (e.g. a divider element).
+
+```typescript
+import { join } from '@cossackframework/renderer';
+
+html`${join(names, (n) => n, ', ')}` // "a, b, c"
+html`<ul>${join(items, (i) => html`<li>${i}</li>`, () => html`<li class="sep">•</li>`)}</ul>`
+```
+
+### `range`
+
+Generate an increasing (or decreasing) sequence of numbers as an array.
+
+```typescript
+import { range } from '@cossackframework/renderer';
+
+html`<ul>${range(0, 5).map((n) => html`<li>${n}</li>`)}</ul>` // 0..4
+```
+
 ## Context API
 
 Share state deep in the tree.

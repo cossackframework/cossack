@@ -3,23 +3,23 @@ import {
   Page,
   storeRules,
   flash,
-  flashed,
-  flashInput,
-  old,
   State,
+  Store,
   type NestedErrors,
 } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { component, html } from '@cossackframework/renderer';
+import { Button, Input } from '@cossackframework/ui';
 
 // This page demonstrates the full POST → redirect → GET pattern with:
 //   - typed + validated nested form data (`getFormData<T>()` + `storeRules<T>`)
-//   - flash messages (`flash` / `flashed`) — one-shot data carried across the redirect
-//   - old input repopulation (`flashInput` / `old`) — keeps field values on validation failure
-//   - NESTED validation errors — `errors.address.city` works (optional chaining),
-//     matching the form's type shape. Flat-key access is available via `flatErrors`.
+//   - auto-bound flash/old data — `@State({ flash })` / `@Store({ old })` pull
+//     flashed values and old input into state during bootstrap, so there's no
+//     `init()` boilerplate. (`getFormData()` auto-flashes both by default.)
+//   - NESTED validation errors — `hasError('address.city')` / `getError('address.city')`
+//     resolve nested fields by dot-path, matching the form's type shape.
 //
 // Flash data is signed-cookie-backed (stateless) and lives for exactly one
-// redirect. It requires an `APP_SECRET` env var. See the /http docs.
+// redirect. It requires an `APP_SECRET` env var. See /docs/session.md.
 
 interface AddressForm {
   street: string;
@@ -34,28 +34,28 @@ interface ComplexFormShape {
 
 @Page({ transport: 'http' })
 export default class ComplexForm extends Cossack {
-  @State()
+  // `flash: true` auto-binds `flashed('success')` during bootstrap.
+  @State({ flash: true })
   success: string | undefined;
 
-  @State()
+  // Auto-binds the flashed `errors` object.
+  @State({ flash: true })
   errors: NestedErrors<ComplexFormShape> | undefined;
 
-  @State()
+  // `old: true` auto-binds `old('name')`, falling back to '' when nothing was
+  // flashed.
+  @State({ old: true })
   name: string = '';
 
-  @State()
+  // A @Store auto-binds the whole old-input object at once (`old('address')`).
+  @Store({ old: true })
   address: AddressForm = { street: '', city: '', state: '' };
 
-  async init() {
-    // Read flashed data on the GET that follows the redirect.
-    this.success = flashed<string>('success');
-    this.errors = flashed('errors');
-    this.name = old<string>('name') ?? '';
-    this.address = old<AddressForm>('address') ?? { street: '', city: '', state: '' };
-  }
-
   async post() {
-    const { data, errors, valid } = await this.c.getFormData<ComplexFormShape>({
+    // `getFormData()` auto-flashes the parsed input (for `old()`) and the nested
+    // `errors` (when invalid) to the next request — no manual flashInput/flash
+    // needed. Disable with `{ flash: false }`.
+    const { data, valid } = await this.c.getFormData<ComplexFormShape>({
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
         address: {
@@ -66,12 +66,9 @@ export default class ComplexForm extends Cossack {
       }),
     });
 
-    // Repopulate the submitted values on either branch so the user keeps them.
-    flashInput(data as unknown as Record<string, unknown>);
-
     if (!valid) {
-      flash('errors', errors); // nested shape: errors.address.city
-      return this.back();      // redirect to Referer (returns the Response)
+      // errors + old input were auto-flashed above; just redirect back.
+      return this.back();
     }
 
     console.log('Validated form data:', data.name, data.address.street);
@@ -86,39 +83,35 @@ export default class ComplexForm extends Cossack {
         ${this.success ? html`<p style="color: green;">${this.success}</p>` : ''}
         ${this.errors ? html`<p style="color: red;">Please fix the errors below.</p>` : ''}
 
-        <form method="post">
+        <form method="post" novalidate>
           <div>
             <label for="name">Name:</label>
-            <input type="text" id="name" name="name" value="${this.name ?? ''}" required />
-            ${this.errors?.name ? html`<span style="color: red;">${this.errors.name}</span>` : ''}
+            ${component(Input, { name: 'name', value: this.name })}
+            ${this.hasError('name') ? html`<span class="text-red-500 text-sm">${this.getError('name')}</span>` : ''}
           </div>
 
-          <h3>Address</h3>
-          <div>
-            <label for="street">Street:</label>
-            <input type="text" id="street" name="address[street]" value="${this.address?.street ?? ''}" required />
-            ${this.errors?.address?.street
-              ? html`<span style="color: red;">${this.errors.address.street}</span>`
-              : ''}
-          </div>
+          <fieldset>
+            <legend>Address</legend>
+            <div>
+              <label for="street">Street:</label>
+              ${component(Input, { name: 'address[street]', value: this.address.street })}
+              ${this.hasError('address.street') ? html`<span class="text-red-500 text-sm">${this.getError('address.street')}</span>` : ''}
+            </div>
 
-          <div>
-            <label for="city">City:</label>
-            <input type="text" id="city" name="address[city]" value="${this.address?.city ?? ''}" required />
-            ${this.errors?.address?.city
-              ? html`<span style="color: red;">${this.errors.address.city}</span>`
-              : ''}
-          </div>
+            <div>
+              <label for="city">City:</label>
+              ${component(Input, { name: 'address[city]', value: this.address.city })}
+              ${this.hasError('address.city') ? html`<span class="text-red-500 text-sm">${this.getError('address.city')}</span>` : ''}
+            </div>
 
-          <div>
-            <label for="state">State:</label>
-            <input type="text" id="state" name="address[state]" value="${this.address?.state ?? ''}" required />
-            ${this.errors?.address?.state
-              ? html`<span style="color: red;">${this.errors.address.state}</span>`
-              : ''}
-          </div>
+            <div>
+              <label for="state">State:</label>
+              ${component(Input, { name: 'address[state]', value: this.address.state })}
+              ${this.hasError('address.state') ? html`<span class="text-red-500 text-sm">${this.getError('address.state')}</span>` : ''}
+            </div>
+          </fieldset>
 
-          <button type="submit">Submit</button>
+          ${component(Button, { type: 'submit', variant: 'default'}, 'Submit')}
         </form>
       </div>
     `;

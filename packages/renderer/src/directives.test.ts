@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { html, renderToString, render } from './cossack-html';
-import { repeat, classMap, styleMap, key, preventDefault } from './directives';
+import { repeat, classMap, styleMap, key, preventDefault, when, choose, map, join, range } from './directives';
 
 describe('Directives', () => {
   it('repeat renders items', () => {
@@ -100,6 +100,159 @@ describe('Directives', () => {
     render(tpl(), container);
     // Same key (undefined) -> no rebuild, same node.
     expect(container.querySelector('.m')).toBe(first);
+  });
+});
+
+describe('pure directives (when, choose, map, join, range)', () => {
+  describe('when', () => {
+    it('returns the true case when the condition is truthy', () => {
+      expect(when(true, () => 'yes', () => 'no')).toBe('yes');
+      // The truthy value is forwarded to the case function.
+      expect(when('x', (c) => c)).toBe('x');
+    });
+
+    it('returns the false case when the condition is falsy', () => {
+      expect(when(false, () => 'yes', () => 'no')).toBe('no');
+    });
+
+    it('returns undefined when falsy and no false case is given', () => {
+      expect(when(0, () => 'yes')).toBeUndefined();
+    });
+
+    it('renders the chosen branch (SSR + client)', () => {
+      const tpl = (on: boolean) =>
+        html`<div>${when(on, () => html`<span class="on">On</span>`, () => html`<span class="off">Off</span>`)}</div>`;
+
+      expect(renderToString(tpl(true)).trim()).toBe('<div><span class="on">On</span></div>');
+      expect(renderToString(tpl(false)).trim()).toBe('<div><span class="off">Off</span></div>');
+
+      const container = document.createElement('div');
+      render(tpl(true), container);
+      expect(container.querySelector('.on')).toBeInstanceOf(HTMLSpanElement);
+      // Toggle to the other branch on the same template site.
+      render(tpl(false), container);
+      expect(container.querySelector('.on')).toBeNull();
+      expect(container.querySelector('.off')).toBeInstanceOf(HTMLSpanElement);
+    });
+  });
+
+  describe('choose', () => {
+    it('selects the first matching case', () => {
+      expect(
+        choose('b', [
+          ['a', () => 'A'],
+          ['b', () => 'B'],
+        ]),
+      ).toBe('B');
+    });
+
+    it('uses the default case when nothing matches', () => {
+      expect(
+        choose('z', [
+          ['a', () => 'A'],
+          ['b', () => 'B'],
+        ], () => 'D'),
+      ).toBe('D');
+    });
+
+    it('returns undefined with no default', () => {
+      expect(choose('z', [['a', () => 'A']])).toBeUndefined();
+    });
+
+    it('passes value and case index to the case function', () => {
+      const spy = vi.fn(() => 'x');
+      choose('b', [
+        ['a', () => 'a'],
+        ['b', spy],
+      ]);
+      expect(spy).toHaveBeenCalledWith('b', 1);
+    });
+
+    it('renders the chosen branch', () => {
+      const tpl = (status: string) =>
+        html`<div>${choose(status, [
+          ['idle', () => html`<i class="idle">Idle</i>`],
+          ['loading', () => html`<b class="loading">Loading</b>`],
+        ], () => html`<span class="unknown">Unknown</span>`)}</div>`;
+
+      expect(renderToString(tpl('loading')).trim()).toBe('<div><b class="loading">Loading</b></div>');
+      expect(renderToString(tpl('nope')).trim()).toBe('<div><span class="unknown">Unknown</span></div>');
+
+      const container = document.createElement('div');
+      render(tpl('idle'), container);
+      expect(container.querySelector('.idle')).toBeInstanceOf(HTMLElement);
+    });
+  });
+
+  describe('map', () => {
+    it('maps an array to values', () => {
+      expect(map([1, 2, 3], (n) => n * 2)).toEqual([2, 4, 6]);
+    });
+
+    it('maps with the index', () => {
+      expect(map(['a', 'b'], (_c, i) => i)).toEqual([0, 1]);
+    });
+
+    it('accepts a Set', () => {
+      expect(map(new Set([1, 2]), (n) => n)).toEqual([1, 2]);
+    });
+
+    it('renders a list of templates', () => {
+      const tpl = () => html`<ul>${map(['a', 'b'], (c) => html`<li>${c}</li>`)}</ul>`;
+      expect(renderToString(tpl()).trim()).toBe('<ul><li>a</li><li>b</li></ul>');
+    });
+  });
+
+  describe('join', () => {
+    it('interleaves a static separator', () => {
+      expect(join(['a', 'b', 'c'], (s) => s, ', ')).toEqual(['a', ', ', 'b', ', ', 'c']);
+    });
+
+    it('does not add a separator after the last item', () => {
+      expect(join(['a'], (s) => s, ',')).toEqual(['a']);
+      expect(join([], (s) => s, ',')).toEqual([]);
+    });
+
+    it('supports a separator function (receives the preceding item index)', () => {
+      const spy = vi.fn(() => '|');
+      join(['a', 'b'], (s) => s, spy);
+      expect(spy.mock.calls[0][0]).toBe(0);
+    });
+
+    it('renders a separator template between items', () => {
+      const tpl = () =>
+        html`<ul>${join(['a', 'b'], (c) => html`<li>${c}</li>`, () => html`<li class="sep">•</li>`)}</ul>`;
+      const out = renderToString(tpl()).trim();
+      expect(out).toBe('<ul><li>a</li><li class="sep">•</li><li>b</li></ul>');
+    });
+  });
+
+  describe('range', () => {
+    it('range(end) yields [0, end)', () => {
+      expect(range(3)).toEqual([0, 1, 2]);
+      expect(range(0)).toEqual([]);
+    });
+
+    it('range(start, end) yields [start, end)', () => {
+      expect(range(2, 5)).toEqual([2, 3, 4]);
+    });
+
+    it('range(start, end, step) honors a positive step', () => {
+      expect(range(0, 10, 3)).toEqual([0, 3, 6, 9]);
+    });
+
+    it('walks downward with a negative step', () => {
+      expect(range(5, 0, -1)).toEqual([5, 4, 3, 2, 1]);
+    });
+
+    it('returns [] for a zero step', () => {
+      expect(range(0, 5, 0)).toEqual([]);
+    });
+
+    it('renders a range of items', () => {
+      const tpl = () => html`<ul>${range(1, 4).map((n) => html`<li>${n}</li>`)}</ul>`;
+      expect(renderToString(tpl()).trim()).toBe('<ul><li>1</li><li>2</li><li>3</li></ul>');
+    });
   });
 });
 

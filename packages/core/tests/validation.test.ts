@@ -1,7 +1,7 @@
 // tests/validation.test.ts
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, validateObject, flattenRuleTree, ValidationRule, ValidationConfig, storeRules } from '../src/shared/validation';
+import { validateValue, validateValueAsync, validateProperty, validateAll, getValidationRules, validateObject, flattenRuleTree, ValidationRule, ValidationConfig, storeRules, getError, hasError } from '../src/shared/validation';
 import { Validate, Store } from '../src/shared/decorators';
 
 describe('Validation', () => {
@@ -1015,6 +1015,113 @@ describe('Validation', () => {
                 code: { customAsync: fn, message: 'bad' },
             }, 'form');
             expect(out['form.code']).toEqual({ customAsync: fn, message: 'bad' });
+        });
+    });
+
+    describe('getError / hasError', () => {
+        /**
+         * Minimal component mock backed by a Record store. Used to exercise the
+         * free-function getError/hasError against both error shapes (flat
+         * dot-path keys written by @Validate, and nested objects returned by
+         * validateObject/getFormData).
+         */
+        function makeComponent<T extends new (...args: any[]) => any>(
+            Klass: T,
+            initialValues: Record<string, any> = {},
+        ): InstanceType<T> & {
+            getProperty(name: string): any;
+            setProperty(name: string, value: any): void;
+        } {
+            const comp = new Klass() as any;
+            const store: Record<string, any> = { ...initialValues };
+            comp.getProperty = (name: string) => store[name];
+            comp.setProperty = (name: string, value: any) => { store[name] = value; };
+            return comp;
+        }
+
+        class FlatErrorComponent {
+            @Validate({
+                rules: {
+                    email: { required: true, email: true, message: 'Bad email' },
+                    address: { zip: { required: true, message: 'Bad ZIP' } },
+                },
+                config: { trigger: 'all', runOn: 'both' },
+            })
+            form: any;
+        }
+
+        it('reads a top-level field from flat-keyed errors', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { 'form.email': 'Bad email' },
+            });
+            expect(getError(comp, 'form.email')).toBe('Bad email');
+            expect(hasError(comp, 'form.email')).toBe(true);
+        });
+
+        it('reads a flat dot-path key written by @Validate (regression)', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { 'form.address.zip': 'Bad ZIP' },
+            });
+            expect(getError(comp, 'form.address.zip')).toBe('Bad ZIP');
+            expect(hasError(comp, 'form.address.zip')).toBe(true);
+        });
+
+        it('reads a nested field from a nested errors object (getFormData/validateObject shape)', () => {
+            // This is the shape produced by validateObject and flashed across a
+            // redirect: { address: { zip: '...' } }, NOT { 'address.zip': '...' }.
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { address: { zip: 'Bad ZIP' }, email: 'Bad email' },
+            });
+            expect(getError(comp, 'address.zip')).toBe('Bad ZIP');
+            expect(getError(comp, 'email')).toBe('Bad email');
+            expect(hasError(comp, 'address.zip')).toBe(true);
+        });
+
+        it('reads deeply nested fields across multiple levels', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { a: { b: { c: 'deep error' } } },
+            });
+            expect(getError(comp, 'a.b.c')).toBe('deep error');
+            expect(hasError(comp, 'a.b.c')).toBe(true);
+        });
+
+        it('returns undefined (and hasError false) for an unknown field', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { email: 'Bad email' },
+            });
+            expect(getError(comp, 'missing')).toBeUndefined();
+            expect(hasError(comp, 'missing')).toBe(false);
+        });
+
+        it('returns undefined for an unknown nested path (does not throw)', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { address: { zip: 'Bad ZIP' } },
+            });
+            expect(getError(comp, 'address.city')).toBeUndefined();
+            expect(hasError(comp, 'address.city')).toBe(false);
+        });
+
+        it('returns undefined for a parent node (no string leaf to return)', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { address: { zip: 'Bad ZIP' } },
+            });
+            // 'address' is the intermediate object, not an error string.
+            expect(getError(comp, 'address')).toBeUndefined();
+            expect(hasError(comp, 'address')).toBe(false);
+        });
+
+        it('handles an empty string error as "no error"', () => {
+            const comp = makeComponent(FlatErrorComponent, {
+                errors: { email: '' },
+            });
+            expect(getError(comp, 'email')).toBe('');
+            expect(hasError(comp, 'email')).toBe(false);
+        });
+
+        it('handles undefined / missing errors property gracefully', () => {
+            const comp = makeComponent(FlatErrorComponent, {});
+            expect(getError(comp, 'anything')).toBeUndefined();
+            expect(hasError(comp, 'anything')).toBe(false);
         });
     });
 });

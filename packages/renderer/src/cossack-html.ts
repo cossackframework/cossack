@@ -1,6 +1,6 @@
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
-import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult } from './directives';
+import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
 
 export class TemplateResult {
   public readonly _cossack_template_result = true;
@@ -85,13 +85,22 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     // SSR has no previous DOM, so key is transparent: just render the template.
     return valueToString(value.template, opts);
   }
+  if (value instanceof GuardResult) {
+    // SSR has no cross-render state, so always evaluate the factory once and
+    // render its result. Memoization is a client-only optimization.
+    return valueToString(value.factory(), opts);
+  }
+  if (value instanceof CacheResult) {
+    // SSR is stateless, so caching is transparent: just render the inner value.
+    return valueToString(value.value, opts);
+  }
   if (value instanceof BindResult) {
     // SSR for two-way binding: emit the current field value. The DOM property
     // name (value/checked) is determined by the attribute this BindResult is
     // attached to, which the SSR scanner handles via its `.startsWith('.')`
     // branch and calls valueToString here. Writeback listeners are a
-    // client-only concern.
-    const current = (value.component as any)?.[value.fieldName];
+    // client-only concern. Dot-paths resolve via property access.
+    const current = resolveField(value.component, value.fieldName);
     return valueToString(current, opts);
   }
   if (isComponentResult(value)) {
@@ -138,6 +147,15 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
   return escapeHtml(value);
 };
 
+// HTML attributes that serialize as presence attributes (emit the bare name
+// when truthy, omit when falsy) rather than name="value". Shared by the SSR
+// spread path (renderSpread) and the SSR direct property-binding path so the
+// two stay in sync.
+const BOOLEAN_ATTRS = new Set([
+  'checked', 'disabled', 'readonly', 'required', 'hidden', 'selected',
+  'multiple', 'autofocus', 'open',
+]);
+
 const renderSpread = (obj: unknown): string => {
   let output = '';
   if (typeof obj === 'object' && obj !== null) {
@@ -153,9 +171,31 @@ const renderSpread = (obj: unknown): string => {
       }
       if (k.startsWith('.')) {
         name = k.slice(1);
+        // Unwrap result-wrapper directives routed through the spread (e.g.
+        // component(Input, { '.value': bind(this, 'name') }) or
+        // { '.value': live(x) }) so SSR emits the underlying value instead of
+        // "[object Object]". Mirrors the direct SSR .value branch. Boolean-ish
+        // attrs (.checked/.disabled) render as presence attributes.
+        if (val instanceof BindResult) {
+          val = resolveField(val.component, val.fieldName);
+        } else if (val instanceof LiveResult) {
+          val = val.value;
+        }
+        if (BOOLEAN_ATTRS.has(name)) {
+          if (val) output += ` ${name}`;
+          continue;
+        }
       }
 
-      if (typeof val === 'boolean') {
+      if (val instanceof IfDefinedResult) {
+        // `ifDefined` via the spread: drop only on undefined; render every other
+        // value (incl. false/null/0/'') as a literal attribute string. Checked
+        // before the `typeof val === 'boolean'` branch so `false` renders as
+        // "false".
+        if (val.value !== undefined) {
+          output += ` ${name}="${escapeHtml(String(val.value))}"`;
+        }
+      } else if (typeof val === 'boolean') {
         if (val) output += ` ${name}`;
       } else if (typeof val === 'function') {
         // Ignore
@@ -264,7 +304,7 @@ class SSRScanner {
             let propVal: unknown;
             const isBind = val instanceof BindResult;
             if (isBind) {
-              propVal = (val.component as any)?.[val.fieldName];
+              propVal = resolveField(val.component, val.fieldName);
             } else {
               propVal = val;
             }
@@ -273,11 +313,7 @@ class SSRScanner {
             // emit a bare attribute when truthy — matching how a checkbox
             // serializes. Plain (non-bind) property bindings keep their
             // original behavior (value="...") to avoid changing existing usage.
-            const isBooleanAttr =
-              isBind &&
-              (attrName === 'checked' || attrName === 'disabled' || attrName === 'readonly' ||
-                attrName === 'selected' || attrName === 'multiple' || attrName === 'required' ||
-                attrName === 'hidden');
+            const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
             if (isBooleanAttr) {
               this.result = this.result.trimEnd();
               if (propVal) this.result += ` ${attrName}`;
@@ -286,6 +322,18 @@ class SSRScanner {
               this.result += ` ${attrName}="${valueToString(propVal, this.opts)}"`;
             } else {
               this.result = this.result.trimEnd();
+            }
+          } else if (val instanceof IfDefinedResult) {
+            // `ifDefined`: drop the attribute only when the value is undefined;
+            // render every other value (incl. false/null/0/'') as a normal
+            // attribute string. The value is stringified explicitly so `false`
+            // becomes "false" rather than being omitted (which `valueToString`
+            // would do for false/null).
+            if (val.value === undefined) {
+              this.result = this.result.trimEnd();
+            } else {
+              this.result = this.result.trimEnd();
+              this.result += ` ${name}="${escapeHtml(String(val.value))}"`;
             }
           } else {
             this.result += fullMatch;
@@ -346,6 +394,20 @@ class NodePart implements Part {
   // Tracked key for the `key()` directive
   private _key: unknown = undefined;
   private _keySet = false;
+  // Memoization state for the `guard()` directive: the last deps compared and
+  // the value the factory produced. `factory` only runs again when deps change.
+  private _guardDeps: unknown[] | null = null;
+  private _guardHasDeps = false;
+  private _guardValue: unknown = undefined;
+  // Caching state for the `cache()` directive. Each entry is keyed by the
+  // template's `strings` and holds the detached DOM nodes (including anchor
+  // comments) plus the Part tree bound to them. When a previously-rendered
+  // template is shown again, those nodes are moved back in place and their
+  // parts re-applied, preserving component state and DOM identity.
+  private _cacheMap = new Map<TemplateStringsArray, { nodes: Node[]; parts: Part[] }>();
+  // The template strings currently displayed (so we know which entry to
+  // detach when switching). Null when the current value is not a template.
+  private _cacheCurrent: TemplateStringsArray | null = null;
   // When true, the next update() adopts the existing DOM (produced by SSR)
   // instead of clearing and rebuilding. Set via _beginHydration() so external
   // hydration setup (rebindParts, _adoptSequence) doesn't reach into private
@@ -373,6 +435,49 @@ class NodePart implements Part {
       this._hydrateValue(value);
       return;
     }
+    // `guard`: resolve to its (possibly cached) inner value before any other
+    // dispatch. The factory only runs when the deps change; otherwise the
+    // previously-produced value is reused, which keeps template part caches
+    // intact (in-place update) instead of recomputing.
+    if (value instanceof GuardResult) {
+      value = this._resolveGuard(value);
+    }
+    // `cache`: keep previously-rendered template subtrees alive across swaps so
+    // toggling back to a cached template reattaches its DOM/parts rather than
+    // rebuilding. Non-template values are unwrapped and handled normally.
+    let fromCache = false;
+    if (value instanceof CacheResult) {
+      const inner = value.value;
+      if (isTemplateResult(inner)) {
+        // The cache fast-path returns early, which would otherwise skip the
+        // component/child-part teardown below. Tear down any prior render
+        // state held by this part (a previously-rendered component, repeat, or
+        // array) so switching INTO cache() does not leak it.
+        if (this.componentInstance) this.disposeComponent();
+        if (this._childParts.length > 0) this.clearChildParts();
+        this.updateCache(inner);
+        return;
+      }
+      value = inner;
+      fromCache = true;
+    } else if (this._cacheMap.size > 0 || this._cacheCurrent) {
+      // Switching AWAY from cache() to an entirely non-cache value: the
+      // stashed subtrees are no longer reachable, so dispose their parts
+      // (components/listeners/etc.) instead of retaining them until dispose().
+      for (const entry of this._cacheMap.values()) {
+        for (const part of entry.parts) {
+          if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+        }
+      }
+      this._cacheMap.clear();
+      this._cacheCurrent = null;
+    }
+    // Switching from a cached template to a non-template value: detach & stash
+    // the current subtree so it can be restored later, then clear bookkeeping.
+    if (fromCache && this._cacheCurrent) {
+      this._stashCurrent();
+      this._cacheCurrent = null;
+    }
     if (this.componentInstance && (!isComponentResult(value) || value.clazz !== this.componentInstance.constructor)) {
       this.disposeComponent();
     }
@@ -390,6 +495,41 @@ class NodePart implements Part {
     } else {
       this.updateNode(value);
     }
+  }
+
+  /**
+   * Resolve a `guard()` directive to the value it should render this turn.
+   * Shallow-compares the new deps to the previous render's deps: if they are
+   * equal, reuse the cached value (factory is NOT called again); otherwise call
+   * the factory, cache its result, and return it. A single dep value is wrapped
+   * into a one-element array so both call shapes compare the same way.
+   */
+  private _resolveGuard(result: GuardResult): unknown {
+    // Snapshot array deps (shallow clone) so in-place mutations between
+    // renders are detected. Without this, a caller that mutates the same
+    // deps array would leave _guardDeps and newDeps aliasing the same array,
+    // and _depsEqual would always see them as equal — skipping the factory
+    // when it should re-run.
+    const newDeps = Array.isArray(result.deps) ? [...result.deps] : [result.deps];
+    if (this._guardHasDeps && this._depsEqual(this._guardDeps, newDeps)) {
+      return this._guardValue;
+    }
+    this._guardDeps = newDeps;
+    this._guardHasDeps = true;
+    this._guardValue = result.factory();
+    return this._guardValue;
+  }
+
+  /**
+   * Shallow array equality for `guard()` deps. Same length and every element
+   * `===`. Used to decide whether to skip the factory.
+   */
+  private _depsEqual(a: unknown[] | null, b: unknown[]): boolean {
+    if (a === null || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
 
   /**
@@ -432,6 +572,29 @@ class NodePart implements Part {
       this.clear();
       this._clearTemplateCache();
       this.updateNode(value.template);
+      return;
+    }
+    if (value instanceof GuardResult) {
+      // On hydration the SSR DOM reflects the factory's output, so evaluate the
+      // factory once (priming the memo cache), then adopt whatever it produced.
+      const resolved = this._resolveGuard(value);
+      this._hydrateValue(resolved);
+      return;
+    }
+    if (value instanceof CacheResult) {
+      // On hydration the SSR DOM reflects the inner value; adopt it and prime
+      // the cache bookkeeping so a subsequent swap to another template works.
+      const inner = value.value;
+      if (isTemplateResult(inner)) {
+        if (!this._cacheMap.has(inner.strings)) {
+          this._adoptTemplate(inner);
+          this._cacheCurrent = inner.strings;
+        } else {
+          this.updateCache(inner);
+        }
+      } else {
+        this._hydrateValue(inner);
+      }
       return;
     }
     if (value === null || value === undefined || value === false) {
@@ -682,6 +845,89 @@ class NodePart implements Part {
     this.updateNode(result.template);
   }
 
+  /**
+   * `cache()` render path. Keeps previously-rendered template subtrees (their
+   * DOM nodes AND Part tree) alive across template swaps so toggling back
+   * restores the same nodes/state instead of rebuilding.
+   *
+   *   - Same template as last render → in-place part update (the common,
+   *     unchanged case; identical to a plain `updateNode` cache hit).
+   *   - Switching away from a different template → detach that template's nodes
+   *     into a stashed entry (keeps its parts alive, bound to those nodes).
+   *   - Switching to a previously-stashed template → move its nodes back in and
+   *     apply the new values to its parts. DOM identity preserved.
+   *   - Switching to a never-seen template → build fresh (degrades to a normal
+   *     render) and record it as the current entry.
+   */
+  private updateCache(result: TemplateResult) {
+    if (this._cacheCurrent === result.strings && this._cachedParts) {
+      // Same template → update parts in place.
+      this._cachedParts.forEach((part, i) => {
+        part.update(result.values[i]);
+      });
+      return;
+    }
+
+    // Switching templates: stash whatever subtree is currently shown so it can
+    // be restored later. This covers both a cached template and a plain (non
+    // cache-routed) render that a previous value left here.
+    if (this._cacheCurrent || this._cachedParts) {
+      this._stashCurrent();
+    }
+
+    const entry = this._cacheMap.get(result.strings);
+    if (entry) {
+      // Restore a previously-cached subtree: move its nodes back into the DOM
+      // (between this part's anchors) and re-apply values to its parts.
+      this.clear();
+      const parent = this.startNode.parentNode;
+      if (!parent) return;
+      for (const node of entry.nodes) {
+        parent.insertBefore(node, this.endNode);
+      }
+      this._cachedTemplateStrings = result.strings;
+      this._cachedParts = entry.parts;
+      for (let i = 0; i < result.values.length; i++) {
+        if (entry.parts[i]) entry.parts[i]!.update(result.values[i]);
+      }
+    } else {
+      // Never-seen template: build fresh. `_stashCurrent` (above) already
+      // detached the previous subtree and cleared the active template cache
+      // (_cachedParts/Strings); we must NOT call _clearTemplateCache() here
+      // because that would also wipe the just-stashed `cache()` entries.
+      this.clear();
+      this.updateNode(result);
+    }
+    this._cacheCurrent = result.strings;
+  }
+
+  /**
+   * Stash the currently-displayed subtree (nodes + parts) into the cache map
+   * keyed by its template strings, so it can be restored on a later render.
+   * The nodes are detached from the DOM but kept alive (with their parts still
+   * bound to them). Does nothing if there is no current template cache entry.
+   */
+  private _stashCurrent() {
+    if (!this._cachedParts) return;
+    const strings = this._cacheCurrent ?? this._cachedTemplateStrings;
+    if (!strings) {
+      // No template strings to key on (e.g. plain value); just drop the cache.
+      this._clearTemplateCache();
+      this.clear();
+      return;
+    }
+    const nodes = this._nodesBetween();
+    // Detach the nodes into a DocumentFragment so they leave the live DOM but
+    // stay together; keep the captured node references for reinsertion.
+    const frag = document.createDocumentFragment();
+    for (const node of nodes) frag.appendChild(node);
+    this._cacheMap.set(strings, { nodes, parts: this._cachedParts });
+    // Drop the active-cache bookkeeping so the next render starts clean. Do NOT
+    // dispose the cached parts — they belong to the stashed entry now.
+    this._cachedTemplateStrings = null;
+    this._cachedParts = null;
+  }
+
   private updateArray(values: unknown[]) {
     this._partKeys = [];
     const minLength = Math.min(values.length, this._childParts.length);
@@ -738,6 +984,18 @@ class NodePart implements Part {
   dispose() {
     this.clear();
     this._clearTemplateCache();
+    // Tear down the `cache()` stash: its parts hold detached subtrees (and any
+    // components within them) that are no longer reachable once this part is
+    // disposed.
+    if (this._cacheMap.size > 0) {
+      for (const entry of this._cacheMap.values()) {
+        for (const part of entry.parts) {
+          if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+        }
+      }
+      this._cacheMap.clear();
+    }
+    this._cacheCurrent = null;
     this.clearChildParts();
     if (this.startNode.parentNode) this.startNode.parentNode.removeChild(this.startNode);
     if (this.endNode.parentNode) this.endNode.parentNode.removeChild(this.endNode);
@@ -819,6 +1077,12 @@ class NodePart implements Part {
     }
     this._cachedTemplateStrings = null;
     this._cachedParts = null;
+    // NOTE: the `cache()` stash map (`_cacheMap`) is intentionally NOT cleared
+    // here — `_clearTemplateCache` is invoked by `updateNode` on every template
+    // switch (including the fresh-build path inside `updateCache` itself), so
+    // clearing it here would wipe entries that were just stashed. The stash is
+    // torn down explicitly in `dispose()` and when the part switches away from
+    // the cache directive entirely.
   }
 
   clear() {
@@ -833,6 +1097,16 @@ class NodePart implements Part {
 
 class SpreadPart implements Part {
   private previousValues: Record<string, unknown> = {};
+  // Per-key state for `bind()` directives routed through the spread (e.g.
+  // component(Input, { '.value': bind(this, 'name') })). Mirrors the per-part
+  // fields AttributePart uses for the direct .value="${bind(...)}" path.
+  private bindStates = new Map<string, {
+    listener: EventListener;
+    lastKind: 'value' | 'checked' | null;
+    lastValue: unknown;
+    boundComponent: unknown;
+    boundField: string;
+  }>();
   constructor(public element: Element) {}
   update(value: unknown) {
     if (typeof value !== 'object' || value === null) return;
@@ -846,7 +1120,12 @@ class SpreadPart implements Part {
           const oldHandler = (this.element as any)[propName];
           if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
         } else if (key.startsWith('.')) {
-          // Prop
+          // Detach a previously-bound writeback listener when the key is dropped.
+          const state = this.bindStates.get(key);
+          if (state) {
+            this.element.removeEventListener((state.listener as any).__eventName, state.listener);
+            this.bindStates.delete(key);
+          }
         } else if (key.startsWith('?')) {
           this.element.removeAttribute(key.slice(1));
         } else {
@@ -886,10 +1165,49 @@ class SpreadPart implements Part {
         (this.element as any)[propName] = handler;
         this.element.addEventListener(eventName, handler);
       } else if (key.startsWith('.')) {
-        (this.element as any)[key.slice(1)] = val;
+        const propName = key.slice(1);
+        // bind() via the spread — same two-way handling as the direct path so
+        // component(Input, { '.value': bind(this, 'name') }) works. Without
+        // this, element.value = BindResult renders "[object Object]".
+        if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
+          this.applySpreadBind(key, propName, val);
+        } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
+          // live() via the spread: compare against the live DOM value (not the
+          // last-rendered value) so an in-progress user edit isn't clobbered,
+          // and a divergent DOM value is corrected. Mirrors AttributePart.
+          const el = this.element as any;
+          if (propName === 'checked') {
+            const boolValue = Boolean(val.value);
+            if (el.checked !== boolValue) el.checked = boolValue;
+          } else {
+            const strValue = val.value == null ? '' : String(val.value);
+            if (el.value !== strValue) el.value = strValue;
+          }
+        } else if (val instanceof BindResult) {
+          // bind() on a non-form property (.disabled/.data-*) — read-only
+          // fallback: push the current field value, no writeback. Mirrors
+          // AttributePart.updateBind's unsupported-property branch. Without
+          // this, element.disabled = BindResult sets a truthy [object Object].
+          (this.element as any)[propName] = resolveField(val.component, val.fieldName);
+        } else if (val instanceof LiveResult) {
+          (this.element as any)[propName] = val.value;
+        } else {
+          (this.element as any)[propName] = val;
+        }
       } else if (key.startsWith('?')) {
         if (val) this.element.setAttribute(key.slice(1), '');
         else this.element.removeAttribute(key.slice(1));
+      } else if (val instanceof IfDefinedResult) {
+        // `ifDefined` via the spread (e.g. component(El, { href: ifDefined(url) })):
+        // drop only on undefined; render every other value (incl. false/null) as a
+        // literal attribute string, mirroring the AttributePart path. Checked
+        // before the `typeof val === 'boolean'` branch so `false` renders as
+        // "false".
+        if (val.value === undefined) {
+          this.element.removeAttribute(key);
+        } else {
+          this.element.setAttribute(key, String(val.value));
+        }
       } else if (typeof val === 'boolean') {
         if (val) this.element.setAttribute(key, '');
         else this.element.removeAttribute(key);
@@ -898,6 +1216,65 @@ class SpreadPart implements Part {
       }
     }
     this.previousValues = { ...props };
+  }
+
+  /**
+   * Two-way bind for a `.value`/`.checked` key routed through the spread.
+   * Mirrors AttributePart.updateBind: push the current field value into the
+   * DOM (dirty-checked) and attach the writeback listener once.
+   */
+  private applySpreadBind(key: string, propName: 'value' | 'checked', bind: BindResult) {
+    const el = this.element as any;
+    const component = bind.component;
+
+    // Render direction: dirty-checked push of the current field value.
+    const current = resolveField(component, bind.fieldName);
+    let state = this.bindStates.get(key);
+    if (propName === 'checked') {
+      const boolValue = Boolean(current);
+      if (!state || state.lastKind !== 'checked' || state.lastValue !== boolValue) {
+        el.checked = boolValue;
+      }
+    } else {
+      const strValue = current == null ? '' : String(current);
+      if (!state || state.lastKind !== 'value' || String(state.lastValue) !== strValue) {
+        el.value = strValue;
+      }
+    }
+
+    // Attach/recreate the writeback listener when the target changes.
+    const eventName = bindEventFor(this.element, propName);
+    const stale = !!state && (
+      state.boundComponent !== component ||
+      state.boundField !== bind.fieldName ||
+      (state.listener as any).__eventName !== eventName
+    );
+    if (state && stale) {
+      this.element.removeEventListener((state.listener as any).__eventName, state.listener);
+      this.bindStates.delete(key);
+      state = undefined;
+    }
+    if (!state) {
+      const listener = (e: Event) => {
+        const source = e.currentTarget as Element & Record<string, any>;
+        const next = propName === 'checked' ? !!source[propName] : source[propName];
+        if (component) setField(component, bind.fieldName, next);
+      };
+      (listener as any).__eventName = eventName;
+      this.element.addEventListener(eventName, listener);
+      state = {
+        listener,
+        lastKind: propName,
+        lastValue: propName === 'checked' ? Boolean(current) : (current == null ? '' : String(current)),
+        boundComponent: component,
+        boundField: bind.fieldName,
+      };
+      this.bindStates.set(key, state);
+    } else {
+      // Update the stored last-comitted value so the next render dirty-checks.
+      state.lastKind = propName;
+      state.lastValue = propName === 'checked' ? Boolean(current) : (current == null ? '' : String(current));
+    }
   }
 }
 
@@ -964,6 +1341,16 @@ class AttributePart implements Part {
     let isLive = false;
     if (value instanceof LiveResult) {
       isLive = true;
+      value = value.value;
+    }
+    // `ifDefined`: drop the attribute only when the value is undefined; render
+    // every other value (including false/null/0/'') as a normal attribute. The
+    // unwrap is done up front so the rest of update() sees the plain value and
+    // just needs the `isIfDefined` flag to opt out of the default false/null
+    // omission in the final setAttribute branch.
+    let isIfDefined = false;
+    if (value instanceof IfDefinedResult) {
+      isIfDefined = true;
       value = value.value;
     }
     if (value instanceof BindResult) {
@@ -1085,6 +1472,15 @@ class AttributePart implements Part {
       if (value) this.element.setAttribute(attrName, '');
       else this.element.removeAttribute(attrName);
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+    } else if (isIfDefined) {
+      // `ifDefined`: drop only on `undefined`; render everything else (incl.
+      // false/null/0/'') as a literal attribute string. Must be checked before
+      // the `typeof value === 'boolean'` branch so `false` renders as "false".
+      if (value === undefined) {
+        this.element.removeAttribute(this.name);
+      } else {
+        this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
+      }
     } else if (typeof value === 'boolean') {
       if (value) this.element.setAttribute(this.name, '');
       else this.element.removeAttribute(this.name);
@@ -1110,7 +1506,7 @@ class AttributePart implements Part {
     if (propName !== 'value' && propName !== 'checked') {
       // Unsupported property: fall back to a plain property assignment so the
       // render still reflects the current field value, with no writeback.
-      (this.element as any)[propName] = (bind.component as any)?.[bind.fieldName];
+      (this.element as any)[propName] = resolveField(bind.component, bind.fieldName);
       if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
       // Detach any listener from a previous bind() — switching from .value to
       // .foo on the same part would otherwise leave the old listener attached.
@@ -1126,7 +1522,7 @@ class AttributePart implements Part {
     // Render direction: push current field value into the DOM (dirty-checked
     // against the last value we committed, so an unchanged field — e.g. the
     // user is mid-edit and nothing else changed — is left alone).
-    const current = component?.[bind.fieldName];
+    const current = resolveField(component, bind.fieldName);
     if (propName === 'checked') {
       const boolValue = Boolean(current);
       if (this.lastFormKind !== 'checked' || this.lastFormValue !== boolValue) {
@@ -1169,7 +1565,9 @@ class AttributePart implements Part {
         const next = propName === 'checked' ? !!source[propName] : source[propName];
         // Plain assignment on a `@State` field triggers requestUpdate on the
         // client (see cossack.ts setupStateProperty), driving the re-render.
-        if (component) component[bind.fieldName] = next;
+        // Dot-paths write through setField so @Store nested writes hit the
+        // reactive Proxy trap.
+        if (component) setField(component, bind.fieldName, next);
       };
       (listener as any).__eventName = eventName;
       this.bindListener = listener;
