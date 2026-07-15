@@ -128,7 +128,7 @@ export class ReactiveForm extends Cossack {
         rules: storeRules<FormState>({
             email: { required: true, email: true, message: 'Enter a valid email' },
             password: { required: true, minLength: 8, message: 'Min 8 characters' },
-            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+            address: { zip: { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' } },
         }),
         config: { trigger: 'all', runOn: 'both' },
     })

@@ -12,7 +12,7 @@ These load automatically when you work on Cossack files. You don't invoke them.
 
 | Skill | What it does |
 |---|---|
-| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for server/client RPC, decorators, validation, forms, loading, database, cache, realtime (SSE + Durable Object), auth, and error handling. |
+| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for server/client RPC, decorators, tasks (`@Task`/`@ServerTask`/`@ClientTask`), validation (incl. `coerce` + nested `@Store`), reactive store, UI components + focus management, forms, loading, database, cache, realtime (SSE + Durable Object), auth, and error handling. |
 
 ### Slash commands
 
@@ -22,6 +22,7 @@ Invoke explicitly for multi-step workflows.
 |---|---|
 | [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` config, middleware wiring, login route, protected pages. |
 | [`/setup-websocket`](./setup-websocket/SKILL.md) | Real-time setup: pick SSE or Durable Object transport, wire channels/scope, configure the DO binding. |
+| [`/setup-ui`](./setup-ui/SKILL.md) | UI package setup: `cossack add ui`, theme selection, component usage with `component()`, ejecting components, focus helpers, the global Toaster. |
 
 For everything else (creating pages, layouts, components, adding state or middleware), just ask in plain language — the background skill gives the assistant everything it needs.
 
@@ -62,6 +63,9 @@ After installing, restart your tool (or run `/reload-plugins` in Claude Code). T
 
 > set up a live counter that syncs across tabs
 # /setup-websocket walks through SSE vs DO and wires the transport
+
+> /setup-ui
+# wires @cossackframework/ui: theme, CSS imports, component usage, Toaster
 ```
 
 ## Compatibility
