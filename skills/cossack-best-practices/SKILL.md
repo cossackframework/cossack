@@ -84,6 +84,15 @@ See `references/server-client-rpc.md` for the full mechanism (transports, transp
 | Prevent leaving the page | `@PreventNavigation()` | No `beforeunload` |
 | Static-render a page | `@Page({ ssg: true })` | No custom pre-render scripts |
 | Optimistic UI | `@Optimistic('serverMethod')` + a `@ClientState` shadow + `@Computed` display getter | See `references/validation.md` sibling patterns / optimistic docs |
+| Render a list (keyed, reorderable) | `repeat(items, keyFn, template)` | Per-item state preserved across reorder; see `references/directives.md` |
+| Render a list (any iterable) | `map(iterable, fn)` / `join(iterable, fn, sep)` / `range(...)` | Unkeyed; see `references/directives.md` |
+| Conditional render (2+ branches) | `when(cond, a, b?)` / `choose(value, cases, default?)` | Only the taken branch evaluates; see `references/directives.md` |
+| Dynamic classes / styles | `classMap({ ... })` / `styleMap({ ... })` | Pure functions returning a string; see `references/directives.md` |
+| Two-way bind a form field | `bind(this, 'field')` | Reads field + writes edits back; see `references/directives.md` |
+| Optional attribute (undefined-only drop) | `ifDefined(value)` | Drops attr only on `undefined`; see `references/directives.md` |
+| Memoize an expensive subtree | `guard(deps, factory)` | Skips re-render until deps change; see `references/directives.md` |
+| Preserve state across template swaps | `cache(value)` | Keeps switched-away subtrees alive; see `references/directives.md` |
+| Force a subtree remount | `key(value, template)` | Re-triggers animations / remounts; see `references/directives.md` |
 
 ## Three essentials most often reinvented
 
@@ -188,8 +197,17 @@ render() {
         ${this.items.map(i => html`<li>${i}</li>`)}     <!-- list -->
         ${component(Child, { prop: 'x' }, 'slot')}      <!-- child -->
     `;
+    }
 }
 ```
+
+The renderer ships a full directive set for common template patterns — prefer
+them over hand-rolled equivalents: `repeat` (keyed lists), `when`/`choose`
+(conditionals), `classMap`/`styleMap`, `ifDefined`, `bind` (two-way form
+binding), `live`, `guard`/`cache` (memoization), `key`, `map`/`join`/`range`,
+`preventDefault`. All from `@cossackframework/renderer`; all SSR + client safe.
+See `references/directives.md` for the full list, signatures, and when to reach
+for each.
 
 ## Navigation lifecycle
 
@@ -214,10 +232,12 @@ render() {
 - **Writing `tracker` instead of `track`.** The task dependency option is `track` — `@Task({ track: ['user'] })`. See `references/tasks.md`.
 - **Forgetting to unsubscribe a `connectStore()`.** Call the returned unsubscribe function in `onCleanup()`, or you'll leak a subscriber after the component is destroyed. See `references/reactive-store.md`.
 - **Using `focusTrap` on a native `<dialog>` (Modal/Sheet).** The `<dialog>` element traps focus automatically — `focusTrap` is only for custom overlays that DON'T use `<dialog>`. See `references/ui.md#focus-management`.
+- **Hand-rolling list/conditional/memoization logic in `render()`.** Use the renderer directives instead: `repeat`/`map`/`join`/`range` (lists), `when`/`choose` (conditionals), `classMap`/`styleMap`, `ifDefined`, `guard`/`cache` (memoization), `bind` (two-way binding). They handle SSR, hydration, and dirty-checking correctly. See `references/directives.md`.
 
 ## References
 
 - `references/server-client-rpc.md` — the RPC mechanism: `@Server`/`@Client`/`@Shared`, transports, server→client calls, security
+- `references/directives.md` — the full template directive set (`repeat`/`when`/`choose`/`classMap`/`styleMap`/`ifDefined`/`bind`/`live`/`guard`/`cache`/`key`/`map`/`join`/`range`/`preventDefault`/`ref`/`unsafeHTML`), signatures, and when to use each
 - `references/decorators.md` — full decorator API (class, property, method decorators, helpers)
 - `references/tasks.md` — task decorators (`@Task`/`@ServerTask`/`@ClientTask`/`@VisibleTask`), the `track` option + path matching, automatic cleanup, choosing the right tool
 - `references/validation.md` — `@Validate` deep dive (rules incl. `coerce`, config, async validators, full form, nested `@Store` validation, typed `getFormData<T>()`)
