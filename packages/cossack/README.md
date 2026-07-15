@@ -1,8 +1,6 @@
 # Cossack CLI
 
-The official command-line interface for the [Cossack Framework](https://cossack.dev) — scaffolding, code generation, lifecycle management, and upgrades for Cossack projects.
-
-`cossack` is the single entry point for working with a Cossack application: creating a new project, generating pages and components, running the dev server, applying database migrations, adding features like auth and database support, optimizing images, and upgrading framework dependencies.
+The official CLI for the [Cossack Framework](https://cossack.dev) — scaffolding, codegen, management, and upgrades for Cossack projects.
 
 ## Installation
 
@@ -45,7 +43,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `start` | Start the production server. |
 | `generate <type> <name>` (`g`) | Generate a page/component/layout/middleware/service/model/migration/seeder. |
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
-| `add <feature>` | Add a feature — `auth` or `database`. |
+| `add <feature>` | Add a feature — `auth`, `database`, or `ui`. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
 | `migration <sub>` (`migrate`) | Run Kysely migrations (`up`, `down`, `status`). |
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
@@ -82,6 +80,7 @@ cossack g migration create_posts
 # Add features
 cossack add database --dialect d1
 cossack add auth --path admin/auth --oauth github
+cossack add ui --theme dark
 
 # Database lifecycle
 cossack migration up

@@ -28,29 +28,13 @@ For everything else (creating pages, layouts, components, adding state or middle
 
 ## Installation
 
-### Option 1 — Skills.sh
+### Via skills.sh
 
 ```bash
 npx skills add https://github.com/cossackframework/skills
 ```
 
-### Option 2 — Copy or symlink into a project
-
-```bash
-# Per-project (loads as `cossack@skills-dir`)
-cp -r /path/to/cossack/skills .claude/skills/cossack
-
-# Or symlink for development (stays in sync with the monorepo)
-ln -s /path/to/cossack/skills .claude/skills/cossack
-```
-
-### Option 3 — Per-session
-
-```bash
-claude --plugin-dir /path/to/cossack/skills
-```
-
-After installing, restart your tool (or run `/reload-plugins` in Claude Code). The background skill activates on the next edit to `src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, or `src/root.ts`.
+After installing, restart your tool (or run `/reload-plugins` in Claude Code).
 
 ## Usage
 
@@ -70,6 +54,7 @@ After installing, restart your tool (or run `/reload-plugins` in Claude Code). T
 
 ## Compatibility
 
+- [ZCode](https://zcode.z.ai/)
 - [Claude Code](https://claude.com/claude-code) — Anthropic's CLI
 - [Open Code](https://github.com/opencode-ai/opencode)
 - Any tool that supports the Agent Skills convention (`.claude-plugin/plugin.json` + `SKILL.md`)

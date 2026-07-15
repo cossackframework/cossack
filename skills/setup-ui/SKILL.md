@@ -26,7 +26,7 @@ cossack add ui
 If the user picked a palette in Step 2, pass `--theme`:
 
 ```bash
-cossack add ui --theme=blue     # or zinc, stone, gray, slate, green, red
+cossack add ui --theme blue     # or zinc, stone, gray, slate, green, red
 ```
 
 Verify `src/style.css` now contains (after `@import "tailwindcss";`):
