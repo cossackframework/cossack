@@ -9,264 +9,150 @@ user-invocable: true
 
 You are setting up authentication for a Cossack Framework application using `@cossackframework/auth`.
 
-## Step 1: Install the Auth Package
+**Prefer the CLI scaffold.** `cossack add auth` generates a complete, working auth setup (PBKDF2 password hashing via Web Crypto, session-based login, register, forgot/reset-password pages, an auth guard, database migrations, and UI components) in one command. Only drop into the manual steps below to customize what the scaffold produced.
+
+## Step 1: Scaffold with the CLI
 
 ```bash
-pnpm add @cossackframework/auth
+cossack add auth
 ```
 
-If the package is already installed, skip this step.
+Options:
 
-## Step 2: Define Types
+| Option | Behavior |
+|---|---|
+| `--path <route-group>` / `-p` | Route group for the auth pages (default `(auth)` — URL-prefix-stripped). E.g. `--path admin/auth` → pages under `/admin/login`. |
+| `--oauth <providers>` | Comma-separated or repeated: `github, google, gitlab, facebook, microsoft`. Adds an `oauth` block to `src/auth.ts` and "Sign in with …" buttons to the login page. Bare `--oauth` prompts interactively. |
+| `--dialect <d1\|turso>` | Skip the database-dialect prompt (passed through to the DB setup). |
+| `--force` / `-f` | Overwrite existing files. |
+| `--dry-run` | Print actions without writing. |
 
-Create `src/types.ts` (or add to an existing types file):
-
-```typescript
-export type User = {
-    id: string;
-    name: string;
-    email: string;
-    password: string; // Hashed in production!
-};
-
-export type Session = {
-    id: string;
-    token: string;
-    userId: string;
-    expiresAt: Date;
-};
+```bash
+# common cases:
+cossack add auth                          # default — session/cookie + DB
+cossack add auth --oauth github,google    # add social login
 ```
 
-## Step 3: Create the Auth Configuration
+## Step 2: Review what was generated
 
-Create `src/auth.ts`:
+`cossack add auth` wires the full stack. If `src/db/config.ts` was absent it also runs `cossack add database` (migrations + DB client), and it ensures `@cossackframework/ui` is present (the auth pages use its `Input`, `Button`, `Field`, `Alert`, `PasswordInput` components).
 
-```typescript
-import { createAuth } from '@cossackframework/auth';
-import { getCookie, setCookie } from 'hono/cookie';
-import type { User } from './types';
+**Auth files:**
 
-// Replace with your actual database client
-const db = {
-    sessions: { find: async (query: any) => null },
-    users: { find: async (query: any) => null },
-};
+| File | Purpose |
+|---|---|
+| `src/auth.ts` | `createAuth()` config — session cookie (`session_id`, 7-day TTL), PBKDF2 hash/verify helpers, `loginUser` / `registerUser` / `requestPasswordReset` / `resetPassword` exports. (+ an `oauth` block if `--oauth`.) |
+| `src/middlewares/auth.ts` | `authGuard` — redirects unauthenticated requests to `/login`, skipping the public paths (`/login`, `/register`, `/forgot-password`, `/reset-password`). |
+| `src/models/Session.ts` | `SessionRow` + `Database` module augmentation for the `sessions` table. |
+| `src/pages/(auth)/layout.ts` | Shared centered-card auth layout. |
+| `src/pages/(auth)/login/index.ts` | Login page (validation + `@Server` login). |
+| `src/pages/(auth)/register/index.ts` | Registration page (validation + `@Server` register). |
+| `src/pages/(auth)/forgot-password/index.ts` | Forgot-password page (emails a 1-hour reset link). |
+| `src/pages/(auth)/reset-password/index.ts` | Reset-password page (consumes the token). |
 
-export const { middleware, createLoginHandler } = createAuth<User>({
-    // 1. Extract session ID from the request (e.g., from a cookie)
-    extractSessionId: (c) => {
-        return getCookie(c, 'session_token');
-    },
+**Wiring edits (automatic):**
+- `src/bootstrap/middlewares.ts` — registers `auth.middleware` (populates `c.get('user')`) **and** `authGuard`.
+- `package.json` — adds `@cossackframework/auth` (+ `database`, `ui` if they were missing).
+- `wrangler.jsonc` — adds a `send_email` binding (`EMAIL`) for password-reset emails (Cloudflare projects only).
+- `src/models/User.ts` — `UserRow` + `User` module augmentation (the `id`/`email`/`name` shape surfaced as `this.user`; `password_hash` excluded).
 
-    // 2. Validate the session and return the user ID (or null)
-    validateSessionId: async (sessionId, c) => {
-        const session = await db.sessions.find({ token: sessionId });
+Key design points of the scaffold (different from rolling it by hand):
+- **Password hashing uses PBKDF2 via Web Crypto** — no `bcrypt` dependency. `hashPassword` / `verifyPassword` are exported from `src/auth.ts`.
+- **Login uses a `@Server()` method on the page** calling the generated `loginUser()` helper + `auth.createSession` — there is **no `/api/login` route** and **no `createLoginHandler`** in the scaffold.
+- **No `src/types.ts`** — types are module-augmented in `src/models/User.ts` and `src/models/Session.ts`.
+- **Password reset reuses the `sessions` table** for tokens (1-hour TTL rows, deleted on consume).
 
-        if (!session || session.expiresAt < new Date()) {
-            return null;
-        }
+## Step 3: Configure environment / bindings
 
-        return session.userId;
-    },
+- **Database (D1):** if `wrangler.jsonc` has a placeholder `<database_id>`, create the database and fill it in: `npx wrangler d1 create <name>`.
+- **Email:** the `send_email` binding (`env.EMAIL.send({ to, from, subject, html, text })`) is used by password reset. Verify the `from` domain in the Cloudflare dashboard, and set `MAIL_FROM` if you want a custom sender. (On the Node adapter this is a polyfill you provide.)
 
-    // 3. Resolve the full user object from the user ID
-    resolveUserById: async (userId, c) => {
-        const user = await db.users.find({ id: userId });
-        return user || null;
-    },
-});
+## Step 4: Run migrations + seed
 
-export const loginHandler = createLoginHandler({
-    // Verify credentials
-    validateCredentials: async (credentials, c) => {
-        const { email, password } = credentials;
-        const user = await db.users.find({ email });
-
-        // Use bcrypt/argon2 in production!
-        if (user && user.password === password) {
-            return user;
-        }
-        return null;
-    },
-
-    // Create session and set cookie
-    createSession: async (user, c) => {
-        const token = crypto.randomUUID();
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 1 week
-
-        await db.sessions.create({
-            token,
-            userId: user.id,
-            expiresAt,
-        });
-
-        const headers = new Headers();
-        setCookie(headers as any, 'session_token', token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: 'Lax',
-            path: '/',
-            expires: expiresAt,
-        });
-
-        return { headers };
-    },
-});
+```bash
+pnpm run db:migrate    # creates users, sessions, roles, permissions, oauth_accounts, cache_items
+pnpm run db:seed       # optional — edit src/seeders/database.seeder.ts first
 ```
 
-## Step 4: Integrate with the App
+## Step 5: Access the user in components
 
-Modify `src/index.ts` to attach auth middleware:
-
-```typescript
-// src/index.ts
-import { createApp } from './router';
-import { AppDurableObject } from './DurableObject';
-import { middleware as authMiddleware, loginHandler } from './auth';
-
-const app = createApp({
-    authMiddleware,
-});
-
-// Add login endpoint
-app.post('/api/login', loginHandler);
-
-export { AppDurableObject };
-export default {
-    fetch: app.fetch,
-};
-```
-
-**Note:** `createApp` accepts an `authMiddleware` option. When provided, it runs on every request and populates `c.get('user')`.
-
-## Step 5: Create Auth Pages
-
-Create a route group for auth-related pages:
-
-```
-src/pages/(auth)/
-    layout.ts            ← Shared auth layout (centered card, etc.)
-    login/index.ts       ← Login page
-    register/index.ts    ← Registration page
-```
-
-### Login Page
-
-```typescript
-import { Cossack, Page, Client } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-
-@Page({ transport: 'http' })
-export default class LoginPage extends Cossack {
-    @Client()
-    async handleLogin(event: Event) {
-        event.preventDefault();
-        const form = event.target as HTMLFormElement;
-        const formData = new FormData(form);
-        const response = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                email: formData.get('email'),
-                password: formData.get('password'),
-            }),
-        });
-        if (response.ok) {
-            window.location.href = '/dashboard';
-        }
-    }
-
-    render() {
-        return html`
-            <h3>Login</h3>
-            <form @submit="${this.handleLogin}">
-                <div>
-                    <label>Email</label>
-                    <input type="email" name="email" required />
-                </div>
-                <div>
-                    <label>Password</label>
-                    <input type="password" name="password" required />
-                </div>
-                <button type="submit">Sign In</button>
-            </form>
-        `;
-    }
-}
-```
-
-## Step 6: Protect Routes
-
-### Option A: Auth Guard Middleware
-
-Create `src/middlewares/auth-guard.ts`:
-
-```typescript
-import { defineServerMiddleware } from '@cossackframework/core';
-
-export const authGuard = defineServerMiddleware(async (c, next) => {
-    const user = c.get('user');
-    if (!user) {
-        return c.redirect('/login');
-    }
-    await next();
-});
-```
-
-Apply to a layout or page:
-
-```typescript
-import { authGuard } from '@/middlewares/auth-guard';
-
-@Page({
-    transport: 'http',
-    middlewares: [authGuard],
-})
-export default class DashboardLayout extends Cossack {
-    render() {
-        return html`<div>${this.children}</div>`;
-    }
-}
-```
-
-### Option B: Check in init()
-
-```typescript
-@Page()
-export class Dashboard extends Cossack {
-    @Server()
-    async init() {
-        if (!this.user) {
-            this.redirect('/login');
-            return;
-        }
-        // Load dashboard data
-    }
-}
-```
-
-## Step 7: Access User in Components
-
-After setup, `this.user` is available in all components:
+After setup, `this.user` (typed as `{ id, email, name }`) is available on every component instance, or `undefined` when unauthenticated:
 
 ```typescript
 render() {
     return html`
-        <div>
-            ${this.user
-                ? html`<p>Welcome, ${this.user.name}</p>`
-                : html`<a href="/login">Sign in</a>`}
-        </div>
+        ${this.user
+            ? html`<p>Welcome, ${this.user.name}</p>`
+            : html`<a href="/login">Sign in</a>`}
     `;
 }
 ```
 
-The user object has the shape: `{ id: string; [key: string]: any }` (as defined by your `User` type).
+## Step 6: Protect additional routes
 
-## Step 8: Verify
+The scaffolded `authGuard` (registered globally in `src/bootstrap/middlewares.ts`) already redirects unauthenticated users to `/login` for every path except the four public auth pages. So by default **everything except the auth pages is protected**. To customize:
 
-1. `@cossackframework/auth` is installed
-2. `src/auth.ts` exports `middleware` and `loginHandler`
-3. `src/index.ts` passes `authMiddleware` to `createApp()`
-4. Protected routes use `authGuard` middleware or check `this.user` in `init()`
-5. Run type checks: `pnpm tsc --noEmit`
+- **Exclude more public paths** — edit the `PUBLIC_PATHS` array in `src/middlewares/auth.ts`.
+- **Per-page check** — for conditional logic on a single page, check `this.user` in `init()`:
+
+```typescript
+@Server()
+async init() {
+    if (!this.user) { this.redirect('/login'); return; }
+    // load data scoped to this.user.id
+}
+```
+
+If you prefer route-level guards over the global one, remove `authGuard` from `src/bootstrap/middlewares.ts` and apply it per layout/page instead:
+
+```typescript
+import { authGuard } from '@/middlewares/auth';
+
+@Page({ transport: 'http', middlewares: [authGuard] })
+export default class DashboardLayout extends Cossack {
+    render() { return html`<div>${this.children}</div>`; }
+}
+```
+
+## Step 7: (Optional) Mount OAuth routes
+
+If you ran `cossack add auth --oauth`, the `oauth` object and a `handleOAuthUser` helper are generated in `src/auth.ts`, but the routes are **not** mounted automatically. Add them to `src/index.ts`:
+
+```typescript
+import { oauth, handleOAuthUser } from './auth';
+
+app.get('/auth/:provider/redirect', (c) => oauth.redirect(c.req.param('provider')));
+app.get('/auth/:provider/callback', (c) =>
+    oauth.callback(c.req.param('provider'), { onUser: handleOAuthUser }),
+);
+```
+
+Set the provider env vars (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `OAUTH_SECRET`, …). See `references/auth.md` and the OAuth docs for the full `handleOAuthUser` upsert/flow.
+
+## Step 8: Customize the generated code
+
+The scaffold is a starting point — edit the files freely:
+
+- **Different fields on `User`** — add columns to a new migration, update `UserRow` in `src/models/User.ts`, update the `User` module augmentation, and adjust `publicUser()` in `src/auth.ts`.
+- **Different hashing** — replace the PBKDF2 `hashPassword`/`verifyPassword` in `src/auth.ts` with bcrypt/argon2 (install the dep; both have edge-compatible builds).
+- **Different session strategy** — the `createAuth<User>(provider)` call in `src/auth.ts` is the seam. The three provider functions (`extractSessionId`, `validateSessionId`, `resolveUserById`) plus `createSession` can implement JWT, OAuth-only, etc. See `references/auth.md`.
+
+## Step 9: Verify
+
+1. `pnpm tsc --noEmit` — no type errors.
+2. `pnpm run db:migrate` ran cleanly.
+3. `src/auth.ts` exports `auth` (and `loginUser` / `registerUser` / reset helpers).
+4. `src/bootstrap/middlewares.ts` registers `auth.middleware` and `authGuard`.
+5. Visit `/register` → create an account → redirected to `/dashboard`; `this.user` is populated.
+6. Log out (clear the `session_id` cookie) → protected routes redirect to `/login`.
+
+## Checklist
+
+- [ ] `cossack add auth` ran (or files wired by hand per `references/auth.md`)
+- [ ] `src/auth.ts` exports `auth` with session + PBKDF2 hashing
+- [ ] `src/bootstrap/middlewares.ts` registers `auth.middleware` + `authGuard`
+- [ ] `wrangler.jsonc` has the `send_email` binding (Cloudflare) or a Node polyfill
+- [ ] `pnpm run db:migrate` created the `users` + `sessions` tables
+- [ ] `/register` → `/dashboard` flow works; `this.user` populated
+- [ ] Unauthenticated visit to a protected route redirects to `/login`
+- [ ] `pnpm tsc --noEmit` passes

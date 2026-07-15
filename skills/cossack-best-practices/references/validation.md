@@ -53,7 +53,56 @@ Key points:
 | `url` | `boolean` | Must be valid URL (http/https) |
 | `custom` | `(value: any) => boolean` | Custom synchronous validator |
 | `customAsync` | `(value: any, component?: any) => Promise<boolean>` | Custom async validator |
+| `coerce` | `'number' \| 'boolean' \| 'date'` | Transform the value **before** other rules run (see below) |
 | `message` | `string` | Custom error message (applies to first failing rule) |
+
+## Coercion (the `coerce` rule)
+
+Form submissions arrive as strings (FormData values are always strings). The
+`coerce` rule transforms the value before other checks run, and writes the
+transformed value back into the returned `data` for `getFormData` /
+`validateObject`.
+
+| Mode | Result | Failure |
+| :--- | :--- | :--- |
+| `'number'` | `Number(value)` | `NaN` (e.g. `"abc"`) |
+| `'boolean'` | `"true"` / `"1"` / `"on"` / `"yes"` (case-insensitive) → `true`, else `false` | never |
+| `'date'` | `new Date(value)` | `Invalid Date` (e.g. `"xyz"`) |
+
+Two important behaviors:
+
+- Coercion runs **after** the `required` check. Empty values (`null`,
+  `undefined`, `''`) are never coerced — `""` stays `""`.
+- A coercion that cannot succeed is a **validation failure** (`Number("abc")`
+  → `NaN`, `new Date("xyz")` → Invalid Date both fail, and the original value
+  is retained in `data`).
+- On the reactive `@Validate` path, the coerced value is used for validation
+  checks but is **not** written back to your store. Coercion's write-back only
+  happens in the `getFormData` / `validateObject` pipeline.
+
+## `getFormData<T>()` — typed return with coercion
+
+`getFormData<T>()` returns `{ data, errors, valid }`. Pass a type parameter and
+`coerce` rules so the returned `data` is correctly typed (`number`, `boolean`,
+`Date` instead of `string`):
+
+```typescript
+interface SignupForm { age: number; tos: boolean; birthday: Date }
+
+const { data, errors, valid } = await this.c.getFormData<SignupForm>({
+    rules: storeRules<SignupForm>({
+        age:      { coerce: 'number', min: 18, message: 'Must be 18+' },
+        tos:      { coerce: 'boolean', required: true, message: 'You must accept the terms' },
+        birthday: { coerce: 'date', message: 'Enter a valid date' },
+    }),
+});
+
+if (valid) {
+    data.age;       // number  (e.g. 25, not "25")
+    data.tos;       // boolean
+    data.birthday;  // Date
+}
+```
 
 ## Validation config
 
@@ -222,8 +271,10 @@ export class StoreFormDemo extends Cossack {
     @Validate({
         rules: storeRules<FormState>({
             email: { required: true, email: true, message: 'Enter a valid email' },
-            'address.zip': { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
-            'address.country': { required: true, minLength: 2, message: 'Enter your country' },
+            address: {
+                zip: { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' },
+                country: { required: true, minLength: 2, message: 'Enter your country' },
+            },
             tags: { required: true, minLength: 1, message: 'Add at least one tag' },
         }),
         config: { trigger: 'all', runOn: 'both' },
@@ -263,4 +314,6 @@ export class StoreFormDemo extends Cossack {
 
 Notes:
 - `validateProperty` / `hasError` / `getError` take the **full** runtime path (`'form.email'`, `'form.address.zip'`) — the prefix is the store property name.
+- `errors` is a **single flat object keyed by the full prefixed dot-path** — there is no nesting in `errors` itself. `'form.address.zip'` is a single top-level key. You can freely mix `@Store` with `@State` / `@ClientState` on the same component.
+- For nested objects, `storeRules<T>()` accepts a nested rule tree that mirrors the store shape: `address: { zip: { ... } }` is equivalent to the flat dot-path `'address.zip'`. Keys are **relative** to the store and auto-prefixed with the property name at registration time.
 - `@Store` makes nested mutations (`this.form.address.zip = ...`, `this.form.tags.push(...)`) reactive without reassigning the whole object. See `references/decorators.md` for the `@Store` / `@ClientStore` API.

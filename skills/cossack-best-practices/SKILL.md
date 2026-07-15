@@ -62,14 +62,21 @@ See `references/server-client-rpc.md` for the full mechanism (transports, transp
 | Render an image | `Image({ src, width, height, alt, ... })` | Cloudflare Image Resizing aware; never raw `<img>` for hero/feature images |
 | Access a DOM node | `@Ref()` decorator | No `querySelector` |
 | Run code after mount | `onMount()` / `@Task()` / `@VisibleTask()` | No manual `setTimeout`/`IntersectionObserver` |
+| Run logic on **every state change** | `@Task()` (both sides) / `@ServerTask()` (server-only) / `@ClientTask()` (client-only) | Replaces manual `if (isServer) return;` guards; see `references/tasks.md` |
+| Run a task only when **specific fields** change | `@Task({ track: ['user', 'posts'] })` | useEffect-style dep array; supports dot-paths like `'form.email'`; see `references/tasks.md` |
+| Tear down side effects automatically | return a cleanup fn from a `@Task`/`@ServerTask`/`@ClientTask` | Runs before next re-run + on destroy (React `useEffect` style) |
 | Listen to window/doc events | `@OnWindow('resize', { debounce })` / `@OnDocument('keydown')` | Auto-bound + auto-cleaned; supports throttle/debounce |
 | Derive a value from state | `@Computed()` getter | Memoized; don't recompute inline in `render()` |
 | Mutate nested objects/arrays reactively | `@Store()` / `@ClientStore()` (deep Proxy) | No manual reassign for `obj.field = x` / `arr.push()`; see `references/decorators.md` |
+| Share reactive global state across components | `createStore()` + `connectStore()` | For toasts/theme/palette — re-renders on change; see `references/reactive-store.md` |
+| Use a Button / Input / Modal / Toast | `@cossackframework/ui` via `component(Button, {...})` | shadcn-style components + Solar icons; see `references/ui.md` |
+| Trap or cycle focus in overlays | `focusTrap()` / `focusNext()` / `getTabbable()` from `@cossackframework/core` | For custom menus/dialogs; native `<dialog>` (Modal/Sheet) traps automatically; see `references/ui.md#focus-management` |
+| Coerce form values (number/boolean/date) | `coerce` rule in `@Validate` / `getFormData<T>()` | Transforms before validation, writes back to `data`; see `references/validation.md` |
 | Bind a method as a handler | nothing — methods are auto-bound | No arrow-function class fields, no `.bind(this)` |
 | Redirect | `this.redirect(url)` | Client-intercepted as soft SPA navigation |
 | Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadContext` | `description`/`image` auto-expand to OG/Twitter |
 | Handle errors / 404 | `error/index.ts` and `404/index.ts` near the route | Hierarchical boundaries; see `references/errors.md` |
-| Add auth | `createAuth()` + middleware from `@cossackframework/auth` | No hand-rolled session checks; see `references/auth.md` |
+| Add auth | `cossack add auth` (scaffolds it all) → `createAuth()` + `auth.middleware` from `@cossackframework/auth` | No hand-rolled session checks; see `references/auth.md` |
 | Real-time state sync | `@Page({ transport: 'sse' \| 'durable-object' })` + `channels`/`scope` | Default to `sse`; see `references/realtime.md` |
 | Broadcast a stateless event | `@Server() broadcastEvent(name)` + `@OnEvent(name)` | |
 | Register server middleware | `defineServerMiddleware()` + `@Page({ middlewares })` | No route-wrapper hacks |
@@ -100,7 +107,22 @@ render() {
 }
 ```
 
-`@Validate` stacks **on top of** `@State`/`@ClientState`/`@Store`/`@ClientStore`. Declare an `errors` state property yourself — the framework writes messages there but does not create it. Use `validateAll()` before submit, `validateProperty(name)` on blur/input. Built-in rules: `required`, `minLength`, `maxLength`, `min`, `max`, `pattern`, `email`, `url`, `custom`, `customAsync`. Full API in `references/validation.md`.
+`@Validate` stacks **on top of** `@State`/`@ClientState`/`@Store`/`@ClientStore`. Declare an `errors` state property yourself — the framework writes messages there but does not create it. Use `validateAll()` before submit, `validateProperty(name)` on blur/input. Built-in rules: `required`, `minLength`, `maxLength`, `min`, `max`, `pattern`, `email`, `url`, `custom`, `customAsync`, `coerce` (`'number'|'boolean'|'date'`). Full API in `references/validation.md`.
+
+**Nested validation** — for a single `@Store`/`@ClientStore`, pass a rule map (use `storeRules<T>()` for compile-time-checked keys) that mirrors the store shape. Keys are relative to the store and auto-prefixed at runtime; `errors` stays a flat object keyed by the full dot-path (`'form.address.zip'`). `validateProperty`/`hasError`/`getError` take the full prefixed path.
+
+**Typed submission** — `this.c.getFormData<T>({ rules })` returns `{ data, errors, valid }`. With `coerce`, `data` is correctly typed (`number`/`boolean`/`Date`, not `string`):
+
+```typescript
+const { data, valid } = await this.c.getFormData<SignupForm>({
+    rules: storeRules<SignupForm>({
+        age:      { coerce: 'number', min: 18, message: 'Must be 18+' },
+        tos:      { coerce: 'boolean', required: true },
+        birthday: { coerce: 'date' },
+    }),
+});
+if (valid) { data.age /* number */, data.tos /* boolean */, data.birthday /* Date */ }
+```
 
 ### 2. Loading — use `this.loading` and `loadingTemplate()`
 
@@ -188,16 +210,23 @@ render() {
 - **Mutating state server-side without `@Server()`.** Changes won't broadcast to clients.
 - **`location.href = ...`** Use `this.redirect()`.
 - **`querySelector` for a child node.** Use `@Ref()`.
+- **Accessing `window`/`document`/the DOM inside `@Task`.** `@Task` runs on both server and client, so it crashes during SSR. Use `@ClientTask()` (if the logic must re-run on every render) or `onMount()` / `@On('mount')` (if it's one-time setup). See `references/tasks.md`.
+- **Writing `tracker` instead of `track`.** The task dependency option is `track` — `@Task({ track: ['user'] })`. See `references/tasks.md`.
+- **Forgetting to unsubscribe a `connectStore()`.** Call the returned unsubscribe function in `onCleanup()`, or you'll leak a subscriber after the component is destroyed. See `references/reactive-store.md`.
+- **Using `focusTrap` on a native `<dialog>` (Modal/Sheet).** The `<dialog>` element traps focus automatically — `focusTrap` is only for custom overlays that DON'T use `<dialog>`. See `references/ui.md#focus-management`.
 
 ## References
 
 - `references/server-client-rpc.md` — the RPC mechanism: `@Server`/`@Client`/`@Shared`, transports, server→client calls, security
 - `references/decorators.md` — full decorator API (class, property, method decorators, helpers)
-- `references/validation.md` — `@Validate` deep dive (rules, config, async validators, full form, `@Store` rule maps)
+- `references/tasks.md` — task decorators (`@Task`/`@ServerTask`/`@ClientTask`/`@VisibleTask`), the `track` option + path matching, automatic cleanup, choosing the right tool
+- `references/validation.md` — `@Validate` deep dive (rules incl. `coerce`, config, async validators, full form, nested `@Store` validation, typed `getFormData<T>()`)
 - `references/forms.md` — the two form patterns: progressive (`post()` + `flash`/`old`) vs reactive (`@Store` + `@Validate` + `@Server`)
+- `references/reactive-store.md` — `createStore()` / `connectStore()` for global reactive state, the imperative-API pattern (e.g. `toast`)
+- `references/ui.md` — `@cossackframework/ui` components, theming, icons, ejecting; focus-management helpers (`focusTrap`/`focusNext`/…)
 - `references/loading.md` — the four loading mechanisms (`loading.ts`, `loadingTemplate()`, `this.loading`, `clientInit()`)
 - `references/database.md` — `db()` / `getDb()`, Kysely queries, request scoping, setup
 - `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation
 - `references/realtime.md` — SSE vs Durable Object transports, scope, channels, streaming, event-driven re-fetch
-- `references/auth.md` — `createAuth()` flow, login handler, guards, `this.user`
+- `references/auth.md` — `cossack add auth` scaffold, `createAuth()` flow, the session/PBKDF2 module, guards, `this.user`
 - `references/errors.md` — `404/index.ts` and `error/index.ts` hierarchical boundaries

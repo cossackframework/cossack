@@ -307,18 +307,75 @@ handleScrollThrottled() { /* at most once every 200ms */ }
 handleResizeDebounced() { /* 150ms after user stops resizing */ }
 ```
 
-### `@Task()`
+### `@Task(options?)`
 
-Registers a method to run as a background task after component mount.
+Registers a method to run on component mount **and** every time the component's state updates. Runs on **both server and client**.
+
+`@Task` accepts an optional options object. Pass `{ track: [...] }` to run the task only when specific state fields change (useEffect-style dependency array), and `return` a cleanup function for automatic teardown.
+
+```typescript
+@State() count = 0;
+
+// Runs on mount + every state update, on both server and client.
+@Task()
+logUpdate() {
+    console.log(`Count is: ${this.count}`);
+}
+
+// Tracked: runs on mount + ONLY when `user` or `posts` change.
+@Task({ track: ['user', 'posts'] })
+async reloadFeed() {
+    this.feed = await fetch(`/api/feed?u=${this.user.id}`).then(r => r.json());
+}
+
+// Cleanup: the returned function runs before the next re-run and on destroy().
+@Task({ track: ['symbol'] })
+subscribe() {
+    const ws = new WebSocket(`/quotes/${this.symbol}`);
+    return () => ws.close();
+}
+```
+
+Options:
+- `track?: (string | symbol)[]` — restrict which state changes re-run the task. Supports dot-paths for nested `@Store` fields (e.g. `track: ['form.email']`). Omit (or pass `[]`) to run on every state change (legacy default). See `references/tasks.md` for the full path-matching table.
+
+### `@ServerTask(options?)`
+
+Like `@Task`, but the method runs **only on the server**. Its body is stripped from the client bundle by the security plugin (like `@Server` methods), so no manual `if (this.isServer) return;` guard is needed. Use for server-only side effects (data normalization, analytics, env-driven state seeding). Accepts the same `{ track }` option.
+
+### `@ClientTask(options?)`
+
+Like `@Task`, but the method runs **only on the client**. Its body is preserved in the client bundle; the server skips it. Use for logic that touches the DOM or browser APIs and needs to re-run on every render — this replaces the manual `if (this.isServer) return;` guard. Accepts the same `{ track }` option.
+
+```typescript
+@ClientTask()
+syncDialogState() {
+    const dlg = this.dialogRef.value;
+    if (!dlg) return;
+    if (this.props.open && !dlg.open) dlg.showModal();
+    else if (!this.props.open && dlg.open) dlg.close();
+}
+```
+
+### Task decorator comparison
+
+| Decorator | Server | Client | Use for |
+|---|---|---|---|
+| `@Task` | ✅ Runs | ✅ Runs | Logic safe on both sides (logging, derived state) |
+| `@ServerTask` | ✅ Runs | ❌ Body stripped | Server-only side effects (no `if (isServer)` guard needed) |
+| `@ClientTask` | ❌ Skipped | ✅ Runs | DOM/browser logic (no `if (!isServer)` guard needed) |
+| `@VisibleTask` | ❌ Skipped | ✅ Runs | Deferred until the element enters the viewport |
+
+See `references/tasks.md` for the lifecycle/track deep dive and "choosing the right tool" guidance.
 
 ### `@VisibleTask(options?)`
 
-Registers a method to run when the component becomes visible in the viewport.
+Registers a method to run **only on the client** when the component (or a specific element within it) becomes visible in the viewport (via `IntersectionObserver`). Use for expensive work that should be deferred until the user actually sees the content.
 
 Options:
-- `strategy?: 'intersection-observer' | 'document-ready'`
-- `threshold?: number`
-- `selector?: string`
+- `strategy?: 'intersection-observer' | 'document-ready'` (default `'intersection-observer'`)
+- `threshold?: number` — visibility fraction 0–1 (default `0`)
+- `selector?: string` — CSS selector to target a specific element within the component (default: the root container). When set, new matching elements are auto-observed after each SPA navigation.
 
 ### `@PreventNavigation()`
 
@@ -360,6 +417,45 @@ Type-safe rule map for `@Validate` on a `@Store` / `@ClientStore`. Keys are chec
 })
 form: SubmitFormState = { email: '', address: { zip: '' }, tags: [] };
 ```
+
+### `createStore<T>(initial)` / `connectStore(...)`
+
+A lightweight signal/subscriber primitive for **global** state shared across unrelated components (toast queues, theme, command palette open/close) — re-renders on change. From `@cossackframework/core`. Use `provide`/`consume` for one-time-injected values; use `createStore` only when consumers must re-render on change.
+
+```typescript
+import { createStore, connectStore } from '@cossackframework/core';
+
+export const themeStore = createStore<'light' | 'dark'>('light');
+themeStore.get();                       // → 'light'
+themeStore.set('dark');                 // notifies all subscribers
+themeStore.update(v => v === 'light' ? 'dark' : 'light');
+
+@Component()
+export class ThemeBadge extends Cossack {
+    @ClientState() theme: 'light' | 'dark' = 'light';
+    private _unsub?: () => void;
+    onMount() { this._unsub = connectStore(themeStore, this as any, 'theme'); }
+    onCleanup() { this._unsub?.(); }   // always unsubscribe
+}
+```
+
+See `references/reactive-store.md` for the full API and the global imperative-API pattern (e.g. `toast.success()`).
+
+### `focusTrap()` / `focusFirst()` / `focusLast()` / `focusNext()` / `getTabbable()`
+
+DOM-level focus utilities for accessible interactive components (custom menus, command palettes, comboboxes, roving-tabindex lists). From `@cossackframework/core`. Framework-agnostic — no Cossack dependency.
+
+```typescript
+import { focusTrap, focusNext } from '@cossackframework/core';
+
+class MyDialog extends Cossack {
+    private releaseTrap?: () => void;
+    onMount() { this.releaseTrap = focusTrap(this.container); }
+    onCleanup() { this.releaseTrap?.(); }   // restores focus to the trigger
+}
+```
+
+> The native `<dialog>` element (used by the UI package's `Modal` and `Sheet`) traps focus automatically — you don't need `focusTrap` for those. Use `focusTrap` only for custom overlays that DON'T use `<dialog>`. See `references/ui.md#focus-management`.
 
 ### `createAuth<User>(provider)`
 
