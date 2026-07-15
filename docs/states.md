@@ -1,6 +1,6 @@
 ---
 title: "States Management"
-description: "Shared state between client and server using the @State decorator with automatic synchronization and simple property definitions."
+description: "Shared state between client and server using the @State and @Store decorators with automatic synchronization, flash/old auto-binding, and simple property definitions."
 ---
 
 # States Management
@@ -32,6 +32,44 @@ export class Counter extends Cossack {
 ```
 
 That's it! When you change the state value, for example, `this.count++`, it automagically synchronize between servers and clients. The UI also reactive without complex hooks.
+
+## `@State` / `@Store` Options
+
+Both `@State()` and `@Store()` accept an options object. The commonly used options are `flash` and `old`, which auto-bind flashed values and old form input during bootstrap — handy for the POST → redirect → GET form flow.
+
+```ts
+@State({ flash: true }) success: string | undefined;          // binds flashed('success')
+@State({ flash: true }) errors: NestedErrors<MyForm> | undefined;
+@State({ old: true })   name = '';                            // binds old('name'), falls back to ''
+@Store({ old: true })   address = { street: '', city: '' };   // binds old('address'), whole object
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `flash` | `boolean \| string` | — | Auto-bind from a flashed value (`flashed()`). `true` uses the property name as the key; a string is an explicit key. |
+| `old` | `boolean \| string` | — | Auto-bind from old input (`old()`). `true` uses the property name; a string is an explicit key (supports dot-paths like `'address.street'`). |
+| `channel` | `string` | `'global'` | A logical grouping tag (realtime transport). See [WebSockets](/docs/websockets.md). |
+| `provider` | `string` | `'page'` | Which `StateProvider` (Durable Object) a `@Server` action is dispatched over. See [Providers](/docs/providers.md). |
+
+**`flash` / `old` rules:**
+
+- The flashed/old value **wins over the class-field initializer** — mirroring the manual `old('name') ?? ''`. When nothing was flashed, the initializer is kept.
+- **Server-only.** On the client `flashed()`/`old()` return `undefined`, so the initializer is kept and the SSR-bound value arrives via normal state hydration.
+- `flash` and `old` are **mutually exclusive** — a property binds from one source (`flash` takes precedence if both are set).
+- No `init()` is needed for repopulation. Keep `init()` only when you need to *compute or transform* a value.
+
+This removes the repetitive `init()` boilerplate. Instead of:
+
+```ts
+async init() {
+    this.success = flashed('success');
+    this.errors = flashed('errors');
+    this.name = old('name') ?? '';
+    this.address = old('address') ?? { street: '', city: '' };
+}
+```
+
+just declare the bindings inline. See [Session & Flash → Auto-binding](/docs/session.md#auto-binding-flash--old-input-into-state) for the full reference, and [Forms](/docs/forms.md) for the complete POST → redirect → GET example.
 
 ## Client-Only States (`@ClientState`)
 

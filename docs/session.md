@@ -89,6 +89,50 @@ const { data, valid } = await this.c.getFormData<MyForm>({
 
 See [Forms](/docs/forms.md) for the full POST → redirect → GET example.
 
+### Auto-binding flash / old input into state
+
+Reading flashed values back in `init()` is repetitive — the same `this.x = flashed('x')` / `this.x = old('x') ?? ''` lines in every form. The `flash` and `old` options on `@State` and `@Store` let you declare the binding once, and the framework populates the property during bootstrap:
+
+```typescript
+import { Cossack, State, Store, flash, type NestedErrors } from '@cossackframework/core';
+
+export default class FormPage extends Cossack {
+  // `flash: true` → binds `flashed('success')` by property name.
+  @State({ flash: true }) success: string | undefined;
+  // `flash: 'msg'` → binds a flashed value by an explicit key.
+  @State({ flash: 'msg' }) notice: string | undefined;
+  // `old: true` → binds `old('name')`, falling back to the initializer ('').
+  @State({ old: true }) name = '';
+  // `old: 'address.street'` → binds old input by an explicit dot-path key.
+  @State({ old: 'address.street' }) street = '';
+  // `@Store({ old: true })` → binds the whole old-input object at once.
+  @Store({ old: true }) address = { street: '', city: '', state: '' };
+
+  async post() {
+    const { data, valid } = await this.c.getFormData<MyForm>({ rules });
+    if (!valid) return this.back();        // input + errors auto-flashed
+    flash('success', 'Saved!');
+    return this.c.redirect('/form');
+  }
+
+  // No init() needed — the bindings above replace it.
+}
+```
+
+| Option value | Key used | Behavior |
+|---|---|---|
+| `flash: true` | property name | Binds `flashed(propertyName)`. |
+| `flash: 'key'` | explicit string | Binds `flashed('key')`. |
+| `old: true` | property name | Binds `old(propertyName)`. |
+| `old: 'address.city'` | explicit dot-path | Binds `old('address.city')` (nested input). |
+
+**Rules:**
+
+- The flashed/old value **wins over the class-field initializer** — mirroring the manual `old('name') ?? ''`. When nothing was flashed, the initializer is kept.
+- **Server-only.** On the client `flashed()`/`old()` return `undefined`, so the initializer is kept and the SSR-bound value arrives through normal state hydration. Zero client-side work.
+- `flash` and `old` are **mutually exclusive** — a property binds from one source. (`flash` takes precedence if both are set.)
+- No `init()` is needed for repopulation. Keep `init()` only when you need to *compute or transform* a value (e.g. merging several flashed fields).
+
 ### How it works
 
 Flash data is carried in a **signed cookie** (`cossack_flash`) that survives the redirect. The framework's flash middleware (registered automatically in `router.ts`) reads + consumes it on the next request (read-once semantics) and seeds a per-request store so `flashed()` / `old()` work context-free, like `__()` for i18n. Writes are signed and set on the response after the handler returns.

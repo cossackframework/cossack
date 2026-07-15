@@ -161,6 +161,23 @@ export function Client(options: ClientOptions = {}): any {
 export interface StateOptions {
   channel?: string;
   provider?: string;
+  /**
+   * Auto-bind this property from a flashed value (`flashed()`) during bootstrap.
+   * `true` uses the property name as the key; a string is an explicit key.
+   * The flashed value wins over the class-field initializer. Server-only — on
+   * the client `flashed()` returns `undefined`, so the initializer is kept.
+   */
+  flash?: boolean | string;
+  /**
+   * Auto-bind this property from old input (`old()`) during bootstrap.
+   * `true` uses the property name as the key; a string is an explicit key
+   * (supports dot-paths like `'address.street'`). The old value wins over the
+   * class-field initializer. Server-only — no-ops on the client.
+   *
+   * Mutually exclusive with `flash`: a property binds from one source only.
+   * `flash` takes precedence if both are set.
+   */
+  old?: boolean | string;
 }
 
 export function State(options: StateOptions = {}): PropertyDecorator {
@@ -172,6 +189,8 @@ export function State(options: StateOptions = {}): PropertyDecorator {
     stateProperties[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      flash: options.flash,
+      old: options.old,
     };
     Reflect.defineMetadata('cossack:state', stateProperties, target.constructor);
   };
@@ -195,11 +214,16 @@ export function ClientState(): PropertyDecorator {
 
 /**
  * Options for the @Store decorator. Mirrors @State so a store can target a
- * specific channel/provider exactly like an individual @State property.
+ * specific channel/provider exactly like an individual @State property, and
+ * also supports the `flash` / `old` auto-bind options (see {@link StateOptions}).
  */
 export interface StoreOptions {
   channel?: string;
   provider?: string;
+  /** Auto-bind from a flashed value. `true` = property name; string = explicit key. */
+  flash?: boolean | string;
+  /** Auto-bind from old input. `true` = property name; string = explicit key (dot-paths ok). */
+  old?: boolean | string;
 }
 
 /**
@@ -224,6 +248,8 @@ export function Store(options: StoreOptions = {}): PropertyDecorator {
     storeProperties[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      flash: options.flash,
+      old: options.old,
     };
     Reflect.defineMetadata('cossack:store', storeProperties, target.constructor);
   };

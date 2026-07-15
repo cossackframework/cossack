@@ -18,25 +18,19 @@ For full prose guides, see `docs/forms.md` (progressive) and `docs/forms-advance
 A plain HTML `<form>` POSTs to the same URL; a `post()` method on the page handles it server-side. This requires `transport: 'http'` on the `@Page` decorator.
 
 ```typescript
-import { Cossack, Page, State, flash, flashed, old, type NestedErrors } from '@cossackframework/core';
+import { Cossack, Page, State, flash, type NestedErrors } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
 interface ContactFields { name: string; email: string; }
 
 @Page({ transport: 'http' })
 export default class ContactForm extends Cossack {
-    @State() success: string | undefined;
-    @State() errors: NestedErrors<ContactFields> | undefined;
-    @State() name = '';
-    @State() email = '';
-
-    async init() {
-        // Read flashed data on the GET that follows the redirect.
-        this.success = flashed<string>('success');
-        this.errors = flashed('errors');
-        this.name = old<string>('name') ?? '';
-        this.email = old<string>('email') ?? '';
-    }
+    // `flash` / `old` options auto-bind flashed values and old input during
+    // bootstrap — no init() boilerplate. Flashed value wins over initializer.
+    @State({ flash: true }) success: string | undefined;
+    @State({ flash: true }) errors: NestedErrors<ContactFields> | undefined;
+    @State({ old: true }) name = '';
+    @State({ old: true }) email = '';
 
     async post() {
         // getFormData() auto-flashes the submitted input (for old()) and the
@@ -93,6 +87,20 @@ this.getError('address.city')    // → 'City is required'
 ```
 
 They also resolve flat dot-path keys written by the `@Validate` reactive path (Pattern 2), so the same calls work in both patterns.
+
+### Auto-binding flash / old into state
+
+Instead of an `init()` that reads `flashed()`/`old()` into state, declare the binding with `flash`/`old` options on `@State` (and `@Store`). The framework populates the property during bootstrap; the flashed value wins over the class-field initializer:
+
+```typescript
+@State({ flash: true })  success: string | undefined;          // flashed('success')
+@State({ flash: true })  errors: NestedErrors<F> | undefined;  // flashed('errors')
+@State({ old: true })    name = '';                            // old('name'), falls back to ''
+@Store({ old: true })    address = { street: '', city: '' };   // old('address'), whole object
+@State({ old: 'address.street' }) street = '';                 // explicit dot-path key
+```
+
+`true` uses the property name as the key; a string is an explicit key (old-input keys support dot-paths). Keep the manual helpers below for computed/transformed values in `init()`. Server-only — the SSR-bound value reaches the client via normal state hydration.
 
 ### The flash / old-input helpers
 

@@ -55,6 +55,7 @@ import {
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
+import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
 import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
 import type {
@@ -515,6 +516,24 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     protected setProperty(name: string | symbol, value: unknown): void {
         (this as any)[name] = value;
+    }
+
+    /**
+     * Resolve an auto-bind value for a @State/@Store property from flash or old
+     * input. Returns `undefined` on the client (or when no flash store is wired),
+     * so the caller falls back to the class-field initializer. `opt` is `true`
+     * (use the property name as the key) or an explicit key string (old-input
+     * keys support dot-paths, e.g. `'address.street'`). `false`/`undefined`
+     * mean "no binding" — return undefined to keep the initializer.
+     */
+    private _resolveFlashBinding(
+        key: string,
+        opt: boolean | string,
+        kind: 'flash' | 'old',
+    ): unknown {
+        if (opt === undefined || opt === false) return undefined;
+        const flashKey = opt === true ? key : opt;
+        return kind === 'flash' ? flashed(flashKey) : old(flashKey);
     }
 
     /**
@@ -1116,6 +1135,23 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             // Get initial value from state source or from existing property value
             let value = this.getProperty(key);
+
+            // Auto-bind from flash/old (server-only). `flash`/`old` are set via
+            // @State/@Store options; the bound value wins over the class-field
+            // initializer, mirroring the manual `old('x') ?? ''` pattern. On the
+            // client flashed()/old() return undefined, so the initializer is kept
+            // and the SSR-bound value arrives via the hydration overlay below.
+            const flashOpt = (stateProperties[key]?.flash ?? storeProperties[key]?.flash) as boolean | string | undefined;
+            const oldOpt = flashOpt === undefined
+                ? (stateProperties[key]?.old ?? storeProperties[key]?.old) as boolean | string | undefined
+                : undefined;
+            if (flashOpt !== undefined) {
+                const bound = this._resolveFlashBinding(String(key), flashOpt, 'flash');
+                if (bound !== undefined) value = bound;
+            } else if (oldOpt !== undefined) {
+                const bound = this._resolveFlashBinding(String(key), oldOpt, 'old');
+                if (bound !== undefined) value = bound;
+            }
 
             // Only sync properties that are NOT client-only
             if (!isClientOnly && stateSource && stateSource[key] !== undefined) {

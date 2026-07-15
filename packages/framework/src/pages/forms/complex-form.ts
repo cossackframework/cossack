@@ -3,9 +3,8 @@ import {
   Page,
   storeRules,
   flash,
-  flashed,
-  old,
   State,
+  Store,
   type NestedErrors,
 } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
@@ -13,15 +12,14 @@ import { Button, Input } from '@cossackframework/ui';
 
 // This page demonstrates the full POST → redirect → GET pattern with:
 //   - typed + validated nested form data (`getFormData<T>()` + `storeRules<T>`)
-//   - flash messages (`flash` / `flashed`) — one-shot data carried across the redirect
-//   - old input repopulation (`old`) — keeps field values on validation failure
+//   - auto-bound flash/old data — `@State({ flash })` / `@Store({ old })` pull
+//     flashed values and old input into state during bootstrap, so there's no
+//     `init()` boilerplate. (`getFormData()` auto-flashes both by default.)
 //   - NESTED validation errors — `hasError('address.city')` / `getError('address.city')`
 //     resolve nested fields by dot-path, matching the form's type shape.
 //
-// `getFormData()` auto-flashes the submitted input and any validation errors to
-// the next request (disable with `{ flash: false }`), so the POST handler only
-// needs to redirect. Flash data is signed-cookie-backed (stateless) and lives
-// for exactly one redirect. It requires an `APP_SECRET` env var. See the /http docs.
+// Flash data is signed-cookie-backed (stateless) and lives for exactly one
+// redirect. It requires an `APP_SECRET` env var. See /docs/session.md.
 
 interface AddressForm {
   street: string;
@@ -36,25 +34,22 @@ interface ComplexFormShape {
 
 @Page({ transport: 'http' })
 export default class ComplexForm extends Cossack {
-  @State()
+  // `flash: true` auto-binds `flashed('success')` during bootstrap.
+  @State({ flash: true })
   success: string | undefined;
 
-  @State()
+  // Auto-binds the flashed `errors` object.
+  @State({ flash: true })
   errors: NestedErrors<ComplexFormShape> | undefined;
 
-  @State()
+  // `old: true` auto-binds `old('name')`, falling back to '' when nothing was
+  // flashed.
+  @State({ old: true })
   name: string = '';
 
-  @State()
+  // A @Store auto-binds the whole old-input object at once (`old('address')`).
+  @Store({ old: true })
   address: AddressForm = { street: '', city: '', state: '' };
-
-  async init() {
-    // Read flashed data on the GET that follows the redirect.
-    this.success = flashed<string>('success');
-    this.errors = flashed('errors');
-    this.name = old<string>('name') ?? '';
-    this.address = old<AddressForm>('address') ?? { street: '', city: '', state: '' };
-  }
 
   async post() {
     // `getFormData()` auto-flashes the parsed input (for `old()`) and the nested

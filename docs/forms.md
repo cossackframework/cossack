@@ -154,8 +154,6 @@ import {
   Page,
   storeRules,
   flash,
-  flashed,
-  old,
   State,
   type NestedErrors,
 } from '@cossackframework/core';
@@ -167,27 +165,22 @@ interface ContactFormFields {
 }
 
 export default class ContactForm extends Cossack {
-  @State()
+  // `flash` / `old` options auto-bind flashed values and old input during
+  // bootstrap, so there's no init() boilerplate. The flashed value wins over
+  // the initializer; otherwise the initializer is kept.
+  @State({ flash: true })
   success: string | undefined;
 
   // NestedErrors<ContactFormFields> mirrors the form type, so optional-chaining
   // (this.errors?.name) is fully typed without spelling out the shape.
-  @State()
+  @State({ flash: true })
   errors: NestedErrors<ContactFormFields> | undefined;
 
-  @State()
+  @State({ old: true })
   name: string = '';
 
-  @State()
+  @State({ old: true })
   email: string = '';
-
-  async init() {
-    // Read flashed data on the GET that follows the redirect.
-    this.success = flashed<string>('success');
-    this.errors = flashed('errors');
-    this.name = old<string>('name') ?? '';
-    this.email = old<string>('email') ?? '';
-  }
 
   async post() {
     // getFormData() auto-flashes the submitted input (for old()) and the
@@ -235,6 +228,8 @@ export default class ContactForm extends Cossack {
   }
 }
 ```
+
+> **Need to transform a value?** The `flash` / `old` options cover the common case (bind a value as-is). Keep an `init()` method when you need to *compute or merge* values — e.g. combining several flashed fields or defaulting from config. The manual `flashed()` / `old()` helpers still work alongside the options. See [Session & Flash → Auto-binding](/docs/session.md#auto-binding-flash--old-input-into-state).
 
 ## Complex Form
 
