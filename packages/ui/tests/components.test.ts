@@ -731,25 +731,21 @@ describe("Form", () => {
     });
 
     it("wraps the submit handler to prevent the default submit", () => {
-        // The handler is built in render() and bound client-side via the spread
-        // (so it isn't visible in SSR output). Verify the wrapper logic directly:
-        // a real SubmitEvent's default is prevented and the delegate is called.
+        // Exercise the real production wrapper (Form.wrapSubmit), not a
+        // reconstruction. The @submit handler is built in render() and bound
+        // client-side via the spread (so it isn't visible in SSR output); this
+        // calls the same wrapper render() installs and asserts that it prevents
+        // the default before delegating to the caller's submit handler.
         let delegated: SubmitEvent | undefined;
         const instance = new Form();
-        instance.props = { submit: (e: SubmitEvent) => { delegated = e; } };
-        // @ts-expect-error render is protected/internal but always present.
-        instance.render();
-        // The wrapper is stashed under the @submit key in the rendered props;
-        // pull it off the instance's last render by re-running with a capture.
-        // Simpler: assert behavior through the same code path the template uses.
+        const submit = (e: SubmitEvent) => { delegated = e; };
+        // @ts-expect-error wrapSubmit is private but always present.
+        const wrapper = instance.wrapSubmit(submit) as (e: SubmitEvent) => void;
+
         const preventDefault = vi.fn();
         const event = { preventDefault } as unknown as SubmitEvent;
-        // Reconstruct the wrapper contract: preventDefault called before delegate.
-        const wrapper = (e: SubmitEvent) => {
-            e.preventDefault();
-            (instance.props.submit as (ev: SubmitEvent) => void)(e);
-        };
         wrapper(event);
+
         expect(preventDefault).toHaveBeenCalled();
         expect(delegated).toBe(event);
     });

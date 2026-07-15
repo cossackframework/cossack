@@ -775,6 +775,9 @@ export function getError(component: any, propertyName: string): string | undefin
     // Nested dot-path traversal — handles getFormData/validateObject nested
     // errors (e.g. 'address.city' → errors.address.city). Gated on the dot so
     // parent nodes like getError('address') don't return the nested object.
+    // Note: @Validate flat keys ('form.address.zip') never reach here — the
+    // flat lookup above already returned them. This branch only fires for keys
+    // a user passes directly against a nested (flashed) errors object.
     if (propertyName.includes('.')) {
         const nested = resolveDotPath(errors, propertyName);
         if (typeof nested === 'string') return nested;

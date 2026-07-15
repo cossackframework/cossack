@@ -43,6 +43,18 @@ export interface FormProps {
 export class Form extends Cossack {
     declare props: FormProps;
 
+    /**
+     * Wrap a submit handler so the native form submission (page reload) is
+     * prevented before the delegate runs. Extracted from `render()` so the
+     * preventDefault contract is unit-testable without DOM/event plumbing.
+     */
+    private wrapSubmit(submit: (event: SubmitEvent) => unknown) {
+        return (event: SubmitEvent) => {
+            event.preventDefault();
+            submit(event);
+        };
+    }
+
     render() {
         const { submit, novalidate, ...rest } = this.props;
 
@@ -55,13 +67,12 @@ export class Form extends Cossack {
         // key in `rest` so the renderer's SpreadPart binds it as an event
         // listener — same convention other components use for `@click`, etc.
         if (submit) {
-            rest["@submit"] = (e: SubmitEvent) => {
-                e.preventDefault();
-                submit(e);
-            };
+            rest["@submit"] = this.wrapSubmit(submit);
         }
         if (wantsNovalidate) {
-            // Presence attribute — SpreadPart sets it from a boolean true.
+            // Presence attribute — both the SSR spread and the client SpreadPart
+            // emit a boolean `true` as the bare attribute name (`novalidate`),
+            // not `novalidate="true"`.
             rest["novalidate"] = true;
         }
 
