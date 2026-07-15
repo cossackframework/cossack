@@ -449,11 +449,28 @@ class NodePart implements Part {
     if (value instanceof CacheResult) {
       const inner = value.value;
       if (isTemplateResult(inner)) {
+        // The cache fast-path returns early, which would otherwise skip the
+        // component/child-part teardown below. Tear down any prior render
+        // state held by this part (a previously-rendered component, repeat, or
+        // array) so switching INTO cache() does not leak it.
+        if (this.componentInstance) this.disposeComponent();
+        if (this._childParts.length > 0) this.clearChildParts();
         this.updateCache(inner);
         return;
       }
       value = inner;
       fromCache = true;
+    } else if (this._cacheMap.size > 0 || this._cacheCurrent) {
+      // Switching AWAY from cache() to an entirely non-cache value: the
+      // stashed subtrees are no longer reachable, so dispose their parts
+      // (components/listeners/etc.) instead of retaining them until dispose().
+      for (const entry of this._cacheMap.values()) {
+        for (const part of entry.parts) {
+          if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+        }
+      }
+      this._cacheMap.clear();
+      this._cacheCurrent = null;
     }
     // Switching from a cached template to a non-template value: detach & stash
     // the current subtree so it can be restored later, then clear bookkeeping.
@@ -488,7 +505,12 @@ class NodePart implements Part {
    * into a one-element array so both call shapes compare the same way.
    */
   private _resolveGuard(result: GuardResult): unknown {
-    const newDeps = Array.isArray(result.deps) ? result.deps : [result.deps];
+    // Snapshot array deps (shallow clone) so in-place mutations between
+    // renders are detected. Without this, a caller that mutates the same
+    // deps array would leave _guardDeps and newDeps aliasing the same array,
+    // and _depsEqual would always see them as equal — skipping the factory
+    // when it should re-run.
+    const newDeps = Array.isArray(result.deps) ? [...result.deps] : [result.deps];
     if (this._guardHasDeps && this._depsEqual(this._guardDeps, newDeps)) {
       return this._guardValue;
     }

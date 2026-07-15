@@ -118,6 +118,21 @@ describe('bind() client writeback via spread', () => {
     expect(component.address.street).toBe('New');
   });
 
+  it('writing back creates the root container when a dot-path root is missing (regression)', () => {
+    // bind(this, 'address.street') writeback must still succeed when the root
+    // object was never initialized — setField auto-creates the missing root
+    // segment instead of being a no-op.
+    const host = document.createElement('div');
+    const component: any = {};
+    const tpl = html`<input ...=${{ '.value': bind(component, 'address.street') }} />`;
+    render(tpl, host);
+    const input = host.querySelector('input') as HTMLInputElement;
+
+    input.value = 'Created';
+    input.dispatchEvent(new Event('input'));
+    expect(component.address).toEqual({ street: 'Created' });
+  });
+
   it('a state change re-renders the input value', () => {
     const host = document.createElement('div');
     const component: any = { name: 'Before' };

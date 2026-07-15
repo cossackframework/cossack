@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { CossackElement } from './cossack-element';
 import { html, renderToString, render } from './cossack-html';
+import type { ComponentResult } from './component';
 import { cache } from './directives';
+
+function makeComponentResult(clazz: new () => CossackElement): ComponentResult {
+  return { _type: 'COMPONENT', clazz, props: {}, children: undefined };
+}
 
 describe('cache directive', () => {
   describe('SSR', () => {
@@ -133,6 +139,70 @@ describe('cache directive', () => {
       expect(container.querySelector('.i0')).toBe(n0);
       render(tpl(2), container);
       expect(container.querySelector('.i2')).toBe(n2);
+    });
+  });
+
+  describe('cleanup / no leaks', () => {
+    it('disposes a previously-rendered component when switching into cache() (regression)', () => {
+      // A single template site switching its value from a component to
+      // cache(template) keeps the same NodePart. The cache fast-path returns
+      // early, so it must still tear down the component instance — otherwise
+      // the component's render listener / lifecycle leaks for the page lifetime.
+      const destroySpy = vi.fn();
+      const disconnectedSpy = vi.fn();
+
+      class LeakComp extends CossackElement {
+        render() {
+          return html`<p>child</p>`;
+        }
+        disconnectedCallback() {
+          disconnectedSpy();
+        }
+        destroy() {
+          destroySpy();
+        }
+      }
+
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      // One reusable template site: only the interpolated VALUE changes, so the
+      // outer NodePart persists (the leak only manifests with a persistent part).
+      const tpl = (v: unknown) => html`${v}`;
+      render(tpl(makeComponentResult(LeakComp)), container);
+      expect(disconnectedSpy).not.toHaveBeenCalled();
+
+      // Switch the same site to a cached template.
+      render(tpl(cache(html`<b class="cached">x</b>`)), container);
+
+      expect(disconnectedSpy).toHaveBeenCalledTimes(1);
+      expect(destroySpy).toHaveBeenCalledTimes(1);
+
+      container.remove();
+    });
+
+    it('clears the stash when switching away from cache() to a non-cache value', () => {
+      // After toggling between two cached templates, switching the same site to a
+      // plain (non-cache) value must dispose the stashed subtrees rather than
+      // retaining them indefinitely. Re-toggling back to cache() then rebuilds.
+      const container = document.createElement('div');
+      const a = () => html`<span class="a">A</span>`;
+      const b = () => html`<span class="b">B</span>`;
+      const tpl = (v: unknown) => html`${v}`;
+
+      // Prime both cache entries.
+      render(tpl(cache(a())), container);
+      render(tpl(cache(b())), container);
+      render(tpl(cache(a())), container);
+
+      // Switch away from cache entirely to a plain value.
+      render(tpl('plain'), container);
+      expect(container.textContent).toContain('plain');
+
+      // Switching back to cache() rebuilds (the stash was cleared), so a fresh
+      // node is produced — not a restored one. This confirms the stash is gone.
+      render(tpl(cache(a())), container);
+      expect(container.querySelector('.a')).toBeInstanceOf(HTMLSpanElement);
     });
   });
 });

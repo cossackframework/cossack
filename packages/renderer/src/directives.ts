@@ -166,6 +166,10 @@ export function setField(component: unknown, path: string, value: unknown): void
     return;
   }
   const parts = path.split('.');
+  // Create the root container if it is missing so a dot-path writeback
+  // (e.g. bind(this, 'address.street')) still succeeds when the root object
+  // was never initialized. Intermediate segments are created in the loop below.
+  if (comp[parts[0]] == null) comp[parts[0]] = {};
   let current: any = comp[parts[0]];
   for (let i = 1; i < parts.length - 1; i++) {
     if (current == null || typeof current !== 'object') return;

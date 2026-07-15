@@ -106,4 +106,27 @@ describe('guard directive', () => {
     render(tpl([2]), container);
     expect(factory).toHaveBeenCalledTimes(2);
   });
+
+  it('detects in-place mutation of a deps array (regression)', () => {
+    // Without snapshotting the deps array, the part would alias the caller's
+    // array; mutating it between renders would leave both the cached and new
+    // deps pointing at the same (mutated) values, so _depsEqual would always be
+    // true and the factory would never re-run.
+    const container = document.createElement('div');
+    const factory = vi.fn(() => html`<span>x</span>`);
+    const deps = [1, 2];
+    const tpl = () => html`<div>${guard(deps, factory)}</div>`;
+
+    render(tpl(), container);
+    expect(factory).toHaveBeenCalledTimes(1);
+
+    // Mutate the SAME array in place — must be detected as a change.
+    deps[1] = 99;
+    render(tpl(), container);
+    expect(factory).toHaveBeenCalledTimes(2);
+
+    // No further mutation -> skip again.
+    render(tpl(), container);
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
 });
