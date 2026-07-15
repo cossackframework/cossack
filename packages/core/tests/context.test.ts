@@ -1,8 +1,23 @@
 // tests/context.test.ts
 import 'reflect-metadata';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Context } from 'hono';
+
+// jsdom defines `window`, so `environment.isServer` is false by default and the
+// flash module no-ops. getFormData is server-only, so force isServer true for
+// the whole file (mirrors flash.test.ts's mock approach).
+vi.mock('../src/shared/environment', () => ({
+  get isServer() {
+    return (globalThis as any).__MOCK_IS_SERVER ?? true;
+  },
+}));
+
 import { createCossackContext, type CossackContext } from '../src/shared/context';
+import {
+  setFlashStoreGetter,
+  __resetFlashForTests,
+  type FlashStore,
+} from '../src/shared/flash';
 
 /**
  * Build a minimal Hono-like context whose `req.formData()` returns a real
@@ -141,5 +156,94 @@ describe('createCossackContext — getFormData', () => {
     const clientCtx = createCossackContext({ req } as unknown as Context, false);
     expect((serverCtx.req as any).path).toBe('/x');
     expect((clientCtx.req as any).path).toBe('/x');
+  });
+});
+
+describe('createCossackContext — getFormData auto-flash', () => {
+  /** Active flash store for the current test. */
+  let store: FlashStore;
+
+  beforeEach(() => {
+    store = { outgoing: {}, incoming: {} };
+    setFlashStoreGetter(() => store);
+  });
+
+  afterEach(() => {
+    __resetFlashForTests();
+  });
+
+  it('flashes the submitted input by default (no rules)', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', 'Alice']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>();
+    // flashInput writes under the reserved __input namespace.
+    expect(store.outgoing.__input).toEqual({ name: 'Alice' });
+  });
+
+  it('flashes input + errors by default when invalid', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', '']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true, message: 'Name is required' } },
+    });
+    expect(store.outgoing.__input).toEqual({ name: '' });
+    expect(store.outgoing.errors).toEqual({ name: 'Name is required' });
+  });
+
+  it('does NOT flash errors on a valid form (avoids empty-error-banner bug)', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', 'Alice']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true } },
+    });
+    // Input is still flashed (single-use, harmlessly dropped if unread).
+    expect(store.outgoing.__input).toEqual({ name: 'Alice' });
+    // But no errors key — flashing {} would render truthy-empty error banners.
+    expect(store.outgoing.errors).toBeUndefined();
+  });
+
+  it('respects flash: false (flashes nothing)', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', '']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true, message: 'Name is required' } },
+      flash: false,
+    });
+    expect(store.outgoing.__input).toBeUndefined();
+    expect(store.outgoing.errors).toBeUndefined();
+  });
+
+  it('respects flash: { input: false } (errors only)', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', '']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true, message: 'Name is required' } },
+      flash: { input: false },
+    });
+    expect(store.outgoing.__input).toBeUndefined();
+    expect(store.outgoing.errors).toEqual({ name: 'Name is required' });
+  });
+
+  it('respects flash: { errors: false } (input only)', async () => {
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', '']]), true);
+    await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true, message: 'Name is required' } },
+      flash: { errors: false },
+    });
+    expect(store.outgoing.__input).toEqual({ name: '' });
+    expect(store.outgoing.errors).toBeUndefined();
+  });
+
+  it('no-ops flashing when no flash store is wired (backward compatible)', async () => {
+    __resetFlashForTests(); // remove the store getter
+    interface MyForm { name: string }
+    const ctx = createCossackContext(mockContext([['name', '']]), true);
+    // Should not throw, and should still return the validated result.
+    const result = await (ctx as unknown as CossackContext).getFormData<MyForm>({
+      rules: { name: { required: true, message: 'Name is required' } },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual({ name: 'Name is required' });
   });
 });

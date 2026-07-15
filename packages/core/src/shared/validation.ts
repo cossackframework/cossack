@@ -750,11 +750,36 @@ export function getValidationErrorProperty(component: any): string {
     return firstRule?.config?.errorProperty || 'errors';
 }
 
-/** Get the error message for a specific property. */
+/**
+ * Get the error message for a specific property.
+ *
+ * Resolves two error shapes transparently:
+ * 1. **Flat dot-path keys** (written by the `@Validate` reactive path via
+ *    `setValidationError`): `{ 'form.address.zip': '...' }`. A direct lookup
+ *    handles both top-level fields (`'name'`) and flat dot-paths.
+ * 2. **Nested objects** (returned by `validateObject` / `getFormData({ rules })`
+ *    and flashed across a redirect): `{ address: { city: '...' } }. Traversed
+ *    via dot-path when the key contains a `.`.
+ *
+ * Only string leaves count as an error, so asking for a parent node
+ * (e.g. `getError('address')`) returns `undefined` rather than the sub-object.
+ */
 export function getError(component: any, propertyName: string): string | undefined {
     const errorProperty = getValidationErrorProperty(component);
-    const errors = component.getProperty(errorProperty) as Record<string, string> | undefined;
-    return errors?.[propertyName];
+    const errors = component.getProperty(errorProperty) as Record<string, unknown> | undefined;
+    if (!errors) return undefined;
+    // Flat-key lookup first — handles top-level fields AND @Validate flat
+    // dot-paths (e.g. 'form.address.zip').
+    const flat = errors[propertyName];
+    if (typeof flat === 'string') return flat;
+    // Nested dot-path traversal — handles getFormData/validateObject nested
+    // errors (e.g. 'address.city' → errors.address.city). Gated on the dot so
+    // parent nodes like getError('address') don't return the nested object.
+    if (propertyName.includes('.')) {
+        const nested = resolveDotPath(errors, propertyName);
+        if (typeof nested === 'string') return nested;
+    }
+    return undefined;
 }
 
 /** Check if a property has validation errors. */
