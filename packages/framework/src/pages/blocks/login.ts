@@ -9,7 +9,7 @@ import {
     HeadContext,
     HeadValue,
 } from '@cossackframework/core';
-import { html, component, bind, type TemplateResult } from '@cossackframework/renderer';
+import { html, component, bind, unsafeHTML, type TemplateResult } from '@cossackframework/renderer';
 import {
     Button,
     Input,
@@ -256,7 +256,7 @@ export default class LoginBlocks extends Cossack {
         return html`
             <button class="flex items-center justify-center px-3 py-2.5 rounded-md border border-border hover:bg-muted cursor-pointer transition-colors bg-transparent"
                 @click=${() => { this.email = 'social@demo.dev'; this.password = 'password123'; }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="${provider === 'google' ? 'none' : 'currentColor'}">${icons[provider]}</svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="${provider === 'google' ? 'none' : 'currentColor'}">${unsafeHTML(icons[provider])}</svg>
             </button>
         `;
     }

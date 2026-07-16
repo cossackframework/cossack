@@ -8,6 +8,8 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { EyeIcon } from "@cossackframework/solar-icons/eye";
+import { EyeClosedIcon } from "@cossackframework/solar-icons/eye-closed";
 
 export interface PasswordInputProps {
     /** Current password value. */
@@ -80,7 +82,7 @@ export class PasswordInput extends Cossack {
                     aria-pressed=${this.revealed}
                     @click=${() => this.toggleReveal()}
                 >
-                    ${component(Icon, { name: this.revealed ? "eye-closed" : "eye", size: 16 })}
+                    ${component(Icon, { entry: this.revealed ? EyeClosedIcon : EyeIcon, size: 16 })}
                 </button>
             </div>
         `;

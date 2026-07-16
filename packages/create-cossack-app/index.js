@@ -106,6 +106,7 @@ async function configureNodeAdapter(projectDir) {
 
   packageJson.devDependencies['@types/ws'] = '^8.18.0';
   packageJson.devDependencies['@types/node'] = '^22.0.0';
+  packageJson.devDependencies['@types/better-sqlite3'] = '^7.6.13';
 
   packageJson.scripts['dev'] = 'node scripts/dev.js';
   packageJson.scripts['start'] = 'node dist/server/index.js';
@@ -156,17 +157,28 @@ export async function getCliClient(): Promise<DbClient> {
 `;
   await fs.writeFile(path.join(projectDir, 'src/db/config.ts'), dbConfigContent);
 
-  const indexTsContent = `import { serve } from '@hono/node-server';
+  const indexTsContent = `import 'reflect-metadata';
+import { serve } from '@hono/node-server';
+import { pathToFileURL } from 'node:url';
 import { CossackNodeAdapter, createNodeEmailSender } from '@cossackframework/node-adapter';
 import { createApp } from '@cossackframework/framework/router';
+import { App } from './App';
+import { template } from './root';
 
-const app = createApp();
+// The Hono app. The dev server (scripts/dev.js) imports these named exports
+// via Vite's ssrLoadModule and runs them itself; in production the \`serve()\`
+// block below (only executed when this file is the entry point) starts the
+// real server.
+export const app = createApp({
+    AppComponent: App,
+    htmlTemplate: template,
+});
 
 // Runtime bindings — mirrors Cloudflare's \`env\` so application code stays
 // identical across runtimes. The database client uses a local SQLite file
 // (better-sqlite3); set DB_PATH to customize. The email sender polyfills the
 // \`send_email\` binding via SMTP (configure SMTP_* env vars when you add auth/email).
-const env: Record<string, unknown> = {
+export const env: Record<string, unknown> = {
     DB_PATH: process.env.DB_PATH ?? './database.sqlite',
 };
 if (process.env.SMTP_HOST) {
@@ -179,17 +191,24 @@ if (process.env.SMTP_HOST) {
     });
 }
 
-const server = serve({
-    // Pass env so \`c.env\` / \`this.env\` is populated for @Server methods.
-    fetch: (req) => app.fetch(req, env),
-    port: Number(process.env.PORT) || 3000,
-}, (info) => {
-    console.log(\`Listening on http://localhost:\${info.port}\`);
-});
+// Only start the production HTTP server when this file is the entry point.
+// The dev server (scripts/dev.js) imports { app, env } without executing this,
+// because Node treats the import as a module load while the dev server is the
+// real entry point. Use pathToFileURL for a cross-platform (incl. Windows)
+// comparison — \`file://\${process.argv[1]}\` is malformed on Windows paths.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+    const server = serve({
+        // Pass env so \`c.env\` / \`this.env\` is populated for @Server methods.
+        fetch: (req) => app.fetch(req, env),
+        port: Number(process.env.PORT) || 3000,
+    }, (info) => {
+        console.log(\`Listening on http://localhost:\${info.port}\`);
+    });
 
-// Pass env to the WebSocket adapter too, so @Server methods over WS see the
-// same bindings (this.env.EMAIL, etc.) as over HTTP.
-// new CossackNodeAdapter({ server, componentRegistry, env });
+    // Pass env to the WebSocket adapter too, so @Server methods over WS see the
+    // same bindings (this.env.EMAIL, etc.) as over HTTP.
+    // new CossackNodeAdapter({ server, componentRegistry, env });
+}
 `;
   await fs.writeFile(path.join(projectDir, 'src/index.ts'), indexTsContent);
 

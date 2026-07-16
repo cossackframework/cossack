@@ -1,6 +1,7 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { CloseCircleIcon as closeCircleIcon } from "@cossackframework/solar-icons/close-circle";
 
 export interface AttachmentProps {
     /** File name. */
@@ -85,7 +86,7 @@ export class Attachment extends Cossack {
                           aria-label="Remove attachment"
                           @click=${() => onRemove()}
                       >
-                          ${component(Icon, { name: "close-circle", size: 14 })}
+                          ${component(Icon, { entry: closeCircleIcon, size: 14 })}
                       </button>`
                     : null}
             </div>

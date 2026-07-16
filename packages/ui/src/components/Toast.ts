@@ -8,6 +8,7 @@ import {
     type ReactiveStore,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { CloseCircleIcon as closeCircleIcon } from "@cossackframework/solar-icons/close-circle";
 
 // ---------------------------------------------------------------------------
 // Global toast store — a module-level singleton. Any code in the app can call
@@ -134,7 +135,7 @@ export class Toaster extends Cossack {
                                 aria-label="Dismiss"
                                 @click=${() => dismissToast(t.id)}
                             >
-                                ${component(Icon, { name: "close-circle", size: 16 })}
+                                ${component(Icon, { entry: closeCircleIcon, size: 16 })}
                             </button>
                         </div>
                     `,

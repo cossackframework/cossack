@@ -46,8 +46,11 @@ export function cossackPages(): Plugin {
           // Loading states: always eager (small, needed immediately for UX)
           const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });
 
-          // Components: always eager (typically small UI components)
-          const components = import.meta.glob('/src/components/**/*.ts', { eager: true });
+          // Components resolve by direct class reference (component(Card, ...)
+          // captures the constructor), so no registry glob is needed. Eagerly
+          // globbing src/components/ would pull in every re-exported component
+          // (e.g. a UI barrel) and defeat tree-shaking.
+          const components = {};
 
           export default { pages, layouts, loadings, components };
         `;

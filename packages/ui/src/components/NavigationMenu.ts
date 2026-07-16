@@ -1,6 +1,7 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
 export interface NavigationMenuProps {
     sections?: Array<{
@@ -69,7 +70,7 @@ export class NavigationMenu extends Cossack {
                                 @click=${trigger === "click" ? () => this.handleClickSection(i, popoverId) : undefined}
                                 @mouseenter=${trigger === "hover" ? () => this.scheduleOpen(i, popoverId) : undefined}
                                 @mouseleave=${trigger === "hover" ? () => this.scheduleClose(popoverId) : undefined}
-                            >${section.label}<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${isActive ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { name: "alt-arrow-down", size: 16 })}</span></button>
+                            >${section.label}<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${isActive ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { entry: altArrowDownIcon, size: 16 })}</span></button>
                             <div
                                 id=${popoverId}
                                 popover="manual"

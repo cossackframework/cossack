@@ -77,6 +77,15 @@ import {
     MultiSelect,
     Icon,
 } from '@cossackframework/ui';
+import { AddCircleIcon as addCircleIcon } from '@cossackframework/solar-icons/add-circle';
+import { AltArrowDownIcon as altArrowDownIcon } from '@cossackframework/solar-icons/alt-arrow-down';
+import { ArrowRightIcon as arrowRightIcon } from '@cossackframework/solar-icons/arrow-right';
+import { CheckCircleIcon as checkCircleIcon } from '@cossackframework/solar-icons/check-circle';
+import { CloseCircleIcon as closeCircleIcon } from '@cossackframework/solar-icons/close-circle';
+import { MagnifierIcon as magnifierIcon } from '@cossackframework/solar-icons/magnifier';
+import { SettingsIcon as settingsIcon } from '@cossackframework/solar-icons/settings';
+import { TrashBinMinimalisticIcon as trashBinMinimalisticIcon } from '@cossackframework/solar-icons/trash-bin-minimalistic';
+
 
 @Page()
 export class ComponentsDemo extends Cossack {
@@ -124,16 +133,16 @@ export class ComponentsDemo extends Cossack {
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="text-xs text-muted-foreground self-center">Icon + text:</span>
-                        ${component(Button, { variant: 'default', size: 'sm' }, html`${component(Icon, { name: 'arrow-right', size: 16 })} Next`)}
-                        ${component(Button, { variant: 'outline', size: 'sm' }, html`${component(Icon, { name: 'settings', size: 16 })} Settings`)}
-                        ${component(Button, { variant: 'destructive', size: 'sm' }, html`${component(Icon, { name: 'trash-bin-minimalistic', size: 16 })} Delete`)}
+                        ${component(Button, { variant: 'default', size: 'sm' }, html`${component(Icon, { entry: arrowRightIcon, size: 16 })} Next`)}
+                        ${component(Button, { variant: 'outline', size: 'sm' }, html`${component(Icon, { entry: settingsIcon, size: 16 })} Settings`)}
+                        ${component(Button, { variant: 'destructive', size: 'sm' }, html`${component(Icon, { entry: trashBinMinimalisticIcon, size: 16 })} Delete`)}
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <span class="text-xs text-muted-foreground self-center">Icon only:</span>
-                        ${component(Button, { variant: 'outline', size: 'icon' }, component(Icon, { name: 'magnifier', size: 16 }))}
-                        ${component(Button, { variant: 'ghost', size: 'icon' }, component(Icon, { name: 'settings', size: 16 }))}
-                        ${component(Button, { variant: 'destructive', size: 'icon' }, component(Icon, { name: 'trash-bin-minimalistic', size: 16 }))}
-                        ${component(Button, { variant: 'default', size: 'icon' }, component(Icon, { name: 'add-circle', size: 16 }))}
+                        ${component(Button, { variant: 'outline', size: 'icon' }, component(Icon, { entry: magnifierIcon, size: 16 }))}
+                        ${component(Button, { variant: 'ghost', size: 'icon' }, component(Icon, { entry: settingsIcon, size: 16 }))}
+                        ${component(Button, { variant: 'destructive', size: 'icon' }, component(Icon, { entry: trashBinMinimalisticIcon, size: 16 }))}
+                        ${component(Button, { variant: 'default', size: 'icon' }, component(Icon, { entry: addCircleIcon, size: 16 }))}
                     </div>
                 </section>
 
@@ -208,21 +217,21 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">Icons</h2>
                     <p class="text-sm text-muted-foreground">Solar icons across six styles (line, bold, duotone, broken, outline, line-duotone).</p>
                     <div class="flex flex-wrap items-center gap-4 text-foreground">
-                        ${component(Icon, { name: 'arrow-right', size: 24, label: 'Arrow right' })}
-                        ${component(Icon, { name: 'alt-arrow-down', size: 24, label: 'Chevron down' })}
-                        ${component(Icon, { name: 'check-circle', size: 24, label: 'Check' })}
-                        ${component(Icon, { name: 'close-circle', size: 24, label: 'Close' })}
-                        ${component(Icon, { name: 'magnifier', size: 24, label: 'Search' })}
-                        ${component(Icon, { name: 'settings', size: 24, label: 'Settings' })}
+                        ${component(Icon, { entry: arrowRightIcon, size: 24, label: 'Arrow right' })}
+                        ${component(Icon, { entry: altArrowDownIcon, size: 24, label: 'Chevron down' })}
+                        ${component(Icon, { entry: checkCircleIcon, size: 24, label: 'Check' })}
+                        ${component(Icon, { entry: closeCircleIcon, size: 24, label: 'Close' })}
+                        ${component(Icon, { entry: magnifierIcon, size: 24, label: 'Search' })}
+                        ${component(Icon, { entry: settingsIcon, size: 24, label: 'Settings' })}
                     </div>
                     <div class="flex flex-wrap items-center gap-4 text-foreground">
                         <span class="text-xs text-muted-foreground">check-circle styles:</span>
-                        ${component(Icon, { name: 'check-circle', style: 'line', size: 32 })}
-                        ${component(Icon, { name: 'check-circle', style: 'bold', size: 32 })}
-                        ${component(Icon, { name: 'check-circle', style: 'duotone', size: 32 })}
-                        ${component(Icon, { name: 'check-circle', style: 'broken', size: 32 })}
-                        ${component(Icon, { name: 'check-circle', style: 'outline', size: 32 })}
-                        ${component(Icon, { name: 'check-circle', style: 'line-duotone', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'line', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'bold', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'duotone', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'broken', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'outline', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, style: 'line-duotone', size: 32 })}
                     </div>
                 </section>
 

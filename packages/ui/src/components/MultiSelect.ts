@@ -9,6 +9,7 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { CloseCircleIcon as closeCircleIcon } from "@cossackframework/solar-icons/close-circle";
 
 export interface MultiSelectProps {
     /** Predefined options to pick from. */
@@ -86,7 +87,7 @@ export class MultiSelect extends Cossack {
                                 aria-label=${`Remove ${tag}`}
                                 @click=${(e: MouseEvent) => { e.stopPropagation(); this.removeTag(i); }}
                             >
-                                <span class="inline-flex items-center justify-center [&_svg]:size-2.5">${component(Icon, { name: "close-circle", size: 16 })}</span>
+                                <span class="inline-flex items-center justify-center [&_svg]:size-2.5">${component(Icon, { entry: closeCircleIcon, size: 16 })}</span>
                             </button>
                         </span>
                     `)}

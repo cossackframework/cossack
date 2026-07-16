@@ -1,6 +1,8 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowLeftIcon as altArrowLeftIcon } from "@cossackframework/solar-icons/alt-arrow-left";
+import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
 
 export interface CarouselProps {
     [key: string]: any;
@@ -35,13 +37,13 @@ export class Carousel extends Cossack {
                     class="cs-carousel__prev absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-background/80 backdrop-blur border flex items-center justify-center cursor-pointer hover:bg-background shadow-xs"
                     aria-label="Previous slide"
                     @click=${() => this.scrollPrev()}
-                ><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span></button>
+                ><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowLeftIcon, size: 16 })}</span></button>
                 <button
                     type="button"
                     class="cs-carousel__next absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-background/80 backdrop-blur border flex items-center justify-center cursor-pointer hover:bg-background shadow-xs"
                     aria-label="Next slide"
                     @click=${() => this.scrollNext()}
-                ><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span></button>
+                ><span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span></button>
             </div>
         `;
     }

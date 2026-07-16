@@ -91,7 +91,7 @@ export { Attachment, type AttachmentProps } from "./components/Attachment";
 export { PasswordInput, type PasswordInputProps } from "./components/PasswordInput";
 export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 
-// Icons
+// Icons — components live here; data/types come from @cossackframework/solar-icons.
 export { Icon, type IconProps } from "./icons/Icon";
-export { iconRegistry, iconNames } from "./icons/registry";
-export { normalizeStyle, type IconStyle } from "./icons/types";
+export { NamedIcon, type NamedIconProps } from "./icons/NamedIcon";
+export { normalizeStyle, type IconStyle, type IconEntry, type IconRegistry } from "@cossackframework/solar-icons/types";

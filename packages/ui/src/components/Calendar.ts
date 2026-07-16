@@ -1,6 +1,8 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowLeftIcon as altArrowLeftIcon } from "@cossackframework/solar-icons/alt-arrow-left";
+import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
 
 export interface CalendarProps {
     /** Selected date (ISO yyyy-mm-dd). */
@@ -93,7 +95,7 @@ export class Calendar extends Cossack {
                         aria-label="Previous month"
                         @click=${() => this.prevMonth()}
                     >
-                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowLeftIcon, size: 16 })}</span>
                     </button>
                     <span class="cs-calendar__title text-sm font-medium text-foreground">
                         ${MONTHS[this.viewMonth]} ${this.viewYear}
@@ -104,7 +106,7 @@ export class Calendar extends Cossack {
                         aria-label="Next month"
                         @click=${() => this.nextMonth()}
                     >
-                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span>
                     </button>
                 </div>
                 <div class="cs-calendar__weekdays grid grid-cols-7 gap-1 mb-1">

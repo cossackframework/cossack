@@ -10,6 +10,34 @@ import { pathToFileURL } from 'node:url';
 import { findProjectRoot, exists } from '../fs-utils.js';
 
 /**
+ * Dynamically import `@cossackframework/database` resolved from the user's
+ * project, not the CLI package itself.
+ *
+ * The `cossack` CLI does not declare `@cossackframework/database` as a
+ * dependency (it's optional — only migration/seeder commands use it), so a
+ * bare `import('@cossackframework/database')` resolves relative to this
+ * module and fails. We resolve the package via the project root instead, which
+ * is where the user's app has it installed (after `cossack add database`).
+ */
+async function loadDatabaseApi(root) {
+  const pkgDir = path.resolve(root, 'node_modules', '@cossackframework', 'database');
+  if (!(await exists(pkgDir))) {
+    throw new Error(
+      '@cossackframework/database is not installed in this project. Run `cossack add database` ' +
+        '(or `pnpm install`) first.',
+    );
+  }
+  // The package ships as TypeScript ("main": "src/index.ts"), so resolve the
+  // entry file explicitly — a bare directory import looks for index.js, which
+  // doesn't exist. tsx (active via the bin respawn) compiles the .ts on import.
+  const entry = path.resolve(pkgDir, 'src', 'index.ts');
+  if (!(await exists(entry))) {
+    throw new Error(`Could not find @cossackframework/database entry at ${entry}.`);
+  }
+  return import(pathToFileURL(entry).href);
+}
+
+/**
  * Loads the user's `src/db/config.ts` and returns its `getCliClient()` result.
  * Throws a friendly error if the file or export is missing.
  */
@@ -46,7 +74,7 @@ export async function runMigrationCommand(direction, ctx) {
       runMigrations,
       formatMigrationResult,
       defaultMigrationsFolder,
-    } = await import('@cossackframework/database');
+    } = await loadDatabaseApi(root);
     const result = await runMigrations(direction, { client, folder: defaultMigrationsFolder() });
     console.log(formatMigrationResult(result));
     return result.error ? 1 : 0;
@@ -57,9 +85,7 @@ export async function runMigrationCommand(direction, ctx) {
 export async function runMigrationStatus(ctx) {
   const root = await findProjectRoot(ctx.cwd);
   return withClient(root, async (client) => {
-    const { getMigrationStatus, defaultMigrationsFolder } = await import(
-      '@cossackframework/database'
-    );
+    const { getMigrationStatus, defaultMigrationsFolder } = await loadDatabaseApi(root);
     const rows = await getMigrationStatus({ client, folder: defaultMigrationsFolder() });
     if (!rows.length) {
       console.log('No migrations found in src/migrations/.');
@@ -77,7 +103,7 @@ export async function runMigrationStatus(ctx) {
 export async function runSeederCommand(ctx, only) {
   const root = await findProjectRoot(ctx.cwd);
   return withClient(root, async (client) => {
-    const { runSeeders, defaultSeedersFolder } = await import('@cossackframework/database');
+    const { runSeeders, defaultSeedersFolder } = await loadDatabaseApi(root);
     const ran = await runSeeders({ client, folder: defaultSeedersFolder(), only });
     if (!ran.length) {
       console.log('No seeders found in src/seeders/.');

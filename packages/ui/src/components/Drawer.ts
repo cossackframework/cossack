@@ -9,6 +9,7 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { CloseCircleIcon as closeCircleIcon } from "@cossackframework/solar-icons/close-circle";
 
 export interface DrawerProps {
     /** Controlled open state. */
@@ -135,7 +136,7 @@ export class Drawer extends Cossack {
                                       aria-label="Close"
                                       @click=${() => this.close()}
                                   >
-                                      ${component(Icon, { name: "close-circle", size: 16 })}
+                                      ${component(Icon, { entry: closeCircleIcon, size: 16 })}
                                   </button>
                               </div>`
                             : null}

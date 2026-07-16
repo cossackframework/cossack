@@ -1,6 +1,7 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState, createRef, type RefObject } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
 export interface MenubarProps {
     menus?: Array<{
@@ -47,7 +48,7 @@ export class Menubar extends Cossack {
                                     "text-muted-foreground hover:bg-accent hover:text-foreground bg-transparent": this.openMenu !== i,
                                 })}
                                 @click=${() => { this.openMenu = this.openMenu === i ? -1 : i; this.togglePanel(i, popoverId); }}
-                            >${menu.label}${chevron ? html`<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${this.openMenu === i ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { name: "alt-arrow-down", size: 16 })}</span>` : null}</button>
+                            >${menu.label}${chevron ? html`<span class="relative top-[1px] ml-1 w-3 h-3 inline-flex items-center justify-center transition-transform duration-300 ${this.openMenu === i ? "rotate-180" : ""} [&_svg]:size-3">${component(Icon, { entry: altArrowDownIcon, size: 16 })}</span>` : null}</button>
                             <div
                                 id=${popoverId}
                                 popover="auto"
