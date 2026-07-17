@@ -33,13 +33,12 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 /* Optional: import a named palette AFTER theme.css to retint. */
 @import "@cossackframework/ui/theme/themes/blue.css";
 
-/* Tailwind v4 excludes node_modules by default. These @source lines tell it to
-   scan the package's component/icon source so every utility class referenced
+/* Tailwind v4 excludes node_modules by default. This @source line tells it to
+   scan the package's component source so every utility class referenced
    inside the components (bg-card, bg-popover, bg-accent, ...) is generated.
-   Without them, only classes that also appear in your own source will be
+   Without it, only classes that also appear in your own source will be
    emitted and most variants will render unstyled. */
 @source "../node_modules/@cossackframework/ui/src/components";
-@source "../node_modules/@cossackframework/ui/src/icons";
 ```
 
 `cossack add ui` wires all of the above automatically.
@@ -110,7 +109,8 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ### Icons
 | Component | Description |
 |---|---|
-| **Icon** | Solar icon set (6 styles: line, bold, duotone, broken, outline, line-duotone) via `<Icon name="arrow-right" />` |
+| **Icon** | Renders a Solar icon from a direct `entry` (tree-shakeable). Pass an icon entry imported from `@cossackframework/solar-icons/<name>`. 6 styles: line, bold, duotone, broken, outline, line-duotone. |
+| **NamedIcon** | Dynamic name-based icon lookup (runtime name from data). Carries the full registry dependency. |
 
 ## Usage
 
@@ -120,11 +120,12 @@ not JSX:
 ```ts
 import { html, component } from "@cossackframework/renderer";
 import { Button, Input, Icon, toast } from "@cossackframework/ui";
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
 html`
   ${component(Button, { variant: "default", "@click": this.save }, "Save")}
   ${component(Input, { type: "email", placeholder: "you@ex.com" })}
-  ${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}
+  ${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}
 `;
 ```
 
@@ -203,29 +204,68 @@ The token set extends shadcn's with `success` / `success-foreground` and
 
 ## Icons
 
-Solar icons (https://solar-icons.vercel.app/) across **six** styles: `line`,
-`bold`, `duotone`, `broken`, `outline`, `line-duotone`. Only a small curated
-set ships in the registry today; the `Icon` component falls back to `line`
-when a requested style is missing for an icon.
+Icons are split across two packages:
+
+- **`@cossackframework/solar-icons`** — the icon **dataset**. A zero-dependency,
+  framework-agnostic package shipping 1,246 Solar icons across six styles as
+  tree-shakeable data entries. Install it to get the icon data:
+
+  ```sh
+  pnpm add @cossackframework/solar-icons
+  ```
+
+- **`@cossackframework/ui`** — provides the **`Icon`** and **`NamedIcon`**
+  components that render the data. These components live in `ui` (not in the
+  data package) so they share your app's single renderer/core module instance.
+
+### Usage — fixed icon (tree-shakeable)
+
+Import the icon entry directly from the data package and pass it to `Icon`:
 
 ```ts
 import { Icon } from "@cossackframework/ui";
+import { component } from "@cossackframework/renderer";
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
-html`${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}`;
+html`${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}`;
 ```
 
-The registry is generated from SVG source. The build script reads Solar's
-`${CATEGORY}/${STYLE}/${NAME}.svg` layout (styles: `Linear`, `Bold`,
-`BoldDuotone`, `Broken`, `Outline`, `LineDuotone`) and emits one module per
-icon plus an aggregated `registry.ts`:
+For maximum tree-shaking, import a single style instead of the full entry:
 
-```sh
-pnpm run build:icons
-# or point at a custom source:
-SRC_DIR=/path/to/solar-icons/packages/core/svgs pnpm run build:icons
+```ts
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right/bold";
+// ArrowRightIcon is now a string (the bold SVG markup only), wrapped by Icon.
 ```
 
-A standalone Solar icons package is planned for the future.
+Each icon export is suffixed with `Icon` (e.g. `ArrowRightIcon`, `SettingsIcon`)
+to avoid collisions with common identifiers. Icon names are kebab-case in the
+import path (`arrow-right`, `eye-closed`, `alt-arrow-down`).
+
+### Usage — dynamic icon name
+
+When the icon name comes from runtime data (e.g. a database field), use
+`NamedIcon`. It carries the full registry dependency (all icons), so prefer
+`Icon` + a direct entry import for fixed icons:
+
+```ts
+import { NamedIcon } from "@cossackframework/ui";
+
+html`${component(NamedIcon, { name: "arrow-right", style: "duotone", size: 20 })}`;
+```
+
+### Styles
+
+Solar ships six styles. The `style` prop selects one; missing styles fall back
+to `line`:
+
+| key           | Solar source folder |
+|---------------|---------------------|
+| `line`        | Linear              |
+| `bold`        | Bold                |
+| `duotone`     | BoldDuotone         |
+| `broken`      | Broken              |
+| `outline`     | Outline             |
+| `line-duotone`| LineDuotone         |
 
 ## Ejecting components
 

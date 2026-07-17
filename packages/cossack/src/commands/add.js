@@ -30,7 +30,6 @@ import {
   createCacheTableMigration,
   seederTemplate,
   UI_COMPONENTS,
-  uiBarrelTemplate,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
 import { resolveFileTarget } from '../names.js';
@@ -56,12 +55,12 @@ export async function addCommand(args, ctx) {
 const SUPPORTED_OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 
 /**
- * Resolve the auth route group from --path, or default to (auth).
+ * Resolve the auth route group from --path, or default to "auth".
  * Returns the directory name and the public route paths.
  */
 async function resolveAuthPaths(ctx) {
   const flag = flagString(ctx.flags.path) || flagString(ctx.flags.p);
-  const group = flag && flag.length ? flag : '(auth)';
+  const group = flag && flag.length ? flag : 'auth';
   // Public route paths: strip route-group segments for the URL (route groups are
   // filesystem-only). e.g. "(auth)" -> "/login", "admin/(auth)" -> "/admin/login".
   const urlPrefix = group
@@ -340,22 +339,21 @@ async function ensureDatabase(root, { dialect, ctx }) {
 }
 
 /**
- * Ensure the @cossackframework/ui package is available: add the dependency,
- * write the src/components/ui barrel, and wire the theme imports into
- * src/style.css. Idempotent — safe to call from addAuth (which now generates
- * pages that import from the UI package) even when `cossack add ui` was already
- * run. Mirrors the dependency-ensure pattern of ensureDatabase().
+ * Ensure the @cossackframework/ui package is available: add the dependency
+ * and wire the theme imports into src/style.css. Idempotent — safe to call
+ * from addAuth (which generates pages that import directly from the UI
+ * package) even when `cossack add ui` was already run. Mirrors the
+ * dependency-ensure pattern of ensureDatabase().
+ *
+ * Note: no `src/components/ui` barrel is generated — pages import components
+ * directly from `@cossackframework/ui`, which keeps the client bundle
+ * tree-shakeable (only used components load).
  */
 async function ensureUi(root, ctx) {
   // 1. dependency
   await addDependency(root, '@cossackframework/ui', resolveUiVersion(), ctx);
 
-  // 2. barrel re-export (same file addUi writes)
-  const barrelPath = path.resolve(root, 'src/components/ui/index.ts');
-  const barrelResult = await writeFile(barrelPath, uiBarrelTemplate(), ctx);
-  reportFile('src/components/ui/index.ts', barrelResult, ctx);
-
-  // 3. theme imports into src/style.css (idempotent via the marker check inside)
+  // 2. theme imports into src/style.css (idempotent via the marker check inside)
   await wireUiTheme(root, ctx);
 }
 
@@ -472,14 +470,22 @@ async function registerMiddleware(root, { importLine, entry, marker, label, ctx 
   } else {
     updated = importLine + updated;
   }
-  // Insert the entry right after the array's opening bracket.
-  if (!/\[/.test(updated)) {
+  // Append the entry at the END of the array (before the closing bracket),
+  // not the start. Order matters: `dbMiddleware` (added by `cossack add
+  // database`) must run first because it establishes the AsyncLocalStorage
+  // scope that `db()` reads from — and `auth.middleware` calls `db()` during
+  // session validation. Appending preserves "first-registered runs first".
+  // Match the closing `];` that ends the middlewares array.
+  const closeMatch = updated.match(/\n(\s*)\];/);
+  if (!closeMatch) {
     console.log(
-      `  note     src/bootstrap/middlewares.ts has no array — add ${label} manually.`,
+      `  note     src/bootstrap/middlewares.ts array close not found — add ${label} manually.`,
     );
     return;
   }
-  updated = updated.replace('[', `[\n${entry}`);
+  const indent = closeMatch[1];
+  const insertAt = updated.indexOf(closeMatch[0]);
+  updated = updated.slice(0, insertAt) + `${entry}\n${indent}` + updated.slice(insertAt);
 
   if (ctx.dryRun) {
     console.log(`  would register  ${label} in src/bootstrap/middlewares.ts`);
@@ -635,9 +641,10 @@ async function wireUiTheme(root, ctx, palette) {
 }
 
 /**
- * `cossack add ui` — adds the @cossackframework/ui dependency, a
- * src/components/ui barrel re-exporting from the package, and wires the two
- * CSS @import lines into src/style.css. Consumers then import from the package.
+ * `cossack add ui` — adds the @cossackframework/ui dependency and wires the
+ * two CSS @import lines into src/style.css. Consumers import components
+ * directly from the package (`import { Button } from '@cossackframework/ui'`),
+ * which keeps the client bundle tree-shakeable.
  *
  * `cossack add ui <component>` — ejects a single customizable copy of the
  * named component into src/components/ui/<Component>.ts. The user owns it.
@@ -647,12 +654,6 @@ async function addUi(args, ctx) {
   const [component] = Array.isArray(args) ? args : [];
 
   await addDependency(root, '@cossackframework/ui', resolveUiVersion(), ctx);
-
-  // Barrel re-export so `import { Button } from './components/ui'` works
-  // whether or not individual components are ejected.
-  const barrelPath = path.resolve(root, 'src/components/ui/index.ts');
-  const barrelResult = await writeFile(barrelPath, uiBarrelTemplate(), ctx);
-  reportFile('src/components/ui/index.ts', barrelResult, ctx);
 
   if (component) {
     const key = String(component).toLowerCase();
@@ -708,7 +709,7 @@ Features:
             @Server methods), an auth guard middleware, and registers everything in
             src/bootstrap/middlewares.ts. Also ensures database support (D1/Turso) and
             wires the send_email binding for password-reset emails.
-            Routes default to (auth)/{login,register,forgot-password,reset-password}.
+            Routes default to auth/{login,register,forgot-password,reset-password}.
   database  Adds @cossackframework/database (Kysely + D1/Turso dialects), a default
             User model, starter migrations (users, sessions, roles, permissions,
             oauth_accounts, cache_items), a seeder, src/db/config.ts, and registers

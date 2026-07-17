@@ -4,6 +4,16 @@ test.describe('Components Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/components-demo');
     await page.waitForSelector('h1:has-text("Components Demo")');
+    // Wait for client hydration to complete before interacting. The h1 above
+    // is present from SSR immediately, so it doesn't guarantee @Client handlers
+    // are wired — clicking before hydration completes silently no-ops. Under
+    // parallel workers the demo page (heavy, many components) hydrates slower,
+    // so gate on the framework's ready signal.
+    await page.waitForFunction(
+      () => (window as any).__cossackReady === true,
+      undefined,
+      { timeout: 15000 },
+    );
   });
 
   test('renders all button variants', async ({ page }) => {

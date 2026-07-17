@@ -310,7 +310,7 @@ describe("Avatar", () => {
     it("renders an img when src is provided", () => {
         const out = renderComp(Avatar, { src: "/me.png", alt: "Tan" });
         expect(out).toContain("<img");
-        expect(out).toContain("src=/me.png");
+        expect(out).toContain('src="/me.png"');
         expect(out).toContain("cs-avatar");
     });
 
@@ -430,7 +430,7 @@ describe("RadioGroup", () => {
         expect(out).toContain("role=");
         expect(out).toContain("radiogroup");
         expect(out).toContain('type="radio"');
-        expect(out).toContain("name=plan");
+        expect(out).toContain('name="plan"');
         expect(out).toContain("Free");
         expect(out).toContain("Pro");
     });
@@ -604,7 +604,7 @@ describe("Breadcrumb", () => {
         expect(out).toContain("cs-breadcrumb");
         expect(out).toContain("Home");
         expect(out).toContain("Settings");
-        expect(out).toContain("href=/");
+        expect(out).toContain('href="/"');
         expect(out).toContain("/");
     });
 });

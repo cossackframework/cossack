@@ -50,7 +50,13 @@ export async function runSeeders(options: RunSeedersOptions): Promise<string[]> 
     const ran: string[] = [];
     for (const file of filtered) {
         const fullPath = path.resolve(folder, file);
-        const mod = await import(`${pathToFileURL(fullPath).href}?t=${Date.now()}`);
+        // `/* @vite-ignore */` suppresses Vite's "cannot analyze dynamic import"
+        // warning: the specifiers are built at runtime from a directory listing
+        // (user seeder files), so static analysis is impossible by design. This
+        // is intentional and matches Vite's documented escape hatch.
+        const mod = await import(
+            /* @vite-ignore */ `${pathToFileURL(fullPath).href}?t=${Date.now()}`
+        );
         const seeder: Seeder = mod.default ?? mod;
         if (typeof seeder?.run !== 'function') {
             throw new Error(`Seeder "${file}" has no \`run(db)\` method (or default export).`);

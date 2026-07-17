@@ -8,6 +8,9 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowLeftIcon as altArrowLeftIcon } from "@cossackframework/solar-icons/alt-arrow-left";
+import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
+import { CalendarIcon as calendarIcon } from "@cossackframework/solar-icons/calendar";
 
 export interface DatePickerProps {
     /** Selected date (ISO yyyy-mm-dd). */
@@ -76,7 +79,7 @@ export class DatePicker extends Cossack {
                     @click=${() => this.position()}
                 >
                     <span>${current ? formatLabel(current) : placeholder}</span>
-                    <span class="inline-flex items-center justify-center text-muted-foreground [&_svg]:size-4">${component(Icon, { name: "calendar", size: 16 })}</span>
+                    <span class="inline-flex items-center justify-center text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: calendarIcon, size: 16 })}</span>
                 </button>
                 <div
                     id=${this.popoverId}
@@ -110,11 +113,11 @@ export class DatePicker extends Cossack {
             <div class="inline-block p-1 select-none">
                 <div class="flex items-center justify-between mb-2 px-1">
                     <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.prevMonth()}>
-                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { name: "alt-arrow-left", size: 16 })}</span>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { entry: altArrowLeftIcon, size: 16 })}</span>
                     </button>
                     <span class="text-sm font-medium text-foreground">${MONTHS[this.viewMonth]} ${this.viewYear}</span>
                     <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.nextMonth()}>
-                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span>
                     </button>
                 </div>
                 <div class="grid grid-cols-7 gap-0.5 mb-1">

@@ -1,6 +1,6 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
-import { Card, CardBody, Icon } from '@cossackframework/ui';
+import { Card, CardBody, NamedIcon } from '@cossackframework/ui';
 
 export interface StatItem {
     label: string;
@@ -64,7 +64,7 @@ export class DashboardStat extends Cossack {
                                             ${stat.change ? html`<p class=${`text-xs font-medium mt-1 ${trendColor}`}>${stat.change}</p>` : null}
                                         </div>
                                         ${stat.icon ? html`<div class="w-10 h-10 rounded-lg bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
-                                            ${component(Icon, { name: stat.icon, size: 20 })}
+                                            ${component(NamedIcon, { name: stat.icon, size: 20 })}
                                         </div>` : null}
                                     </div>`))}
                             )}

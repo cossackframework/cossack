@@ -1,6 +1,7 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, OnWindow } from '@cossackframework/core';
-import { Modal, Icon, Kbd } from '@cossackframework/ui';
+import { Modal, Icon, NamedIcon, Kbd } from '@cossackframework/ui';
+import { MagnifierIcon as magnifier } from '@cossackframework/solar-icons/magnifier';
 
 export interface CommandItem {
     /** Unique id. */
@@ -62,7 +63,7 @@ export class CommandPalette extends Cossack {
             }, html`
                 <div class="cs-command-palette flex flex-col gap-2">
                     <div class="flex items-center gap-2 border-b pb-2">
-                        ${component(Icon, { name: 'magnifier', size: 18 })}
+                        ${component(Icon, { entry: magnifier, size: 18 })}
                         <input
                             type="text"
                             class="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground"
@@ -89,7 +90,7 @@ export class CommandPalette extends Cossack {
                                                 @mouseenter=${() => { this.activeIndex = idx; }}
                                             >
                                                 ${item.icon
-                                                    ? html`<span class="text-muted-foreground [&_svg]:size-4">${component(Icon, { name: item.icon, size: 16 })}</span>`
+                                                    ? html`<span class="text-muted-foreground [&_svg]:size-4">${component(NamedIcon, { name: item.icon, size: 16 })}</span>`
                                                     : html`<span class="size-4 shrink-0"></span>`}
                                                 <span class="flex-1 text-left">${item.label}</span>
                                                 ${item.shortcut ? component(Kbd, {}, item.shortcut) : null}

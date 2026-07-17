@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  hono: ^4.12.30
+
 importers:
 
   .:
@@ -15,8 +18,8 @@ importers:
   packages/auth:
     dependencies:
       hono:
-        specifier: ^4.12.29
-        version: 4.12.29
+        specifier: ^4.12.30
+        version: 4.12.30
     devDependencies:
       vitest:
         specifier: ^4.1.10
@@ -28,8 +31,8 @@ importers:
         specifier: workspace:*
         version: link:../renderer
       hono:
-        specifier: ^4.12.29
-        version: 4.12.29
+        specifier: ^4.12.30
+        version: 4.12.30
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -94,8 +97,8 @@ importers:
         specifier: ^22.19.0
         version: 22.20.1
       hono:
-        specifier: ^4.12.29
-        version: 4.12.29
+        specifier: ^4.12.30
+        version: 4.12.30
       miniflare:
         specifier: ^4.20260623.0
         version: 4.20260623.0
@@ -120,6 +123,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/solar-icons':
+        specifier: ^0.7.0
+        version: 0.7.0
       '@cossackframework/ui':
         specifier: workspace:*
         version: link:../ui
@@ -127,8 +133,8 @@ importers:
         specifier: ^4.0.3
         version: 4.0.3
       hono:
-        specifier: ^4.12.29
-        version: 4.12.29
+        specifier: ^4.12.30
+        version: 4.12.30
       marked:
         specifier: ^17.0.1
         version: 17.0.1
@@ -170,8 +176,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       hono:
-        specifier: ^4.12.29
-        version: 4.12.29
+        specifier: ^4.12.30
+        version: 4.12.30
       nodemailer:
         specifier: ^6.9.16
         version: 6.10.1
@@ -231,6 +237,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/solar-icons':
+        specifier: ^0.7.0
+        version: 0.7.0
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
@@ -448,6 +457,9 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
+
+  '@cossackframework/solar-icons@0.7.0':
+    resolution: {integrity: sha512-gY/Hpaxgt7e+jNMqN5ZrelebU59WCsKksPm1EsVs8aDMLkwEVK5aKE4mSgOJPVdcjqgcnKgdtM4kuIMLewdoYQ==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -1506,8 +1518,8 @@ packages:
     resolution: {integrity: sha512-RDeQm3dT9n0A5f/TszjUmNCLEuPnMGv3Tv4BmNINebz/h17PA6LMBcxJ5FrcqltNBMh9jA/8ufgDdBYUdBt+eg==}
     engines: {node: '>=20.0.0'}
 
-  hono@4.12.29:
-    resolution: {integrity: sha512-1hNiRjawYrLq/4m3DQQjPGFg0VZkk4RjQJDff/excI6Dm9BiL75qxGrd7/c6YOxPdq6AscP3LiXhQ6fKFC1Waw==}
+  hono@4.12.30:
+    resolution: {integrity: sha512-emn+JoJjrN9YTpRDS5it/UI2SO9BAE37T6I3d963RxcZ81G9A4pr2SZTEiiaiKbzx+NKRg5BZ89fCL7gCJCUog==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@6.0.0:
@@ -2336,6 +2348,8 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260708.1':
     optional: true
 
+  '@cossackframework/solar-icons@0.7.0': {}
+
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
@@ -3149,7 +3163,7 @@ snapshots:
       - utf-8-validate
     optional: true
 
-  hono@4.12.29: {}
+  hono@4.12.30: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:

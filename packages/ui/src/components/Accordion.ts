@@ -8,6 +8,7 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
 export interface AccordionItemProps {
     /** Controlled open state. When passed, the parent owns the state. */
@@ -99,7 +100,7 @@ export class AccordionItem extends Cossack {
                         class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200"
                         style=${`transform: rotate(${open ? 180 : 0}deg);`}
                     >
-                        ${component(Icon, { name: "alt-arrow-down", size: 16 })}
+                        ${component(Icon, { entry: altArrowDownIcon, size: 16 })}
                     </span>
                 </button>
                 <div

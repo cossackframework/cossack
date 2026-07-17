@@ -16,7 +16,7 @@ import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-la
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
 import '../i18n-globals';
 
-const { pages, layouts, loadings, components } = registry;
+const { pages, layouts, loadings } = registry;
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
@@ -25,18 +25,9 @@ for (const filePath in pages) {
     routeToFilePath.set(routePath, filePath);
 }
 
-// Register Components
-for (const path in components) {
-    const module = components[path];
-    // Find the exported class
-    for (const key in module) {
-        const exported = (module as any)[key];
-        if (typeof exported === 'function' && (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)) {
-            // Register by export name (usually file name matches class name in our convention, e.g. Button.ts -> Button)
-            CossackElement.components[key] = exported;
-        }
-    }
-}
+// Components resolve by direct class reference (component(Card, ...) captures
+// the constructor), so no name-registry population is needed. The `components`
+// glob was removed from the vite plugin to allow tree-shaking.
 
 declare global {
   interface Window {
@@ -436,6 +427,9 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   appInstance._frameworkMount();
   appInstance._frameworkNavigateComplete(window.location.pathname);
 
+  // Mark hydration complete so e2e/tests can wait for client interactivity
+  // without racing the bootstrap (SSR elements are present immediately).
+  (window as any).__cossackReady = true;
   document.dispatchEvent(new CustomEvent('cossack:ready', {
     bubbles: true,
     detail: { pathname: window.location.pathname, navigationType: 'initial' }
@@ -526,6 +520,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
         await commit();
       }
 
+      (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
         bubbles: true,
         detail: { pathname: state.pathname, navigationType: 'spa', types: options?.types }

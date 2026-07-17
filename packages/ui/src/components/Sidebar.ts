@@ -8,6 +8,8 @@ import {
     type RefObject,
 } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
+import { HamburgerMenuIcon as hamburgerMenuIcon } from "@cossackframework/solar-icons/hamburger-menu";
 
 export interface SidebarItem {
     label: string;
@@ -127,7 +129,7 @@ export class Sidebar extends Cossack {
                         aria-label=${this.collapsed ? "Expand sidebar" : "Collapse sidebar"}
                         @click=${() => this.toggleCollapse()}
                     >
-                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { name: "hamburger-menu", size: 16 })}</span>
+                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: hamburgerMenuIcon, size: 16 })}</span>
                     </button>
                 </div>
 
@@ -204,7 +206,7 @@ export class Sidebar extends Cossack {
                                 "cs-sidebar__chevron w-3.5 h-3.5 text-muted-foreground transition-transform inline-flex items-center justify-center [&_svg]:size-3.5": true,
                                 "rotate-90": expanded,
                             })}
-                        >${component(Icon, { name: "alt-arrow-right", size: 16 })}</span>
+                        >${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span>
                     </button>
                     ${expanded
                         ? html`<div class="cs-sidebar__group-items ml-4 mt-0.5 space-y-0.5 border-l pl-2">

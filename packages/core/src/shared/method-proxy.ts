@@ -295,7 +295,15 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         });
 
                         if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
+                            // The server returns { error: <message> } for thrown
+                            // @Server errors — surface that message so form
+                            // handlers can display it instead of a generic status.
+                            let msg = `HTTP error! status: ${response.status}`;
+                            try {
+                                const errBody = await response.json() as Record<string, any>;
+                                if (errBody?.error) msg = String(errBody.error);
+                            } catch { /* body wasn't JSON; keep the status message */ }
+                            throw new Error(msg);
                         }
 
                         const data = await response.json() as Record<string, any>;
@@ -349,6 +357,15 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     });
 
                     let resolveYield: ((result: IteratorResult<any>) => void) | null = null;
+                    // Reject fn for the pending `next()` promise. A `stream-error` SSE
+                    // event calls this to surface server-side errors (e.g. a thrown
+                    // ClientVisibleError) into the consumer's `for await...of` loop,
+                    // instead of silently ending the iterator as a successful completion.
+                    let rejectYield: ((reason: any) => void) | null = null;
+                    // A stream error that arrived while next() was NOT awaiting is stashed
+                    // here and thrown by the next next() call, so the consumer's loop still
+                    // sees it regardless of timing.
+                    let pendingStreamError: Error | null = null;
                     let streamId: string | null = null;
                     let pendingValues: any[] = [];
                     let streamDone = false;
@@ -363,6 +380,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (resolveYield) {
                                 resolveYield({ value: data.value, done: false });
                                 resolveYield = null;
+                                rejectYield = null;
                             } else {
                                 pendingValues.push(data.value);
                             }
@@ -379,6 +397,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (resolveYield) {
                                 resolveYield({ value: undefined, done: true });
                                 resolveYield = null;
+                                rejectYield = null;
                             }
                         } catch (e) {
                             console.error('[Cossack] Error parsing SSE stream-done event:', e);
@@ -390,9 +409,22 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             const data = JSON.parse(event.data);
                             if (data.streamId !== streamId) return;
                             streamDone = true;
-                            if (resolveYield) {
-                                resolveYield({ value: undefined, done: true });
+                            // Surface the server-side error to the consumer's
+                            // `for await...of` loop by rejecting the pending
+                            // next() promise (throws inside the loop, the usual
+                            // place to try/catch streaming errors), or stashing
+                            // it for the next next() call if none is awaiting.
+                            const err = new Error(
+                                typeof data.error === 'string' && data.error
+                                    ? data.error
+                                    : 'Stream error',
+                            );
+                            if (rejectYield) {
+                                rejectYield(err);
+                                rejectYield = null;
                                 resolveYield = null;
+                            } else {
+                                pendingStreamError = err;
                             }
                             console.error('[Cossack] Stream error:', data.error);
                         } catch (e) {
@@ -409,10 +441,23 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
                     const iterator: AsyncIterator<any> & { [Symbol.asyncIterator](): AsyncIterator<any> } = {
                         async next() {
+                            // A stream-error that arrived while next() wasn't awaiting
+                            // is stashed; throw it now so the consumer's for-await loop
+                            // sees it instead of completing silently.
+                            if (pendingStreamError) {
+                                const e = pendingStreamError;
+                                pendingStreamError = null;
+                                throw e;
+                            }
                             if (!initComplete) {
                                 const response = await fetchPromise;
                                 if (!response.ok) {
-                                    throw new Error(`HTTP error! status: ${response.status}`);
+                                    let msg = `HTTP error! status: ${response.status}`;
+                                    try {
+                                        const errBody = await response.json() as Record<string, any>;
+                                        if (errBody?.error) msg = String(errBody.error);
+                                    } catch { /* not JSON */ }
+                                    throw new Error(msg);
                                 }
                                 const data = await response.json() as Record<string, any>;
 
@@ -459,9 +504,13 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 return { value: pendingValues.shift(), done: false };
                             }
 
-                            // Wait for next SSE event
-                            return new Promise<IteratorResult<any>>((resolve) => {
+                            // Wait for next SSE event. Capture both resolve and
+                            // reject so a `stream-error` event can reject (throw
+                            // into the consumer's for-await loop) rather than
+                            // resolve-as-done (silent success).
+                            return new Promise<IteratorResult<any>>((resolve, reject) => {
                                 resolveYield = resolve;
+                                rejectYield = reject;
                             });
                         },
 
@@ -591,7 +640,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     });
 
                     if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                        let msg = `HTTP error! status: ${response.status}`;
+                        try {
+                            const errBody = await response.json() as Record<string, any>;
+                            if (errBody?.error) msg = String(errBody.error);
+                        } catch { /* not JSON */ }
+                        throw new Error(msg);
                     }
 
                     const data = await response.json() as Record<string, any>;

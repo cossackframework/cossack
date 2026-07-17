@@ -1,5 +1,5 @@
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids';
 
@@ -108,7 +108,22 @@ export function handleUpload(ctx: RouterContext) {
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
 
-        const actionResult = await targetInstance[action](...args);
+        let actionResult: unknown;
+        try {
+            actionResult = await targetInstance[action](...args);
+        } catch (e: any) {
+            // `ClientVisibleError` (caller's fault, message is user-facing) →
+            // 400 with the message forwarded so form handlers can display it
+            // (e.g. "email already exists"). Anything else is an internal
+            // failure → 500, logged server-side, generic message to the client
+            // so internals / file paths / stack details never leak.
+            if (isClientVisibleError(e)) {
+                return c.json({ error: e.message }, 400);
+            }
+            console.error('[/upload] internal error:', e);
+            const isDev = (import.meta as any).env?.DEV;
+            return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
+        }
 
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });

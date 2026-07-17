@@ -1,6 +1,7 @@
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
+import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
 export interface NativeSelectProps {
     /** Control size. Defaults to "default". */
@@ -61,7 +62,7 @@ export class NativeSelect extends Cossack {
                     ${this.children}
                 </select>
                 <span class="cs-native-select__icon pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground inline-flex">
-                    ${component(Icon, { name: "alt-arrow-down", size: 16 })}
+                    ${component(Icon, { entry: altArrowDownIcon, size: 16 })}
                 </span>
             </div>
         `;

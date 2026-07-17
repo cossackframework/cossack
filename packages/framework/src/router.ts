@@ -5,6 +5,7 @@ import { renderRoot, TemplateHelpers } from './root';
 import { PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
 import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
+import { isClientVisibleError } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -49,6 +50,12 @@ import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
 
+// Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
+// `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
+// This is needed because apps import `createApp` from this `./router`
+// subpath, not the framework's main entry (which also imports i18n-globals).
+import './i18n-globals';
+
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
 // or dynamic `import()` for the manifest — the bundler (rolldown) resolves
@@ -60,6 +67,16 @@ import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
 let _manifest: Record<string, any> | undefined;
 async function getManifest(env?: any): Promise<Record<string, any>> {
   if (_manifest !== undefined) return _manifest;
+  // In dev there is no client manifest — Vite serves source on demand, so
+  // return empty and let renderRoot emit dev paths. (On Cloudflare the ASSETS
+  // fetch 404s and the catch below yields the same empty result, but for the
+  // Node adapter the on-disk manifest lookup would otherwise pick up a stale
+  // built manifest from the framework package itself.) Short-circuit here so
+  // both runtimes behave identically in dev.
+  if (import.meta.env?.DEV) {
+    _manifest = {};
+    return _manifest;
+  }
   let resolved: Record<string, any> = {};
   try {
     let text: string;
@@ -75,7 +92,9 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
       }
       text = await res.text();
     } else {
-      // Node.js: read from dist/client/.vite/manifest.json.
+      // Node.js: read from dist/client/.vite/manifest.json. Resolve relative
+      // to this module via fileURLToPath (NOT dirname(import.meta.url), which
+      // is a file: URL string and yields a bogus "file:/..." path).
       const { readFileSync } = await import('fs');
       const { resolve, dirname } = await import('path');
       const { fileURLToPath } = await import('url');
@@ -140,7 +159,7 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
   return `/${entry.file}`;
 }
 
-const { pages, layouts, components, loadings } = registry;
+const { pages, layouts, loadings } = registry;
 
 /** Maximum byte size for inlining CSS (20 KiB). */
 const CSS_INLINE_THRESHOLD = 25600;
@@ -177,11 +196,14 @@ async function getInlineCss(env: any): Promise<string | undefined> {
       }
       cssText = await res.text();
     } else {
-      // Node.js: read from dist/client
+      // Node.js: read from dist/client. Resolve relative to this module via
+      // fileURLToPath — dirname(import.meta.url) is a "file:" URL string, not
+      // a filesystem path, and produces a bogus "file:/..." prefix.
       const { readFileSync } = await import('fs');
       const { resolve, dirname } = await import('path');
-      // SSR output is in dist/worker, CSS is in dist/client
-      const clientDir = resolve(dirname(import.meta.url), '..', 'client');
+      const { fileURLToPath } = await import('url');
+      const here = dirname(fileURLToPath(import.meta.url));
+      const clientDir = resolve(here, '..', 'client');
       cssText = readFileSync(resolve(clientDir, cssPath.replace(/^\//, '')), 'utf-8');
     }
 
@@ -209,21 +231,10 @@ async function getInlineCss(env: any): Promise<string | undefined> {
  */
 export { filePathToRoutePath };
 
-// Register Components
-for (const path in components) {
-  const module = components[path];
-  // Find the exported class
-  for (const key in module) {
-    const exported = (module as any)[key];
-    if (
-      typeof exported === 'function' &&
-      (exported.prototype instanceof CossackElement || (exported as any)._isCossackElement)
-    ) {
-      // Register by export name
-      CossackElement.components[key] = exported;
-    }
-  }
-}
+// Components resolve by direct class reference (component(Card, ...) captures
+// the constructor), so no name-registry population is needed. The `components`
+// glob was removed from the vite plugin to allow tree-shaking — eagerly loading
+// src/components/ would pull in every re-exported component (e.g. a UI barrel).
 
 // Generate secure IDs for components (single source of truth: ./route-ids).
 // The same computation runs in the SSG build via the Vite-plugin-emitted
@@ -642,11 +653,24 @@ export function createApp(options: CreateAppOptions = {}) {
 
     // Call the method. For streaming requests, don't await — the result may
     // be an async iterable that the SSE driver will pull values from.
+    // Wrap in try/catch so thrown errors surface as a JSON body the client can
+    // display instead of a generic HTTP 500. `ClientVisibleError` (the caller's
+    // fault, message is user-facing) → 400 with the message; anything else is an
+    // internal failure → 500, logged server-side, generic message to the client.
     let actionResult: any;
-    if (isStreamRequest) {
-      actionResult = targetInstance[action](...(payload || []));
-    } else {
-      actionResult = await targetInstance[action](...(payload || []));
+    try {
+      if (isStreamRequest) {
+        actionResult = targetInstance[action](...(payload || []));
+      } else {
+        actionResult = await targetInstance[action](...(payload || []));
+      }
+    } catch (e: any) {
+      if (isClientVisibleError(e)) {
+        return c.json({ error: e.message }, 400);
+      }
+      console.error('[/crpc] internal error:', e);
+      const isDev = (import.meta as any).env?.DEV;
+      return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
     }
 
     const location = c.res.headers.get('Location');
