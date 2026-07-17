@@ -211,6 +211,14 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
         ctx.result = merged;
         continue;
       }
+      // Merge failed (no double-quoted class attr found on the current tag).
+      // This can happen if the template uses single-quoted `class='...'` or the
+      // tag has no class attribute at all. The fallback below emits a fresh
+      // `class="..."`, which may duplicate if a single-quoted class exists.
+      // Warn in dev so this doesn't degrade silently.
+      if (typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV) {
+        console.warn('[cossack/renderer] spread class merge failed — falling back to a separate class attribute. If the tag already has a class attribute, check that it uses double quotes.');
+      }
     }
 
     if (val instanceof IfDefinedResult) {

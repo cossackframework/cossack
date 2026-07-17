@@ -677,6 +677,10 @@ async function consumePasswordResetToken(token: string): Promise<string | null> 
   return row.user_id;
 }
 
+// Unlike the other auth helpers (which use the request-scoped db() global),
+// this one still takes c: Context because it accesses c.env.EMAIL (the
+// Cloudflare send_email binding / node-adapter polyfill) and c.env.MAIL_FROM.
+// There is no global env() equivalent for runtime bindings yet.
 export async function requestPasswordReset(c: Context, email: string, resetBaseUrl: string) {
   const token = await createPasswordResetToken(email);
   if (!token) return; // silently no-op for unknown emails
