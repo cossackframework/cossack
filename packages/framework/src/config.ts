@@ -53,6 +53,36 @@ export interface ConfigStore {
     config: Record<string, unknown>;
 }
 
+/**
+ * Evaluate the auto-discovered config factories (`src/config/*.ts` default
+ * exports) against the given env bindings, returning the config tree keyed by
+ * file name. Files without a default-exported factory function are skipped with
+ * a warning — config files are auto-globbed, so a single misplaced constants
+ * file in `src/config/` must not take down every route. Only factory modules
+ * (`({ env }) => ({...})`) belong in `src/config/`; constants/types go in
+ * `src/lib/`.
+ *
+ * Shared by the request-time config middleware (router.ts) and the SSG render
+ * path (ssg-renderer.ts) so both enforce the same rule.
+ */
+export function buildConfig(
+    factories: Record<string, unknown>,
+    envFn: EnvFunction,
+): Record<string, unknown> {
+    const built: Record<string, unknown> = {};
+    for (const [name, factory] of Object.entries(factories)) {
+        if (typeof factory !== 'function') {
+            console.warn(
+                `[Cossack] Config file "src/config/${name}.ts" has no default-exported factory function — skipping. Only factory ` +
+                    `modules (default export \`({ env }) => ({...})\`) belong in src/config/. Move constants/types to src/lib/.`,
+            );
+            continue;
+        }
+        built[name] = (factory as ConfigFactory)({ env: envFn });
+    }
+    return built;
+}
+
 // ---------------------------------------------------------------------------
 // Type-safe inference machinery
 // ---------------------------------------------------------------------------

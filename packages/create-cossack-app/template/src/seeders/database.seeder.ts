@@ -1,5 +1,5 @@
 import type { DbClient } from '@cossackframework/database';
-import { ALL_PERMISSIONS } from '../config/permissions';
+import { ALL_PERMISSIONS } from '../lib/permissions';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword } from '../auth';
 

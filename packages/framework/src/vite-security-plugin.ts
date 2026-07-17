@@ -125,6 +125,19 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (/(^|\/)src\/auth\.m?ts$/.test(cleanId)) {
         return generateAuthClientStub(cleanId);
       }
+
+      // General server-only detection: any other user module that imports from
+      // `@cossackframework/database`, `@cossackframework/auth`, or a `node:`
+      // builtin is server-only (the import transitively pulls
+      // `node:async_hooks`). This catches service/data-access modules (e.g.
+      // `src/services/users.ts`, `src/db/config.ts`) that aren't `src/auth.ts`
+      // but still leak server code into the client bundle. Page components import
+      // from these, but the real calls live inside stripped `@Server` bodies, so
+      // stubbing named exports to throwing placeholders keeps the graph clean.
+      // `src/config/*` is already handled above and `src/auth.ts` above that.
+      if (isServerOnlyModule(cleanId)) {
+        return generateServerOnlyStub(cleanId, moduleLabelFromId(cleanId));
+      }
     },
 
     transform(code, id) {
@@ -185,23 +198,60 @@ function parseProgram(code: string): any | null {
 }
 
 /**
- * Generate the client-side stub module for `src/auth.ts`.
+ * Generate a client-side stub module for a server-only user module.
  *
- * `src/auth.ts` is server-only (it imports `db()` → `node:async_hooks` and
- * `@cossackframework/auth`). Page components import named exports from it, but
- * every real call lives inside a stripped `@Server` body — so on the client each
- * named export is replaced with a throwing placeholder that keeps the module
- * graph clean and surfaces accidental client use loudly in dev.
+ * A server-only module is one that imports from `@cossackframework/database`
+ * (which pulls `node:async_hooks`), `@cossackframework/auth`, or a `node:`
+ * builtin — none of which belong in the browser. Other modules (e.g. page
+ * components) import named exports from it, but every real call lives inside a
+ * stripped `@Server` body — so on the client each named export is replaced with
+ * a throwing placeholder that keeps the module graph clean and surfaces
+ * accidental client use loudly in dev.
  *
- * The set of exports is parsed from the REAL `src/auth.ts` on disk (not
- * hard-coded) so it tracks the generator exactly, including conditional OAuth
- * exports (`oauth`, `handleOAuthUser`). The `auth` export, which is a
- * `createAuth(...)` kit object, is stubbed as `{ middleware: stub }` — the only
- * property ever referenced from preserved code. `export type` declarations are
- * skipped (types are erased and never become runtime bindings).
+ * The set of exports is parsed from the real file on disk (not hard-coded) so
+ * it tracks the source exactly. `export type` declarations are skipped (types
+ * are erased and never become runtime bindings).
+ *
+ * `moduleName` is the short label used in the generated error message and the
+ * header comment (e.g. `'auth'`, `'services/users'`).
  *
  * Falls back to a throwing Proxy stub if the file can't be read or parsed (so
  * a build never hard-fails, but accidental client use is still loud).
+ */
+export function generateServerOnlyStub(id: string, moduleName: string): string {
+  const namedExports = readNamedExports(id);
+  const header =
+    `// [cossack-security] ${moduleName} is server-only — stubbed on the client.\n` +
+    `const stub = (name) => () => { throw new Error('${moduleName}.' + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
+
+  if (namedExports.length === 0) {
+    // Couldn't read/parse the real file. Emit a throwing Proxy so any named
+    // import resolves to a loud error rather than `undefined` (which fails far
+    // from the cause). A build never hard-fails, but accidental client use is
+    // still surfaced in dev.
+    return (
+      header +
+      `// [cossack-security] Could not parse ${moduleName} exports — using a throwing Proxy fallback.\n` +
+      `export default new Proxy({}, { get: (_, name) => stub(String(name)) });\n`
+    );
+  }
+
+  const lines: string[] = [];
+  for (const name of namedExports) {
+    lines.push(`export const ${name} = stub('${name}');\n`);
+  }
+  return header + lines.join('');
+}
+
+/**
+ * Generate the client-side stub module for `src/auth.ts`.
+ *
+ * Specialized wrapper over {@link generateServerOnlyStub} that preserves the
+ * `auth` export's shape: client code (the login page) references
+ * `auth.createSession` inside a stripped `@Server` body, but bootstrap code may
+ * reference `auth.middleware` — so stub `auth` as `{ middleware: stub,
+ * createSession: stub }` rather than a bare function. Other exports are stubbed
+ * normally.
  */
 function generateAuthClientStub(id: string): string {
   const namedExports = readNamedExports(id);
@@ -249,6 +299,98 @@ function generateAuthClientStub(id: string): string {
     }
   }
   return header + lines.join('');
+}
+
+/**
+ * Server-only import specifiers. A user module that imports from any of these
+ * cannot run in the browser (they pull Node built-ins like `node:async_hooks`)
+ * and must be stubbed on the client.
+ *
+ * NOTE: `@cossackframework/auth` is intentionally NOT in this set. The auth
+ * package is pure TypeScript (only `hono` type imports, no Node built-ins) and
+ * its `createAuthorizer` (the `guard` kit) must run on the client so that
+ * `@Page({ middlewares: [guard.requireRole('admin')] })` can evaluate at module
+ * load. A file that uses the server-only `createAuth` (sessions) typically also
+ * imports `db` from `@cossackframework/database` (e.g. `src/auth.ts`) and is
+ * caught by the `db` rule — or by the `src/auth.ts` filename special-case.
+ */
+const SERVER_ONLY_IMPORT_SOURCES = new Set([
+  '@cossackframework/database',
+]);
+
+/**
+ * Read the import source specifiers from a TypeScript module on disk via the
+ * Oxc AST. Covers static imports (`import x from 'y'`, `import { x } from 'y'`)
+ * and dynamic `import('y')` calls. Returns the set of source strings (e.g.
+ * `'@cossackframework/database'`, `'node:fs'`).
+ */
+export function readImportSources(id: string): string[] {
+  const cleanId = id.split('?')[0].split('#')[0];
+  let source: string;
+  try {
+    source = readFileSync(cleanId, 'utf-8');
+  } catch {
+    return [];
+  }
+  const program = parseProgram(source);
+  if (!program) return [];
+
+  const sources = new Set<string>();
+  for (const stmt of program.body ?? []) {
+    if (stmt.type === 'ImportDeclaration' && stmt.source?.value) {
+      // `import type { X } from 'y'` erases at compile time and pulls no
+      // runtime code — skip it so a type-only import from a server-only package
+      // (e.g. a model file doing `import type { Generated }`) isn't misflagged.
+      if (stmt.importKind === 'type') continue;
+      sources.add(stmt.source.value);
+    } else if (stmt.type === 'ExportNamedDeclaration' && stmt.source?.value) {
+      // re-export `export { x } from 'y'`; skip type-only re-exports similarly.
+      if (stmt.exportKind === 'type') continue;
+      sources.add(stmt.source.value);
+    } else if (stmt.type === 'ExportAllDeclaration' && stmt.source?.value) {
+      if (stmt.exportKind === 'type') continue;
+      sources.add(stmt.source.value);
+    }
+  }
+  return [...sources];
+}
+
+/**
+ * Determine whether a user module is server-only by inspecting its imports.
+ *
+ * A module is server-only if it imports from:
+ *   - any `@cossackframework/database` / `@cossackframework/auth` specifier
+ *     (these transitively pull `node:async_hooks` and other server-only code),
+ *     OR
+ *   - any `node:` builtin (these never exist in the browser).
+ *
+ * Subpath imports are matched by their package prefix (e.g.
+ * `@cossackframework/database` matches `@cossackframework/database` exactly;
+ * `node:` matches by prefix). Type-only imports (`import type { X } from 'y'`)
+ * are excluded by the AST walker — they erase at compile time and never pull
+ * runtime code.
+ *
+ * Used by the `load` hook to auto-stub server-only modules on the client, so a
+ * service file (`src/services/users.ts`) that does `import { db } from
+ * '@cossackframework/database'` doesn't leak `node:async_hooks` into the bundle.
+ */
+export function isServerOnlyModule(id: string): boolean {
+  const sources = readImportSources(id);
+  return sources.some((spec) => {
+    if (spec.startsWith('node:')) return true;
+    return SERVER_ONLY_IMPORT_SOURCES.has(spec);
+  });
+}
+
+/**
+ * A short, human-readable module label for stub error messages. Derives the
+ * tail of the path (e.g. `src/services/users.ts` → `services/users`) so errors
+ * read `'services/users.listUsers is server-only ...'`.
+ */
+export function moduleLabelFromId(id: string): string {
+  const cleanId = id.split('?')[0].split('#')[0];
+  const parts = cleanId.replace(/\\/g, '/').split('/src/').pop() || cleanId;
+  return parts.replace(/\.m?ts$/, '');
 }
 
 /**

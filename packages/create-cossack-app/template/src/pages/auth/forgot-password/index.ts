@@ -1,13 +1,18 @@
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
+import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { html, component, bind } from '@cossackframework/renderer';
 import { Field, Input, Button, Alert } from '@cossackframework/ui';
 import { requestPasswordReset } from '../../../auth';
 
 @Page({ transport: 'http' })
 export default class ForgotPasswordPage extends Cossack {
-    @State()
-    @Validate({ rules: { required: true, email: true, message: 'Enter a valid email' }, config: { trigger: 'all', runOn: 'both' } })
-    email = '';
+    @Store()
+    @Validate({
+        rules: storeRules<{ email: string }>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    form: { email: string } = { email: '' };
 
     @State() submitted = false;
 
@@ -15,10 +20,9 @@ export default class ForgotPasswordPage extends Cossack {
     async handleSubmit(event: Event) {
         event.preventDefault();
         const ok = await this.validateAll();
-        if (!ok) { this.requestUpdate(); return; }
-        await this.requestReset(this.email);
+        if (!ok) return;
+        await this.requestReset(this.form.email);
         this.submitted = true;
-        this.requestUpdate();
     }
 
     @Server()
@@ -35,8 +39,8 @@ export default class ForgotPasswordPage extends Cossack {
                 ? component(Alert, { variant: 'success', title: __('Check your email') },
                     __('If an account exists for that email, a reset link has been sent.'))
                 : html`<form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
-                    ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email') },
-                        component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
+                    ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email') },
+                        component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }))}
                     ${component(Button, { type: 'submit', block: true }, __('Send Reset Link'))}
                 </form>`}
             <p class="mt-6 text-center text-sm text-muted-foreground">

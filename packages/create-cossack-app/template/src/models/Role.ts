@@ -2,7 +2,7 @@ import type { Generated } from '@cossackframework/database';
 
 /**
  * The `roles` table row shape. `permissions` is a JSON array of Permission
- * strings (see config/permissions.ts); null means no permissions granted.
+ * strings (see lib/permissions.ts); null means no permissions granted.
  */
 export interface RoleRow {
     id: Generated<string>;

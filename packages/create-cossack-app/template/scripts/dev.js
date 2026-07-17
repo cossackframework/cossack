@@ -61,12 +61,13 @@ function toWebRequest(req) {
 /** Pipe a Web Response out to a Node ServerResponse (binary-safe, backpressured, multi-cookie aware). */
 async function sendWebResponse(res, response) {
   res.statusCode = response.status;
-  // `set-cookie` must be applied with res.append (setHeader overwrites, which
-  // drops every cookie but the last on multi-cookie responses like OAuth).
-  // Prefer Headers.getSetCookie() (Node >= 18.14) — the canonical source that
-  // splits multi-value Set-Cookie headers correctly — and fall back to walking
-  // the entries() for older runtimes. Doing one OR the other avoids applying
-  // cookies twice.
+  // `set-cookie` must be applied with res.appendHeader (setHeader overwrites,
+  // which drops every cookie but the last on multi-cookie responses like
+  // OAuth). Node's http.ServerResponse has appendHeader (>= 18.14), not the
+  // `append` alias some other runtimes expose. Prefer Headers.getSetCookie()
+  // (Node >= 18.14) — the canonical source that splits multi-value Set-Cookie
+  // headers correctly — and fall back to walking the entries() for older
+  // runtimes. Doing one OR the other avoids applying cookies twice.
   if (typeof response.headers.getSetCookie === 'function') {
     const cookieHeaders = response.headers.getSetCookie();
     // Copy non-cookie headers first.
@@ -75,12 +76,12 @@ async function sendWebResponse(res, response) {
       res.setHeader(key, value);
     }
     for (const cookie of cookieHeaders) {
-      res.append('set-cookie', cookie);
+      res.appendHeader('set-cookie', cookie);
     }
   } else {
     for (const [key, value] of response.headers.entries()) {
       if (key.toLowerCase() === 'set-cookie') {
-        res.append('set-cookie', value);
+        res.appendHeader('set-cookie', value);
       } else {
         res.setHeader(key, value);
       }

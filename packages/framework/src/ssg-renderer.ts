@@ -15,7 +15,7 @@ import {
 } from '@cossackframework/core';
 import { App } from './App';
 import { renderRoot, TemplateHelpers } from './root';
-import { runWithConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config';
+import { runWithConfig, buildConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config';
 import type { Context } from 'hono';
 
 /**
@@ -201,17 +201,9 @@ export async function renderSsgPage(
     const v = envBindings?.[key];
     return v !== undefined && v !== null ? String(v) : def ?? '';
   };
-  const builtConfig: Record<string, unknown> = {};
-  if (configFactories) {
-    for (const [name, factory] of Object.entries(configFactories)) {
-      if (typeof factory !== 'function') {
-        throw new Error(
-          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
-        );
-      }
-      builtConfig[name] = (factory as ConfigFactory)({ env: envFn });
-    }
-  }
+  const builtConfig: Record<string, unknown> = configFactories
+    ? buildConfig(configFactories as Record<string, unknown>, envFn)
+    : {};
   const configStore: ConfigStore = { env: envBindings, config: builtConfig };
 
   // Seed the i18n runtime (one-time) so SSG output renders in the default

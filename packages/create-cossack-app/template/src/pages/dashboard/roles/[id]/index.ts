@@ -1,27 +1,27 @@
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Checkbox } from '@cossackframework/ui';
+import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { html, component, bind } from '@cossackframework/renderer';
+import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Checkbox, Form } from '@cossackframework/ui';
 import { guard } from '../../../../services/rbac';
 import { getRole, updateRole, type RoleDetail } from '../../../../services/roles';
-import { PERMISSIONS, type Permission } from '../../../../config/permissions';
+import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
 
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class EditRolePage extends Cossack {
-    @State()
-    @Validate({ rules: { required: true, message: 'Name is required' }, config: { trigger: 'all', runOn: 'both' } })
-    name = '';
+    @Store()
+    @Validate({
+        rules: storeRules<RoleDetail>({
+            name: { required: true, message: 'Name is required' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    role: RoleDetail | null = null;
 
     @State() selected: Permission[] = [];
-    @State() role: RoleDetail | null = null;
     @State() saved = false;
     @State() error = '';
 
-    onMount() {
-        return this.load();
-    }
-
     @Server()
-    async load() {
+    async init() {
         const id = this.c.req.param('id')!;
         const role = await getRole(id);
         if (!role) {
@@ -29,7 +29,6 @@ export default class EditRolePage extends Cossack {
             return;
         }
         this.role = role;
-        this.name = role.name;
         this.selected = role.permissions as Permission[];
     }
 
@@ -38,7 +37,6 @@ export default class EditRolePage extends Cossack {
         this.selected = checked
             ? [...this.selected, perm]
             : this.selected.filter((p) => p !== perm);
-        this.requestUpdate();
     }
 
     @Client()
@@ -47,22 +45,21 @@ export default class EditRolePage extends Cossack {
         this.error = '';
         this.saved = false;
         const ok = await this.validateAll();
-        if (!ok) { this.requestUpdate(); return; }
+        if (!ok) return;
+
         try {
-            await this.save(this.name, this.selected);
+            await this.save(this.role, this.selected);
             this.saved = true;
-            await this.load();
-            this.requestUpdate();
         } catch (e: any) {
             this.error = e?.message || __('Could not save role');
-            this.requestUpdate();
         }
     }
 
     @Server()
-    async save(name: string, permissions: Permission[]) {
+    async save(role: RoleDetail | null, permissions: Permission[]) {
+        if (!role) throw new Error(__('Role not found'));
         const id = this.c.req.param('id')!;
-        await updateRole(id, { name, permissions });
+        await updateRole(id, { name: role.name, permissions });
     }
 
     render() {
@@ -79,27 +76,32 @@ export default class EditRolePage extends Cossack {
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
                     ${component(CardBody, {}, html`
-                        <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-6">
+                        ${component(Form, {
+                            submit: (e: Event) => this.handleSubmit(e),
+                        }, html`
+                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+                            ${this.saved ? component(Alert, { variant: 'success' }, __('Saved.')) : null}
+                            <div class="flex flex-col space-y-6">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name') },
-                                component(Input, { id: 'name', type: 'text', '.value': this.name, '@input': (e: any) => this.setProperty('name', e.target.value) }))}
+                                component(Input, { id: 'name', type: 'text', '.value': bind(this.role, 'name') }))}
 
                             <div>
                                 <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>
                                 <div class="space-y-2">
                                     ${PERMISSIONS.map((perm) => html`
-                                        <label class="flex items-center gap-3 cursor-pointer">
+                                        <label class="flex items-start gap-3 cursor-pointer">
                                             ${component(Checkbox, {
                                                 checked: this.selected.includes(perm),
                                                 '@change': (e: any) => this.togglePermission(perm, e.target.checked),
                                             })}
-                                            <span class="text-sm text-foreground font-mono">${perm}</span>
+                                            <span>
+                                                <span class="block text-sm text-foreground font-mono">${perm}</span>
+                                            </span>
                                         </label>
                                     `)}
                                 </div>
                             </div>
 
-                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
-                            ${this.saved ? component(Alert, { variant: 'success' }, __('Saved.')) : null}
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Save changes'))}
                                 <a href="/dashboard/roles"
@@ -107,7 +109,8 @@ export default class EditRolePage extends Cossack {
                                     ${__('Back')}
                                 </a>
                             </div>
-                        </form>
+                            </div>
+                        `)}
                     `)}
                 `)}
             </div>

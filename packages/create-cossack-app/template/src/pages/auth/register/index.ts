@@ -1,20 +1,25 @@
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
+import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { html, component, bind } from '@cossackframework/renderer';
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { auth, registerUser } from '../../../auth';
 
+interface RegisterForm {
+    name: string;
+    email: string;
+    password: string;
+}
+
 @Page({ transport: 'http' })
 export default class RegisterPage extends Cossack {
-    @State()
-    name = '';
-
-    @State()
-    @Validate({ rules: { required: true, email: true, message: 'Enter a valid email' }, config: { trigger: 'all', runOn: 'both' } })
-    email = '';
-
-    @State()
-    @Validate({ rules: { required: true, minLength: 8, message: 'Password must be at least 8 characters' }, config: { trigger: 'all', runOn: 'both' } })
-    password = '';
+    @Store()
+    @Validate({
+        rules: storeRules<RegisterForm>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    form: RegisterForm = { name: '', email: '', password: '' };
 
     @State() error = '';
 
@@ -23,12 +28,11 @@ export default class RegisterPage extends Cossack {
         event.preventDefault();
         this.error = '';
         const ok = await this.validateAll();
-        if (!ok) { this.requestUpdate(); return; }
+        if (!ok) return;
         try {
-            await this.register(this.name, this.email, this.password);
+            await this.register(this.form.name, this.form.email, this.form.password);
         } catch (e: any) {
             this.error = e?.message || 'Registration failed';
-            this.requestUpdate();
         }
     }
 
@@ -47,11 +51,11 @@ export default class RegisterPage extends Cossack {
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Register')}</h3>
             <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
                 ${component(Field, { label: __('Name'), for: 'name' },
-                    component(Input, { id: 'name', type: 'text', '.value': this.name, '@input': (e: any) => this.setProperty('name', e.target.value) }))}
-                ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email') },
-                    component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
-                ${component(Field, { label: __('Password'), for: 'password', error: this.getError('password') },
-                    component(PasswordInput, { value: this.password, onChange: (v: string) => this.setProperty('password', v) }))}
+                    component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}
+                ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email') },
+                    component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }))}
+                ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password') },
+                    component(PasswordInput, { value: this.form.password, onChange: (v: string) => this.form.password = v }))}
                 ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                 ${component(Button, { type: 'submit', block: true }, __('Create Account'))}
             </form>

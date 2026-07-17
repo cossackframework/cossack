@@ -1,16 +1,23 @@
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Avatar } from '@cossackframework/ui';
+import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { html, component, bind } from '@cossackframework/renderer';
+import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Avatar, Form } from '@cossackframework/ui';
 import { updateUserProfile } from '../../../auth';
+
+interface ProfileForm {
+    name: string;
+    avatar: string;
+}
 
 @Page({ transport: 'http' })
 export default class ProfilePage extends Cossack {
-    @State()
-    @Validate({ rules: { required: true, message: 'Name is required' }, config: { trigger: 'all', runOn: 'both' } })
-    name = '';
-
-    @State()
-    avatar = '';
+    @Store()
+    @Validate({
+        rules: storeRules<ProfileForm>({
+            name: { required: true, message: 'Name is required' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    form: ProfileForm = { name: '', avatar: '' };
 
     @State() saved = false;
     @State() error = '';
@@ -18,8 +25,8 @@ export default class ProfilePage extends Cossack {
     onMount() {
         const user = this.user;
         if (user) {
-            this.name = user.name;
-            this.avatar = user.avatar ?? '';
+            this.form.name = user.name;
+            this.form.avatar = user.avatar ?? '';
         }
     }
 
@@ -29,14 +36,12 @@ export default class ProfilePage extends Cossack {
         this.error = '';
         this.saved = false;
         const ok = await this.validateAll();
-        if (!ok) { this.requestUpdate(); return; }
+        if (!ok) return;
         try {
-            await this.save(this.name, this.avatar);
+            await this.save(this.form.name, this.form.avatar);
             this.saved = true;
-            this.requestUpdate();
         } catch (e: any) {
             this.error = e?.message || 'Could not save profile';
-            this.requestUpdate();
         }
     }
 
@@ -56,7 +61,7 @@ export default class ProfilePage extends Cossack {
 
                 ${component(Card, {}, component(CardBody, {}, html`
                     <div class="flex items-center gap-4">
-                        ${component(Avatar, { src: this.avatar || user.avatar || undefined, alt: this.name || user.name, size: 56 })}
+                        ${component(Avatar, { src: this.form.avatar || user.avatar || undefined, alt: this.form.name || user.name, size: 56 })}
                         <div>
                             <div class="text-sm text-muted-foreground">${__('Email')}</div>
                             <div class="text-foreground font-medium">${user.email}</div>
@@ -66,15 +71,21 @@ export default class ProfilePage extends Cossack {
 
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Edit profile')}</h2>`)}
-                    <form @submit="${(e: Event) => this.handleSubmit(e)}" class="p-6 pt-0 space-y-4">
-                        ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name') },
-                            component(Input, { id: 'name', type: 'text', '.value': this.name, '@input': (e: any) => this.setProperty('name', e.target.value) }))}
-                        ${component(Field, { label: __('Avatar URL'), for: 'avatar', hint: __('A link to your profile picture.') },
-                            component(Input, { id: 'avatar', type: 'url', placeholder: 'https://...', '.value': this.avatar, '@input': (e: any) => this.setProperty('avatar', e.target.value) }))}
-                        ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
-                        ${this.saved ? component(Alert, { variant: 'success' }, __('Profile updated.')) : null}
-                        ${component(Button, { type: 'submit' }, __('Save changes'))}
-                    </form>
+                    ${component(CardBody, {}, html`
+                        ${component(Form, {
+                            submit: (e: Event) => this.handleSubmit(e),
+                        }, html`
+                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+                            ${this.saved ? component(Alert, { variant: 'success' }, __('Profile updated.')) : null}
+                            <div class="flex flex-col space-y-4">
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name') },
+                                component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}
+                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', hint: __('A link to your profile picture.') },
+                                component(Input, { id: 'avatar', type: 'url', placeholder: 'https://...', '.value': bind(this.form, 'avatar') }))}
+                            ${component(Button, { type: 'submit' }, __('Save changes'))}
+                            </div>
+                        `)}
+                    `)}
                 `)}
             </div>
         `;

@@ -48,7 +48,7 @@ import { createLocaleMiddleware } from './middlewares/locale';
 import { createFlashMiddleware } from './middlewares/flash';
 import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
+import { runWithConfig, buildConfig, type EnvFunction } from './config';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -349,15 +349,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const v = envBindings?.[key];
       return v !== undefined && v !== null ? String(v) : def ?? '';
     };
-    const built: Record<string, unknown> = {};
-    for (const [name, factory] of Object.entries(configFactories as Record<string, unknown>)) {
-      if (typeof factory !== 'function') {
-        throw new Error(
-          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
-        );
-      }
-      built[name] = (factory as ConfigFactory)({ env: envFn });
-    }
+    const built = buildConfig(configFactories as Record<string, unknown>, envFn);
     return runWithConfig({ env: envBindings, config: built }, () => next());
   });
 

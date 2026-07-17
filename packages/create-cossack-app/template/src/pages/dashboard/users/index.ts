@@ -9,12 +9,8 @@ export default class UsersPage extends Cossack {
     @State() users: UserSummary[] = [];
     @State() error = '';
 
-    onMount() {
-        return this.load();
-    }
-
     @Server()
-    async load() {
+    async init() {
         this.users = await listUsers();
     }
 
@@ -26,7 +22,7 @@ export default class UsersPage extends Cossack {
         }
         try {
             await deleteUser(id);
-            await this.load();
+            this.users = await listUsers();
         } catch (e: any) {
             this.error = e?.message || __('Could not delete user');
         }

@@ -1,6 +1,6 @@
 // tests/config.test.ts
-import { describe, it, expect } from 'vitest';
-import { config, env, runWithConfig, type ConfigStore } from '../src/config';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { config, env, runWithConfig, buildConfig, type ConfigStore } from '../src/config';
 
 // Note: config() now reads directly from AsyncLocalStorage (no isServer flag,
 // no setConfigStoreGetter injection). Tests use runWithConfig() to scope a
@@ -149,5 +149,47 @@ describe('config() type inference', () => {
             void _url;
             void _locale;
         });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// buildConfig()
+// ---------------------------------------------------------------------------
+describe('buildConfig()', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('evaluates each factory with the env function', () => {
+        const envFn = (key: string, def: string = '') => (key === 'APP_NAME' ? 'Storm' : def);
+        const built = buildConfig(
+            {
+                app: ({ env }) => ({ name: env('APP_NAME', 'Fallback') }),
+                db: ({ env }) => ({ host: env('DB_HOST', 'localhost') }),
+            },
+            envFn as any,
+        );
+        expect(built).toEqual({ app: { name: 'Storm' }, db: { host: 'localhost' } });
+    });
+
+    it('skips non-function defaults (e.g. a constants file) instead of throwing', () => {
+        // Regression: a file in src/config/ that exports only constants (no
+        // default factory) must not crash the request. buildConfig skips it.
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const envFn = (key: string, def: string = '') => def;
+        const built = buildConfig(
+            {
+                permissions: undefined, // simulates a constants-only module (no default export)
+                app: ({ env }) => ({ name: env('APP_NAME', 'My App') }),
+            },
+            envFn as any,
+        );
+        expect(built).toEqual({ app: { name: 'My App' } });
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toMatch(/src\/config\/permissions\.ts/);
+    });
+
+    it('returns an empty object for no factories', () => {
+        expect(buildConfig({}, (() => '') as any)).toEqual({});
     });
 });

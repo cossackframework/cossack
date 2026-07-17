@@ -16,13 +16,8 @@ export default class SessionsPage extends Cossack {
     @State() sessions: SessionInfo[] = [];
     @State() error = '';
 
-    onMount() {
-        // Loads on SSR + whenever an action mutates state and re-renders.
-        return this.load();
-    }
-
     @Server()
-    async load() {
+    async init() {
         const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
         this.sessions = await listUserSessions(this.user!.id, currentId);
     }
@@ -31,7 +26,8 @@ export default class SessionsPage extends Cossack {
     async revoke(id: string) {
         try {
             await revokeSession(id);
-            await this.load();
+            const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
+            this.sessions = await listUserSessions(this.user!.id, currentId);
         } catch (e: any) {
             this.error = e?.message || 'Could not revoke session';
         }
@@ -42,7 +38,7 @@ export default class SessionsPage extends Cossack {
         try {
             const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
             await revokeAllUserSessions(this.user!.id, currentId);
-            await this.load();
+            this.sessions = await listUserSessions(this.user!.id, currentId);
         } catch (e: any) {
             this.error = e?.message || 'Could not revoke sessions';
         }

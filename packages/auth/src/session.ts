@@ -48,12 +48,31 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
             return await next();
         }
 
-        const userId = await provider.validateSessionId(sessionId, c);
+        // Degrade to guest on any provider error rather than surfacing a 500.
+        // The provider's validateSessionId/resolveUserById typically query the
+        // database (e.g. a `sessions` table); if the DB is unreachable or the
+        // schema is not yet migrated, the request must still render. A stale or
+        // corrupt session cookie should never take down every route — the user
+        // is simply treated as logged out, and the cookie will be ignored until
+        // it expires or is overwritten on the next successful login.
+        let userId: string | null;
+        try {
+            userId = await provider.validateSessionId(sessionId, c);
+        } catch (err) {
+            console.warn('[Cossack Auth] validateSessionId threw — treating as guest:', err);
+            return await next();
+        }
         if (!userId) {
             return await next();
         }
 
-        const user = await provider.resolveUserById(userId, c);
+        let user: User | null;
+        try {
+            user = await provider.resolveUserById(userId, c);
+        } catch (err) {
+            console.warn('[Cossack Auth] resolveUserById threw — treating as guest:', err);
+            return await next();
+        }
         if (user) {
             c.set('user', user);
         }

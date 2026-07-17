@@ -2,12 +2,12 @@
 //
 // Role-management data access for the /dashboard/roles admin pages. Plain
 // functions over the global request-scoped db() — no Context, no state.
-// Permissions are validated against the PERMISSIONS constant (config/permissions.ts).
+// Permissions are validated against the PERMISSIONS constant (lib/permissions.ts).
 
 import { db } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
-import { PERMISSIONS, type Permission } from '../config/permissions';
+import { PERMISSIONS, type Permission } from '../lib/permissions';
 
 interface RoleRow {
     id: string;

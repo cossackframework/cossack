@@ -1,21 +1,26 @@
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
+import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { html, component, bind } from '@cossackframework/renderer';
+import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Alert, Form } from '@cossackframework/ui';
 import { guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
 
+interface NewUserForm {
+    name: string;
+    email: string;
+    password: string;
+}
+
 @Page({ transport: 'http', middlewares: [guard.requireRole('admin')] })
 export default class NewUserPage extends Cossack {
-    @State()
-    name = '';
-
-    @State()
-    @Validate({ rules: { required: true, email: true, message: 'Enter a valid email' }, config: { trigger: 'all', runOn: 'both' } })
-    email = '';
-
-    @State()
-    @Validate({ rules: { required: true, minLength: 8, message: 'Password must be at least 8 characters' }, config: { trigger: 'all', runOn: 'both' } })
-    password = '';
+    @Store()
+    @Validate({
+        rules: storeRules<NewUserForm>({
+            email: { required: true, email: true, message: 'Enter a valid email' },
+            password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
+        }),
+        config: { trigger: 'all', runOn: 'both' }
+    })
+    form: NewUserForm = { name: '', email: '', password: '' };
 
     @State() error = '';
 
@@ -24,12 +29,11 @@ export default class NewUserPage extends Cossack {
         event.preventDefault();
         this.error = '';
         const ok = await this.validateAll();
-        if (!ok) { this.requestUpdate(); return; }
+        if (!ok) return;
         try {
-            await this.create(this.name, this.email, this.password);
+            await this.create(this.form.name, this.form.email, this.form.password);
         } catch (e: any) {
             this.error = e?.message || __('Could not create user');
-            this.requestUpdate();
         }
     }
 
@@ -50,14 +54,17 @@ export default class NewUserPage extends Cossack {
                 ${component(Card, {}, html`
                     ${component(CardHeader, {}, html`<h2 class="text-base font-semibold text-foreground">${__('Details')}</h2>`)}
                     ${component(CardBody, {}, html`
-                        <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
-                            ${component(Field, { label: __('Name'), for: 'name' },
-                                component(Input, { id: 'name', type: 'text', '.value': this.name, '@input': (e: any) => this.setProperty('name', e.target.value) }))}
-                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email') },
-                                component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('email') ? 'error' : 'default', '.value': this.email, '@input': (e: any) => this.setProperty('email', e.target.value) }))}
-                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('password') },
-                                component(PasswordInput, { value: this.password, onChange: (v: string) => this.setProperty('password', v) }))}
+                        ${component(Form, {
+                            submit: (e: Event) => this.handleSubmit(e),
+                        }, html`
                             ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
+                            <div class="flex flex-col space-y-4">
+                            ${component(Field, { label: __('Name'), for: 'name' },
+                                component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}
+                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email') },
+                                component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }))}
+                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password') },
+                                component(PasswordInput, { value: this.form.password, onChange: (v: string) => this.form.password = v }))}
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Create user'))}
                                 <a href="/dashboard/users"
@@ -65,7 +72,8 @@ export default class NewUserPage extends Cossack {
                                     ${__('Cancel')}
                                 </a>
                             </div>
-                        </form>
+                            </div>
+                        `)}
                     `)}
                 `)}
             </div>

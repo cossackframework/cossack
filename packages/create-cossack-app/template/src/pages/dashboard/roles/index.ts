@@ -9,12 +9,8 @@ export default class RolesPage extends Cossack {
     @State() roles: RoleDetail[] = [];
     @State() error = '';
 
-    onMount() {
-        return this.load();
-    }
-
     @Server()
-    async load() {
+    async init() {
         this.roles = await listRoles();
     }
 
@@ -26,7 +22,7 @@ export default class RolesPage extends Cossack {
         }
         try {
             await deleteRole(id);
-            await this.load();
+            this.roles = await listRoles();
         } catch (e: any) {
             this.error = e?.message || __('Could not delete role');
         }
