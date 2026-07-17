@@ -15,9 +15,10 @@ import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
 import '../i18n-globals';
-// Side-effect: registers `config`, `env`, `binding` as globals (no-ops/defaults
-// on the client, where there is no request scope).
-import '../config-globals';
+// NOTE: `config`/`env`/`binding` globals are intentionally NOT registered on
+// the client. They read the request-scoped AsyncLocalStorage (node:async_hooks),
+// which doesn't exist in the browser, and no client code calls them. They are
+// installed server-side only (see src/index.ts and src/router.ts).
 
 const { pages, layouts, loadings } = registry;
 
