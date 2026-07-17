@@ -61,11 +61,16 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     // Skip node_modules
     if (id.includes('node_modules')) return false;
 
-    // Skip framework packages
-    if (id.includes('@cossackframework/core')) return false;
-    if (id.includes('@cossackframework/renderer')) return false;
-    if (id.includes('@cossackframework/auth')) return false;
-    if (id.includes('@cossackframework/database')) return false;
+    // Skip framework packages. Use path-aware matching (surrounding path
+    // separators) so a user path like `/src/@cossackframework/core-utils/x.ts`
+    // doesn't accidentally match.
+    const fwkPrefixes = ['core', 'renderer', 'auth', 'database'];
+    if (fwkPrefixes.some((pkg) => {
+      const needle = `@cossackframework/${pkg}`;
+      // Match either `/@cossackframework/pkg/` or `\@cossackframework\pkg\`
+      // (path-delimited), not a bare substring.
+      return id.includes(`/${needle}/`) || id.includes(`\\${needle}\\`);
+    })) return false;
 
     // Only process TypeScript files in user code
     return id.endsWith('.ts') || id.endsWith('.mts');

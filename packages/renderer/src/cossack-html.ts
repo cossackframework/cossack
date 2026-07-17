@@ -187,11 +187,11 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       // { '.value': live(x) }) so SSR emits the underlying value instead of
       // "[object Object]". Mirrors the direct SSR .value branch. Boolean-ish
       // attrs (.checked/.disabled) render as presence attributes.
-        if (val instanceof BindResult) {
-          val = resolveField(val.component, val.fieldName);
-        } else if (val instanceof LiveResult) {
-          val = val.value;
-        }
+      if (val instanceof BindResult) {
+        val = resolveField(val.component, val.fieldName);
+      } else if (val instanceof LiveResult) {
+        val = val.value;
+      }
       if (BOOLEAN_ATTRS.has(name)) {
         if (val) ctx.result += ` ${name}`;
         continue;
@@ -252,6 +252,9 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   // class attribute is the last attribute before the tag close). Capture the
   // prefix whitespace and suffix so the replacement preserves surrounding chars
   // and doesn't concatenate adjacent attributes (id="x"class="...").
+  // NOTE: only matches double-quoted `class="..."`. Single-quoted `class='...'`
+  // is valid HTML but vanishingly rare in template literals (the SSR emitter
+  // always uses double quotes), so it's not handled here.
   const match = tagSlice.match(/(^|\s)class="([^"]*)"(\s|\/?>|$)/);
   if (!match) return null;
   const prefix = match[1];
@@ -260,7 +263,12 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   const extra = extraClass.trim();
   if (!extra) return result;
   const merged = existing ? `${existing} ${extra}` : extra;
-  const rewrittenTag = tagSlice.replace(match[0], `${prefix}class="${escapeHtml(merged)}"${suffix}`);
+  // Don't escape the merged class value: it's developer-controlled (component
+  // props, not user input), and CSS class names can legitimately contain quotes
+  // (e.g. Tailwind arbitrary values like `before:content-['hello']`). Escaping
+  // would mangle those into `&#039;` and break the CSS selector. The existing
+  // class text from the template is already raw (unescaped) HTML.
+  const rewrittenTag = tagSlice.replace(match[0], `${prefix}class="${merged}"${suffix}`);
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
