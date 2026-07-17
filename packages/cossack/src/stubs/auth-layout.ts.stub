@@ -1,6 +1,6 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Card, CardBody } from '@cossackframework/ui/Card';
+import { Card, CardBody } from '@cossackframework/ui';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {

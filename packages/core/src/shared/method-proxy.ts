@@ -380,6 +380,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (resolveYield) {
                                 resolveYield({ value: data.value, done: false });
                                 resolveYield = null;
+                                rejectYield = null;
                             } else {
                                 pendingValues.push(data.value);
                             }
@@ -396,6 +397,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (resolveYield) {
                                 resolveYield({ value: undefined, done: true });
                                 resolveYield = null;
+                                rejectYield = null;
                             }
                         } catch (e) {
                             console.error('[Cossack] Error parsing SSE stream-done event:', e);

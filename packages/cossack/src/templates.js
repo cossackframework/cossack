@@ -86,11 +86,7 @@ export function loginPageTemplate({ loginPath, registerPath, oauthProviders }) {
     : '';
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Field } from '@cossackframework/ui/Field';
-import { Input } from '@cossackframework/ui/Input';
-import { PasswordInput } from '@cossackframework/ui/PasswordInput';
-import { Button } from '@cossackframework/ui/Button';
-import { Alert } from '@cossackframework/ui/Alert';
+import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { auth, loginUser } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -153,11 +149,7 @@ ${oauthButtons}      <form @submit="\${(e: Event) => this.handleSubmit(e)}" clas
 export function registerPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Field } from '@cossackframework/ui/Field';
-import { Input } from '@cossackframework/ui/Input';
-import { PasswordInput } from '@cossackframework/ui/PasswordInput';
-import { Button } from '@cossackframework/ui/Button';
-import { Alert } from '@cossackframework/ui/Alert';
+import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { auth, registerUser } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -224,10 +216,7 @@ export default class RegisterPage extends Cossack {
 export function forgotPasswordPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Field } from '@cossackframework/ui/Field';
-import { Input } from '@cossackframework/ui/Input';
-import { Button } from '@cossackframework/ui/Button';
-import { Alert } from '@cossackframework/ui/Alert';
+import { Field, Input, Button, Alert } from '@cossackframework/ui';
 import { requestPasswordReset } from '../../../auth';
 
 @Page({ transport: 'http' })
@@ -278,10 +267,7 @@ export default class ForgotPasswordPage extends Cossack {
 export function resetPasswordPageTemplate({ loginPath }) {
   return `import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Field } from '@cossackframework/ui/Field';
-import { PasswordInput } from '@cossackframework/ui/PasswordInput';
-import { Button } from '@cossackframework/ui/Button';
-import { Alert } from '@cossackframework/ui/Alert';
+import { Field, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { resetPassword } from '../../../auth';
 
 @Page({ transport: 'http' })
