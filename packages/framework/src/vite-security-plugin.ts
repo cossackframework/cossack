@@ -95,10 +95,15 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (!isClientEnvironment) return;
       if (id.includes('node_modules')) return;
 
+      // Vite module ids frequently include query strings (e.g. `src/auth.ts?import`
+      // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
+      // the regex anchors ($>) and readFileSync both see the real path.
+      const cleanId = id.split('?')[0].split('#')[0];
+
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
       // dependencies or other project subdirectories.
-      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(id)) {
+      if (/(^|\/)src\/config\/[^/]+\.m?ts$/.test(cleanId)) {
         return `export default {};\n`;
       }
 
@@ -112,8 +117,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // The export list is derived dynamically from the real `src/auth.ts` (via
       // the Oxc AST) so it tracks the generator exactly — including conditional
       // OAuth exports (`oauth`, `handleOAuthUser`) — and never drifts.
-      if (/(^|\/)src\/auth\.m?ts$/.test(id)) {
-        return generateAuthClientStub(id);
+      if (/(^|\/)src\/auth\.m?ts$/.test(cleanId)) {
+        return generateAuthClientStub(cleanId);
       }
     },
 
@@ -200,15 +205,29 @@ function generateAuthClientStub(id: string): string {
     `const stub = (name) => () => { throw new Error('auth.' + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
 
   if (namedExports.length === 0) {
-    // Couldn't read/parse the real file. Emit a throwing Proxy as the default
-    // export so named imports (`import { loginUser } from '../../../auth'`)
-    // resolve to a function that throws with actionable guidance, rather than
-    // silently being `undefined` (which fails far from the cause in dev).
+    // Couldn't read/parse the real file. Fall back to a conservative set of
+    // expected exports so named imports (`import { loginUser } from '../../../auth'`)
+    // resolve to throwing stubs (loud in dev) rather than being `undefined`
+    // (which fails far from the cause). The Proxy default catches anything else.
+    const fallbackExports = [
+      'auth', 'hashPassword', 'verifyPassword',
+      'loginUser', 'registerUser',
+      'requestPasswordReset', 'resetPassword',
+      'oauth', 'handleOAuthUser',
+    ];
+    const lines: string[] = [];
+    for (const name of fallbackExports) {
+      if (name === 'auth') {
+        lines.push(`export const auth = { middleware: stub('middleware') };\n`);
+      } else {
+        lines.push(`export const ${name} = stub('${name}');\n`);
+      }
+    }
     return (
       header +
-      `// [cossack-security] Could not parse src/auth.ts exports — using a throwing fallback.\n` +
-      `const fallback = new Proxy({}, { get: (_, name) => stub(String(name)) });\n` +
-      `export default fallback;\n`
+      `// [cossack-security] Could not parse src/auth.ts exports — using a conservative fallback.\n` +
+      lines.join('') +
+      `export default new Proxy({}, { get: (_, name) => stub(String(name)) });\n`
     );
   }
 
@@ -236,9 +255,11 @@ function generateAuthClientStub(id: string): string {
  * interface`) are excluded because they produce no runtime binding.
  */
 function readNamedExports(id: string): string[] {
+  // Strip Vite query/hash suffixes (?import, ?v=…) so readFileSync sees the real path.
+  const cleanId = id.split('?')[0].split('#')[0];
   let source: string;
   try {
-    source = readFileSync(id, 'utf-8');
+    source = readFileSync(cleanId, 'utf-8');
   } catch {
     return [];
   }

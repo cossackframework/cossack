@@ -40,8 +40,14 @@ export class NamedIcon extends Cossack {
         const entry: IconEntry | undefined = iconRegistry[name];
         if (!entry) {
             if (typeof console !== "undefined") {
+                // Log a short preview instead of all 1,246+ names (noisy + costly).
+                const previewCount = 20;
+                const preview = iconNames.slice(0, previewCount).join(", ");
+                const suffix = iconNames.length > previewCount
+                    ? `, … (+${iconNames.length - previewCount} more)`
+                    : "";
                 console.warn(
-                    `[cossack/ui] Unknown icon "${name}". Available: ${iconNames.join(", ")}`,
+                    `[cossack/ui] Unknown icon "${name}". Available: ${preview}${suffix}`,
                 );
             }
             return null;

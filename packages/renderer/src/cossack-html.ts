@@ -246,16 +246,21 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
 const mergeClassIntoResult = (result: string, extraClass: string): string | null => {
   const tagStart = result.lastIndexOf('<');
   const tagSlice = tagStart >= 0 ? result.slice(tagStart) : result;
-  // Anchor on start-of-slice or whitespace, NOT \b: a word boundary would also
-  // match `data-class="..."` / `:class="..."` (the hyphen is a boundary), so we
-  // only accept a `class` attribute preceded by tag start or an attribute space.
-  const match = tagSlice.match(/(?:^|\s)class="([^"]*)"(\s|$)/);
+  // Anchor on start-of-slice or whitespace (NOT \b: a word boundary would also
+  // match `data-class="..."` / `:class="..."` since the hyphen is a boundary).
+  // Allow `>`/`/>` as the suffix so `<div class="x">` merges correctly (the
+  // class attribute is the last attribute before the tag close). Capture the
+  // prefix whitespace and suffix so the replacement preserves surrounding chars
+  // and doesn't concatenate adjacent attributes (id="x"class="...").
+  const match = tagSlice.match(/(^|\s)class="([^"]*)"(\s|\/?>|$)/);
   if (!match) return null;
-  const existing = match[1];
+  const prefix = match[1];
+  const existing = match[2];
+  const suffix = match[3];
   const extra = extraClass.trim();
   if (!extra) return result;
   const merged = existing ? `${existing} ${extra}` : extra;
-  const rewrittenTag = tagSlice.replace(match[0], `class="${escapeHtml(merged)}"${match[2]}`);
+  const rewrittenTag = tagSlice.replace(match[0], `${prefix}class="${escapeHtml(merged)}"${suffix}`);
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
@@ -407,7 +412,8 @@ class SSRScanner {
               this.result += strVal;
               replaced = false; // leave the closing quote in the next string
             } else {
-              this.result += `"${escapeHtml(strVal)}"`;
+              // strVal is already HTML-escaped by valueToString — don't double-escape.
+              this.result += `"${strVal}"`;
             }
           }
 
