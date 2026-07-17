@@ -30,6 +30,14 @@ export interface SessionRow {
     id: string;
     user_id: string | null;
     data: string | null;
+    /** JSON bag for auth-session metadata (user-agent, ip, type discriminator, ...). */
+    meta: string | null;
+    /** Geo (Cloudflare request.cf country/city) captured at login; null off-CF. */
+    location: string | null;
+    /** User-Agent header captured at login. */
+    user_agent: string | null;
+    /** Client IP (cf-connecting-ip) captured at login. */
+    ip_address: string | null;
     expires_at: string;
 }
 

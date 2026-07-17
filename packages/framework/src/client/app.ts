@@ -15,6 +15,9 @@ import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
 import '../i18n-globals';
+// Side-effect: registers `config`, `env`, `binding` as globals (no-ops/defaults
+// on the client, where there is no request scope).
+import '../config-globals';
 
 const { pages, layouts, loadings } = registry;
 

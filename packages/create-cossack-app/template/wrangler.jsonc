@@ -6,6 +6,14 @@
   ],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
+  // Cloudflare Email Routing. Used by binding('EMAIL').send(...) for password
+  // reset (and any transactional email). Verify the `from` domain in the
+  // dashboard; until then requestPasswordReset is a graceful no-op.
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
   // Cloudflare D1 binding. Replace <database_id> with the output of
   // `npx wrangler d1 create <name>`, then run `cossack migration up`.
   "d1_databases": [

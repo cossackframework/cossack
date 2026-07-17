@@ -33,16 +33,24 @@ interface ExecutionContext {
 	waitUntil(promise: Promise<unknown>): void;
 	passThroughOnException(): void;
 }
+/** Cloudflare Email Routing binding (wrangler.jsonc `send_email`). */
+declare abstract class SendEmail {
+	send(message: { to: string; from: string; subject: string; html?: string; text?: string }): Promise<void>;
+}
 
 interface CloudflareBindings {
 	/** Cloudflare Workers Static Assets binding (wrangler.jsonc `assets`). */
 	ASSETS: Fetcher;
 	/** Cloudflare D1 database binding (wrangler.jsonc `d1_databases`). Used by db() / getDb(c). */
 	DB: D1Database;
+	/** Cloudflare Email Routing binding (wrangler.jsonc `send_email`). Used by binding('EMAIL').send(...) in requestPasswordReset. */
+	EMAIL: SendEmail;
 	/** Site base URL (wrangler.jsonc `vars.APP_URL`). Read via config('app.url'). Used for sitemap/canonical/OG generation. */
 	APP_URL: string;
 	/** Default locale for `__()`. Override with `cossack_locale` cookie or `Accept-Language`. See `cossack lang publish`. */
 	APP_LOCALE: string;
 	/** Signing secret for flash-data cookies (min 16 chars). Read via config('app.key'). */
 	APP_SECRET: string;
+	/** From address for transactional email. Read via env('MAIL_FROM') in requestPasswordReset. */
+	MAIL_FROM: string;
 }

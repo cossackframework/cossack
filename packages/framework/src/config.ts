@@ -201,3 +201,29 @@ export function env(key: string, defaultValue?: string): string {
     const value = store.env?.[key];
     return value === undefined || value === null ? (defaultValue ?? '') : String(value);
 }
+
+/**
+ * Reads a RAW binding from the per-request environment (`c.env`) without
+ * string coercion — for binding *objects* like `D1Database`, Cloudflare
+ * `send_email`, R2 buckets, KV namespaces, or Durable Object namespaces.
+ *
+ * Returns `undefined` when the binding is unset or no request scope is active
+ * (e.g. on the client or outside a request). Unlike {@link env}, this does
+ * NOT stringify — pass the expected type as the generic so the call site
+ * stays type-safe.
+ *
+ * @example
+ * ```ts
+ * import { binding } from '@cossackframework/framework/config';
+ *
+ * const d1 = binding<D1Database>('DB');
+ * const mailer = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
+ * if (mailer) await mailer.send({ to, from, subject, html, text });
+ * ```
+ */
+export function binding<T = unknown>(key: string): T | undefined {
+    const store = requestStore();
+    if (!store) return undefined;
+    const value = store.env?.[key];
+    return value === undefined || value === null ? undefined : (value as T);
+}

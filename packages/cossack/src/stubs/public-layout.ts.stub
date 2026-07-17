@@ -1,0 +1,63 @@
+import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
+import { html, type TemplateResult } from '@cossackframework/renderer';
+
+/**
+ * Public layout: header (logo + nav) and footer shared by all marketing-style
+ * pages. Nav links are auth-aware: a logged-in visitor sees Dashboard; a
+ * logged-out visitor sees Login + Register.
+ *
+ * This is a URL-stripped route group — the parens in `(public)` mean pages
+ * here keep their normal URL (e.g. `(public)/index.ts` serves `/`), they only
+ * share this layout.
+ */
+@Page({ transport: 'http' })
+export default class PublicLayout extends Cossack {
+    public head(context: HeadContext): HeadValue {
+        return { title: context.title ? `My App — ${context.title}` : 'My App' };
+    }
+
+    render(): TemplateResult {
+        return html`
+            <div class="min-h-screen flex flex-col bg-background text-foreground">
+                <header class="border-b border-border">
+                    <div class="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between">
+                        <a href="/" class="flex items-center gap-2 font-semibold text-foreground">
+                            <img src="/logo.svg" alt="My App" width="28" height="28" />
+                            <span>My App</span>
+                        </a>
+                        <nav class="flex items-center gap-1 sm:gap-2 text-sm">
+                            <a href="/docs" class="px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                                ${__('Docs')}
+                            </a>
+                            ${this.user
+                                ? html`<a href="/dashboard" class="px-4 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity">
+                                      ${__('Dashboard')}
+                                  </a>`
+                                : html`<a href="/auth/login" class="px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                                      ${__('Login')}
+                                  </a>
+                                  <a href="/auth/register" class="px-4 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity">
+                                      ${__('Register')}
+                                  </a>`}
+                        </nav>
+                    </div>
+                </header>
+
+                <main class="flex-1">
+                    ${this.children}
+                </main>
+
+                <footer class="border-t border-border">
+                    <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+                        <p>&copy; ${new Date().getFullYear()} My App. ${__('All rights reserved.')}</p>
+                        <div class="flex items-center gap-4">
+                            <a href="https://github.com/cossackframework" class="hover:text-foreground transition-colors">GitHub</a>
+                            <a href="https://x.com" class="hover:text-foreground transition-colors">X</a>
+                            <a href="/docs" class="hover:text-foreground transition-colors">${__('Docs')}</a>
+                        </div>
+                    </div>
+                </footer>
+            </div>
+        `;
+    }
+}

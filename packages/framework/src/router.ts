@@ -55,6 +55,11 @@ import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
 // This is needed because apps import `createApp` from this `./router`
 // subpath, not the framework's main entry (which also imports i18n-globals).
 import './i18n-globals';
+// Side-effect: register the config accessors (`config`, `env`, `binding`) on
+// `globalThis` so bare calls in user middleware/auth/pages resolve during SSR.
+// Same reason as i18n-globals above: apps import `createApp` from this
+// `./router` subpath, not the framework's main entry.
+import './config-globals';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static

@@ -25,10 +25,32 @@ import {
   createUsersMigration,
   createSessionsMigration,
   createRolesMigration,
-  createPermissionsMigration,
   createOauthAccountsMigration,
   createCacheTableMigration,
+  createUserRolesMigration,
   seederTemplate,
+  defaultSeederTemplate,
+  configAuthTemplate,
+  permissionsConfigTemplate,
+  uuidHelperTemplate,
+  roleModelTemplate,
+  userRoleModelTemplate,
+  rbacServiceTemplate,
+  usersServiceTemplate,
+  rolesServiceTemplate,
+  publicLayoutTemplate,
+  publicIndexTemplate,
+  dashboardLayoutTemplate,
+  dashboardIndexTemplate,
+  dashboardProfileTemplate,
+  dashboardSessionsTemplate,
+  usersIndexTemplate,
+  usersNewTemplate,
+  usersEditTemplate,
+  rolesIndexTemplate,
+  rolesNewTemplate,
+  rolesEditTemplate,
+  logoSvgTemplate,
   UI_COMPONENTS,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
@@ -147,12 +169,37 @@ async function addAuth(_args, ctx) {
   // 3. scaffold auth module + session model + pages + middleware
   const files = [
     ['src/models/Session.ts', sessionModelTemplate()],
+    ['src/models/Role.ts', roleModelTemplate()],
+    ['src/models/UserRole.ts', userRoleModelTemplate()],
     ['src/auth.ts', authModuleTemplate({ publicPaths, loginPath: paths.loginPath, oauthProviders })],
+    ['src/config/auth.ts', configAuthTemplate({ loginPath: paths.loginPath })],
+    ['src/config/permissions.ts', permissionsConfigTemplate()],
+    ['src/lib/uuid.ts', uuidHelperTemplate()],
+    // RBAC: authorizer + user/role CRUD data access.
+    ['src/services/rbac.ts', rbacServiceTemplate()],
+    ['src/services/users.ts', usersServiceTemplate()],
+    ['src/services/roles.ts', rolesServiceTemplate()],
     [`${paths.pagesDir}/layout.ts`, authLayoutTemplate()],
     [`${paths.pagesDir}/login/index.ts`, loginPageTemplate({ loginPath: paths.loginPath, registerPath: paths.registerPath, oauthProviders })],
     [`${paths.pagesDir}/register/index.ts`, registerPageTemplate({ loginPath: paths.loginPath })],
     [`${paths.pagesDir}/forgot-password/index.ts`, forgotPasswordPageTemplate({ loginPath: paths.loginPath })],
     [`${paths.pagesDir}/reset-password/index.ts`, resetPasswordPageTemplate({ loginPath: paths.loginPath })],
+    // Public landing page + shared chrome (URL-stripped route group).
+    ['src/pages/(public)/layout.ts', publicLayoutTemplate()],
+    ['src/pages/(public)/index.ts', publicIndexTemplate()],
+    // Dashboard (namespaced /dashboard) — layout, landing, profile, sessions.
+    ['src/pages/dashboard/layout.ts', dashboardLayoutTemplate()],
+    ['src/pages/dashboard/index.ts', dashboardIndexTemplate()],
+    ['src/pages/dashboard/profile/index.ts', dashboardProfileTemplate()],
+    ['src/pages/dashboard/sessions/index.ts', dashboardSessionsTemplate()],
+    // Admin-only: user + role management (gated via guard.requireRole('admin')).
+    ['src/pages/dashboard/users/index.ts', usersIndexTemplate()],
+    ['src/pages/dashboard/users/new/index.ts', usersNewTemplate()],
+    ['src/pages/dashboard/users/[id]/index.ts', usersEditTemplate()],
+    ['src/pages/dashboard/roles/index.ts', rolesIndexTemplate()],
+    ['src/pages/dashboard/roles/new/index.ts', rolesNewTemplate()],
+    ['src/pages/dashboard/roles/[id]/index.ts', rolesEditTemplate()],
+    ['public/logo.svg', logoSvgTemplate()],
     ['src/middlewares/auth.ts', authMiddlewareTemplate({ publicPaths, loginPath: paths.loginPath })],
   ];
 
@@ -161,6 +208,30 @@ async function addAuth(_args, ctx) {
     const result = await writeFile(target, content, ctx);
     reportFile(rel, result, ctx);
   }
+
+  // The public landing page now lives at src/pages/(public)/index.ts. If a
+  // pre-existing src/pages/index.ts is still around (from `cossack create` or
+  // an earlier scaffold), it would also serve `/` and conflict. Remove it so
+  // there's a single source for the root route. Best-effort + dryRun-aware.
+  const rootIndex = path.resolve(root, 'src/pages/index.ts');
+  if (await exists(rootIndex)) {
+    if (ctx.dryRun) {
+      console.log('  would remove  src/pages/index.ts (superseded by (public)/index.ts)');
+    } else {
+      await fs.rm(rootIndex, { force: true });
+      console.log('  removed  src/pages/index.ts (superseded by (public)/index.ts)');
+    }
+  }
+
+  // Default seeder (admin role + user). Force-overwrite because `add database`
+  // (often run just above via ensureDatabase) writes a blank seeder; the admin
+  // version is the right default once auth/RBAC is in place.
+  const seederResult = await writeFile(
+    path.resolve(root, 'src/seeders/database.seeder.ts'),
+    defaultSeederTemplate(),
+    { ...ctx, force: true },
+  );
+  reportFile('src/seeders/database.seeder.ts', seederResult, ctx);
 
   // 4. register global middleware (auth session + guard) in
   //    src/bootstrap/middlewares.ts (the registry createApp auto-loads).
@@ -300,13 +371,17 @@ async function ensureDatabase(root, { dialect, ctx }) {
     ['0001_create_users.ts', createUsersMigration()],
     ['0002_create_sessions.ts', createSessionsMigration()],
     ['0003_create_roles.ts', createRolesMigration()],
-    ['0004_create_permissions.ts', createPermissionsMigration()],
+    // 0004 (permissions table) was removed: permissions now live as a JSON
+    // column on roles (see 0003) and the canonical list is config/permissions.ts.
     ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
     ['0006_create_cache_table.ts', createCacheTableMigration()],
+    ['0007_create_user_roles.ts', createUserRolesMigration()],
   ];
 
   const files = [
     ['src/models/User.ts', userModelTemplate()],
+    // `addDatabase` writes a blank seeder. The admin-seeding version is written
+    // by `addAuth` (which brings in the roles/users it depends on).
     ['src/seeders/database.seeder.ts', seederTemplate()],
     ['src/middlewares/db.ts', dbMiddlewareFileTemplate()],
     [

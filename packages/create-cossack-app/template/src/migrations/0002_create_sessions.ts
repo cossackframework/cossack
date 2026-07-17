@@ -10,6 +10,13 @@ export async function up(db: Kysely<any>): Promise<void> {
     // data holds a JSON key/value bag for general-purpose session storage
     // (the session() helper). Nullable until first write.
     .addColumn('data', 'text')
+    // meta holds a JSON bag for auth-session metadata (type discriminator, ...).
+    .addColumn('meta', 'text')
+    // Tracking fields for authenticated sessions (populated at login).
+    // location comes from Cloudflare request.cf (country/city); null off-CF.
+    .addColumn('location', 'text')
+    .addColumn('user_agent', 'text')
+    .addColumn('ip_address', 'text')
     .addColumn('expires_at', 'text', (c) => c.notNull())
     .execute();
 }
