@@ -110,7 +110,11 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | Component | Description |
 |---|---|
 | **Icon** | Renders a Solar icon from a direct `entry` (tree-shakeable). Pass an icon entry imported from `@cossackframework/solar-icons/<name>`. 6 styles: line, bold, duotone, broken, outline, line-duotone. |
-| **NamedIcon** | Dynamic name-based icon lookup (runtime name from data). Carries the full registry dependency. |
+
+> **Only `Icon` is provided.** There is no name-based lookup component —
+> importing icons by name pulls the full ~1,200-icon registry (~9 MB of SVG
+> paths) into the bundle. Always import the specific icon you need and pass its
+> entry to `<Icon>`.
 
 ## Usage
 
@@ -214,9 +218,9 @@ Icons are split across two packages:
   pnpm add @cossackframework/solar-icons
   ```
 
-- **`@cossackframework/ui`** — provides the **`Icon`** and **`NamedIcon`**
-  components that render the data. These components live in `ui` (not in the
-  data package) so they share your app's single renderer/core module instance.
+- **`@cossackframework/ui`** — provides the **`Icon`** component that renders
+  the data. It lives in `ui` (not in the data package) so it shares your app's
+  single renderer/core module instance.
 
 ### Usage — fixed icon (tree-shakeable)
 
@@ -241,17 +245,10 @@ Each icon export is suffixed with `Icon` (e.g. `ArrowRightIcon`, `SettingsIcon`)
 to avoid collisions with common identifiers. Icon names are kebab-case in the
 import path (`arrow-right`, `eye-closed`, `alt-arrow-down`).
 
-### Usage — dynamic icon name
-
-When the icon name comes from runtime data (e.g. a database field), use
-`NamedIcon`. It carries the full registry dependency (all icons), so prefer
-`Icon` + a direct entry import for fixed icons:
-
-```ts
-import { NamedIcon } from "@cossackframework/ui";
-
-html`${component(NamedIcon, { name: "arrow-right", style: "duotone", size: 20 })}`;
-```
+> **No name-based lookup.** If the icon is determined by runtime data, map it
+> to a direct entry yourself (a small `Record<string, IconEntry>` of the icons
+> you ship). Importing the full registry to resolve names by string pulls all
+> 1,246 icons (~9 MB) into the bundle.
 
 ### Styles
 

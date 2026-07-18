@@ -12,6 +12,11 @@ declare module 'virtual:cossack-pages' {
     default: new () => import('@cossackframework/core').Cossack;
   }
 
+  // For lazy loading (client build), layouts are functions that return promises,
+  // exactly like pages. The runtime shape differs per environment: eager module
+  // on SSR (synchronous render), loader function on the client (code-split).
+  type LayoutModuleLoader = () => Promise<LayoutModule>;
+
   interface LoadingModule {
     default: unknown;
   }
@@ -23,7 +28,8 @@ declare module 'virtual:cossack-pages' {
   interface CossackPagesRegistry {
     // Pages can be either the module directly (SSR/eager) or a loader function (client/lazy)
     pages: Record<string, PageModule | PageModuleLoader>;
-    layouts: Record<string, LayoutModule>;
+    // Same eager/lazy split as pages — client awaits layouts[path]() in app.ts.
+    layouts: Record<string, LayoutModule | LayoutModuleLoader>;
     loadings: Record<string, LoadingModule | undefined>;
     components: Record<string, ComponentModule>;
   }

@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { html, component, bind } from '@cossackframework/renderer';
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
+import { html, component, bind } from '@cossackframework/renderer';
 import { auth, loginUser } from '../../../auth';
 
 interface LoginForm {

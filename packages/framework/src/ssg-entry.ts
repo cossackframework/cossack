@@ -78,7 +78,13 @@ const htmlTemplate = await loadHtmlTemplate();
  */
 export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
   const baseUrl = args.baseUrl;
-  const { pages, layouts } = registry;
+  // The registry is imported from the SSR build, where layouts are eagerly
+  // loaded (see vite-plugin.ts: `{ eager: true }` for SSR). The union type
+  // reflects the client's lazy shape; narrow here since SSG is server-only.
+  const { pages, layouts } = registry as {
+    pages: Record<string, any>;
+    layouts: Record<string, any>;
+  };
 
   const ssgRoutes = collectSsgRoutes(pages, layouts);
   console.log(`[cossack/ssg] Found ${ssgRoutes.length} SSG route(s)`);

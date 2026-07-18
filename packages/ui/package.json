@@ -2,7 +2,7 @@
   "name": "@cossackframework/ui",
   "version": "0.1.0",
   "type": "module",
-  "description": "UI component library for the Cossack Framework — token-driven, themeable components and Solar icons",
+  "description": "UI component library for the Cossack Framework \u2014 token-driven, themeable components and Solar icons",
   "license": "MIT",
   "repository": {
     "type": "git",

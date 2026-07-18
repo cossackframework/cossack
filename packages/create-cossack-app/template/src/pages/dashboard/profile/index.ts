@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, Button, Avatar, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Avatar, Form } from '@cossackframework/ui';
 import { updateUserProfile } from '../../../auth';
 
 interface ProfileForm {
@@ -21,12 +21,17 @@ export default class ProfilePage extends Cossack {
 
     @State() saved = false;
     @State() error = '';
+    /** Email shown in the profile card (read-only; seeded server-side). */
+    @State() userEmail = '';
 
-    onMount() {
+    async init() {
+        // Seed the form server-side (serializes via @Store) so it's populated
+        // at SSR — not empty until onMount runs client-side.
         const user = this.user;
         if (user) {
             this.form.name = user.name;
             this.form.avatar = user.avatar ?? '';
+            this.userEmail = user.email;
         }
     }
 
@@ -40,8 +45,10 @@ export default class ProfilePage extends Cossack {
         try {
             await this.save(this.form.name, this.form.avatar);
             this.saved = true;
+            toast.success(__('Profile updated.'));
         } catch (e: any) {
             this.error = e?.message || 'Could not save profile';
+            toast.error(this.error);
         }
     }
 
@@ -51,7 +58,6 @@ export default class ProfilePage extends Cossack {
     }
 
     render() {
-        const user = this.user!;
         return html`
             <div class="space-y-8 max-w-2xl">
                 <div>
@@ -61,10 +67,10 @@ export default class ProfilePage extends Cossack {
 
                 ${component(Card, {}, component(CardBody, {}, html`
                     <div class="flex items-center gap-4">
-                        ${component(Avatar, { src: this.form.avatar || user.avatar || undefined, alt: this.form.name || user.name, size: 56 })}
+                        ${component(Avatar, { src: this.form.avatar || undefined, alt: this.form.name, size: 56 })}
                         <div>
                             <div class="text-sm text-muted-foreground">${__('Email')}</div>
-                            <div class="text-foreground font-medium">${user.email}</div>
+                            <div class="text-foreground font-medium">${this.userEmail}</div>
                         </div>
                     </div>
                 `))}
@@ -75,8 +81,6 @@ export default class ProfilePage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
-                            ${this.saved ? component(Alert, { variant: 'success' }, __('Profile updated.')) : null}
                             <div class="flex flex-col space-y-4">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name') },
                                 component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}

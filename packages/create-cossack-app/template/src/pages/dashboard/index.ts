@@ -1,17 +1,37 @@
-import { Cossack, Page } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
+import { Cossack, Page, State } from '@cossackframework/core';
 import { Card, CardBody, Avatar } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
+
+interface DashboardStat {
+    label: string;
+    value: string;
+}
 
 @Page({ transport: 'http' })
 export default class DashboardPage extends Cossack {
-    render() {
-        const user = this.user!;
-        const stats = [
-            { label: __('Plan'), value: __('Free') },
-            { label: __('Role'), value: __('Member') },
-            { label: __('Status'), value: __('Active') },
-        ];
+    /** Display name for the greeting card (seeded server-side so it serializes). */
+    @State() userName = '';
+    @State() userEmail = '';
+    @State() userAvatar: string | null = null;
+    /** Stats derived from the user's roles — computed in init(), not render(). */
+    @State() stats: DashboardStat[] = [];
 
+    async init() {
+        const user = this.user;
+        if (user) {
+            this.userName = user.name;
+            this.userEmail = user.email;
+            this.userAvatar = user.avatar;
+            const roleNames = user.roles?.map((r) => r.name) ?? [];
+            this.stats = [
+                { label: __('Plan'), value: __('Free') },
+                { label: __('Role'), value: roleNames.length ? roleNames.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join(', ') : __('None') },
+                { label: __('Status'), value: __('Active') },
+            ];
+        }
+    }
+
+    render() {
         return html`
             <div class="space-y-8">
                 <div>
@@ -21,16 +41,16 @@ export default class DashboardPage extends Cossack {
 
                 ${component(Card, {}, component(CardBody, {}, html`
                     <div class="flex items-center gap-4">
-                        ${component(Avatar, { src: user.avatar ?? undefined, alt: user.name, size: 56 })}
+                        ${component(Avatar, { src: this.userAvatar ?? undefined, alt: this.userName, size: 56 })}
                         <div>
-                            <div class="text-lg font-semibold text-foreground">${user.name}</div>
-                            <div class="text-sm text-muted-foreground">${user.email}</div>
+                            <div class="text-lg font-semibold text-foreground">${this.userName}</div>
+                            <div class="text-sm text-muted-foreground">${this.userEmail}</div>
                         </div>
                     </div>
                 `))}
 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    ${stats.map((stat) => html`
+                    ${this.stats.map((stat) => html`
                         ${component(Card, {}, component(CardBody, {}, html`
                             <p class="text-sm text-muted-foreground">${stat.label}</p>
                             <p class="text-2xl font-bold text-foreground mt-1">${stat.value}</p>

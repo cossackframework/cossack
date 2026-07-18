@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
 import { Field, PasswordInput, Button, Alert } from '@cossackframework/ui';
+import { html, component } from '@cossackframework/renderer';
 import { resetPassword } from '../../../auth';
 
 @Page({ transport: 'http' })

@@ -1,12 +1,11 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
 import { Card, CardBody } from '@cossackframework/ui';
-
+import { html, component } from '@cossackframework/renderer';
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {
     render() {
         return html`
-            <div class="flex justify-center items-center min-h-[80vh] bg-muted/40 px-4">
+            <div class="flex justify-center items-center min-h-screen bg-muted/40 px-4">
                 ${component(Card, { class: 'w-full max-w-sm' }, html`
                     ${component(CardBody, { class: 'pt-6' }, html`
                         <a href="/" class="flex items-center justify-center gap-2 mb-6">

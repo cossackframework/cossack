@@ -17,6 +17,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn('location', 'text')
     .addColumn('user_agent', 'text')
     .addColumn('ip_address', 'text')
+    .addColumn('created_at', 'text', (c) => c.notNull().defaultTo(''))
     .addColumn('expires_at', 'text', (c) => c.notNull())
     .execute();
 }

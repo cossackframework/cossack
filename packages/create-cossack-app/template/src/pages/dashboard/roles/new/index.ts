@@ -1,6 +1,6 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Checkbox, Form } from '@cossackframework/ui';
 import { guard } from '../../../../services/rbac';
 import { createRole } from '../../../../services/roles';
 import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
@@ -40,6 +40,7 @@ export default class NewRolePage extends Cossack {
             await this.create(this.form.name, this.form.permissions);
         } catch (e: any) {
             this.error = e?.message || __('Could not create role');
+            toast.error(this.error);
         }
     }
 
@@ -63,7 +64,6 @@ export default class NewRolePage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                             <div class="flex flex-col space-y-6">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name') },
                                 component(Input, { id: 'name', type: 'text', placeholder: 'editor', '.value': bind(this.form, 'name') }))}

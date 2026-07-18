@@ -59,6 +59,50 @@ export function filePathToHttpRoute(filePath: string): string {
   return route || '/';
 }
 
+/**
+ * Specificity rank of a single path segment, used to order route registration.
+ * Lower = more specific (registered first so it wins during matching).
+ *   - literal segment (e.g. `users`):  0
+ *   - param segment    (e.g. `:id`):   1
+ *   - catch-all        (e.g. `:x*`):   2
+ *
+ * Hono's RegExpRouter lets an earlier-registered param route shadow a later
+ * static sibling at the same path position — so `/dashboard/users/:id`
+ * registered before `/dashboard/users/new` captures `new` as `id`. Registering
+ * more-specific (literal) routes first prevents that. Verified by repro:
+ * glob order is lexicographic (`[id]` sorts before `new`), so without this
+ * sort, every `[dir]/new` + `[dir]/[id]` pair is broken.
+ */
+function segmentSpecificity(segment: string): number {
+  if (!segment) return 0;
+  if (segment.endsWith('*')) return 2; // catch-all :slug*
+  if (segment.startsWith(':')) return 1; // param :name
+  return 0; // literal
+}
+
+/**
+ * Compare two HTTP route patterns for registration order. Returns negative
+ * when `a` is more specific and should be registered first.
+ *
+ * Comparison walks segments left to right. At the first diverging segment the
+ * one with the lower specificity rank wins; ties fall back to lexicographic
+ * order (stable, deterministic regardless of glob insertion order). Shorter
+ * paths sort before longer ones when all shared segments are equal, so
+ * `/dashboard/users` precedes `/dashboard/users/:id`.
+ */
+export function compareHttpRoutes(a: string, b: string): number {
+  const sa = a.split('/');
+  const sb = b.split('/');
+  const len = Math.min(sa.length, sb.length);
+  for (let i = 0; i < len; i++) {
+    if (sa[i] === sb[i]) continue;
+    const rankDiff = segmentSpecificity(sa[i]) - segmentSpecificity(sb[i]);
+    if (rankDiff !== 0) return rankDiff;
+    return sa[i] < sb[i] ? -1 : 1;
+  }
+  return sa.length - sb.length;
+}
+
 export interface RouteIdMaps {
   /** component route id (cmp_N) -> filePath */
   routeIdMap: Map<string, string>;

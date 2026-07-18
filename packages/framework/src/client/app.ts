@@ -339,14 +339,23 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
     currentLayoutInstances = [];
     for (const { path: layoutFilePath, state } of layoutStack) {
-        // Layout paths are already file paths (from server)
+        // Layout paths are already file paths (from server). Layouts are lazy
+        // on the client (code-split per route, like pages), so the registry
+        // holds loader functions — await to get the module. This keeps a layout
+        // with heavy deps (e.g. dashboard sidebar pulling @cossackframework/ui)
+        // off routes that don't use it.
         let instance = currentLayoutsMap.get(layoutFilePath);
         if (!instance) {
-            const layoutModule = layouts[layoutFilePath];
-            if (!layoutModule) {
+            const layoutEntry = layouts[layoutFilePath];
+            if (!layoutEntry) {
                 console.warn(`[Cossack] Layout module not found for path: ${layoutFilePath}`);
                 continue;
             }
+            // On the client, layouts are lazy: the registry holds loader functions
+            // (see vite-plugin.ts). Await to resolve the module.
+            const layoutModule = typeof layoutEntry === 'function'
+                ? await (layoutEntry as () => Promise<any>)()
+                : layoutEntry;
             const LComp = Object.values(layoutModule)[0] as new () => Cossack;
             instance = createInstance(LComp);
             instance.updateHead = syncHead;

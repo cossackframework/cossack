@@ -1,6 +1,6 @@
 import { Cossack, Page, Store, State, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, PasswordInput, Button, Alert, Form } from '@cossackframework/ui';
 import { guard } from '../../../../services/rbac';
 import { createUser } from '../../../../services/users';
 
@@ -34,6 +34,7 @@ export default class NewUserPage extends Cossack {
             await this.create(this.form.name, this.form.email, this.form.password);
         } catch (e: any) {
             this.error = e?.message || __('Could not create user');
+            toast.error(this.error);
         }
     }
 
@@ -57,7 +58,6 @@ export default class NewUserPage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
                             <div class="flex flex-col space-y-4">
                             ${component(Field, { label: __('Name'), for: 'name' },
                                 component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}

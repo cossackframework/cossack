@@ -17,8 +17,9 @@ import type { Context } from 'hono';
 import { createAuth } from '@cossackframework/auth';
 import { db } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
-import { uuidv7 } from './lib/uuid';
-import type { RoleAssignment } from './models/User';
+import { uuidv7 } from '@/lib/uuid';
+import type { RoleAssignment, UserRow } from '@/models/User';
+import type { SessionRow } from '@/models/Session';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -76,24 +77,10 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<ArrayBuffe
   );
 }
 
-// --- Types (snake_case to match the migrations) ----------------------------
-interface UserRow {
-  id: string;
-  email: string;
-  name: string | null;
-  password_hash: string | null;
-  avatar: string | null;
-  meta: string | null;
-}
-interface SessionRow {
-  id: string;
-  user_id: string;
-  meta: string | null;
-  location: string | null;
-  user_agent: string | null;
-  ip_address: string | null;
-  expires_at: string;
-}
+// --- Types -----------------------------------------------------------------
+// Row types come from the models (Kysely-augmented). Importing them here keeps
+// a single source of truth so the query builder stays fully typed and inserts
+// pick up new columns (e.g. `created_at`) automatically.
 
 /** The safe user shape exposed to pages (`this.user`) — no password_hash. */
 export interface PublicUser {
@@ -158,7 +145,9 @@ function captureRequestInfo(c: Context): { ip: string | null; userAgent: string 
 
 async function createSessionRow(user: UserRow, c: Context): Promise<{ headers: Headers }> {
   const id = uuidv7();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
+  const createdAt = now.toISOString();
   const meta: SessionMeta = { type: 'auth' };
   const { ip, userAgent, location } = captureRequestInfo(c);
   await db()
@@ -167,6 +156,7 @@ async function createSessionRow(user: UserRow, c: Context): Promise<{ headers: H
       id,
       user_id: user.id,
       expires_at: expiresAt,
+      created_at: createdAt,
       meta: JSON.stringify(meta),
       ip_address: ip,
       user_agent: userAgent,
@@ -273,11 +263,12 @@ async function createPasswordResetToken(email: string): Promise<string | null> {
     | undefined;
   if (!user) return null; // do NOT leak whether the email exists
   const token = uuidv7();
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hour
   const meta: SessionMeta = { type: 'password_reset' };
   await db()
     .insertInto('sessions')
-    .values({ id: token, user_id: user.id, expires_at: expiresAt, meta: JSON.stringify(meta) })
+    .values({ id: token, user_id: user.id, expires_at: expiresAt, created_at: now.toISOString(), meta: JSON.stringify(meta) })
     .execute();
   return token;
 }
@@ -352,6 +343,8 @@ export function expiredSessionCookie(): Headers {
 export interface SessionInfo {
   id: string;
   expiresAt: string;
+  /** When the session was created (the "Logged in" time). */
+  createdAt: string;
   /** True when this row is the calling session (never revokable from its own page). */
   current: boolean;
   meta: Record<string, unknown> | null;
@@ -379,7 +372,7 @@ export async function listUserSessions(userId: string, currentSessionId?: string
     .selectFrom('sessions')
     .where('user_id', '=', userId)
     .where('expires_at', '>', new Date().toISOString())
-    .select(['id', 'expires_at', 'meta', 'location', 'user_agent', 'ip_address'])
+    .select(['id', 'expires_at', 'created_at', 'meta', 'location', 'user_agent', 'ip_address'])
     .execute() as SessionRow[];
   return rows
     .filter((row) => {
@@ -390,6 +383,7 @@ export async function listUserSessions(userId: string, currentSessionId?: string
     .map((row) => ({
       id: row.id,
       expiresAt: row.expires_at,
+      createdAt: row.created_at ?? row.expires_at,
       current: row.id === currentSessionId,
       meta: parseMeta(row.meta),
       location: row.location,

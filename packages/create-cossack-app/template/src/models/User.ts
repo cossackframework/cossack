@@ -1,5 +1,3 @@
-import type { Generated } from '@cossackframework/database';
-
 /**
  * A role assigned to a user, with its parsed permissions. Populated by
  * `resolveUserById` (src/auth.ts) and read by the authorizer (src/services/rbac.ts).
@@ -12,16 +10,18 @@ export interface RoleAssignment {
 
 /**
  * The `users` table row shape. Column names match the migration (snake_case).
- * Add columns here as your app grows.
+ * `id` and `created_at` are set by the app (uuidv7 + ISO timestamp), so they're
+ * plain `string` — not Kysely `Generated` (which would make them optional on
+ * insert and widen the read type). Add columns here as your app grows.
  */
 export interface UserRow {
-  id: Generated<string>;
+  id: string;
   email: string;
   name: string | null;
   password_hash: string | null;
   avatar: string | null;
   meta: string | null;
-  created_at: Generated<string>;
+  created_at: string;
 }
 
 // Map the table name -> row type so Kysely's query builder is fully typed.

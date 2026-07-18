@@ -38,6 +38,9 @@ export interface SessionRow {
     user_agent: string | null;
     /** Client IP (cf-connecting-ip) captured at login. */
     ip_address: string | null;
+    /** When the session row was created (the "Logged in" time). Optional on insert
+     *  (the generic SessionStore doesn't set it; app auth flows do via migration). */
+    created_at?: string;
     expires_at: string;
 }
 

@@ -40,8 +40,13 @@ export function cossackPages(): Plugin {
         return `
           const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '/src/pages/**/*.md', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${isSsrEnvironment ? ', { eager: true }' : ''});
 
-          // Layouts: always eager (small, shared, needed immediately)
-          const layouts = import.meta.glob('/src/pages/**/layout.ts', { eager: true });
+          // Layouts: eager on SSR (synchronous server rendering), lazy on the
+          // client. A layout often pulls in heavy deps (e.g. the dashboard
+          // layout imports the whole @cossackframework/ui barrel); eager-loading
+          // every layout on the client would force those deps onto routes that
+          // don't use them (e.g. the public landing page loading the dashboard
+          // sidebar). The client resolves layouts via dynamic import in app.ts.
+          const layouts = import.meta.glob('/src/pages/**/layout.ts'${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Loading states: always eager (small, needed immediately for UX)
           const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });

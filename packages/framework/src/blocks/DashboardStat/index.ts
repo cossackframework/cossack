@@ -1,6 +1,7 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
-import { Card, CardBody, NamedIcon } from '@cossackframework/ui';
+import { Card, CardBody, Icon } from '@cossackframework/ui';
+import type { IconEntry } from '@cossackframework/solar-icons/types';
 
 export interface StatItem {
     label: string;
@@ -9,8 +10,8 @@ export interface StatItem {
     change?: string;
     /** Whether the change is positive (green) or negative (red). */
     trend?: 'up' | 'down' | 'neutral';
-    /** Solar icon name. */
-    icon?: string;
+    /** Tree-shakeable icon entry from @cossackframework/solar-icons. */
+    icon?: IconEntry;
 }
 
 export interface DashboardStatProps {
@@ -64,7 +65,7 @@ export class DashboardStat extends Cossack {
                                             ${stat.change ? html`<p class=${`text-xs font-medium mt-1 ${trendColor}`}>${stat.change}</p>` : null}
                                         </div>
                                         ${stat.icon ? html`<div class="w-10 h-10 rounded-lg bg-muted inline-flex items-center justify-center text-muted-foreground shrink-0">
-                                            ${component(NamedIcon, { name: stat.icon, size: 20 })}
+                                            ${component(Icon, { entry: stat.icon, size: 20 })}
                                         </div>` : null}
                                     </div>`))}
                             )}

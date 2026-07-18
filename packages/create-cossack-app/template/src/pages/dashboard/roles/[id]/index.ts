@@ -1,6 +1,6 @@
 import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Card, CardBody, CardHeader, Field, Input, Button, Checkbox, Form, toast } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { Card, CardBody, CardHeader, Field, Input, Button, Alert, Checkbox, Form } from '@cossackframework/ui';
 import { guard } from '../../../../services/rbac';
 import { getRole, updateRole, type RoleDetail } from '../../../../services/roles';
 import { PERMISSIONS, type Permission } from '../../../../lib/permissions';
@@ -50,16 +50,17 @@ export default class EditRolePage extends Cossack {
         try {
             await this.save(this.role, this.selected);
             this.saved = true;
+            toast.success(__('Saved.'));
         } catch (e: any) {
             this.error = e?.message || __('Could not save role');
+            toast.error(this.error);
         }
     }
 
     @Server()
     async save(role: RoleDetail | null, permissions: Permission[]) {
         if (!role) throw new Error(__('Role not found'));
-        const id = this.c.req.param('id')!;
-        await updateRole(id, { name: role.name, permissions });
+        await updateRole(role.id, { name: role.name, permissions });
     }
 
     render() {
@@ -79,8 +80,6 @@ export default class EditRolePage extends Cossack {
                         ${component(Form, {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
-                            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
-                            ${this.saved ? component(Alert, { variant: 'success' }, __('Saved.')) : null}
                             <div class="flex flex-col space-y-6">
                             ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name') },
                                 component(Input, { id: 'name', type: 'text', '.value': bind(this.role, 'name') }))}
