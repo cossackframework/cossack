@@ -12,7 +12,7 @@ These load automatically when you work on Cossack files. You don't invoke them.
 
 | Skill | What it does |
 |---|---|
-| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for server/client RPC, template directives (`repeat`/`when`/`choose`/`classMap`/`styleMap`/`ifDefined`/`bind`/`guard`/`cache`/…), decorators, tasks (`@Task`/`@ServerTask`/`@ClientTask`), validation (incl. `coerce` + nested `@Store`), reactive store, UI components + focus management, forms, loading, database, cache, realtime (SSE + Durable Object), auth, and error handling. |
+| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, and errors. |
 
 ### Slash commands
 

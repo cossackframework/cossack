@@ -2,13 +2,13 @@
 
 Cossack ships a database layer built on [Kysely](https://kysely.dev) — a type-safe SQL query builder that runs on Cloudflare Workers, Node.js, and the browser. It has first-class dialects for **Cloudflare D1** and **Turso** (libSQL), plus migrations and seeders. The package **re-exports Kysely**, so you don't install it separately.
 
-> **Before you reach for a raw SQL client, an ORM, or `fetch('/api/...')`** — Cossack has a built-in `db()` helper. Use it inside `@Server()` methods.
+> **Before you reach for a raw SQL client, an ORM, or `fetch('/api/...')`** — Cossack has a built-in `db()` helper. Use it in `server$` loaders for read-only render data or `@Server()` methods for actions.
 
 ## The two helpers
 
 | Helper | Import | When to use |
 |---|---|---|
-| `db()` | `@cossackframework/database` | Inside a `@Server()` method or any code running within the request scope. Uses AsyncLocalStorage — no context argument needed. |
+| `db()` | `@cossackframework/database` | Inside a `server$` loader, `@Server()` method, or other request-scoped server code. Uses AsyncLocalStorage — no context argument needed. |
 | `getDb(c)` | `@cossackframework/database` | When you have the Hono `Context` in hand (e.g. in middleware). Reads `c.get('db')`. |
 
 Both return the same per-request Kysely client (`DbClient`). Prefer `db()` inside components — it's shorter and the request scope is already set up by the framework middleware.
@@ -21,20 +21,18 @@ There is **no** `this.db` property on components. Import `db()` and call it.
 
 ```typescript
 import { db } from '@cossackframework/database';
-import { Cossack, Page, Server, State } from '@cossackframework/core';
+import { Cossack, Page, Server, server$ } from '@cossackframework/core';
 
 @Page({ transport: 'http' })
 export class UsersPage extends Cossack {
-    @State() users: { id: number; name: string }[] = [];
-
-    @Server()
-    async init() {
-        this.users = await db()
+    users = server$(
+        () => db()
             .selectFrom('users')
             .select(['id', 'name'])
             .orderBy('name', 'asc')
-            .execute();
-    }
+            .execute(),
+        { initial: [] },
+    );
 
     @Server()
     async createUser(name: string) {
@@ -54,13 +52,13 @@ import { Generated, sql, type Selectable } from '@cossackframework/database';
 
 ## The constraint: only inside a request scope
 
-`db()` resolves the client from AsyncLocalStorage. It **must** be called within a request handler — i.e. inside a `@Server()` method, a server middleware, or a `runWithDb(...)` block. Calling it outside a request throws:
+`db()` resolves the client from AsyncLocalStorage. It **must** be called within a request handler — i.e. inside a `server$` loader, `@Server()` method, server middleware, or a `runWithDb(...)` block. Calling it outside a request throws:
 
 ```
 [Cossack] No database client in scope. `db()` must be called within a request handler …
 ```
 
-This is why database calls belong in `@Server()` methods, never in `@Client()` / `@Shared()` / `render()`. (Those run on the client, where there is no database.)
+Never call `db()` directly in `@Client()`, `@Shared()`, or ordinary render code. A loader passed to `server$` is safe because the compiler extracts it, including when the macro call appears directly in `render()`.
 
 ## Setup
 

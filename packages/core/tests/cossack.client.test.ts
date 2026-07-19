@@ -192,6 +192,29 @@ describe('Cossack Core: Client-Side', () => {
 
       expect(component.loading['increment']).toBeUndefined();
   });
+
+  it('handles non-serializable server$ results without an unhandled client rejection', async () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+      const loader = vi.fn(async () => circular);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const value = component.__serverResource('profile', loader, { initial: { status: 'loading' } });
+      expect(value).toEqual({ status: 'loading' });
+      await expect(Promise.all(component.__serverResourcePending())).resolves.toEqual([undefined]);
+
+      expect(errorSpy).toHaveBeenCalledWith(
+          '[Cossack server$:profile]',
+          expect.objectContaining({
+              name: 'ServerResourceSerializationError',
+              message: expect.stringContaining('result is not transport-safe'),
+          }),
+      );
+      // A failed invocation stays rejected until deps change, refresh, or invalidate.
+      component.__serverResource('profile', loader, { initial: { status: 'loading' } });
+      expect(loader).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+  });
 });
 
 describe('redirect() does not double-push history state', () => {

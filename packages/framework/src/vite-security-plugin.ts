@@ -136,20 +136,30 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // stubbing named exports to throwing placeholders keeps the graph clean.
       // `src/config/*` is already handled above and `src/auth.ts` above that.
       if (isServerOnlyModule(cleanId)) {
+        // Component modules must reach transform() first: @Server bodies and
+        // server$ loaders are removed there, after which their now-unused
+        // server-only imports can be tree-shaken. Stubbing the whole module in
+        // load() would erase the component before the AST security pass.
+        try {
+          const source = readFileSync(cleanId, 'utf8');
+          if (/extends\s+(?:Cossack|CossackElement)\b/.test(source)) return;
+        } catch { /* generate the conservative stub below */ }
         return generateServerOnlyStub(cleanId, moduleLabelFromId(cleanId));
       }
     },
 
     transform(code, id) {
-      // Only strip in client environment
       const isClientEnvironment = this.environment?.name === 'client';
-      if (!isClientEnvironment) {
-        return { code, map: null };
-      }
-
       if (!shouldProcessFile(id)) {
         return { code, map: null };
       }
+
+      // server$ is a compiler macro in both environments. On the server its
+      // generated method retains the loader; the normal client pass below
+      // replaces that method with the existing RPC proxy stub.
+      if (code.includes('server$')) code = transformServerResources(code, id);
+
+      if (!isClientEnvironment) return { code, map: null };
 
       // Check if this file contains a Cossack class or a @Service decorated class
       if (!code.includes('extends Cossack') && !code.includes('extends CossackElement') && !code.includes('@Service')) {
@@ -157,17 +167,191 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       try {
-        const transformed = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
+        const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
+        const transformed = stripClientServerOnlyImports(stripped, id);
         if (transformed !== code) {
           return { code: transformed, map: null };
         }
       } catch (error) {
-        console.warn(`[Cossack Security] Error processing ${id}:`, error);
+        throw error;
       }
 
       return { code, map: null };
     },
   };
+}
+
+function isServerOnlyImportSource(source: string): boolean {
+  return source === '@cossackframework/database' ||
+    source.startsWith('@cossackframework/database/') ||
+    source === '@cossackframework/auth' ||
+    source.startsWith('@cossackframework/auth/') ||
+    source.startsWith('node:');
+}
+
+/**
+ * Remove direct server-only imports after method/resource bodies have been
+ * stripped. If a binding remains referenced, it escaped into client-safe code
+ * and the client build must fail instead of loading a Node/server module.
+ */
+export function stripClientServerOnlyImports(code: string, id: string): string {
+  const program = parseProgram(code);
+  if (!program) throw new Error(`[Cossack Security] Could not validate server-only imports in ${id}.`);
+
+  const candidates: Array<{ node: any; source: string; bindings: string[] }> = [];
+  for (const statement of program.body ?? []) {
+    if (statement.type !== 'ImportDeclaration') continue;
+    const source = String(statement.source?.value ?? '');
+    if (!isServerOnlyImportSource(source)) continue;
+    candidates.push({
+      node: statement,
+      source,
+      bindings: (statement.specifiers ?? []).map((specifier: any) => specifier.local?.name).filter(Boolean),
+    });
+  }
+  if (!candidates.length) return code;
+
+  const referenced = new Set<string>();
+  const visit = (node: any, parent?: any, parentKey?: string) => {
+    if (!node || typeof node.type !== 'string' || node.type === 'ImportDeclaration') return;
+    if (node.type === 'Identifier') {
+      const isStaticKey =
+        ((parent?.type === 'MethodDefinition' || parent?.type === 'PropertyDefinition') && parentKey === 'key' && !parent.computed) ||
+        (parent?.type === 'MemberExpression' && parentKey === 'property' && !parent.computed) ||
+        (parent?.type === 'Property' && parentKey === 'key' && !parent.computed && !parent.shorthand);
+      if (!isStaticKey) referenced.add(node.name);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value)) value.forEach((child) => visit(child, node, key));
+      else if (value && typeof (value as any).type === 'string') visit(value, node, key);
+    }
+  };
+  for (const statement of program.body ?? []) visit(statement);
+
+  for (const candidate of candidates) {
+    const leaked = candidate.bindings.filter((binding) => referenced.has(binding));
+    if (leaked.length) {
+      throw new Error(
+        `[Cossack Security] ${id} references server-only import ${JSON.stringify(candidate.source)} ` +
+        `from client-safe code (${leaked.join(', ')}). Move the reference into a server$ loader or @Server() method.`,
+      );
+    }
+  }
+
+  let result = code;
+  for (const candidate of [...candidates].sort((a, b) => b.node.start - a.node.start)) {
+    result = result.slice(0, candidate.node.start) + result.slice(candidate.node.end);
+  }
+  return result;
+}
+
+type MacroReplacement = { start: number; end: number; replacement: string };
+
+function stableResourceHash(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/** Transform imported server$ bindings into generated @Server RPC methods. */
+export function transformServerResources(code: string, id: string): string {
+  const program = parseProgram(code);
+  if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
+  const bindings = new Set<string>();
+  for (const statement of program.body ?? []) {
+    if (statement.type !== 'ImportDeclaration' || statement.source?.value !== '@cossackframework/core') continue;
+    for (const specifier of statement.specifiers ?? []) {
+      if (specifier.type === 'ImportSpecifier' && (specifier.imported?.name ?? specifier.imported?.value) === 'server$') {
+        bindings.add(specifier.local?.name ?? 'server$');
+      }
+    }
+  }
+  if (!bindings.size) return code;
+
+  const replacements: MacroReplacement[] = [];
+  let hasGeneratedResources = false;
+  for (const cls of findClasses(program)) {
+    if (superclassName(cls) !== 'Cossack' && superclassName(cls) !== 'CossackElement') continue;
+    const className = cls.id?.name ?? 'Anonymous';
+    let inlineOrdinal = 0;
+    const generated: string[] = [];
+    const allowedCalls = new Set<number>();
+
+    const compileCall = (call: any, name: string): string => {
+      if (call.arguments?.length < 1 || call.arguments.length > 2) {
+        throw new Error(`[Cossack server$] ${id}: ${name} expects a loader and one optional options object.`);
+      }
+      const loader = call.arguments[0];
+      allowedCalls.add(call.start);
+      if (loader.type !== 'ArrowFunctionExpression' && loader.type !== 'FunctionExpression') {
+        throw new Error(`[Cossack server$] ${id}: ${name} loader must be an inline function.`);
+      }
+      const options = call.arguments[1] ? sourceSlice(code, call.arguments[1]) : '{}';
+      const method = `__cossack_server_resource_${stableResourceHash(`${id}:${className}:${name}`)}`;
+      const args = (loader.params ?? []).map((p: any) => sourceSlice(code, p)).join(', ');
+      const body = loader.body.type === 'BlockStatement'
+        ? sourceSlice(code, loader.body)
+        : `{ return ${sourceSlice(code, loader.body)}; }`;
+      generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) ${body}\n`);
+      hasGeneratedResources = true;
+      return `this.__serverResource(${JSON.stringify(name)}, this.${method}.bind(this), ${options})`;
+    };
+
+    for (const member of cls.body?.body ?? []) {
+      if (member.type === 'PropertyDefinition' && member.value?.type === 'CallExpression' &&
+          member.value.callee?.type === 'Identifier' && bindings.has(member.value.callee.name)) {
+        const name = memberKeyName(member.key);
+        if (!name) throw new Error(`[Cossack server$] ${id}: resource fields require a static name.`);
+        const optionsNode = member.value.arguments?.[1];
+        const hasInitial = optionsNode?.type === 'ObjectExpression' && (optionsNode.properties ?? []).some((p: any) =>
+          !p.computed && (p.key?.name ?? p.key?.value) === 'initial');
+        if (!hasInitial) throw new Error(`[Cossack server$] ${id}: class field "${name}" requires { initial }.`);
+        const expression = compileCall(member.value, name);
+        const type = member.typeAnnotation ? sourceSlice(code, member.typeAnnotation) : '';
+        replacements.push({ start: member.start, end: member.end, replacement: `get ${sourceSlice(code, member.key)}()${type} { return ${expression}; }` });
+      }
+    }
+
+    const render = (cls.body?.body ?? []).find((m: any) => m.type === 'MethodDefinition' && memberKeyName(m.key) === 'render');
+    const visitRender = (node: any) => {
+      if (!node || typeof node.type !== 'string') return;
+      if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && bindings.has(node.callee.name)) {
+        const name = `render:${inlineOrdinal++}`;
+        replacements.push({ start: node.start, end: node.end, replacement: compileCall(node, name) });
+        return;
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(visitRender);
+        else if (value && typeof (value as any).type === 'string') visitRender(value);
+      }
+    };
+    if (render) visitRender(render.value.body);
+
+    // Any remaining macro call in this class is in an unsupported location.
+    const scan = (node: any) => {
+      if (!node || typeof node.type !== 'string') return;
+      if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && bindings.has(node.callee.name) && !allowedCalls.has(node.start)) {
+        throw new Error(`[Cossack server$] ${id}: server$ is only valid as a class-field initializer or a direct call inside render().`);
+      }
+      for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(scan);
+        else if (value && typeof (value as any).type === 'string') scan(value);
+      }
+    };
+    scan(cls.body);
+
+    if (generated.length) replacements.push({ start: cls.body.end - 1, end: cls.body.end - 1, replacement: generated.join('') });
+  }
+  let result = code;
+  for (const item of replacements.sort((a, b) => b.start - a.start)) result = result.slice(0, item.start) + item.replacement + result.slice(item.end);
+  if (hasGeneratedResources) {
+    result = `import { Server as __CossackServerResource } from '@cossackframework/core';\n${result}`;
+  }
+  return result;
 }
 
 // ============================================================================
@@ -574,7 +758,7 @@ function collectAstMethods(cls: any, code: string): AstMethod[] {
       methods.push({
         name,
         decorators,
-        hasServerDecorator: decorators.some((d: string) => /@Server\b/.test(d)),
+        hasServerDecorator: decorators.some((d: string) => /@(?:Server|__CossackServerResource)\b/.test(d)),
         bodyStart: body.start,
         bodyEnd: body.end,
       });
@@ -594,7 +778,7 @@ function collectAstMethods(cls: any, code: string): AstMethod[] {
       methods.push({
         name,
         decorators,
-        hasServerDecorator: decorators.some((d: string) => /@Server\b/.test(d)),
+        hasServerDecorator: decorators.some((d: string) => /@(?:Server|__CossackServerResource)\b/.test(d)),
         bodyStart: body.type === 'BlockStatement' ? body.start : value.start,
         bodyEnd: body.type === 'BlockStatement' ? body.end : value.end,
         fieldValueStart: value.start,
