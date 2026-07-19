@@ -48,12 +48,18 @@ The reverse works too: inside a `@Server()` method, calling `this.someClientMeth
 
 See `references/server-client-rpc.md` for the full mechanism (transports, transportable arguments, security, server→client calls).
 
+For read-only data consumed by rendering, prefer the compiler macro `server$`
+over `init() + @State() + @Server()` boilerplate. Keep `@Server()` for
+mutations, redirects, session/flash writes, broadcasts, and client actions. See
+`references/server-functions.md`.
+
 ## Use the built-in (don't reinvent)
 
 | If you're about to… | Use the built-in | Notes |
 |---|---|---|
 | Call the server from the client | `@Server()` method, called as `this.method()` — **no `fetch()`** | Auto RPC proxy; see `references/server-client-rpc.md` |
-| Query a database | `db()` from `@cossackframework/database` (Kysely, re-exported) | Inside `@Server()` only; see `references/database.md` |
+| Load read-only server data for rendering | `server$(() => query(), { initial })` | SSR, hydration, reactive deps; see `references/server-functions.md` |
+| Query a database | `db()` from `@cossackframework/database` (Kysely, re-exported) | Use in `server$` for render data or `@Server()` for actions; see `references/database.md` |
 | Cache an expensive result | `cache.remember(key, ttl, fn)` from `@cossackframework/framework/cache` | Server-only; KV recommended; see `references/cache.md` |
 | Validate a form field | `@Validate({ rules, config })` + `getError()` / `hasError()` / `validateAll()` | See `references/validation.md` |
 | Handle a form submission | Progressive: `<form method="post">` + `post()` + `flash`/`old`. Reactive: `@Store` + `@Validate` + `@Server` submit. | No `fetch()`; see `references/forms.md` |
@@ -219,6 +225,8 @@ for each.
 ## Common mistakes to avoid
 
 - **Writing `fetch('/api/...')` to call the server.** Use a `@Server()` method and call it as `this.method()`. The framework installs an automatic RPC proxy — no API route, no serialization boilerplate. See `references/server-client-rpc.md`.
+- **Using `init() + @State() + @Server()` for read-only render data.** Prefer a named `server$` resource with `{ initial }` and explicit `deps`. Keep `@Server()` for effects. See `references/server-functions.md`.
+- **Calling `db()` or `cache` directly from `@Client()` / `@Shared()` / `render()`.** Put reads in a `server$` loader or effects in `@Server()`. A `server$` loader is compiler-extracted even when the macro call appears in `render()`.
 - **Calling `db()` or `cache` from a `@Client()` / `@Shared()` / `render()`.** Both are server-only. Put database queries and cache reads inside `@Server()` methods. See `references/database.md` and `references/cache.md`.
 - **Stripped method ran as no-op on client.** Add `@Client()` / `@Shared()` / `@Optimistic()`.
 - **`@Validate()` used alone.** It must stack on `@State()` / `@ClientState()` / `@Store()` / `@ClientStore()`.
@@ -237,6 +245,7 @@ for each.
 ## References
 
 - `references/server-client-rpc.md` — the RPC mechanism: `@Server`/`@Client`/`@Shared`, transports, server→client calls, security
+- `references/server-functions.md` — `server$` fields/inline calls, deps, SSR/hydration, refresh/invalidation, query-vs-mutation rules
 - `references/directives.md` — the full template directive set (`repeat`/`when`/`choose`/`classMap`/`styleMap`/`ifDefined`/`bind`/`live`/`guard`/`cache`/`key`/`map`/`join`/`range`/`preventDefault`/`ref`/`unsafeHTML`), signatures, and when to use each
 - `references/decorators.md` — full decorator API (class, property, method decorators, helpers)
 - `references/tasks.md` — task decorators (`@Task`/`@ServerTask`/`@ClientTask`/`@VisibleTask`), the `track` option + path matching, automatic cleanup, choosing the right tool

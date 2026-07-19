@@ -478,13 +478,25 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         // Wrap rendering
-        let body = (pageInstance as any)._getWrappedTemplate();
-        for (let i = layoutInstances.length - 1; i >= 0; i--) {
-          layoutInstances[i].children = body;
-          body = layoutInstances[i]._getWrappedTemplate();
+        let body: any;
+        let finalHtml = '';
+        const resourceOwners = [pageInstance, ...layoutInstances, appInstance];
+        for (let pass = 0; pass < 10; pass++) {
+          body = (pageInstance as any)._getWrappedTemplate();
+          for (let i = layoutInstances.length - 1; i >= 0; i--) {
+            layoutInstances[i].children = body;
+            body = layoutInstances[i]._getWrappedTemplate();
+          }
+          appInstance.children = body;
+          finalHtml = appInstance._render();
+          const pending = resourceOwners.flatMap((owner) => owner.__serverResourcePending());
+          if (!pending.length) break;
+          if (pass === 9) throw new Error('[Cossack server$] SSR resources did not stabilize after 10 render passes.');
+          await Promise.all(pending);
         }
-        appInstance.children = body;
-        const finalHtml = appInstance._render();
+        layoutPaths.forEach((layoutPath, index) => {
+          layoutStates[layoutPath] = layoutInstances[index].getInitialState();
+        });
 
         // Head Merging (page → layouts → app, inside-out)
         const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);

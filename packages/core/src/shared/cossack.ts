@@ -69,6 +69,7 @@ import type {
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
+import { ServerResourceSerializationError, type ServerResourceOptions } from './server-resource';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
@@ -115,6 +116,96 @@ function createThrottle(fn: Function, ms: number) {
 }
 
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
+    private _serverResources = new Map<string, {
+        argsKey: string;
+        value: unknown;
+        hasValue: boolean;
+        resolved: boolean;
+        pending?: Promise<unknown>;
+        error?: unknown;
+    }>();
+
+    private _serverResourceKey(name: string, args: readonly unknown[]): string {
+        const seen = new WeakSet<object>();
+        try {
+            return JSON.stringify(args, (_key, value) => {
+                if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
+                    throw new TypeError(`unsupported dependency type ${typeof value}`);
+                }
+                if (value && typeof value === 'object') {
+                    if (seen.has(value)) throw new TypeError('circular dependency');
+                    seen.add(value);
+                    if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+                        throw new TypeError(`unsupported dependency ${value.constructor?.name || 'object'}`);
+                    }
+                    if (!Array.isArray(value)) {
+                        return Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]));
+                    }
+                }
+                return value;
+            }) ?? '[]';
+        } catch (error) {
+            throw new ServerResourceSerializationError(name, `dependencies are not transport-safe: ${(error as Error).message}`);
+        }
+    }
+
+    /** @internal Entry point emitted by the server$ compiler transform. */
+    public __serverResource<TValue, TArgs extends readonly unknown[]>(
+        name: string,
+        loader: (...args: TArgs) => Promise<TValue> | TValue,
+        options: ServerResourceOptions<TValue, TArgs> = {},
+    ): TValue | undefined {
+        const args = (options.deps?.() ?? []) as TArgs;
+        const argsKey = this._serverResourceKey(name, args);
+        let entry = this._serverResources.get(name);
+        if (entry?.argsKey === '') entry.argsKey = argsKey;
+        if (!entry || entry.argsKey !== argsKey) {
+            entry = { argsKey, value: entry?.hasValue ? entry.value : options.initial, hasValue: entry?.hasValue || 'initial' in options, resolved: false };
+            this._serverResources.set(name, entry);
+        }
+        if (!entry.resolved && !entry.pending && !entry.error) {
+            entry.pending = Promise.resolve(loader(...args)).then((value) => {
+                // Results use the same JSON-safe contract as hydration/RPC.
+                this._serverResourceKey(name, [value]);
+                if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return value;
+                entry!.value = value;
+                entry!.hasValue = true;
+                entry!.resolved = true;
+                entry!.error = undefined;
+                entry!.pending = undefined;
+                if (!this.isServer) void this.requestUpdate();
+                return value;
+            }, (error) => {
+                if (this._serverResources.get(name) === entry) {
+                    entry!.pending = undefined;
+                    entry!.error = error;
+                    if (!this.isServer) console.error(`[Cossack server$:${name}]`, error);
+                }
+                if (this.isServer) throw error;
+            });
+        }
+        return entry.value as TValue | undefined;
+    }
+
+    public async refresh$(name: string): Promise<void> {
+        const entry = this._serverResources.get(name);
+        if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
+        entry.error = undefined;
+        entry.pending = undefined;
+        entry.resolved = false;
+        await this.requestUpdate();
+        await this._serverResources.get(name)?.pending;
+    }
+
+    public invalidate$(name: string): void {
+        if (!this._serverResources.delete(name)) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
+        if (!this.isServer) void this.requestUpdate();
+    }
+
+    /** @internal Promises collected during the current synchronous SSR pass. */
+    public __serverResourcePending(): Promise<unknown>[] {
+        return [...this._serverResources.values()].flatMap((entry) => entry.pending ? [entry.pending] : []);
+    }
     // Standard Properties
     protected container?: Element;
     protected isServer: boolean = isServer;
@@ -618,6 +709,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.provide(RequestContext, this.c);
 
         this.initializeState(initialState);
+
+        for (const [name, value] of Object.entries(initialState?.serverResources ?? {})) {
+            this._serverResources.set(name, { argsKey: '', value, hasValue: true, resolved: true });
+        }
 
         // Bootstrap injected services
         this._bootstrapServices();
@@ -1863,6 +1958,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 user: this.user,
             },
         };
+        if (this._serverResources.size) {
+            serializedState.serverResources = Object.fromEntries(
+                [...this._serverResources].filter(([, entry]) => entry.hasValue).map(([name, entry]) => [name, entry.value]),
+            );
+        }
 
         // Note: serverMethods is no longer included in serialized state for security.
         // Client-side proxies are set up using Reflect metadata directly in _setupServerMethodProxies.

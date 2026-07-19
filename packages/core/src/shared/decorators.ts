@@ -103,6 +103,8 @@ function isValidationRuleMap(rules: Record<string, unknown>): boolean {
 export interface ServerOptions {
   channel?: string;
   provider?: string;
+  /** @internal Compiler marker for generated server$ loaders. */
+  serverResource?: boolean;
 }
 
 /**
@@ -119,6 +121,7 @@ export function Server(options: ServerOptions = {}): any {
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      ...(options.serverResource ? { serverResource: true } : {}),
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);
   };

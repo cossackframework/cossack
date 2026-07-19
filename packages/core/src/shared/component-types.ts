@@ -67,6 +67,8 @@ export interface SerializedComponentState {
     transport?: string;
     /** Scope key for SSE/DO transport (computed once during SSR) */
     scopeKey?: string;
+    /** Resolved compiler-generated server$ invocations. */
+    serverResources?: Record<string, unknown>;
 }
 
 export interface CossackOptions {

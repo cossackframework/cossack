@@ -15,7 +15,39 @@ import {
   generateServerOnlyStub,
   readImportSources,
   moduleLabelFromId,
+  transformServerResources,
 } from '../src/vite-security-plugin';
+
+describe('server$ compiler macro', () => {
+  it('extracts aliased field and inline loaders with stable generated methods', () => {
+    const source = `
+      import { server$ as resource } from '@cossackframework/core';
+      class Users extends Cossack {
+        userId = 1;
+        users = resource((id) => this.find(id), { deps: () => [this.userId] as const, initial: [] });
+        render() { return resource(() => this.title()); }
+      }`;
+    const result = transformServerResources(source, '/src/pages/users/index.ts');
+    expect(result).toContain('get users()');
+    expect(result).toContain('this.__serverResource("users"');
+    expect(result).toContain('this.__serverResource("render:0"');
+    expect(result).toContain("import { Server as __CossackServerResource } from '@cossackframework/core'");
+    expect(result).toContain('@__CossackServerResource({ serverResource: true })');
+    expect(result).toContain('return this.find(id)');
+  });
+
+  it('requires initial for fields', () => {
+    const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack { x = server$(() => 1); }`;
+    expect(() => transformServerResources(source, 'a.ts')).toThrow('requires { initial }');
+  });
+
+  it('rejects calls in arbitrary methods and ignores unrelated names', () => {
+    const bad = `import { server$ } from '@cossackframework/core'; class A extends Cossack { foo() { return server$(() => 1); } }`;
+    expect(() => transformServerResources(bad, 'a.ts')).toThrow('only valid');
+    const unrelated = `const server$ = () => 1; class A extends Cossack { render() { return server$(); } }`;
+    expect(transformServerResources(unrelated, 'a.ts')).toBe(unrelated);
+  });
+});
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
