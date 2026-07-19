@@ -138,4 +138,15 @@ describe('Cossack Core: Server-Side', () => {
   
       expect(mockRuntime.broadcastState).toHaveBeenCalledWith({ count: 5 });
   });
+
+  it('propagates a named serialization error for an invalid server$ result', async () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+
+      component.__serverResource('users', async () => circular, { initial: {} });
+
+      await expect(Promise.all(component.__serverResourcePending())).rejects.toThrow(
+          '[Cossack server$:users] result is not transport-safe: circular dependency',
+      );
+  });
 });

@@ -213,7 +213,6 @@ export function transformServerResources(code: string, id: string): string {
     const className = cls.id?.name ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
-    const resources = new Set<string>();
     const allowedCalls = new Set<number>();
 
     const compileCall = (call: any, name: string): string => {
@@ -233,7 +232,6 @@ export function transformServerResources(code: string, id: string): string {
         : `{ return ${sourceSlice(code, loader.body)}; }`;
       generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) ${body}\n`);
       hasGeneratedResources = true;
-      resources.add(name);
       return `this.__serverResource(${JSON.stringify(name)}, this.${method}.bind(this), ${options})`;
     };
 

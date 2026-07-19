@@ -125,7 +125,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         error?: unknown;
     }>();
 
-    private _serverResourceKey(name: string, args: readonly unknown[]): string {
+    private _serverResourceKey(
+        name: string,
+        args: readonly unknown[],
+        subject: 'dependencies' | 'result' = 'dependencies',
+    ): string {
         const seen = new WeakSet<object>();
         try {
             return JSON.stringify(args, (_key, value) => {
@@ -145,7 +149,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 return value;
             }) ?? '[]';
         } catch (error) {
-            throw new ServerResourceSerializationError(name, `dependencies are not transport-safe: ${(error as Error).message}`);
+            throw new ServerResourceSerializationError(name, `${subject} is not transport-safe: ${(error as Error).message}`);
         }
     }
 
@@ -166,7 +170,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!entry.resolved && !entry.pending && !entry.error) {
             entry.pending = Promise.resolve(loader(...args)).then((value) => {
                 // Results use the same JSON-safe contract as hydration/RPC.
-                this._serverResourceKey(name, [value]);
+                this._serverResourceKey(name, [value], 'result');
                 if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return value;
                 entry!.value = value;
                 entry!.hasValue = true;
@@ -175,7 +179,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 entry!.pending = undefined;
                 if (!this.isServer) void this.requestUpdate();
                 return value;
-            }, (error) => {
+            }).catch((error) => {
                 if (this._serverResources.get(name) === entry) {
                     entry!.pending = undefined;
                     entry!.error = error;
