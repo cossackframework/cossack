@@ -167,7 +167,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       try {
-        const transformed = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
+        const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
+        const transformed = stripClientServerOnlyImports(stripped, id);
         if (transformed !== code) {
           return { code: transformed, map: null };
         }
@@ -178,6 +179,71 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       return { code, map: null };
     },
   };
+}
+
+function isServerOnlyImportSource(source: string): boolean {
+  return source === '@cossackframework/database' ||
+    source.startsWith('@cossackframework/database/') ||
+    source === '@cossackframework/auth' ||
+    source.startsWith('@cossackframework/auth/') ||
+    source.startsWith('node:');
+}
+
+/**
+ * Remove direct server-only imports after method/resource bodies have been
+ * stripped. If a binding remains referenced, it escaped into client-safe code
+ * and the client build must fail instead of loading a Node/server module.
+ */
+export function stripClientServerOnlyImports(code: string, id: string): string {
+  const program = parseProgram(code);
+  if (!program) throw new Error(`[Cossack Security] Could not validate server-only imports in ${id}.`);
+
+  const candidates: Array<{ node: any; source: string; bindings: string[] }> = [];
+  for (const statement of program.body ?? []) {
+    if (statement.type !== 'ImportDeclaration') continue;
+    const source = String(statement.source?.value ?? '');
+    if (!isServerOnlyImportSource(source)) continue;
+    candidates.push({
+      node: statement,
+      source,
+      bindings: (statement.specifiers ?? []).map((specifier: any) => specifier.local?.name).filter(Boolean),
+    });
+  }
+  if (!candidates.length) return code;
+
+  const referenced = new Set<string>();
+  const visit = (node: any, parent?: any, parentKey?: string) => {
+    if (!node || typeof node.type !== 'string' || node.type === 'ImportDeclaration') return;
+    if (node.type === 'Identifier') {
+      const isStaticKey =
+        ((parent?.type === 'MethodDefinition' || parent?.type === 'PropertyDefinition') && parentKey === 'key' && !parent.computed) ||
+        (parent?.type === 'MemberExpression' && parentKey === 'property' && !parent.computed) ||
+        (parent?.type === 'Property' && parentKey === 'key' && !parent.computed && !parent.shorthand);
+      if (!isStaticKey) referenced.add(node.name);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value)) value.forEach((child) => visit(child, node, key));
+      else if (value && typeof (value as any).type === 'string') visit(value, node, key);
+    }
+  };
+  for (const statement of program.body ?? []) visit(statement);
+
+  for (const candidate of candidates) {
+    const leaked = candidate.bindings.filter((binding) => referenced.has(binding));
+    if (leaked.length) {
+      throw new Error(
+        `[Cossack Security] ${id} references server-only import ${JSON.stringify(candidate.source)} ` +
+        `from client-safe code (${leaked.join(', ')}). Move the reference into a server$ loader or @Server() method.`,
+      );
+    }
+  }
+
+  let result = code;
+  for (const candidate of [...candidates].sort((a, b) => b.node.start - a.node.start)) {
+    result = result.slice(0, candidate.node.start) + result.slice(candidate.node.end);
+  }
+  return result;
 }
 
 type MacroReplacement = { start: number; end: number; replacement: string };

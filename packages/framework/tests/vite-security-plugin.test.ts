@@ -16,6 +16,7 @@ import {
   readImportSources,
   moduleLabelFromId,
   transformServerResources,
+  stripClientServerOnlyImports,
 } from '../src/vite-security-plugin';
 
 describe('server$ compiler macro', () => {
@@ -46,6 +47,35 @@ describe('server$ compiler macro', () => {
     expect(() => transformServerResources(bad, 'a.ts')).toThrow('only valid');
     const unrelated = `const server$ = () => 1; class A extends Cossack { render() { return server$(); } }`;
     expect(transformServerResources(unrelated, 'a.ts')).toBe(unrelated);
+  });
+
+  it('removes loader-only database imports from the client module', () => {
+    const source = `
+      import { server$ } from '@cossackframework/core';
+      import { db } from '@cossackframework/database';
+      class Users extends Cossack {
+        users = server$(() => db().selectFrom('users').selectAll().execute(), { initial: [] });
+        render() { return this.users.length; }
+      }`;
+    const macro = transformServerResources(source, '/src/pages/users/index.ts');
+    const stripped = transformCossackClass(
+      macro,
+      '/src/pages/users/index.ts',
+      isClientSafeMethod,
+      new Set(['render']),
+      true,
+    );
+    const result = stripClientServerOnlyImports(stripped, '/src/pages/users/index.ts');
+    expect(result).not.toContain("from '@cossackframework/database'");
+    expect(result).not.toContain("selectFrom('users')");
+  });
+
+  it('fails when a server-only import remains in client-safe code', () => {
+    const source = `
+      import { db } from '@cossackframework/database';
+      class Users extends Cossack { render() { return db(); } }`;
+    expect(() => stripClientServerOnlyImports(source, '/src/pages/users/index.ts'))
+      .toThrow('references server-only import "@cossackframework/database" from client-safe code (db)');
   });
 });
 
