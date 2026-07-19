@@ -155,6 +155,11 @@ async function addAuth(_args, ctx) {
     const dialect = (await resolveDialect(ctx));
     console.log('  adding database support (required by auth)...');
     await ensureDatabase(root, { dialect, ctx });
+  } else {
+    // Existing database projects may predate migrations required by auth/RBAC.
+    // Add the current migration set without touching their database config.
+    console.log('  adding auth database migrations...');
+    await ensureDatabaseMigrations(root, ctx);
   }
 
   // 2. add auth dependency
@@ -167,6 +172,8 @@ async function addAuth(_args, ctx) {
   await ensureUi(root, ctx);
 
   // 3. scaffold auth module + session model + pages + middleware
+  const rootIndex = path.resolve(root, 'src/pages/index.ts');
+  const hasRootIndex = await exists(rootIndex);
   const files = [
     ['src/models/Session.ts', sessionModelTemplate()],
     ['src/models/Role.ts', roleModelTemplate()],
@@ -186,7 +193,9 @@ async function addAuth(_args, ctx) {
     [`${paths.pagesDir}/reset-password/index.ts`, resetPasswordPageTemplate({ loginPath: paths.loginPath })],
     // Public landing page + shared chrome (URL-stripped route group).
     ['src/pages/(public)/layout.ts', publicLayoutTemplate()],
-    ['src/pages/(public)/index.ts', publicIndexTemplate()],
+    // An existing root page belongs to the application. In that case, omit
+    // the scaffold's alternative root route instead of deleting user code.
+    ...(hasRootIndex ? [] : [['src/pages/(public)/index.ts', publicIndexTemplate()]]),
     // Dashboard (namespaced /dashboard) — layout, landing, profile, sessions.
     ['src/pages/dashboard/layout.ts', dashboardLayoutTemplate()],
     ['src/pages/dashboard/index.ts', dashboardIndexTemplate()],
@@ -209,18 +218,8 @@ async function addAuth(_args, ctx) {
     reportFile(rel, result, ctx);
   }
 
-  // The public landing page now lives at src/pages/(public)/index.ts. If a
-  // pre-existing src/pages/index.ts is still around (from `cossack create` or
-  // an earlier scaffold), it would also serve `/` and conflict. Remove it so
-  // there's a single source for the root route. Best-effort + dryRun-aware.
-  const rootIndex = path.resolve(root, 'src/pages/index.ts');
-  if (await exists(rootIndex)) {
-    if (ctx.dryRun) {
-      console.log('  would remove  src/pages/index.ts (superseded by (public)/index.ts)');
-    } else {
-      await fs.rm(rootIndex, { force: true });
-      console.log('  removed  src/pages/index.ts (superseded by (public)/index.ts)');
-    }
+  if (hasRootIndex) {
+    console.log('  exists   src/pages/index.ts (keeping existing root page; skipped (public)/index.ts)');
   }
 
   // Default seeder (admin role + user). Force-overwrite because `add database`
@@ -367,17 +366,6 @@ async function ensureDatabase(root, { dialect, ctx }) {
   }
 
   // 2. scaffold models + migrations + seeders + db config
-  const migrations = [
-    ['0001_create_users.ts', createUsersMigration()],
-    ['0002_create_sessions.ts', createSessionsMigration()],
-    ['0003_create_roles.ts', createRolesMigration()],
-    // 0004 (permissions table) was removed: permissions now live as a JSON
-    // column on roles (see 0003) and the canonical list is config/permissions.ts.
-    ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
-    ['0006_create_cache_table.ts', createCacheTableMigration()],
-    ['0007_create_user_roles.ts', createUserRolesMigration()],
-  ];
-
   const files = [
     ['src/models/User.ts', userModelTemplate()],
     // `addDatabase` writes a blank seeder. The admin-seeding version is written
@@ -388,7 +376,6 @@ async function ensureDatabase(root, { dialect, ctx }) {
       'src/db/config.ts',
       dialect === 'd1' ? dbConfigD1Template() : dbConfigTursoTemplate(),
     ],
-    ...migrations.map(([rel, content]) => [`src/migrations/${rel}`, content]),
   ];
 
   for (const [rel, content] of files) {
@@ -396,6 +383,7 @@ async function ensureDatabase(root, { dialect, ctx }) {
     const result = await writeFile(target, content, ctx);
     reportFile(rel, result, ctx);
   }
+  await ensureDatabaseMigrations(root, ctx);
 
   // 3. wire D1 binding into wrangler.jsonc (D1 only)
   if (dialect === 'd1') {
@@ -411,6 +399,26 @@ async function ensureDatabase(root, { dialect, ctx }) {
     label: 'db',
     ctx,
   });
+}
+
+/** Scaffold the migrations auth and the default database setup rely on. */
+async function ensureDatabaseMigrations(root, ctx) {
+  const migrations = [
+    ['0001_create_users.ts', createUsersMigration()],
+    ['0002_create_sessions.ts', createSessionsMigration()],
+    ['0003_create_roles.ts', createRolesMigration()],
+    // 0004 (permissions table) was removed: permissions now live as a JSON
+    // column on roles (see 0003) and the canonical list is config/permissions.ts.
+    ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
+    ['0006_create_cache_table.ts', createCacheTableMigration()],
+    ['0007_create_user_roles.ts', createUserRolesMigration()],
+  ];
+
+  for (const [rel, content] of migrations) {
+    const target = path.resolve(root, 'src/migrations', rel);
+    const result = await writeFile(target, content, ctx);
+    reportFile(`src/migrations/${rel}`, result, ctx);
+  }
 }
 
 /**

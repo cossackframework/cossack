@@ -179,6 +179,33 @@ describe('add auth', () => {
     expect(pkg.dependencies['@cossackframework/database']).toBeDefined();
   });
 
+  it('scaffolds auth migrations when database support already exists', async () => {
+    fs.mkdirSync(path.join(tmp, 'src/db'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'src/db/config.ts'), '// existing database config\n');
+
+    await addCommand(['auth'], ctx);
+
+    expect(fs.existsSync(path.join(tmp, 'src/migrations/0002_create_sessions.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/migrations/0003_create_roles.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/migrations/0007_create_user_roles.ts'))).toBe(true);
+    expect(fs.readFileSync(path.join(tmp, 'src/db/config.ts'), 'utf8')).toBe(
+      '// existing database config\n',
+    );
+  });
+
+  it('preserves an existing root page and skips the conflicting public root page', async () => {
+    fs.mkdirSync(path.join(tmp, 'src/pages'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'src/pages/index.ts'), '// application landing page\n');
+
+    await addCommand(['auth'], ctx);
+
+    expect(fs.readFileSync(path.join(tmp, 'src/pages/index.ts'), 'utf8')).toBe(
+      '// application landing page\n',
+    );
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/index.ts'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/layout.ts'))).toBe(true);
+  });
+
   it('adds the UI dependency (auth pages import from @cossackframework/ui)', async () => {
     await addCommand(['auth'], ctx);
     const pkg = JSON.parse(fs.readFileSync(path.join(tmp, 'package.json'), 'utf8'));
