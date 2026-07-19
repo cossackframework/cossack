@@ -17,19 +17,31 @@ test.describe('Tailwind Demo Page', () => {
 
   test('should apply Tailwind utility styles', async ({ page }) => {
     const h1 = page.locator('h1');
-    const fontSize = await h1.evaluate((el) => getComputedStyle(el).fontSize);
-    // text-3xl → 1.875rem (30px)
-    expect(parseFloat(fontSize)).toBeGreaterThanOrEqual(28);
+    // Wait for Tailwind's CSS to apply before reading computed styles — in dev
+    // mode the stylesheet loads async, so a one-shot getComputedStyle can race
+    // and return defaults before text-3xl / font-bold are evaluated.
+    await expect(async () => {
+      const fontSize = await h1.evaluate((el) => getComputedStyle(el).fontSize);
+      // text-3xl → 1.875rem (30px)
+      expect(parseFloat(fontSize)).toBeGreaterThanOrEqual(28);
+    }).toPass({ timeout: 5000 });
 
-    const fontWeight = await h1.evaluate((el) => getComputedStyle(el).fontWeight);
-    // font-bold → 700
-    expect(fontWeight).toBe('700');
+    await expect(async () => {
+      const fontWeight = await h1.evaluate((el) => getComputedStyle(el).fontWeight);
+      // font-bold → 700
+      expect(fontWeight).toBe('700');
+    }).toPass({ timeout: 5000 });
   });
 
   test('should have responsive grid layout', async ({ page }) => {
     const grid = page.locator('.grid');
-    const display = await grid.evaluate((el) => getComputedStyle(el).display);
-    expect(display).toBe('grid');
+    // Wait for Tailwind's CSS to apply before reading computed style — in dev
+    // mode the stylesheet loads async, so a one-shot getComputedStyle can race
+    // and return '' before the .grid utility is evaluated.
+    await expect(async () => {
+      const display = await grid.evaluate((el) => getComputedStyle(el).display);
+      expect(display).toBe('grid');
+    }).toPass({ timeout: 5000 });
   });
 
   test('should handle interactive counter', async ({ page }) => {

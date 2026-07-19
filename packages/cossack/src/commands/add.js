@@ -25,10 +25,32 @@ import {
   createUsersMigration,
   createSessionsMigration,
   createRolesMigration,
-  createPermissionsMigration,
   createOauthAccountsMigration,
   createCacheTableMigration,
+  createUserRolesMigration,
   seederTemplate,
+  defaultSeederTemplate,
+  configAuthTemplate,
+  permissionsConfigTemplate,
+  uuidHelperTemplate,
+  roleModelTemplate,
+  userRoleModelTemplate,
+  rbacServiceTemplate,
+  usersServiceTemplate,
+  rolesServiceTemplate,
+  publicLayoutTemplate,
+  publicIndexTemplate,
+  dashboardLayoutTemplate,
+  dashboardIndexTemplate,
+  dashboardProfileTemplate,
+  dashboardSessionsTemplate,
+  usersIndexTemplate,
+  usersNewTemplate,
+  usersEditTemplate,
+  rolesIndexTemplate,
+  rolesNewTemplate,
+  rolesEditTemplate,
+  logoSvgTemplate,
   UI_COMPONENTS,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
@@ -133,6 +155,11 @@ async function addAuth(_args, ctx) {
     const dialect = (await resolveDialect(ctx));
     console.log('  adding database support (required by auth)...');
     await ensureDatabase(root, { dialect, ctx });
+  } else {
+    // Existing database projects may predate migrations required by auth/RBAC.
+    // Add the current migration set without touching their database config.
+    console.log('  adding auth database migrations...');
+    await ensureDatabaseMigrations(root, ctx);
   }
 
   // 2. add auth dependency
@@ -145,14 +172,43 @@ async function addAuth(_args, ctx) {
   await ensureUi(root, ctx);
 
   // 3. scaffold auth module + session model + pages + middleware
+  const rootIndex = path.resolve(root, 'src/pages/index.ts');
+  const hasRootIndex = await exists(rootIndex);
   const files = [
     ['src/models/Session.ts', sessionModelTemplate()],
+    ['src/models/Role.ts', roleModelTemplate()],
+    ['src/models/UserRole.ts', userRoleModelTemplate()],
     ['src/auth.ts', authModuleTemplate({ publicPaths, loginPath: paths.loginPath, oauthProviders })],
+    ['src/config/auth.ts', configAuthTemplate({ loginPath: paths.loginPath })],
+    ['src/config/permissions.ts', permissionsConfigTemplate()],
+    ['src/lib/uuid.ts', uuidHelperTemplate()],
+    // RBAC: authorizer + user/role CRUD data access.
+    ['src/services/rbac.ts', rbacServiceTemplate()],
+    ['src/services/users.ts', usersServiceTemplate()],
+    ['src/services/roles.ts', rolesServiceTemplate()],
     [`${paths.pagesDir}/layout.ts`, authLayoutTemplate()],
     [`${paths.pagesDir}/login/index.ts`, loginPageTemplate({ loginPath: paths.loginPath, registerPath: paths.registerPath, oauthProviders })],
     [`${paths.pagesDir}/register/index.ts`, registerPageTemplate({ loginPath: paths.loginPath })],
     [`${paths.pagesDir}/forgot-password/index.ts`, forgotPasswordPageTemplate({ loginPath: paths.loginPath })],
     [`${paths.pagesDir}/reset-password/index.ts`, resetPasswordPageTemplate({ loginPath: paths.loginPath })],
+    // Public landing page + shared chrome (URL-stripped route group).
+    ['src/pages/(public)/layout.ts', publicLayoutTemplate()],
+    // An existing root page belongs to the application. In that case, omit
+    // the scaffold's alternative root route instead of deleting user code.
+    ...(hasRootIndex ? [] : [['src/pages/(public)/index.ts', publicIndexTemplate()]]),
+    // Dashboard (namespaced /dashboard) — layout, landing, profile, sessions.
+    ['src/pages/dashboard/layout.ts', dashboardLayoutTemplate()],
+    ['src/pages/dashboard/index.ts', dashboardIndexTemplate()],
+    ['src/pages/dashboard/profile/index.ts', dashboardProfileTemplate()],
+    ['src/pages/dashboard/sessions/index.ts', dashboardSessionsTemplate()],
+    // Admin-only: user + role management (gated via guard.requireRole('admin')).
+    ['src/pages/dashboard/users/index.ts', usersIndexTemplate()],
+    ['src/pages/dashboard/users/new/index.ts', usersNewTemplate()],
+    ['src/pages/dashboard/users/[id]/index.ts', usersEditTemplate()],
+    ['src/pages/dashboard/roles/index.ts', rolesIndexTemplate()],
+    ['src/pages/dashboard/roles/new/index.ts', rolesNewTemplate()],
+    ['src/pages/dashboard/roles/[id]/index.ts', rolesEditTemplate()],
+    ['public/logo.svg', logoSvgTemplate()],
     ['src/middlewares/auth.ts', authMiddlewareTemplate({ publicPaths, loginPath: paths.loginPath })],
   ];
 
@@ -161,6 +217,20 @@ async function addAuth(_args, ctx) {
     const result = await writeFile(target, content, ctx);
     reportFile(rel, result, ctx);
   }
+
+  if (hasRootIndex) {
+    console.log('  exists   src/pages/index.ts (keeping existing root page; skipped (public)/index.ts)');
+  }
+
+  // Default seeder (admin role + user). Force-overwrite because `add database`
+  // (often run just above via ensureDatabase) writes a blank seeder; the admin
+  // version is the right default once auth/RBAC is in place.
+  const seederResult = await writeFile(
+    path.resolve(root, 'src/seeders/database.seeder.ts'),
+    defaultSeederTemplate(),
+    { ...ctx, force: true },
+  );
+  reportFile('src/seeders/database.seeder.ts', seederResult, ctx);
 
   // 4. register global middleware (auth session + guard) in
   //    src/bootstrap/middlewares.ts (the registry createApp auto-loads).
@@ -296,24 +366,16 @@ async function ensureDatabase(root, { dialect, ctx }) {
   }
 
   // 2. scaffold models + migrations + seeders + db config
-  const migrations = [
-    ['0001_create_users.ts', createUsersMigration()],
-    ['0002_create_sessions.ts', createSessionsMigration()],
-    ['0003_create_roles.ts', createRolesMigration()],
-    ['0004_create_permissions.ts', createPermissionsMigration()],
-    ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
-    ['0006_create_cache_table.ts', createCacheTableMigration()],
-  ];
-
   const files = [
     ['src/models/User.ts', userModelTemplate()],
+    // `addDatabase` writes a blank seeder. The admin-seeding version is written
+    // by `addAuth` (which brings in the roles/users it depends on).
     ['src/seeders/database.seeder.ts', seederTemplate()],
     ['src/middlewares/db.ts', dbMiddlewareFileTemplate()],
     [
       'src/db/config.ts',
       dialect === 'd1' ? dbConfigD1Template() : dbConfigTursoTemplate(),
     ],
-    ...migrations.map(([rel, content]) => [`src/migrations/${rel}`, content]),
   ];
 
   for (const [rel, content] of files) {
@@ -321,6 +383,7 @@ async function ensureDatabase(root, { dialect, ctx }) {
     const result = await writeFile(target, content, ctx);
     reportFile(rel, result, ctx);
   }
+  await ensureDatabaseMigrations(root, ctx);
 
   // 3. wire D1 binding into wrangler.jsonc (D1 only)
   if (dialect === 'd1') {
@@ -336,6 +399,26 @@ async function ensureDatabase(root, { dialect, ctx }) {
     label: 'db',
     ctx,
   });
+}
+
+/** Scaffold the migrations auth and the default database setup rely on. */
+async function ensureDatabaseMigrations(root, ctx) {
+  const migrations = [
+    ['0001_create_users.ts', createUsersMigration()],
+    ['0002_create_sessions.ts', createSessionsMigration()],
+    ['0003_create_roles.ts', createRolesMigration()],
+    // 0004 (permissions table) was removed: permissions now live as a JSON
+    // column on roles (see 0003) and the canonical list is config/permissions.ts.
+    ['0005_create_oauth_accounts.ts', createOauthAccountsMigration()],
+    ['0006_create_cache_table.ts', createCacheTableMigration()],
+    ['0007_create_user_roles.ts', createUserRolesMigration()],
+  ];
+
+  for (const [rel, content] of migrations) {
+    const target = path.resolve(root, 'src/migrations', rel);
+    const result = await writeFile(target, content, ctx);
+    reportFile(`src/migrations/${rel}`, result, ctx);
+  }
 }
 
 /**

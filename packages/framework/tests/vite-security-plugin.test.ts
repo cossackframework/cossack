@@ -4,7 +4,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { transformCossackClass, isClientSafeMethod, stripSsgGenerateStaticParams } from '../src/vite-security-plugin';
+import { writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+  transformCossackClass,
+  isClientSafeMethod,
+  stripSsgGenerateStaticParams,
+  isServerOnlyModule,
+  generateServerOnlyStub,
+  readImportSources,
+  moduleLabelFromId,
+} from '../src/vite-security-plugin';
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
@@ -1731,5 +1742,128 @@ export class Page extends Cossack {
     } finally {
       console.warn = original;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server-only module detection & stubbing
+// ---------------------------------------------------------------------------
+// Regression for the `node:async_hooks` leak: a user service module that does
+// `import { db } from '@cossackframework/database'` pulls ALS into the client
+// bundle. The security plugin must auto-detect such modules and stub their
+// named exports on the client (same pattern as src/auth.ts).
+describe('server-only module detection', () => {
+  // Unique counter so every temp file path is distinct across tests (avoids any
+  // cross-test contamination from same-named files).
+  let seq = 0;
+  /** Write a temp .ts file and return its path. Cleaned up via afterEach. */
+  function tempFile(name: string, contents: string): string {
+    const path = join(tmpdir(), `cossack-sec-${seq++}-${name}`);
+    writeFileSync(path, contents, 'utf-8');
+    return path;
+  }
+
+  const createdPaths: string[] = [];
+  const track = (p: string) => {
+    createdPaths.push(p);
+    return p;
+  };
+
+  // Best-effort cleanup of temp files created across tests.
+  if (typeof afterEach === 'function') {
+    afterEach(() => {
+      for (const p of createdPaths.splice(0)) {
+        try { rmSync(p, { force: true }); } catch { /* ignore */ }
+      }
+    });
+  }
+
+  describe('readImportSources()', () => {
+    it('collects static import sources', () => {
+      const p = track(tempFile('static.ts', `import { db } from '@cossackframework/database';\nimport { x } from './local';\n`));
+      expect(readImportSources(p).sort()).toEqual(['./local', '@cossackframework/database']);
+    });
+
+    it('collects re-export sources', () => {
+      const p = track(tempFile('reexport.ts', `export { db } from '@cossackframework/database';\nexport * from './other';\n`));
+      expect(readImportSources(p).sort()).toEqual(['./other', '@cossackframework/database']);
+    });
+
+    it('returns an empty array when the file cannot be read', () => {
+      expect(readImportSources('/does/not/exist.ts')).toEqual([]);
+    });
+  });
+
+  describe('isServerOnlyModule()', () => {
+    it('flags a module importing from @cossackframework/database', () => {
+      const p = track(tempFile('svc.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => db().selectFrom('users');\n`));
+      expect(isServerOnlyModule(p)).toBe(true);
+    });
+
+    it('does NOT flag a module importing only from @cossackframework/auth (guard must run on client)', () => {
+      // The auth package is pure TypeScript (hono type imports only, no Node
+      // built-ins). createAuthorizer / `guard` must run on the client so
+      // `@Page({ middlewares: [guard.requireRole('admin')] })` can evaluate at
+      // module load. (A file that uses the server-only createAuth + db is caught
+      // by the @cossackframework/database rule or the src/auth.ts special-case.)
+      const p = track(tempFile('rbac.ts', `import { createAuthorizer } from '@cossackframework/auth';\nexport const guard = createAuthorizer({ hasRole: () => true });\n`));
+      expect(isServerOnlyModule(p)).toBe(false);
+    });
+
+    it('flags a module importing a node: builtin', () => {
+      const p = track(tempFile('fs.ts', `import { readFileSync } from 'node:fs';\n`));
+      expect(isServerOnlyModule(p)).toBe(true);
+    });
+
+    it('does NOT flag a type-only import from @cossackframework/database', () => {
+      // `import type` erases at compile time and never pulls runtime code.
+      const p = track(tempFile('model.ts', `import type { Generated } from '@cossackframework/database';\nexport interface User { id: Generated<string>; }\n`));
+      expect(isServerOnlyModule(p)).toBe(false);
+    });
+
+    it('does NOT flag a plain module with no server-only imports', () => {
+      const p = track(tempFile('util.ts', `import { html } from '@cossackframework/renderer';\nexport const greet = () => 'hi';\n`));
+      expect(isServerOnlyModule(p)).toBe(false);
+    });
+  });
+
+  describe('generateServerOnlyStub()', () => {
+    it('stubs each named export as a throwing function', () => {
+      const p = track(tempFile('users.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => [];\nexport async function deleteUser(id: string) {}\n`));
+      const stub = generateServerOnlyStub(p, 'services/users');
+      expect(stub).toContain('// [cossack-security] services/users is server-only');
+      expect(stub).toContain("export const listUsers = stub('listUsers');");
+      expect(stub).toContain("export const deleteUser = stub('deleteUser');");
+      // The throwing error references the module label.
+      expect(stub).toContain("'services/users.' + name + ' is server-only");
+    });
+
+    it('skips type-only exports (no runtime binding)', () => {
+      const p = track(tempFile('types.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => [];\nexport type User = { id: string };\n`));
+      const stub = generateServerOnlyStub(p, 'svc');
+      expect(stub).toContain("export const listUsers = stub('listUsers');");
+      // `export type User` must NOT produce a runtime stub binding.
+      expect(stub).not.toContain("export const User");
+    });
+
+    it('falls back to a throwing Proxy when exports cannot be parsed', () => {
+      const stub = generateServerOnlyStub('/does/not/exist.ts', 'svc');
+      expect(stub).toContain('Proxy');
+      expect(stub).toContain('throw');
+    });
+  });
+
+  describe('moduleLabelFromId()', () => {
+    it('derives the tail after /src/', () => {
+      expect(moduleLabelFromId('/home/me/app/src/services/users.ts')).toBe('services/users');
+    });
+
+    it('strips a vite query suffix before deriving', () => {
+      expect(moduleLabelFromId('/app/src/db/config.ts?v=abc')).toBe('db/config');
+    });
+
+    it('handles backslash paths', () => {
+      expect(moduleLabelFromId('C:\\app\\src\\services\\users.ts')).toBe('services/users');
+    });
   });
 });

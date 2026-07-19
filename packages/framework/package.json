@@ -89,7 +89,7 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "pnpm run build:types && vite build",
     "build:types": "tsc -p tsconfig.declarations.json",
     "build:ssg": "pnpm run build:types && vite build",
     "build:all": "pnpm run build:types && pnpm run build",

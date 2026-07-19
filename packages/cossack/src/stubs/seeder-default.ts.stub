@@ -1,0 +1,76 @@
+import type { DbClient } from '@cossackframework/database';
+import { ALL_PERMISSIONS } from '../config/permissions';
+import { uuidv7 } from '../lib/uuid';
+import { hashPassword } from '../auth';
+
+/**
+ * Default seeder — idempotently provisions the `admin` role (with all
+ * permissions) and an admin user. The admin email/password are configurable
+ * via ADMIN_EMAIL / ADMIN_PASSWORD env vars (read with process.env because
+ * the seeder runs in the CLI against local SQLite, not inside a request).
+ *
+ * Run with: `cossack seeder run`
+ */
+export default {
+    async run(db: DbClient) {
+        const now = new Date().toISOString();
+
+        // 1. Ensure the admin role exists with every permission.
+        let adminRole = await db
+            .selectFrom('roles')
+            .where('name', '=', 'admin')
+            .select(['id', 'permissions'])
+            .executeTakeFirst() as { id: string; permissions: string | null } | undefined;
+
+        if (!adminRole) {
+            const id = uuidv7();
+            await db
+                .insertInto('roles')
+                .values({ id, name: 'admin', permissions: JSON.stringify(ALL_PERMISSIONS), created_at: now })
+                .execute();
+            adminRole = { id, permissions: JSON.stringify(ALL_PERMISSIONS) };
+        } else if (!adminRole.permissions || adminRole.permissions !== JSON.stringify(ALL_PERMISSIONS)) {
+            // Keep the admin role's permissions in sync with the constant.
+            await db
+                .updateTable('roles')
+                .set({ permissions: JSON.stringify(ALL_PERMISSIONS) })
+                .where('id', '=', adminRole.id)
+                .execute();
+        }
+
+        // 2. Ensure the admin user exists and is assigned the admin role.
+        const adminEmail = process.env.ADMIN_EMAIL ?? 'admin@example.com';
+        const adminPassword = process.env.ADMIN_PASSWORD ?? 'change-me-now';
+
+        let adminUser = await db
+            .selectFrom('users')
+            .where('email', '=', adminEmail)
+            .select('id')
+            .executeTakeFirst() as { id: string } | undefined;
+
+        if (!adminUser) {
+            const id = uuidv7();
+            const passwordHash = await hashPassword(adminPassword);
+            await db
+                .insertInto('users')
+                .values({ id, email: adminEmail, name: 'Admin', password_hash: passwordHash, created_at: now })
+                .execute();
+            adminUser = { id };
+        }
+
+        const existingAssignment = await db
+            .selectFrom('user_roles')
+            .where('user_id', '=', adminUser.id)
+            .where('role_id', '=', adminRole.id)
+            .select('user_id')
+            .executeTakeFirst();
+        if (!existingAssignment) {
+            await db
+                .insertInto('user_roles')
+                .values({ user_id: adminUser.id, role_id: adminRole.id, created_at: now })
+                .execute();
+        }
+
+        console.log(`  seeded   admin role + user (${adminEmail}). Set ADMIN_PASSWORD before going to production.`);
+    },
+};

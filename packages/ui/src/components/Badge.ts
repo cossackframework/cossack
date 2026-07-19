@@ -39,7 +39,7 @@ export class Badge extends Cossack {
             "cs-badge": true,
             [`cs-badge--${variant}`]: true,
             "inline-flex items-center gap-1": true,
-            "rounded-md border border-transparent px-2 py-0.5 text-xs font-medium": true,
+            "rounded-md border px-2 py-0.5 text-xs font-medium": true,
             "w-fit whitespace-nowrap shrink-0": true,
             "[&_svg]:size-3 [&_svg]:shrink-0": true,
             "focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none": true,

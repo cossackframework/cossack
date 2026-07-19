@@ -5,6 +5,8 @@ import { createApp } from './router';
 import { AppDurableObject } from './DurableObject';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
 import './i18n-globals';
+// Side-effect: registers `config`, `env`, `binding` as globals.
+import './config-globals';
 
 // Create the Hono app. The vite plugin will handle injecting the pages.
 const app = createApp();

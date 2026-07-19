@@ -17,6 +17,7 @@
     "@cossackframework/database": "^0.1.0",
     "@cossackframework/framework": "^0.6.0",
     "@cossackframework/renderer": "^0.6.0",
+    "@cossackframework/solar-icons": "^0.7.0",
     "@cossackframework/ui": "^0.1.0",
     "cossack": "^0.1.0",
     "gray-matter": "^4.0.3",

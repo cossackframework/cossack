@@ -82,9 +82,12 @@ import { AltArrowDownIcon as altArrowDownIcon } from '@cossackframework/solar-ic
 import { ArrowRightIcon as arrowRightIcon } from '@cossackframework/solar-icons/arrow-right';
 import { CheckCircleIcon as checkCircleIcon } from '@cossackframework/solar-icons/check-circle';
 import { CloseCircleIcon as closeCircleIcon } from '@cossackframework/solar-icons/close-circle';
+import { FolderIcon as folderIcon } from '@cossackframework/solar-icons/folder';
+import { HomeIcon as homeIcon } from '@cossackframework/solar-icons/home';
 import { MagnifierIcon as magnifierIcon } from '@cossackframework/solar-icons/magnifier';
 import { SettingsIcon as settingsIcon } from '@cossackframework/solar-icons/settings';
 import { TrashBinMinimalisticIcon as trashBinMinimalisticIcon } from '@cossackframework/solar-icons/trash-bin-minimalistic';
+import { UsersGroupRoundedIcon as usersIcon } from '@cossackframework/solar-icons/users-group-rounded';
 
 
 @Page()
@@ -93,6 +96,7 @@ export class ComponentsDemo extends Cossack {
     @ClientState() sheetOpen = false;
     @ClientState() alertOpen = false;
     @ClientState() drawerOpen = false;
+    @ClientState() sidebarCollapsed = false;
     @ClientState() calendarDate = '2025-07-04';
     @ClientState() datePickerDate: string | undefined = undefined;
     @ClientState() otpValue = '';
@@ -759,15 +763,17 @@ export class ComponentsDemo extends Cossack {
                         ${component(Sidebar, {
                             title: 'Acme Inc',
                             items: [
-                                { label: 'Dashboard', href: '#', icon: 'home', active: true },
-                                { label: 'Projects', href: '#', icon: 'folder', children: [
+                                { label: 'Dashboard', href: '#', icon: homeIcon, active: true },
+                                { label: 'Projects', href: '#', icon: folderIcon, children: [
                                     { label: 'Active', href: '#' },
                                     { label: 'Archived', href: '#' },
                                 ]},
-                                { label: 'Team', href: '#', icon: 'users' },
-                                { label: 'Settings', href: '#', icon: 'settings' },
+                                { label: 'Team', href: '#', icon: usersIcon },
+                                { label: 'Settings', href: '#', icon: settingsIcon },
                             ],
                             collapsible: 'icon',
+                            collapsed: this.sidebarCollapsed,
+                            onToggle: () => { this.sidebarCollapsed = !this.sidebarCollapsed; },
                             onNavigate: (item: any) => toast.show('Navigate: ' + item.label),
                             // Footer slot: arbitrary content. Here a user-menu trigger.
                             // side:'right' opens the menu beside the trigger (desktop);

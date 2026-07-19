@@ -53,6 +53,36 @@ export interface ConfigStore {
     config: Record<string, unknown>;
 }
 
+/**
+ * Evaluate the auto-discovered config factories (`src/config/*.ts` default
+ * exports) against the given env bindings, returning the config tree keyed by
+ * file name. Files without a default-exported factory function are skipped with
+ * a warning — config files are auto-globbed, so a single misplaced constants
+ * file in `src/config/` must not take down every route. Only factory modules
+ * (`({ env }) => ({...})`) belong in `src/config/`; constants/types go in
+ * `src/lib/`.
+ *
+ * Shared by the request-time config middleware (router.ts) and the SSG render
+ * path (ssg-renderer.ts) so both enforce the same rule.
+ */
+export function buildConfig(
+    factories: Record<string, unknown>,
+    envFn: EnvFunction,
+): Record<string, unknown> {
+    const built: Record<string, unknown> = {};
+    for (const [name, factory] of Object.entries(factories)) {
+        if (typeof factory !== 'function') {
+            console.warn(
+                `[Cossack] Config file "src/config/${name}.ts" has no default-exported factory function — skipping. Only factory ` +
+                    `modules (default export \`({ env }) => ({...})\`) belong in src/config/. Move constants/types to src/lib/.`,
+            );
+            continue;
+        }
+        built[name] = (factory as ConfigFactory)({ env: envFn });
+    }
+    return built;
+}
+
 // ---------------------------------------------------------------------------
 // Type-safe inference machinery
 // ---------------------------------------------------------------------------
@@ -200,4 +230,30 @@ export function env(key: string, defaultValue?: string): string {
     if (!store) return defaultValue ?? '';
     const value = store.env?.[key];
     return value === undefined || value === null ? (defaultValue ?? '') : String(value);
+}
+
+/**
+ * Reads a RAW binding from the per-request environment (`c.env`) without
+ * string coercion — for binding *objects* like `D1Database`, Cloudflare
+ * `send_email`, R2 buckets, KV namespaces, or Durable Object namespaces.
+ *
+ * Returns `undefined` when the binding is unset or no request scope is active
+ * (e.g. on the client or outside a request). Unlike {@link env}, this does
+ * NOT stringify — pass the expected type as the generic so the call site
+ * stays type-safe.
+ *
+ * @example
+ * ```ts
+ * import { binding } from '@cossackframework/framework/config';
+ *
+ * const d1 = binding<D1Database>('DB');
+ * const mailer = binding<{ send: (m: unknown) => Promise<unknown> }>('EMAIL');
+ * if (mailer) await mailer.send({ to, from, subject, html, text });
+ * ```
+ */
+export function binding<T = unknown>(key: string): T | undefined {
+    const store = requestStore();
+    if (!store) return undefined;
+    const value = store.env?.[key];
+    return value === undefined || value === null ? undefined : (value as T);
 }

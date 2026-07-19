@@ -72,6 +72,36 @@ describe('createAuth — middleware', () => {
         expect(res.status).toBe(200);
         expect(((await res.json()) as { user: unknown }).user).toBeNull();
     });
+
+    it('degrades to guest when validateSessionId throws (e.g. sessions table missing)', async () => {
+        // Regression: a stale session cookie when the DB/schema is unavailable
+        // must not 500 every route — the request should render as a guest.
+        const kit = createAuth<User>({
+            extractSessionId: () => 'stale-cookie',
+            validateSessionId: async () => {
+                throw new Error('no such table: sessions');
+            },
+            resolveUserById: async () => null,
+        });
+        const app = buildApp(kit);
+        const res = await app.request('/me');
+        expect(res.status).toBe(200);
+        expect(((await res.json()) as { user: unknown }).user).toBeNull();
+    });
+
+    it('degrades to guest when resolveUserById throws', async () => {
+        const kit = createAuth<User>({
+            extractSessionId: () => 'token',
+            validateSessionId: async () => 'u1',
+            resolveUserById: async () => {
+                throw new Error('connection refused');
+            },
+        });
+        const app = buildApp(kit);
+        const res = await app.request('/me');
+        expect(res.status).toBe(200);
+        expect(((await res.json()) as { user: unknown }).user).toBeNull();
+    });
 });
 
 describe('createAuth — createLoginHandler', () => {

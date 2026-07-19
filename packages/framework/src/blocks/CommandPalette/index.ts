@@ -1,7 +1,8 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, OnWindow } from '@cossackframework/core';
-import { Modal, Icon, NamedIcon, Kbd } from '@cossackframework/ui';
+import { Modal, Icon, Kbd } from '@cossackframework/ui';
 import { MagnifierIcon as magnifier } from '@cossackframework/solar-icons/magnifier';
+import type { IconEntry } from '@cossackframework/solar-icons/types';
 
 export interface CommandItem {
     /** Unique id. */
@@ -10,8 +11,8 @@ export interface CommandItem {
     label: string;
     /** Optional category for grouping. */
     group?: string;
-    /** Optional Solar icon name. */
-    icon?: string;
+    /** Tree-shakeable icon entry from @cossackframework/solar-icons. */
+    icon?: IconEntry;
     /** Optional keyboard shortcut hint, e.g. "⌘K". */
     shortcut?: string;
 }
@@ -35,9 +36,9 @@ export interface CommandPaletteProps {
  *
  *   ${component(CommandPalette, {
  *       commands: [
- *           { id: 'home', label: 'Go to Home', group: 'Navigation', icon: 'hamburger-menu' },
+ *           { id: 'home', label: 'Go to Home', group: 'Navigation', icon: HamburgerMenuIcon },
  *           { id: 'settings', label: 'Open Settings', group: 'Navigation', shortcut: '⌘,' },
- *           { id: 'delete', label: 'Delete item', group: 'Actions', icon: 'trash-bin-minimalistic' },
+ *           { id: 'delete', label: 'Delete item', group: 'Actions', icon: TrashBinMinimalisticIcon },
  *       ],
  *       onSelect: (id) => { navigate(id); },
  *   })}
@@ -90,7 +91,7 @@ export class CommandPalette extends Cossack {
                                                 @mouseenter=${() => { this.activeIndex = idx; }}
                                             >
                                                 ${item.icon
-                                                    ? html`<span class="text-muted-foreground [&_svg]:size-4">${component(NamedIcon, { name: item.icon, size: 16 })}</span>`
+                                                    ? html`<span class="text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: item.icon, size: 16 })}</span>`
                                                     : html`<span class="size-4 shrink-0"></span>`}
                                                 <span class="flex-1 text-left">${item.label}</span>
                                                 ${item.shortcut ? component(Kbd, {}, item.shortcut) : null}

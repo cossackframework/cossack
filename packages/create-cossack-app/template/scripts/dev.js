@@ -13,12 +13,30 @@
  * full process restart. This mirrors how the Cloudflare adapter runs the same
  * `createApp()` in dev — the only difference is the runtime.
  */
-import { createServer } from 'vite';
+import { createServer, mergeConfig } from 'vite';
 import http from 'node:http';
 import { Readable } from 'node:stream';
 
 const PORT = Number(process.env.PORT) || 3000;
 const ENTRY = '/src/index.ts';
+
+/**
+ * When COSSACK_LOCAL is set, merge in vite.config.dev.ts — an overlay that
+ * pre-bundles locally-linked @cossackframework packages for the SSR environment
+ * so a cold dev start doesn't spend ~14s re-transforming their TS source each
+ * boot. No-op for normal installs (packages ship pre-built from npm). See
+ * vite.config.dev.ts for the full rationale and how to edit the package list.
+ */
+async function loadInlineConfig() {
+  if (!process.env.COSSACK_LOCAL) return {};
+  try {
+    const devConfig = (await import('../vite.config.dev.ts')).default;
+    return mergeConfig({}, devConfig);
+  } catch (e) {
+    console.warn('[cossack dev] COSSACK_LOCAL set but vite.config.dev.ts could not be loaded; ignoring.', e?.message ?? e);
+    return {};
+  }
+}
 
 /** Build env bindings mirroring Cloudflare's `env` (see src/index.ts). */
 async function buildEnv() {
@@ -61,12 +79,13 @@ function toWebRequest(req) {
 /** Pipe a Web Response out to a Node ServerResponse (binary-safe, backpressured, multi-cookie aware). */
 async function sendWebResponse(res, response) {
   res.statusCode = response.status;
-  // `set-cookie` must be applied with res.append (setHeader overwrites, which
-  // drops every cookie but the last on multi-cookie responses like OAuth).
-  // Prefer Headers.getSetCookie() (Node >= 18.14) — the canonical source that
-  // splits multi-value Set-Cookie headers correctly — and fall back to walking
-  // the entries() for older runtimes. Doing one OR the other avoids applying
-  // cookies twice.
+  // `set-cookie` must be applied with res.appendHeader (setHeader overwrites,
+  // which drops every cookie but the last on multi-cookie responses like
+  // OAuth). Node's http.ServerResponse has appendHeader (>= 18.14), not the
+  // `append` alias some other runtimes expose. Prefer Headers.getSetCookie()
+  // (Node >= 18.14) — the canonical source that splits multi-value Set-Cookie
+  // headers correctly — and fall back to walking the entries() for older
+  // runtimes. Doing one OR the other avoids applying cookies twice.
   if (typeof response.headers.getSetCookie === 'function') {
     const cookieHeaders = response.headers.getSetCookie();
     // Copy non-cookie headers first.
@@ -75,12 +94,12 @@ async function sendWebResponse(res, response) {
       res.setHeader(key, value);
     }
     for (const cookie of cookieHeaders) {
-      res.append('set-cookie', cookie);
+      res.appendHeader('set-cookie', cookie);
     }
   } else {
     for (const [key, value] of response.headers.entries()) {
       if (key.toLowerCase() === 'set-cookie') {
-        res.append('set-cookie', value);
+        res.appendHeader('set-cookie', value);
       } else {
         res.setHeader(key, value);
       }
@@ -103,7 +122,9 @@ async function sendWebResponse(res, response) {
 }
 
 async function main() {
+  const inlineConfig = await loadInlineConfig();
   const vite = await createServer({
+    ...inlineConfig,
     server: { middlewareMode: true },
     appType: 'custom', // we handle routing ourselves
     // Inherit the project's vite.config.ts (cossackPages/lang/middlewares/
@@ -173,16 +194,23 @@ async function main() {
     socket.destroy();
   });
 
-  // Reload the app module when src/index.ts changes (client code still
-  // hot-updates via Vite). Invalidate so the next ssrLoadModule re-reads disk.
+  // Reload the app module when any src/ server file changes (client code still
+  // hot-updates via Vite for CSS/client-only modules). Previously only
+  // src/index.ts triggered a reload, so edits to pages/services/middlewares
+  // were invisible until a manual restart. We invalidate the entry and its
+  // transitive SSR graph so the next request re-reads the changed modules.
   // `loadApp` itself guards against overlapping reloads via loadingPromise.
   vite.watcher.on('change', (file) => {
-    if (file.endsWith('/src/index.ts') || file.endsWith('/src/index.js')) {
-      console.log('[cossack dev] src/index.ts changed — reloading app module');
-      const mod = vite.moduleGraph.urlToModuleMap.get(ENTRY);
-      if (mod) vite.moduleGraph.invalidateModule(mod);
-      loadApp().catch((e) => console.error('[cossack dev] reload failed:', e));
-    }
+    const normalized = file.replace(/\\/g, '/');
+    const isSrcChange =
+      normalized.includes('/src/') &&
+      /\.(ts|tsx|js|jsx|md|mdx)$/.test(normalized) &&
+      !normalized.includes('/src/client/');
+    if (!isSrcChange) return;
+    console.log(`[cossack dev] ${normalized.split('/src/')[1]} changed — reloading app module`);
+    const mod = vite.moduleGraph.urlToModuleMap.get(ENTRY);
+    if (mod) vite.moduleGraph.invalidateModule(mod);
+    loadApp().catch((e) => console.error('[cossack dev] reload failed:', e));
   });
 
   server.listen(PORT, () => {

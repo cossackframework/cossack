@@ -38,6 +38,7 @@ export class Checkbox extends Cossack {
                     type="checkbox"
                     class="cs-checkbox__input size-4 shrink-0 rounded-[4px] border border-input shadow-xs accent-primary outline-none transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring"
                     ?checked=${checked}
+                    .checked=${checked}
                     .indeterminate=${indeterminate}
                     ...=${rest}
                 />

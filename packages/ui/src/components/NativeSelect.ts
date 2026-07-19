@@ -48,7 +48,11 @@ export class NativeSelect extends Cossack {
                         "cs-native-select__input": true,
                         [`cs-native-select--${variant}`]: true,
                         [`cs-native-select--${size}`]: true,
-                        "appearance-none w-full rounded-md border bg-transparent": true,
+                        // bg-background/text-foreground (not bg-transparent) so the
+                        // control and its <option> dropdown are readable in dark mode.
+                        // color-scheme lets the browser theme the native dropdown list.
+                        "appearance-none w-full rounded-md border bg-background text-foreground [color-scheme:light_dark]": true,
+                        "dark:[color-scheme:dark]": true,
                         "shadow-xs outline-none": true,
                         "transition-[color,box-shadow]": true,
                         "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,

@@ -31,9 +31,9 @@ export class Icon extends Cossack {
             // Help migrate callers still using the old name-based API.
             if (typeof console !== "undefined" && "name" in this.props && this.props.name) {
                 console.warn(
-                    `[cossack/ui] <Icon> no longer takes a "name" prop — use "entry" instead. ` +
-                    `For dynamic names, use <NamedIcon>. ` +
-                    `Example: import { ArrowRightIcon } from '@cossackframework/solar-icons/arrow-right'; ` +
+                    `[cossack/ui] <Icon> takes an "entry" prop, not "name". ` +
+                    `Import the icon you need directly (tree-shakeable) and pass it: ` +
+                    `import { ArrowRightIcon } from '@cossackframework/solar-icons/arrow-right'; ` +
                     `component(Icon, { entry: ArrowRightIcon })`,
                 );
             }

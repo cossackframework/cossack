@@ -33,7 +33,7 @@ import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, APP_ROUTE_ID, type RouterContext } from './route-ids';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -48,13 +48,18 @@ import { createLocaleMiddleware } from './middlewares/locale';
 import { createFlashMiddleware } from './middlewares/flash';
 import { createRequestContextMiddleware } from './middlewares/request-context';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { runWithConfig, type ConfigFactory, type EnvFunction } from './config';
+import { runWithConfig, buildConfig, type EnvFunction } from './config';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
 // This is needed because apps import `createApp` from this `./router`
 // subpath, not the framework's main entry (which also imports i18n-globals).
 import './i18n-globals';
+// Side-effect: register the config accessors (`config`, `env`, `binding`) on
+// `globalThis` so bare calls in user middleware/auth/pages resolve during SSR.
+// Same reason as i18n-globals above: apps import `createApp` from this
+// `./router` subpath, not the framework's main entry.
+import './config-globals';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -313,7 +318,10 @@ export interface CreateAppOptions {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
-  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>();
+  // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
+  // Hono's getPathNoStrict strips a single trailing slash before route matching,
+  // so users get the same page whether or not they type the slash.
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
 
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {
@@ -344,15 +352,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const v = envBindings?.[key];
       return v !== undefined && v !== null ? String(v) : def ?? '';
     };
-    const built: Record<string, unknown> = {};
-    for (const [name, factory] of Object.entries(configFactories as Record<string, unknown>)) {
-      if (typeof factory !== 'function') {
-        throw new Error(
-          `[Cossack] Config file "src/config/${name}.ts" must default-export a factory function.`,
-        );
-      }
-      built[name] = (factory as ConfigFactory)({ env: envFn });
-    }
+    const built = buildConfig(configFactories as Record<string, unknown>, envFn);
     return runWithConfig({ env: envBindings, config: built }, () => next());
   });
 
@@ -703,8 +703,19 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.json(responseData);
   });
 
-  // Register all routes
-  for (const path in pages) {
+  // Register all routes.
+  //
+  // Sort by route specificity (literal > param > catch-all) before registering
+  // so that a static sibling like `/dashboard/users/new` is registered before
+  // `/dashboard/users/:id`. Hono's RegExpRouter otherwise lets an
+  // earlier-registered param route shadow a later static sibling at the same
+  // path position — and `import.meta.glob` yields keys in lexicographic order,
+  // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
+  // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
+  const pagePaths = Object.keys(pages).sort((a, b) =>
+    compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
+  );
+  for (const path of pagePaths) {
     let httpRoute = filePathToHttpRoute(path);
 
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
