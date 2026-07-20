@@ -1,9 +1,11 @@
 import type { Plugin } from 'vite';
-import { marked } from 'marked';
-import matter from 'gray-matter';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
+import { processMarkdown } from './markdown-processor.js';
+import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
+
+export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
 const virtualModuleId = 'virtual:cossack-pages';
 const resolvedVirtualModuleId = '\0' + virtualModuleId;
@@ -19,8 +21,6 @@ const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
  * The `writeBundle` hook below copies it to this non-ignored path after
  * the client build so `env.ASSETS.fetch` can reach it in production.
  */
-export const SSR_MANIFEST_ASSET_PATH = '/cossack-manifest.json';
-
 export function cossackPages(): Plugin {
   return {
     name: 'cossack-pages',
@@ -76,28 +76,26 @@ export function cossackPages(): Plugin {
       }
 
       if (id.endsWith('.mdx') || id.endsWith('.md')) {
-        const { data, content } = matter(code);
-        const htmlContent = await marked(content);
-
-        // Escape backticks and ${} to avoid breaking the template string
-        const escapedHtml = htmlContent.replace(/\`/g, '\\`').replace(/\$\{/g, '\\${');
+        const { html: htmlContent, frontmatter } = await processMarkdown(code);
 
         return {
           code: `
             import { Cossack } from '@cossackframework/core';
-            import { html } from '@cossackframework/renderer';
+            import { html, unsafeHTML } from '@cossackframework/renderer';
+
+            const markdownHtml = ${JSON.stringify(htmlContent)};
 
             class MdxPage extends Cossack {
               head() {
                 return {
-                  title: ${JSON.stringify(data.title || '')},
-                  description: ${JSON.stringify(data.description || '')},
-                  image: ${JSON.stringify(data.image || '')}
+                  title: ${JSON.stringify(frontmatter.title || '')},
+                  description: ${JSON.stringify(frontmatter.description || '')},
+                  image: ${JSON.stringify(frontmatter.image || '')}
                 };
               }
 
               render() {
-                return html\`<div class="mdx-content">${escapedHtml}</div>\`;
+                return html\`<div class="mdx-content">\${unsafeHTML(markdownHtml)}</div>\`;
               }
             }
 
