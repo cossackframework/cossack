@@ -2,16 +2,20 @@ import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackfram
 import { html, component } from '@cossackframework/renderer';
 import { Kbd } from '@cossackframework/ui';
 import { CommandPalette, type CommandItem } from '../../blocks/CommandPalette';
+import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu';
+import { SettingsIcon } from '@cossackframework/solar-icons/settings';
+import { AddCircleIcon } from '@cossackframework/solar-icons/add-circle';
+import { TrashBinMinimalisticIcon } from '@cossackframework/solar-icons/trash-bin-minimalistic';
 
 const COMMANDS: CommandItem[] = [
-    { id: 'home', label: 'Go to Home', group: 'Navigation', icon: 'hamburger-menu' },
-    { id: 'dashboard', label: 'Go to Dashboard', group: 'Navigation', icon: 'settings' },
+    { id: 'home', label: 'Go to Home', group: 'Navigation', icon: HamburgerMenuIcon },
+    { id: 'dashboard', label: 'Go to Dashboard', group: 'Navigation', icon: SettingsIcon },
     { id: 'settings', label: 'Open Settings', group: 'Navigation', shortcut: '⌘,' },
     { id: 'profile', label: 'View Profile', group: 'Navigation' },
-    { id: 'new-post', label: 'Create new post', group: 'Actions', icon: 'add-circle' },
+    { id: 'new-post', label: 'Create new post', group: 'Actions', icon: AddCircleIcon },
     { id: 'invite', label: 'Invite team member', group: 'Actions' },
     { id: 'export', label: 'Export data', group: 'Actions' },
-    { id: 'delete', label: 'Delete account', group: 'Actions', icon: 'trash-bin-minimalistic' },
+    { id: 'delete', label: 'Delete account', group: 'Actions', icon: TrashBinMinimalisticIcon },
 ];
 
 @Page({ transport: 'http' })

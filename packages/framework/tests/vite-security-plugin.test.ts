@@ -3,7 +3,7 @@
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1832,13 +1832,11 @@ describe('server-only module detection', () => {
   };
 
   // Best-effort cleanup of temp files created across tests.
-  if (typeof afterEach === 'function') {
-    afterEach(() => {
-      for (const p of createdPaths.splice(0)) {
-        try { rmSync(p, { force: true }); } catch { /* ignore */ }
-      }
-    });
-  }
+  afterEach(() => {
+    for (const p of createdPaths.splice(0)) {
+      try { rmSync(p, { force: true }); } catch { /* ignore */ }
+    }
+  });
 
   describe('readImportSources()', () => {
     it('collects static import sources', () => {

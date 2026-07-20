@@ -240,13 +240,18 @@ describe('add auth', () => {
     // The config default redirectAfterLogout mirrors the chosen login path.
     const cfg = fs.readFileSync(path.join(tmp, 'src/config/auth.ts'), 'utf8');
     expect(cfg).toContain("'/admin/auth/login'");
+    const guard = fs.readFileSync(path.join(tmp, 'src/middlewares/auth.ts'), 'utf8');
+    expect(guard).toContain('"/admin/auth/login"');
+    expect(guard).toContain('"/admin/auth/reset-password"');
+    expect(guard).not.toContain("path.startsWith('/auth/')");
   });
 
   it('default auth namespace uses /auth/* paths and config-driven guard', async () => {
     await addCommand(['auth'], ctx);
     const guard = fs.readFileSync(path.join(tmp, 'src/middlewares/auth.ts'), 'utf8');
-    // Guard is prefix-based and reads redirects from config(), not hardcoded paths.
-    expect(guard).toContain("path.startsWith('/auth/')");
+    // Guest routes are exact matches, leaving OAuth callbacks and endpoints accessible.
+    expect(guard).toContain('guestPaths.has(path)');
+    expect(guard).toContain('"/auth/login"');
     expect(guard).toContain("path.startsWith('/dashboard')");
     expect(guard).toContain("config('auth.redirectAfterLogin')");
     expect(guard).toContain("config('auth.redirectAfterLogout')");

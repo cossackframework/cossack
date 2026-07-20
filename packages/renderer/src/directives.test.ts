@@ -214,7 +214,7 @@ describe('pure directives (when, choose, map, join, range)', () => {
     });
 
     it('supports a separator function (receives the preceding item index)', () => {
-      const spy = vi.fn(() => '|');
+      const spy = vi.fn((_index: number) => '|');
       join(['a', 'b'], (s) => s, spy);
       expect(spy.mock.calls[0][0]).toBe(0);
     });
