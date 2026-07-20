@@ -27,6 +27,7 @@ describe('create-cossack-app starter examples', () => {
     expect(home).toContain("from '../../components/Chat'");
     const chat = read('src/components/Chat.ts');
     expect(chat).toContain('interface ChatProps');
+    expect(chat).not.toContain('[key: string]: unknown');
     expect(chat).toContain("role: 'user' | 'assistant'");
     expect(chat).toContain("from '@cossackframework/ui'");
     expect(chat).toContain("from '@cossackframework/solar-icons/arrow-up'");
@@ -53,6 +54,8 @@ describe('create-cossack-app starter examples', () => {
     expect(blogLayout).toContain('items: breadcrumb.items');
     expect(blogLayout).not.toContain('onNavigateComplete(pathname: string)');
     expect(blogLayout).not.toContain("@OnDocument('cossack:ready')");
+    expect(blogLayout).toContain("pathname.replace(/\\/+$/, '')");
+    expect(blogLayout).not.toContain('.at(-1)!');
 
     const contact = read('src/pages/(public)/contact.ts');
     expect(contact).toContain('interface ContactPayload');
@@ -63,6 +66,7 @@ describe('create-cossack-app starter examples', () => {
     expect(contact).toContain("this.validateProperty(`form.${field}`");
     expect(contact).toContain('@Server()');
     expect(contact).toContain('this.loading.submitContact');
+    expect(contact).toContain('await validateObject(payload, contactRules)');
     expect(contact).toContain('this.success =');
 
     const nav = read('src/pages/(public)/layout.ts');

@@ -1,18 +1,19 @@
-import { __, Client, ClientState, ClientStore, Cossack, HeadContext, HeadValue, Page, Server, Validate, storeRules } from '@cossackframework/core';
+import { __, Client, ClientState, ClientStore, Cossack, HeadContext, HeadValue, Page, Server, Validate, storeRules, validateObject } from '@cossackframework/core';
 import { Button, Field, Input, Textarea } from '@cossackframework/ui';
 import { component, html } from '@cossackframework/renderer';
 
 interface ContactPayload { name: string; email: string; message: string; }
+const contactRules = storeRules<ContactPayload>({
+    name: { required: true, minLength: 2, message: 'Please enter your name' },
+    email: { required: true, email: true, message: 'Please enter a valid email address' },
+    message: { required: true, minLength: 10, message: 'Message must be at least 10 characters' },
+});
 
 @Page({ transport: 'http' })
 export default class ContactPage extends Cossack {
     @ClientStore()
     @Validate({
-        rules: storeRules<ContactPayload>({
-            name: { required: true, minLength: 2, message: 'Please enter your name' },
-            email: { required: true, email: true, message: 'Please enter a valid email address' },
-            message: { required: true, minLength: 10, message: 'Message must be at least 10 characters' },
-        }),
+        rules: contactRules,
         config: { trigger: 'all', runOn: 'client' },
     })
     form: ContactPayload = { name: '', email: '', message: '' };
@@ -53,6 +54,8 @@ export default class ContactPage extends Cossack {
 
     @Server()
     async submitContact(payload: ContactPayload): Promise<{ success: true }> {
+        const { valid } = await validateObject(payload, contactRules);
+        if (!valid) throw new Error('Please check your contact details and try again.');
         console.info('contact.submitted', { name: payload.name, email: payload.email, message: payload.message });
         return { success: true };
     }

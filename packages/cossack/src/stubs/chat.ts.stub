@@ -3,7 +3,7 @@ import { Bubble, Button, Card, CardBody, CardHeader, Icon, Input, Message, Messa
 import { ArrowUpIcon as arrowUpIcon } from '@cossackframework/solar-icons/arrow-up';
 import { component, html } from '@cossackframework/renderer';
 export interface ChatMessage { role: 'user' | 'assistant'; content: string; }
-interface ChatProps { [key: string]: unknown; messages: ChatMessage[]; streamingText: string; isStreaming: boolean; inputValue: string; onInput: (event: Event) => void; onSubmit: (event: Event) => void; }
+interface ChatProps { messages: ChatMessage[]; streamingText: string; isStreaming: boolean; inputValue: string; onInput: (event: Event) => void; onSubmit: (event: Event) => void; }
 @Component()
 export class Chat extends Cossack {
     declare props: ChatProps;

@@ -8,9 +8,10 @@ interface BreadcrumbItem {
 }
 
 function breadcrumbFor(pathname: string): { postTitle: string; items: BreadcrumbItem[] } {
-    const slug = pathname.replace(/^\/blog\/?/, '');
-    const postTitle = slug
-        ? slug.split('/').at(-1)!.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+    const slug = pathname.replace(/\/+$/, '').replace(/^\/blog\/?/, '');
+    const postSlug = slug.split('/').at(-1) ?? '';
+    const postTitle = postSlug
+        ? postSlug.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
         : '';
     return {
         postTitle,
