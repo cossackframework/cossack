@@ -1,6 +1,6 @@
 // tests/config.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { config, env, runWithConfig, buildConfig, type ConfigStore } from '../src/config';
+import { config, env, runWithConfig, buildConfig, type ConfigStore, type EnvFunction } from '../src/config';
 
 // Note: config() now reads directly from AsyncLocalStorage (no isServer flag,
 // no setConfigStoreGetter injection). Tests use runWithConfig() to scope a
@@ -164,8 +164,8 @@ describe('buildConfig()', () => {
         const envFn = (key: string, def: string = '') => (key === 'APP_NAME' ? 'Storm' : def);
         const built = buildConfig(
             {
-                app: ({ env }) => ({ name: env('APP_NAME', 'Fallback') }),
-                db: ({ env }) => ({ host: env('DB_HOST', 'localhost') }),
+                app: ({ env }: { env: EnvFunction }) => ({ name: env('APP_NAME', 'Fallback') }),
+                db: ({ env }: { env: EnvFunction }) => ({ host: env('DB_HOST', 'localhost') }),
             },
             envFn as any,
         );
@@ -180,7 +180,7 @@ describe('buildConfig()', () => {
         const built = buildConfig(
             {
                 permissions: undefined, // simulates a constants-only module (no default export)
-                app: ({ env }) => ({ name: env('APP_NAME', 'My App') }),
+                app: ({ env }: { env: EnvFunction }) => ({ name: env('APP_NAME', 'My App') }),
             },
             envFn as any,
         );

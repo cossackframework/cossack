@@ -70,7 +70,7 @@ describe('cache directive', () => {
       render(tpl(true, 'first'), container);
       expect(container.querySelector('.a')!.textContent).toBe('first');
 
-      render(tpl(false), container);
+      render(tpl(false, ''), container);
 
       // Restore A with a new value — the node is reused AND shows the new value.
       render(tpl(true, 'second'), container);

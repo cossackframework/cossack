@@ -1,5 +1,10 @@
 import { Cossack, Page, ClientState, State, Store, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component, bind, type TemplateResult } from '@cossackframework/renderer';
+import { Widget2Icon } from '@cossackframework/solar-icons/widget-2';
+import { ChartIcon } from '@cossackframework/solar-icons/chart';
+import { CartIcon } from '@cossackframework/solar-icons/cart';
+import { UsersGroupRoundedIcon } from '@cossackframework/solar-icons/users-group-rounded';
+import { SettingsIcon } from '@cossackframework/solar-icons/settings';
 import {
     Card,
     CardHeader,
@@ -193,14 +198,14 @@ export default class DashboardBlocks extends Cossack {
                     width: '240px',
                     collapsible: 'icon',
                     items: [
-                        { label: 'Dashboard', href: '#', icon: 'grid', active: true },
-                        { label: 'Analytics', href: '#', icon: 'chart' },
-                        { label: 'Orders', href: '#', icon: 'cart', children: [
+                        { label: 'Dashboard', href: '#', icon: Widget2Icon, active: true },
+                        { label: 'Analytics', href: '#', icon: ChartIcon },
+                        { label: 'Orders', href: '#', icon: CartIcon, children: [
                             { label: 'All Orders', href: '#' },
                             { label: 'Refunds', href: '#' },
                         ]},
-                        { label: 'Customers', href: '#', icon: 'users' },
-                        { label: 'Settings', href: '#', icon: 'settings' },
+                        { label: 'Customers', href: '#', icon: UsersGroupRoundedIcon },
+                        { label: 'Settings', href: '#', icon: SettingsIcon },
                     ],
                     footer: component(DropdownMenu, {
                         block: true,

@@ -52,6 +52,7 @@ import {
   rolesEditTemplate,
   logoSvgTemplate,
   UI_COMPONENTS,
+  uiBarrelTemplate,
 } from '../templates.js';
 import { flagList, flagString } from '../flags.js';
 import { resolveFileTarget } from '../names.js';
@@ -178,7 +179,7 @@ async function addAuth(_args, ctx) {
     ['src/models/Session.ts', sessionModelTemplate()],
     ['src/models/Role.ts', roleModelTemplate()],
     ['src/models/UserRole.ts', userRoleModelTemplate()],
-    ['src/auth.ts', authModuleTemplate({ publicPaths, loginPath: paths.loginPath, oauthProviders })],
+    ['src/auth.ts', authModuleTemplate({ loginPath: paths.loginPath, oauthProviders })],
     ['src/config/auth.ts', configAuthTemplate({ loginPath: paths.loginPath })],
     ['src/config/permissions.ts', permissionsConfigTemplate()],
     ['src/lib/uuid.ts', uuidHelperTemplate()],
@@ -209,7 +210,7 @@ async function addAuth(_args, ctx) {
     ['src/pages/dashboard/roles/new/index.ts', rolesNewTemplate()],
     ['src/pages/dashboard/roles/[id]/index.ts', rolesEditTemplate()],
     ['public/logo.svg', logoSvgTemplate()],
-    ['src/middlewares/auth.ts', authMiddlewareTemplate({ publicPaths, loginPath: paths.loginPath })],
+    ['src/middlewares/auth.ts', authMiddlewareTemplate({ publicPaths })],
   ];
 
   for (const [rel, content] of files) {
@@ -428,9 +429,8 @@ async function ensureDatabaseMigrations(root, ctx) {
  * package) even when `cossack add ui` was already run. Mirrors the
  * dependency-ensure pattern of ensureDatabase().
  *
- * Note: no `src/components/ui` barrel is generated — pages import components
- * directly from `@cossackframework/ui`, which keeps the client bundle
- * tree-shakeable (only used components load).
+ * Auth pages import directly from the package. The explicit `cossack add ui`
+ * command additionally creates the conventional local barrel.
  */
 async function ensureUi(root, ctx) {
   // 1. dependency
@@ -769,6 +769,10 @@ async function addUi(args, ctx) {
     return 1;
   }
   await wireUiTheme(root, ctx, palette);
+
+  const barrelPath = path.resolve(root, 'src/components/ui/index.ts');
+  const barrelResult = await writeFile(barrelPath, uiBarrelTemplate(), ctx);
+  reportFile('src/components/ui/index.ts', barrelResult, ctx);
 
   console.log(
     '\nUI support added. Components are available via `import { Button, ... } from "./components/ui"`.\n' +
