@@ -92,7 +92,7 @@ Services support the same decorators as components:
 | `@State()` | Synchronized state. Changes on the server are returned to the client after RPC calls. |
 | `@Server()` | Server-only method. Proxied via HTTP on the client. Body is stripped from client bundle. |
 | `@Client()` | Client-only method. Stubbed on the server. |
-| `@Shared()` | Runs on both sides with full implementation. Not proxied. |
+| `@Shared()` | Runs locally on both sides with its full implementation. Never RPC-callable or proxied. |
 | `@Computed()` | Memoized getter. Runs locally on both sides. |
 
 ### `@Shared` vs `@Server`

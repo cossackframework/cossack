@@ -9,7 +9,7 @@ Cossack provides a way to directly reference DOM elements within your components
 
 ## Basic Usage
 
-To use a ref, decorate a property with `@Ref()` and type it as `RefObject<HTMLElement>`. Then, bind it to an element in your template using the `ref` attribute.
+To use a ref, decorate a property with `@Ref()`, `declare` keyword, and type it as `RefObject<HTMLElement>`. Then, bind it to an element in your template using the `ref` attribute.
 
 ```typescript
 import { Cossack, Page, Ref, html, type RefObject } from '@cossackframework/core';
@@ -20,7 +20,6 @@ export default class RefExample extends Cossack {
     @Ref()
     declare inputRef: RefObject<HTMLInputElement>;
 
-    @Client()
     onMount() {
         // Access the DOM element via .value
         this.inputRef.value?.focus();
@@ -34,8 +33,6 @@ export default class RefExample extends Cossack {
     }
 }
 ```
-
-> **Note:** When using TypeScript with `useDefineForClassFields: true` (the default in Vite), you must use the `declare` keyword for properties decorated with `@Ref`. This prevents the compiler from emitting a property initializer that would overwrite the decorator's logic.
 
 ## How it Works
 

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Page, State, Server, Client, PageOptions, createTypedDecorators, Ref, Debounce, Throttle, Task, ServerTask, ClientTask } from '../src/shared/decorators';
+import { Page, State, Server, Client, Shared, PageOptions, createTypedDecorators, Ref, Debounce, Throttle, Task, ServerTask, ClientTask } from '../src/shared/decorators';
 import * as environment from '../src/shared/environment';
 
 vi.mock('../src/shared/environment');
@@ -196,6 +196,25 @@ describe('Decorators', () => {
                 showAlert: true,
             });
         });
+    });
+  });
+
+  describe('@Shared', () => {
+    it('records only local shared metadata and preserves return types', async () => {
+      class TestComponent {
+        @Shared()
+        format(value: number) { return `value:${value}`; }
+
+        @Shared()
+        async formatAsync(value: number) { return `async:${value}`; }
+      }
+
+      const instance = new TestComponent();
+      expect(instance.format(3)).toBe('value:3');
+      expect(await instance.formatAsync(4)).toBe('async:4');
+      expect(Reflect.getMetadata('cossack:shared', TestComponent.prototype, 'format')).toBe(true);
+      expect(Reflect.getMetadata('cossack:server-methods', TestComponent)).toBeUndefined();
+      expect(Reflect.getMetadata('cossack:client-methods', TestComponent)).toBeUndefined();
     });
   });
 

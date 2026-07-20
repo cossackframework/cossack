@@ -324,8 +324,9 @@ Fallback: parses the constructor source to extract parameter names, then checks 
 |-----|--------|----------|----------|
 | `cossack:service` | `@Service()` | class constructor | `{ scope: 'singleton' \| 'transient' }` |
 | `cossack:state` | `@State()` | class constructor | `{ [key]: { channel, provider } }` |
-| `cossack:server-methods` | `@Server()`, `@Shared()` | class constructor | `{ [methodName]: { channel, provider } }` |
-| `cossack:client-methods` | `@Client()`, `@Shared()` | class constructor | `{ [methodName]: true \| { channel } }` |
+| `cossack:server-methods` | `@Server()` | class constructor | `{ [methodName]: { channel, provider } }` |
+| `cossack:client-methods` | `@Client()` | class constructor | `{ [methodName]: true \| { channel } }` |
+| `cossack:shared` | `@Shared()` | class prototype + property key | `true` |
 | `design:paramtypes` | TypeScript compiler (emitDecoratorMetadata) | class constructor | `[Class, Class, ...]` |
 | `page:options` | `@Page()` | class constructor | `{ channels, transport, ... }` |
 
@@ -345,6 +346,6 @@ Fallback: parses the constructor source to extract parameter names, then checks 
 
 6. **Method name collisions**: If the component and a service both define a method with the same name, the component's method wins. `_forwardServiceMethods` skips methods that already exist on the component.
 
-7. **`@Shared` is dual-registered**: Both `cossack:server-methods` and `cossack:client-methods` contain `@Shared` methods. All filtering logic must check: `if (clientMethods[methodName]) continue` to avoid proxying shared methods.
+7. **`@Shared` is local-only**: It records only `cossack:shared` property metadata. Shared methods retain their implementation and are never installed as HTTP, WebSocket, or server-to-client RPC proxies.
 
 8. **Global container is per-JS-environment**: Server and client each have their own global container. Singletons are not shared between server and client (they are separate processes/runtimes).

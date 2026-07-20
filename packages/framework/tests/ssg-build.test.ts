@@ -67,6 +67,28 @@ describe('SSG build test guard', () => {
   });
 });
 
+describe('published SSG plugin ESM contract', () => {
+  const builtPlugin = path.resolve(PROJECT_ROOT, 'dist/esm/vite-ssg-plugin.js');
+
+  it('uses explicit .js specifiers for relative imports executed by Node', () => {
+    const source = readFile('src/vite-ssg-plugin.ts');
+    const relativeDynamicImports = [...source.matchAll(/import\(\s*['"](\.\/[^'"]+)['"]\s*\)/g)]
+      .map((match) => match[1]);
+    expect(relativeDynamicImports.length).toBeGreaterThan(0);
+    expect(relativeDynamicImports.every((specifier) => specifier.endsWith('.js'))).toBe(true);
+  });
+
+  it.runIf(fileExists('dist/esm/vite-ssg-plugin.js'))('imports the emitted plugin in Node ESM', async () => {
+    const module = await import(`${path.toNamespacedPath(builtPlugin)}?test=${Date.now()}`);
+    expect(module.cossackSsg).toBeTypeOf('function');
+  });
+
+  it.runIf(fileExists('dist/esm/vite-ssg-plugin.js'))('does not retain deleted ssg-build artifacts', () => {
+    expect(fileExists('dist/esm/ssg-build.js')).toBe(false);
+    expect(fileExists('dist/esm/ssg-build.d.ts')).toBe(false);
+  });
+});
+
 describe('getOutputFilePath (path-traversal guard)', () => {
   const out = path.resolve(PROJECT_ROOT, 'dist', 'client');
 

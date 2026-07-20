@@ -146,7 +146,7 @@ class LifecycleDemo extends Cossack {
 
 ### The `@Shared` Decorator
 
-The `@Shared()` decorator marks a method as safe to run on both client and server. Unlike `@Server` methods (which become proxies on the client) or `@Client` methods (which run only on the client), `@Shared` methods retain their full implementation on both sides.
+The `@Shared()` decorator marks a local-only method as safe to run on both client and server. Unlike `@Server` methods (which become proxies on the client) or `@Client` methods (which may be invoked from the server), `@Shared` methods retain their full implementation on both sides and are never registered as RPC actions.
 
 **Use `@Shared` for:**
 - Pure functions that don't access server-only resources

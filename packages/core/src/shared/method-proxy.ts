@@ -2,6 +2,7 @@
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
+import { isSharedMethod } from './shared-method';
 
 interface ServerMethodBase {
     name: string;
@@ -188,6 +189,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
     for (const method of serverMethods) {
         const { name } = method;
+        if (isSharedMethod(component.constructor, name)) continue;
 
         if (isSse) {
             // SSE hybrid proxy — works with both `await` and `for await...of`
@@ -706,6 +708,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
 
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
+        if (isSharedMethod(component.constructor, name)) continue;
         const proxy = (...args: any[]) => {
             invalidateCurrentClientPage();
             let ws = component.websockets.get(provider);
@@ -770,11 +773,13 @@ export function setupServerMethodProxies(component: any): void {
     const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', component.constructor) || {};
 
     // Build the server methods list from metadata
-    const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
-        name,
-        channel: options.channel || 'global',
-        provider: options.provider || 'page',
-    }));
+    const serverMethods = Object.entries(serverMethodsMetadata)
+        .filter(([name]) => !isSharedMethod(component.constructor, name))
+        .map(([name, options]: [string, any]) => ({
+            name,
+            channel: options.channel || 'global',
+            provider: options.provider || 'page',
+        }));
 
     // Also detect methods without decorators (server-only by default)
     const clientSafeMethods = new Set(
@@ -859,6 +864,7 @@ export function isRpcCallableAction(constructor: unknown, action: unknown): acti
     if (action === '__proto__' || action === 'prototype' || action === 'constructor') return false;
     // Framework-internal @Server lifecycle hooks are not RPC endpoints.
     if (RPC_BLOCKED_INTERNAL_METHODS.has(action)) return false;
+    if (isSharedMethod(constructor, action)) return false;
 
     let proto: object | null = typeof constructor === 'function' ? constructor : null;
     while (proto !== null && proto !== Function.prototype) {

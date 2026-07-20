@@ -121,7 +121,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       // Resolve the base URL once and reuse it for both rendering and the
       // sitemap (avoids resolving getSiteUrl twice). Resolved here (not in the
       // entry) so the plugin and entry agree on a single value.
-      const { getSiteUrl } = await import('./ssg-config');
+      const { getSiteUrl } = await import('./ssg-config.js');
       const baseUrl = options.baseUrl || getSiteUrl({ projectRoot });
       console.log(`[cossack/ssg] Using base URL: ${baseUrl}`);
 
@@ -147,7 +147,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       // --- Sitemap + routes.json ---
       if (renderedRoutes.length > 0) {
         console.log('\n[cossack/ssg] Generating sitemap...');
-        const sitemap = (await import('./sitemap-generator')).generateSitemapFromUrls(
+        const sitemap = (await import('./sitemap-generator.js')).generateSitemapFromUrls(
           renderedRoutes,
           { baseUrl, lastmod: new Date() },
         );
@@ -219,9 +219,9 @@ async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryMod
   // are not part of the config-bundle dependency graph. These run only during
   // SSG (inside closeBundle), never at config-evaluation time.
   const { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } = await import(
-    './vite-plugin'
+    './vite-plugin.js'
   );
-  const { cossackSecurityPlugin } = await import('./vite-security-plugin');
+  const { cossackSecurityPlugin } = await import('./vite-security-plugin.js');
 
   const inlineConfig: InlineConfig = {
     root: projectRoot,

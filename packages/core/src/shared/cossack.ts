@@ -28,6 +28,7 @@ import {
     setupServerMethodProxies as setupServerMethodProxiesFn,
     isRpcCallableAction,
 } from './method-proxy';
+import { isSharedMethod } from './shared-method';
 import { HeadTag, HeadContext, HeadValue, composeHead as composeHeadFn, type Headed } from './head';
 import {
     buildHeadContext as buildHeadContextFn,
@@ -736,11 +737,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             // Get server methods directly from Reflect metadata instead of serialized state
             const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-            const serverMethods = Object.entries(serverMethodsMetadata).map(([name, options]: [string, any]) => ({
-                name,
-                channel: options.channel || 'global',
-                provider: options.provider || 'page',
-            }));
+            const serverMethods = Object.entries(serverMethodsMetadata)
+                .filter(([name]) => !isSharedMethod(this.constructor, name))
+                .map(([name, options]: [string, any]) => ({
+                    name,
+                    channel: options.channel || 'global',
+                    provider: options.provider || 'page',
+                }));
 
             if (pageOptions?.transport === 'http') {
                 this.proxyHttpMethods(serverMethods);
@@ -1464,6 +1467,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private proxyClientMethods() {
         const clientMethods = Reflect.getMetadata('cossack:client-methods', this.constructor) || {};
         for (const key in clientMethods) {
+            if (isSharedMethod(this.constructor, key)) continue;
             if (!this.hasMethod(key)) continue;
 
             this.setProperty(key, (...args: any[]) => {

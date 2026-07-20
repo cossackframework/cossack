@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
-import { Server, State } from '../src/shared/decorators';
+import { Server, Shared, State } from '../src/shared/decorators';
 import { isRpcCallableAction, sanitizeClientState } from '../src/shared/method-proxy';
 
 describe('isRpcCallableAction (RPC allowlist gate)', () => {
@@ -23,6 +23,17 @@ describe('isRpcCallableAction (RPC allowlist gate)', () => {
         }
         expect(isRpcCallableAction(Child, 'baseMethod')).toBe(true);
         expect(isRpcCallableAction(Child, 'childMethod')).toBe(true);
+    });
+
+    it('rejects @Shared methods even when stale server metadata exists', () => {
+        class Page {
+            @Shared()
+            format() { return 'local'; }
+        }
+        Reflect.defineMetadata('cossack:server-methods', {
+            format: { channel: 'global', provider: 'page' },
+        }, Page);
+        expect(isRpcCallableAction(Page, 'format')).toBe(false);
     });
 
     it('rejects undecorated methods (the core security guarantee)', () => {

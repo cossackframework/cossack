@@ -649,26 +649,8 @@ export function Computed(): MethodDecorator {
  */
 export function Shared(): MethodDecorator {
     return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
-        // Mark as server-callable (like @Server)
-        const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
-            ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
-            : {};
-
-        serverMethods[propertyKey] = {
-            channel: 'global',
-            provider: 'page',
-        };
-        Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);
-
-        // Also mark as client-safe (like @Client) so it's NOT stubbed
-        const clientMethods = Reflect.hasOwnMetadata('cossack:client-methods', target.constructor)
-            ? Reflect.getOwnMetadata('cossack:client-methods', target.constructor)
-            : {};
-
-        clientMethods[propertyKey] = true;
-        Reflect.defineMetadata('cossack:client-methods', clientMethods, target.constructor);
-
-        // Mark as shared for the security plugin to detect
+        // Shared methods are local-only. This metadata keeps their bodies in
+        // client bundles without registering either RPC direction.
         Reflect.defineMetadata('cossack:shared', true, target, propertyKey);
 
         return descriptor;

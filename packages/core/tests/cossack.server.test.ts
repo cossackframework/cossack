@@ -8,7 +8,7 @@ vi.mock('../src/shared/environment', () => ({
 }));
 
 import { Cossack } from '../src/shared/cossack';
-import { State, Server, Client } from '../src/shared/decorators';
+import { State, Server, Client, Shared } from '../src/shared/decorators';
 import { renderToString } from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 import type { Context } from 'hono';
@@ -60,6 +60,12 @@ class TestComponent extends Cossack<{}> {
     // This would be implemented on the client
   }
 
+  @Shared()
+  formatCount(prefix: string) { return `${prefix}:${this.count}`; }
+
+  @Shared()
+  async formatCountAsync(prefix: string) { return `${prefix}:${this.count}`; }
+
   render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
@@ -97,6 +103,16 @@ describe('Cossack Core: Server-Side', () => {
       await component.bootstrap({ context: mockContext });
       expect(component.count).toBe(0);
       expect(component.message).toBe('initial');
+  });
+
+  it('runs synchronous and asynchronous @Shared methods locally without loading state', async () => {
+      const mockContext = { req: { param: vi.fn() } } as unknown as Context;
+      await component.bootstrap({ context: mockContext });
+
+      expect(component.formatCount('sync')).toBe('sync:0');
+      expect(await component.formatCountAsync('async')).toBe('async:0');
+      expect(component.loading.formatCount).toBeUndefined();
+      expect(component.loading.formatCountAsync).toBeUndefined();
   });
 
   it('should render HTML using renderToString', async () => {

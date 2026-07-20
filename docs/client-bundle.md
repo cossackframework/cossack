@@ -56,7 +56,7 @@ its full implementation:
 - `@Client()` — client-only method (stubbed on the server); also the escape hatch for helpers the transitive scan can't detect
 - `@Optimistic(action)` — optimistic UI handler
 - `@Computed()` — memoized getter
-- `@Shared()` — runs on both client and server
+- `@Shared()` — runs locally on both client and server and is never proxied
 - `@On(event)` / `@OnDocument(event)` / `@OnWindow(event)` / `@OnEvent(event)` — event listeners
 - `@Task()` — runs on mount and every state update
 - `@VisibleTask()` — runs when an element enters the viewport
@@ -187,4 +187,3 @@ preserved.
 
 Matches inside string literals, comments, and template literals (e.g. a
 `<pre>` code sample that quotes the function) are not touched.
-

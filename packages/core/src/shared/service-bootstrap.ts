@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import { isService } from './container';
 import { RESERVED_STATE_KEYS } from './component-types';
+import { isSharedMethod } from './shared-method';
 
 /**
  * Bootstrap a service instance: set up @State properties as simple
@@ -129,7 +130,7 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
 
     for (const methodName of Object.keys(serverMethods)) {
         // Skip @Shared/@Client methods — they run locally
-        if (clientMethods[methodName]) continue;
+        if (clientMethods[methodName] || isSharedMethod(serviceInstance.constructor, methodName)) continue;
         // Only forward if component doesn't already have this method
         if (component.hasMethod(methodName)) continue;
 
@@ -159,7 +160,9 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
     const serviceStateKeys = Object.keys(serviceStateMeta);
 
     // Only proxy methods that are @Server-only (not @Shared, not @Client)
-    const serverOnlyMethods = Object.keys(serverMethods).filter(name => !clientMethods[name]);
+    const serverOnlyMethods = Object.keys(serverMethods).filter(
+        name => !clientMethods[name] && !isSharedMethod(serviceInstance.constructor, name)
+    );
 
     if (serverOnlyMethods.length === 0) return;
 
@@ -301,4 +304,3 @@ export function getConstructorParamNames(component: any): string[] {
         })
         .filter(Boolean);
 }
-
