@@ -35,9 +35,9 @@ describe('CounterService', () => {
   it('should have @Shared metadata for formatCount', () => {
     const serverMethods = Reflect.getMetadata('cossack:server-methods', CounterService);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', CounterService);
-    // @Shared writes to both server-methods and client-methods
-    expect(serverMethods).toHaveProperty('formatCount');
-    expect(clientMethods).toHaveProperty('formatCount');
+    expect(Reflect.getMetadata('cossack:shared', CounterService.prototype, 'formatCount')).toBe(true);
+    expect(serverMethods).not.toHaveProperty('formatCount');
+    expect(clientMethods).toBeUndefined();
   });
 
   it('should increment count', () => {

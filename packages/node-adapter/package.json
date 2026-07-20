@@ -18,7 +18,6 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -31,15 +30,18 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "hono": "^4.12.31",
     "nodemailer": "^9.0.3",
     "ws": ">=8.21.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.0",
+    "hono": "^4.12.31",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "hono": "^4.12.0"
   }
 }

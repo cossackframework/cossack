@@ -8,7 +8,7 @@ vi.mock('../src/shared/environment', () => ({
 }));
 
 import { Cossack } from '../src/shared/cossack';
-import { State, Server, Client } from '../src/shared/decorators';
+import { State, Server, Client, Shared } from '../src/shared/decorators';
 import * as renderer from '@cossackframework/renderer';
 import type { TemplateResult } from '@cossackframework/renderer';
 
@@ -58,6 +58,12 @@ class TestComponent extends Cossack<{}> {
   showAlert(msg: string) {
     // This would be implemented on the client
   }
+
+  @Shared()
+  formatCount(prefix: string) { return `${prefix}:${this.count}`; }
+
+  @Shared()
+  async formatCountAsync(prefix: string) { return `${prefix}:${this.count}`; }
 
   render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
@@ -172,6 +178,17 @@ describe('Cossack Core: Client-Side', () => {
 
     // But the loading state should have been updated by the proxy
     expect(component.loading['increment']).toBeTruthy();
+  });
+
+  it('runs synchronous and asynchronous @Shared methods locally without transport or loading state', async () => {
+    await component.bootstrap();
+    const wsInstance = (global.WebSocket as any).mock.results[0].value;
+
+    expect(component.formatCount('sync')).toBe('sync:10');
+    expect(await component.formatCountAsync('async')).toBe('async:10');
+    expect(wsInstance.send).not.toHaveBeenCalled();
+    expect(component.loading.formatCount).toBeUndefined();
+    expect(component.loading.formatCountAsync).toBeUndefined();
   });
 
   it('should clear loading state when action-complete is received', async () => {

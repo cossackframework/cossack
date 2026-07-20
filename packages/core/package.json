@@ -32,15 +32,18 @@
   },
   "dependencies": {
     "@cossackframework/renderer": "workspace:*",
-    "hono": "^4.12.31",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
     "@types/node": "^22.19.0",
+    "hono": "^4.12.31",
     "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "hono": "^4.12.0"
   }
 }

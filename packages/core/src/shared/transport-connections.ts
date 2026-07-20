@@ -1,6 +1,7 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
+import { isSharedMethod } from './shared-method';
 
 /**
  * Initialize provider map for the component (server-side only).
@@ -98,7 +99,7 @@ export function connectWebSocket(component: any): void {
             } else if (data.type === 'client-action') {
                 const { action, payload } = data;
                 const clientMethods = Reflect.getMetadata('cossack:client-methods', component.constructor) || {};
-                if (clientMethods[action] && component.hasMethod(action)) {
+                if (clientMethods[action] && !isSharedMethod(component.constructor, action) && component.hasMethod(action)) {
                     const method = component.getMethod(action);
                     (method as any)(...payload);
                 }
@@ -207,7 +208,7 @@ export function connectSSE(component: any): void {
         try {
             const { action, payload } = JSON.parse((event as any).data);
             const clientMethods = Reflect.getMetadata('cossack:client-methods', component.constructor) || {};
-            if (clientMethods[action] && component.hasMethod(action)) {
+            if (clientMethods[action] && !isSharedMethod(component.constructor, action) && component.hasMethod(action)) {
                 const method = component.getMethod(action);
                 (method as any)(...payload);
             }
