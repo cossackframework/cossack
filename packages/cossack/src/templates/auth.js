@@ -100,6 +100,12 @@ export function publicIndexTemplate() {
   return loadStub('public-index.ts.stub');
 }
 
+export function chatComponentTemplate() { return loadStub('chat.ts.stub'); }
+export function blogIndexTemplate() { return loadStub('blog-index.ts.stub'); }
+export function blogLayoutTemplate() { return loadStub('blog-layout.ts.stub'); }
+export function blogHelloWorldTemplate() { return loadStub('blog-hello-world.md.stub'); }
+export function contactPageTemplate() { return loadStub('contact.ts.stub'); }
+
 /** src/pages/dashboard/layout.ts — sidebar shell + user menu. */
 export function dashboardLayoutTemplate() {
   return loadStub('dashboard-layout.ts.stub');
@@ -229,4 +235,3 @@ export function authModuleTemplate({ loginPath, oauthProviders = [] }) {
     oauthSection: oauthSection(oauthProviders),
   });
 }
-

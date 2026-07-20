@@ -10,8 +10,8 @@ export class App extends Cossack {
 
     @On('navigate-complete')
     logNavigation(pathname: string) {
-        // @On('navigate-complete') only fires on the App component, mirroring
-        // the onNavigateComplete() hook. Multiple handlers are supported.
+        // App, active layouts, and the current page all receive this lifecycle
+        // event. Multiple handlers per component are supported.
         this.lastNavigatedPath = pathname;
 
         // This is a part of e2e test so do NOT remove it.

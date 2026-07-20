@@ -1,4 +1,4 @@
-import { Cossack, Page, Server, State, Client } from '@cossackframework/core';
+import { Cossack, Page, Server, State, Client, server$ } from '@cossackframework/core';
 import { Sidebar, DropdownMenu, Avatar, Icon, SidebarItem } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
@@ -25,6 +25,7 @@ import { themeStore } from '@/stores';
  */
 @Page({ transport: 'http' })
 export default class DashboardLayout extends Cossack {
+    appName = server$(() => config('app.name'), { initial: 'My App' });
     @State() theme: 'light' | 'dark' = 'dark';
     /** Sidebar collapsed state. Seeded from the cookie at SSR (via this.c) and
      *  re-read client-side in onMount; persists across client navigations. */
@@ -129,10 +130,10 @@ export default class DashboardLayout extends Cossack {
         return html`
             <div class="flex min-h-screen bg-background">
                 ${component(Sidebar, {
-                    title: __('My App'),
+                    title: this.appName,
                     brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
                         <img src="/logo.svg" alt="" width="24" height="24" class="shrink-0" />
-                        <span class="text-sm font-semibold text-foreground truncate">${__('My App')}</span>
+                        <span class="text-sm font-semibold text-foreground truncate">${this.appName}</span>
                     </a>
                     <a href="/dashboard" class="hidden group-[.is-collapsed]:flex items-center justify-center" aria-label=${__('Dashboard')}>
                         <img src="/logo.svg" alt="" width="24" height="24" />
@@ -205,7 +206,7 @@ export default class DashboardLayout extends Cossack {
                         ${this.children}
                     </main>
                     <footer class="border-t border-border px-6 sm:px-8 py-4 text-xs text-muted-foreground">
-                        &copy; ${new Date().getFullYear()} ${__('My App')}. ${__('All rights reserved.')}
+                        &copy; ${new Date().getFullYear()} ${this.appName}. ${__('All rights reserved.')}
                     </footer>
                 </div>
             </div>

@@ -16,7 +16,7 @@ description: 'Complete documentation index covering all Cossack framework concep
 - [Project Structure](/docs/project-structure.md)
 - [Routing](/docs/routing.md)
 - [Pages](/docs/pages.md)
-- [Markdown Pages](/docs/mdx.md)
+- [Markdown Pages](/docs/markdown.md)
 - [Header](/docs/header.md)
 - [Components](/docs/components.md)
 - [States](/docs/states.md)

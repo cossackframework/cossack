@@ -512,8 +512,8 @@ export function OnEvent(eventName: string): MethodDecorator {
  * hooks. Unlike the hooks, multiple `@On('mount')` / `@On('navigate-complete')`
  * methods are supported on a single component.
  *
- * Note: `'navigate-complete'` only fires on the App component, mirroring the
- * `onNavigateComplete()` hook.
+ * `'navigate-complete'` fires on the App, active layouts, and current page,
+ * mirroring the `onNavigateComplete()` hook.
  */
 export function On(
   eventName: CossackLifecycleEvent | HTMLElementEventName | (string & {}),

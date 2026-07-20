@@ -307,6 +307,14 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
   const currentLayoutsMap = new Map<string, Cossack>();
 
+  const notifyNavigationComplete = (pathname: string) => {
+    appInstance._frameworkNavigateComplete(pathname);
+    for (const layout of currentLayoutInstances) {
+      layout._frameworkNavigateComplete(pathname);
+    }
+    currentPage?._frameworkNavigateComplete(pathname);
+  };
+
   const loadComponent = async (initialState: any) => {
     // Support both routePath (new) and componentPath (legacy) for backward compatibility
     const routePath = initialState?.routePath || initialState?.componentPath;
@@ -438,7 +446,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   appInstance.mount(containerEl, true);
   appInstance.isMounted = true;
   appInstance._frameworkMount();
-  appInstance._frameworkNavigateComplete(window.location.pathname);
+  notifyNavigationComplete(window.location.pathname);
 
   // Mark hydration complete so e2e/tests can wait for client interactivity
   // without racing the bootstrap (SSR elements are present immediately).
@@ -513,7 +521,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       const commit = async () => {
         window.__INITIAL_STATE__ = state;
         await loadComponent(state);
-        appInstance._frameworkNavigateComplete(state.pathname);
+        notifyNavigationComplete(state.pathname);
       };
 
       if (viewTransitionsEnabled && supportsViewTransitions()) {

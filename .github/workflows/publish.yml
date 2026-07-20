@@ -43,6 +43,7 @@ jobs:
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
           pnpm --filter @cossackframework/database vitest --run
+          pnpm --filter @cossackframework/ui test -- --run
           pnpm --filter @cossackframework/framework vitest --run tests/
           pnpm --filter cossack vitest --run
 
@@ -68,6 +69,12 @@ jobs:
 
       - name: Publish @cossackframework/database
         run: pnpm publish --filter @cossackframework/database --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # framework depends on the UI workspace package, so publish UI first.
+      - name: Publish @cossackframework/ui
+        run: pnpm publish --filter @cossackframework/ui --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

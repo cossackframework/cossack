@@ -40,6 +40,11 @@ import {
   rolesServiceTemplate,
   publicLayoutTemplate,
   publicIndexTemplate,
+  chatComponentTemplate,
+  blogIndexTemplate,
+  blogLayoutTemplate,
+  blogHelloWorldTemplate,
+  contactPageTemplate,
   dashboardLayoutTemplate,
   dashboardIndexTemplate,
   dashboardProfileTemplate,
@@ -197,6 +202,11 @@ async function addAuth(_args, ctx) {
     // An existing root page belongs to the application. In that case, omit
     // the scaffold's alternative root route instead of deleting user code.
     ...(hasRootIndex ? [] : [['src/pages/(public)/index.ts', publicIndexTemplate()]]),
+    ['src/components/Chat.ts', chatComponentTemplate()],
+    ['src/pages/(public)/blog/index.ts', blogIndexTemplate()],
+    ['src/pages/(public)/blog/layout.ts', blogLayoutTemplate()],
+    ['src/pages/(public)/blog/hello-world.md', blogHelloWorldTemplate()],
+    ['src/pages/(public)/contact.ts', contactPageTemplate()],
     // Dashboard (namespaced /dashboard) — layout, landing, profile, sessions.
     ['src/pages/dashboard/layout.ts', dashboardLayoutTemplate()],
     ['src/pages/dashboard/index.ts', dashboardIndexTemplate()],

@@ -1,4 +1,4 @@
-import { Cossack, Page, State, Client, HeadContext, HeadValue } from '@cossackframework/core';
+import { Cossack, Page, State, Client, HeadContext, HeadValue, server$ } from '@cossackframework/core';
 import { NavigationMenu, Sheet, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
@@ -21,6 +21,7 @@ import { themeStore } from '../../stores';
  */
 @Page({ transport: 'http' })
 export default class PublicLayout extends Cossack {
+    appName = server$(() => config('app.name'), { initial: 'My App' });
     @State() theme: 'light' | 'dark' = 'dark';
     @State() mobileNavOpen = false;
     /** Auth-aware nav data — computed server-side in init() so it serializes
@@ -32,7 +33,7 @@ export default class PublicLayout extends Cossack {
     private _themeUnsub?: () => void;
 
     public head(context: HeadContext): HeadValue {
-        return { title: context.title ? `My App — ${context.title}` : 'My App' };
+        return { title: context.title ? `${this.appName} — ${context.title}` : this.appName };
     }
 
     onCleanup() {
@@ -56,6 +57,10 @@ export default class PublicLayout extends Cossack {
         // store as @State.
         const isLoggedIn = !!this.user;
         const docsItems = [{ label: __('Docs'), href: 'https://cossack.dev/docs', description: __('Guides, API reference, examples') }];
+        const starterItems = [
+            { label: __('Blog'), href: '/blog', description: __('Read the starter post') },
+            { label: __('Contact'), href: '/contact', description: __('Send us a message') },
+        ];
         const authItems = isLoggedIn
             ? [{ label: __('Dashboard'), href: '/dashboard', description: __('Your account overview') }]
             : [
@@ -63,10 +68,13 @@ export default class PublicLayout extends Cossack {
                 { label: __('Register'), href: '/auth/register', description: __('Create a new account') },
             ];
         this.navSections = [
+            { label: __('Explore'), items: starterItems },
             { label: __('Docs'), items: docsItems },
             { label: isLoggedIn ? __('Account') : __('Get started'), items: authItems },
         ];
         this.mobileLinks = [
+            { label: __('Blog'), href: '/blog' },
+            { label: __('Contact'), href: '/contact' },
             { label: __('Docs'), href: 'https://cossack.dev/docs' },
             ...(isLoggedIn
                 ? [{ label: __('Dashboard'), href: '/dashboard' }]
@@ -98,8 +106,8 @@ export default class PublicLayout extends Cossack {
                 <header class="border-b border-border sticky top-0 z-30 bg-background/95 backdrop-blur">
                     <div class="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between gap-4">
                         <a href="/" class="flex items-center gap-2 font-semibold text-foreground shrink-0">
-                            <img src="/logo.svg" alt="My App" width="28" height="28" />
-                            <span>My App</span>
+                            <img src="/logo.svg" alt=${this.appName} width="28" height="28" />
+                            <span>${this.appName}</span>
                         </a>
 
                         <div class="flex items-center gap-2">
@@ -162,7 +170,7 @@ export default class PublicLayout extends Cossack {
 
                 <footer class="border-t border-border">
                     <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-                        <p>&copy; ${new Date().getFullYear()} My App. ${__('All rights reserved.')}</p>
+                        <p>&copy; ${new Date().getFullYear()} ${this.appName}. ${__('All rights reserved.')}</p>
                         <div class="flex items-center gap-4">
                             <a href="https://github.com/cossackframework" class="hover:text-foreground transition-colors">GitHub</a>
                             <a href="https://x.com/cossackframework" class="hover:text-foreground transition-colors">X</a>

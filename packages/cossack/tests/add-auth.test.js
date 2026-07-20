@@ -60,6 +60,11 @@ describe('add auth', () => {
     // dashboard + public chrome
     expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/layout.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/index.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/components/Chat.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/blog/index.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/blog/layout.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/blog/hello-world.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'src/pages/(public)/contact.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/pages/dashboard/layout.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/pages/dashboard/index.ts'))).toBe(true);
     expect(fs.existsSync(path.join(tmp, 'src/pages/dashboard/profile/index.ts'))).toBe(true);
@@ -230,6 +235,34 @@ describe('add auth', () => {
     expect(layout).toContain("from '@cossackframework/ui'");
     expect(layout).toContain('Card');
     expect(layout).toContain('/logo.svg');
+  });
+
+  it('uses configured branding and scaffolds the starter public examples', async () => {
+    await addCommand(['auth'], ctx);
+    for (const file of ['src/pages/(public)/layout.ts', 'src/pages/auth/layout.ts', 'src/pages/dashboard/layout.ts']) {
+      const layout = fs.readFileSync(path.join(tmp, file), 'utf8');
+      expect(layout).toContain("server$(() => config('app.name'), { initial: 'My App' })");
+      expect(layout).not.toMatch(/>My App</);
+    }
+    const home = fs.readFileSync(path.join(tmp, 'src/pages/(public)/index.ts'), 'utf8');
+    expect(home).toContain("transport: 'sse'");
+    expect(home).toContain("scope: () => 'home-chat-demo'");
+    expect(home).toContain('async *sendMessage');
+    expect(home).toContain("from '../../components/Chat'");
+    const contact = fs.readFileSync(path.join(tmp, 'src/pages/(public)/contact.ts'), 'utf8');
+    expect(contact).toContain('@Server()');
+    expect(contact).toContain('@Validate({');
+    expect(contact).toContain('storeRules<ContactPayload>');
+    expect(contact).toContain('await this.validateAll()');
+    expect(contact).toContain('this.loading.submitContact');
+    expect(contact).toContain("type: 'email', required: true");
+    const blog = fs.readFileSync(path.join(tmp, 'src/pages/(public)/blog/index.ts'), 'utf8');
+    expect(blog).toContain("href: '/blog/hello-world'");
+    const markdown = fs.readFileSync(path.join(tmp, 'src/pages/(public)/blog/hello-world.md'), 'utf8');
+    expect(markdown).toContain('title: Hello, world!');
+    const nav = fs.readFileSync(path.join(tmp, 'src/pages/(public)/layout.ts'), 'utf8');
+    expect(nav).toContain('href="/blog"');
+    expect(nav).toContain('href="/contact"');
   });
 
   it('--path admin/auth routes pages under src/pages/admin/auth/ and bakes the prefix into config', async () => {

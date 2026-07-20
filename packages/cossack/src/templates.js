@@ -6,6 +6,7 @@ export {
   forgotPasswordPageTemplate, resetPasswordPageTemplate, authMiddlewareTemplate,
   rootLayoutWithAuthTemplate, configAuthTemplate, publicLayoutTemplate,
   publicIndexTemplate, dashboardLayoutTemplate, dashboardIndexTemplate,
+  chatComponentTemplate, blogIndexTemplate, blogLayoutTemplate, blogHelloWorldTemplate, contactPageTemplate,
   dashboardProfileTemplate, dashboardSessionsTemplate, logoSvgTemplate,
   uuidHelperTemplate, permissionsConfigTemplate, roleModelTemplate,
   userRoleModelTemplate, rbacServiceTemplate, usersServiceTemplate,

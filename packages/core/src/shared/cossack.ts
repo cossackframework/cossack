@@ -1785,9 +1785,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public onCleanup(): void {}
 
     /**
-     * Called after every SPA navigation completes. Only fires on the App
-     * component. Override to react to navigation. No need to call
-     * `super.onNavigateComplete()`.
+     * Called after every SPA navigation completes on the App, active layouts,
+     * and current page. Override to react to route changes in persistent
+     * layouts without wiring document-level navigation events. No need to
+     * call `super.onNavigateComplete()`.
      */
     public onNavigateComplete(pathname: string): void {}
 

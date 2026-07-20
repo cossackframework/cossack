@@ -1,57 +1,46 @@
-import { Cossack, Page, State, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { Client, ClientState, Cossack, Page, Server, State } from '@cossackframework/core';
+import { component, html } from '@cossackframework/renderer';
+import { Chat, type ChatMessage } from '../../components/Chat';
 
-@Page()
+@Page({ transport: 'sse', scope: () => 'home-chat-demo' })
 export default class IndexPage extends Cossack {
-    @State() count = 0;
+    @State() messages: ChatMessage[] = [];
+    @State() streamingText = '';
+    @State() isStreaming = false;
+    @ClientState() inputValue = 'What is Cossack framework?';
+
+    @Client() handleInput(event: Event) { this.inputValue = (event.target as HTMLInputElement).value; }
+    @Client() handleSubmit(event: Event) {
+        event.preventDefault();
+        const text = this.inputValue.trim();
+        if (!text || this.isStreaming) return;
+        this.inputValue = '';
+        this.sendMessage(text);
+    }
 
     @Server()
-    increment() {
-        this.count++;
+    async *sendMessage(text: string) {
+        if (!text.trim() || this.isStreaming) return;
+        this.messages = [...this.messages, { role: 'user', content: text.trim() }];
+        this.streamingText = '';
+        this.isStreaming = true;
+        const chunks = [
+            'A full-stack TypeScript framework for building edge first, real-time web applications.\n\n',
+            'Write client and server logic in the same class seamlessly. ',
+            'Cossack automatically handles state management, SSR, and security.\n\n',
+            'Think of it like Laravel + Next.js + Phoenix LiveView, but TypeScript native and edge deployment ready.',
+        ];
+        for (const chunk of chunks) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            this.streamingText += chunk;
+            yield chunk;
+        }
+        this.messages = [...this.messages, { role: 'assistant', content: this.streamingText.trim() }];
+        this.streamingText = '';
+        this.isStreaming = false;
     }
 
     render() {
-        // __() is a global — no import needed. Without src/lang/*.json it
-        // returns the key itself (the English text below), so the page works
-        // out of the box. Run `cossack lang publish` to enable translations.
-        return html`
-            <div class="mx-auto max-w-6xl px-4 py-20 sm:py-28 text-center">
-                <div class="space-y-6">
-                    <h1 class="text-4xl sm:text-6xl font-bold tracking-tight text-foreground">
-                        ${__('Hello Cossack!')}
-                    </h1>
-                    <p class="mx-auto max-w-2xl text-lg sm:text-xl text-muted-foreground">
-                        ${__('A modern full-stack TypeScript framework')}
-                    </p>
-                </div>
-
-                <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
-                    <a href="/docs"
-                       class="inline-flex items-center justify-center rounded-md bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-                        ${__('Read the docs')}
-                    </a>
-                    ${this.user
-                        ? html`<a href="/dashboard"
-                              class="inline-flex items-center justify-center rounded-md border border-border px-6 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                              ${__('Go to dashboard')}
-                          </a>`
-                        : html`<a href="/auth/register"
-                              class="inline-flex items-center justify-center rounded-md border border-border px-6 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                              ${__('Get started')}
-                          </a>`}
-                </div>
-
-                <div class="mt-16 inline-flex items-center gap-4 bg-card rounded-xl border border-border px-8 py-6">
-                    <span class="text-sm font-medium text-muted-foreground uppercase tracking-wide">${__('Count')}</span>
-                    <span class="text-3xl font-bold tabular-nums text-foreground min-w-[3ch] text-center">${this.count}</span>
-                    <button
-                        @click=${this.increment}
-                        class="bg-primary hover:opacity-90 text-primary-foreground font-semibold px-4 py-2 rounded-md transition-opacity cursor-pointer"
-                    >
-                        ${__('Increment')}
-                    </button>
-                </div>
-            </div>
-        `;
+        return html`<div class="mx-auto max-w-6xl px-4 py-16 sm:py-24"><div class="text-center space-y-5"><h1 class="text-4xl sm:text-6xl font-bold tracking-tight">${__('Cossack')}</h1><p class="text-muted-foreground">${__('The Borderless TypeScript Framework')}</p></div><div class="mt-12">${component(Chat, { messages: this.messages, streamingText: this.streamingText, isStreaming: this.isStreaming, inputValue: this.inputValue, onInput: this.handleInput, onSubmit: this.handleSubmit })}</div></div>`;
     }
 }
