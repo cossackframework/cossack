@@ -32,11 +32,11 @@
   "dependencies": {
     "@cossackframework/core": "workspace:*",
     "hono": "^4.12.31",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^9.0.3",
     "ws": ">=8.21.0"
   },
   "devDependencies": {
-    "@types/nodemailer": "^6.4.17",
+    "@types/nodemailer": "^9.0.3",
     "@types/ws": "^8.18.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
