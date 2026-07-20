@@ -118,10 +118,6 @@ export default defineConfig({
                   name: 'cossack-framework',
                 },
                 {
-                  test: /node_modules[\/\\](marked|gray-matter)/,
-                  name: 'vendor-markdown',
-                },
-                {
                   test: /node_modules/,
                   name: 'vendor',
                 },

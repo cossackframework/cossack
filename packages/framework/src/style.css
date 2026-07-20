@@ -13,6 +13,65 @@
 @source "../node_modules/@cossackframework/ui/src/icons";
 
 /*
+ * Markdown is compiled with Sugar High. These values belong to the example
+ * application's theme: generated Markdown only provides the --sh-* hooks and
+ * .sh__line--highlighted class so applications remain free to style them.
+ */
+.mdx-content {
+    --sh-class: #953800;
+    --sh-identifier: #24292f;
+    --sh-sign: #57606a;
+    --sh-property: #0550ae;
+    --sh-entity: #8250df;
+    --sh-jsxliterals: #0a3069;
+    --sh-string: #0a3069;
+    --sh-keyword: #cf222e;
+    --sh-comment: #6e7781;
+}
+
+.dark .mdx-content {
+    --sh-class: #ffa657;
+    --sh-identifier: #e6edf3;
+    --sh-sign: #8b949e;
+    --sh-property: #79c0ff;
+    --sh-entity: #d2a8ff;
+    --sh-jsxliterals: #a5d6ff;
+    --sh-string: #a5d6ff;
+    --sh-keyword: #ff7b72;
+    --sh-comment: #8b949e;
+}
+
+.mdx-content pre[class*="sh-lang--"] {
+    overflow-x: auto;
+    padding: 1rem;
+    border: 1px solid #d0d7de;
+    border-radius: 0.5rem;
+    background: #f6f8fa;
+}
+
+.dark .mdx-content pre[class*="sh-lang--"] {
+    border-color: #30363d;
+    background: #161b22;
+}
+
+.mdx-content .sh__line {
+    display: block;
+    min-height: 1.5em;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+}
+
+.mdx-content .sh__line--highlighted {
+    background: #fff8c5;
+    box-shadow: inset 3px 0 #d4a72c;
+}
+
+.dark .mdx-content .sh__line--highlighted {
+    background: #2d2a14;
+    box-shadow: inset 3px 0 #d29922;
+}
+
+/*
  * Dark mode is opt-in via a `.dark` class on <html> (or any ancestor of the
  * UI). The `.dark` token overrides live in @cossackframework/ui/theme/theme.css.
  * To retint, import a named palette AFTER theme.css, e.g.:

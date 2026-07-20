@@ -32,7 +32,7 @@ import { createApiHandler } from './api-handler';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
-import { SSR_MANIFEST_ASSET_PATH } from './vite-plugin';
+import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
