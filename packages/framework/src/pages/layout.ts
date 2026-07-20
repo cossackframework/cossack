@@ -7,7 +7,9 @@ export default class RootLayout extends Cossack {
     return html`
       <div class="root-layout">
         <header class="p-4 border-b border-gray-300">
-          <strong>Cossack Framework</strong>
+          <strong>
+          <img src="/logo.svg" alt="Cossack Logo" class="inline-block w-6 h-6 mr-2" />
+          Cossack Framework</strong>
           <nav class="inline-block ml-8">
             <a href="/" class="no-underline text-inherit ${this.isActive('/', true) ? 'font-bold text-blue-500 underline' : ''}">Home</a> |
             <a href="/contact" class="no-underline text-inherit ${this.isActive('/contact') ? 'font-bold text-blue-500 underline' : ''}">Contact</a> |
