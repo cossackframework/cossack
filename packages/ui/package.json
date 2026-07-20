@@ -39,9 +39,9 @@
     "build:icons": "tsx src/scripts/build-icons.ts"
   },
   "peerDependencies": {
-    "@cossackframework/core": "^0.6.0",
+    "@cossackframework/core": "^0.7.0",
     "@cossackframework/solar-icons": "^0.7.0",
-    "@cossackframework/renderer": "^0.6.0"
+    "@cossackframework/renderer": "^0.7.0"
   },
   "devDependencies": {
     "@cossackframework/core": "workspace:*",

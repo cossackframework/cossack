@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Core library for the Cossack Framework",
   "license": "MIT",
@@ -32,7 +32,7 @@
   },
   "dependencies": {
     "@cossackframework/renderer": "workspace:*",
-    "hono": "^4.12.29",
+    "hono": "^4.12.31",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {

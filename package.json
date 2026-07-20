@@ -12,10 +12,5 @@
   },
   "workspaces": [
     "packages/*"
-  ],
-  "pnpm": {
-    "overrides": {
-      "hono": "^4.12.30"
-    }
-  }
+  ]
 }

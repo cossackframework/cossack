@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/node-adapter",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Node.js runtime adapter for the Cossack Framework",
   "license": "MIT",
@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "hono": "^4.12.29",
+    "hono": "^4.12.31",
     "nodemailer": "^6.9.16",
     "ws": ">=8.21.0"
   },

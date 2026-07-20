@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/framework",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Meta framework package for the Cossack Framework",
   "license": "MIT",
@@ -110,7 +110,7 @@
     "@cossackframework/solar-icons": "^0.7.0",
     "@cossackframework/ui": "workspace:*",
     "gray-matter": "^4.0.3",
-    "hono": "^4.12.29",
+    "hono": "^4.12.31",
     "marked": "^17.0.1",
     "reflect-metadata": "^0.2.2",
     "tsx": "^4.23.0"

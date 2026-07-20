@@ -14,7 +14,7 @@ function scaffoldProject() {
     path.join(tmp, 'package.json'),
     JSON.stringify({
       name: 'demo',
-      dependencies: { '@cossackframework/framework': '^0.6.0' },
+      dependencies: { '@cossackframework/framework': '^0.7.0' },
     }),
   );
   // A typical app already has the tailwind import in style.css.

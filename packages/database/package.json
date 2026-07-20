@@ -26,7 +26,7 @@
   "peerDependencies": {
     "@libsql/client": "^0.14.0",
     "@tursodatabase/serverless": "^0.1.0",
-    "hono": "^4.12.29"
+    "hono": "^4.12.31"
   },
   "peerDependenciesMeta": {
     "@tursodatabase/serverless": {
@@ -39,7 +39,7 @@
   "devDependencies": {
     "@libsql/client": "^0.14.0",
     "@types/node": "^22.19.0",
-    "hono": "^4.12.29",
+    "hono": "^4.12.31",
     "miniflare": "^4.20260623.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
