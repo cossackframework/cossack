@@ -30,10 +30,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build packages with dist output
-        run: |
-          pnpm --filter @cossackframework/renderer build
-          pnpm --filter @cossackframework/core build
-          pnpm --filter @cossackframework/node-adapter build
+        run: pnpm run build
 
       - name: Build framework types
         run: pnpm --filter @cossackframework/framework build:types

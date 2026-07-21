@@ -28,11 +28,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build core packages
-        run: |
-          pnpm --filter @cossackframework/renderer build
-          pnpm --filter @cossackframework/core build
-          pnpm --filter @cossackframework/node-adapter build
+      - name: Build workspace libraries
+        run: pnpm run build
 
       - name: Install Playwright browsers
         run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
