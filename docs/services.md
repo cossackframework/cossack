@@ -1,33 +1,63 @@
 ---
 title: "Services & Dependency Injection"
-description: "Reusable classes that hold state and business logic, injected into components via constructor parameters with full decorator support."
+description: "Share reactive state and request-aware business logic within a layout subtree using explicit service scopes and lazy injection."
 ---
 
 # Services & Dependency Injection
 
-Services are reusable classes that hold state and business logic, injected into page and layout components via constructor parameters. They support the same decorators as components (`@State`, `@Server`, `@Client`, `@Shared`, etc.) and share the component's RPC transport automatically.
+Services hold business logic and reactive state that several pages or components
+need to share. A layout explicitly owns its services with `services`, and any
+descendant can inject the same instance with `@Inject()`.
+
+```typescript
+@Page({ services: [DashboardService] })
+export default class DashboardLayout extends Cossack {}
+
+@Page()
+export default class DashboardPage extends Cossack {
+    @Inject(DashboardService)
+    private dashboard!: DashboardService;
+}
+```
+
+The scope follows the layout's lifetime: it is isolated per server request,
+survives client navigation while the layout is reused, and is disposed when the
+user leaves that layout subtree.
 
 ## Basic Usage
 
 ### 1. Define a Service
 
-Decorate a class with `@Service()` and use `@State`, `@Server`, and other decorators just like you would in a component:
+Decorate the class with `@Service()`. Extend `CossackService` when server methods
+need the current request, authenticated user, environment bindings, or redirects.
 
 ```typescript
-import { Service, State, Server, Shared } from '@cossackframework/core';
+// src/services/DashboardService.ts
+import {
+    CossackService,
+    Service,
+    Shared,
+    State,
+    Store,
+    Server,
+} from '@cossackframework/core';
+
+interface Env {
+    API_URL: string;
+}
 
 @Service()
-export class CounterService {
+export class DashboardService extends CossackService<Env> {
     @State() count = 0;
+    @Store() filters = { query: '', archived: false };
 
     @Server()
-    increment() {
+    async increment(): Promise<number | Response> {
+        if (!this.user) return this.redirect('/login');
+
+        // `this.env`, `this.c`, and `this.user` belong to this request.
         this.count++;
-    }
-
-    @Server()
-    decrement() {
-        this.count--;
+        return this.count;
     }
 
     @Shared()
@@ -37,208 +67,267 @@ export class CounterService {
 }
 ```
 
-### 2. Inject into a Component
+Use `@Server()` for database access, external APIs, secrets, and other
+server-only work. Use `@Shared()` for safe logic that should execute locally in
+both runtimes.
 
-Declare the service as a constructor parameter. TypeScript's `emitDecoratorMetadata` (already enabled in the project tsconfig) captures the type, and the framework resolves it automatically:
+### 2. Declare Ownership on a Layout
+
+Add the service class to the layout's `services` array:
 
 ```typescript
-import { Page, Cossack } from '@cossackframework/core';
+// src/pages/dashboard/layout.ts
+import { Cossack, Inject, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { CounterService } from '../services/CounterService';
+import { DashboardService } from '../../services/DashboardService';
 
-@Page()
-export default class CounterPage extends Cossack {
-    constructor(private counterService: CounterService) {
-        super();
-    }
+@Page({ services: [DashboardService] })
+export default class DashboardLayout extends Cossack {
+    @Inject(DashboardService)
+    private dashboard!: DashboardService;
 
     render() {
         return html`
-            <button @click=${() => this.counterService.decrement()}>-</button>
-            <span>${this.counterService.formatCount()}</span>
-            <button @click=${() => this.counterService.increment()}>+</button>
+            <aside>${this.dashboard.formatCount()}</aside>
+            ${this.children}
         `;
     }
 }
 ```
 
-That's it. The framework handles instantiation, state synchronization, and RPC proxying.
+Service ownership is explicit. The framework does not create a scoped service
+from the first place that injects it.
 
-## How It Works
+### 3. Inject It Anywhere Below the Layout
 
-### Instantiation
-
-When the framework creates a component (during SSR, CRPC handling, or client hydration), it uses `createInstance(ComponentClass)` instead of `new ComponentClass()`. This helper reads constructor parameter types from `reflect-metadata` and resolves any `@Service()` dependencies from the DI container.
-
-### Server-Side
-
-1. The service is instantiated and injected into the component.
-2. The component gets **forwarding methods** for each `@Server`-only method on the service. When the CRPC handler calls `componentInstance.increment()`, it delegates to `serviceInstance.increment()`.
-3. Service `@State` properties are registered on the component's state container, so `getPublicState()` returns service state alongside component state.
-
-### Client-Side
-
-1. The service is instantiated and injected during client hydration.
-2. `@Server`-only methods are replaced with HTTP fetch proxies that call `/crpc` using the parent component's `componentRouteId`.
-3. `@Shared` methods keep their full implementation and run locally.
-4. When the server responds with updated state, values are synced back to the service instance and the component re-renders.
-
-## Decorator Support
-
-Services support the same decorators as components:
-
-| Decorator | Behavior in Services |
-| :--- | :--- |
-| `@State()` | Synchronized state. Changes on the server are returned to the client after RPC calls. |
-| `@Server()` | Server-only method. Proxied via HTTP on the client. Body is stripped from client bundle. |
-| `@Client()` | Client-only method. Stubbed on the server. |
-| `@Shared()` | Runs locally on both sides with its full implementation. Never RPC-callable or proxied. |
-| `@Computed()` | Memoized getter. Runs locally on both sides. |
-
-### `@Shared` vs `@Server`
-
-Use `@Shared` for pure functions and data formatting that must run on the client without a network round-trip. Use `@Server` for methods that access databases, external APIs, or other server-only resources.
+Pages, layouts, and renderer-created nested components resolve the nearest
+active declaration lazily:
 
 ```typescript
-@Service()
-export class CartService {
-    @State() items: CartItem[] = [];
+// src/pages/dashboard/index.ts
+import { Cossack, Inject, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+import { DashboardService } from '../../services/DashboardService';
 
-    @Server()
-    async addItem(productId: string) {
-        // Runs on server only — can access database
-        const product = await db.products.findById(productId);
-        this.items.push(product);
-    }
-
-    @Shared()
-    get total(): number {
-        // Runs locally on both client and server — no RPC needed
-        return this.items.reduce((sum, item) => sum + item.price, 0);
-    }
-}
-```
-
-## Service Scopes
-
-### Singleton (Default)
-
-All services are singletons by default. If multiple components inject the same service class, they share the same instance:
-
-```typescript
-@Service() // scope: 'singleton' (default)
-export class AuthService {
-    @State() user: User | null = null;
-
-    @Server()
-    async login(email: string, password: string) { /* ... */ }
-}
-```
-
-### Transient
-
-Use `{ scope: 'transient' }` when each injection should get its own instance:
-
-```typescript
-@Service({ scope: 'transient' })
-export class FormValidationService {
-    @State() errors: Record<string, string> = {};
-    // Each component gets its own error state
-}
-```
-
-## Service-to-Service Injection
-
-Services can depend on other services through constructor injection:
-
-```typescript
-@Service()
-export class LoggerService {
-    logs: string[] = [];
-    log(msg: string) { this.logs.push(msg); }
-}
-
-@Service()
-export class PaymentService {
-    @State() status = 'idle';
-
-    constructor(private logger: LoggerService) {}
-
-    @Server()
-    async processPayment(amount: number) {
-        this.logger.log(`Processing payment: $${amount}`);
-        this.status = 'processing';
-        // ... payment logic
-        this.status = 'completed';
-    }
-}
-```
-
-The DI container resolves the full dependency graph automatically and detects circular dependencies.
-
-## Multiple Services in One Component
-
-A component can inject multiple services:
-
-```typescript
 @Page()
-export default class Checkout extends Cossack {
-    constructor(
-        private cartService: CartService,
-        private paymentService: PaymentService,
-        private authService: AuthService,
-    ) {
-        super();
-    }
+export default class DashboardPage extends Cossack {
+    @Inject(DashboardService)
+    private dashboard!: DashboardService;
 
     render() {
-        if (!this.authService.user) {
-            return html`<p>Please log in</p>`;
-        }
-
         return html`
-            <ul>
-                ${this.cartService.items.map(item => html`<li>${item.name}</li>`)}
-            </ul>
-            <p>Total: $${this.cartService.total}</p>
-            <button @click=${() => this.paymentService.processPayment(this.cartService.total)}>
-                Pay Now (${this.paymentService.status})
+            <button @click=${() => this.dashboard.increment()}>
+                ${this.dashboard.formatCount()}
             </button>
         `;
     }
 }
 ```
 
-## Security
+`@Inject()` defines a lazy, read-only property. No prop plumbing or public
+renderer context API is needed. If no active parent layout declares the class,
+the framework throws an error that names the missing service and shows where to
+declare it.
 
-The Vite security plugin automatically processes `@Service` classes the same way it handles components:
+## Scope and Lifetime
 
-- `@Server` method bodies are **stripped** from the client bundle and replaced with stubs.
-- `@Shared` and `@Client` methods retain their full implementation.
-- Methods without decorators are treated as server-only (secure by default).
+Every declaration creates one instance for that layout scope, regardless of
+how many descendants inject it. All consumers rerender when one of the
+service's `@State` fields or nested `@Store` values changes.
 
-This means database queries, API keys, and server-side business logic inside services are never exposed to the browser.
+- Each SSR request gets a fresh root scope, so requests cannot share service
+  state or user data.
+- Each service RPC request reconstructs the applicable layout hierarchy in a
+  fresh request scope.
+- In the browser, a reused layout keeps its scope across navigation between
+  pages in the same subtree.
+- Leaving the subtree disposes the scope. Returning later creates a new service
+  instance with fresh or newly hydrated state.
+
+Services may define an optional cleanup hook:
+
+```typescript
+@Service()
+export class SearchService {
+    private controller = new AbortController();
+
+    onDispose() {
+        this.controller.abort();
+    }
+}
+```
+
+`onDispose()` runs once when the owning scope is destroyed. Cleanup that must
+finish before navigation continues should be synchronous: Promise-returning
+hooks are started and rejection-logged, but are not awaited.
+
+## Nested Layouts and Shadowing
+
+Resolution starts at the innermost active layout and walks outward. A nested
+layout can declare the same class to create an isolated instance for its own
+subtree:
+
+```typescript
+// The outer dashboard subtree has one instance.
+@Page({ services: [PreferencesService] })
+export class DashboardLayout extends Cossack {}
+
+// Everything below this layout receives a different instance.
+@Page({ services: [PreferencesService] })
+export class AdminLayout extends Cossack {}
+```
+
+Duplicate entries in one `services` array are rejected, as are classes that do
+not have `@Service()`.
+
+## Request-Aware Services
+
+`CossackService<Env>` provides protected facilities for server methods:
+
+| Member | Purpose |
+| :--- | :--- |
+| `this.c` | Current Hono request context plus Cossack context helpers. |
+| `this.user` | Current authenticated `User`, or `undefined`. |
+| `this.env` | Current runtime bindings, typed by the `Env` generic. |
+| `this.redirect(url, status?)` | Return a server redirect response. |
+
+Prefer `this.user` for authenticated-user data. Do not cache a request context,
+user, or bindings in a module-level variable or a legacy global singleton.
+Explicit layout scopes bind these values to the current SSR or RPC request.
+
+The request facilities are intended for request-bound server work. A browser
+render has only a hydrated context shim, and server-only context operations
+remain unavailable there.
+
+## Reactive State and Hydration
+
+Scoped services support the same public reactive state primitives as
+components:
+
+| Decorator | Service behavior |
+| :--- | :--- |
+| `@State()` | A reactive public field synchronized during hydration and service RPC. |
+| `@Store()` | A reactive object or array; nested mutations also notify every consumer. |
+| `@Server()` | An allowlisted server action, proxied automatically in the browser. |
+| `@Shared()` | A method whose implementation runs locally on both client and server. |
+| `@Client()` | A client-only method whose server implementation is stubbed. |
+| `@Computed()` | A computed value evaluated locally rather than serialized as state. |
+
+The framework serializes a service's state once under its owning layout, in a
+separate `services` section. It does not copy service fields or methods onto
+consumer components, so a component and service may safely use the same member
+names.
+
+Only declared `@State` and `@Store` fields are restored. Unknown client-supplied
+keys and prototype-pollution keys are ignored. Values use the same JSON-safe
+serialization contract as component state; cyclic structures and non-JSON
+values should not be stored in synchronized service state.
+
+During client navigation, state from a still-active layout is kept rather than
+overwritten by a newly fetched SSR snapshot. A newly entered layout hydrates
+its services before descendant components render.
+
+## Server Actions
+
+Calling an injected service's `@Server()` method in the browser uses Cossack's
+built-in RPC channel. The request identifies the owning layout, a stable service
+slot, the action, arguments, and current public service state. The server then:
+
+1. Rebuilds the layout scope for the request.
+2. Restores only the declared service state fields.
+3. Verifies that the target method has `@Server()` metadata.
+4. Invokes the method with request-local `c`, `user`, and `env` values.
+5. Returns the method result, redirect metadata, and updated service state.
+
+Undecorated helpers, `@Shared()` methods, `@Client()` methods, internal members,
+and forged action names are not RPC-callable. The Vite security transform also
+strips server-only method bodies from client bundles.
+
+## Service Dependencies
+
+Services may use constructor injection for other services:
+
+```typescript
+@Service()
+export class AuditService {
+    @Server()
+    record(message: string) {
+        // Persist the audit event.
+    }
+}
+
+@Service()
+export class BillingService {
+    constructor(private audit: AuditService) {}
+
+    @Server()
+    async charge(amount: number) {
+        this.audit.record(`Charging ${amount}`);
+        // Process the charge.
+    }
+}
+
+@Page({ services: [AuditService, BillingService] })
+export class BillingLayout extends Cossack {}
+```
+
+Declare dependencies in the same layout or an ancestor when they should share
+that subtree's scope. Circular dependency graphs are rejected.
+
+## Constructor Injection Compatibility
+
+Existing constructor injection remains supported:
+
+```typescript
+@Page()
+export class LegacyPage extends Cossack {
+    constructor(private logger: LoggerService) {
+        super();
+    }
+}
+```
+
+When a matching explicit layout declaration exists, constructor injection uses
+that scoped instance. Otherwise it falls back to the legacy DI container and
+honors `@Service({ scope: 'singleton' | 'transient' })`.
+
+The `scope` option controls only that legacy fallback. A class explicitly listed
+in `services` always has one instance owned by that layout scope. Prefer explicit
+layout ownership for shared reactive state or request-aware work; legacy global
+singletons must never retain request- or user-specific mutable data.
+
+## `services` Is Not `providers`
+
+These similarly named page options solve different problems:
+
+| API | Use it for |
+| :--- | :--- |
+| `services: [DashboardService]` | DI ownership, subtree-shared logic, reactive state, and request-aware actions. |
+| `providers: { room: roomProvider }` | Selecting WebSocket, SSE, or Durable Object state transports. |
+
+Adding a service does not configure a transport provider, and adding a provider
+does not make a class injectable.
+
+For browser-only application-global UI state shared across unrelated trees,
+such as theme, toast, or command-palette state, continue to use
+[`createStore()` and `connectStore()`](/docs/reactive-store.md).
 
 ## File Convention
 
-Services are typically placed in `src/services/`:
+Services are commonly kept in `src/services/` and imported explicitly by the
+layout that owns them and by each consumer:
 
-```
+```text
 src/
   services/
-    CounterService.ts
-    AuthService.ts
-    CartService.ts
+    DashboardService.ts
   pages/
-    checkout/
+    dashboard/
+      layout.ts
       index.ts
+      settings/
+        index.ts
 ```
 
-There is no auto-discovery — import services explicitly in the components that use them.
-
-## Limitations
-
-- Services must be injected via **constructor parameters** with TypeScript parameter properties (e.g., `constructor(private service: MyService)`). The framework uses `emitDecoratorMetadata` to resolve types at runtime.
-- Services do not have their own RPC channel. They share the parent component's transport (`http` or `durable-object`).
-- `@State` properties on services are scoped to the parent component's lifecycle. On HTTP transport, state resets on page reload (same as component state).
-- Services cannot use lifecycle hooks like `onMount()` or `onCleanup()`. Use the parent component's hooks instead.
+There is no service auto-discovery. This keeps ownership visible and prevents a
+consumer from silently creating a new scope.

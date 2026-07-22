@@ -1,18 +1,17 @@
-import { Page, Cossack } from '@cossackframework/core';
+import { Page, Cossack, Inject } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 import { CounterService } from '../../services/CounterService';
 
 @Page()
 export default class DiDemo extends Cossack {
-    constructor(private counterService: CounterService) {
-        super();
-    }
+    @Inject(CounterService)
+    private counterService!: CounterService;
 
     render(): TemplateResult {
         return html`
             <div style="padding: 20px; font-family: sans-serif;">
                 <h1>Dependency Injection Demo</h1>
-                <p>This page uses a CounterService injected via constructor.</p>
+                <p>This page uses a layout-scoped CounterService injected with @Inject.</p>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <button
                         @click=${() => this.counterService.decrement()}
@@ -30,6 +29,7 @@ export default class DiDemo extends Cossack {
                         +
                     </button>
                 </div>
+                <p><a href="/di-demo/other">Open another page in this layout</a></p>
             </div>
         `;
     }

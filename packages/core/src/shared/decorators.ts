@@ -6,6 +6,7 @@ import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
+import type { ServiceClass } from './container';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -14,6 +15,8 @@ export interface PageOptions {
   middlewares?: Middleware[];
   channels?: string[];
   providers?: { [key: string]: StateProvider };
+  /** Services owned by this layout and shared throughout its active subtree. */
+  services?: ServiceClass[];
   transport?: CossackTransport;
   route?: string;
   ssg?: boolean | SsgOptions;
@@ -872,5 +875,16 @@ export function Service(options: ServiceOptions = {}): ClassDecorator {
     Reflect.defineMetadata('cossack:service', {
       scope: options.scope || 'singleton',
     }, target);
+  };
+}
+
+/** Lazily inject a service declared by the nearest active layout scope. */
+export function Inject<T>(serviceClass: ServiceClass<T>): PropertyDecorator {
+  return (target: any, propertyKey: string | symbol) => {
+    const injections: Map<string | symbol, ServiceClass> = Reflect.hasOwnMetadata('cossack:inject', target.constructor)
+      ? new Map(Reflect.getOwnMetadata('cossack:inject', target.constructor))
+      : new Map();
+    injections.set(propertyKey, serviceClass);
+    Reflect.defineMetadata('cossack:inject', injections, target.constructor);
   };
 }
