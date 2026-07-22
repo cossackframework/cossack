@@ -93,11 +93,11 @@ function extractInner(svg: string): string {
     return match[1]
         .replace(
             /\s*(stroke|fill)\s*=\s*"#1[cC]274[cC]"/gi,
-            '$1="currentColor"',
+            ' $1="currentColor"',
         )
         .replace(
             /\s*(stroke|fill)\s*=\s*"#?\s*(?:black|#000(?:000)?|rgb\(0\s*0\s*0\))?"/gi,
-            '$1="currentColor"',
+            ' $1="currentColor"',
         )
         .replace(/\s*stroke\s*=\s*"none"/gi, ' stroke="none"')
         .trim();

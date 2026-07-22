@@ -19,7 +19,11 @@ const TYPE_JS_CSS = /\s+type\s*=\s*["']text\/(javascript|css)["']/gi;
 
 // Regex to match attribute values that are safe to unquote
 // (alphanumeric, dash, underscore, dot)
-const QUOTED_ATTR = /(\w[\w-]*)\s*=\s*["']([a-zA-Z0-9_.-]+)["']/g;
+// Only unquote when the closing quote is followed by a valid attribute/tag
+// separator. Besides matching the HTML grammar, this prevents malformed
+// third-party markup such as `r="6"stroke="currentColor"` from becoming the
+// substantially worse `r=6stroke=currentColor` during minification.
+const QUOTED_ATTR = /(\w[\w-]*)\s*=\s*["']([a-zA-Z0-9_.-]+)["'](?=\s|\/?>)/g;
 
 function preserveBlocks(html: string): { html: string; blocks: string[] } {
     const blocks: string[] = [];
