@@ -667,10 +667,18 @@ const UI_PALETTES = [
  *
  * - Two @import lines pull the base reset + @theme token layer.
  * - An optional palette @import (when `palette` is set) retints the UI.
- * - Two @source lines tell Tailwind v4 to scan the package's component/icon
- *   source. Tailwind v4 excludes node_modules by default, so without these the
- *   variant utilities (bg-secondary, bg-destructive, bg-success, ...) would
- *   never be generated and the components would render unstyled.
+ * - One @source line tells Tailwind v4 to scan the package's bundled output.
+ *   Tailwind v4 excludes node_modules by default, so without it the variant
+ *   utilities (bg-secondary, bg-destructive, bg-success, ...) and component-only
+ *   classes (border-l, pl-2, has-[>svg]:px-3) would never be generated and the
+ *   components would render partially unstyled.
+ *
+ * `@source` must target a path that exists in the INSTALLED package. The
+ * package's `files` field ships only `dist` and `src/theme` — NOT
+ * `src/components` or `src/icons` — so scanning those would silently no-op for
+ * published installs. `dist/index.js` contains every component/icon utility
+ * class string verbatim, so a single `@source` at `dist` works for both
+ * published npm installs and monorepo workspace links.
  */
 function uiThemeBlock(palette) {
   const lines = [
@@ -684,8 +692,7 @@ function uiThemeBlock(palette) {
   }
   lines.push(
     ``,
-    `@source "../node_modules/@cossackframework/ui/src/components";`,
-    `@source "../node_modules/@cossackframework/ui/src/icons";`,
+    `@source "../node_modules/@cossackframework/ui/dist";`,
   );
   return lines.join('\n');
 }

@@ -11,6 +11,7 @@ import {
   hashFile,
 } from '../fs-utils.js';
 import { flagString, flagList } from '../flags.js';
+import { detectAdapter } from './start.js';
 
 const execFileP = promisify(execFile);
 const requireFromHere = createRequire(import.meta.url);
@@ -29,6 +30,41 @@ const EXCLUDE_FROM_SYNC = new Set([
   'wrangler.toml',
   '.cossack/scaffold.json',
 ]);
+
+// Files that `create-cossack-app`'s `configureNodeAdapter()` rewrites (or
+// deletes) when scaffolding a Node project. The bundled template only ships
+// their Cloudflare-flavored versions, so applying them to an existing Node
+// project would clobber its runtime contract — e.g. `src/index.ts` would lose
+// the named `app` export, `vite.config.ts` would re-add the Cloudflare plugin,
+// and `src/db/config.ts` would swap better-sqlite3 for D1 bindings. These must
+// be excluded from drift sync whenever the project's adapter is `node`.
+// Keep in sync with `configureNodeAdapter` in create-cossack-app/index.js.
+const NODE_ADAPTER_REWRITES = new Set([
+  'src/index.ts',
+  'src/db/config.ts',
+  'vite.config.ts',
+  'worker-configuration.d.ts',
+]);
+
+/**
+ * Resolve the effective adapter for a project. The manifest's recorded
+ * `adapter` is authoritative; fall back to the wrangler-presence heuristic for
+ * projects created by an older CLI that didn't write the field.
+ */
+async function resolveAdapter(root, manifest) {
+  if (manifest && manifest.adapter) return manifest.adapter;
+  return detectAdapter(root);
+}
+
+/**
+ * Files excluded from template sync for the given adapter. Node projects never
+ * receive the bundled Cloudflare-flavored runtime files that
+ * `configureNodeAdapter` rewrites at create time.
+ */
+function adapterExclusions(adapter) {
+  if (adapter === 'node') return NODE_ADAPTER_REWRITES;
+  return new Set();
+}
 
 export async function upgradeCommand(args, ctx) {
   const dir = args[0];
@@ -66,7 +102,7 @@ export async function upgradeCommand(args, ctx) {
   const report = await buildDriftReport(root, ctx);
   printReport(report);
 
-  if (applyTemplate || ctx.force) {
+  if (applyTemplate || ctx.force || forceFiles.length > 0) {
     const applied = await applyTemplateUpdates(root, report, forceFiles, ctx);
     if (applied.forced.length > 0) {
       console.log(
@@ -211,9 +247,12 @@ async function buildDriftReport(root, ctx) {
     path.join(root, '.cossack/scaffold.json'),
   );
   const templateDir = await bundledTemplateDir();
+  const adapter = await resolveAdapter(root, manifest);
+  const extraExcluded = adapterExclusions(adapter);
 
   const report = {
     hasManifest: !!manifest,
+    adapter,
     canUpdate: [],
     modified: [],
     upToDate: [],
@@ -228,7 +267,7 @@ async function buildDriftReport(root, ctx) {
   for (const rel of Object.keys(files)) {
     const baseline = files[rel];
     const current = await hashFile(path.join(root, rel));
-    const excluded = EXCLUDE_FROM_SYNC.has(rel);
+    const excluded = EXCLUDE_FROM_SYNC.has(rel) || extraExcluded.has(rel);
 
     let newHash = null;
     if (templateDir && current !== null && !excluded) {
@@ -250,6 +289,13 @@ function printReport(report) {
         '   may not have a manifest.)',
     );
     return;
+  }
+  if (report.adapter === 'node') {
+    console.log(
+      '  Adapter: node — adapter-specific runtime files (src/index.ts,\n' +
+        '  src/db/config.ts, vite.config.ts) are excluded from sync because the\n' +
+        '  bundled template ships Cloudflare-flavored versions of them.',
+    );
   }
   section('Unchanged, update available', report.canUpdate);
   section('Modified by you (skipped)', report.modified);
@@ -287,11 +333,13 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
     applied.push(rel);
   }
 
-  // --force: overwrite ALL modified files the user has edited, and restore
-  // any files they deleted (missing), pulling every one from the template.
-  // This is destructive — local edits are lost.
+  // --force implies --apply-template and restores scaffold files that are
+  // missing, but deliberately preserves locally modified files. A blanket
+  // overwrite is too broad for an upgrade command: scaffolded pages, layouts,
+  // styles, migrations, and assets commonly become application-owned files.
+  // Callers must name each intentional overwrite with --force-file instead.
   if (ctx.force) {
-    for (const rel of [...report.modified, ...report.missing]) {
+    for (const rel of report.missing) {
       const src = path.join(templateDir, rel);
       if (!(await exists(src))) {
         continue;
@@ -305,16 +353,28 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       console.log(`  force-updated  ${rel}`);
       forced.push(rel);
     }
-    if (forced.length > 0) {
+    if (report.modified.length > 0) {
       console.log(
-        '  warning  --force overwrote local edits. Restore from version control if needed.',
+        `  preserved  ${report.modified.length} locally modified file(s). ` +
+          'Use --force-file <path> for each intentional overwrite.',
       );
     }
   }
 
   // Force-update specific modified/excluded files the user explicitly requested
-  // via --force-file <path> (surgical, even without --force).
+  // via --force-file <path> (surgical, even without --force). Refuse to copy a
+  // bundled-template file that belongs to a different adapter — forcing a
+  // Cloudflare runtime file (src/index.ts, vite.config.ts, ...) onto a Node
+  // project would silently break its runtime contract.
+  const extraExcluded = adapterExclusions(report.adapter);
   for (const rel of forceFiles) {
+    if (extraExcluded.has(rel)) {
+      console.error(
+        `  cannot force: ${rel} is adapter-specific (adapter: ${report.adapter}). ` +
+          `Re-run \`cossack add\` or regenerate it for your adapter instead of copying the template.`,
+      );
+      continue;
+    }
     const src = path.join(templateDir, rel);
     if (!(await exists(src))) {
       console.error(`  cannot force: ${rel} not in template`);
@@ -375,9 +435,9 @@ Options:
   --apply-template                  Also update scaffolded files that you have
                                     NOT modified (detected via .cossack/scaffold.json).
                                     Modified files are always skipped.
-  --force                           Overwrite ALL modified files and restore any
-                                    deleted ones from the template. DESTRUCTIVE —
-                                    local edits are lost. Implies --apply-template.
+  --force                           Apply safe template updates and restore
+                                    deleted scaffold files. Locally modified
+                                    files remain protected. Implies --apply-template.
   --force-file <path>               Force-update one specific file even if you
                                     modified it. May be repeated.
   --dry-run                         Show what would happen without writing.`;

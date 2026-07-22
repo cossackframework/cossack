@@ -52,9 +52,11 @@ describe('add ui (no component arg)', () => {
     const css = fs.readFileSync(path.join(tmp, 'src/style.css'), 'utf8');
     expect(css).toContain('@cossackframework/ui/theme/base.css');
     expect(css).toContain('@cossackframework/ui/theme/theme.css');
-    // @source is required so Tailwind v4 scans the package's component classes
-    expect(css).toContain('@source "../node_modules/@cossackframework/ui/src/components"');
-    expect(css).toContain('@source "../node_modules/@cossackframework/ui/src/icons"');
+    // @source points at the published bundle (dist), which exists in the
+    // installed package — NOT src/components/src/icons, which are unpublished.
+    expect(css).toContain('@source "../node_modules/@cossackframework/ui/dist"');
+    expect(css).not.toContain('@cossackframework/ui/src/components');
+    expect(css).not.toContain('@cossackframework/ui/src/icons');
   });
 
   it('is idempotent on style.css (does not duplicate the imports)', async () => {

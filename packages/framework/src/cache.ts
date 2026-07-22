@@ -15,7 +15,7 @@
 // `expirationTtl` is also seconds, so it maps directly.
 
 import { getRequestContext } from '@cossackframework/core';
-import { config } from './config';
+import { config } from './config.js';
 
 /** Default in-memory store size before lazy pruning kicks in. */
 const DEFAULT_MAX_ENTRIES = 10_000;

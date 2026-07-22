@@ -25,6 +25,18 @@ export function cossackPages(): Plugin {
   return {
     name: 'cossack-pages',
     enforce: 'pre',
+    // The framework runtime imports the virtual modules provided by this
+    // plugin. If Vite externalizes the package during SSR, Node evaluates the
+    // published JS directly and cannot resolve the `virtual:cossack-*` scheme.
+    // Keep it in Vite's module graph so both virtual modules and package-local
+    // ESM imports are transformed consistently for external applications.
+    config() {
+      return {
+        ssr: {
+          noExternal: ['@cossackframework/framework'],
+        },
+      };
+    },
     resolveId(id) {
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;

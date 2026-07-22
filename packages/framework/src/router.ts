@@ -1,7 +1,7 @@
 // src/router.ts
 import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
-import { renderRoot, TemplateHelpers } from './root';
+import { renderRoot, TemplateHelpers } from './root.js';
 import { PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
 import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
@@ -27,13 +27,13 @@ function isRpcCallableActionOrService(constructor: unknown, action: unknown): bo
   }
   return false;
 }
-import { App } from './App';
-import { createApiHandler } from './api-handler';
+import { App } from './App.js';
+import { createApiHandler } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
-import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids';
+import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -41,25 +41,25 @@ import {
   syncSseState,
   registerSseStoreEntry,
   resolveSseScopeKey,
-} from './transports/sse';
-import { handleWebSocketProxy } from './transports/websocket';
-import { handleUpload } from './transports/http';
-import { createLocaleMiddleware } from './middlewares/locale';
-import { createFlashMiddleware } from './middlewares/flash';
-import { createRequestContextMiddleware } from './middlewares/request-context';
+} from './transports/sse.js';
+import { handleWebSocketProxy } from './transports/websocket.js';
+import { handleUpload } from './transports/http.js';
+import { createLocaleMiddleware } from './middlewares/locale.js';
+import { createFlashMiddleware } from './middlewares/flash.js';
+import { createRequestContextMiddleware } from './middlewares/request-context.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { runWithConfig, buildConfig, type EnvFunction } from './config';
+import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
 // This is needed because apps import `createApp` from this `./router`
 // subpath, not the framework's main entry (which also imports i18n-globals).
-import './i18n-globals';
+import './i18n-globals.js';
 // Side-effect: register the config accessors (`config`, `env`, `binding`) on
 // `globalThis` so bare calls in user middleware/auth/pages resolve during SSR.
 // Same reason as i18n-globals above: apps import `createApp` from this
 // `./router` subpath, not the framework's main entry.
-import './config-globals';
+import './config-globals.js';
 
 // In production builds, the SSR bundle is emitted BEFORE the client build
 // produces dist/client/.vite/manifest.json. We therefore cannot use a static
@@ -530,7 +530,11 @@ export function createApp(options: CreateAppOptions = {}) {
           transport: pageOptions?.transport || 'http',
           scopeKey,
           _app_state: appInstance.getInitialState(),
-          _layout_stack: layoutPaths.map((p) => ({ path: p, state: layoutStates[p] })), // Keep file paths for layouts
+          _layout_stack: layoutPaths.map((p) => ({
+            path: p,
+            state: layoutStates[p],
+            componentRouteId: routePathToIdMap.get(p),
+          })), // Keep file paths and their RPC target IDs for layouts
           // Localization: hydrate the active locale's catalog (and the default
           // fallback if different) so `__()` works on the client immediately.
           // Other locales are dynamic-imported on demand by `setLocale()`.

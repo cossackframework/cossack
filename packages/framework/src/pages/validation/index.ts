@@ -127,7 +127,7 @@ export class ValidationDemo extends Cossack {
 
     render(): TemplateResult {
         return html`
-            <div class="max-w-[600px] mx-auto p-8">
+            <div class="max-w-150 mx-auto p-8">
                 <h1>Validation Demo</h1>
                 <p>This page demonstrates the @Validate decorator with various validation rules.</p>
 

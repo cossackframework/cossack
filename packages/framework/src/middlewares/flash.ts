@@ -23,7 +23,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signValue, verifyValue } from '@cossackframework/core';
-import { ensureFlashAlsWired, runWithFlash } from '../flash-context';
+import { ensureFlashAlsWired, runWithFlash } from '../flash-context.js';
 
 const COOKIE_NAME = 'cossack_flash';
 // Only needs to survive one redirect (POST -> GET). 30s is generous for the

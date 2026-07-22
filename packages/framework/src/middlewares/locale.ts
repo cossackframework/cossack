@@ -32,8 +32,8 @@ import {
     defaultLocale as buildDefaultLocale,
     loadCatalog,
 } from 'virtual:cossack-lang';
-import { ensureLocaleAlsWired, runWithLocale } from '../i18n-context';
-import { config } from '../config';
+import { ensureLocaleAlsWired, runWithLocale } from '../i18n-context.js';
+import { config } from '../config.js';
 
 export interface LocaleMiddlewareOptions {
     /** Resolve from `Accept-Language` when no cookie is set. Default: false. */

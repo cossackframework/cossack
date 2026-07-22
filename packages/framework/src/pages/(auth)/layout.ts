@@ -6,7 +6,7 @@ export default class AuthLayout extends Cossack {
   render() {
     return html`
       <div class="auth-layout flex justify-center items-center min-h-[80vh] bg-gray-100">
-        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-[400px]">
+        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-100">
           <h2 class="text-center text-gray-800 mb-6">Cossack Auth</h2>
           ${this.children}
           <div class="mt-6 text-center text-sm">

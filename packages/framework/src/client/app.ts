@@ -7,14 +7,14 @@ import {
     __hydrateLocale,
     getDefaultLocale,
 } from '@cossackframework/core';
-import { App } from '../App';
+import { App } from '../App.js';
 import { CossackElement } from '@cossackframework/renderer';
-import { registerDevToolsInstance } from './devtools';
-import { filePathToRoutePath } from '../route-ids';
+import { registerDevToolsInstance } from './devtools.js';
+import { filePathToRoutePath } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
-import '../i18n-globals';
+import '../i18n-globals.js';
 // NOTE: `config`/`env`/`binding` globals are intentionally NOT registered on
 // the client. They read the request-scoped AsyncLocalStorage (node:async_hooks),
 // which doesn't exist in the browser, and no client code calls them. They are
@@ -346,7 +346,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     }
 
     currentLayoutInstances = [];
-    for (const { path: layoutFilePath, state } of layoutStack) {
+    for (const { path: layoutFilePath, state, componentRouteId } of layoutStack) {
         // Layout paths are already file paths (from server). Layouts are lazy
         // on the client (code-split per route, like pages), so the registry
         // holds loader functions — await to get the module. This keeps a layout
@@ -377,7 +377,10 @@ export async function createClientApp({ container, AppComponent, viewTransitions
                 return true;
             };
 
-            await instance.bootstrap({ initialState: state, skipInit: true });
+            await instance.bootstrap({
+              initialState: { ...state, componentRouteId },
+              skipInit: true,
+            });
             currentLayoutsMap.set(layoutFilePath, instance);
         }
         instance.updatePath(pathname);

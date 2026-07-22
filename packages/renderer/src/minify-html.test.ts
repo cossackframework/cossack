@@ -134,6 +134,14 @@ Line 1
         expect(result).toBe('<div class=foo id=bar-baz>hello</div>');
     });
 
+    it('does not merge adjacent malformed SVG attributes when unquoting', () => {
+        const input = '<circle cx="12" cy="12" r="6"stroke="currentColor" stroke-width="1.5"/>';
+        const result = minifyHtml(input);
+
+        expect(result).toContain('r="6"stroke=currentColor');
+        expect(result).not.toContain('r=6stroke');
+    });
+
     it('keeps quotes around values with special characters', () => {
         const input = '<div class="foo bar">hello</div>';
         // "foo bar" contains a space, so it should stay quoted

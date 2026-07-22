@@ -13,9 +13,9 @@ import {
     getDefaultLocale,
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
-import { App } from './App';
-import { renderRoot, TemplateHelpers } from './root';
-import { runWithConfig, buildConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config';
+import { App } from './App.js';
+import { renderRoot, TemplateHelpers } from './root.js';
+import { runWithConfig, buildConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config.js';
 import type { Context } from 'hono';
 
 /**
@@ -59,8 +59,8 @@ interface LayoutStackItem {
 // Re-export the canonical route-path helper so callers that historically
 // imported it from ssg-renderer keep working, without maintaining a
 // divergent copy here.
-export { filePathToRoutePath, getModulePreloads } from './route-ids';
-import { filePathToRoutePath, getModulePreloads } from './route-ids';
+export { filePathToRoutePath, getModulePreloads } from './route-ids.js';
+import { filePathToRoutePath, getModulePreloads } from './route-ids.js';
 
 /**
  * One-time locale setup for the SSG build. The caller resolves the locale
@@ -182,6 +182,7 @@ export async function renderSsgPage(
   componentRouteId?: string,
   configFactories?: Record<string, ConfigFactory>,
   localeInput?: SsgLocaleInput,
+  filePathToId: Record<string, string> = {},
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
@@ -308,6 +309,7 @@ export async function renderSsgPage(
     _layout_stack: layoutPaths.map((item: LayoutStackItem) => ({
       path: item.path,
       state: layoutStates[item.path],
+      componentRouteId: filePathToId[item.path],
     })),
   };
 

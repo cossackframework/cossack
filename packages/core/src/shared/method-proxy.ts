@@ -172,7 +172,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
     const isAppComponent = component.constructor.name === 'App';
     const componentRouteId = isAppComponent
         ? initialState?.appRouteId
-        : initialState?.componentRouteId;
+        : component.__cossack_componentRouteId || initialState?.componentRouteId;
 
     if (!componentRouteId) {
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');

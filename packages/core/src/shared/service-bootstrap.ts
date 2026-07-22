@@ -171,7 +171,7 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
     const isAppComponent = component.constructor.name === 'App';
     const componentRouteId = isAppComponent
         ? initialState?.appRouteId
-        : initialState?.componentRouteId;
+        : component.__cossack_componentRouteId || initialState?.componentRouteId;
     const scopeKey = initialState?.scopeKey;
 
     if (!componentRouteId) return;

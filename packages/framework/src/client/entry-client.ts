@@ -1,6 +1,6 @@
 import '../style.css';
-import { createClientApp } from './';
-import { enableDevTools } from './devtools';
+import { createClientApp } from './index.js';
+import { enableDevTools } from './devtools.js';
 
 if (import.meta.env.DEV) {
   enableDevTools();
