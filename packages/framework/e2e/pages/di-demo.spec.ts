@@ -94,7 +94,24 @@ test.describe('DI Demo Page', () => {
 
     await page.click('a:has-text("Leave DI layout")');
     await expect(page).toHaveURL(/\/$/);
+
+    // A history traversal updates the URL before Cossack finishes its async
+    // SPA render. Wait for the matching route-ready event so the assertions
+    // below observe the newly committed page rather than the outgoing page.
+    await page.evaluate(() => {
+      (window as any).__cossackE2EReadyPath = undefined;
+      const handleReady = (event: Event) => {
+        const pathname = (event as CustomEvent).detail?.pathname;
+        if (pathname !== '/di-demo/other') return;
+        (window as any).__cossackE2EReadyPath = pathname;
+        document.removeEventListener('cossack:ready', handleReady);
+      };
+      document.addEventListener('cossack:ready', handleReady);
+    });
     await page.goBack();
+    await page.waitForFunction(
+      () => (window as any).__cossackE2EReadyPath === '/di-demo/other',
+    );
     await expect(page).toHaveURL(/\/di-demo\/other$/);
     await expect(page.getByTestId('page-service-count')).toHaveText('Count: 0');
     await expect(page.getByTestId('nested-service-count')).toHaveText('Count: 0');

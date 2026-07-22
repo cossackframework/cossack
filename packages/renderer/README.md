@@ -129,6 +129,108 @@ import { unsafeHTML } from '@cossackframework/renderer';
 html`<div>${unsafeHTML('<script>...</script>')}</div>`
 ```
 
+### SVG Fragments
+
+Use `svg` for fragments whose root nodes must be created in the SVG namespace.
+SVG results can be nested, rendered in arrays, and used inside an HTML `<svg>`
+element. The renderer switches back to the HTML namespace inside
+`<foreignObject>`.
+
+```typescript
+import { html, svg } from '@cossackframework/renderer';
+
+const dot = (x: number, color: string) => svg`
+  <circle cx="${x}" cy="12" r="6" fill="${color}"></circle>
+`;
+
+html`<svg viewBox="0 0 100 24">${[dot(12, 'red'), dot(32, 'blue')]}</svg>`
+```
+
+SVG and HTML templates serialize the same way during SSR. Namespace selection
+is a client DOM concern and is preserved during hydration.
+
+### Rendering Nothing
+
+`nothing` removes the value according to its binding context. An empty string
+also renders no child node, but remains an ordinary value in attributes.
+
+```typescript
+import { html, nothing } from '@cossackframework/renderer';
+
+html`
+  <p>${showMessage ? message : nothing}</p>
+  <a title="prefix-${hasTitle ? title : nothing}">link</a>
+  <input .value=${hasValue ? value : nothing}>
+  <button ?disabled=${busy ? true : nothing}>Save</button>
+  <button @click=${enabled ? this.save : nothing}>Save</button>
+  <div ...=${enabled ? attributes : nothing}></div>
+`
+```
+
+In child expressions, `nothing` clears managed nodes. In normal attributes it
+removes the whole attribute, including an attribute with several expressions.
+Property bindings receive `undefined`, boolean attributes are removed, event
+handlers are disabled, and a spread set to `nothing` removes its previously
+managed values. SSR, hydration, and later updates use the same rules.
+
+## Component Styles
+
+Declare Light DOM component styles with `static styles`. The `css` tag accepts
+only numbers and nested `CSSResult` values in interpolations. Raw values require
+the explicit `unsafeCSS` trust boundary.
+
+```typescript
+import {
+  CossackElement,
+  css,
+  html,
+  unsafeCSS,
+} from '@cossackframework/renderer';
+
+const gap = 12;
+const shared = css`.label { font-weight: 600; }`;
+const reviewedThemeColor = unsafeCSS('rebeccapurple');
+
+class Notice extends CossackElement {
+  static styles = [
+    shared,
+    css`
+      .notice { display: flex; gap: ${gap}px; color: ${reviewedThemeColor}; }
+      @media (width < 40rem) { .notice { display: block; } }
+      @keyframes enter { from { opacity: 0; } }
+      .notice { animation: enter 150ms; }
+    `,
+  ];
+
+  render() {
+    return html`<div class="notice"><span class="label">Ready</span></div>`;
+  }
+}
+```
+
+Style arrays may be nested. They are flattened in declaration order, and the
+last occurrence of the same `CSSResult` wins. A subclass can extend inherited
+styles explicitly:
+
+```typescript
+class EmphasizedNotice extends Notice {
+  static styles = [Notice.styles, css`.notice { border: 2px solid currentColor; }`];
+}
+```
+
+Cossack scopes selectors by adding deterministic `data-cossack-scope`
+attributes to elements created by that component and emits one managed style
+element per component instance. Conditional at-rules and functional selectors
+are scoped recursively; keyframe names and matching animation declarations are
+rewritten. `:host`, `:host-context`, and `::slotted` are rejected because
+Cossack uses Light DOM rather than Shadow DOM.
+
+Scoping follows template ownership. Nested components use their own scope, while
+projected templates retain the scope of the component that created them. This
+is attribute-based isolation, not a Shadow DOM security boundary: inherited CSS
+properties still inherit normally. `unsafeHTML` and manually supplied DOM nodes
+are explicit escape hatches and are not guaranteed to receive scope attributes.
+
 ## Using Components in Templates
 
 Use the `component` helper function to include child components in your templates.

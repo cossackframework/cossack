@@ -2,23 +2,62 @@ import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
 
-export class TemplateResult {
+export type TemplateResultType = 1 | 2;
+
+export class TemplateResult<T extends TemplateResultType = TemplateResultType> {
   public readonly _cossack_template_result = true;
+  public readonly '_$litType$': T;
   constructor(
     public readonly strings: TemplateStringsArray,
     public readonly values: unknown[],
-  ) {}
+    litType: T = 1 as T,
+  ) {
+    this['_$litType$'] = litType;
+  }
+
+  /** Component that created this template. Used for Light DOM style ownership. */
+  public __cossackOwner?: CossackElement;
+  /** Scope applied only to elements statically owned by this template. */
+  public __cossackScope?: string;
 }
 
-export const html = (strings: TemplateStringsArray, ...values: unknown[]) => {
-  return new TemplateResult(strings, values);
+export type SVGTemplateResult = TemplateResult<2>;
+
+export const html = (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult<1> => {
+  const result = new TemplateResult(strings, values, 1);
+  const owner = CossackElement.currentRenderingInstance;
+  if (owner) {
+    result.__cossackOwner = owner;
+    result.__cossackScope = owner._getStyleScopeId();
+  }
+  return result;
 };
+
+export const svg = (strings: TemplateStringsArray, ...values: unknown[]): SVGTemplateResult => {
+  const result = new TemplateResult(strings, values, 2);
+  const owner = CossackElement.currentRenderingInstance;
+  if (owner) {
+    result.__cossackOwner = owner;
+    result.__cossackScope = owner._getStyleScopeId();
+  }
+  return result;
+};
+
+/** Lit-compatible sentinel that removes the value in its binding context. */
+export const nothing: unique symbol = Symbol.for('cossack-nothing');
+
+export type ValueSanitizer = (value: unknown) => unknown;
+export type SanitizerFactory = (
+  node: Node,
+  name: string,
+  type: 'property' | 'attribute',
+) => ValueSanitizer;
 
 export const component = <T extends CossackElement>(
   clazz: new () => T,
   props?: T['props'] & Record<string, unknown>,
   children?: unknown,
-): TemplateResult => {
+): TemplateResult<1> => {
   const raw: ComponentResult = {
     _type: 'COMPONENT',
     clazz,
@@ -56,7 +95,7 @@ export const escapeHtml = (unsafe: unknown): string => {
 };
 
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
-  if (value === null || value === undefined || value === false) {
+  if (value === nothing || value === '' || value === null || value === undefined || value === false) {
     return '';
   }
   if (Array.isArray(value)) {
@@ -126,7 +165,7 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
 
     pushCurrentInstance(instance);
     (instance as any).willUpdate(new Map());
-    const template = instance.render();
+    const template = instance._finalizeRenderOutput(instance.render());
     let res = '';
     if (template) {
       if (isTemplateResult(template)) {
@@ -173,7 +212,7 @@ interface SpreadRenderContext {
 }
 
 const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
-  if (typeof obj !== 'object' || obj === null) return;
+  if (obj === nothing || typeof obj !== 'object' || obj === null) return;
   for (const [k, v] of Object.entries(obj)) {
     if (k.startsWith('@')) continue;
 
@@ -181,7 +220,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
     let val = v;
 
     if (k.startsWith('?')) {
-      if (v) ctx.result += ` ${k.slice(1)}`;
+      if (v !== nothing && v) ctx.result += ` ${k.slice(1)}`;
       continue;
     }
     if (k.startsWith('.')) {
@@ -195,6 +234,9 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
         val = resolveField(val.component, val.fieldName);
       } else if (val instanceof LiveResult) {
         val = val.value;
+      }
+      if (val === nothing) {
+        continue;
       }
       if (BOOLEAN_ATTRS.has(name)) {
         if (val) ctx.result += ` ${name}`;
@@ -225,7 +267,9 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       }
     }
 
-    if (val instanceof IfDefinedResult) {
+    if (val === nothing) {
+      continue;
+    } else if (val instanceof IfDefinedResult) {
       // `ifDefined` via the spread: drop only on undefined; render every other
       // value (incl. false/null/0/'') as a literal attribute string. Checked
       // before the `typeof val === 'boolean'` branch so `false` renders as
@@ -295,11 +339,11 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
  * decide where to insert `<!--CRP_i-->` markers. Any divergence breaks the
  * lockstep hydration walk.
  */
-const classifyPositions = (strings: TemplateStringsArray): boolean[] => {
+const classifyPositions = (strings: readonly string[]): boolean[] => {
   const isNode: boolean[] = [];
   let isInsideTag = false;
   let insideAttrQuote: string | null = null;
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
+  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
   for (let i = 0; i < strings.length - 1; i++) {
     const str = strings[i];
     for (let j = 0; j < str.length; j++) {
@@ -321,30 +365,181 @@ const classifyPositions = (strings: TemplateStringsArray): boolean[] => {
   return isNode;
 };
 
+/**
+ * Build markers that cannot collide with authored static template text.
+ *
+ * The markers exist only while template strings are joined for scanning and
+ * are removed before parsing/serialization. Choosing a prefix absent from all
+ * input strings preserves literal private-use characters (including strings
+ * that resemble an older marker format) without requiring randomness.
+ */
+const createTemplateMarkers = (strings: readonly string[]) => {
+  let sequence = 0;
+  let prefix: string;
+  do {
+    prefix = `\uE000cossack:${sequence++}:`;
+  } while (strings.some((value) => value.includes(prefix)));
+  const suffix = ':\uE001';
+  return {
+    marker: (index: number): string => `${prefix}${index}${suffix}`,
+    pattern: new RegExp(`${prefix}(\\d+)${suffix}`, 'g'),
+  };
+};
+
+/** Add a scope attribute to static opening tags without touching nested values. */
+const scopeTemplateStrings = (strings: TemplateStringsArray, scopeId?: string): readonly string[] => {
+  if (!scopeId) return strings;
+  const markers = createTemplateMarkers(strings);
+  let source = '';
+  for (let i = 0; i < strings.length; i++) {
+    source += strings[i];
+    if (i < strings.length - 1) source += markers.marker(i);
+  }
+
+  let output = '';
+  let insideTag = false;
+  let quote: string | null = null;
+  let openingTag = '';
+  let rawTextTag = '';
+  for (let i = 0; i < source.length;) {
+    if (rawTextTag) {
+      const closing = `</${rawTextTag}`;
+      if (source.slice(i, i + closing.length).toLowerCase() === closing) {
+        rawTextTag = '';
+      } else {
+        output += source[i++];
+        continue;
+      }
+    }
+    if (!insideTag && source.startsWith('<!--', i)) {
+      const end = source.indexOf('-->', i + 4);
+      const next = end < 0 ? source.length : end + 3;
+      output += source.slice(i, next);
+      i = next;
+      continue;
+    }
+    if (!insideTag && source[i] === '<' && /[A-Za-z]/.test(source[i + 1] ?? '')) {
+      let end = i + 2;
+      while (end < source.length && !/[\s/>]/.test(source[end])) end++;
+      openingTag = source.slice(i + 1, end).toLowerCase();
+      output += source.slice(i, end);
+      output += ` data-cossack-scope="${scopeId}"`;
+      i = end;
+      insideTag = true;
+      continue;
+    }
+    const char = source[i++];
+    output += char;
+    if (insideTag) {
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '>') {
+        insideTag = false;
+        if (/^(script|style|textarea|title)$/.test(openingTag)) rawTextTag = openingTag;
+        openingTag = '';
+      }
+    }
+  }
+
+  const scoped: string[] = [];
+  let last = 0;
+  let marker: RegExpExecArray | null;
+  while ((marker = markers.pattern.exec(output))) {
+    scoped.push(output.slice(last, marker.index));
+    last = marker.index + marker[0].length;
+  }
+  scoped.push(output.slice(last));
+  return scoped;
+};
+
+interface NothingAttributeGroup {
+  first: number;
+  last: number;
+  prefix: string;
+  suffix: string;
+}
+
+/**
+ * Find attributes containing one or more expressions. This lets SSR remove a
+ * whole multi-expression attribute when any slot is `nothing`, even though
+ * rendering otherwise streams through template strings from left to right.
+ */
+const findNothingAttributeGroups = (
+  strings: readonly string[],
+  values: readonly unknown[],
+): Map<number, NothingAttributeGroup> => {
+  const templateMarkers = createTemplateMarkers(strings);
+  let source = '';
+  for (let i = 0; i < strings.length; i++) {
+    source += strings[i];
+    if (i < strings.length - 1) source += templateMarkers.marker(i);
+  }
+  const groups = new Map<number, NothingAttributeGroup>();
+  const tagPattern = /<(?![!/])(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagPattern.exec(source))) {
+    const attributePattern = /\s+([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/g;
+    let attribute: RegExpExecArray | null;
+    while ((attribute = attributePattern.exec(tag[0]))) {
+      const raw = attribute[0];
+      const markers = [...raw.matchAll(templateMarkers.pattern)];
+      if (markers.length === 0) continue;
+      const indices = markers.map((match) => Number(match[1]));
+      if (!indices.some((index) => values[index] === nothing)) continue;
+      const firstMarker = markers[0];
+      const lastMarker = markers[markers.length - 1];
+      groups.set(indices[0], {
+        first: indices[0],
+        last: indices[indices.length - 1],
+        prefix: raw.slice(0, firstMarker.index),
+        suffix: raw.slice(lastMarker.index! + lastMarker[0].length),
+      });
+    }
+  }
+  return groups;
+};
+
 class SSRScanner {
   private result: string = '';
   private stringIdx = 0;
   private charIdxForNext = 0;
   private isNodePositions: boolean[];
+  private strings: readonly string[];
+  private nothingAttributeGroups: Map<number, NothingAttributeGroup>;
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
-    this.isNodePositions = classifyPositions(resultObj.strings);
+    this.strings = scopeTemplateStrings(resultObj.strings, resultObj.__cossackScope);
+    this.isNodePositions = classifyPositions(this.strings);
+    this.nothingAttributeGroups = findNothingAttributeGroups(this.strings, resultObj.values);
   }
 
   scan(): string {
-    const { strings, values } = this.resultObj;
+    const { values } = this.resultObj;
+    const strings = this.strings;
 
     while (this.stringIdx < strings.length) {
       const str = strings[this.stringIdx];
       const remaining = str.substring(this.charIdxForNext || 0);
 
-      const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/);
+      const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/);
 
       this.result += remaining;
       this.charIdxForNext = 0;
 
       if (this.stringIdx < strings.length - 1) {
         const val = values[this.stringIdx];
+        const nothingGroup = this.nothingAttributeGroups.get(this.stringIdx);
+        if (nothingGroup) {
+          if (this.result.endsWith(nothingGroup.prefix)) {
+            this.result = this.result.slice(0, -nothingGroup.prefix.length);
+          }
+          this.stringIdx = nothingGroup.last;
+          this.charIdxForNext = nothingGroup.suffix.length;
+          this.stringIdx++;
+          continue;
+        }
         if (attrMatch) {
           const fullMatch = attrMatch[0];
           const name = attrMatch[1];
@@ -479,13 +674,29 @@ interface Part {
   update(value: unknown): void;
 }
 
+const templateIdentities = new WeakMap<TemplateStringsArray, Map<string, object>>();
+const templateIdentity = (result: TemplateResult): object => {
+  let byType = templateIdentities.get(result.strings);
+  if (!byType) {
+    byType = new Map();
+    templateIdentities.set(result.strings, byType);
+  }
+  const key = `${result['_$litType$']}:${result.__cossackScope ?? ''}`;
+  let identity = byType.get(key);
+  if (!identity) {
+    identity = {};
+    byType.set(key, identity);
+  }
+  return identity;
+};
+
 class NodePart implements Part {
   private componentInstance: CossackElement | null = null;
   private renderListener: ((t: TemplateResult | unknown | null) => void) | null = null;
   private _childParts: NodePart[] = [];
   private _partKeys: unknown[] = [];
   // Cache for nested template result updates
-  private _cachedTemplateStrings: TemplateStringsArray | null = null;
+  private _cachedTemplateIdentity: object | null = null;
   private _cachedParts: Part[] | null = null;
   // Tracked key for the `key()` directive
   private _key: unknown = undefined;
@@ -500,10 +711,10 @@ class NodePart implements Part {
   // comments) plus the Part tree bound to them. When a previously-rendered
   // template is shown again, those nodes are moved back in place and their
   // parts re-applied, preserving component state and DOM identity.
-  private _cacheMap = new Map<TemplateStringsArray, { nodes: Node[]; parts: Part[] }>();
+  private _cacheMap = new Map<object, { nodes: Node[]; parts: Part[] }>();
   // The template strings currently displayed (so we know which entry to
   // detach when switching). Null when the current value is not a template.
-  private _cacheCurrent: TemplateStringsArray | null = null;
+  private _cacheCurrent: object | null = null;
   // When true, the next update() adopts the existing DOM (produced by SSR)
   // instead of clearing and rebuilding. Set via _beginHydration() so external
   // hydration setup (rebindParts, _adoptSequence) doesn't reach into private
@@ -682,9 +893,10 @@ class NodePart implements Part {
       // the cache bookkeeping so a subsequent swap to another template works.
       const inner = value.value;
       if (isTemplateResult(inner)) {
-        if (!this._cacheMap.has(inner.strings)) {
+        const identity = templateIdentity(inner);
+        if (!this._cacheMap.has(identity)) {
           this._adoptTemplate(inner);
-          this._cacheCurrent = inner.strings;
+          this._cacheCurrent = identity;
         } else {
           this.updateCache(inner);
         }
@@ -693,7 +905,7 @@ class NodePart implements Part {
       }
       return;
     }
-    if (value === null || value === undefined || value === false) {
+    if (value === nothing || value === '' || value === null || value === undefined || value === false) {
       // Expected empty; remove any stray SSR nodes.
       this.clear();
       return;
@@ -841,7 +1053,7 @@ class NodePart implements Part {
     for (let i = 0; i < value.values.length; i++) {
       if (parts[i]) parts[i]!.update(value.values[i]);
     }
-    this._cachedTemplateStrings = value.strings;
+    this._cachedTemplateIdentity = templateIdentity(value);
     this._cachedParts = parts;
   }
 
@@ -973,7 +1185,8 @@ class NodePart implements Part {
    *     render) and record it as the current entry.
    */
   private updateCache(result: TemplateResult) {
-    if (this._cacheCurrent === result.strings && this._cachedParts) {
+    const identity = templateIdentity(result);
+    if (this._cacheCurrent === identity && this._cachedParts) {
       // Same template → update parts in place.
       this._cachedParts.forEach((part, i) => {
         part.update(result.values[i]);
@@ -988,7 +1201,7 @@ class NodePart implements Part {
       this._stashCurrent();
     }
 
-    const entry = this._cacheMap.get(result.strings);
+    const entry = this._cacheMap.get(identity);
     if (entry) {
       // Restore a previously-cached subtree: move its nodes back into the DOM
       // (between this part's anchors) and re-apply values to its parts.
@@ -998,7 +1211,7 @@ class NodePart implements Part {
       for (const node of entry.nodes) {
         parent.insertBefore(node, this.endNode);
       }
-      this._cachedTemplateStrings = result.strings;
+      this._cachedTemplateIdentity = identity;
       this._cachedParts = entry.parts;
       for (let i = 0; i < result.values.length; i++) {
         if (entry.parts[i]) entry.parts[i]!.update(result.values[i]);
@@ -1011,7 +1224,7 @@ class NodePart implements Part {
       this.clear();
       this.updateNode(result);
     }
-    this._cacheCurrent = result.strings;
+    this._cacheCurrent = identity;
   }
 
   /**
@@ -1022,8 +1235,8 @@ class NodePart implements Part {
    */
   private _stashCurrent() {
     if (!this._cachedParts) return;
-    const strings = this._cacheCurrent ?? this._cachedTemplateStrings;
-    if (!strings) {
+    const identity = this._cacheCurrent ?? this._cachedTemplateIdentity;
+    if (!identity) {
       // No template strings to key on (e.g. plain value); just drop the cache.
       this._clearTemplateCache();
       this.clear();
@@ -1034,10 +1247,10 @@ class NodePart implements Part {
     // stay together; keep the captured node references for reinsertion.
     const frag = document.createDocumentFragment();
     for (const node of nodes) frag.appendChild(node);
-    this._cacheMap.set(strings, { nodes, parts: this._cachedParts });
+    this._cacheMap.set(identity, { nodes, parts: this._cachedParts });
     // Drop the active-cache bookkeeping so the next render starts clean. Do NOT
     // dispose the cached parts — they belong to the stashed entry now.
-    this._cachedTemplateStrings = null;
+    this._cachedTemplateIdentity = null;
     this._cachedParts = null;
   }
 
@@ -1122,7 +1335,7 @@ class NodePart implements Part {
     if (!this.startNode.parentNode) return;
     if (isTemplateResult(value)) {
       // Check if we have a cached template with the same strings
-      if (this._cachedTemplateStrings === value.strings && this._cachedParts) {
+      if (this._cachedTemplateIdentity === templateIdentity(value) && this._cachedParts) {
         // Template structure is the same, just update the parts
         this._cachedParts.forEach((part, i) => {
           part.update(value.values[i]);
@@ -1137,7 +1350,7 @@ class NodePart implements Part {
         // Cache the template strings and parts for future updates
         const cached = containerCache.get(container.firstChild?.childNodes[0] || container);
         if (cached) {
-          this._cachedTemplateStrings = cached.strings;
+          this._cachedTemplateIdentity = cached.identity;
           this._cachedParts = cached.parts;
         }
       }
@@ -1161,7 +1374,7 @@ class NodePart implements Part {
       this._clearTemplateCache();
       this.clear();
       this.startNode.parentNode!.insertBefore(value, this.endNode);
-    } else if (value === null || value === undefined || value === false) {
+    } else if (value === nothing || value === '' || value === null || value === undefined || value === false) {
       this._clearTemplateCache();
       this.clear();
     } else {
@@ -1188,7 +1401,7 @@ class NodePart implements Part {
         if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
       }
     }
-    this._cachedTemplateStrings = null;
+    this._cachedTemplateIdentity = null;
     this._cachedParts = null;
     // NOTE: the `cache()` stash map (`_cacheMap`) is intentionally NOT cleared
     // here — `_clearTemplateCache` is invoked by `updateNode` on every template
@@ -1226,8 +1439,8 @@ class SpreadPart implements Part {
   private spreadClasses: string[] = [];
   constructor(public element: Element) {}
   update(value: unknown) {
-    if (typeof value !== 'object' || value === null) return;
-    const props = value as Record<string, unknown>;
+    if (value !== nothing && (typeof value !== 'object' || value === null)) return;
+    const props = value === nothing ? {} : value as Record<string, unknown>;
 
     for (const key of Object.keys(this.previousValues)) {
       if (!(key in props)) {
@@ -1243,6 +1456,7 @@ class SpreadPart implements Part {
             this.element.removeEventListener((state.listener as any).__eventName, state.listener);
             this.bindStates.delete(key);
           }
+          (this.element as any)[key.slice(1)] = undefined;
         } else if (key.startsWith('?')) {
           this.element.removeAttribute(key.slice(1));
         } else if (key === 'class' || key === 'className') {
@@ -1259,11 +1473,15 @@ class SpreadPart implements Part {
     }
 
     for (const [key, val] of Object.entries(props)) {
-      if (key.startsWith('@') && (typeof val === 'function' || val instanceof PreventDefaultResult)) {
+      if (key.startsWith('@')) {
         const eventName = key.slice(1);
         const propName = `__crp_handler_${eventName}`;
         const oldHandler = (this.element as any)[propName];
         if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
+        if (val === nothing || (typeof val !== 'function' && !(val instanceof PreventDefaultResult))) {
+          (this.element as any)[propName] = undefined;
+          continue;
+        }
         // Unwrap `preventDefault(handler)` into a wrapper that prevents the
         // event default first and applies `novalidate` to the bound <form>.
         let handler: EventListener;
@@ -1290,10 +1508,17 @@ class SpreadPart implements Part {
         this.element.addEventListener(eventName, handler);
       } else if (key.startsWith('.')) {
         const propName = key.slice(1);
+        const priorBind = this.bindStates.get(key);
+        if (priorBind && !(val instanceof BindResult)) {
+          this.element.removeEventListener((priorBind.listener as any).__eventName, priorBind.listener);
+          this.bindStates.delete(key);
+        }
         // bind() via the spread — same two-way handling as the direct path so
         // component(Input, { '.value': bind(this, 'name') }) works. Without
         // this, element.value = BindResult renders "[object Object]".
-        if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
+        if (val === nothing) {
+          (this.element as any)[propName] = undefined;
+        } else if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
           this.applySpreadBind(key, propName, val);
         } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
           // live() via the spread: compare against the live DOM value (not the
@@ -1319,8 +1544,11 @@ class SpreadPart implements Part {
           (this.element as any)[propName] = val;
         }
       } else if (key.startsWith('?')) {
-        if (val) this.element.setAttribute(key.slice(1), '');
+        if (val !== nothing && val) this.element.setAttribute(key.slice(1), '');
         else this.element.removeAttribute(key.slice(1));
+      } else if (val === nothing) {
+        if (key === 'class' || key === 'className') this.applySpreadClass('');
+        else this.element.removeAttribute(key);
       } else if (val instanceof IfDefinedResult) {
         // `ifDefined` via the spread (e.g. component(El, { href: ifDefined(url) })):
         // drop only on undefined; render every other value (incl. false/null) as a
@@ -1484,6 +1712,30 @@ class AttributePart implements Part {
     this.multiState = multiState ?? null;
   }
   update(value: unknown) {
+    if (value === nothing) {
+      if (this.bindListener) this._detachBindListener();
+      if (this.isMulti && this.multiState) {
+        this.multiState.currentValues[this.multiState.position] = nothing;
+        this.element.removeAttribute(this.name);
+        return;
+      }
+      if (this.name.startsWith('@')) {
+        (this.element as any)[`__crp_handler_${this.name.slice(1)}`] = undefined;
+        this.element.removeAttribute(this.name);
+      } else if (this.name.startsWith('.')) {
+        const propName = this.name.slice(1);
+        (this.element as any)[propName] = undefined;
+        this.lastFormKind = null;
+        this.lastFormValue = undefined;
+        this.element.removeAttribute(this.name);
+      } else if (this.name.startsWith('?')) {
+        this.element.removeAttribute(this.name.slice(1));
+        this.element.removeAttribute(this.name);
+      } else {
+        this.element.removeAttribute(this.name);
+      }
+      return;
+    }
     let isLive = false;
     if (value instanceof LiveResult) {
       isLive = true;
@@ -1525,6 +1777,10 @@ class AttributePart implements Part {
       // full string using every part's latest value and set once.
       const { currentValues, position } = this.multiState;
       currentValues[position] = value;
+      if (currentValues.includes(nothing)) {
+        this.element.removeAttribute(this.name);
+        return;
+      }
       let result = this.segments[0];
       for (let i = 0; i < currentValues.length; i++) {
         result += String(currentValues[i]) + this.segments[i + 1];
@@ -1749,7 +2005,7 @@ const bindEventFor = (element: Element, propName: string): string => {
   return 'input';
 };
 
-const containerCache = new WeakMap<Node, { strings: TemplateStringsArray; parts: Part[] }>();
+const containerCache = new WeakMap<Node, { identity: object; parts: Part[] }>();
 
 /**
  * Compile a TemplateResult into a fresh DOM fragment with marker comments
@@ -1763,15 +2019,16 @@ const containerCache = new WeakMap<Node, { strings: TemplateStringsArray; parts:
  */
 const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
   const parts: Part[] = [];
+  const strings = scopeTemplateStrings(result.strings, result.__cossackScope);
 
   let htmlString = '';
   let isInsideTag = false;
   let insideAttrQuote: string | null = null; // tracks open quote char ('"' or "'")
 
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_-]+)=["']?$/;
+  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
 
-  for (let i = 0; i < result.strings.length - 1; i++) {
-    const str = result.strings[i];
+  for (let i = 0; i < strings.length - 1; i++) {
+    const str = strings[i];
 
     // Track whether we're inside a tag and inside an attribute quote
     for (let j = 0; j < str.length; j++) {
@@ -1803,7 +2060,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
     }
   }
 
-  const lastStr = result.strings[result.strings.length - 1];
+  const lastStr = strings[strings.length - 1];
   for (let j = 0; j < lastStr.length; j++) {
     if (insideAttrQuote) {
       if (lastStr[j] === insideAttrQuote) insideAttrQuote = null;
@@ -1816,7 +2073,20 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
   htmlString += lastStr;
 
   const template = document.createElement('template');
-  template.innerHTML = htmlString;
+  if (result['_$litType$'] === 2) {
+    // Parsing through an SVG element gives every fragment child the correct
+    // namespace while allowing the HTML parser to switch back inside
+    // <foreignObject>. Only the wrapper's children become template output.
+    template.innerHTML = `<svg>${htmlString}</svg>`;
+    const svgRoot = template.content.firstElementChild as SVGSVGElement | null;
+    const fragment = document.createDocumentFragment();
+    if (svgRoot) {
+      while (svgRoot.firstChild) fragment.appendChild(svgRoot.firstChild);
+    }
+    template.content.replaceChildren(fragment);
+  } else {
+    template.innerHTML = htmlString;
+  }
   const instance = template.content.cloneNode(true);
 
   const walker = document.createTreeWalker(instance, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
@@ -1885,7 +2155,8 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
 
 export const render = (result: TemplateResult, container: Node) => {
   const existing = containerCache.get(container);
-  if (existing && existing.strings === result.strings) {
+  const identity = templateIdentity(result);
+  if (existing && existing.identity === identity) {
     existing.parts.forEach((part, i) => {
       part.update(result.values[i]);
     });
@@ -1910,17 +2181,19 @@ export const render = (result: TemplateResult, container: Node) => {
     }
   }
 
-  if (container instanceof HTMLElement) {
+  if (
+    (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
+    (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
+  ) {
     container.innerHTML = '';
-    container.appendChild(fragment);
-  } else if (container instanceof DocumentFragment) {
+  } else {
     while (container.firstChild) {
       container.removeChild(container.firstChild);
     }
-    container.appendChild(fragment);
   }
+  container.appendChild(fragment);
 
-  containerCache.set(container, { strings: result.strings, parts });
+  containerCache.set(container, { identity, parts });
 };
 
 /**
@@ -2012,7 +2285,11 @@ const reconcileNodeLists = (
     // tag check a <p> in the DOM would silently absorb a <div> template's
     // parts, producing a corrupted tree.
     if (bpNode.nodeType === Node.ELEMENT_NODE) {
-      if (exNode.nodeType !== Node.ELEMENT_NODE || bpNode.nodeName !== exNode.nodeName) {
+      if (
+        exNode.nodeType !== Node.ELEMENT_NODE ||
+        bpNode.nodeName !== exNode.nodeName ||
+        (bpNode as Element).namespaceURI !== (exNode as Element).namespaceURI
+      ) {
         throw new HydrateMismatch(`tag mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
       }
       map.set(bpNode, exNode);
@@ -2095,7 +2372,8 @@ export const hydrate = (result: TemplateResult, container: Node) => {
   }
   // Already hydrated/managed by this template — use the fast update path.
   const cached = containerCache.get(container);
-  if (cached && cached.strings === result.strings) {
+  const identity = templateIdentity(result);
+  if (cached && cached.identity === identity) {
     cached.parts.forEach((part, i) => part.update(result.values[i]));
     return;
   }
@@ -2127,5 +2405,5 @@ export const hydrate = (result: TemplateResult, container: Node) => {
     throw e;
   }
 
-  containerCache.set(container, { strings: result.strings, parts });
+  containerCache.set(container, { identity, parts });
 };

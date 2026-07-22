@@ -1,5 +1,7 @@
 import { TemplateResult, render, hydrate, html, isTemplateResult } from './cossack-html';
 import { Context } from './context';
+import { getFinalizedStyles } from './css';
+import type { CSSResultGroup, FinalizedStyles } from './css';
 
 export type PropertyDeclaration = {
   type?: unknown;
@@ -35,10 +37,37 @@ export const instanceStack: CossackElement[] = [];
 export const pushCurrentInstance = (instance: CossackElement) => instanceStack.push(instance);
 export const popCurrentInstance = () => instanceStack.pop();
 
+const styleTemplates = new WeakMap<Function, TemplateResult>();
+
+const createStaticTemplate = (text: string): TemplateResult => {
+  const strings = [text] as unknown as TemplateStringsArray;
+  (strings as unknown as { raw: readonly string[] }).raw = strings;
+  return new TemplateResult(strings, []);
+};
+
+const styleTemplateFor = (componentClass: Function, styles: FinalizedStyles): TemplateResult => {
+  let template = styleTemplates.get(componentClass);
+  if (!template) {
+    // getFinalizedStyles() is intentionally idempotent per component class;
+    // this cache relies on that invariant so a class always reuses the same
+    // scope ID and managed style template across renders and instances.
+    // A literal </style sequence would terminate the HTML element even when it
+    // appears in CSS text. Escaping the slash is CSS-equivalent and keeps the
+    // managed style node structurally stable for SSR/hydration.
+    const safeCss = styles.cssText.replace(/<\/style/gi, '<\\/style');
+    template = createStaticTemplate(`<style data-cossack-style="${styles.scopeId}">${safeCss}</style>`);
+    styleTemplates.set(componentClass, template);
+  }
+  return template;
+};
+
+const wrapStyledOutput = (styles: TemplateResult, output: unknown): TemplateResult => html`${styles}${output}`;
+
 export class CossackElement implements ReactiveControllerHost {
   static properties: PropertyDeclarations = {};
   static readonly _isCossackElement = true;
   static components: Record<string, typeof CossackElement> = {};
+  static styles?: CSSResultGroup;
 
   // Holds content projected from the parent
   public children: unknown = null;
@@ -163,7 +192,7 @@ export class CossackElement implements ReactiveControllerHost {
             this.resetRenderState();
             pushCurrentInstance(this);
 
-            const template = this.render();
+            const template = this._finalizeRenderOutput(this.render());
 
             this.__notifyListeners(template);
 
@@ -196,6 +225,42 @@ export class CossackElement implements ReactiveControllerHost {
 
   removeRenderListener(listener: (template: TemplateResult | unknown | null) => void) {
       this.__renderListeners.delete(listener);
+  }
+
+  /** @internal Return the deterministic Light DOM style scope for this class. */
+  public _getStyleScopeId(): string | undefined {
+      return getFinalizedStyles(this.constructor as typeof CossackElement)?.scopeId;
+  }
+
+  /**
+   * @internal Shared output finalizer used by standalone elements, nested
+   * component() rendering, and the core Cossack page/layout/app path.
+   */
+  public _finalizeRenderOutput(value: TemplateResult | unknown | null): TemplateResult | unknown | null {
+      const styles = getFinalizedStyles(this.constructor as typeof CossackElement);
+      this._claimTemplateOwnership(value, styles?.scopeId);
+      if (!styles) return value;
+      return wrapStyledOutput(styleTemplateFor(this.constructor, styles), value);
+  }
+
+  private _claimTemplateOwnership(value: unknown, scopeId?: string): void {
+      if (!value || typeof value !== 'object') return;
+      if ((value as any)._type === 'COMPONENT') {
+          const component = value as any;
+          component.parent = this;
+          this._claimTemplateOwnership(component.children, scopeId);
+          return;
+      }
+      if (isTemplateResult(value)) {
+          if (value.__cossackOwner && value.__cossackOwner !== this) return;
+          value.__cossackOwner = this;
+          value.__cossackScope = scopeId;
+          for (const nested of value.values) this._claimTemplateOwnership(nested, scopeId);
+          return;
+      }
+      if (Array.isArray(value)) {
+          for (const nested of value) this._claimTemplateOwnership(nested, scopeId);
+      }
   }
 
   mount(container: HTMLElement, hydrateFirst = false) {
