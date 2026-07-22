@@ -2,7 +2,7 @@ import { Cossack, Page, State, Client } from '@cossackframework/core';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { Toaster } from '@cossackframework/ui';
 import { getCookie } from 'hono/cookie';
-import { themeStore } from './stores';
+import { themeStore } from './stores.client';
 
 /**
  * Root application component.
