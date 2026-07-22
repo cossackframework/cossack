@@ -17,11 +17,15 @@
 
 <h1 align="center">The Borderless TypeScript Framework</h1>
 
-A full-stack TypeScript framework for building edge first, real-time web applications.
+A full-stack TypeScript framework for building real-time, edge first web applications.
 
-Write client and server logic in the same class seamlessly. Cossack automatically handles state management, SSR, and security.
+Write client and server logic in the same class seamlessly, like no border exists, deploy to Cloudflare Workers or any Node compatible runtime in seconds.
 
 Think of it like Laravel + Next.js + Phoenix LiveView, but TypeScript native and edge deployment ready.
+
+## Status
+
+Cossack is in **alpha stage**. Breaking changes are expected. We are actively working on it and welcome contributions.
 
 ## Quick Start
 
@@ -38,7 +42,7 @@ The CLI will prompt you to choose a runtime adapter:
 
 ## Why Cossack?
 
-Cossack is the most advanced TypeScript framework for building modern web applications.
+Cossack is the most advanced TypeScript framework for building modern web applications on any platform.
 
 No more `fetch()`, no more query libraries, no more client-server boilerplate, even no more client-server components.
 Your server methods are directly callable from the client, and vice-versa.
