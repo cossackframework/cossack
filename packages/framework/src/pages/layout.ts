@@ -1,4 +1,4 @@
-import { Cossack, Page } from '@cossackframework/core';
+import { Cossack, Page, Server } from '@cossackframework/core';
 import { html, type TemplateResult } from '@cossackframework/renderer';
 
 @Page({ transport: 'http' })

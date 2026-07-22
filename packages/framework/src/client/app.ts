@@ -346,7 +346,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     }
 
     currentLayoutInstances = [];
-    for (const { path: layoutFilePath, state } of layoutStack) {
+    for (const { path: layoutFilePath, state, componentRouteId } of layoutStack) {
         // Layout paths are already file paths (from server). Layouts are lazy
         // on the client (code-split per route, like pages), so the registry
         // holds loader functions — await to get the module. This keeps a layout
@@ -377,7 +377,10 @@ export async function createClientApp({ container, AppComponent, viewTransitions
                 return true;
             };
 
-            await instance.bootstrap({ initialState: state, skipInit: true });
+            await instance.bootstrap({
+              initialState: { ...state, componentRouteId },
+              skipInit: true,
+            });
             currentLayoutsMap.set(layoutFilePath, instance);
         }
         instance.updatePath(pathname);

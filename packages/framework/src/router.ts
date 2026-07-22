@@ -530,7 +530,11 @@ export function createApp(options: CreateAppOptions = {}) {
           transport: pageOptions?.transport || 'http',
           scopeKey,
           _app_state: appInstance.getInitialState(),
-          _layout_stack: layoutPaths.map((p) => ({ path: p, state: layoutStates[p] })), // Keep file paths for layouts
+          _layout_stack: layoutPaths.map((p) => ({
+            path: p,
+            state: layoutStates[p],
+            componentRouteId: routePathToIdMap.get(p),
+          })), // Keep file paths and their RPC target IDs for layouts
           // Localization: hydrate the active locale's catalog (and the default
           // fallback if different) so `__()` works on the client immediately.
           // Other locales are dynamic-imported on demand by `setLocale()`.

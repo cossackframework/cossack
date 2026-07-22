@@ -182,6 +182,7 @@ export async function renderSsgPage(
   componentRouteId?: string,
   configFactories?: Record<string, ConfigFactory>,
   localeInput?: SsgLocaleInput,
+  filePathToId: Record<string, string> = {},
 ): Promise<string> {
   // Create a mock Hono context for SSR
   const mockContext = createMockContext(routePath, staticParams, baseUrl);
@@ -308,6 +309,7 @@ export async function renderSsgPage(
     _layout_stack: layoutPaths.map((item: LayoutStackItem) => ({
       path: item.path,
       state: layoutStates[item.path],
+      componentRouteId: filePathToId[item.path],
     })),
   };
 

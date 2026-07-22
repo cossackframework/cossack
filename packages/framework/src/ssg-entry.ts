@@ -116,6 +116,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
           args.manifest.filePathToId[route.filePath],
           configFactories,
           locale,
+          args.manifest.filePathToId,
         );
 
         rendered.push(routePath);
