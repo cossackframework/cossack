@@ -125,6 +125,55 @@ npx wrangler secret put APP_SECRET
 
 The `env()` helper reads from the same per-request bindings object, so both `vars` and secrets resolve identically at runtime.
 
+## CORS
+
+New projects include `src/config/cors.ts`. Existing projects that do not have
+that file receive the same secure defaults: API CORS is enabled, with no trusted
+cross-origin origins.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CORS_ENABLED` | `true` | Enable built-in CORS on `/api` and `/api/*` |
+| `CORS_ORIGINS` | empty | Comma-separated origin allowlist |
+| `CORS_METHODS` | `GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS` | Allowed preflight methods |
+| `CORS_HEADERS` | empty | Allowed headers; empty reflects requested headers |
+| `CORS_EXPOSE_HEADERS` | empty | Response headers exposed to browser code |
+| `CORS_CREDENTIALS` | `false` | Permit credentialed browser requests |
+| `CORS_MAX_AGE` | `86400` | Browser preflight cache duration in seconds |
+
+CSV values are trimmed and empty entries discarded. Methods are normalized to
+uppercase, and trailing slashes on exact origins are ignored. Supported origins
+are exact HTTP(S) origins, global `*`, `https://*.example.com` (scheme-specific),
+and `*.example.com` (HTTP or HTTPS). Subdomain patterns exclude the apex.
+Malformed entries never match. `CORS_CREDENTIALS=true` with global `*` is
+rejected because credentialed CORS requires an explicit origin.
+
+For Node, put values in `.env`; for local Wrangler development, use `.dev.vars`:
+
+```dotenv
+CORS_ENABLED=true
+CORS_ORIGINS=https://app.example.com,*.preview.example.com
+CORS_METHODS=GET,POST,OPTIONS
+CORS_HEADERS=Authorization,Content-Type
+CORS_EXPOSE_HEADERS=X-Request-Id
+CORS_CREDENTIALS=true
+CORS_MAX_AGE=3600
+```
+
+For a deployed Worker, use Wrangler variables:
+
+```jsonc
+{
+  "vars": {
+    "CORS_ORIGINS": "https://app.example.com",
+    "CORS_CREDENTIALS": "true"
+  }
+}
+```
+
+CORS controls which responses browsers expose to cross-origin JavaScript. It
+does not replace authentication, authorization, CSRF protection, or rate limits.
+
 ### `env()` vs `config()`
 
 | Helper | What it reads | Return type | When to use |

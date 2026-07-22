@@ -51,6 +51,13 @@
   "vars": {
     "APP_URL": "https://example.com",
     "APP_LOCALE": "en",
-    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET"
+    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET",
+    "CORS_ENABLED": "true",
+    "CORS_ORIGINS": "",
+    "CORS_METHODS": "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS",
+    "CORS_HEADERS": "",
+    "CORS_EXPOSE_HEADERS": "",
+    "CORS_CREDENTIALS": "false",
+    "CORS_MAX_AGE": "86400"
   }
 }

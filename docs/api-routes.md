@@ -9,6 +9,29 @@ Cossack makes it easy to build backend endpoints directly within your project. Y
 
 All API routes should be placed in the `src/pages/api/` directory.
 
+## Cross-origin requests (CORS)
+
+CORS is built in for `/api` and `/api/*`. It is enabled by default, but the
+default origin list is empty, so no cross-origin website is trusted until you
+configure one. Same-origin requests and non-browser clients are unaffected.
+
+Set `CORS_ORIGINS` to a comma-separated allowlist:
+
+```dotenv
+# .env (Node) or .dev.vars (Wrangler local development)
+CORS_ORIGINS=https://app.example.com,https://*.example.org
+CORS_CREDENTIALS=true
+```
+
+Exact HTTP(S) origins, `*`, scheme-specific subdomain patterns such as
+`https://*.example.com`, and scheme-less patterns such as `*.example.com` are
+supported. Wildcard subdomains do not include the apex (`example.com`). The
+global `*` cannot be combined with credentials.
+
+Preflight requests return `204` before project auth/database middleware runs.
+CORS is intentionally not applied to pages or framework transport endpoints
+such as `/crpc`, uploads, SSE, and WebSockets. See [Configuration](./config.md#cors).
+
 ## Functional API Routes (Zero-Config)
 
 For most use cases, you can simply export a standard Hono handler.
