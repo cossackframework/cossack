@@ -1,7 +1,7 @@
 // src/transports/http.ts
 import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError } from '@cossackframework/core';
 import type { Context } from 'hono';
-import type { RouterContext } from '../route-ids';
+import type { RouterContext } from '../route-ids.js';
 
 /** RPC allowlist including @Server methods on injected @Service deps (see router.ts). */
 function isRpcCallableActionOrService(constructor: unknown, action: unknown): boolean {

@@ -1,2 +1,2 @@
-export * from './app';
-export * from './scroll-reveal';
+export * from './app.js';
+export * from './scroll-reveal.js';

@@ -23,8 +23,8 @@
 import registry from 'virtual:cossack-pages';
 import configFactories from 'virtual:cossack-config';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
-import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } from './ssg-renderer';
-import type { RoutesManifest } from './route-ids';
+import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } from './ssg-renderer.js';
+import type { RoutesManifest } from './route-ids.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';

@@ -7,7 +7,7 @@
 //
 //   import { config } from '@cossackframework/framework/config';
 //   const appName = config('app.name'); // 'Cossack'
-import type { EnvFunction } from '../config';
+import type { EnvFunction } from '../config.js';
 
 export interface AppConfig {
     name: string;

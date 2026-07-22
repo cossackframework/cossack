@@ -13,7 +13,7 @@
 // (`config`/`env` → their default arg or `''`/`undefined`; `binding` →
 // `undefined`) — matching the behavior of the imported versions.
 
-import { config, env, binding } from './config';
+import { config, env, binding } from './config.js';
 
 let installed = false;
 
@@ -35,7 +35,7 @@ installConfigGlobals();
 // the fully-typed overloads from `./config` (via `typeof`) so callers get the
 // same dotted-path inference and return types as the imported versions.
 declare global {
-    const config: typeof import('./config').config;
-    const env: typeof import('./config').env;
-    const binding: typeof import('./config').binding;
+    const config: typeof import('./config.js').config;
+    const env: typeof import('./config.js').env;
+    const binding: typeof import('./config.js').binding;
 }

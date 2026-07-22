@@ -1,7 +1,7 @@
 // src/transports/sse.ts
 import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
-import type { RouterContext } from '../route-ids';
+import type { RouterContext } from '../route-ids.js';
 
 /** Active async generator being iterated by the SSE endpoint. */
 interface PendingGenerator {

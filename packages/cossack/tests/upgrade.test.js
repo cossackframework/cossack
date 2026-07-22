@@ -172,14 +172,14 @@ describe('upgradeCommand end-to-end (no network)', () => {
     await write(tmpProject, 'src/root.ts', 'user-edit');
     await write(tmpTemplate, 'src/root.ts', 'root-v2');
 
-    const ctx = makeCtx(['--apply-template', '--force-file', 'src/root.ts']);
+    const ctx = makeCtx(['--force-file', 'src/root.ts']);
     await upgradeCommand(ctx.args, ctx.ctx);
     expect(fs.readFileSync(path.join(tmpProject, 'src/root.ts'), 'utf8')).toBe(
       'root-v2',
     );
   });
 
-  it('--force overwrites modified files from the template', async () => {
+  it('--force preserves modified files from the template', async () => {
     const baselineRoot = await write(tmpProject, 'src/root.ts', 'root-v1');
     const baselineApp = await write(tmpProject, 'src/App.ts', 'app-v1');
     await write(tmpProject, 'package.json', '{}');
@@ -197,12 +197,12 @@ describe('upgradeCommand end-to-end (no network)', () => {
 
     const ctx = makeCtx(['--force']);
     await upgradeCommand(ctx.args, ctx.ctx);
-    // --force overwrites the user edits with the template content
+    // Broad force applies safe updates but cannot destroy application edits.
     expect(fs.readFileSync(path.join(tmpProject, 'src/root.ts'), 'utf8')).toBe(
-      'root-v2',
+      'root-user-edit',
     );
     expect(fs.readFileSync(path.join(tmpProject, 'src/App.ts'), 'utf8')).toBe(
-      'app-v2',
+      'app-user-edit',
     );
   });
 
@@ -264,4 +264,130 @@ describe('upgradeCommand end-to-end (no network)', () => {
       },
     };
   }
+
+  // Regression tests for bug-3.md: `cossack upgrade --force` (and --apply-template
+  // / --force-file) must NOT overwrite a Node project's runtime files with the
+  // Cloudflare-flavored versions from the bundled template. The manifest records
+  // adapter: "node", and configureNodeAdapter rewrites src/index.ts,
+  // src/db/config.ts, and vite.config.ts at create time — those are excluded.
+  describe('Node adapter protection (bug-3)', () => {
+    async function seedNodeProject() {
+      // Node-flavored runtime files as written by configureNodeAdapter.
+      const nodeIndex = await write(
+        tmpProject,
+        'src/index.ts',
+        'export const app = createApp({...}); // node entry',
+      );
+      const nodeDb = await write(
+        tmpProject,
+        'src/db/config.ts',
+        'import Database from "better-sqlite3"; // node db config',
+      );
+      const nodeVite = await write(
+        tmpProject,
+        'vite.config.ts',
+        '// node vite config (no cloudflare plugin)',
+      );
+      await write(tmpProject, 'package.json', '{}');
+      const manifest = {
+        schemaVersion: 1,
+        tool: 'create-cossack-app',
+        templateVersion: '0.1.0',
+        adapter: 'node',
+        files: {
+          'src/index.ts': nodeIndex,
+          'src/db/config.ts': nodeDb,
+          'vite.config.ts': nodeVite,
+        },
+      };
+      await write(
+        tmpProject,
+        '.cossack/scaffold.json',
+        JSON.stringify(manifest),
+      );
+      // Cloudflare-flavored equivalents in the template.
+      await write(
+        tmpTemplate,
+        'src/index.ts',
+        'const app = createApp({...}); export default { fetch: app.fetch }; // cloudflare',
+      );
+      await write(
+        tmpTemplate,
+        'src/db/config.ts',
+        'export function createClient(env) { return env.DB; } // cloudflare D1',
+      );
+      await write(
+        tmpTemplate,
+        'vite.config.ts',
+        'cloudflare({ viteEnvironment: { name: "ssr" } }); // cloudflare plugin',
+      );
+    }
+
+    it('--force does NOT overwrite Node adapter runtime files', async () => {
+      await seedNodeProject();
+      const ctx = makeCtx(['--force']);
+      await upgradeCommand(ctx.args, ctx.ctx);
+      expect(fs.readFileSync(path.join(tmpProject, 'src/index.ts'), 'utf8'))
+        .toBe('export const app = createApp({...}); // node entry');
+      expect(fs.readFileSync(path.join(tmpProject, 'src/db/config.ts'), 'utf8'))
+        .toBe('import Database from "better-sqlite3"; // node db config');
+      expect(fs.readFileSync(path.join(tmpProject, 'vite.config.ts'), 'utf8'))
+        .toBe('// node vite config (no cloudflare plugin)');
+    });
+
+    it('--apply-template does NOT overwrite Node adapter runtime files', async () => {
+      await seedNodeProject();
+      const ctx = makeCtx(['--apply-template']);
+      await upgradeCommand(ctx.args, ctx.ctx);
+      expect(fs.readFileSync(path.join(tmpProject, 'src/index.ts'), 'utf8'))
+        .toBe('export const app = createApp({...}); // node entry');
+      expect(fs.readFileSync(path.join(tmpProject, 'vite.config.ts'), 'utf8'))
+        .toBe('// node vite config (no cloudflare plugin)');
+    });
+
+    it('--force-file refuses adapter-specific files with a clear error', async () => {
+      await seedNodeProject();
+      const ctx = makeCtx([
+        '--force-file',
+        'src/index.ts',
+        '--force-file',
+        'vite.config.ts',
+      ]);
+      await upgradeCommand(ctx.args, ctx.ctx);
+      // Node files untouched.
+      expect(fs.readFileSync(path.join(tmpProject, 'src/index.ts'), 'utf8'))
+        .toBe('export const app = createApp({...}); // node entry');
+      expect(fs.readFileSync(path.join(tmpProject, 'vite.config.ts'), 'utf8'))
+        .toBe('// node vite config (no cloudflare plugin)');
+    });
+
+    it('adapter is detected from wrangler presence when manifest lacks the field', async () => {
+      // Older project: manifest has no `adapter`, but wrangler.jsonc present
+      // => cloudflare, so adapter-specific files are NOT excluded and CAN be
+      // updated normally.
+      const baselineIndex = await write(
+        tmpProject,
+        'src/index.ts',
+        'cloudflare-entry-v1',
+      );
+      await write(tmpProject, 'package.json', '{}');
+      await write(tmpProject, 'wrangler.jsonc', '{}');
+      const manifest = {
+        schemaVersion: 1,
+        templateVersion: '0.1.0',
+        files: { 'src/index.ts': baselineIndex },
+      };
+      await write(
+        tmpProject,
+        '.cossack/scaffold.json',
+        JSON.stringify(manifest),
+      );
+      await write(tmpTemplate, 'src/index.ts', 'cloudflare-entry-v2');
+
+      const ctx = makeCtx(['--apply-template']);
+      await upgradeCommand(ctx.args, ctx.ctx);
+      expect(fs.readFileSync(path.join(tmpProject, 'src/index.ts'), 'utf8'))
+        .toBe('cloudflare-entry-v2');
+    });
+  });
 });

@@ -7,14 +7,14 @@ import {
     __hydrateLocale,
     getDefaultLocale,
 } from '@cossackframework/core';
-import { App } from '../App';
+import { App } from '../App.js';
 import { CossackElement } from '@cossackframework/renderer';
-import { registerDevToolsInstance } from './devtools';
-import { filePathToRoutePath } from '../route-ids';
+import { registerDevToolsInstance } from './devtools.js';
+import { filePathToRoutePath } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
-import '../i18n-globals';
+import '../i18n-globals.js';
 // NOTE: `config`/`env`/`binding` globals are intentionally NOT registered on
 // the client. They read the request-scoped AsyncLocalStorage (node:async_hooks),
 // which doesn't exist in the browser, and no client code calls them. They are

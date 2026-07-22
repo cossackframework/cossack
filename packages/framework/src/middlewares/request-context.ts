@@ -10,7 +10,7 @@
 // loop, locale, and flash).
 
 import type { MiddlewareHandler } from 'hono';
-import { ensureRequestContextAlsWired, runWithContext } from '../request-context-als';
+import { ensureRequestContextAlsWired, runWithContext } from '../request-context-als.js';
 
 export function createRequestContextMiddleware(): MiddlewareHandler {
     return async (c, next) => {

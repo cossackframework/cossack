@@ -34,11 +34,12 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 @import "@cossackframework/ui/theme/themes/blue.css";
 
 /* Tailwind v4 excludes node_modules by default. This @source line tells it to
-   scan the package's component source so every utility class referenced
-   inside the components (bg-card, bg-popover, bg-accent, ...) is generated.
+   scan the package's published bundle (dist), which contains every utility
+   class referenced inside the components (bg-card, bg-popover, bg-accent, ...).
    Without it, only classes that also appear in your own source will be
-   emitted and most variants will render unstyled. */
-@source "../node_modules/@cossackframework/ui/src/components";
+   emitted and most variants will render unstyled. Note the `files` field ships
+   only `dist` and `src/theme`, so scan `dist` (not src/components). */
+@source "../node_modules/@cossackframework/ui/dist";
 ```
 
 `cossack add ui` wires all of the above automatically.

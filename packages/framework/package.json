@@ -96,6 +96,7 @@
     "preview": "pnpm run build:ssg && vite preview",
     "deploy": "pnpm run build:types && vite build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "pretest": "pnpm run build:types",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ssg": "COSSACK_TEST_SSG=1 playwright test e2e/pages/ssg.spec.ts",
