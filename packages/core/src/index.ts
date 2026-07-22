@@ -47,4 +47,18 @@ export {
     connectStore,
     type ReactiveStore,
 } from './shared/reactive-store';
-export { html, TemplateResult } from '@cossackframework/renderer';
+export {
+    html,
+    svg,
+    nothing,
+    TemplateResult,
+    css,
+    unsafeCSS,
+    CSSResult,
+} from '@cossackframework/renderer';
+export type {
+    SVGTemplateResult,
+    ValueSanitizer,
+    SanitizerFactory,
+    CSSResultGroup,
+} from '@cossackframework/renderer';

@@ -3,6 +3,17 @@ import { test, expect } from '../fixtures';
 test.describe('Nested State Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/examples/nested-state');
+    // The counters are visible from SSR before their server-action handlers
+    // are hydrated. Wait for client bootstrap and nested component hydration
+    // before interacting so the first click cannot be lost.
+    await page.waitForFunction(
+      () => (window as any).__cossackReady === true,
+      undefined,
+      { timeout: 15000 },
+    );
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
   });
 
   test('should display nested components', async ({ page }) => {

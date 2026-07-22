@@ -58,10 +58,15 @@ test.describe('Tailwind Demo Page', () => {
 
   test('should render badges with rounded-full', async ({ page }) => {
     const badge = page.locator('.rounded-full').first();
-    const borderRadius = await badge.evaluate((el) => parseFloat(getComputedStyle(el).borderRadius));
-    // rounded-full → 9999px in the computed style
-    expect(borderRadius).toBeGreaterThanOrEqual(9999);
+
+    await expect.poll(
+      () => badge.evaluate((el) =>
+        Number.parseFloat(getComputedStyle(el).borderRadius),
+      ),
+      { timeout: 5000 },
+    ).toBeGreaterThanOrEqual(9999);
   });
+
 
   test('should preserve styles after client-side navigation', async ({ page }) => {
     // Verify initial page has Tailwind content

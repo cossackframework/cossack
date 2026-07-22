@@ -1712,12 +1712,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (pushedForDirectComposition) pushCurrentInstance(this);
         try {
             // Special case: check if we should render a loading UI instead of standard output
+            let output: unknown;
             if (this.loading.init && this.hasMethod('loadingTemplate')) {
                 const method = this.getMethod('loadingTemplate');
-                return (method as any)();
+                output = (method as any)();
+            } else {
+                output = this.render();
             }
-
-            let template = this.render();
+            // Keep the internal contract honest even for JavaScript consumers
+            // or methods explicitly typed as `any`: ownership, scoped-style
+            // finalization, and devtools wrapping should always receive either
+            // a TemplateResult or null.
+            let template = output == null
+                ? null
+                : isTemplateResult(output) ? output : html`${output}`;
             attachTemplateOwner(template, this);
 
             // Inject devtools markers if source info is present
@@ -1740,7 +1748,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // The strings array has 2 parts (start marker, end marker).
             template = new TemplateResult(Ctor.__devStrings, [template]);
         }
-        return template;
+        const finalize = (this as any)._finalizeRenderOutput;
+        return (typeof finalize === 'function' ? finalize.call(this, template) : template) as TemplateResult | null;
         } finally {
             if (pushedForDirectComposition && instanceStack[instanceStack.length - 1] === this) {
                 popCurrentInstance();
