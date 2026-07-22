@@ -5,6 +5,10 @@ export interface ComponentResult {
     clazz: new () => CossackElement;
     props: Record<string, unknown>;
     children: unknown;
+    /** Rendering owner captured when component() is evaluated. */
+    parent?: CossackElement | null;
+    /** Framework-private scope captured from the rendering owner. */
+    serviceScope?: unknown;
 }
 
 export const isComponentResult = (value: unknown): value is ComponentResult => {

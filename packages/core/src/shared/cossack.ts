@@ -71,6 +71,8 @@ import type {
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
 import { ServerResourceSerializationError, type ServerResourceOptions } from './server-resource';
+import type { ServiceClass } from './container';
+import type { ServiceScope } from './service-scope';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
@@ -116,7 +118,41 @@ function createThrottle(fn: Function, ms: number) {
     };
 }
 
+/**
+ * Direct framework composition can evaluate a page template before the
+ * renderer begins walking it. Stamp component() results with that page as
+ * their owner so nested components inherit the correct scope/context even
+ * when core and renderer are separate bundled module instances.
+ */
+function attachTemplateOwner(value: unknown, owner: CossackElement): void {
+    if (value && typeof value === 'object' && (value as any)._type === 'COMPONENT') {
+        const componentResult = value as any;
+        // The component() helper may observe an outer composition stack (for
+        // example App while it is interpolating a page template). The class
+        // whose render() produced this result is the authoritative parent.
+        componentResult.parent = owner;
+        componentResult.serviceScope = (owner as any)._getServiceScope?.();
+        attachTemplateOwner(componentResult.children, owner);
+        return;
+    }
+    if (isTemplateResult(value)) {
+        const ownedTemplate = value as TemplateResult & { __cossackOwner?: CossackElement };
+        // Layout/App composition interpolates an already-evaluated child
+        // template. Do not walk into it and steal its component ownership.
+        if (ownedTemplate.__cossackOwner && ownedTemplate.__cossackOwner !== owner) return;
+        ownedTemplate.__cossackOwner = owner;
+        for (const nested of value.values) attachTemplateOwner(nested, owner);
+        return;
+    }
+    if (Array.isArray(value)) {
+        for (const nested of value) attachTemplateOwner(nested, owner);
+    }
+}
+
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
+    private _serviceScope?: ServiceScope;
+    private _ownsServiceScope = false;
+    private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
     private _serverResources = new Map<string, {
         argsKey: string;
         value: unknown;
@@ -372,6 +408,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
 
         try {
+            if (!this._serviceScope) {
+                const parent = this.getParentComponent() as any;
+                if (parent?._getServiceScope) this._serviceScope = parent._getServiceScope();
+            }
+            this._prepareInjectedServices();
             // Register first so parent can provide restored child state
             this.registerSelf();
             this.initializeState();
@@ -502,6 +543,75 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     private _bootstrapServices(): void {
         bootstrapServicesFn(this);
+    }
+
+    /** @internal Attach the routing layer's active service scope. */
+    public _setServiceScope(scope: ServiceScope, owns = false): void {
+        this._serviceScope = scope;
+        this._ownsServiceScope = owns;
+        this._prepareInjectedServices();
+    }
+
+    /** @internal Used by renderer-created descendants to inherit their parent scope. */
+    public _getServiceScope(): ServiceScope | undefined {
+        return this._serviceScope;
+    }
+
+    /** @internal True when legacy constructor DI must not flatten a scoped service. */
+    public _isExplicitlyScopedService(serviceClass: ServiceClass, instance: unknown): boolean {
+        const owner = this._serviceScope?.getOwnerScope(serviceClass);
+        return !!owner && owner.resolveDeclared(serviceClass) === instance;
+    }
+
+    /** @internal Make legacy constructor injection reactive when it resolves a layout declaration. */
+    public _subscribeScopedConstructorService(serviceClass: ServiceClass): void {
+        const key = `constructor:${serviceClass.name}`;
+        if (!this._serviceScope || this._serviceInjectionCleanups.has(key)) return;
+        this._serviceInjectionCleanups.set(key, this._serviceScope.subscribe(serviceClass, this));
+    }
+
+    /** @internal Materialize lazy @Inject accessors after derived fields exist. */
+    public _prepareInjectedServices(): void {
+        const injections = Reflect.getMetadata('cossack:inject', this.constructor) as
+            | Map<string | symbol, ServiceClass>
+            | undefined;
+        if (!injections) return;
+        for (const [propertyKey, serviceClass] of injections) {
+            const descriptor = Object.getOwnPropertyDescriptor(this, propertyKey);
+            if (descriptor?.get && (descriptor.get as any).__cossackInject) continue;
+            let resolved: unknown;
+            let didResolve = false;
+            const getter = () => {
+                if (!didResolve) {
+                    if (!this._serviceScope) {
+                        const parent = this.getParentComponent() as any;
+                        if (parent?._getServiceScope) this._serviceScope = parent._getServiceScope();
+                    }
+                    if (!this._serviceScope) {
+                        throw new Error(
+                            `[Cossack] Cannot inject ${serviceClass.name || '<anonymous>'} into ${this.constructor.name}: ` +
+                            'the component is not attached to an active layout service scope.',
+                        );
+                    }
+                    resolved = this._serviceScope.resolveDeclared(serviceClass);
+                    this._serviceInjectionCleanups.set(
+                        propertyKey,
+                        this._serviceScope.subscribe(serviceClass, this),
+                    );
+                    didResolve = true;
+                }
+                return resolved;
+            };
+            (getter as any).__cossackInject = true;
+            Object.defineProperty(this, propertyKey, {
+                get: getter,
+                set: () => {
+                    throw new Error(`[Cossack] Injected property ${String(propertyKey)} is read-only.`);
+                },
+                enumerable: false,
+                configurable: true,
+            });
+        }
     }
 
     private _registerServiceState(serviceInstance: any): void {
@@ -716,6 +826,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.provide(EnvContext, this.env);
         this.provide(UserContext, this.user);
         this.provide(RequestContext, this.c);
+
+        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
 
         this.initializeState(initialState);
 
@@ -1596,6 +1708,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // renderer would stringify as "[object Promise]"; the client stubs call
         // `__cossackAssertNotRendering` which throws in dev / warns in prod.
         enterRender();
+        const pushedForDirectComposition = instanceStack[instanceStack.length - 1] !== this;
+        if (pushedForDirectComposition) pushCurrentInstance(this);
         try {
             // Special case: check if we should render a loading UI instead of standard output
             if (this.loading.init && this.hasMethod('loadingTemplate')) {
@@ -1604,6 +1718,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
 
             let template = this.render();
+            attachTemplateOwner(template, this);
 
             // Inject devtools markers if source info is present
             // Since __source is injected by the Vite plugin only in DEV mode,
@@ -1627,6 +1742,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
         return template;
         } finally {
+            if (pushedForDirectComposition && instanceStack[instanceStack.length - 1] === this) {
+                popCurrentInstance();
+            }
             exitRender();
         }
     }
@@ -1971,6 +2089,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 user: this.user,
             },
         };
+        if (this._ownsServiceScope) {
+            serializedState.services = this._serviceScope?.serializeOwnedState();
+        }
         if (this._serverResources.size) {
             serializedState.serverResources = Object.fromEntries(
                 [...this._serverResources].filter(([, entry]) => entry.hasValue).map(([name, entry]) => [name, entry.value]),
@@ -2026,6 +2147,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         try {
             this.onCleanup();
+            for (const cleanup of this._serviceInjectionCleanups.values()) cleanup();
+            this._serviceInjectionCleanups.clear();
             // Drain task cleanup functions (React `useEffect` style). Runs on
             // both server and client since tasks themselves run on both.
             for (const taskKey of [...this._taskCleanups.keys()]) {
@@ -2056,6 +2179,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Drop cached store proxies so their raw targets (and the
                 // component's state) can be GC'd once the component is gone.
                 this._storeProxies.clear();
+            }
+            if (this._ownsServiceScope) {
+                this._serviceScope?.dispose();
+                this._ownsServiceScope = false;
             }
         } finally {
             // Don't restore phase after destroy - the component is destroyed

@@ -24,6 +24,7 @@ export const component = <T extends CossackElement>(
     clazz,
     props: props ?? {},
     children,
+    parent: CossackElement.currentRenderingInstance,
   };
   return html`${raw}`;
 };
@@ -110,7 +111,10 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
       (instance as any).props = value.props;
     }
     instance.children = value.children;
-    instance.__parent = CossackElement.currentRenderingInstance;
+    instance.__parent = value.parent || CossackElement.currentRenderingInstance;
+    if (value.serviceScope && typeof (instance as any)._setServiceScope === 'function') {
+      (instance as any)._setServiceScope(value.serviceScope);
+    }
 
     // Set up _id for nested components (same logic as updateComponent)
     if (instance.__parent) {
@@ -733,12 +737,22 @@ class NodePart implements Part {
    * renders reconcile via the normal updateNode cache path.
    */
   private _adoptComponent(result: ComponentResult) {
-    if (this.componentInstance && this.componentInstance.constructor !== result.clazz) {
+    const desiredParent = result.parent || CossackElement.currentRenderingInstance;
+    if (
+      this.componentInstance
+      && (
+        this.componentInstance.constructor !== result.clazz
+        || this.componentInstance.__parent !== desiredParent
+      )
+    ) {
       this.disposeComponent();
     }
     if (!this.componentInstance) {
       this.componentInstance = new result.clazz();
-      this.componentInstance.__parent = CossackElement.currentRenderingInstance;
+      this.componentInstance.__parent = desiredParent;
+      if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
+        (this.componentInstance as any)._setServiceScope(result.serviceScope);
+      }
       if (this.componentInstance.__parent) {
         this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
       }
@@ -868,9 +882,16 @@ class NodePart implements Part {
   }
 
   private updateComponent(result: ComponentResult) {
+    const desiredParent = result.parent || CossackElement.currentRenderingInstance;
+    if (this.componentInstance && this.componentInstance.__parent !== desiredParent) {
+      this.disposeComponent();
+    }
     if (!this.componentInstance) {
       this.componentInstance = new result.clazz();
-      this.componentInstance.__parent = CossackElement.currentRenderingInstance;
+      this.componentInstance.__parent = desiredParent;
+      if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
+        (this.componentInstance as any)._setServiceScope(result.serviceScope);
+      }
       if (this.componentInstance.__parent) {
         this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
       }

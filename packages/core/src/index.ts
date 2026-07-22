@@ -23,6 +23,8 @@ export * from './shared/runtimes/durable-object';
 export * from './shared/runtimes/sse';
 export * from './shared/container';
 export * from './shared/service-bootstrap';
+export * from './shared/service-scope';
+export * from './shared/cossack-service';
 export * from './shared/middleware';
 export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy';
 export { isOriginAllowed } from './shared/origin-security';

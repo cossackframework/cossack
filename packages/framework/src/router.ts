@@ -3,7 +3,15 @@ import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
-import { createInstance, isRpcCallableAction, sanitizeClientState } from '@cossackframework/core';
+import {
+  createInstance,
+  createLayoutServiceScope,
+  createRootServiceScope,
+  getServiceState,
+  isRpcCallableAction,
+  sanitizeClientState,
+  sanitizeServiceState,
+} from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
 import { isClientVisibleError } from '@cossackframework/core';
 
@@ -383,21 +391,14 @@ export function createApp(options: CreateAppOptions = {}) {
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
       const inlineCss = await getInlineCss(c.env);
+      const requestServiceScope = createRootServiceScope();
 
       try {
         const user = c.get('user');
-        const appInstance = createInstance(options.AppComponent ?? App);
+        requestServiceScope.bindRequest({ context: c, user, env: c.env });
+        const appInstance = createInstance(options.AppComponent ?? App, { serviceScope: requestServiceScope });
         const layoutInstances: any[] = [];
-        const pageInstance = createInstance(PageComponent);
         const layoutPaths = getLayoutStack(path);
-
-        // Check if component has a loading template (method or file convention)
-        // If so, skip init() during SSR to show loading UI immediately
-        const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
-        const lastSlash = path.lastIndexOf('/');
-        const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
-        const hasLoadingFile = loadings[loadingFilePath] !== undefined;
-        const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
         // Compute scopeKey once — used for SSE store, DO ID, and client initial state.
         const scopeKey = await resolveSseScopeKey(c, pageOptions);
@@ -450,13 +451,30 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
+        let activeServiceScope = requestServiceScope;
         for (const lPath of layoutPaths) {
           const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-          const lInst = createInstance(LComp);
+          const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
+            ownerRouteId: routePathToIdMap.get(lPath),
+            ownerRoutePath: lPath,
+            scopeKey,
+          });
+          layoutServiceScope.bindRequest({ context: c, user, env: c.env });
+          const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
           await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
           layoutInstances.push(lInst);
           layoutStates[lPath] = lInst.getInitialState();
+          activeServiceScope = layoutServiceScope;
         }
+
+        const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
+        // Check if component has a loading template (method or file convention)
+        // If so, skip init() during SSR to show loading UI immediately
+        const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
+        const lastSlash = path.lastIndexOf('/');
+        const loadingFilePath = `${path.substring(0, lastSlash)}/loading.ts`;
+        const hasLoadingFile = loadings[loadingFilePath] !== undefined;
+        const shouldSkipInit = hasLoadingTemplate || hasLoadingFile;
 
         // Bootstrap Page with retrieved DO initial state (if any)
         // Skip init() if component has a loading template to show loading UI immediately
@@ -579,6 +597,8 @@ export function createApp(options: CreateAppOptions = {}) {
           ? `<h1>Internal Server Error</h1><pre>${escapeHtml(detail)}</pre>`
           : '<h1>Internal Server Error</h1>';
         return c.html(body, 500);
+      } finally {
+        requestServiceScope.dispose();
       }
     };
   };
@@ -593,6 +613,70 @@ export function createApp(options: CreateAppOptions = {}) {
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const isStreamRequest = !!body._cossack_stream;
     const user = c.get('user');
+
+    // Explicit layout-service RPC. The client addresses the owning layout and
+    // stable service slot; no service fields or methods are projected onto a
+    // component instance, so component names cannot collide with service names.
+    if (body.service) {
+      const ownerRouteId = body.service.ownerRouteId;
+      const slot = body.service.slot;
+      if (typeof ownerRouteId !== 'string' || typeof slot !== 'string') {
+        return c.json({ error: 'Invalid service target' }, 400);
+      }
+      const ownerPath = routeIdMap.get(ownerRouteId);
+      if (!ownerPath || !layouts[ownerPath]) return c.json({ error: 'Invalid service owner' }, 400);
+
+      const requestScope = createRootServiceScope();
+      requestScope.bindRequest({ context: c, user, env: c.env });
+      try {
+        let activeScope = requestScope;
+        let ownerScope: ReturnType<typeof createLayoutServiceScope> | undefined;
+        for (const layoutPath of getLayoutStack(ownerPath)) {
+          const layoutModule = layouts[layoutPath];
+          if (!layoutModule) return c.json({ error: 'Service layout not found' }, 404);
+          const LayoutComponent = Object.values(layoutModule as object)[0] as new () => Cossack;
+          const nextScope = createLayoutServiceScope(activeScope, LayoutComponent, {
+            ownerRouteId: routePathToIdMap.get(layoutPath),
+            ownerRoutePath: layoutPath,
+            scopeKey: clientScopeKey,
+          });
+          nextScope.bindRequest({ context: c, user, env: c.env });
+          activeScope = nextScope;
+          if (layoutPath === ownerPath) ownerScope = nextScope;
+        }
+        if (!ownerScope) return c.json({ error: 'Service owner is not active' }, 400);
+        const owned = ownerScope.getOwnedService(slot);
+        if (!owned) return c.json({ error: `Unknown service slot '${slot}'` }, 404);
+
+        const safeState = sanitizeServiceState(owned.serviceClass, state);
+        ownerScope.hydrateOwnedService(slot, safeState);
+        if (!isRpcCallableAction(owned.serviceClass, action)) {
+          return c.json({ error: `Action '${String(action)}' is not a callable service method` }, 403);
+        }
+        const rateLimited = await enforceMethodRateLimit(c, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
+        if (rateLimited) return rateLimited;
+
+        let actionResult: unknown;
+        try {
+          actionResult = await owned.instance[action](...(Array.isArray(payload) ? payload : []));
+        } catch (e: any) {
+          if (isClientVisibleError(e)) return c.json({ error: e.message }, 400);
+          console.error('[/crpc service] internal error:', e);
+          const isDev = (import.meta as any).env?.DEV;
+          return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
+        }
+
+        const location = c.res.headers.get('Location');
+        if (location) return c.json({ _cossack_redirect: location });
+        if (actionResult instanceof Response) return actionResult;
+        return c.json({
+          _cossack_service_state: getServiceState(owned.instance),
+          ...(actionResult !== undefined ? { _cossack_return: actionResult } : {}),
+        });
+      } finally {
+        requestScope.dispose();
+      }
+    }
 
     const componentPath = routeIdMap.get(componentRouteId);
     if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);

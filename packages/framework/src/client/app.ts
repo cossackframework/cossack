@@ -1,4 +1,14 @@
-import { Cossack, enableClientNavigation, LifecyclePhase, createInstance, supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions } from '@cossackframework/core';
+import {
+  Cossack,
+  createInstance,
+  createLayoutServiceScope,
+  createRootServiceScope,
+  enableClientNavigation,
+  LifecyclePhase,
+  supportsViewTransitions,
+  supportsViewTransitionTypes,
+  type NavigateOptions,
+} from '@cossackframework/core';
 import {
     setSupportedLocales,
     setDefaultLocale,
@@ -14,7 +24,7 @@ import { filePathToRoutePath } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
-import '../i18n-globals.js';
+import '../i18n-globals';
 // NOTE: `config`/`env`/`binding` globals are intentionally NOT registered on
 // the client. They read the request-scoped AsyncLocalStorage (node:async_hooks),
 // which doesn't exist in the browser, and no client code calls them. They are
@@ -260,7 +270,8 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     }
   }
 
-  const appInstance = createInstance(AppComponent ?? App);
+  const clientServiceRoot = createRootServiceScope();
+  const appInstance = createInstance(AppComponent ?? App, { serviceScope: clientServiceRoot });
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
@@ -338,15 +349,22 @@ export async function createClientApp({ container, AppComponent, viewTransitions
         activeLayoutPaths.add(l.path);
     }
 
+    const staleLayoutInstances: Cossack[] = [];
     for (const [path, instance] of currentLayoutsMap.entries()) {
         if (!activeLayoutPaths.has(path)) {
-            instance.destroy();
+            // Keep the scope alive until the new App render has removed the
+            // old page's renderer-created descendants. Those children can
+            // have a queued final update and still need their injected service
+            // while the DOM reconciliation tears them down.
+            staleLayoutInstances.push(instance);
             currentLayoutsMap.delete(path);
         }
     }
 
-    currentLayoutInstances = [];
-    for (const { path: layoutFilePath, state, componentRouteId } of layoutStack) {
+    try {
+      currentLayoutInstances = [];
+      let activeServiceScope = clientServiceRoot;
+      for (const { path: layoutFilePath, state, componentRouteId } of layoutStack) {
         // Layout paths are already file paths (from server). Layouts are lazy
         // on the client (code-split per route, like pages), so the registry
         // holds loader functions — await to get the module. This keeps a layout
@@ -354,90 +372,103 @@ export async function createClientApp({ container, AppComponent, viewTransitions
         // off routes that don't use it.
         let instance = currentLayoutsMap.get(layoutFilePath);
         if (!instance) {
-            const layoutEntry = layouts[layoutFilePath];
-            if (!layoutEntry) {
-                console.warn(`[Cossack] Layout module not found for path: ${layoutFilePath}`);
-                continue;
-            }
-            // On the client, layouts are lazy: the registry holds loader functions
-            // (see vite-plugin.ts). Await to resolve the module.
-            const layoutModule = typeof layoutEntry === 'function'
-                ? await (layoutEntry as () => Promise<any>)()
-                : layoutEntry;
-            const LComp = Object.values(layoutModule)[0] as new () => Cossack;
-            instance = createInstance(LComp);
-            instance.updateHead = syncHead;
+          const layoutEntry = layouts[layoutFilePath];
+          if (!layoutEntry) {
+            console.warn(`[Cossack] Layout module not found for path: ${layoutFilePath}`);
+            continue;
+          }
+          // On the client, layouts are lazy: the registry holds loader functions
+          // (see vite-plugin.ts). Await to resolve the module.
+          const layoutModule = typeof layoutEntry === 'function'
+            ? await (layoutEntry as () => Promise<any>)()
+            : layoutEntry;
+          const LComp = Object.values(layoutModule)[0] as new () => Cossack;
+          const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
+            ownerRouteId: componentRouteId,
+            ownerRoutePath: layoutFilePath,
+            initialState: state?.services,
+            scopeKey: initialState?.scopeKey,
+          });
+          instance = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
+          instance.updateHead = syncHead;
 
-            // Hook reactivity
-            const originalRequestUpdate = instance.requestUpdate.bind(instance);
-            instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+          // Hook reactivity
+          const originalRequestUpdate = instance.requestUpdate.bind(instance);
+          instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
                 const p = originalRequestUpdate(name, oldValue);
                 await p;
                 await triggerAppUpdate();
                 return true;
-            };
+          };
 
-            await instance.bootstrap({
-              initialState: { ...state, componentRouteId },
-              skipInit: true,
-            });
-            currentLayoutsMap.set(layoutFilePath, instance);
+          await instance.bootstrap({
+            initialState: { ...state, componentRouteId },
+            skipInit: true,
+          });
+          currentLayoutsMap.set(layoutFilePath, instance);
         }
         instance.updatePath(pathname);
         currentLayoutInstances.push(instance);
-    }
-
-    // Dynamic import for page module (code splitting)
-    const pageModuleLoader = pages[componentPath];
-    if (!pageModuleLoader) {
-      console.error(`Component module loader not found for path: ${componentPath}`);
-      return;
-    }
-
-    // Load the page module asynchronously (cast to function type since import.meta.glob returns a loader for lazy builds)
-    const loader = pageModuleLoader as () => Promise<any>;
-    const module = await loader();
-    if (!module) {
-      console.error(`Failed to load module for path: ${componentPath}`);
-      return;
-    }
-
-    const PageComponent = Object.values(module)[0] as new () => Cossack;
-
-    if (PageComponent) {
-      if (currentPage) {
-        currentPage.destroy();
+        activeServiceScope = instance._getServiceScope() || activeServiceScope;
       }
-      const componentInstance = createInstance(PageComponent);
-      currentPage = componentInstance;
 
-      // Register the page with the app instance for child component state restoration
-      appInstance.setCurrentPage(componentInstance);
+      // Dynamic import for page module (code splitting)
+      const pageModuleLoader = pages[componentPath];
+      if (!pageModuleLoader) {
+        console.error(`Component module loader not found for path: ${componentPath}`);
+        return;
+      }
 
-      componentInstance.updateHead = syncHead;
+      // Load the page module asynchronously (cast to function type since import.meta.glob returns a loader for lazy builds)
+      const loader = pageModuleLoader as () => Promise<any>;
+      const module = await loader();
+      if (!module) {
+        console.error(`Failed to load module for path: ${componentPath}`);
+        return;
+      }
 
-      // Hook reactivity
-      const originalRequestUpdate = componentInstance.requestUpdate.bind(componentInstance);
-      componentInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+      const PageComponent = Object.values(module)[0] as new () => Cossack;
+
+      if (PageComponent) {
+        if (currentPage) {
+          currentPage.destroy();
+        }
+        const componentInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
+        currentPage = componentInstance;
+
+        // Register the page with the app instance for child component state restoration
+        appInstance.setCurrentPage(componentInstance);
+
+        componentInstance.updateHead = syncHead;
+
+        // Hook reactivity
+        const originalRequestUpdate = componentInstance.requestUpdate.bind(componentInstance);
+        componentInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
           const p = originalRequestUpdate(name, oldValue);
           await p;
           await triggerAppUpdate();
           return true;
-      };
+        };
 
-      await componentInstance.bootstrap({ initialState, skipInit: true });
-      componentInstance.updatePath(pathname);
+        await componentInstance.bootstrap({ initialState, skipInit: true });
+        componentInstance.updatePath(pathname);
 
-      // Register with DevTools for state inspection (use absolute path from Vite injection)
-      const sourceFile = (componentInstance.constructor as any).__source?.file;
-      if (sourceFile) {
-        registerDevToolsInstance(sourceFile, componentInstance);
+        // Register with DevTools for state inspection (use absolute path from Vite injection)
+        const sourceFile = (componentInstance.constructor as any).__source?.file;
+        if (sourceFile) {
+          registerDevToolsInstance(sourceFile, componentInstance);
+        }
+
+        // Perform initial composition and render
+        await triggerAppUpdate();
       }
-
-      // Perform initial composition and render
-      await triggerAppUpdate();
+      isDisplayingLoadingState = false;
+    } finally {
+      // Scope disposal must happen even when module loading, bootstrap, or the
+      // final App reconciliation throws. The scopes stay alive until this
+      // point so outgoing renderer children can finish teardown safely.
+      for (const staleLayout of staleLayoutInstances) staleLayout.destroy();
     }
-    isDisplayingLoadingState = false;
   };
 
   await loadComponent(window.__INITIAL_STATE__);
@@ -490,7 +521,8 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
       if (LoadingCompClass && !isDisplayingLoadingState) {
           isDisplayingLoadingState = true;
-          const loadingInstance = createInstance(LoadingCompClass);
+          const loadingScope = currentLayoutInstances.at(-1)?._getServiceScope() || clientServiceRoot;
+          const loadingInstance = createInstance(LoadingCompClass, { serviceScope: loadingScope });
           // We swap current page with loading component temporarily
           if (currentPage) currentPage.destroy();
           currentPage = loadingInstance;

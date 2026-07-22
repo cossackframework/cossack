@@ -14,6 +14,23 @@ function makeComponentResult(clazz: new () => CossackElement): ComponentResult {
 }
 
 describe('component disposal calls destroy()', () => {
+    it('recreates a same-class child when its rendering parent instance changes', () => {
+        const destroySpy = vi.fn();
+        class Child extends CossackElement {
+            render() { return html`<p>child</p>`; }
+            destroy() { destroySpy(); }
+        }
+        const firstParent = new CossackElement();
+        const secondParent = new CossackElement();
+        const container = document.createElement('div');
+        const template = (result: ComponentResult) => html`${result}`;
+
+        render(template({ ...makeComponentResult(Child), parent: firstParent }), container);
+        render(template({ ...makeComponentResult(Child), parent: secondParent }), container);
+
+        expect(destroySpy).toHaveBeenCalledTimes(1);
+    });
+
     it('calls destroy() when a component part is replaced by a non-component value', () => {
         const destroySpy = vi.fn();
         const disconnectedSpy = vi.fn();
@@ -72,4 +89,3 @@ describe('component disposal calls destroy()', () => {
         container.remove();
     });
 });
-

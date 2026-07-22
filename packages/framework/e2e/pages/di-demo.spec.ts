@@ -11,6 +11,13 @@ test.describe('DI Demo Page', () => {
     const body = await page.locator('body').textContent();
     expect(body).toContain('Dependency Injection Demo');
     expect(body).toContain('Count: 0');
+    const state = await page.evaluate(() => {
+      const layout = (window as any).__INITIAL_STATE__._layout_stack
+        .find((item: any) => item.path.endsWith('/di-demo/layout.ts'));
+      return layout.state;
+    });
+    expect(state.public).not.toHaveProperty('count');
+    expect(state.services).toEqual({ '0': { count: 0 } });
   });
 
   test('should increment counter via service', async ({ page }) => {
@@ -32,6 +39,7 @@ test.describe('DI Demo Page', () => {
 
     const afterIncrement = await page.locator('body').textContent();
     expect(afterIncrement).toContain('Count: 1');
+    await expect(page.getByTestId('layout-service-count')).toHaveText('Count: 1');
   });
 
   test('should decrement counter via service', async ({ page }) => {
@@ -72,5 +80,44 @@ test.describe('DI Demo Page', () => {
 
     const body = await page.locator('body').textContent();
     expect(body).toContain('Count: 3');
+  });
+
+  test('persists within the layout and resets after leaving its subtree', async ({ page }) => {
+    await page.waitForLoadState('networkidle');
+    await page.click('button:has-text("+")');
+    await expect(page.locator('body')).toContainText('Count: 1');
+
+    await page.click('a:has-text("Open another page")');
+    await expect(page).toHaveURL(/\/di-demo\/other$/);
+    await expect(page.getByTestId('page-service-count')).toHaveText('Count: 1');
+    await expect(page.getByTestId('nested-service-count')).toHaveText('Count: 1');
+
+    await page.click('a:has-text("Leave DI layout")');
+    await expect(page).toHaveURL(/\/$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/di-demo\/other$/);
+    await expect(page.getByTestId('page-service-count')).toHaveText('Count: 0');
+    await expect(page.getByTestId('nested-service-count')).toHaveText('Count: 0');
+  });
+
+  test('supports service redirects and rejects forged service actions', async ({ page, request }) => {
+    const target = await page.evaluate(() => {
+      const layout = (window as any).__INITIAL_STATE__._layout_stack
+        .find((item: any) => item.path.endsWith('/di-demo/layout.ts'));
+      return { ownerRouteId: layout.componentRouteId, slot: '0' };
+    });
+    const forged = await request.post('/crpc', {
+      data: {
+        service: target,
+        action: 'formatCount',
+        payload: [],
+        state: { count: 0 },
+      },
+    });
+    expect(forged.status()).toBe(403);
+
+    await page.click('a:has-text("Open another page")');
+    await page.click('button:has-text("Service redirect home")');
+    await expect(page).toHaveURL(/\/$/);
   });
 });

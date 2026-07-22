@@ -162,6 +162,31 @@ describe('Dependency Injection', () => {
   });
 
   describe('createInstance', () => {
+    it('prepares injected properties only once when attaching a scope', () => {
+      class ScopedConsumer {
+        prepareCalls = 0;
+        scopeCalls = 0;
+        _prepareInjectedServices() { this.prepareCalls++; }
+        _setServiceScope() {
+          this.scopeCalls++;
+          this._prepareInjectedServices();
+        }
+      }
+
+      const instance = createInstance(ScopedConsumer, { serviceScope: {} as any });
+      expect(instance.scopeCalls).toBe(1);
+      expect(instance.prepareCalls).toBe(1);
+    });
+
+    it('still prepares unscoped instances for lazy missing-scope errors', () => {
+      class UnscopedConsumer {
+        prepareCalls = 0;
+        _prepareInjectedServices() { this.prepareCalls++; }
+      }
+
+      expect(createInstance(UnscopedConsumer).prepareCalls).toBe(1);
+    });
+
     it('should create instance with no dependencies', () => {
       @Service()
       class SimpleService {

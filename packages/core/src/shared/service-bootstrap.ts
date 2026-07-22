@@ -3,6 +3,16 @@ import 'reflect-metadata';
 import { isService } from './container';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
+import { createStoreProxy, isPlainObjectOrArray } from './store';
+
+type ServiceRuntime = {
+    values: Map<string, unknown>;
+    stores: Set<string>;
+    proxies: Map<string, object>;
+    listeners: Set<(key: string, value: unknown) => void>;
+};
+
+const serviceRuntimes = new WeakMap<object, ServiceRuntime>();
 
 /**
  * Bootstrap a service instance: set up @State properties as simple
@@ -14,8 +24,18 @@ import { isSharedMethod } from './shared-method';
 export function bootstrapService(
     instance: any,
 ): void {
+    if (serviceRuntimes.has(instance)) return;
     const stateProperties = Reflect.getMetadata('cossack:state', instance.constructor) || {};
-    const stateKeys = Object.keys(stateProperties);
+    const storeProperties = Reflect.getMetadata('cossack:store', instance.constructor) || {};
+    const stateKeys = [...new Set([...Object.keys(stateProperties), ...Object.keys(storeProperties)])];
+
+    const runtime: ServiceRuntime = {
+        values: new Map(),
+        stores: new Set(Object.keys(storeProperties)),
+        proxies: new Map(),
+        listeners: new Set(),
+    };
+    serviceRuntimes.set(instance, runtime);
 
     if (stateKeys.length === 0) {
         return;
@@ -24,25 +44,70 @@ export function bootstrapService(
     // Initialize @State properties as simple getters/setters.
     // The parent component handles re-renders via its RPC response handler.
     for (const key of stateKeys) {
-        let value = instance[key];
-
-        // Skip if property already has a reactive descriptor
-        const descriptor = Object.getOwnPropertyDescriptor(instance, key);
-        if (descriptor && descriptor.get && descriptor.set) {
-            continue;
-        }
+        runtime.values.set(key, instance[key]);
 
         Object.defineProperty(instance, key, {
             get() {
-                return value;
+                const value = runtime.values.get(key);
+                if (
+                    !runtime.stores.has(key)
+                    || value === null
+                    || typeof value !== 'object'
+                    || !isPlainObjectOrArray(value)
+                ) return value;
+                let proxy = runtime.proxies.get(key);
+                if (!proxy) {
+                    proxy = createStoreProxy(
+                        value as Record<PropertyKey, unknown>,
+                        key,
+                        () => {
+                            const current = runtime.values.get(key);
+                            for (const listener of runtime.listeners) listener(key, current);
+                        },
+                    );
+                    runtime.proxies.set(key, proxy);
+                }
+                return proxy;
             },
             set(newValue: any) {
-                value = newValue;
+                const oldValue = runtime.values.get(key);
+                if (oldValue === newValue) return;
+                runtime.values.set(key, newValue);
+                runtime.proxies.delete(key);
+                for (const listener of runtime.listeners) listener(key, newValue);
             },
             enumerable: true,
             configurable: true,
         });
     }
+}
+
+/** Return only the service's public @State/@Store fields. */
+export function getServiceState(instance: any): Record<string, unknown> {
+    bootstrapService(instance);
+    const runtime = serviceRuntimes.get(instance)!;
+    return Object.fromEntries(runtime.values);
+}
+
+/** Apply a serialized public service-state overlay. Unknown keys are ignored. */
+export function hydrateServiceState(instance: any, state: unknown): void {
+    bootstrapService(instance);
+    if (!state || typeof state !== 'object') return;
+    const runtime = serviceRuntimes.get(instance)!;
+    for (const key of runtime.values.keys()) {
+        if (Object.prototype.hasOwnProperty.call(state, key)) instance[key] = (state as any)[key];
+    }
+}
+
+/** Subscribe a rendering consumer to this service's reactive state. */
+export function subscribeToService(
+    instance: any,
+    listener: (key: string, value: unknown) => void,
+): () => void {
+    bootstrapService(instance);
+    const runtime = serviceRuntimes.get(instance)!;
+    runtime.listeners.add(listener);
+    return () => runtime.listeners.delete(listener);
 }
 
 // ========== Component service bootstrap helpers ==========
@@ -64,6 +129,13 @@ export function bootstrapServices(component: any): void {
         if (isService(dep)) {
             const serviceInstance = findServiceInstance(component, dep);
             if (serviceInstance) {
+                // Explicit layout-scoped services have their own state slots,
+                // subscriptions, and RPC route. Never flatten them onto a
+                // component (which would reintroduce name collisions).
+                if (component._isExplicitlyScopedService?.(dep, serviceInstance)) {
+                    component._subscribeScopedConstructorService?.(dep);
+                    continue;
+                }
                 // Set up @State getters/setters on the service
                 bootstrapService(serviceInstance);
 

@@ -40,6 +40,8 @@ export interface ComponentState {
 export interface SerializedComponentState {
     /** Public state values */
     public: Record<string, unknown>;
+    /** State owned by this layout's declared services, keyed by stable slot. */
+    services?: Record<string, Record<string, unknown>>;
     /** Internal state values (only present for client-side restoration) */
     internal?: Record<string, unknown>;
     /** Metadata needed for initialization */

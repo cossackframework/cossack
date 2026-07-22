@@ -5,6 +5,8 @@ export interface ServiceMetadata {
     scope: 'singleton' | 'transient';
 }
 
+export type ServiceClass<T = any> = new (...args: any[]) => T;
+
 /**
  * Check if a class is decorated with @Service().
  */
@@ -105,20 +107,32 @@ export function resetContainer(): void {
  * Create an instance of a component class, resolving any @Service dependencies
  * from the DI container. If the class has no service dependencies, behaves like `new`.
  */
-export function createInstance<T>(ComponentClass: new (...args: any[]) => T): T {
+export interface CreateInstanceOptions {
+    serviceScope?: import('./service-scope').ServiceScope;
+    ownsServiceScope?: boolean;
+}
+
+export function createInstance<T>(
+    ComponentClass: new (...args: any[]) => T,
+    options: CreateInstanceOptions = {},
+): T {
     const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', ComponentClass) || [];
 
-    if (paramTypes.length === 0) {
-        return new ComponentClass();
-    }
-
-    const container = getContainer();
     const deps = paramTypes.map((dep: any) => {
         if (isService(dep)) {
-            return container.resolve(dep);
+            return options.serviceScope ? options.serviceScope.resolve(dep) : getContainer().resolve(dep);
         }
         return undefined;
     });
 
-    return new ComponentClass(...deps);
+    const instance = new ComponentClass(...deps);
+    if (options.serviceScope && typeof (instance as any)._setServiceScope === 'function') {
+        (instance as any)._setServiceScope(options.serviceScope, options.ownsServiceScope === true);
+    } else if (typeof (instance as any)._prepareInjectedServices === 'function') {
+        // Preserve the lazy missing-scope error for callers that construct an
+        // @Inject consumer without a routing scope. _setServiceScope performs
+        // this preparation itself on the scoped path.
+        (instance as any)._prepareInjectedServices();
+    }
+    return instance;
 }
