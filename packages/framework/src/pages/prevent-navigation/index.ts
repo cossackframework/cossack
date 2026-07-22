@@ -43,8 +43,8 @@ export default class PreventNavigationDemo extends Cossack {
 
             <!-- Custom Prompt UI -->
             ${this._pendingNavigation ? html`
-                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[1000]">
-                    <div class="bg-white p-5 rounded-lg shadow-lg max-w-[400px]">
+                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-1000">
+                    <div class="bg-white p-5 rounded-lg shadow-lg max-w-100">
                         <h3>Unsaved Changes</h3>
                         <p>You have unsaved text in the input field. Are you sure you want to leave?</p>
                         <div class="mt-4 flex gap-2.5 justify-end">

@@ -1,4 +1,4 @@
-import { Cossack, Page, Ref, State, html, type RefObject } from '@cossackframework/core';
+import { Client, Cossack, Page, Ref, State, html, type RefObject } from '@cossackframework/core';
 
 @Page()
 export default class RefPage extends Cossack {
@@ -27,6 +27,7 @@ export default class RefPage extends Cossack {
         }, 100);
     }
 
+    @Client()
     animateBox = () => {
         if (this.boxRef.value) {
             this.boxRef.value.animate([
