@@ -47,6 +47,7 @@ import { handleUpload } from './transports/http.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
+import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
 
@@ -355,6 +356,11 @@ export function createApp(options: CreateAppOptions = {}) {
     const built = buildConfig(configFactories as Record<string, unknown>, envFn);
     return runWithConfig({ env: envBindings, config: built }, () => next());
   });
+
+  // Built-in API CORS runs inside the request config scope but before project
+  // middleware, so valid preflights avoid auth/database work and downstream
+  // API responses (including errors) receive CORS headers.
+  app.use('*', createCorsMiddleware());
 
   // Global request middlewares from `src/bootstrap/middlewares.ts` (db client,
   // auth session, feature flags, ...). Each is registered in array order,

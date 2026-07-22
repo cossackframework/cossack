@@ -54,6 +54,10 @@
       "types": "./dist/esm/api-handler.d.ts",
       "import": "./dist/esm/api-handler.js"
     },
+    "./cors": {
+      "types": "./dist/esm/middlewares/cors.d.ts",
+      "import": "./dist/esm/middlewares/cors.js"
+    },
     "./ssg-renderer": {
       "types": "./dist/esm/ssg-renderer.d.ts",
       "import": "./dist/esm/ssg-renderer.js"
