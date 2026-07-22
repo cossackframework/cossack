@@ -12,7 +12,7 @@ import { UserCircleIcon as profileIcon } from '@cossackframework/solar-icons/use
 import { MonitorSmartphoneIcon as sessionsIcon } from '@cossackframework/solar-icons/monitor-smartphone';
 import { Logout3Icon as logoutIcon } from '@cossackframework/solar-icons/logout-3';
 import { logout } from '../../auth';
-import { themeStore } from '@/stores';
+import { themeStore } from '@/stores.client';
 
 /**
  * Dashboard layout: sidebar nav + user menu + theme toggle, shared by every

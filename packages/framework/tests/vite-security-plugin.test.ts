@@ -17,7 +17,88 @@ import {
   moduleLabelFromId,
   transformServerResources,
   stripClientServerOnlyImports,
+  cossackSecurityPlugin,
+  generateClientOnlyServerStub,
+  isClientOnlyModuleId,
 } from '../src/vite-security-plugin';
+
+describe('client-only modules', () => {
+  const paths: string[] = [];
+  let seq = 0;
+  const fixture = (source: string, extension = '.client.ts') => {
+    const path = join(tmpdir(), `cossack-client-only-${seq++}${extension}`);
+    writeFileSync(path, source, 'utf8');
+    paths.push(path);
+    return path;
+  };
+
+  afterEach(() => {
+    for (const path of paths.splice(0)) rmSync(path, { force: true });
+  });
+
+  it('matches .client.ts and .client.mts after query/hash suffixes only', () => {
+    expect(isClientOnlyModuleId('/src/stores.client.ts?import#x')).toBe(true);
+    expect(isClientOnlyModuleId('C:\\src\\browser.client.mts?v=1')).toBe(true);
+    expect(isClientOnlyModuleId('/src/client.ts')).toBe(false);
+    expect(isClientOnlyModuleId('/src/stores.ts')).toBe(false);
+  });
+
+  it('generates named/default stubs and ignores type-only exports', () => {
+    const path = fixture(`
+      export const value = window.location.href;
+      export let count = 0;
+      export function run() {}
+      export class BrowserThing {}
+      export enum Mode { Light, Dark }
+      const local = 1;
+      export { local as renamed };
+      export type Shape = { value: string };
+      export interface Contract { run(): void }
+      export default document;
+    `);
+    const stub = generateClientOnlyServerStub(`${path}?import#hash`, 'stores.client');
+    for (const name of ['value', 'count', 'run', 'BrowserThing', 'Mode', 'renamed']) {
+      expect(stub).toContain(`export const ${name} = __clientOnly`);
+    }
+    expect(stub).toContain("export default __clientOnly('default')");
+    expect(stub).not.toContain('Shape');
+    expect(stub).not.toContain('Contract');
+    expect(stub).not.toContain('window.location');
+  });
+
+  it('supports explicit runtime re-exports and rejects runtime export star', () => {
+    const explicit = fixture(`export { value as browserValue, default } from './browser';`);
+    const stub = generateClientOnlyServerStub(explicit);
+    expect(stub).toContain('export const browserValue');
+    expect(stub).toContain('export default');
+
+    const star = fixture(`export * from './browser';`);
+    expect(() => generateClientOnlyServerStub(star)).toThrow('runtime "export *"');
+    const typeStar = fixture(`export type * from './types';`, '.client.mts');
+    expect(() => generateClientOnlyServerStub(typeStar)).not.toThrow();
+  });
+
+  it('keeps module evaluation safe but throws on access, call, and construction', async () => {
+    const path = fixture(`export const browserApi = window.api;`);
+    const stub = generateClientOnlyServerStub(path, 'browser.client');
+    const module = await import(`data:text/javascript,${encodeURIComponent(stub)}`);
+    expect(module.browserApi).toBeTruthy();
+    const message = /Client-only export "browserApi".*onMount\(\).*clientInit\(\).*@Client/;
+    expect(() => module.browserApi.value).toThrow(message);
+    expect(() => module.browserApi()).toThrow(message);
+    expect(() => new module.browserApi()).toThrow(message);
+  });
+
+  it('loads original source in the client environment and stubs it during SSR', async () => {
+    const path = fixture(`window.__client_only_loaded = true; export const store = document;`);
+    const plugin = cossackSecurityPlugin();
+    const load = plugin.load as any;
+    expect(await load.call({ environment: { name: 'client' } }, `${path}?import`)).toBeUndefined();
+    const ssr = await load.call({ environment: { name: 'ssr' } }, `${path}#x`);
+    expect(ssr).toContain('export const store');
+    expect(ssr).not.toContain('window.__client_only_loaded');
+  });
+});
 
 describe('server$ compiler macro', () => {
   it('extracts aliased field and inline loaders with stable generated methods', () => {

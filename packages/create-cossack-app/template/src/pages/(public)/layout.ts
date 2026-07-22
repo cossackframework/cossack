@@ -5,7 +5,7 @@ import { getCookie } from 'hono/cookie';
 import { SunIcon as sunIcon } from '@cossackframework/solar-icons/sun';
 import { MoonIcon as moonIcon } from '@cossackframework/solar-icons/moon';
 import { HamburgerMenuIcon as hamburgerIcon } from '@cossackframework/solar-icons/hamburger-menu';
-import { themeStore } from '../../stores';
+import { themeStore } from '../../stores.client';
 /**
  * Public layout: header (logo + nav + theme toggle) and footer shared by all
  * marketing-style pages. Nav links are auth-aware: a logged-in visitor sees

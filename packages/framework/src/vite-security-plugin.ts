@@ -97,13 +97,23 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
      */
     load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
-      if (!isClientEnvironment) return;
       if (id.includes('node_modules')) return;
 
       // Vite module ids frequently include query strings (e.g. `src/auth.ts?import`
       // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
       // the regex anchors ($>) and readFileSync both see the real path.
       const cleanId = id.split('?')[0].split('#')[0];
+
+      // Browser-only modules are loaded verbatim by the client build. Every
+      // server environment receives a shape-compatible, lazy throwing stub so
+      // shared components can import them without executing browser globals at
+      // module evaluation time.
+      if (isClientOnlyModuleId(cleanId)) {
+        if (isClientEnvironment) return;
+        return generateClientOnlyServerStub(cleanId, moduleLabelFromId(cleanId));
+      }
+
+      if (!isClientEnvironment) return;
 
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
@@ -381,6 +391,72 @@ function parseProgram(code: string): any | null {
   }
 }
 
+/** Whether a Vite module id uses the browser-only module filename convention. */
+export function isClientOnlyModuleId(id: string): boolean {
+  const cleanId = id.split('?')[0].split('#')[0];
+  return /(?:^|[/\\])[^/\\]+\.client\.m?ts$/.test(cleanId);
+}
+
+type ClientOnlyExports = { named: string[]; hasDefault: boolean };
+
+/**
+ * Generate an SSR-safe interface for a browser-only module. Importing a stub
+ * is harmless; any runtime interaction with one of its exports fails close to
+ * the misuse with lifecycle guidance.
+ */
+export function generateClientOnlyServerStub(id: string, moduleName = moduleLabelFromId(id)): string {
+  const cleanId = id.split('?')[0].split('#')[0];
+  let source: string;
+  try {
+    source = readFileSync(cleanId, 'utf8');
+  } catch {
+    throw new Error(`[Cossack Security] Could not read client-only module ${cleanId}.`);
+  }
+  const exports = readClientOnlyExports(source, cleanId);
+  const label = JSON.stringify(moduleName);
+  const prelude =
+    `// [cossack-security] ${moduleName} is client-only — stubbed during SSR.\n` +
+    `const __clientOnly = (name) => {\n` +
+    `  const fail = () => { throw new Error('[Cossack] Client-only export "' + name + '" from "' + ${label} + '" was accessed during SSR. Use it only in onMount(), clientInit(), or an @Client() method.'); };\n` +
+    `  return new Proxy(function () {}, { get: fail, set: fail, apply: fail, construct: fail });\n` +
+    `};\n`;
+  const lines = exports.named.map((name) => `export const ${name} = __clientOnly(${JSON.stringify(name)});\n`);
+  if (exports.hasDefault) lines.push(`export default __clientOnly('default');\n`);
+  return prelude + lines.join('');
+}
+
+function readClientOnlyExports(source: string, id: string): ClientOnlyExports {
+  const program = parseProgram(source);
+  if (!program) throw new Error(`[Cossack Security] Could not parse client-only module ${id}.`);
+  const named = new Set<string>();
+  let hasDefault = false;
+  for (const stmt of program.body ?? []) {
+    if (stmt.type === 'ExportAllDeclaration') {
+      if (stmt.exportKind !== 'type') {
+        throw new Error(
+          `[Cossack Security] Client-only module ${id} uses runtime "export *", ` +
+          `whose SSR stub interface cannot be determined locally. Replace it with explicit named exports.`,
+        );
+      }
+      continue;
+    }
+    if (stmt.type === 'ExportDefaultDeclaration') {
+      hasDefault = true;
+      continue;
+    }
+    if (stmt.type !== 'ExportNamedDeclaration' || stmt.exportKind === 'type') continue;
+    if (stmt.declaration) collectDeclarationNames(stmt.declaration, named);
+    for (const specifier of stmt.specifiers ?? []) {
+      if (specifier.exportKind === 'type') continue;
+      const exported = specifier.exported;
+      const name = exported?.name ?? exported?.value;
+      if (name === 'default') hasDefault = true;
+      else if (typeof name === 'string') named.add(name);
+    }
+  }
+  return { named: [...named], hasDefault };
+}
+
 /**
  * Generate a client-side stub module for a server-only user module.
  *
@@ -636,6 +712,7 @@ function collectDeclarationNames(decl: any, names: Set<string>): void {
       break;
     case 'FunctionDeclaration':
     case 'ClassDeclaration':
+    case 'TSEnumDeclaration':
       if (decl.id?.type === 'Identifier') names.add(decl.id.name);
       break;
     default:

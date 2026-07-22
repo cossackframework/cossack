@@ -21,6 +21,38 @@ re-render.
 import { createStore, connectStore, type ReactiveStore } from '@cossackframework/core';
 ```
 
+## Browser-only store modules
+
+Name stores that initialize browser libraries or access browser globals at the
+top level with the `.client.ts` (or `.client.mts`) suffix:
+
+```typescript
+// stores.client.ts
+import { createStore } from '@cossackframework/core';
+
+const savedTheme = window.localStorage.getItem('theme');
+export const themeStore = createStore(savedTheme ?? 'light');
+```
+
+Shared components can statically import the module using its `.client`
+basename. Client builds load the original module; SSR substitutes lazy
+placeholders, so merely importing it on the server is safe:
+
+```typescript
+import { themeStore } from './stores.client';
+
+onMount() {
+    themeStore.set(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+}
+```
+
+Do not read, call, construct, or access properties on client-only exports in an
+SSR path. This includes `render()`, `init()`, server-side field initializers,
+and module top-level code. Use them from `onMount()`, `clientInit()`, or an
+`@Client()` method instead. Client-only modules must use explicit runtime
+exports; runtime `export *` is rejected because the SSR placeholder interface
+cannot be determined from the local file.
+
 ## `createStore<T>(initial)`
 
 Creates a reactive store with an initial value. Returns a `ReactiveStore<T>`
@@ -98,7 +130,7 @@ callable from anywhere (server methods, event handlers, services). The pattern:
 3. Mount a single component (e.g. `<Toaster />`) that subscribes and renders.
 
 ```typescript
-// toast.ts
+// toast.client.ts
 import { createStore } from '@cossackframework/core';
 
 export interface ToastItem {
