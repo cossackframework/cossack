@@ -10,7 +10,7 @@ export default class ImageDemo extends Cossack {
       <h1>Image Optimization Demo</h1>
       <p>This image is rendered using the <code>Image</code> helper.</p>
       
-      <div class="max-w-[600px] border border-gray-300">
+      <div class="max-w-150 border border-gray-300">
         ${Image({
             src: 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?q=80&w=600&auto=format&fit=crop',
             width: 600,
