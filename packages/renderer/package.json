@@ -1,8 +1,8 @@
 {
   "name": "@cossackframework/renderer",
-  "version": "0.7.1",
+  "version": "0.7.4",
   "type": "module",
-  "description": "Light DOM rendering engine for the Cossack Framework",
+  "description": "The rendering engine for Cossack Framework. Lit inspired, light dom, ssr",
   "license": "MIT",
   "repository": {
     "type": "git",

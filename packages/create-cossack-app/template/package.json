@@ -12,14 +12,14 @@
     "deploy": "vite build && cossack ssg && wrangler deploy"
   },
   "dependencies": {
-    "@cossackframework/auth": "^0.7.1",
-    "@cossackframework/core": "^0.7.1",
-    "@cossackframework/database": "^0.7.1",
-    "@cossackframework/framework": "^0.7.1",
-    "@cossackframework/renderer": "^0.7.1",
+    "@cossackframework/auth": "^0.7.4",
+    "@cossackframework/core": "^0.7.4",
+    "@cossackframework/database": "^0.7.4",
+    "@cossackframework/framework": "^0.7.4",
+    "@cossackframework/renderer": "^0.7.4",
     "@cossackframework/solar-icons": "^0.7.1",
-    "@cossackframework/ui": "^0.7.1",
-    "cossack": "^0.7.1",
+    "@cossackframework/ui": "^0.7.4",
+    "cossack": "^0.7.4",
     "hono": "^4.12.31",
     "reflect-metadata": "^0.2.2"
   },
