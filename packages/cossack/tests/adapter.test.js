@@ -60,7 +60,9 @@ describe('adapter command', () => {
       interactive: false,
     });
     expect(log).toHaveBeenCalledWith(expect.stringContaining('pnpm install'));
-    expect(log).toHaveBeenCalledWith('No database contents were migrated.');
+    expect(log).toHaveBeenCalledWith(
+      'Database contents are unaffected by adapter switching.',
+    );
     expect(log).toHaveBeenCalledWith(expect.stringContaining('DB_PATH'));
   });
 

@@ -25,9 +25,10 @@ interface HandlerDeps {
 }
 
 async function resolveSecret(config: CreateOAuthConfig, c: Context): Promise<string> {
-    const secret = typeof config.secret === 'function'
-        ? await config.secret(c)
-        : config.secret;
+    // Static secrets are validated once by createOAuth(). Resolvers must be
+    // checked per request because their value may vary with the context.
+    if (typeof config.secret !== 'function') return config.secret;
+    const secret = await config.secret(c);
     if (!secret || secret.length < 16) {
         throw new Error(
             'createOAuth: `secret` must resolve to a string of at least 16 characters (use a 32+ byte random value from env).',

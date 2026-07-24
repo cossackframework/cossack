@@ -71,7 +71,10 @@ export async function upgradeCommand(args, ctx) {
   }
 
   // 4. Drift report (always printed) + optional template apply.
-  const report = await buildDriftReport(root);
+  const report = await buildDriftReport(
+    root,
+    projectPkg.name || path.basename(root),
+  );
   printReport(report);
 
   if (applyTemplate || ctx.force || forceFiles.length > 0) {
@@ -198,7 +201,7 @@ export function classifyFile({ baseline, current, newHash, excluded }) {
   return 'modified';
 }
 
-async function buildDriftReport(root) {
+async function buildDriftReport(root, projectName) {
   const manifest = await readJsonIfExists(
     path.join(root, '.cossack/scaffold.json'),
   );
@@ -230,7 +233,7 @@ async function buildDriftReport(root) {
     dashboardModules: manifest.dashboardModules,
   });
   const rendered = await renderRecipe(recipe, {
-    projectName: projectPkgName(root),
+    projectName,
   });
   report.rendered = rendered;
   const paths = new Set([...Object.keys(manifest.files ?? {}), ...rendered.keys()]);
@@ -260,10 +263,6 @@ function unsupportedManifestError(manifest) {
     `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
     'Recreate the project with the current alpha CLI.',
   );
-}
-
-function projectPkgName(root) {
-  return path.basename(root);
 }
 
 function printReport(report) {

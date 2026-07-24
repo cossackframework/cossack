@@ -39,10 +39,18 @@ export {
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const templateDir = path.join(packageDir, 'template');
-const templateVersion = JSON.parse(
+const scaffoldPackage = JSON.parse(
   await fs.readFile(path.join(packageDir, 'package.json'), 'utf8'),
-).version;
-const BETTER_SQLITE3_VERSION = '^13.0.1';
+);
+const templateVersion = scaffoldPackage.version;
+const dependencyVersions = scaffoldPackage.scaffold?.dependencyVersions ?? {};
+function dependencyVersion(name) {
+  const version = dependencyVersions[name];
+  if (typeof version !== 'string' || version.length === 0) {
+    throw new Error(`Missing scaffold.dependencyVersions entry for ${name}`);
+  }
+  return version;
+}
 const text = (value) => Buffer.from(value, 'utf8');
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 const LOCAL_ENV_CAPABILITY = 'local-environment';
@@ -382,49 +390,56 @@ function packageJson(recipe, projectName) {
     '@cossackframework/framework': `^${templateVersion}`,
     '@cossackframework/renderer': `^${templateVersion}`,
     cossack: `^${templateVersion}`,
-    hono: '^4.12.31',
-    'reflect-metadata': '^0.2.2',
+    hono: dependencyVersion('hono'),
+    'reflect-metadata': dependencyVersion('reflect-metadata'),
   };
   if (recipe.resolvedFeatures.includes('ui')) {
     dependencies['@cossackframework/ui'] = `^${templateVersion}`;
-    dependencies['@cossackframework/solar-icons'] = '^0.7.1';
+    dependencies['@cossackframework/solar-icons'] =
+      dependencyVersion('@cossackframework/solar-icons');
   }
   if (recipe.resolvedFeatures.includes('database')) {
     dependencies['@cossackframework/database'] = `^${templateVersion}`;
-    if (recipe.config.database === 'turso') dependencies['@tursodatabase/serverless'] = '^0.1.0';
+    if (recipe.config.database === 'turso') {
+      dependencies['@tursodatabase/serverless'] =
+        dependencyVersion('@tursodatabase/serverless');
+    }
   }
   if (recipe.resolvedFeatures.includes('auth')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
   if (recipe.adapter === 'node') {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
-    dependencies['@hono/node-server'] = '^1.13.0';
-    dependencies.ws = '^8.18.0';
+    dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
+    dependencies.ws = dependencyVersion('ws');
     if (recipe.resolvedFeatures.includes('database') &&
         recipe.config.database === 'sqlite') {
-      dependencies['better-sqlite3'] = BETTER_SQLITE3_VERSION;
+      dependencies['better-sqlite3'] = dependencyVersion('better-sqlite3');
     }
   }
   const devDependencies = {
-    '@types/node': '^22.0.0',
-    '@tailwindcss/vite': '^4.1.0',
-    prettier: '^3.4.0',
-    tailwindcss: '^4.1.0',
-    tsx: '^4.23.0',
-    vite: '^8.1.4',
-    vitest: '^4.1.10',
+    '@types/node': dependencyVersion('@types/node'),
+    '@tailwindcss/vite': dependencyVersion('@tailwindcss/vite'),
+    prettier: dependencyVersion('prettier'),
+    tailwindcss: dependencyVersion('tailwindcss'),
+    tsx: dependencyVersion('tsx'),
+    vite: dependencyVersion('vite'),
+    vitest: dependencyVersion('vitest'),
   };
   if (recipe.adapter === 'cloudflare') {
-    devDependencies['@cloudflare/vite-plugin'] = '^1.44.0';
-    devDependencies.wrangler = '^4.110.0';
+    devDependencies['@cloudflare/vite-plugin'] =
+      dependencyVersion('@cloudflare/vite-plugin');
+    devDependencies.wrangler = dependencyVersion('wrangler');
   } else {
-    devDependencies['@types/ws'] = '^8.18.0';
+    devDependencies['@types/ws'] = dependencyVersion('@types/ws');
     if (recipe.resolvedFeatures.includes('database') &&
         recipe.config.database === 'sqlite') {
-      devDependencies['@types/better-sqlite3'] = '^7.6.13';
+      devDependencies['@types/better-sqlite3'] =
+        dependencyVersion('@types/better-sqlite3');
     }
   }
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    devDependencies['better-sqlite3'] = BETTER_SQLITE3_VERSION;
-    devDependencies['@types/better-sqlite3'] = '^7.6.13';
+    devDependencies['better-sqlite3'] = dependencyVersion('better-sqlite3');
+    devDependencies['@types/better-sqlite3'] =
+      dependencyVersion('@types/better-sqlite3');
   }
   const scripts = recipe.adapter === 'node'
     ? {
@@ -1307,6 +1322,8 @@ export async function writeManifest(
     tool: '@cossackframework/scaffold',
     templateVersion,
     updatedAt: new Date().toISOString(),
+    // Keep the schema-v2 compatibility alias while runtime-aware consumers
+    // migrate to the canonical `runtime` field.
     runtime: recipe.adapter,
     adapter: recipe.adapter,
     preset: recipe.preset,

@@ -6,6 +6,10 @@ It owns the application templates, preset and feature registries, dependency
 resolution, dashboard modules, conflict-safe change sets, and schema-v2
 scaffold manifests.
 
+Versions for third-party packages written to generated applications are
+configured in `package.json` under `scaffold.dependencyVersions`. Workspace
+Cossack packages use the scaffold package's own version.
+
 Node recipes generate a gitignored `.env` with safe local defaults and random
 application/OAuth secrets, plus a tracked `.env.example` containing documented
 placeholder values. Their generated pnpm configuration allows the trusted

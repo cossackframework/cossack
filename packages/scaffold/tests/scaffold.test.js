@@ -18,6 +18,10 @@ import {
   resolveRecipe,
 } from '../src/index.js';
 
+const scaffoldPackage = JSON.parse(
+  await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
+);
+const dependencyVersions = scaffoldPackage.scaffold.dependencyVersions;
 const temporaryDirectories = [];
 
 async function temporaryDirectory() {
@@ -100,6 +104,10 @@ describe('recipe resolution', () => {
       .toBe(recipe.resolvedFeatures.includes('examples'));
     expect(Boolean(pkg.dependencies['@cossackframework/ui']))
       .toBe(recipe.resolvedFeatures.includes('ui'));
+    if (recipe.resolvedFeatures.includes('ui')) {
+      expect(pkg.dependencies['@cossackframework/solar-icons'])
+        .toBe(dependencyVersions['@cossackframework/solar-icons']);
+    }
     expect(Boolean(pkg.dependencies['@cossackframework/database']))
       .toBe(recipe.resolvedFeatures.includes('database'));
     expect(Boolean(pkg.dependencies['@cossackframework/auth']))
@@ -362,7 +370,8 @@ describe('composition', () => {
       database: 'd1',
     }));
     const pkg = JSON.parse(files.get('package.json').content.toString());
-    expect(pkg.devDependencies['better-sqlite3']).toBe('^13.0.1');
+    expect(pkg.devDependencies['better-sqlite3'])
+      .toBe(dependencyVersions['better-sqlite3']);
   });
 
   it('detects a Node minimal project before adding auth', async () => {

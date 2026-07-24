@@ -121,6 +121,21 @@ try {
     '--yes',
   ], { cwd: projectDir });
   await run('pnpm', ['install', '--prefer-offline'], { cwd: projectDir });
+  await run('pnpm', [
+    'exec',
+    'cossack',
+    'add',
+    'ui',
+    'button',
+    '--yes',
+  ], { cwd: projectDir });
+  const ejectedButton = await fs.readFile(
+    path.join(projectDir, 'src/components/ui/Button.ts'),
+    'utf8',
+  );
+  if (!ejectedButton.includes('export class Button')) {
+    throw new Error('UI component ejection did not use the packaged source');
+  }
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await fs.access(path.join(
     projectDir,

@@ -221,6 +221,22 @@ describe('schema-v2 recipe upgrades', () => {
     expect(updated).toContain('cossackPages');
   });
 
+  it('renders project metadata from the declared package name', async () => {
+    const project = await seedProject();
+    const packagePath = path.join(project.projectDir, 'package.json');
+    await fs.writeFile(
+      packagePath,
+      JSON.stringify({ name: 'renamed-app', type: 'module' }, null, 2) + '\n',
+    );
+
+    await runUpgrade(project.projectDir, ['--apply-template']);
+
+    expect(await fs.readFile(
+      path.join(project.projectDir, '.env.example'),
+      'utf8',
+    )).toContain('APP_NAME=renamed-app');
+  });
+
   it('does not introduce files for capabilities absent from the recipe', async () => {
     const project = await seedProject();
     await runUpgrade(project.projectDir, ['--apply-template']);

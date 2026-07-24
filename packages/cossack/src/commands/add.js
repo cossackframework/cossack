@@ -1,12 +1,26 @@
 import { addFeature, FEATURES, parseList } from '@cossackframework/scaffold';
-import { findProjectRoot } from '../fs-utils.js';
+import path from 'node:path';
+import { findProjectRoot, writeFile } from '../fs-utils.js';
 import { flagString } from '../flags.js';
+import { UI_COMPONENTS } from '../templates.js';
 
 export async function addCommand(args, ctx) {
-  const [feature] = args;
+  const [feature, componentName] = args;
   if (!feature || !FEATURES.includes(feature)) {
     console.error(
       `Unknown feature: ${feature || '(none)'}.\nAvailable features: ${FEATURES.join(', ')}`,
+    );
+    return 1;
+  }
+  if (componentName && feature !== 'ui') {
+    console.error('A component name is only supported by `cossack add ui`.');
+    return 1;
+  }
+  const uiComponent = componentName ? UI_COMPONENTS[componentName] : undefined;
+  if (componentName && !uiComponent) {
+    console.error(
+      `Unknown UI component: ${componentName}.\n` +
+      `Available components: ${Object.keys(UI_COMPONENTS).join(', ')}`,
     );
     return 1;
   }
@@ -30,12 +44,31 @@ export async function addCommand(args, ctx) {
 
     if (result.status === 'present') {
       console.log(`  present  ${feature} is already installed`);
-      return 0;
     }
     if (result.status === 'cancelled') {
       console.log('Cancelled. No files were changed.');
       return 0;
     }
+    if (uiComponent) {
+      const target = path.join(
+        root,
+        'src/components/ui',
+        `${uiComponent.className}.ts`,
+      );
+      const status = await writeFile(target, uiComponent.template(), ctx);
+      if (status === 'skipped') {
+        console.error(
+          `  exists   ${path.relative(root, target)} ` +
+          '(use --force to overwrite)',
+        );
+        return 1;
+      }
+      console.log(
+        `  ${status === 'dry-run' ? 'would eject' : 'ejected'}  ` +
+        `${path.relative(root, target)}`,
+      );
+    }
+    if (result.status === 'present') return 0;
 
     const automaticallyAdded = result.addedFeatures.filter(
       (item) => item !== feature,
@@ -66,9 +99,10 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return `cossack add <ui|database|auth|dashboard|examples>
+  return `cossack add <ui|database|auth|dashboard|examples> [component]
 
 Options:
+  component                         Eject a UI component for customization
   --database <d1|sqlite|turso>
   --runtime <cloudflare|node>
   --auth-methods <credentials,oauth>

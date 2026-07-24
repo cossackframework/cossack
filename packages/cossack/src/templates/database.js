@@ -1,6 +1,6 @@
 import { loadStub } from './load-stub.js';
 
-// Database stubs (`cossack add database` + `cossack generate model|migration|seeder`)
+// Database stubs (`cossack generate model|migration|seeder`)
 // ===========================================================================
 
 /** `src/models/User.ts` — default User model + Database/User augmentations. */
@@ -17,4 +17,3 @@ export function migrationTemplate() {
 export function seederTemplate() {
   return loadStub('seeder.ts.stub');
 }
-

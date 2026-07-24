@@ -60,7 +60,7 @@ export async function adapterCommand(args, ctx) {
     const install = await detectInstallCommand(root);
     console.log(`\nNext: run \`${install}\` to reconcile dependencies.`);
     if (result.databaseChange.installed) {
-      console.log('No database contents were migrated.');
+      console.log('Database contents are unaffected by adapter switching.');
       if (result.databaseChange.target === 'd1') {
         console.log(
           'Configure the D1 binding in `wrangler.jsonc`, then run ' +

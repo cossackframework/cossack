@@ -19,16 +19,33 @@ const requireFromCli = createRequire(import.meta.url);
  * `pnpm install`).
  */
 function ejectFromPackage(className) {
-  try {
-    const pkgJsonPath = requireFromCli.resolve('@cossackframework/ui/package.json');
-    const pkgDir = path.dirname(pkgJsonPath);
-    const srcPath = path.join(pkgDir, 'src', 'components', `${className}.ts`);
-    return fs.readFileSync(srcPath, 'utf8');
-  } catch {
-    return `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
+  const resolvers = [
+    createRequire(path.join(process.cwd(), 'package.json')),
+    requireFromCli,
+  ];
+  for (const resolver of resolvers) {
+    try {
+      const themePath = resolver.resolve(
+        '@cossackframework/ui/theme/base.css',
+      );
+      const pkgDir = path.resolve(path.dirname(themePath), '../..');
+      const srcPath = path.join(pkgDir, 'src', 'components', `${className}.ts`);
+      return fs.readFileSync(srcPath, 'utf8')
+        .replace(
+          /from ["']\.\.\/icons\/Icon["']/g,
+          'from "@cossackframework/ui"',
+        )
+        .replace(
+          /from ["']\.\/Avatar["']/g,
+          'from "@cossackframework/ui"',
+        );
+    } catch {
+      // Try the next resolution root.
+    }
+  }
+  return `// Run \`pnpm install\` then re-run \`cossack add ui ${className.toLowerCase()}\`
 // to eject the full source from @cossackframework/ui.
 export {};\n`;
-  }
 }
 
 /** Wrapper so the catalog entry shape stays consistent: { className, template }. */
@@ -104,4 +121,3 @@ export const UI_COMPONENTS = {
   'password-input': { className: 'PasswordInput', template: fromPackage('PasswordInput') },
   'multi-select': { className: 'MultiSelect', template: fromPackage('MultiSelect') },
 };
-
