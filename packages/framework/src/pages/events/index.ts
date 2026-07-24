@@ -1,6 +1,5 @@
 import { Cossack, Page, ClientState, On, OnDocument, OnWindow } from '@cossackframework/core';
 import { html, component, unsafeHTML } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
 
 @Page({
     transport: 'http'
@@ -45,7 +44,7 @@ export default class EventsDemo extends Cossack {
     }
 
     render() {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="p-5 border-2 border-dashed border-gray-300 m-5">
                 <h1>Event Syntax Demo</h1>
                 <p>Interact with the page to see events in action.</p>
@@ -83,6 +82,6 @@ export default class EventsDemo extends Cossack {
                     ${unsafeHTML('Test <b>Unsafe HTML</b>')}
                 </p>
             </div>
-        `);
+        `;
     }
 }

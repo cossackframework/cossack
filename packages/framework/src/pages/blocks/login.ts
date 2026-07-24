@@ -19,6 +19,7 @@ import {
     CardHeader,
     CardBody,
     CardFooter,
+    Checkbox,
 } from '@cossackframework/ui';
 
 @Page({ transport: 'http' })
@@ -61,12 +62,11 @@ export default class LoginBlocks extends Cossack {
                             <h1 class="text-lg font-semibold">Login Forms</h1>
                         </div>
                         <div class="flex gap-1 bg-muted rounded-md p-1">
-                            ${tabs.map((t, i) => html`
-                                <button type="button"
-                                    class=${`px-3 py-1.5 text-sm font-medium rounded-sm cursor-pointer border-none transition-colors ${this.tab === i ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground bg-transparent'}`}
-                                    @click=${() => { this.tab = i; }}
-                                >${t}</button>
-                            `)}
+                            ${tabs.map((t, i) => component(Button, {
+                                type: 'button', size: 'sm',
+                                variant: this.tab === i ? 'default' : 'ghost',
+                                '@click': () => { this.tab = i; },
+                            }, t))}
                         </div>
                     </div>
                 </div>
@@ -88,7 +88,11 @@ export default class LoginBlocks extends Cossack {
             <div class="max-w-sm mx-auto mt-4 p-4 rounded-lg bg-success/10 text-success text-sm flex items-center gap-2">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Logged in as <strong>${this.email}</strong>
-                <button type="button" class="ml-auto text-success/70 hover:text-success cursor-pointer border-none bg-transparent" @click=${() => { this.submitted = false; }}>×</button>
+                ${component(Button, {
+                    type: 'button', variant: 'ghost', size: 'icon',
+                    'aria-label': 'Dismiss success message',
+                    '@click': () => { this.submitted = false; },
+                }, '×')}
             </div>
         `;
     }
@@ -99,24 +103,28 @@ export default class LoginBlocks extends Cossack {
             ${showName ? html`
                 <div>
                     ${component(Label, { for: 'name' }, 'Name')}
-                    <input type="text" id="name" class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
-                        .value=${bind(this, 'name')} />
+                    ${component(Input, { type: 'text', id: 'name', '.value': bind(this, 'name') })}
                 </div>
             ` : null}
             <div>
                 ${component(Label, { for: 'email' }, 'Email')}
-                <input type="email" id="email" placeholder="jane@example.com"
-                    class=${`w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground ${this.hasError('email') ? 'border-destructive' : 'border-border'}`}
-                    .value=${bind(this, 'email')}
-                    @blur=${() => this.validateProperty('email', 'blur')} />
+                ${component(Input, {
+                    type: 'email', id: 'email', placeholder: 'jane@example.com',
+                    variant: this.hasError('email') ? 'error' : 'default',
+                    '.value': bind(this, 'email'),
+                    '@blur': () => this.validateProperty('email', 'blur'),
+                })}
                 ${this.hasError('email') ? html`<p class="text-xs text-destructive mt-1">${this.getError('email')}</p>` : null}
             </div>
             <div>
                 ${component(Label, { for: 'password' }, 'Password')}
-                <input type="password" id="password" placeholder="••••••••"
-                    class=${`w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground ${this.hasError('password') ? 'border-destructive' : 'border-border'}`}
-                    .value=${bind(this, 'password')}
-                    @blur=${() => this.validateProperty('password', 'blur')} />
+                ${component(PasswordInput, {
+                    id: 'password', placeholder: '••••••••',
+                    value: this.password,
+                    onChange: (value: string) => { this.password = value; },
+                    'aria-invalid': this.hasError('password'),
+                    '@blur': () => this.validateProperty('password', 'blur'),
+                })}
                 ${this.hasError('password') ? html`<p class="text-xs text-destructive mt-1">${this.getError('password')}</p>` : null}
             </div>
             ${component(Button, { type: 'submit', variant: 'default', block: true }, 'Login')}
@@ -198,7 +206,7 @@ export default class LoginBlocks extends Cossack {
                                 ${this.formFields()}
                                 <div class="flex items-center justify-between">
                                     <label class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                                        <input type="checkbox" class="rounded border-border" /> Remember me
+                                        ${component(Checkbox, { 'aria-label': 'Remember me' })} Remember me
                                     </label>
                                     <a href="#" class="text-xs text-primary hover:underline">Forgot password?</a>
                                 </div>
@@ -254,10 +262,13 @@ export default class LoginBlocks extends Cossack {
             github: '<path d="M12 .3a12 12 0 00-3.79 23.4c.6.1.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.21.08 1.84 1.24 1.84 1.24 1.08 1.83 2.81 1.3 3.5.99.1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 016 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.49 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.58A12 12 0 0012 .3"/>',
         };
         return html`
-            <button class="flex items-center justify-center px-3 py-2.5 rounded-md border border-border hover:bg-muted cursor-pointer transition-colors bg-transparent"
-                @click=${() => { this.email = 'social@demo.dev'; this.password = 'password123'; }}>
+            ${component(Button, {
+                variant: 'outline', size: 'icon',
+                'aria-label': `Continue with ${provider}`,
+                '@click': () => { this.email = 'social@demo.dev'; this.password = 'password123'; },
+            }, html`
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="${provider === 'google' ? 'none' : 'currentColor'}">${unsafeHTML(icons[provider])}</svg>
-            </button>
+            `)}
         `;
     }
 }

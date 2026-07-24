@@ -1,4 +1,6 @@
 import { Cossack, Page, Client, State, html } from '@cossackframework/core';
+import { component } from '@cossackframework/renderer';
+import { Button } from '@cossackframework/ui';
 
 /**
  * LifecycleDemo - Demonstrates loading states in Cossack
@@ -76,12 +78,7 @@ export default class LifecycleDemo extends Cossack {
             <ul>
                 ${this.data.map(item => html`<li>${item}</li>`)}
             </ul>
-            <button
-                @click="${() => this.reload()}"
-                class="py-2 px-4 bg-blue-500 text-white border-none rounded cursor-pointer"
-            >
-                Refresh Data (Show Loading UI)
-            </button>
+            ${component(Button, { '@click': this.reload }, 'Refresh Data (Show Loading UI)')}
         `;
     }
 }

@@ -1,5 +1,6 @@
 import { Cossack, Page, State, ClientState, Client, HeadContext, HeadValue, getLocale } from '@cossackframework/core';
-import { html, TemplateResult } from '@cossackframework/renderer';
+import { component, html, TemplateResult } from '@cossackframework/renderer';
+import { Badge, Button, ButtonGroup, Typography } from '@cossackframework/ui';
 
 @Page({
     transport: 'http',
@@ -50,34 +51,21 @@ export class LocalizationDemo extends Cossack {
     render(): TemplateResult | null {
         return html`
             <div class="p-8 max-w-2xl">
-                <h1 class="text-2xl font-bold mb-4">${__('welcome')}</h1>
+                ${component(Typography, { variant: 'h1' }, __('welcome'))}
 
                 <p class="mb-4">
-                    Current locale: <code class="bg-gray-100 px-2 py-1 rounded">${this.activeLocaleLabel}</code>
+                    Current locale: ${component(Badge, { variant: 'secondary' }, this.activeLocaleLabel)}
                     <span class="text-gray-500 text-sm ml-2">
                         (&lt;html lang="${getLocale()}">)
                     </span>
                 </p>
 
-                <div class="flex gap-2 mb-8">
-                    <button
-                        class="px-3 py-1 border rounded ${getLocale() === 'en' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}"
-                        @click=${() => this.switchLocale('en')}
-                    >English</button>
-                    <button
-                        class="px-3 py-1 border rounded ${getLocale() === 'es' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}"
-                        @click=${() => this.switchLocale('es')}
-                    >Español</button>
-                    <button
-                        class="px-3 py-1 border rounded ${getLocale() === 'ru' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}"
-                        @click=${() => this.switchLocale('ru')}
-                    >Русский</button>
-                    <button
-                        class="px-3 py-1 border rounded bg-gray-100"
-                        @click=${this.switchAutoBrowser}
-                        title="Follow navigator.languages"
-                    >AUTO:BROWSER</button>
-                </div>
+                <div class="mb-8">${component(ButtonGroup, {}, html`
+                    ${component(Button, { variant: getLocale() === 'en' ? 'default' : 'outline', '@click': () => this.switchLocale('en') }, 'English')}
+                    ${component(Button, { variant: getLocale() === 'es' ? 'default' : 'outline', '@click': () => this.switchLocale('es') }, 'Español')}
+                    ${component(Button, { variant: getLocale() === 'ru' ? 'default' : 'outline', '@click': () => this.switchLocale('ru') }, 'Русский')}
+                    ${component(Button, { variant: 'secondary', '@click': this.switchAutoBrowser, title: 'Follow navigator.languages' }, 'AUTO:BROWSER')}
+                `)}</div>
 
                 <section class="mb-6">
                     <h2 class="text-lg font-semibold mb-2">Placeholders</h2>
@@ -92,9 +80,9 @@ export class LocalizationDemo extends Cossack {
                     <h2 class="text-lg font-semibold mb-2">Pluralization</h2>
                     <p class="mb-2">${__('apples', { count: this.appleCount })}</p>
                     <div class="flex gap-2 items-center">
-                        <button class="px-3 py-1 border rounded" @click=${() => this.appleCount = Math.max(0, this.appleCount - 1)}>-</button>
+                        ${component(Button, { variant: 'outline', size: 'icon', '@click': () => this.appleCount = Math.max(0, this.appleCount - 1) }, '−')}
                         <span class="w-12 text-center">${this.appleCount}</span>
-                        <button class="px-3 py-1 border rounded" @click=${() => this.appleCount = this.appleCount + 1}>+</button>
+                        ${component(Button, { size: 'icon', '@click': () => this.appleCount = this.appleCount + 1 }, '+')}
                     </div>
                     <p class="text-xs text-gray-500 mt-2">
                         Russian uses 3 plural forms; English/Spanish use 2. Try switching with count = 1, 2, 5.

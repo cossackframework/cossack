@@ -1,12 +1,11 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html, component } from '@cossackframework/renderer';
+import { html } from '@cossackframework/renderer';
 import { Image } from '@cossackframework/core';
-import { Layout } from '@/components/Layout';
 
 @Page({ transport: 'http' })
 export default class ImageDemo extends Cossack {
   render() {
-    return component(Layout, { dir: 'ltr' }, html`
+    return html`
       <h1>Image Optimization Demo</h1>
       <p>This image is rendered using the <code>Image</code> helper.</p>
       
@@ -30,6 +29,6 @@ export default class ImageDemo extends Cossack {
       <p>
         <a href="/optimistic-counter">Go Back to Optimistic Counter</a>
       </p>
-    `);
+    `;
   }
 }

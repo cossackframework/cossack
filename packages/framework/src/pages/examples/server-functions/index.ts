@@ -8,7 +8,7 @@ import {
     server$,
 } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { Layout } from '../../../components/Layout';
+import { Button, Label, NativeSelect } from '@cossackframework/ui';
 
 type Region = 'asia' | 'europe' | 'americas';
 
@@ -73,7 +73,7 @@ export default class ServerFunctionsExample extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <section class="max-w-3xl space-y-6">
                 <header>
                     <h1 class="text-3xl font-bold mb-2">Reactive server functions with <code>server$</code></h1>
@@ -98,21 +98,23 @@ export default class ServerFunctionsExample extends Cossack {
                             Changing the dependency fetches a new invocation and retains the previous value while pending.
                         </p>
                     </div>
-                    <label class="block">
-                        <span class="mr-2 font-medium">Region</span>
-                        <select class="border rounded px-3 py-2" .value=${this.region} @change=${this.selectRegion}>
+                    <div class="space-y-2">
+                        ${component(Label, { for: 'region' }, 'Region')}
+                        ${component(NativeSelect, {
+                            id: 'region', '.value': this.region, '@change': this.selectRegion,
+                        }, html`
                             <option value="asia">Asia</option>
                             <option value="europe">Europe</option>
                             <option value="americas">Americas</option>
-                        </select>
-                    </label>
+                        `)}
+                    </div>
                     <div class="rounded bg-gray-50 p-3 font-mono text-sm">
                         <div>${this.regionSummary.message}</div>
                         <div class="text-gray-500">${this.regionSummary.resolvedAt}</div>
                     </div>
                     <div class="flex gap-2">
-                        <button class="rounded bg-blue-600 px-3 py-2 text-white" @click=${this.refreshRegion}>Refresh now</button>
-                        <button class="rounded border border-gray-400 px-3 py-2" @click=${this.invalidateRegion}>Invalidate</button>
+                        ${component(Button, { '@click': this.refreshRegion }, 'Refresh now')}
+                        ${component(Button, { variant: 'outline', '@click': this.invalidateRegion }, 'Invalidate')}
                     </div>
                 </article>
 
@@ -137,6 +139,6 @@ export default class ServerFunctionsExample extends Cossack {
                     Guide: <a class="text-blue-600 underline" href="/docs/server-functions.md">server functions</a>
                 </p>
             </section>
-        `);
+        `;
     }
 }

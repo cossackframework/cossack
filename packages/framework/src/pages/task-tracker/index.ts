@@ -1,4 +1,4 @@
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import {
     Cossack,
     Page,
@@ -10,6 +10,7 @@ import {
     HeadContext,
     HeadValue,
 } from '@cossackframework/core';
+import { Button, Input, Label, Typography } from '@cossackframework/ui';
 
 /**
  * TaskTrackerDemo — demonstrates `@Task({ track })` dependency filtering and
@@ -155,7 +156,7 @@ export default class TaskTrackerDemo extends Cossack {
     render(): TemplateResult {
         return html`
             <div class="max-w-3xl mx-auto">
-                <h1 class="text-3xl font-bold mb-2">Task Tracker Demo</h1>
+                ${component(Typography, { variant: 'h1' }, 'Task Tracker Demo')}
                 <p class="text-gray-600 mb-6">
                     <code>@Task(&#123; track: [...] &#125;)</code> runs a task only when its
                     tracked dependencies change, plus once on mount. Tasks may also
@@ -166,54 +167,41 @@ export default class TaskTrackerDemo extends Cossack {
                 <!-- Controls -->
                 <section class="mb-8 space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                        ${component(Label, {}, html`
                             Name (tracked by <code>trackedNameTask</code> and <code>cleanupTask</code>)
-                        </label>
-                        <input
-                            type="text"
-                            class="border border-gray-300 rounded px-3 py-2 w-full"
-                            .value="${this.name}"
-                            @input="${(e: Event) =>
-                                this.setName((e.target as HTMLInputElement).value)}"
-                        />
+                        `)}
+                        ${component(Input, {
+                            type: 'text', '.value': this.name,
+                            '@input': (e: Event) => this.setName((e.target as HTMLInputElement).value),
+                        })}
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             Theme: <strong>${this.theme}</strong> — unrelated to any tracked task
                         </label>
-                        <button
-                            @click="${() => this.toggleTheme()}"
-                            class="py-1.5 px-3 bg-gray-200 rounded text-sm"
-                        >
-                            Toggle theme (should NOT fire tracked tasks)
-                        </button>
+                        ${component(Button, { variant: 'secondary', '@click': this.toggleTheme },
+                            'Toggle theme (should NOT fire tracked tasks)')}
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                            ${component(Label, {}, html`
                                 form.email (tracked by <code>trackedStoreTask</code>)
-                            </label>
-                            <input
-                                type="text"
-                                class="border border-gray-300 rounded px-3 py-2 w-full"
-                                .value="${this.form.email}"
-                                @input="${(e: Event) =>
-                                    this.setEmail((e.target as HTMLInputElement).value)}"
-                            />
+                            `)}
+                            ${component(Input, {
+                                type: 'text', '.value': this.form.email,
+                                '@input': (e: Event) => this.setEmail((e.target as HTMLInputElement).value),
+                            })}
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                            ${component(Label, {}, html`
                                 form.password (sibling — should NOT fire tracked tasks)
-                            </label>
-                            <input
-                                type="text"
-                                class="border border-gray-300 rounded px-3 py-2 w-full"
-                                .value="${this.form.password}"
-                                @input="${(e: Event) =>
-                                    this.setPassword((e.target as HTMLInputElement).value)}"
-                            />
+                            `)}
+                            ${component(Input, {
+                                type: 'text', '.value': this.form.password,
+                                '@input': (e: Event) => this.setPassword((e.target as HTMLInputElement).value),
+                            })}
                         </div>
                     </div>
                 </section>
@@ -222,12 +210,7 @@ export default class TaskTrackerDemo extends Cossack {
                 <section class="mb-8">
                     <div class="flex items-center justify-between mb-3">
                         <h2 class="text-xl font-semibold">Run counts</h2>
-                        <button
-                            @click="${() => this.resetCounts()}"
-                            class="py-1 px-3 text-sm border border-gray-300 rounded"
-                        >
-                            Reset
-                        </button>
+                        ${component(Button, { variant: 'outline', size: 'sm', '@click': this.resetCounts }, 'Reset')}
                     </div>
                     <p class="text-sm text-gray-500 mb-3">
                         Each started at <code>1</code> from the mount run. Change the inputs

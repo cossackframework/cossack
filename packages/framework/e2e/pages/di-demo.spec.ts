@@ -3,6 +3,9 @@ import { test, expect } from '../fixtures';
 test.describe('DI Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/di-demo');
+    await page.waitForFunction(
+      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
+    );
   });
 
   test('should render the page with injected service', async ({ page }) => {
@@ -87,31 +90,45 @@ test.describe('DI Demo Page', () => {
     await page.click('button:has-text("+")');
     await expect(page.locator('body')).toContainText('Count: 1');
 
-    await page.click('a:has-text("Open another page")');
+    await Promise.all([
+      page.evaluate(() => new Promise<void>((resolve) => {
+        const handleReady = (event: Event) => {
+          if ((event as CustomEvent).detail?.pathname !== '/di-demo/other') return;
+          document.removeEventListener('cossack:ready', handleReady);
+          resolve();
+        };
+        document.addEventListener('cossack:ready', handleReady);
+      })),
+      page.click('a:has-text("Open another page")'),
+    ]);
     await expect(page).toHaveURL(/\/di-demo\/other$/);
     await expect(page.getByTestId('page-service-count')).toHaveText('Count: 1');
     await expect(page.getByTestId('nested-service-count')).toHaveText('Count: 1');
 
-    await page.click('a:has-text("Leave DI layout")');
+    await Promise.all([
+      page.evaluate(() => new Promise<void>((resolve) => {
+        const handleReady = (event: Event) => {
+          if ((event as CustomEvent).detail?.pathname !== '/') return;
+          document.removeEventListener('cossack:ready', handleReady);
+          resolve();
+        };
+        document.addEventListener('cossack:ready', handleReady);
+      })),
+      page.click('a:has-text("Leave DI layout")'),
+    ]);
     await expect(page).toHaveURL(/\/$/);
 
-    // A history traversal updates the URL before Cossack finishes its async
-    // SPA render. Wait for the matching route-ready event so the assertions
-    // below observe the newly committed page rather than the outgoing page.
-    await page.evaluate(() => {
-      (window as any).__cossackE2EReadyPath = undefined;
-      const handleReady = (event: Event) => {
-        const pathname = (event as CustomEvent).detail?.pathname;
-        if (pathname !== '/di-demo/other') return;
-        (window as any).__cossackE2EReadyPath = pathname;
-        document.removeEventListener('cossack:ready', handleReady);
-      };
-      document.addEventListener('cossack:ready', handleReady);
-    });
-    await page.goBack();
-    await page.waitForFunction(
-      () => (window as any).__cossackE2EReadyPath === '/di-demo/other',
-    );
+    await Promise.all([
+      page.evaluate(() => new Promise<void>((resolve) => {
+        const handleReady = (event: Event) => {
+          if ((event as CustomEvent).detail?.pathname !== '/di-demo/other') return;
+          document.removeEventListener('cossack:ready', handleReady);
+          resolve();
+        };
+        document.addEventListener('cossack:ready', handleReady);
+      })),
+      page.goBack(),
+    ]);
     await expect(page).toHaveURL(/\/di-demo\/other$/);
     await expect(page.getByTestId('page-service-count')).toHaveText('Count: 0');
     await expect(page.getByTestId('nested-service-count')).toHaveText('Count: 0');

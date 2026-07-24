@@ -39,6 +39,7 @@ import {
     Empty,
     Kbd,
     ButtonGroup,
+    Command,
 } from "../src/index";
 import { toastStore } from "../src/components/Toast";
 
@@ -547,6 +548,22 @@ describe("Sheet", () => {
     it("applies the size prop as inline width for left/right", () => {
         const out = renderComp(Sheet, { side: "left", size: "500px" });
         expect(out).toContain("width:500px");
+    });
+
+    it("forwards accessible dialog attributes", () => {
+        const out = renderComp(Sheet, { "aria-label": "Demo navigation" });
+        expect(out).toContain('aria-label="Demo navigation"');
+    });
+});
+
+describe("Command", () => {
+    it("supports a controlled open state without changing its public item contract", () => {
+        const out = renderComp(Command, {
+            open: true,
+            items: [{ id: "/docs", label: "Documentation", group: "Navigation" }],
+        });
+        expect(out).toContain("cs-command__panel");
+        expect(out).toContain("Documentation");
     });
 });
 

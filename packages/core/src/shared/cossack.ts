@@ -1670,7 +1670,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     // Overriding CossackElement updated to handle head updates
     updated(changedProperties: Map<string | number | symbol, unknown>) {
         super.updated(changedProperties);
-        if (!this.isServer) {
+        // The framework replaces updateHead on the App, active layouts, and
+        // current page with a callback that composes the entire head stack.
+        // Renderer-created child components retain the prototype method and
+        // must not replace the document head with their own empty head().
+        if (!this.isServer && this.updateHead !== Cossack.prototype.updateHead) {
             this.updateHead();
         }
     }

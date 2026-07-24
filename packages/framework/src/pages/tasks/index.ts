@@ -1,7 +1,6 @@
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Cossack, Client, Page, Server, State, OnEvent, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
-import { Layout } from '../../components/Layout';
-import { Button } from '../../components/Button';
+import { Button } from '@cossackframework/ui';
 import { loggingMiddleware } from '@/middlewares/logging';
 
 interface Task {
@@ -76,9 +75,7 @@ export class Tasks extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, {
-            dir: 'ltr',
-        }, html`
+        return html`
             <div>
                 <h1>Tasks</h1>
                 <ul class="list-none p-0">
@@ -93,6 +90,6 @@ export class Tasks extends Cossack {
                     `)}
                 </ul>
             </div>
-        `);
+        `;
     }
 }

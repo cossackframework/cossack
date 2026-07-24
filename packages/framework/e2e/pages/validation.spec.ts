@@ -4,6 +4,9 @@ test.describe('Validation Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/validation');
     await page.waitForSelector('text=Validation Demo');
+    await page.waitForFunction(
+      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
+    );
   });
 
   test('should display validation form', async ({ page }) => {
@@ -137,11 +140,8 @@ const websiteInput = page.locator('input#website');
     // The validateAll() in handleSubmit will validate all fields at once
     await page.locator('button[type="submit"]').click();
 
-    // Wait for form submission and async validation
-    await page.waitForTimeout(2000);
-
     // Should show success message
-    const successMessage = page.locator('text=Form submitted successfully!');
+    const successMessage = page.getByText('Form submitted successfully!');
     await expect(successMessage).toBeVisible();
   });
 

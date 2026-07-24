@@ -7,8 +7,9 @@ test.describe('Blocks Pages', () => {
     await page.goto('/blocks');
     await expect(page.locator('h1:has-text("Blocks")')).toBeVisible();
     // Two category cards.
-    await expect(page.locator('a[href="/blocks/login"]')).toBeVisible();
-    await expect(page.locator('a[href="/blocks/dashboard"]')).toBeVisible();
+    const content = page.getByRole('main');
+    await expect(content.getByRole('link', { name: /Login Forms/ })).toBeVisible();
+    await expect(content.getByRole('link', { name: /Dashboards/ })).toBeVisible();
   });
 
   test('login blocks render all 4 variations', async ({ page }) => {

@@ -13,13 +13,13 @@ test.describe('Navigation', () => {
   test('should navigate to optimistic-counter page from nav', async ({ page }) => {
     await clickAndWaitForNavigation(page, 'a[href="/optimistic-counter"]');
     await expect(page).toHaveURL(/\/optimistic-counter/);
-    await expect(page.locator('h1, h2')).toContainText(/Optimistic/);
+    await expect(page.getByRole('heading', { name: /Optimistic Counter/i })).toBeVisible();
   });
 
   test('should navigate to optimistic-counter page', async ({ page }) => {
     await clickAndWaitForNavigation(page, 'a[href="/optimistic-counter"]');
     await expect(page).toHaveURL(/\/optimistic-counter/);
-    await expect(page.locator('h1, h2')).toContainText(/Optimistic/);
+    await expect(page.getByRole('heading', { name: /Optimistic Counter/i })).toBeVisible();
   });
 
   test('should navigate to lifecycle page', async ({ page }) => {

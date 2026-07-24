@@ -52,7 +52,7 @@ test.describe('Docs Page', () => {
   });
 
   test('should apply layout to MDX content', async ({ page }) => {
-    await expect(page.locator('.docs-container .mdx-content')).toBeVisible();
+    await expect(page.locator('.docs-container > main.mdx-content')).toBeVisible();
     await expect(page.locator('[data-docs-raw-html]')).toHaveText('Raw HTML remains available.');
   });
 
@@ -61,6 +61,6 @@ test.describe('Docs Page', () => {
     const count = await codeBlocks.count();
 
     expect(count).toBeGreaterThanOrEqual(2);
-    await expect(page.locator('.mdx-content')).not.toContainText('highlight-next-line');
+    await expect(page.locator('.docs-container > main.mdx-content')).not.toContainText('highlight-next-line');
   });
 });

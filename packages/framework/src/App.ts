@@ -1,12 +1,17 @@
-import { Cossack, Page, State, HeadContext, HeadValue, ClientState, On, Client } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { Cossack, Page, HeadContext, HeadValue, ClientState, On, OnDocument, Client } from '@cossackframework/core';
+import { component, html } from '@cossackframework/renderer';
+import { Button, Command } from '@cossackframework/ui';
+import { demoCommandItems } from './demo-catalog.js';
 
 @Page({ transport: 'http' })
 export class App extends Cossack {
-    @State() theme: 'light' | 'dark' = 'light';
+    @ClientState() theme: 'light' | 'dark' = 'light';
 
     @ClientState()
     lastNavigatedPath: string = '/';
+
+    @ClientState()
+    commandPaletteOpen = false;
 
     @On('navigate-complete')
     logNavigation(pathname: string) {
@@ -31,22 +36,48 @@ export class App extends Cossack {
     toggleTheme() {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
         if (!this.isServer) {
-            document.body.className = this.theme;
+            document.documentElement.classList.toggle('dark', this.theme === 'dark');
         }
+    }
+
+    @OnDocument('keydown')
+    handleCommandShortcut(event: KeyboardEvent) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            this.commandPaletteOpen = !this.commandPaletteOpen;
+        } else if (event.key === 'Escape' && this.commandPaletteOpen) {
+            this.commandPaletteOpen = false;
+        }
+    }
+
+    @Client()
+    setCommandPaletteOpen(open: boolean) {
+        this.commandPaletteOpen = open;
+    }
+
+    @Client()
+    navigateFromCommand(url: string) {
+        this.redirect(url);
     }
 
     render() {
         return html`
             <div id="app-wrapper" class="${this.theme}">
-                <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
-                    <button 
-                        @click=${() => this.toggleTheme()}
-                        style="padding: 8px 16px; border-radius: 20px; border: 1px solid #ccc; background: white; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2);"
-                    >
-                        ${this.theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
-                    </button>
+                <div class="fixed bottom-5 right-5 z-[1000]">
+                    ${component(Button, {
+                        variant: 'outline',
+                        '@click': this.toggleTheme,
+                        'aria-label': `Switch to ${this.theme === 'light' ? 'dark' : 'light'} mode`,
+                    }, this.theme === 'light' ? '🌙 Dark mode' : '☀️ Light mode')}
                 </div>
                 ${this.children}
+                ${component(Command, {
+                    items: demoCommandItems,
+                    placeholder: 'Go to a demo…',
+                    open: this.commandPaletteOpen,
+                    onOpenChange: this.setCommandPaletteOpen,
+                    onSelect: this.navigateFromCommand,
+                })}
             </div>
         `;
     }

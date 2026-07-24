@@ -1,6 +1,6 @@
 import { Cossack, Page, ClientState, Client } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
+import { Button } from '@cossackframework/ui';
 
 @Page()
 export default class ViewTransitionsList extends Cossack {
@@ -22,7 +22,7 @@ export default class ViewTransitionsList extends Cossack {
     }
 
     render() {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <style>
                 .vt-card {
                     display: block;
@@ -77,12 +77,12 @@ export default class ViewTransitionsList extends Cossack {
                 <h2 class="mt-6">Same-Route Transitions (crossfade)</h2>
                 <p>Click tabs to switch content with a crossfade. Uses <code>this.startViewTransition()</code>.</p>
                 <div class="flex gap-2 mt-3">
-                    ${['overview', 'details', 'reviews'].map(tab => html`
-                        <button
-                            class="vt-tab-button ${this.activeTab === tab ? 'active' : ''}"
-                            @click=${() => this.switchTab(tab)}
-                        >${tab}</button>
-                    `)}
+                    ${['overview', 'details', 'reviews'].map(tab =>
+                        component(Button, {
+                            variant: this.activeTab === tab ? 'default' : 'outline',
+                            class: `vt-tab-button ${this.activeTab === tab ? 'active' : ''}`,
+                            '@click': () => this.switchTab(tab),
+                        }, tab))}
                 </div>
                 <div class="vt-tab-content mt-3">
                     ${this.activeTab === 'overview' ? html`
@@ -94,6 +94,6 @@ export default class ViewTransitionsList extends Cossack {
                     `}
                 </div>
             </div>
-        `);
+        `;
     }
 }

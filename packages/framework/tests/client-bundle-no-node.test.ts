@@ -24,6 +24,6 @@ describe('client entry must stay Node-free', () => {
     });
 
     it('still imports i18n-globals (those are client-safe)', () => {
-        expect(clientEntry).toMatch(/['"]\.\.\/i18n-globals['"]/);
+        expect(clientEntry).toMatch(/['"]\.\.\/i18n-globals(?:\.js)?['"]/);
     });
 });

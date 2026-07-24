@@ -1,6 +1,6 @@
 import { Cossack, Page, ClientState, Client, Server, State, Debounce, Throttle, RateLimit } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
+import { Button, Card, Input, Typography } from '@cossackframework/ui';
 
 @Page({
     transport: 'http',
@@ -106,34 +106,32 @@ export default class DebounceDemo extends Cossack {
     }
 
     render() {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="p-5 border-2 border-dashed border-gray-300 m-5">
-                <h1>Debounce &amp; Throttle Demo</h1>
+                ${component(Typography, { variant: 'h1' }, 'Debounce & Throttle Demo')}
                 <p>
                     <code>@Debounce(ms)</code> coalesces rapid calls into a single trailing
                     invocation; <code>@Throttle(ms)</code> runs at most once per window.
                 </p>
 
                 <div class="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-5 mt-5">
-                    <div class="p-4 bg-blue-50 rounded-lg">
+                    ${component(Card, {}, html`
                         <h3>@Debounce(500) search</h3>
-                        <input
-                            class="border border-gray-400 rounded px-2 py-1 w-full"
-                            @input=${(e: InputEvent) => this.handleInput(e)}
-                            placeholder="Type to search..."
-                        />
+                        ${component(Input, {
+                            '@input': this.handleInput,
+                            placeholder: 'Type to search...',
+                        })}
                         <p class="mt-2">Keystrokes: <strong>${this.rawKeystrokes}</strong></p>
                         <p>API calls: <strong class="text-blue-800 text-[1.5em]">${this.apiCalls}</strong></p>
                         <p>Last query: <strong>${this.lastQuery || '—'}</strong></p>
-                    </div>
+                    `)}
 
-                    <div class="p-4 bg-purple-50 rounded-lg">
+                    ${component(Card, {}, html`
                         <h3>@Server() @Debounce(500) search</h3>
-                        <input
-                            class="border border-gray-400 rounded px-2 py-1 w-full"
-                            @input=${(e: InputEvent) => this.handleServerInput(e)}
-                            placeholder="Type to query the server..."
-                        />
+                        ${component(Input, {
+                            '@input': this.handleServerInput,
+                            placeholder: 'Type to query the server...',
+                        })}
                         <p class="mt-2">Keystrokes: <strong>${this.serverKeystrokes}</strong></p>
                         <p>Server API calls: <strong class="text-purple-800 text-[1.5em]">${this.serverApiCalls}</strong></p>
                         <p>Last server query: <strong>${this.serverLastQuery || '—'}</strong></p>
@@ -141,35 +139,25 @@ export default class DebounceDemo extends Cossack {
                         <ul class="list-disc list-inside text-sm text-purple-900">
                             ${this.serverResults.map((fruit) => html`<li>${fruit}</li>`)}
                         </ul>
-                    </div>
+                    `)}
 
-                    <div class="p-4 bg-green-50 rounded-lg">
+                    ${component(Card, {}, html`
                         <h3>@Throttle(1000) click</h3>
-                        <button
-                            class="border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.countedClick()}
-                        >
-                            Smash me
-                        </button>
+                        ${component(Button, { '@click': this.countedClick }, 'Smash me')}
                         <p class="mt-2">Registered clicks (max 1/sec):</p>
                         <strong class="text-[2em] text-green-800">${this.throttleClicks}</strong>
-                    </div>
+                    `)}
 
-                    <div class="p-4 bg-red-50 rounded-lg">
+                    ${component(Card, {}, html`
                         <h3>@Server() @RateLimit(max:3 / 10s)</h3>
-                        <button
-                            class="border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.requestSave()}
-                        >
-                            Save (server)
-                        </button>
+                        ${component(Button, { variant: 'destructive', '@click': this.requestSave }, 'Save (server)')}
                         <p class="mt-2">Successful server saves (3 per 10s, then 429):</p>
                         <strong class="text-[2em] text-red-800">${this.saveAttempts}</strong>
                         <p class="text-xs text-gray-600 mt-1">
                             Unlike client debounce, this is enforced server-side —
                             a malicious client cannot bypass it.
                         </p>
-                    </div>
+                    `)}
                 </div>
 
                 <p class="mt-5 italic text-gray-500">
@@ -180,6 +168,6 @@ export default class DebounceDemo extends Cossack {
                     <em>Registered clicks</em> tick at most once per second.
                 </p>
             </div>
-        `);
+        `;
     }
 }

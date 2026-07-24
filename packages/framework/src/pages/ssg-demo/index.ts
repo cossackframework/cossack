@@ -1,6 +1,5 @@
 import { Cossack, Page } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
 
 /**
  * Static SSG Example
@@ -22,7 +21,6 @@ export class SsgDemo extends Cossack {
 
   render() {
     return html`
-      ${component(Layout, { dir: 'ltr' }, html`
         <div class="ssg-demo">
           <h1>Static Site Generation Demo</h1>
 
@@ -62,7 +60,6 @@ export class MyPage extends Cossack {
             Build date: ${new Date().toISOString()}
           </p>
         </div>
-      `)}
     `;
   }
 }

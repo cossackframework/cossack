@@ -1,5 +1,6 @@
-import { html, bind, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, Page, State, Validate, Client, Server, HeadContext, HeadValue } from '@cossackframework/core';
+import { Alert, Button, Input, Label, Typography } from '@cossackframework/ui';
 
 @Page({
     transport: 'http',
@@ -89,8 +90,8 @@ export class ValidationDemo extends Cossack {
 
     @Client()
     handleInput(field: string, event: Event) {
-        // Value sync is handled by `bind()` on each input; this handler only
-        // runs validation. Validate on input — fields configured with trigger
+        (this as any)[field] = (event.target as HTMLInputElement).value;
+        // Validate on input — fields configured with trigger
         // 'blur' or 'submit' will be skipped here (returns true without running
         // validators).
         this.validateProperty(field, 'input');
@@ -128,106 +129,98 @@ export class ValidationDemo extends Cossack {
     render(): TemplateResult {
         return html`
             <div class="max-w-150 mx-auto p-8">
-                <h1>Validation Demo</h1>
+                ${component(Typography, { variant: 'h1' }, 'Validation Demo')}
                 <p>This page demonstrates the @Validate decorator with various validation rules.</p>
 
                 <form @submit="${(e: Event) => this.handleSubmit(e)}">
                     <!-- Email Field -->
                     <div class="mb-4">
-                        <label for="email" class="block mb-2">Email (required, email)</label>
-                        <input
-                            type="email"
-                            id="email"
-                            .value="${bind(this, 'email')}"
-                            @input="${(e: Event) => this.handleInput('email', e)}"
-                            @blur="${(e: Event) => this.handleBlur('email', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('email') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'email' }, 'Email (required, email)')}
+                        ${component(Input, {
+                            type: 'email', id: 'email', '.value': this.email,
+                            variant: this.hasError('email') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('email'),
+                            '@input': (e: Event) => this.handleInput('email', e),
+                            '@blur': (e: Event) => this.handleBlur('email', e),
+                        })}
                         ${this.hasError('email') ? html`<span class="text-red-500 text-sm">${this.getError('email')}</span>` : ''}
                     </div>
 
                     <!-- Password Field -->
                     <div class="mb-4">
-                        <label for="password" class="block mb-2">Password (required, minLength: 8)</label>
-                        <input
-                            type="password"
-                            id="password"
-                            .value="${bind(this, 'password')}"
-                            @input="${(e: Event) => this.handleInput('password', e)}"
-                            @blur="${(e: Event) => this.handleBlur('password', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('password') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'password' }, 'Password (required, minLength: 8)')}
+                        ${component(Input, {
+                            type: 'password', id: 'password', '.value': this.password,
+                            variant: this.hasError('password') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('password'),
+                            '@input': (e: Event) => this.handleInput('password', e),
+                            '@blur': (e: Event) => this.handleBlur('password', e),
+                        })}
                         ${this.hasError('password') ? html`<span class="text-red-500 text-sm">${this.getError('password')}</span>` : ''}
                     </div>
 
                     <!-- Username Field -->
                     <div class="mb-4">
-                        <label for="username" class="block mb-2">Username (required, pattern: alphanumeric + underscore)</label>
-                        <input
-                            type="text"
-                            id="username"
-                            .value="${bind(this, 'username')}"
-                            @input="${(e: Event) => this.handleInput('username', e)}"
-                            @blur="${(e: Event) => this.handleBlur('username', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('username') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'username' }, 'Username (required, pattern: alphanumeric + underscore)')}
+                        ${component(Input, {
+                            type: 'text', id: 'username', '.value': this.username,
+                            variant: this.hasError('username') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('username'),
+                            '@input': (e: Event) => this.handleInput('username', e),
+                            '@blur': (e: Event) => this.handleBlur('username', e),
+                        })}
                         ${this.hasError('username') ? html`<span class="text-red-500 text-sm">${this.getError('username')}</span>` : ''}
                     </div>
 
                     <!-- Age Field -->
                     <div class="mb-4">
-                        <label for="age" class="block mb-2">Age (required, min: 18, max: 120)</label>
-                        <input
-                            type="number"
-                            id="age"
-                            .value="${bind(this, 'age')}"
-                            @input="${(e: Event) => this.handleInput('age', e)}"
-                            @blur="${(e: Event) => this.handleBlur('age', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('age') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'age' }, 'Age (required, min: 18, max: 120)')}
+                        ${component(Input, {
+                            type: 'number', id: 'age', '.value': this.age,
+                            variant: this.hasError('age') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('age'),
+                            '@input': (e: Event) => this.handleInput('age', e),
+                            '@blur': (e: Event) => this.handleBlur('age', e),
+                        })}
                         ${this.hasError('age') ? html`<span class="text-red-500 text-sm">${this.getError('age')}</span>` : ''}
                     </div>
 
                     <!-- Website Field -->
                     <div class="mb-4">
-                        <label for="website" class="block mb-2">Website (url)</label>
-                        <input
-                            type="url"
-                            id="website"
-                            .value="${bind(this, 'website')}"
-                            @input="${(e: Event) => this.handleInput('website', e)}"
-                            @blur="${(e: Event) => this.handleBlur('website', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('website') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'website' }, 'Website (url)')}
+                        ${component(Input, {
+                            type: 'url', id: 'website', '.value': this.website,
+                            variant: this.hasError('website') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('website'),
+                            '@input': (e: Event) => this.handleInput('website', e),
+                            '@blur': (e: Event) => this.handleBlur('website', e),
+                        })}
                         ${this.hasError('website') ? html`<span class="text-red-500 text-sm">${this.getError('website')}</span>` : ''}
                     </div>
 
                     <!-- Discount Code Field (customAsync validation) -->
                     <div class="mb-4">
-                        <label for="discountCode" class="block mb-2">Discount Code (optional, async server validation)</label>
-                        <input
-                            type="text"
-                            id="discountCode"
-                            placeholder="Try: SAVE10, SAVE20, WELCOME, VIP50"
-                            .value="${bind(this, 'discountCode')}"
-                            @input="${(e: Event) => this.handleInput('discountCode', e)}"
-                            @blur="${(e: Event) => this.handleBlur('discountCode', e)}"
-                            class="w-full p-2 border rounded ${this.hasError('discountCode') ? 'border-red-500' : 'border-gray-300'}"
-                        />
+                        ${component(Label, { for: 'discountCode' }, 'Discount Code (optional, async server validation)')}
+                        ${component(Input, {
+                            type: 'text', id: 'discountCode', placeholder: 'Try: SAVE10, SAVE20, WELCOME, VIP50',
+                            '.value': this.discountCode,
+                            variant: this.hasError('discountCode') ? 'error' : 'default',
+                            'aria-invalid': this.hasError('discountCode'),
+                            '@input': (e: Event) => this.handleInput('discountCode', e),
+                            '@blur': (e: Event) => this.handleBlur('discountCode', e),
+                        })}
                         ${this.hasError('discountCode') ? html`<span class="text-red-500 text-sm">${this.getError('discountCode')}</span>` : ''}
                         <small class="text-gray-500 text-xs">Valid codes: SAVE10, SAVE20, WELCOME, VIP50</small>
                     </div>
 
-                    <button type="submit" class="py-3 px-6 bg-blue-500 text-white border-none rounded cursor-pointer">
-                        Submit
-                    </button>
+                    ${component(Button, { type: 'submit' }, 'Submit')}
                 </form>
 
                 ${this.submitted ? html`
-                    <div class="mt-8 p-4 bg-green-100 rounded">
-                        <h3 class="mt-0 text-green-800">Form submitted successfully!</h3>
+                    ${component(Alert, { variant: 'success', class: 'mt-8' }, html`
+                        <h3 class="font-semibold">Form submitted successfully!</h3>
                         <pre class="bg-white p-4 rounded overflow-x-auto">${JSON.stringify(this.formData, null, 2)}</pre>
-                    </div>
+                    `)}
                 ` : ''}
             </div>
         `;
