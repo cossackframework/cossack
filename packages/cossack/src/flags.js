@@ -24,6 +24,8 @@ const KNOWN_BOOL = new Set([
   'ni',
   'yes',
   'y',
+  'help',
+  'h',
 ]);
 
 export function parseFlags(argv) {

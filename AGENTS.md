@@ -29,8 +29,8 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`auth`**: Auth package
 -   **`database`**: Database support — Kysely-based query builder with D1 + Turso dialects, migrations, and seeders. Re-exports Kysely. Included by default in new projects (the framework stays decoupled — no hard dependency); use `cossack add database` to add to existing projects.
 -   **`test-utils`**: Test helpers
--   **`create-cossack-app`**: `create-cossack-app` CLI.
--   **`cossack`**: Newer `cossack` CLI. Which also depends on `create-cossack-app` for scaffolding.
+-   **`scaffold`**: Node-only recipe engine for creation and feature composition.
+-   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.
 -   **`ui`**: UI components package. shadcn-ui inspired components.
 
 ## 4. Development Workflow

@@ -11,4 +11,15 @@ describe('parseFlags', () => {
     expect(short.flags.ni).toBe(true);
     expect(short.args).toEqual(['hello']);
   });
+
+  it('treats command help flags as booleans before positional arguments', () => {
+    expect(parseFlags(['--help', 'node'])).toEqual({
+      flags: { help: true },
+      args: ['node'],
+    });
+    expect(parseFlags(['-h', 'cloudflare'])).toEqual({
+      flags: { h: true },
+      args: ['cloudflare'],
+    });
+  });
 });

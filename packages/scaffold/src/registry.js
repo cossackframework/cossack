@@ -1,5 +1,6 @@
 export const ADAPTERS = ['cloudflare', 'node'];
 export const FEATURES = ['ui', 'database', 'auth', 'dashboard', 'examples'];
+export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
 export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
@@ -61,20 +62,12 @@ export function resolveFeatures(explicit) {
 }
 
 export function removeFeature(explicit, feature) {
-  const selected = new Set(parseList(explicit));
-  assertKnown([...selected], FEATURES, 'feature');
+  const requested = parseList(explicit);
+  assertKnown(requested, FEATURES, 'feature');
   assertKnown([feature], FEATURES, 'feature');
-  selected.delete(feature);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const selectedFeature of [...selected]) {
-      if (FEATURE_REGISTRY[selectedFeature].requires.some((required) => !selected.has(required))) {
-        selected.delete(selectedFeature);
-        changed = true;
-      }
-    }
-  }
+  const selected = new Set(requested.filter((selectedFeature) =>
+    !resolveFeatures([selectedFeature]).includes(feature),
+  ));
   return FEATURES.filter((candidate) => selected.has(candidate));
 }
 
@@ -86,7 +79,7 @@ export function resolveDashboardModules(value, dashboardSelected) {
 }
 
 export function resolveRecipe(options = {}) {
-  const adapter = options.adapter ?? 'cloudflare';
+  const adapter = options.adapter ?? options.runtime ?? 'cloudflare';
   if (!ADAPTERS.includes(adapter)) {
     throw new Error(`Unknown adapter "${adapter}". Supported values: ${ADAPTERS.join(', ')}`);
   }
@@ -115,6 +108,19 @@ export function resolveRecipe(options = {}) {
 
   const oauth = parseList(options.oauth);
   assertKnown(oauth, OAUTH_PROVIDERS, 'OAuth provider');
+  const authMethods = options.authMethods === undefined
+    ? (oauth.length ? ['credentials', 'oauth'] : ['credentials'])
+    : parseList(options.authMethods);
+  assertKnown(authMethods, AUTH_METHODS, 'auth method');
+  if (resolvedFeatures.includes('auth') && authMethods.length === 0) {
+    throw new Error(`Select at least one auth method: ${AUTH_METHODS.join(', ')}`);
+  }
+  if (resolvedFeatures.includes('auth') && authMethods.includes('oauth') && oauth.length === 0) {
+    throw new Error(`OAuth authentication requires at least one provider: ${OAUTH_PROVIDERS.join(', ')}`);
+  }
+  if (!authMethods.includes('oauth') && oauth.length) {
+    throw new Error('OAuth providers were configured but the oauth auth method is not enabled');
+  }
   const theme = options.theme ?? 'default';
   assertKnown([theme], UI_THEMES, 'UI theme');
 
@@ -131,6 +137,6 @@ export function resolveRecipe(options = {}) {
     explicitFeatures,
     resolvedFeatures,
     dashboardModules,
-    config: { database, oauth, theme },
+    config: { database, authMethods, oauth, theme },
   };
 }

@@ -15,6 +15,8 @@ export async function addCommand(args, ctx) {
     const root = await findProjectRoot(ctx.cwd);
     const result = await addFeature(root, feature, {
       database: flagString(ctx.flags.database) ?? flagString(ctx.flags.dialect),
+      runtime: flagString(ctx.flags.runtime),
+      authMethods: ctx.flags['auth-methods'],
       oauth: ctx.flags.oauth,
       theme: flagString(ctx.flags.theme),
       features: feature === 'dashboard' && ctx.flags.features !== undefined
@@ -35,7 +37,7 @@ export async function addCommand(args, ctx) {
       return 0;
     }
 
-    const automaticallyAdded = result.recipe.resolvedFeatures.filter(
+    const automaticallyAdded = result.addedFeatures.filter(
       (item) => item !== feature,
     );
     console.log(
@@ -57,6 +59,7 @@ export async function addCommand(args, ctx) {
     }
     return 0;
   } catch (error) {
+    if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
     console.error(`  error   ${error.message}`);
     return 1;
   }
@@ -67,6 +70,8 @@ export function addHelp() {
 
 Options:
   --database <d1|sqlite|turso>
+  --runtime <cloudflare|node>
+  --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
   --features <users,sessions,settings,roles>  Dashboard modules

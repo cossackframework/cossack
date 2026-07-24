@@ -13,7 +13,8 @@ pnpm cossack create my-app
 cd my-app
 ```
 
-It's available via the project's `devDependency` on `cossack`, usually through `pnpm`-script shortcuts like `pnpm dev`, `pnpm build`, and `pnpm start`.
+It's available through the generated project's `cossack` dependency, usually
+via scripts such as `pnpm dev`, `pnpm build`, and `pnpm start`.
 
 ### Globally (optional)
 
@@ -43,7 +44,9 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `start` | Start the production server. |
 | `generate <type> <name>` (`g`) | Generate a page/component/layout/middleware/service/model/migration/seeder. |
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
-| `add <feature>` | Add a feature — `auth`, `database`, or `ui`. |
+| `add <feature>` | Add `ui`, `database`, `auth`, `dashboard`, or `examples`. |
+| `remove <feature>` | Remove a feature and anything that depends on it. |
+| `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
 | `migration <sub>` (`migrate`) | Run Kysely migrations (`up`, `down`, `status`). |
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
@@ -78,9 +81,14 @@ cossack g component UserCard
 cossack g migration create_posts
 
 # Add features
-cossack add database --dialect d1
-cossack add auth --path admin/auth --oauth github
-cossack add ui --theme dark
+cossack add database --database d1
+cossack add auth --auth-methods credentials,oauth --oauth github
+cossack add dashboard --features users,sessions
+cossack remove database
+
+# Switch runtimes (configuration/code only; database data is not migrated)
+cossack adapter node
+cossack adapter cloudflare --database=turso
 
 # Database lifecycle
 cossack migration up
@@ -97,11 +105,12 @@ cossack upgrade --apply-template
 
 The CLI is a small, dependency-light Node.js program (no `commander`/`yargs`). Commands are registered in [`src/dispatch.js`](./src/dispatch.js); each command lives in [`src/commands/`](./src/commands) and follows the contract `async function run(args, ctx): Promise<exitCode>`. Generated file contents are pure template functions in [`src/templates.js`](./src/templates.js) (string in, string out) for easy testing.
 
-Scaffolding is powered by [`@cossackframework/scaffold`](../scaffold). Both
-`cossack create` and `create-cossack-app` resolve the same recipe and write a
-schema-v2 `.cossack/scaffold.json` manifest with capability ownership and
-baseline hashes. `cossack add` composes features into that recipe, while
-`cossack upgrade` re-renders only the installed capabilities.
+Scaffolding is powered by [`@cossackframework/scaffold`](../scaffold).
+`cossack create` writes a schema-v2 `.cossack/scaffold.json` manifest with
+capability ownership and baseline hashes. `cossack add` composes features,
+`cossack remove` removes features and their dependents, `cossack adapter`
+re-renders the recorded recipe for another runtime, and `cossack upgrade`
+re-renders only the installed capabilities.
 
 Available presets are `minimal`, `database`, `auth`, and `full-stack`.
 Composable features are `ui`, `database`, `auth`, `dashboard`, and `examples`.

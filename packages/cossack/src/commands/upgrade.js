@@ -13,7 +13,6 @@ import {
   hashFile,
 } from '../fs-utils.js';
 import { flagString, flagList } from '../flags.js';
-import { detectAdapter } from './start.js';
 
 const execFileP = promisify(execFile);
 const requireFromHere = createRequire(import.meta.url);
@@ -33,36 +32,6 @@ const EXCLUDE_FROM_SYNC = new Set([
   '.cossack/scaffold.json',
 ]);
 
-// Schema-v1 manifests predate recipe rendering and compare against the bundled
-// Cloudflare template. Protect files that older Node scaffolds rewrote. Schema
-// v2 renders adapter-specific files directly and does not need this fallback.
-const NODE_ADAPTER_REWRITES = new Set([
-  'src/index.ts',
-  'src/db/config.ts',
-  'vite.config.ts',
-  'worker-configuration.d.ts',
-]);
-
-/**
- * Resolve the effective adapter for a project. The manifest's recorded
- * `adapter` is authoritative; fall back to the wrangler-presence heuristic for
- * projects created by an older CLI that didn't write the field.
- */
-async function resolveAdapter(root, manifest) {
-  if (manifest && manifest.adapter) return manifest.adapter;
-  return detectAdapter(root);
-}
-
-/**
- * Files excluded from template sync for the given adapter. Node projects never
- * receive the bundled Cloudflare-flavored runtime files that
- * older scaffolding rewrote at create time.
- */
-function adapterExclusions(adapter) {
-  if (adapter === 'node') return NODE_ADAPTER_REWRITES;
-  return new Set();
-}
-
 export async function upgradeCommand(args, ctx) {
   const dir = args[0];
   const tag = flagString(ctx.flags.tag) || 'latest';
@@ -76,6 +45,12 @@ export async function upgradeCommand(args, ctx) {
   if (!projectPkg) {
     console.error('  error   no package.json found (is this a Cossack project?)');
     return 1;
+  }
+  const manifest = await readJsonIfExists(
+    path.join(root, '.cossack/scaffold.json'),
+  );
+  if (manifest && manifest.schemaVersion !== 2) {
+    throw unsupportedManifestError(manifest);
   }
 
   console.log(`Upgrading ${projectPkg.name || 'project'} at ${root}`);
@@ -96,7 +71,7 @@ export async function upgradeCommand(args, ctx) {
   }
 
   // 4. Drift report (always printed) + optional template apply.
-  const report = await buildDriftReport(root, ctx);
+  const report = await buildDriftReport(root);
   printReport(report);
 
   if (applyTemplate || ctx.force || forceFiles.length > 0) {
@@ -207,22 +182,6 @@ async function runInstall(pm, cwd) {
   }
 }
 
-let templateDirOverride = null;
-/** @internal test hook to point drift analysis at a synthetic template dir. */
-export function _setTemplateDirOverride(dir) {
-  templateDirOverride = dir;
-}
-
-async function bundledTemplateDir() {
-  if (templateDirOverride !== null) return templateDirOverride;
-  try {
-    const pkgPath = requireFromHere.resolve('@cossackframework/scaffold/package.json');
-    return path.join(path.dirname(pkgPath), 'template');
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Pure per-file drift classification.
  *  - baseline: hash recorded in .cossack/scaffold.json at create time
@@ -239,13 +198,11 @@ export function classifyFile({ baseline, current, newHash, excluded }) {
   return 'modified';
 }
 
-async function buildDriftReport(root, ctx) {
+async function buildDriftReport(root) {
   const manifest = await readJsonIfExists(
     path.join(root, '.cossack/scaffold.json'),
   );
-  const templateDir = await bundledTemplateDir();
-  const adapter = await resolveAdapter(root, manifest);
-  const extraExcluded = adapterExclusions(adapter);
+  const adapter = manifest?.runtime ?? manifest?.adapter;
 
   const report = {
     hasManifest: !!manifest,
@@ -255,64 +212,54 @@ async function buildDriftReport(root, ctx) {
     upToDate: [],
     excluded: [],
     missing: [],
-    templateAvailable: !!templateDir,
     rendered: null,
   };
 
   if (!manifest) return report;
-
-  if (manifest.schemaVersion === 2) {
-    const recipe = resolveRecipe({
-      adapter: manifest.runtime ?? manifest.adapter,
-      preset: 'minimal',
-      features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
-      database: manifest.config?.database,
-      oauth: manifest.config?.oauth,
-      theme: manifest.config?.theme,
-      dashboardModules: manifest.dashboardModules,
-    });
-    const rendered = await renderRecipe(recipe, {
-      projectName: projectPkgName(root),
-    });
-    report.rendered = rendered;
-    report.templateAvailable = true;
-    const paths = new Set([...Object.keys(manifest.files ?? {}), ...rendered.keys()]);
-    for (const rel of paths) {
-      const owned = manifest.files?.[rel];
-      const baseline = typeof owned === 'string' ? owned : owned?.hash;
-      const current = await hashFile(path.join(root, rel));
-      const candidate = rendered.get(rel);
-      const newHash = candidate
-        ? createHash('sha256').update(candidate.content).digest('hex')
-        : null;
-      const excluded = EXCLUDE_FROM_SYNC.has(rel);
-      if (!owned) {
-        if (current === null && candidate) report.canUpdate.push(rel);
-        else if (candidate && current === newHash) report.upToDate.push(rel);
-        else report.modified.push(rel);
-        continue;
-      }
-      const bucket = classifyFile({ baseline, current, newHash, excluded });
-      report[bucket].push(rel);
-    }
-    return report;
+  if (manifest.schemaVersion !== 2) {
+    throw unsupportedManifestError(manifest);
   }
-
-  const files = manifest.files || {};
-  for (const rel of Object.keys(files)) {
-    const baseline = files[rel];
+  const recipe = resolveRecipe({
+    adapter,
+    preset: 'minimal',
+    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+    database: manifest.config?.database,
+    authMethods: manifest.config?.authMethods,
+    oauth: manifest.config?.oauth,
+    theme: manifest.config?.theme,
+    dashboardModules: manifest.dashboardModules,
+  });
+  const rendered = await renderRecipe(recipe, {
+    projectName: projectPkgName(root),
+  });
+  report.rendered = rendered;
+  const paths = new Set([...Object.keys(manifest.files ?? {}), ...rendered.keys()]);
+  for (const rel of paths) {
+    const owned = manifest.files?.[rel];
+    const baseline = typeof owned === 'string' ? owned : owned?.hash;
     const current = await hashFile(path.join(root, rel));
-    const excluded = EXCLUDE_FROM_SYNC.has(rel) || extraExcluded.has(rel);
-
-    let newHash = null;
-    if (templateDir && current !== null && !excluded) {
-      newHash = await hashFile(path.join(templateDir, rel));
+    const candidate = rendered.get(rel);
+    const newHash = candidate
+      ? createHash('sha256').update(candidate.content).digest('hex')
+      : null;
+    const excluded = EXCLUDE_FROM_SYNC.has(rel);
+    if (!owned) {
+      if (current === null && candidate) report.canUpdate.push(rel);
+      else if (candidate && current === newHash) report.upToDate.push(rel);
+      else report.modified.push(rel);
+      continue;
     }
-
     const bucket = classifyFile({ baseline, current, newHash, excluded });
     report[bucket].push(rel);
   }
   return report;
+}
+
+function unsupportedManifestError(manifest) {
+  return new Error(
+    `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
+    'Recreate the project with the current alpha CLI.',
+  );
 }
 
 function projectPkgName(root) {
@@ -324,17 +271,9 @@ function printReport(report) {
   if (!report.hasManifest) {
     console.log(
       '  No .cossack/scaffold.json found — skipping file-level drift analysis.\n' +
-        '  (Only dependencies were updated. Projects created with an older CLI\n' +
-        '   may not have a manifest.)',
+        '  Only dependency versions were updated.',
     );
     return;
-  }
-  if (report.adapter === 'node') {
-    console.log(
-      '  Adapter: node — adapter-specific runtime files (src/index.ts,\n' +
-        '  src/db/config.ts, vite.config.ts) are excluded from sync because the\n' +
-        '  bundled template ships Cloudflare-flavored versions of them.',
-    );
   }
   section('Unchanged, update available', report.canUpdate);
   section('Modified by you (skipped)', report.modified);
@@ -351,12 +290,11 @@ function section(title, items) {
 }
 
 async function applyTemplateUpdates(root, report, forceFiles, ctx) {
-  const templateDir = await bundledTemplateDir();
   const applied = [];
   const forced = [];
 
-  if (!templateDir) {
-    console.error('  cannot apply: bundled template not available.');
+  if (!report.rendered) {
+    console.error('  cannot apply: schema-v2 recipe is unavailable.');
     return { applied, forced };
   }
 
@@ -368,11 +306,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       continue;
     }
     await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
-    if (report.rendered?.has(rel)) {
-      await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
-    } else {
-      await fs.copyFile(path.join(templateDir, rel), path.join(root, rel));
-    }
+    await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
     console.log(`  updated  ${rel}`);
     applied.push(rel);
   }
@@ -384,21 +318,14 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
   // Callers must name each intentional overwrite with --force-file instead.
   if (ctx.force) {
     for (const rel of report.missing) {
-      const src = path.join(templateDir, rel);
-      if (!report.rendered?.has(rel) && !(await exists(src))) {
-        continue;
-      }
+      if (!report.rendered.has(rel)) continue;
       if (ctx.dryRun) {
         console.log(`  would force-update  ${rel}`);
         forced.push(rel);
         continue;
       }
       await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
-      if (report.rendered?.has(rel)) {
-        await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
-      } else {
-        await fs.copyFile(src, path.join(root, rel));
-      }
+      await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
       console.log(`  force-updated  ${rel}`);
       forced.push(rel);
     }
@@ -410,23 +337,12 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
     }
   }
 
-  // Force-update specific modified/excluded files the user explicitly requested
-  // via --force-file <path> (surgical, even without --force). Refuse to copy a
-  // bundled-template file that belongs to a different adapter — forcing a
-  // Cloudflare runtime file (src/index.ts, vite.config.ts, ...) onto a Node
-  // project would silently break its runtime contract.
-  const extraExcluded = report.rendered ? new Set() : adapterExclusions(report.adapter);
+  // Force-update specific modified files the user explicitly requested via
+  // --force-file <path> (surgical, even without --force). Recipe rendering is
+  // runtime-aware, so cross-adapter template copies are impossible.
   for (const rel of forceFiles) {
-    if (extraExcluded.has(rel)) {
-      console.error(
-        `  cannot force: ${rel} is adapter-specific (adapter: ${report.adapter}). ` +
-          `Re-run \`cossack add\` or regenerate it for your adapter instead of copying the template.`,
-      );
-      continue;
-    }
-    const src = path.join(templateDir, rel);
-    if (!report.rendered?.has(rel) && !(await exists(src))) {
-      console.error(`  cannot force: ${rel} not in template`);
+    if (!report.rendered.has(rel)) {
+      console.error(`  cannot force: ${rel} is not owned by the recorded recipe`);
       continue;
     }
     if (ctx.dryRun) {
@@ -435,11 +351,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       continue;
     }
     await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
-    if (report.rendered?.has(rel)) {
-      await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
-    } else {
-      await fs.copyFile(src, path.join(root, rel));
-    }
+    await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
     console.log(`  force-updated  ${rel}`);
     forced.push(rel);
   }
@@ -460,16 +372,12 @@ async function refreshManifest(root, rels, rendered) {
   for (const rel of rels) {
     const h = await hashFile(path.join(root, rel));
     if (h) {
-      if (manifest.schemaVersion === 2) {
-        const previous = manifest.files[rel];
-        manifest.files[rel] = {
-          capability: rendered?.get(rel)?.capability ??
-            (typeof previous === 'object' ? previous.capability : 'base'),
-          hash: h,
-        };
-      } else {
-        manifest.files[rel] = h;
-      }
+      const previous = manifest.files[rel];
+      manifest.files[rel] = {
+        capability: rendered?.get(rel)?.capability ??
+          (typeof previous === 'object' ? previous.capability : 'base'),
+        hash: h,
+      };
     }
   }
   manifest.templateVersion = await readTemplateVersion();

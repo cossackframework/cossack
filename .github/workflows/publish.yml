@@ -17,7 +17,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,7 +42,11 @@ jobs:
           pnpm --filter @cossackframework/database vitest --run
           pnpm --filter @cossackframework/ui test -- --run
           pnpm --filter @cossackframework/framework vitest --run tests/
+          pnpm --filter @cossackframework/scaffold test
           pnpm --filter cossack vitest --run
+
+      - name: Test generated app with local package tarballs
+        run: pnpm run test:scaffold:local
 
       - name: Publish @cossackframework/renderer
         run: pnpm publish --filter @cossackframework/renderer --access public --no-git-checks
@@ -80,13 +84,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish create-cossack-app
-        run: pnpm publish --filter create-cossack-app --access public --no-git-checks
+      - name: Publish @cossackframework/scaffold
+        run: pnpm publish --filter @cossackframework/scaffold --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # cossack must publish LAST: it depends on @cossackframework/framework and
-      # create-cossack-app, both of which are published above. It is plain JS
+      # @cossackframework/scaffold, both of which are published above. It is plain JS
       # (no build step) — ships bin/ and src/ directly.
       - name: Publish cossack
         run: pnpm publish --filter cossack --access public --no-git-checks

@@ -58,10 +58,49 @@ Scaffold a new Cossack project in a directory named `<name>`. Prompts for the ru
 
 ```bash
 cossack create my-app
-cossack create my-app --adapter node
+cossack create my-app --adapter node --preset full-stack
 ```
 
-`cossack create` and `create-cossack-app` produce identical projects and both write a `.cossack/scaffold.json` manifest used by `cossack upgrade` for template-drift detection.
+`cossack create` writes a `.cossack/scaffold.json` manifest used by
+`cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
+
+### `cossack adapter <node|cloudflare>`
+
+Switch an existing schema-v2 scaffolded project to one active runtime. The
+command re-renders the complete recorded recipe, previews the change set,
+preserves installed features and unrelated local edits, and updates the
+manifest and `package.json` runtime metadata.
+
+```bash
+cossack adapter node
+cossack adapter cloudflare --database=turso
+cossack adapter node --database=sqlite --yes
+```
+
+**Options**
+
+| Option | Description |
+| --- | --- |
+| `--database <d1\|sqlite\|turso>` | Select a provider supported by the target runtime. Required for non-interactive or dry-run D1 → Node and SQLite → Cloudflare switches. |
+| `--yes` | Apply without confirmation. |
+| `--dry-run` | Preview every write, deletion, and preserved edit without changing files. |
+| `--force` | Replace or delete conflicting runtime/provider-specific files. Unrelated application edits remain protected. |
+
+Turso works with either runtime and is preserved unless another provider is
+selected. D1 must change to SQLite or Turso when targeting Node; SQLite must
+change to D1 or Turso when targeting Cloudflare. If database support is not
+installed, the target runtime default is recorded silently.
+
+Recognized application, OAuth, and Turso values are transferred between `.env`
+and `.dev.vars`; existing target-file values win, and the source file is never
+deleted. Local environment files remain gitignored and are not added to the
+scaffold manifest.
+
+> **Database data is not migrated.** The command changes application code and
+> configuration only. Deployment resources, D1/SQLite/Turso contents,
+> lockfiles, and dependency installation remain your responsibility. After a
+> successful switch, run the install command printed by the CLI, configure the
+> selected provider, and run `cossack migration up` where appropriate.
 
 ### `cossack dev`
 
@@ -169,11 +208,12 @@ cossack add <feature> [options]
 
 Adds `@cossackframework/database` (Kysely with D1 and Turso dialects), a default `User` model, starter migrations (`users`, `sessions`, `roles`, `permissions`, `oauth_accounts`, `cache_items`), a seeder, `src/db/config.ts`, the `dbMiddleware`, and the D1 binding in `wrangler.jsonc`. Prompts for the dialect (default: D1).
 
-> **Note:** Database support is included by default in new projects created via `create-cossack-app`. Use this command only to add it to an existing project that predates it.
+> **Note:** The Database and Full Stack presets include database support. Use
+> this command for Minimal projects or to compose it later.
 
 ```bash
 cossack add database
-cossack add database --dialect turso
+cossack add database --database turso
 ```
 
 #### `cossack add auth`
@@ -182,17 +222,36 @@ Adds full working session authentication: `@cossackframework/auth` plus the `dat
 
 ```bash
 cossack add auth
-cossack add auth --path admin/auth
-cossack add auth --oauth github,google
+cossack add auth --auth-methods credentials,oauth --oauth github,google
 ```
 
 **Options**
 
 | Option | Description |
 | --- | --- |
-| `--path <route-group>` | Custom route group for the auth pages (default: `(auth)`). |
-| `--oauth <providers>` | Generate OAuth provider config. Comma-separated or repeated: `github`, `google`, `gitlab`, `facebook`, `microsoft`. Bare `--oauth` prompts interactively. |
-| `--dialect <d1\|turso>` | Database dialect to scaffold (default: prompt, or `d1`). |
+| `--auth-methods <methods>` | `credentials`, `oauth`, or both. |
+| `--oauth <providers>` | OAuth providers: `github`, `google`, `gitlab`, `facebook`, `microsoft`. |
+| `--database <d1\|sqlite\|turso>` | Database provider, validated against the runtime. |
+
+#### `cossack add dashboard`
+
+Adds the authenticated dashboard shell and every module by default. Select a
+subset with `--features`.
+
+```bash
+cossack add dashboard
+cossack add dashboard --features users,sessions
+```
+
+#### `cossack remove <feature>`
+
+Removes a feature and dependent features. Automatically installed
+prerequisites are removed when no remaining feature needs them.
+
+```bash
+cossack remove dashboard
+cossack remove database --dry-run
+```
 
 See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md) for the concepts these files implement.
 
@@ -323,7 +382,7 @@ Upgrade Cossack dependencies in the current project and report template drift. *
 ```bash
 cossack upgrade                       # bump deps + print drift report
 cossack upgrade --apply-template      # also update files you have NOT edited
-cossack upgrade --force               # overwrite ALL edited files + restore deleted ones (destructive)
+cossack upgrade --force               # apply safe updates + restore deleted files
 cossack upgrade --force-file <path>   # surgically overwrite one file, even if edited
 ```
 
@@ -333,7 +392,7 @@ cossack upgrade --force-file <path>   # surgically overwrite one file, even if e
 | --- | --- |
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
 | `--apply-template` | Update scaffolded files you have **not** modified. Modified files are always skipped. |
-| `--force` | Overwrite **all** modified files and restore any deleted ones from the template. Destructive — local edits are lost. Implies `--apply-template`. |
+| `--force` | Apply safe updates and restore deleted scaffold files. Locally modified files remain protected. |
 | `--force-file <path>` | Force-update one specific file even if you modified it. May be repeated. |
 | `--dry-run` | Show what would happen without writing. |
 

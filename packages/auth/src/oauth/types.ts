@@ -170,10 +170,12 @@ export interface OAuthCookieOptions {
 
 export interface CreateOAuthConfig {
     /**
-     * HMAC-SHA256 signing secret for the state/PKCE cookie. Provide via env,
-     * e.g. `env.OAUTH_STATE_SECRET`. Should be at least 32 bytes of entropy.
+     * HMAC-SHA256 signing secret for the state/PKCE cookie. Provide a string
+     * or a request-scoped resolver for runtimes such as Cloudflare Workers,
+     * where bindings are available only through `c.env`. The resolved value
+     * must contain at least 16 characters and should have 32 bytes of entropy.
      */
-    secret: string;
+    secret: string | ((c: Context) => string | Promise<string>);
     /**
      * Per-provider credentials. First-party keys (`github`, `google`,
      * `gitlab`, `facebook`, `microsoft`) are typed with their specific option

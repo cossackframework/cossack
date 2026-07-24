@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { createApp } from '@cossackframework/scaffold';
+import { renderBanner } from '../banner.js';
 import { flagString } from '../flags.js';
 
 export async function createCommand(args, ctx) {
@@ -16,6 +17,7 @@ export async function createCommand(args, ctx) {
   }
 
   try {
+    console.log(`${renderBanner()}\n`);
     const yes = ctx.flags.yes === true || ctx.flags.y === true;
     const { projectDir, adapter: used, recipe, status } = await createApp(projectName, {
       cwd: ctx.cwd,
@@ -23,6 +25,7 @@ export async function createCommand(args, ctx) {
       preset: flagString(ctx.flags.preset),
       features: ctx.flags.features,
       database: flagString(ctx.flags.database),
+      authMethods: ctx.flags['auth-methods'],
       oauth: ctx.flags.oauth,
       theme: flagString(ctx.flags.theme),
       dashboardModules: ctx.flags['dashboard-features'],
@@ -47,6 +50,7 @@ export async function createCommand(args, ctx) {
     }
     return 0;
   } catch (error) {
+    if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
     console.error('Error creating Cossack app:', error.message);
     return 1;
   }
@@ -62,6 +66,7 @@ Options:
   --preset <minimal|database|auth|full-stack>
   --features <ui,database,auth,dashboard,examples>
   --database <d1|sqlite|turso>
+  --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
   --dashboard-features <users,sessions,settings,roles>

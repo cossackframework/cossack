@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Cossack, PageOptions, User } from '@cossackframework/core';
+import { Cossack, Page, PageOptions, User } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 import {
     setSupportedLocales,
     setDefaultLocale,
@@ -13,7 +14,6 @@ import {
     getDefaultLocale,
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
-import { App } from './App.js';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { runWithConfig, buildConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config.js';
 import type { Context } from 'hono';
@@ -50,6 +50,19 @@ interface SsgRoute {
 interface LayoutStackItem {
   path: string;
   instance: Cossack;
+}
+
+/**
+ * Server-safe last-resort App for direct renderSsgPage() callers that do not
+ * supply their project App. Keep this local: importing the framework demo App
+ * eagerly evaluates browser-only decorator metadata such as KeyboardEvent in
+ * the Node SSG process.
+ */
+@Page({ transport: 'http' })
+class SsgFallbackApp extends Cossack {
+  render() {
+    return html`${this.children}`;
+  }
 }
 
 /**
@@ -225,16 +238,17 @@ export async function renderSsgPage(
 
   // Bootstrap App
   if (!AppComponent) {
-    // No user App was supplied — falling back to the framework's demo App.
+    // No user App was supplied — use a neutral wrapper so direct API calls can
+    // still render without evaluating a browser-oriented component in Node.
     // This is almost always a plumbing mistake (the SSG entry should import and
     // pass the project's own `App`), and results in the wrong <title>/head and
     // missing global tags. Warn loudly so it's not silent.
     console.warn(
-      '[cossack/ssg] No AppComponent was passed to renderSsgPage(); falling back to the framework default App. ' +
+      '[cossack/ssg] No AppComponent was passed to renderSsgPage(); falling back to a minimal server-safe App. ' +
         'Pass your App (e.g. via `cossack ssg` or renderSsgPage(..., App)) so your head()/title are applied.',
     );
   }
-  const appInstance = new (AppComponent ?? App)();
+  const appInstance = new (AppComponent ?? SsgFallbackApp)();
   await appInstance.bootstrap({ context: mockContext, user, env: envBindings, page: routePath });
 
   // Bootstrap Layouts
@@ -365,12 +379,21 @@ function createMockContext(
   baseUrl: string = 'https://example.com',
 ): Context {
   const fullUrl = params ? replaceParams(path, params) : path;
+  const rawRequest = new Request(`${baseUrl}${fullUrl}`);
 
-  // Create a minimal Hono context mock
+  // Create a minimal Hono context mock backed by a real Request. Hono helpers
+  // such as getCookie() read `c.req.raw.headers`; a shape-only req object makes
+  // App/layout/page lifecycle methods fail during SSG even though `this.c`
+  // itself is defined.
   const mockContext = {
     req: {
+      raw: rawRequest,
       path: path,
-      url: `${baseUrl}${fullUrl}`,
+      url: rawRequest.url,
+      method: rawRequest.method,
+      header: (name?: string) => name
+        ? rawRequest.headers.get(name) ?? undefined
+        : Object.fromEntries(rawRequest.headers.entries()),
       param: (key?: string) => {
         if (key && params) {
           return params[key];

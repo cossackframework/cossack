@@ -7,7 +7,9 @@ description: "VSCode snippets for common scaffolding tasks including pages, layo
 
 Cossack ships with VSCode snippets to speed up common scaffolding tasks. They are scoped to TypeScript files and activate via prefix triggers.
 
-Snippets are included automatically when you scaffold a new app with `create-cossack-app`. For existing projects, copy `.vscode/cossack.code-snippets` into your project's `.vscode/` directory.
+Snippets are included automatically when you scaffold a new app with
+`cossack create`. For existing projects, copy
+`.vscode/cossack.code-snippets` into your project's `.vscode/` directory.
 
 ## Scaffolding Snippets
 

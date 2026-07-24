@@ -22,7 +22,8 @@ Cossack ships a database layer built on [Kysely](https://kysely.dev) — a type-
 
 ## Quick start
 
-Database support ships with every new project created via `create-cossack-app`. To add it to an existing project that predates it:
+Select the Database or Full Stack preset with `cossack create`, or add database
+support to an existing project:
 
 ```sh
 npx cossack add database

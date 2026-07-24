@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import {
   ADAPTERS,
   FEATURES,
+  AUTH_METHODS,
   OAUTH_PROVIDERS,
   UI_THEMES,
   DASHBOARD_MODULES,
@@ -22,6 +23,7 @@ import {
 export {
   ADAPTERS,
   FEATURES,
+  AUTH_METHODS,
   OAUTH_PROVIDERS,
   UI_THEMES,
   DASHBOARD_MODULES,
@@ -40,8 +42,143 @@ const templateDir = path.join(packageDir, 'template');
 const templateVersion = JSON.parse(
   await fs.readFile(path.join(packageDir, 'package.json'), 'utf8'),
 ).version;
+const BETTER_SQLITE3_VERSION = '^13.0.1';
 const text = (value) => Buffer.from(value, 'utf8');
 const hash = (content) => createHash('sha256').update(content).digest('hex');
+const LOCAL_ENV_CAPABILITY = 'local-environment';
+const LOCAL_ENV_PATHS = new Set(['.env', '.dev.vars']);
+const ADAPTER_PATHS = new Set([
+  '.env.example',
+  '.dev.vars.example',
+  'package.json',
+  'scripts/dev.js',
+  'src/config/database.ts',
+  'src/db/config.ts',
+  'src/index.ts',
+  'tsconfig.json',
+  'vite.config.ts',
+  'worker-configuration.d.ts',
+  'wrangler.jsonc',
+]);
+const TRANSFERRED_ENV_NAMES = new Set([
+  'APP_NAME',
+  'APP_ENV',
+  'APP_DEBUG',
+  'APP_URL',
+  'APP_LOCALE',
+  'APP_FALLBACK_LOCALE',
+  'APP_SECRET',
+  'PORT',
+  'CACHE_DRIVER',
+  'CORS_ENABLED',
+  'CORS_ORIGINS',
+  'AUTH_REDIRECT_AFTER_LOGIN',
+  'AUTH_REDIRECT_AFTER_LOGOUT',
+  'MAIL_FROM',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_SECURE',
+  'SMTP_USER',
+  'SMTP_PASS',
+  'OAUTH_SECRET',
+  'TURSO_URL',
+  'TURSO_TOKEN',
+  ...OAUTH_PROVIDERS.flatMap((provider) => {
+    const prefix = provider.toUpperCase();
+    return [`${prefix}_CLIENT_ID`, `${prefix}_CLIENT_SECRET`];
+  }),
+]);
+
+export class PromptAbortedError extends Error {
+  constructor() {
+    super('Prompt aborted');
+    this.name = 'PromptAbortedError';
+    this.code = 'COSSACK_PROMPT_ABORTED';
+  }
+}
+
+let promptRunner = prompts;
+let promptInputOverride;
+
+/** @internal Test hook for deterministic prompt navigation/cancellation tests. */
+export function _setPromptTestOverrides(overrides = undefined) {
+  promptRunner = overrides?.prompt ?? prompts;
+  promptInputOverride = overrides?.input;
+}
+
+function questionWithPreviousValue(question, previousValue) {
+  const prepared = { ...question };
+  delete prepared.when;
+  if (previousValue === undefined) return prepared;
+  if (prepared.type === 'select') {
+    const index = prepared.choices.findIndex((choice) => choice.value === previousValue);
+    if (index >= 0) prepared.initial = index;
+  } else if (prepared.type === 'multiselect') {
+    const selected = new Set(previousValue);
+    prepared.choices = prepared.choices.map((choice) => ({
+      ...choice,
+      selected: selected.has(choice.value),
+    }));
+  } else {
+    prepared.initial = previousValue;
+  }
+  return prepared;
+}
+
+async function promptOne(question, previousValue) {
+  let cancelKind = 'abort';
+  let cancelled = false;
+  const input = question.stdin ?? promptInputOverride ?? process.stdin;
+  const observeKey = (_input, key = {}) => {
+    if (key.name === 'escape') cancelKind = 'back';
+    else if ((key.ctrl && key.name === 'c') || (key.ctrl && key.name === 'd')) {
+      cancelKind = 'abort';
+    }
+  };
+  input.on?.('keypress', observeKey);
+  try {
+    const prepared = questionWithPreviousValue(question, previousValue);
+    const answer = await promptRunner(prepared, {
+      onCancel: () => {
+        cancelled = true;
+        return false;
+      },
+    });
+    if (cancelled) {
+      if (cancelKind === 'back') return { action: 'back' };
+      throw new PromptAbortedError();
+    }
+    return { action: 'submit', value: answer[question.name] };
+  } finally {
+    input.removeListener?.('keypress', observeKey);
+  }
+}
+
+async function promptWizard(questions, initialAnswers = {}, startAtLast = false) {
+  const answers = { ...initialAnswers };
+  let cursor = startAtLast ? Number.POSITIVE_INFINITY : 0;
+  while (true) {
+    const active = questions.filter((question) =>
+      !question.when || question.when(answers),
+    );
+    if (cursor === Number.POSITIVE_INFINITY) cursor = Math.max(0, active.length - 1);
+    if (cursor >= active.length) return answers;
+    const rawQuestion = active[cursor];
+    const question = {
+      ...rawQuestion,
+      choices: typeof rawQuestion.choices === 'function'
+        ? rawQuestion.choices(answers)
+        : rawQuestion.choices,
+    };
+    const result = await promptOne(question, answers[question.name]);
+    if (result.action === 'back') {
+      cursor = Math.max(0, cursor - 1);
+      continue;
+    }
+    answers[question.name] = result.value;
+    cursor += 1;
+  }
+}
 
 const BASE_PATHS = new Set([
   '.prettierrc.json',
@@ -85,6 +222,11 @@ const AUTH_PATHS = new Set([
   'src/pages/auth/layout.ts',
   'src/pages/auth/login/index.ts',
   'src/pages/auth/register/index.ts',
+  'src/pages/auth/reset-password/index.ts',
+]);
+const CREDENTIAL_AUTH_PATHS = new Set([
+  'src/pages/auth/register/index.ts',
+  'src/pages/auth/forgot-password/index.ts',
   'src/pages/auth/reset-password/index.ts',
 ]);
 const DASHBOARD_CORE_PATHS = new Set([
@@ -214,7 +356,8 @@ function wranglerConfig(recipe, projectName) {
   const database = recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1'
     ? `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "<database_id>"\n  }]`
     : '';
-  const email = recipe.resolvedFeatures.includes('auth')
+  const email = recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('credentials')
     ? `,\n  "send_email": [{ "name": "EMAIL" }]`
     : '';
   return `{
@@ -255,7 +398,10 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = '^1.13.0';
     dependencies.ws = '^8.18.0';
-    if (recipe.config.database === 'sqlite') dependencies['better-sqlite3'] = '^11.0.0';
+    if (recipe.resolvedFeatures.includes('database') &&
+        recipe.config.database === 'sqlite') {
+      dependencies['better-sqlite3'] = BETTER_SQLITE3_VERSION;
+    }
   }
   const devDependencies = {
     '@types/node': '^22.0.0',
@@ -271,24 +417,42 @@ function packageJson(recipe, projectName) {
     devDependencies.wrangler = '^4.110.0';
   } else {
     devDependencies['@types/ws'] = '^8.18.0';
-    if (recipe.config.database === 'sqlite') devDependencies['@types/better-sqlite3'] = '^7.6.13';
+    if (recipe.resolvedFeatures.includes('database') &&
+        recipe.config.database === 'sqlite') {
+      devDependencies['@types/better-sqlite3'] = '^7.6.13';
+    }
   }
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    devDependencies['better-sqlite3'] = '^11.0.0';
+    devDependencies['better-sqlite3'] = BETTER_SQLITE3_VERSION;
     devDependencies['@types/better-sqlite3'] = '^7.6.13';
+  }
+  const scripts = recipe.adapter === 'node'
+    ? {
+        dev: 'node --env-file-if-exists=.env scripts/dev.js',
+        build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
+        start: 'node --env-file-if-exists=.env dist/server/index.js',
+      }
+    : {
+        dev: 'vite dev',
+        build: 'vite build',
+        'build:ssg': 'vite build && cossack ssg',
+        deploy: 'vite build && cossack ssg && wrangler deploy',
+      };
+  if (recipe.adapter === 'node' &&
+      recipe.resolvedFeatures.includes('database') &&
+      recipe.config.database === 'sqlite') {
+    scripts.migrate = 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up';
+    scripts.postinstall = 'pnpm run migrate';
   }
   return JSON.stringify({
     name: projectName,
     type: 'module',
     description: 'The Borderless TypeScript Framework',
-    scripts: recipe.adapter === 'node'
-      ? { dev: 'node scripts/dev.js', build: 'vite build', start: 'node dist/server/index.js' }
-      : {
-          dev: 'vite dev',
-          build: 'vite build',
-          'build:ssg': 'vite build && cossack ssg',
-          deploy: 'vite build && cossack ssg && wrangler deploy',
-        },
+    cossack: { runtime: recipe.adapter },
+    pnpm: {
+      onlyBuiltDependencies: ['better-sqlite3', 'esbuild', 'sharp', 'workerd'],
+    },
+    scripts,
     dependencies,
     devDependencies,
   }, null, 2) + '\n';
@@ -331,16 +495,37 @@ export async function getCliClient(): Promise<DbClient> {
 `;
 }
 
-function nodeEntry() {
+function oauthRouteBlock(providers) {
+  if (!providers.length) return '';
+  return providers.map((provider) => `app.get(
+  '/auth/${provider}/redirect',
+  oauth.redirect('${provider}'),
+);
+app.get(
+  '/auth/${provider}/callback',
+  oauth.callback('${provider}', { onUser: handleOAuthUser }),
+);`).join('\n');
+}
+
+function nodeEntry(providers = []) {
+  const oauthImport = providers.length
+    ? "import { oauth, handleOAuthUser } from './auth';\n"
+    : '';
+  const routes = oauthRouteBlock(providers);
   return `import 'reflect-metadata';
 import { serve } from '@hono/node-server';
 import { pathToFileURL } from 'node:url';
 import { createApp } from '@cossackframework/framework/router';
 import { App } from './App';
 import { template } from './root';
+${oauthImport}
 
 export const app = createApp({ AppComponent: App, htmlTemplate: template });
-export const env: Record<string, unknown> = { DB_PATH: process.env.DB_PATH ?? './database.sqlite' };
+${routes}
+export const env: Record<string, unknown> = {
+  ...process.env,
+  DB_PATH: process.env.DB_PATH ?? './database.sqlite',
+};
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   serve({ fetch: (request) => app.fetch(request, env), port: Number(process.env.PORT) || 3000 });
@@ -425,35 +610,85 @@ export default {
 `;
 }
 
-function oauthConfig(providers) {
-  return `export const oauthProviders = ${JSON.stringify(providers)} as const;
-export type OAuthProvider = typeof oauthProviders[number];
-`;
-}
-
 function applyOauthToAuth(content, providers) {
   if (!providers.length) return content;
   const providerConfig = providers.map((provider) => {
     const prefix = provider.toUpperCase();
     return `    ${provider}: {
-      clientId: process.env.${prefix}_CLIENT_ID!,
-      clientSecret: process.env.${prefix}_CLIENT_SECRET!,
+      clientId: String(c.env.${prefix}_CLIENT_ID ?? ''),
+      clientSecret: String(c.env.${prefix}_CLIENT_SECRET ?? ''),
       redirectUrl: \`/auth/${provider}/callback\`,
     },`;
+  }).join('\n');
+  const providerEnvironment = providers.map((provider) => {
+    const prefix = provider.toUpperCase();
+    return `  ${provider}: {
+    clientId: '${prefix}_CLIENT_ID',
+    clientSecret: '${prefix}_CLIENT_SECRET',
+  },`;
   }).join('\n');
   return content
     .replace(
       "import { createAuth } from '@cossackframework/auth';",
-      "import { createAuth, createOAuth, type OAuthUser, type TokenSet } from '@cossackframework/auth';",
+      "import { createAuth, createOAuth, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';",
     )
     .concat(`
 
-export const oauth = createOAuth({
-  secret: process.env.OAUTH_SECRET!,
-  providers: {
+const oauthProviderEnvironment = {
+${providerEnvironment}
+} as const;
+
+function oauthConfigurationError(c: Context, provider: string): string | null {
+  const providerEnvironment =
+    oauthProviderEnvironment[provider as keyof typeof oauthProviderEnvironment];
+  if (!providerEnvironment) {
+    return \`Provider "\${provider}" is not enabled for this application.\`;
+  }
+
+  const missing = [
+    providerEnvironment.clientId,
+    providerEnvironment.clientSecret,
+  ].filter((name) => !String(c.env[name] ?? '').trim());
+  if (missing.length) {
+    return \`Set \${missing.join(' and ')} before using \${provider} OAuth.\`;
+  }
+
+  if (String(c.env.OAUTH_SECRET ?? '').length < 16) {
+    return 'Set OAUTH_SECRET to a random value of at least 16 characters (32+ bytes recommended).';
+  }
+  return null;
+}
+
+function oauthUnavailable(c: Context, provider: string, message: string): Response {
+  console.warn(\`[Cossack OAuth] \${provider} is unavailable: \${message}\`);
+  return c.json({
+    error: 'OAuth is not configured',
+    provider,
+    message,
+  }, 503);
+}
+
+function createOAuthForRequest(c: Context): OAuthKit {
+  return createOAuth({
+    secret: String(c.env.OAUTH_SECRET ?? ''),
+    providers: {
 ${providerConfig}
+    },
+  });
+}
+
+export const oauth: OAuthKit = {
+  redirect: (provider) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, provider, error);
+    return createOAuthForRequest(c).redirect(provider)(c, next);
   },
-});
+  callback: (provider, options) => async (c, next) => {
+    const error = oauthConfigurationError(c, provider);
+    if (error) return oauthUnavailable(c, provider, error);
+    return createOAuthForRequest(c).callback(provider, options)(c, next);
+  },
+};
 
 export async function handleOAuthUser(oauthUser: OAuthUser, _tokens: TokenSet, c: Context) {
   const user = {
@@ -472,6 +707,22 @@ export async function handleOAuthUser(oauthUser: OAuthUser, _tokens: TokenSet, c
 `);
 }
 
+const OAUTH_PROVIDER_ICONS = {
+  github: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02.8-.22 1.65-.33 2.5-.33.85 0 1.7.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48C19.14 20.16 22 16.42 22 12c0-5.52-4.48-10-10-10z"/></svg>',
+  google: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09A6.5 6.5 0 0 1 5.49 12c0-.73.13-1.43.35-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.45 1.18 4.93z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>',
+  gitlab: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="#FC6D26"><path d="m23.96 13.59-1.35-4.14-2.66-8.2a.46.46 0 0 0-.87 0l-2.67 8.2H7.59l-2.67-8.2a.46.46 0 0 0-.87 0l-2.66 8.2-1.35 4.14a.91.91 0 0 0 .33 1.01L12 23.05l11.63-8.45a.91.91 0 0 0 .33-1.01z"/></svg>',
+  facebook: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0" fill="#1877F2"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.26h3.33l-.53 3.49h-2.8V24C19.61 23.09 24 18.1 24 12.07z"/></svg>',
+  microsoft: '<svg aria-hidden="true" viewBox="0 0 24 24" class="size-4 shrink-0"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>',
+};
+
+const OAUTH_PROVIDER_LABELS = {
+  github: 'GitHub',
+  google: 'Google',
+  gitlab: 'GitLab',
+  facebook: 'Facebook',
+  microsoft: 'Microsoft',
+};
+
 function withoutRbacQueries(content) {
   return content.replace(
     /\/\/ Reads a user's assigned roles[\s\S]*?\n}\n\nfunction parsePermissions[\s\S]*?\n}\n\n\/\/ --- Session create/,
@@ -484,15 +735,175 @@ async function loadUserRoles(_userId: string): Promise<RoleAssignment[]> {
   );
 }
 
-function applyOauthToLogin(content, providers) {
+function applyOauthToLogin(content, providers, authMethods) {
   if (!providers.length) return content;
-  const buttons = providers.map((provider) =>
-    `            ${'${'}component(Button, { variant: 'outline', block: true }, html\`<a href="/auth/${provider}/redirect" class="block w-full text-center">Sign in with ${provider[0].toUpperCase() + provider.slice(1)}</a>\`)}`
-  ).join('\n');
+  const buttons = providers.map((provider) => {
+    const label = OAUTH_PROVIDER_LABELS[provider];
+    return `                <a href="/auth/${provider}/redirect" data-oauth-provider="${provider}" class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                    ${OAUTH_PROVIDER_ICONS[provider]}
+                    <span>Continue with ${label}</span>
+                </a>`;
+  }).join('\n');
+  const oauthButtons = `            <div class="mt-4 space-y-2" aria-label="OAuth sign in options">
+${buttons}
+            </div>`;
+
+  if (!authMethods.includes('credentials')) {
+    return content
+      .replace(/\n            <form @submit="[\s\S]*?<\/form>/, `\n${oauthButtons}`)
+      .replace(/\n            <p class="mt-6[\s\S]*?<\/p>/, '');
+  }
+
+  const separator = `            <div class="mt-6 flex items-center gap-3" aria-hidden="true">
+                <div class="h-px flex-1 bg-border"></div>
+                <span class="text-xs font-medium uppercase text-muted-foreground">or</span>
+                <div class="h-px flex-1 bg-border"></div>
+            </div>`;
   return content.replace(
-    '            <form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">',
-    `${buttons}\n            <div class="my-4 text-center text-sm text-muted-foreground">— or —</div>\n            <form @submit="\${(e: Event) => this.handleSubmit(e)}" class="space-y-4">`,
+    '\n            </form>\n            <p class="mt-6',
+    `\n            </form>\n${separator}\n${oauthButtons}\n            <p class="mt-6`,
   );
+}
+
+function generateAuthSecret() {
+  return randomBytes(32).toString('base64url');
+}
+
+function ensureEnvironmentSecrets(recipe, existingSecrets) {
+  const needsOAuthSecret = recipe.resolvedFeatures.includes('auth') &&
+    recipe.config.authMethods.includes('oauth');
+  const needsAppSecret = recipe.adapter === 'node';
+  return {
+    ...recipe,
+    config: {
+      ...recipe.config,
+      ...(needsAppSecret
+        ? {
+            appSecret: existingSecrets?.appSecret ??
+              recipe.config.appSecret ??
+              generateAuthSecret(),
+          }
+        : {}),
+      ...(needsOAuthSecret
+        ? {
+            authSecret: existingSecrets?.authSecret ??
+              recipe.config.authSecret ??
+              generateAuthSecret(),
+          }
+        : {}),
+    },
+  };
+}
+
+function publicRecipe(recipe) {
+  const {
+    appSecret: _appSecret,
+    authSecret: _authSecret,
+    ...config
+  } = recipe.config;
+  return { ...recipe, config };
+}
+
+function mergeEnvironmentContent(existing, values) {
+  const normalized = existing && !existing.endsWith('\n') ? `${existing}\n` : (existing ?? '');
+  let result = normalized;
+  for (const [name, value] of values) {
+    const pattern = new RegExp(`^${name}=(.*)$`, 'm');
+    const current = result.match(pattern);
+    if (!current) {
+      result += `${name}=${value}\n`;
+    } else if (!current[1] && value) {
+      result = result.replace(pattern, `${name}=${value}`);
+    }
+  }
+  return result;
+}
+
+function nodeEnvironmentValues(recipe, projectName, example = false) {
+  const values = [
+    ['APP_NAME', projectName],
+    ['APP_ENV', 'development'],
+    ['APP_DEBUG', 'true'],
+    ['APP_URL', 'http://localhost:3000'],
+    ['APP_LOCALE', 'en'],
+    ['APP_FALLBACK_LOCALE', 'en'],
+    ['APP_SECRET', example
+      ? 'replace-with-a-random-32-byte-secret'
+      : (recipe.config.appSecret ?? generateAuthSecret())],
+    ['PORT', '3000'],
+    ['CACHE_DRIVER', 'memory'],
+    ['CORS_ENABLED', 'true'],
+    ['CORS_ORIGINS', 'http://localhost:3000'],
+  ];
+  if (recipe.resolvedFeatures.includes('database')) {
+    values.push(['DB_CONNECTION', recipe.config.database]);
+    if (recipe.config.database === 'sqlite') {
+      values.push(['DB_PATH', './database.sqlite']);
+    } else if (recipe.config.database === 'turso') {
+      values.push(['TURSO_URL', example ? 'libsql://your-database.turso.io' : '']);
+      values.push(['TURSO_TOKEN', example ? 'your-turso-token' : '']);
+    }
+  }
+  if (recipe.resolvedFeatures.includes('auth')) {
+    values.push(['AUTH_REDIRECT_AFTER_LOGIN',
+      recipe.resolvedFeatures.includes('dashboard') ? '/dashboard' : '/']);
+    values.push(['AUTH_REDIRECT_AFTER_LOGOUT', '/auth/login']);
+    if (recipe.config.authMethods.includes('credentials')) {
+      values.push(['MAIL_FROM', 'no-reply@localhost']);
+      values.push(['SMTP_HOST', '']);
+      values.push(['SMTP_PORT', '587']);
+      values.push(['SMTP_SECURE', 'false']);
+      values.push(['SMTP_USER', '']);
+      values.push(['SMTP_PASS', '']);
+    }
+    if (recipe.config.authMethods.includes('oauth')) {
+      values.push(['OAUTH_SECRET', example
+        ? 'replace-with-a-random-32-byte-secret'
+        : (recipe.config.authSecret ?? generateAuthSecret())]);
+      for (const provider of recipe.config.oauth) {
+        const prefix = provider.toUpperCase();
+        values.push([`${prefix}_CLIENT_ID`, example ? `your-${provider}-client-id` : '']);
+        values.push([`${prefix}_CLIENT_SECRET`, example ? `your-${provider}-client-secret` : '']);
+      }
+    }
+  }
+  return values;
+}
+
+function oauthEnvironmentValues(recipe, example = false) {
+  const values = [
+    ['OAUTH_SECRET', example
+      ? 'replace-with-a-random-32-byte-secret'
+      : (recipe.config.authSecret ?? generateAuthSecret())],
+  ];
+  for (const provider of recipe.config.oauth) {
+    const prefix = provider.toUpperCase();
+    values.push([`${prefix}_CLIENT_ID`, example ? `your-${provider}-client-id` : '']);
+    values.push([`${prefix}_CLIENT_SECRET`, example ? `your-${provider}-client-secret` : '']);
+  }
+  return values;
+}
+
+function environmentExample(values) {
+  return values.map(([name, value]) => `${name}=${value}`).join('\n') + '\n';
+}
+
+async function readEnvironment(projectDir, adapter) {
+  const rel = adapter === 'node' ? '.env' : '.dev.vars';
+  try {
+    const content = await fs.readFile(path.join(projectDir, rel), 'utf8');
+    const read = (name) => content.match(new RegExp(`^${name}=(.+)$`, 'm'))?.[1]?.trim();
+    return {
+      rel,
+      content,
+      secrets: {
+        appSecret: read('APP_SECRET'),
+        authSecret: read('OAUTH_SECRET'),
+      },
+    };
+  } catch {
+    return { rel, content: '', secrets: {} };
+  }
 }
 
 function applyTheme(content, theme) {
@@ -505,10 +916,20 @@ export async function renderRecipe(recipe, options = {}) {
   const files = new Map();
   for (const rel of await walk(templateDir)) {
     if (rel === 'package.json') continue;
+    if (CREDENTIAL_AUTH_PATHS.has(rel) &&
+        !recipe.config.authMethods.includes('credentials')) continue;
+    if (rel === 'src/migrations/0005_create_oauth_accounts.ts' &&
+        !recipe.config.authMethods.includes('oauth')) continue;
     const capability = capabilityFor(rel, recipe);
     if (!capability) continue;
     let content = await fs.readFile(path.join(templateDir, rel));
     if (rel === 'src/style.css') content = text(applyTheme(content.toString('utf8'), recipe.config.theme));
+    if (rel === 'src/config/database.ts') {
+      content = text(content.toString('utf8').replace(
+        "default: env('DB_CONNECTION', 'd1')",
+        `default: env('DB_CONNECTION', '${recipe.config.database}')`,
+      ));
+    }
     if (rel === 'src/config/auth.ts' && !recipe.resolvedFeatures.includes('dashboard')) {
       content = text(content.toString('utf8').replace(
         "env('AUTH_REDIRECT_AFTER_LOGIN', '/dashboard')",
@@ -523,10 +944,24 @@ export async function renderRecipe(recipe, options = {}) {
       content = text(applyOauthToAuth(authContent, recipe.config.oauth));
     }
     if (rel === 'src/pages/auth/login/index.ts') {
-      content = text(applyOauthToLogin(content.toString('utf8'), recipe.config.oauth));
+      content = text(applyOauthToLogin(
+        content.toString('utf8'),
+        recipe.config.oauth,
+        recipe.config.authMethods,
+      ));
     }
     if (recipe.adapter === 'node' && ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
-    if (recipe.adapter === 'node' && rel === 'src/index.ts') content = text(nodeEntry());
+    if (recipe.adapter === 'node' && rel === 'src/index.ts') {
+      content = text(nodeEntry(
+        recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
+      ));
+    }
+    if (recipe.adapter === 'node' && rel === 'scripts/dev.js') {
+      content = text(content.toString('utf8').replace(
+        '  const env = {\\n    DB_PATH:',
+        '  const env = {\\n    ...process.env,\\n    DB_PATH:',
+      ));
+    }
     if (recipe.adapter === 'node' && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
     }
@@ -553,6 +988,10 @@ export async function renderRecipe(recipe, options = {}) {
     content: text(middlewareRegistry(recipe)),
     capability: 'base',
   });
+  files.set('.gitignore', {
+    content: text('node_modules/\ndist/\n.env\n.dev.vars\n'),
+    capability: 'base',
+  });
 
   if (!recipe.resolvedFeatures.includes('ui')) {
     files.set('src/App.ts', { content: text(minimalApp()), capability: 'base' });
@@ -574,12 +1013,6 @@ export async function renderRecipe(recipe, options = {}) {
         capability: 'database',
       });
     }
-  }
-  if (recipe.resolvedFeatures.includes('auth')) {
-    files.set('src/config/oauth.ts', {
-      content: text(oauthConfig(recipe.config.oauth)),
-      capability: 'auth',
-    });
   }
   if (recipe.resolvedFeatures.includes('ui')) {
     files.set('src/components/ui/index.ts', {
@@ -610,6 +1043,51 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
+  if (recipe.adapter === 'cloudflare' &&
+      recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('oauth')) {
+    const entry = files.get('src/index.ts');
+    const source = entry.content.toString('utf8')
+      .replace(
+        "import { template } from './root';",
+        "import { template } from './root';\nimport { oauth, handleOAuthUser } from './auth';",
+      )
+      .replace(
+        '\nexport { AppDurableObject };',
+        `\n${oauthRouteBlock(recipe.config.oauth)}\n\nexport { AppDurableObject };`,
+      );
+    files.set('src/index.ts', { ...entry, content: text(source) });
+  }
+  if (recipe.adapter === 'node') {
+    const projectName = options.projectName ?? 'my-cossack-app';
+    const values = nodeEnvironmentValues(recipe, projectName);
+    files.set('.env', {
+      content: text(mergeEnvironmentContent(
+        options.environmentContent ?? options.authEnvContent,
+        values,
+      )),
+      capability: LOCAL_ENV_CAPABILITY,
+    });
+    files.set('.env.example', {
+      content: text(environmentExample(
+        nodeEnvironmentValues(recipe, projectName, true),
+      )),
+      capability: 'base',
+    });
+  } else if (recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('oauth')) {
+    files.set('.dev.vars', {
+      content: text(mergeEnvironmentContent(
+        options.environmentContent ?? options.authEnvContent,
+        oauthEnvironmentValues(recipe),
+      )),
+      capability: LOCAL_ENV_CAPABILITY,
+    });
+    files.set('.dev.vars.example', {
+      content: text(environmentExample(oauthEnvironmentValues(recipe, true))),
+      capability: 'auth',
+    });
+  }
   return files;
 }
 
@@ -630,6 +1108,25 @@ export async function readManifest(projectDir) {
   }
 }
 
+export async function detectProjectRuntime(projectDir, manifest = undefined) {
+  const resolvedManifest = manifest === undefined ? await readManifest(projectDir) : manifest;
+  const recorded = resolvedManifest?.runtime ?? resolvedManifest?.adapter;
+  if (ADAPTERS.includes(recorded)) return recorded;
+  let pkg = null;
+  try {
+    pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
+  } catch {
+    // Runtime detection can still use adapter-specific files.
+  }
+  const packageRuntime = pkg?.cossack?.runtime;
+  if (ADAPTERS.includes(packageRuntime)) return packageRuntime;
+  const dependencies = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
+  if (dependencies['@cossackframework/node-adapter']) return 'node';
+  if (dependencies['@cloudflare/vite-plugin'] || dependencies.wrangler) return 'cloudflare';
+  if (await access(path.join(projectDir, 'wrangler.jsonc'))) return 'cloudflare';
+  return undefined;
+}
+
 async function currentHash(file) {
   try {
     return hash(await fs.readFile(file));
@@ -642,17 +1139,38 @@ async function buildPlan(projectDir, rendered, manifest, force = false) {
   const writes = [];
   const deletes = [];
   const conflicts = [];
+  const preserved = [];
   const owned = manifest?.files ?? {};
+  const canForce = (rel) => typeof force === 'function' ? force(rel) : force;
 
   for (const [rel, entry] of rendered) {
     const absolute = path.join(projectDir, rel);
     const existingHash = await currentHash(absolute);
     const nextHash = hash(entry.content);
-    if (existingHash === nextHash) continue;
     const baseline = typeof owned[rel] === 'string' ? owned[rel] : owned[rel]?.hash;
+    if (existingHash === nextHash) {
+      if (existingHash !== null && !baseline) {
+        preserved.push({
+          path: rel,
+          capability: entry.capability,
+          reason: 'user-owned',
+        });
+      }
+      continue;
+    }
     const userOwned = existingHash !== null && !baseline;
     const modified = baseline && existingHash !== baseline;
-    if ((userOwned || modified) && rel !== 'package.json' && !force) {
+    const recipeChanged = baseline && nextHash !== baseline;
+    const mergeSafe = rel === 'package.json' || entry.capability === LOCAL_ENV_CAPABILITY;
+    if (modified && !recipeChanged && !mergeSafe && !canForce(rel)) {
+      preserved.push({
+        path: rel,
+        capability: entry.capability,
+        reason: existingHash === null ? 'locally-deleted' : 'locally-modified',
+      });
+      continue;
+    }
+    if ((userOwned || (modified && recipeChanged)) && !mergeSafe && !canForce(rel)) {
       conflicts.push(rel);
       continue;
     }
@@ -661,16 +1179,18 @@ async function buildPlan(projectDir, rendered, manifest, force = false) {
 
   for (const [rel, ownedEntry] of Object.entries(owned)) {
     if (rendered.has(rel)) continue;
+    if (LOCAL_ENV_PATHS.has(rel) ||
+        ownedEntry.capability === LOCAL_ENV_CAPABILITY) continue;
     const baseline = typeof ownedEntry === 'string' ? ownedEntry : ownedEntry.hash;
     const existingHash = await currentHash(path.join(projectDir, rel));
     if (existingHash === null) continue;
-    if (existingHash !== baseline && !force) {
+    if (existingHash !== baseline && !canForce(rel)) {
       conflicts.push(rel);
       continue;
     }
     deletes.push({ path: rel, capability: ownedEntry.capability ?? 'base' });
   }
-  return { writes, deletes, conflicts };
+  return { writes, deletes, conflicts, preserved };
 }
 
 export async function planChanges(projectDir, recipe, manifest = undefined) {
@@ -680,16 +1200,66 @@ export async function planChanges(projectDir, recipe, manifest = undefined) {
   return buildPlan(projectDir, rendered, resolvedManifest);
 }
 
-async function mergePackage(projectDir, rendered) {
+function mergePackageSection(
+  current = {},
+  desired = {},
+  previous = {},
+  forceManaged = false,
+) {
+  const merged = { ...desired };
+  for (const [name, currentValue] of Object.entries(current)) {
+    if (name in desired) continue;
+    if (name in previous &&
+        (forceManaged || currentValue === previous[name])) continue;
+    merged[name] = currentValue;
+  }
+  return merged;
+}
+
+async function mergePackage(
+  projectDir,
+  rendered,
+  previousRendered = undefined,
+  forceManaged = false,
+) {
   const entry = rendered.get('package.json');
   if (!entry || !(await access(path.join(projectDir, 'package.json')))) return;
   const current = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
   const desired = JSON.parse(entry.content.toString('utf8'));
+  const previousEntry = previousRendered?.get('package.json');
+  const previous = previousEntry
+    ? JSON.parse(previousEntry.content.toString('utf8'))
+    : {};
+  const allowedBuilds = [
+    ...(current.pnpm?.onlyBuiltDependencies ?? []),
+    ...(desired.pnpm?.onlyBuiltDependencies ?? []),
+  ];
   const merged = {
     ...current,
-    scripts: { ...(current.scripts ?? {}), ...(desired.scripts ?? {}) },
-    dependencies: { ...(current.dependencies ?? {}), ...(desired.dependencies ?? {}) },
-    devDependencies: { ...(current.devDependencies ?? {}), ...(desired.devDependencies ?? {}) },
+    cossack: { ...(current.cossack ?? {}), ...(desired.cossack ?? {}) },
+    pnpm: {
+      ...(current.pnpm ?? {}),
+      ...(desired.pnpm ?? {}),
+      onlyBuiltDependencies: [...new Set(allowedBuilds)],
+    },
+    scripts: mergePackageSection(
+      current.scripts,
+      desired.scripts,
+      previous.scripts,
+      forceManaged,
+    ),
+    dependencies: mergePackageSection(
+      current.dependencies,
+      desired.dependencies,
+      previous.dependencies,
+      forceManaged,
+    ),
+    devDependencies: mergePackageSection(
+      current.devDependencies,
+      desired.devDependencies,
+      previous.devDependencies,
+      forceManaged,
+    ),
   };
   entry.content = text(JSON.stringify(merged, null, 2) + '\n');
 }
@@ -704,9 +1274,31 @@ async function applyPlan(projectDir, rendered, plan) {
   }
 }
 
-export async function writeManifest(projectDir, recipe, rendered) {
+export async function writeManifest(
+  projectDir,
+  recipe,
+  rendered,
+  previousManifest = undefined,
+  plan = undefined,
+) {
   const files = {};
+  const written = plan
+    ? new Set(plan.writes.map((change) => change.path))
+    : undefined;
   for (const [rel, entry] of rendered) {
+    if (entry.capability === LOCAL_ENV_CAPABILITY) continue;
+    const previous = previousManifest?.files?.[rel];
+    if (plan && !written.has(rel)) {
+      if (previous) {
+        files[rel] = {
+          capability: entry.capability,
+          hash: typeof previous === 'string' ? previous : previous.hash,
+        };
+      }
+      // A matching pre-existing file without a prior manifest entry remains
+      // user-owned; rendering the same bytes does not transfer ownership.
+      continue;
+    }
     const contentHash = await currentHash(path.join(projectDir, rel));
     if (contentHash) files[rel] = { capability: entry.capability, hash: contentHash };
   }
@@ -721,24 +1313,65 @@ export async function writeManifest(projectDir, recipe, rendered) {
     explicitFeatures: recipe.explicitFeatures,
     resolvedFeatures: recipe.resolvedFeatures,
     dashboardModules: recipe.dashboardModules,
-    config: recipe.config,
+    config: publicRecipe(recipe).config,
     files,
   };
   const manifestDir = path.join(projectDir, '.cossack');
   await fs.mkdir(manifestDir, { recursive: true });
   const manifestPath = path.join(manifestDir, 'scaffold.json');
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  const temporaryPath = path.join(
+    manifestDir,
+    `.scaffold.json.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
+  );
+  try {
+    await fs.writeFile(temporaryPath, JSON.stringify(manifest, null, 2) + '\n');
+    await fs.rename(temporaryPath, manifestPath);
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true });
+    throw error;
+  }
   return manifestPath;
 }
 
-async function promptCreationOptions(options) {
+function databaseChoices(adapter, includeAll = false) {
+  return Object.entries(DATABASE_PROVIDERS)
+    .filter(([, value]) => includeAll || value.adapters.includes(adapter))
+    .map(([value, definition]) => ({
+      title: `${value}${includeAll ? ` (${definition.adapters.join(' / ')})` : ''}`,
+      value,
+    }));
+}
+
+function authMethodChoices() {
+  return [
+    {
+      title: 'Username/password',
+      value: 'credentials',
+      description: 'Email/password login, registration, and password reset.',
+      selected: true,
+    },
+    {
+      title: 'OAuth',
+      value: 'oauth',
+      description: 'Sign in through one or more external providers.',
+    },
+  ];
+}
+
+async function promptCreationOptions(options, previous = {}, startAtLast = false) {
   if (options.interactive !== true) return options;
-  let cancelled = false;
-  const onCancel = () => {
-    cancelled = true;
-    return false;
-  };
-  const primary = await prompts([
+  const recipeFor = (answers) => resolveRecipe({
+    ...options,
+    ...answers,
+    authMethods: 'credentials',
+    oauth: undefined,
+  });
+  const initialAuthMethods = options.authMethods ??
+    previous.authMethods ??
+    (options.oauth !== undefined && parseList(options.oauth).length
+      ? ['credentials', 'oauth']
+      : ['credentials']);
+  const questions = [
     !options.adapter && {
       type: 'select', name: 'adapter', message: 'Runtime adapter',
       choices: [{ title: 'Cloudflare Workers', value: 'cloudflare' }, { title: 'Node.js', value: 'node' }],
@@ -747,90 +1380,138 @@ async function promptCreationOptions(options) {
       type: 'select', name: 'preset', message: 'Project preset', initial: 3,
       choices: Object.keys(PRESET_REGISTRY).map((value) => ({ title: value, value })),
     },
-  ].filter(Boolean), { onCancel });
-  const selected = { ...options, ...primary };
-  if (cancelled) return { ...selected, _cancelled: true };
-  const provisional = resolveRecipe(selected);
-  const configuration = await prompts([
-    provisional.resolvedFeatures.includes('database') && options.database === undefined && {
+    options.database === undefined && {
       type: 'select', name: 'database', message: 'Database provider',
-      choices: Object.entries(DATABASE_PROVIDERS)
-        .filter(([, value]) => value.adapters.includes(provisional.adapter))
-        .map(([value]) => ({ title: value, value })),
+      choices: (answers) => databaseChoices(recipeFor(answers).adapter),
+      when: (answers) => recipeFor(answers).resolvedFeatures.includes('database'),
     },
-    provisional.resolvedFeatures.includes('ui') && options.theme === undefined && {
+    options.theme === undefined && {
       type: 'select', name: 'theme', message: 'UI theme',
       choices: UI_THEMES.map((value) => ({ title: value, value })),
+      when: (answers) => recipeFor(answers).resolvedFeatures.includes('ui'),
     },
-    provisional.resolvedFeatures.includes('auth') && options.oauth === undefined && {
-      type: 'multiselect', name: 'oauth', message: 'OAuth providers (optional)',
+    options.authMethods === undefined &&
+      options.oauth === undefined && {
+      type: 'multiselect',
+      name: 'authMethods',
+      message: 'Authentication methods',
+      choices: authMethodChoices(),
+      validate: (value) => value.length > 0 || 'Select at least one authentication method',
+      when: (answers) => recipeFor(answers).resolvedFeatures.includes('auth'),
+    },
+    options.oauth === undefined && {
+      type: 'multiselect', name: 'oauth', message: 'OAuth providers',
       choices: OAUTH_PROVIDERS.map((value) => ({ title: value, value })),
+      validate: (value) => value.length > 0 || 'Select at least one OAuth provider',
+      when: (answers) =>
+        recipeFor(answers).resolvedFeatures.includes('auth') &&
+        parseList(answers.authMethods).includes('oauth'),
     },
-    provisional.resolvedFeatures.includes('dashboard') &&
-      options.dashboardModules === undefined &&
+    options.dashboardModules === undefined &&
       options.dashboardFeatures === undefined && {
         type: 'multiselect',
         name: 'dashboardModules',
         message: 'Dashboard modules',
         choices: DASHBOARD_MODULES.map((value) => ({ title: value, value, selected: true })),
+        when: (answers) => recipeFor(answers).resolvedFeatures.includes('dashboard'),
       },
-  ].filter(Boolean), { onCancel });
-  return { ...selected, ...configuration, _cancelled: cancelled };
+  ].filter(Boolean);
+  const answers = await promptWizard(
+    questions,
+    { ...previous, ...options, authMethods: initialAuthMethods },
+    startAtLast,
+  );
+  if (!parseList(answers.authMethods).includes('oauth')) {
+    answers.oauth = [];
+  }
+  return { ...options, ...answers };
 }
 
-async function confirmPlan(plan, options) {
+async function confirmPlan(plan, options, summary = undefined) {
   if (options.yes || options.confirm === false || options.interactive !== true) return true;
   console.log('\nPlanned scaffold changes:');
+  if (summary?.requested) console.log(`  requested  ${summary.requested}`);
+  if (summary?.prerequisites?.length) {
+    console.log(`  includes   ${summary.prerequisites.join(', ')}`);
+  }
+  if (summary?.dashboardModules?.length) {
+    console.log(`  modules    ${summary.dashboardModules.join(', ')}`);
+  }
   for (const change of plan.writes) {
     console.log(`  ${change.overwrite ? 'update' : 'create'}  ${change.path}  [${change.capability}]`);
   }
   for (const change of plan.deletes) {
     console.log(`  delete  ${change.path}  [${change.capability}]`);
   }
-  const response = await prompts({
+  for (const change of plan.preserved) {
+    console.log(`  preserve  ${change.path}  [${change.reason}]`);
+  }
+  const result = await promptOne({
     type: 'confirm',
     name: 'confirmed',
     message: `Apply ${plan.writes.length} write(s) and ${plan.deletes.length} deletion(s)?`,
     initial: true,
   });
-  return response.confirmed === true;
+  if (result.action === 'back') return 'back';
+  return result.value === true;
 }
 
 export async function createApp(projectName, options = {}) {
   if (!projectName) throw new Error('Please provide a project name');
-  const prompted = await promptCreationOptions(options);
-  const projectDir = path.resolve(prompted.cwd ?? process.cwd(), projectName);
-  if (prompted._cancelled) {
+  let previous = {};
+  let startAtLast = false;
+  while (true) {
+    const prompted = await promptCreationOptions(options, previous, startAtLast);
+    const projectDir = path.resolve(prompted.cwd ?? process.cwd(), projectName);
+    const recipe = ensureEnvironmentSecrets(resolveRecipe(prompted));
+    if (await access(projectDir) && (await fs.readdir(projectDir)).length > 0 && !prompted.force) {
+      throw new Error(`Target directory is not empty: ${projectDir}`);
+    }
+    const rendered = await renderRecipe(recipe, {
+      projectName: path.basename(projectDir),
+      authSecret: recipe.config.authSecret,
+    });
+    const plan = await buildPlan(projectDir, rendered, null, prompted.force);
+    if (plan.conflicts.length) throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}`);
+    const confirmation = await confirmPlan(plan, prompted, {
+      requested: `preset:${recipe.preset}`,
+      prerequisites: recipe.resolvedFeatures,
+      dashboardModules: recipe.dashboardModules,
+    });
+    if (confirmation === 'back') {
+      previous = prompted;
+      startAtLast = true;
+      continue;
+    }
+    if (!confirmation) {
+      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe, status: 'cancelled' };
+    }
+    await applyPlan(projectDir, rendered, plan);
+    const manifestPath = await writeManifest(projectDir, recipe, rendered, undefined, plan);
     return {
+      status: 'created',
       projectDir,
-      adapter: prompted.adapter ?? 'cloudflare',
-      manifestPath: path.join(projectDir, '.cossack/scaffold.json'),
-      recipe: resolveRecipe({ ...prompted, interactive: false }),
-      status: 'cancelled',
+      adapter: recipe.adapter,
+      manifestPath,
+      recipe: publicRecipe(recipe),
     };
   }
-  const recipe = resolveRecipe(prompted);
-  if (await access(projectDir) && (await fs.readdir(projectDir)).length > 0 && !prompted.force) {
-    throw new Error(`Target directory is not empty: ${projectDir}`);
-  }
-  const rendered = await renderRecipe(recipe, { projectName: path.basename(projectDir) });
-  const plan = await buildPlan(projectDir, rendered, null, prompted.force);
-  if (plan.conflicts.length) throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}`);
-  if (!await confirmPlan(plan, prompted)) {
-    return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe, status: 'cancelled' };
-  }
-  await applyPlan(projectDir, rendered, plan);
-  const manifestPath = await writeManifest(projectDir, recipe, rendered);
-  return { projectDir, adapter: recipe.adapter, manifestPath, recipe };
 }
 
 async function inferRecipe(projectDir, manifest) {
+  if (manifest && manifest.schemaVersion !== 2) {
+    throw new Error(
+      `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
+      'Recreate the project with the current alpha CLI.',
+    );
+  }
   if (manifest?.schemaVersion === 2) {
     return resolveRecipe({
       adapter: manifest.runtime ?? manifest.adapter,
       preset: 'minimal',
       features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
       database: manifest.config?.database,
+      authMethods: manifest.config?.authMethods,
       oauth: manifest.config?.oauth,
       theme: manifest.config?.theme,
       dashboardModules: manifest.dashboardModules,
@@ -842,25 +1523,440 @@ async function inferRecipe(projectDir, manifest) {
   if (dependencies['@cossackframework/ui']) features.push('ui');
   if (dependencies['@cossackframework/database']) features.push('database');
   if (dependencies['@cossackframework/auth']) features.push('auth');
-  return resolveRecipe({
-    adapter: await access(path.join(projectDir, 'wrangler.jsonc')) ? 'cloudflare' : 'node',
+  const runtime = await detectProjectRuntime(projectDir, manifest);
+  const recipe = resolveRecipe({
+    adapter: runtime ?? 'cloudflare',
     preset: 'minimal',
     features,
+    authMethods: features.includes('auth') ? 'credentials' : undefined,
   });
+  return runtime ? recipe : { ...recipe, adapter: 'unknown' };
 }
 
-async function promptAddOptions(current, feature, options) {
-  if (options.interactive !== true) return options;
-  const nextFeatures = resolveFeatures([...current.explicitFeatures, feature]);
+function runtimeFromDatabase(database) {
+  if (database === 'd1') return 'cloudflare';
+  if (database === 'sqlite') return 'node';
+  return undefined;
+}
+
+async function readLocalEnvironment(projectDir, rel) {
+  try {
+    return await fs.readFile(path.join(projectDir, rel), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function environmentValue(content, name) {
+  return content.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1]?.trim();
+}
+
+function transferEnvironmentValues(targetContent, sourceContent) {
+  const values = [];
+  for (const name of TRANSFERRED_ENV_NAMES) {
+    const value = environmentValue(sourceContent, name);
+    if (value) values.push([name, value]);
+  }
+  return mergeEnvironmentContent(targetContent, values);
+}
+
+function setEnvironmentValue(content, name, value) {
+  const pattern = new RegExp(`^${name}=.*$`, 'm');
+  if (pattern.test(content)) return content.replace(pattern, `${name}=${value}`);
+  const normalized = content && !content.endsWith('\n') ? `${content}\n` : content;
+  return `${normalized}${name}=${value}\n`;
+}
+
+function adapterEnvironmentDefaults(recipe) {
+  const values = [];
+  if (recipe.resolvedFeatures.includes('database')) {
+    values.push(['DB_CONNECTION', recipe.config.database]);
+    if (recipe.config.database === 'turso') {
+      values.push(['TURSO_URL', ''], ['TURSO_TOKEN', '']);
+    }
+  }
+  if (recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('oauth')) {
+    values.push(...oauthEnvironmentValues(recipe));
+  }
+  return values;
+}
+
+function changedPackageFields(current, previous, desired) {
+  const conflicts = [];
+  const inspect = (section, currentValues = {}, previousValues = {}, desiredValues = {}) => {
+    const managed = new Set([
+      ...Object.keys(previousValues),
+      ...Object.keys(desiredValues),
+    ]);
+    for (const name of managed) {
+      const before = previousValues[name];
+      const next = desiredValues[name];
+      if (before === next) continue;
+      const value = currentValues[name];
+      if (value !== before && value !== next) {
+        conflicts.push(`package.json#${section}.${name}`);
+      }
+    }
+  };
+  inspect('scripts', current.scripts, previous.scripts, desired.scripts);
+  inspect(
+    'dependencies',
+    current.dependencies,
+    previous.dependencies,
+    desired.dependencies,
+  );
+  inspect(
+    'devDependencies',
+    current.devDependencies,
+    previous.devDependencies,
+    desired.devDependencies,
+  );
+  const currentRuntime = current.cossack?.runtime;
+  const previousRuntime = previous.cossack?.runtime;
+  const desiredRuntime = desired.cossack?.runtime;
+  if (previousRuntime !== desiredRuntime &&
+      currentRuntime !== previousRuntime &&
+      currentRuntime !== desiredRuntime) {
+    conflicts.push('package.json#cossack.runtime');
+  }
+  return conflicts;
+}
+
+async function packageFieldConflicts(projectDir, previousRendered, rendered) {
+  const current = JSON.parse(
+    await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'),
+  );
+  const previous = JSON.parse(
+    previousRendered.get('package.json').content.toString('utf8'),
+  );
+  const desired = JSON.parse(
+    rendered.get('package.json').content.toString('utf8'),
+  );
+  return changedPackageFields(current, previous, desired);
+}
+
+async function applyPlanAndManifestAtomically(
+  projectDir,
+  rendered,
+  plan,
+  recipe,
+  manifest,
+) {
+  const manifestPath = path.join(projectDir, '.cossack/scaffold.json');
+  const affected = new Set([
+    ...plan.writes.map((change) => change.path),
+    ...plan.deletes.map((change) => change.path),
+    '.cossack/scaffold.json',
+  ]);
+  const snapshots = new Map();
+  for (const rel of affected) {
+    try {
+      snapshots.set(rel, await fs.readFile(path.join(projectDir, rel)));
+    } catch {
+      snapshots.set(rel, null);
+    }
+  }
+  try {
+    await applyPlan(projectDir, rendered, plan);
+    return await writeManifest(projectDir, recipe, rendered, manifest, plan);
+  } catch (error) {
+    for (const [rel, content] of snapshots) {
+      const absolute = path.join(projectDir, rel);
+      if (content === null) {
+        await fs.rm(absolute, { force: true });
+      } else {
+        await fs.mkdir(path.dirname(absolute), { recursive: true });
+        await fs.writeFile(absolute, content);
+      }
+    }
+    throw error;
+  }
+}
+
+function adapterSwitchResult(
+  status,
+  current,
+  recipe,
+  changes,
+  manifestPath,
+  databaseInstalled,
+) {
+  return {
+    status,
+    previousAdapter: current.adapter,
+    targetAdapter: recipe.adapter,
+    databaseChange: {
+      previous: current.config.database,
+      target: recipe.config.database,
+      changed: current.config.database !== recipe.config.database,
+      installed: databaseInstalled,
+    },
+    recipe: publicRecipe(recipe),
+    changes,
+    manifestPath,
+  };
+}
+
+/**
+ * Re-render a schema-v2 project for exactly one runtime adapter.
+ */
+export async function switchAdapter(projectDir, target, options = {}) {
+  if (!ADAPTERS.includes(target)) {
+    throw new Error(
+      `Unknown adapter "${target ?? '(missing)'}". ` +
+      `Supported values: ${ADAPTERS.join(', ')}`,
+    );
+  }
+  const root = path.resolve(projectDir);
+  const manifestPath = path.join(root, '.cossack/scaffold.json');
+  const manifest = await readManifest(root);
+  if (!manifest) {
+    throw new Error(
+      'Adapter switching requires a schema-v2 .cossack/scaffold.json manifest.',
+    );
+  }
+  if (manifest.schemaVersion !== 2) {
+    throw new Error(
+      `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
+      'Adapter switching requires schema version 2.',
+    );
+  }
+  const current = resolveRecipe({
+    adapter: manifest.runtime ?? manifest.adapter,
+    preset: manifest.preset ?? 'minimal',
+    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+    database: manifest.config?.database,
+    authMethods: manifest.config?.authMethods,
+    oauth: manifest.config?.oauth,
+    theme: manifest.config?.theme,
+    dashboardModules: manifest.dashboardModules,
+  });
+  const empty = { writes: [], deletes: [], conflicts: [], preserved: [] };
+  if (current.adapter === target) {
+    return adapterSwitchResult(
+      'present',
+      current,
+      current,
+      empty,
+      manifestPath,
+      current.resolvedFeatures.includes('database'),
+    );
+  }
+
+  const databaseInstalled = current.resolvedFeatures.includes('database');
+  const targetDefault = target === 'cloudflare' ? 'd1' : 'sqlite';
+  const currentCompatible = DATABASE_PROVIDERS[current.config.database]
+    ?.adapters.includes(target);
+  const mustSelectDatabase = databaseInstalled &&
+    !currentCompatible &&
+    options.database === undefined;
+  if (mustSelectDatabase &&
+      (options.dryRun || options.interactive !== true)) {
+    const supported = databaseChoices(target).map((choice) => choice.value);
+    throw new Error(
+      `Database provider "${current.config.database}" is not supported by the ` +
+      `${target} adapter. Pass --database=${supported.join(' or --database=')}.`,
+    );
+  }
+
+  let selectedDatabase = options.database ??
+    (databaseInstalled && currentCompatible ? current.config.database : targetDefault);
+  while (true) {
+    if (mustSelectDatabase && options.interactive === true) {
+      const selection = await promptOne({
+        type: 'select',
+        name: 'database',
+        message: `Database provider for ${target}`,
+        choices: databaseChoices(target),
+      }, selectedDatabase);
+      if (selection.action === 'back') continue;
+      selectedDatabase = selection.value;
+    }
+
+    const targetEnvironmentRel = target === 'node' ? '.env' : '.dev.vars';
+    const sourceEnvironmentRel = current.adapter === 'node' ? '.env' : '.dev.vars';
+    const [targetEnvironment, sourceEnvironment] = await Promise.all([
+      readLocalEnvironment(root, targetEnvironmentRel),
+      readLocalEnvironment(root, sourceEnvironmentRel),
+    ]);
+    const transferredEnvironment = transferEnvironmentValues(
+      targetEnvironment,
+      sourceEnvironment,
+    );
+    let recipe = resolveRecipe({
+      adapter: target,
+      preset: manifest.preset ?? 'minimal',
+      features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+      database: selectedDatabase,
+      authMethods: manifest.config?.authMethods,
+      oauth: manifest.config?.oauth,
+      theme: manifest.config?.theme,
+      dashboardModules: manifest.dashboardModules,
+    });
+    recipe = ensureEnvironmentSecrets(recipe, {
+      appSecret: environmentValue(targetEnvironment, 'APP_SECRET') ??
+        environmentValue(sourceEnvironment, 'APP_SECRET'),
+      authSecret: environmentValue(targetEnvironment, 'OAUTH_SECRET') ??
+        environmentValue(sourceEnvironment, 'OAUTH_SECRET'),
+    });
+    const previousRendered = await renderRecipe(current, {
+      projectName: path.basename(root),
+      environmentContent: sourceEnvironment,
+    });
+    const rendered = await renderRecipe(recipe, {
+      projectName: path.basename(root),
+      environmentContent: transferredEnvironment,
+    });
+    let nextEnvironment = rendered.get(targetEnvironmentRel)?.content
+      .toString('utf8') ?? transferredEnvironment;
+    nextEnvironment = mergeEnvironmentContent(
+      nextEnvironment,
+      adapterEnvironmentDefaults(recipe),
+    );
+    if (databaseInstalled) {
+      nextEnvironment = setEnvironmentValue(
+        nextEnvironment,
+        'DB_CONNECTION',
+        recipe.config.database,
+      );
+    }
+    if (nextEnvironment || targetEnvironment || sourceEnvironment) {
+      rendered.set(targetEnvironmentRel, {
+        content: text(nextEnvironment),
+        capability: LOCAL_ENV_CAPABILITY,
+      });
+    }
+
+    const packageConflicts = await packageFieldConflicts(
+      root,
+      previousRendered,
+      rendered,
+    );
+    await mergePackage(root, rendered, previousRendered, options.force === true);
+    const plan = await buildPlan(
+      root,
+      rendered,
+      manifest,
+      (rel) => options.force === true && ADAPTER_PATHS.has(rel),
+    );
+    if (!options.force) plan.conflicts.push(...packageConflicts);
+    if (plan.conflicts.length) {
+      throw new Error(
+        `Scaffold conflicts: ${plan.conflicts.join(', ')}. ` +
+        'Re-run with --force to replace runtime/provider-specific changes.',
+      );
+    }
+    if (options.dryRun) {
+      return adapterSwitchResult(
+        'dry-run',
+        current,
+        recipe,
+        plan,
+        manifestPath,
+        databaseInstalled,
+      );
+    }
+    const confirmation = await confirmPlan(plan, options, {
+      requested: `adapter ${target}`,
+      prerequisites: current.config.database === recipe.config.database
+        ? []
+        : [`database ${current.config.database} → ${recipe.config.database}`],
+    });
+    if (confirmation === 'back') {
+      if (!mustSelectDatabase) continue;
+      selectedDatabase = undefined;
+      continue;
+    }
+    if (!confirmation) {
+      return adapterSwitchResult(
+        'cancelled',
+        current,
+        current,
+        plan,
+        manifestPath,
+        databaseInstalled,
+      );
+    }
+    const writtenManifestPath = await applyPlanAndManifestAtomically(
+      root,
+      rendered,
+      plan,
+      recipe,
+      manifest,
+    );
+    return adapterSwitchResult(
+      'changed',
+      current,
+      recipe,
+      plan,
+      writtenManifestPath,
+      databaseInstalled,
+    );
+  }
+}
+
+async function promptAddOptions(
+  current,
+  feature,
+  options,
+  previous = {},
+  startAtLast = false,
+) {
+  const nextFeatures = resolveFeatures([
+    ...new Set([...current.explicitFeatures, feature]),
+  ]);
+  const databaseNeeded = !current.resolvedFeatures.includes('database') &&
+    nextFeatures.includes('database');
+  const knownRuntime = ADAPTERS.includes(options.runtime)
+    ? options.runtime
+    : ADAPTERS.includes(options.adapter)
+      ? options.adapter
+      : ADAPTERS.includes(current.adapter)
+        ? current.adapter
+        : undefined;
+
+  if (options.interactive !== true) {
+    const database = options.database ??
+      (current.resolvedFeatures.includes('database')
+        ? current.config.database
+        : undefined);
+    const runtime = knownRuntime ??
+      runtimeFromDatabase(options.database ?? (databaseNeeded ? database : undefined));
+    if (!runtime) {
+      throw new Error(
+        'Could not determine the project runtime. Pass --runtime=cloudflare or --runtime=node.',
+      );
+    }
+    const authMethods = options.authMethods ??
+      (!current.resolvedFeatures.includes('auth') &&
+       options.oauth !== undefined &&
+       parseList(options.oauth).length
+        ? ['credentials', 'oauth']
+        : current.config.authMethods);
+    return { ...options, runtime, database, authMethods };
+  }
+
   const questions = [];
-  if (!current.resolvedFeatures.includes('database') &&
-      nextFeatures.includes('database') &&
-      options.database === undefined) {
+  if (databaseNeeded && options.database === undefined) {
     questions.push({
       type: 'select', name: 'database', message: 'Database provider',
-      choices: Object.entries(DATABASE_PROVIDERS)
-        .filter(([, value]) => value.adapters.includes(current.adapter))
-        .map(([value]) => ({ title: value, value })),
+      choices: databaseChoices(knownRuntime, !knownRuntime),
+    });
+  }
+  if (!knownRuntime) {
+    questions.push({
+      type: 'select',
+      name: 'runtime',
+      message: 'Project runtime',
+      choices: [
+        { title: 'Cloudflare Workers', value: 'cloudflare' },
+        { title: 'Node.js', value: 'node' },
+      ],
+      when: (answers) => {
+        const database = options.database ?? answers.database;
+        return !database || database === 'turso';
+      },
     });
   }
   if (!current.resolvedFeatures.includes('ui') &&
@@ -873,20 +1969,48 @@ async function promptAddOptions(current, feature, options) {
   }
   if (!current.resolvedFeatures.includes('auth') &&
       nextFeatures.includes('auth') &&
+      options.authMethods === undefined &&
       options.oauth === undefined) {
     questions.push({
-      type: 'multiselect', name: 'oauth', message: 'OAuth providers (optional)',
-      choices: OAUTH_PROVIDERS.map((value) => ({ title: value, value })),
+      type: 'multiselect',
+      name: 'authMethods',
+      message: 'Authentication methods',
+      choices: authMethodChoices(),
+      validate: (value) => value.length > 0 || 'Select at least one authentication method',
     });
   }
-  let cancelled = false;
-  const answers = await prompts(questions, {
-    onCancel: () => {
-      cancelled = true;
-      return false;
-    },
-  });
-  return { ...options, ...answers, _cancelled: cancelled };
+  if (!current.resolvedFeatures.includes('auth') &&
+      nextFeatures.includes('auth') &&
+      options.oauth === undefined) {
+    questions.push({
+      type: 'multiselect', name: 'oauth', message: 'OAuth providers',
+      choices: OAUTH_PROVIDERS.map((value) => ({ title: value, value })),
+      validate: (value) => value.length > 0 || 'Select at least one OAuth provider',
+      when: (answers) => parseList(
+        options.authMethods ?? answers.authMethods,
+      ).includes('oauth'),
+    });
+  }
+  const initialAuthMethods = options.authMethods ??
+    previous.authMethods ??
+    (options.oauth !== undefined && parseList(options.oauth).length
+      ? ['credentials', 'oauth']
+      : current.config.authMethods ?? ['credentials']);
+  const answers = await promptWizard(questions, {
+    ...previous,
+    ...options,
+    authMethods: initialAuthMethods,
+  }, startAtLast);
+  const database = options.database ?? answers.database ??
+    (databaseNeeded ? undefined : current.config.database);
+  const runtime = knownRuntime ?? runtimeFromDatabase(database) ?? answers.runtime;
+  if (!runtime) {
+    throw new Error(
+      'Could not determine the project runtime. Pass --runtime=cloudflare or --runtime=node.',
+    );
+  }
+  if (!parseList(answers.authMethods).includes('oauth')) answers.oauth = [];
+  return { ...options, ...answers, database, runtime };
 }
 
 export async function addFeature(projectDir, feature, options = {}) {
@@ -896,54 +2020,196 @@ export async function addFeature(projectDir, feature, options = {}) {
   const root = path.resolve(projectDir);
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
-  const prompted = await promptAddOptions(current, feature, options);
-  if (prompted._cancelled) {
+  let previous = {};
+  let startAtLast = false;
+  while (true) {
+    const prompted = await promptAddOptions(
+      current,
+      feature,
+      options,
+      previous,
+      startAtLast,
+    );
+    const explicitFeatures = [...new Set([...current.explicitFeatures, feature])];
+    let dashboardModules = current.dashboardModules;
+    if (feature === 'dashboard') {
+      const requested = prompted.features ?? prompted.dashboardModules;
+      if (requested !== undefined) {
+        const additions = resolveDashboardModules(requested, true);
+        dashboardModules = DASHBOARD_MODULES.filter((module) =>
+          [...current.dashboardModules, ...additions].includes(module),
+        );
+      } else {
+        dashboardModules = [...DASHBOARD_MODULES];
+      }
+    }
+    const environment = await readEnvironment(root, prompted.runtime);
+    let recipe = resolveRecipe({
+      adapter: prompted.runtime,
+      preset: 'minimal',
+      features: explicitFeatures,
+      database: prompted.database ?? current.config.database,
+      authMethods: prompted.authMethods ?? current.config.authMethods,
+      oauth: prompted.oauth ?? current.config.oauth,
+      theme: prompted.theme ?? current.config.theme,
+      dashboardModules,
+    });
+    recipe = ensureEnvironmentSecrets(recipe, environment.secrets);
+    const addedFeatures = recipe.resolvedFeatures.filter(
+      (candidate) => !current.resolvedFeatures.includes(candidate),
+    );
+    const addedDashboardModules = recipe.dashboardModules.filter(
+      (module) => !current.dashboardModules.includes(module),
+    );
+    const rendered = await renderRecipe(recipe, {
+      projectName: path.basename(root),
+      authSecret: recipe.config.authSecret,
+      environmentContent: environment.content,
+    });
+    await mergePackage(root, rendered);
+    const plan = await buildPlan(root, rendered, manifest, prompted.force);
+    if (plan.conflicts.length) {
+      throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}. Re-run with --force to overwrite.`);
+    }
+    const recipeMetadataChanged = JSON.stringify(publicRecipe(recipe)) !==
+      JSON.stringify(publicRecipe(current));
+    if (plan.writes.length === 0 &&
+        plan.deletes.length === 0 &&
+        !recipeMetadataChanged) {
+      return {
+        status: 'present',
+        recipe: publicRecipe(recipe),
+        changes: plan,
+        addedFeatures,
+        addedDashboardModules,
+        manifestPath: path.join(root, '.cossack/scaffold.json'),
+      };
+    }
+    if (prompted.dryRun) {
+      return {
+        status: 'dry-run',
+        recipe: publicRecipe(recipe),
+        changes: plan,
+        addedFeatures,
+        addedDashboardModules,
+        manifestPath: path.join(root, '.cossack/scaffold.json'),
+      };
+    }
+    const confirmation = await confirmPlan(plan, prompted, {
+      requested: feature,
+      prerequisites: addedFeatures.filter((candidate) => candidate !== feature),
+      dashboardModules: feature === 'dashboard' ? addedDashboardModules : [],
+    });
+    if (confirmation === 'back') {
+      previous = prompted;
+      startAtLast = true;
+      continue;
+    }
+    if (!confirmation) {
+      return {
+        status: 'cancelled',
+        recipe: current,
+        changes: plan,
+        addedFeatures: [],
+        addedDashboardModules: [],
+        manifestPath: path.join(root, '.cossack/scaffold.json'),
+      };
+    }
+    await applyPlan(root, rendered, plan);
+    const manifestPath = await writeManifest(root, recipe, rendered, manifest, plan);
     return {
-      status: 'cancelled',
-      recipe: current,
-      changes: { writes: [], deletes: [], conflicts: [] },
+      status: 'added',
+      recipe: publicRecipe(recipe),
+      changes: plan,
+      addedFeatures,
+      addedDashboardModules,
+      manifestPath,
+    };
+  }
+}
+
+export async function removeFeatureFromProject(projectDir, feature, options = {}) {
+  if (!FEATURES.includes(feature)) {
+    throw new Error(`Unknown feature "${feature}". Supported values: ${FEATURES.join(', ')}`);
+  }
+  const root = path.resolve(projectDir);
+  const manifest = await readManifest(root);
+  const current = await inferRecipe(root, manifest);
+  if (!current.resolvedFeatures.includes(feature)) {
+    const empty = { writes: [], deletes: [], conflicts: [], preserved: [] };
+    return {
+      status: 'absent',
+      recipe: publicRecipe(current),
+      changes: empty,
       manifestPath: path.join(root, '.cossack/scaffold.json'),
     };
   }
-  const alreadyInstalled = current.resolvedFeatures.includes(feature);
-  const explicitFeatures = [...new Set([...current.explicitFeatures, feature])];
-  let dashboardModules = current.dashboardModules;
-  if (feature === 'dashboard') {
-    const requested = prompted.features ?? prompted.dashboardModules;
-    if (requested !== undefined) {
-      const additions = resolveDashboardModules(requested, true);
-      dashboardModules = DASHBOARD_MODULES.filter((module) =>
-        [...current.dashboardModules, ...additions].includes(module),
-      );
-    } else if (!alreadyInstalled) {
-      dashboardModules = [...DASHBOARD_MODULES];
-    }
-  }
+
+  const explicitFeatures = removeFeature(current.explicitFeatures, feature);
+  const environment = await readEnvironment(root, current.adapter);
   const recipe = resolveRecipe({
     adapter: current.adapter,
     preset: 'minimal',
     features: explicitFeatures,
-    database: prompted.database ?? current.config.database,
-    oauth: prompted.oauth ?? current.config.oauth,
-    theme: prompted.theme ?? current.config.theme,
-    dashboardModules,
+    database: current.config.database,
+    authMethods: current.config.authMethods,
+    oauth: current.config.oauth,
+    theme: current.config.theme,
+    dashboardModules: current.dashboardModules,
   });
-  const rendered = await renderRecipe(recipe, { projectName: path.basename(root) });
-  await mergePackage(root, rendered);
-  const plan = await buildPlan(root, rendered, manifest, prompted.force);
+  const previousRendered = await renderRecipe(current, {
+    projectName: path.basename(root),
+    environmentContent: environment.content,
+  });
+  const rendered = await renderRecipe(recipe, {
+    projectName: path.basename(root),
+    environmentContent: environment.content,
+  });
+  await mergePackage(root, rendered, previousRendered);
+  const plan = await buildPlan(root, rendered, manifest, options.force);
   if (plan.conflicts.length) {
-    throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}. Re-run with --force to overwrite.`);
+    throw new Error(
+      `Scaffold conflicts: ${plan.conflicts.join(', ')}. ` +
+      'Re-run with --force to remove modified scaffold files.',
+    );
   }
   if (plan.writes.length === 0 && plan.deletes.length === 0) {
-    return { status: 'present', recipe, changes: plan, manifestPath: path.join(root, '.cossack/scaffold.json') };
+    return {
+      status: 'absent',
+      recipe: publicRecipe(recipe),
+      changes: plan,
+      manifestPath: path.join(root, '.cossack/scaffold.json'),
+    };
   }
-  if (prompted.dryRun) {
-    return { status: 'dry-run', recipe, changes: plan, manifestPath: path.join(root, '.cossack/scaffold.json') };
+  if (options.dryRun) {
+    return {
+      status: 'dry-run',
+      recipe: publicRecipe(recipe),
+      changes: plan,
+      manifestPath: path.join(root, '.cossack/scaffold.json'),
+    };
   }
-  if (!await confirmPlan(plan, prompted)) {
-    return { status: 'cancelled', recipe: current, changes: plan, manifestPath: path.join(root, '.cossack/scaffold.json') };
+  const removedFeatures = current.resolvedFeatures.filter(
+    (candidate) => !recipe.resolvedFeatures.includes(candidate),
+  );
+  const confirmation = await confirmPlan(plan, options, {
+    requested: `remove ${feature}`,
+    prerequisites: removedFeatures.filter((candidate) => candidate !== feature),
+  });
+  if (confirmation === 'back' || !confirmation) {
+    return {
+      status: 'cancelled',
+      recipe: publicRecipe(current),
+      changes: plan,
+      manifestPath: path.join(root, '.cossack/scaffold.json'),
+    };
   }
   await applyPlan(root, rendered, plan);
-  const manifestPath = await writeManifest(root, recipe, rendered);
-  return { status: 'added', recipe, changes: plan, manifestPath };
+  const manifestPath = await writeManifest(root, recipe, rendered, manifest, plan);
+  return {
+    status: 'removed',
+    recipe: publicRecipe(recipe),
+    changes: plan,
+    manifestPath,
+  };
 }

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { detectProjectRuntime } from '@cossackframework/scaffold';
 import { exists, findProjectRoot } from '../fs-utils.js';
 import { run } from '../spawn.js';
 
@@ -22,12 +23,7 @@ export async function startCommand(args, ctx) {
 }
 
 export async function detectAdapter(root) {
-  // Cloudflare: wrangler.jsonc / wrangler.toml present
-  const isCf =
-    (await exists(path.join(root, 'wrangler.jsonc'))) ||
-    (await exists(path.join(root, 'wrangler.toml')));
-  if (isCf) return 'cloudflare';
-  return 'node';
+  return (await detectProjectRuntime(root)) ?? 'node';
 }
 
 export function startHelp() {
@@ -36,5 +32,6 @@ export function startHelp() {
 Start the production server.
   - Cloudflare adapter: \`wrangler dev\`
   - Node adapter: \`node dist/server/index.js\`
-Adapter is auto-detected from wrangler.jsonc presence.`;
+Adapter is read from the scaffold manifest or package metadata, with
+adapter-specific files used as a legacy fallback.`;
 }
