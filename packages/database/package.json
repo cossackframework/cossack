@@ -40,7 +40,7 @@
     "@libsql/client": "^0.14.0",
     "@types/node": "^22.19.0",
     "hono": "^4.12.31",
-    "miniflare": "^4.20260623.0",
+    "miniflare": "^4.20260722.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
