@@ -1,12 +1,20 @@
 import { createClient } from '@libsql/client';
 import { createDatabase } from '@cossackframework/database';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { runStudio } from '../dist/index.js';
 import { createLocalConnection } from '../src/testing';
 
 let launchUrl = '';
 let abort: AbortController;
 let running: Promise<void>;
+
+async function replaceEditorValue(page: Page, testId: string, value: string) {
+  const editor = page.getByTestId(testId);
+  await expect(editor.locator('.monaco-editor')).toBeVisible();
+  await editor.locator('textarea').focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type(value);
+}
 
 test.beforeAll(async () => {
   const client = createClient({ url: ':memory:' });
@@ -18,10 +26,13 @@ test.beforeAll(async () => {
     CREATE TABLE people (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      age INTEGER
+      age INTEGER,
+      profile JSON
     )
   `);
   await connection.execute('CREATE TABLE notes (body TEXT)');
+  await connection.execute('CREATE TABLE kysely_migration (name TEXT PRIMARY KEY)');
+  await connection.execute('CREATE TABLE kysely_migration_lock (id INTEGER PRIMARY KEY)');
   for (let index = 1; index <= 55; index++) {
     await connection.execute(
       'INSERT INTO people (name, age) VALUES (?, ?)',
@@ -54,7 +65,21 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await page.goto(launchUrl);
   await expect(page.getByText('Cossack Studio', { exact: true })).toBeVisible();
 
+  await expect(page.getByTestId('object-kysely_migration')).toHaveCount(0);
+  await page.getByRole('button', { name: /System tables/ }).click();
+  await page.getByLabel('kysely_migration', { exact: true }).check();
+  await expect(page.getByTestId('object-kysely_migration')).toBeVisible();
+
+  const rootWasDark = await page.locator('html').evaluate((element) => element.classList.contains('dark'));
+  await page.getByTestId('theme-toggle').click();
+  await expect.poll(() => page.locator('html').evaluate((element) =>
+    element.classList.contains('dark'))).toBe(!rootWasDark);
+
   await page.getByTestId('object-people').click();
+  await expect(page.getByTestId('grid-row')).toHaveCount(55);
+  await expect(page.getByTestId('row-count')).toContainText('55 rows');
+  await expect(page.getByTestId('page-size')).toHaveValue('100');
+  await page.getByTestId('page-size').selectOption('50');
   await expect(page.getByTestId('grid-row')).toHaveCount(50);
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByTestId('grid-row')).toHaveCount(5);
@@ -63,14 +88,19 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(page.getByTestId('structure-table')).toContainText('PK 1 auto');
 
   await page.getByTestId('tab-sql').click();
-  await page.getByTestId('sql-editor').fill('SELECT COUNT(*) AS total FROM people;');
+  await replaceEditorValue(page, 'sql-editor', 'SELECT COUNT(*) AS total FROM people;');
   await page.getByTestId('run-sql').click();
   await expect(page.getByTestId('sql-results')).toContainText('55');
+  await expect(page.getByTestId('run-sql')).toBeEnabled();
 
-  await page.getByTestId('sql-editor').fill(
+  await replaceEditorValue(
+    page,
+    'sql-editor',
     'CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT);',
   );
-  await page.getByTestId('sql-editor').press('Control+Enter');
+  const sqlTextarea = page.getByTestId('sql-editor').locator('textarea');
+  await sqlTextarea.focus();
+  await page.keyboard.press('ControlOrMeta+Enter');
   await expect(page.getByTestId('object-projects')).toBeVisible();
 
   await page.getByTestId('object-people').click();
@@ -83,12 +113,21 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await page.getByTestId('submit-insert').click();
   await expect(page.getByTestId('data-grid')).toContainText('Inserted person');
 
-  page.once('dialog', async (dialog) => dialog.accept('Edited person'));
   await page.getByTestId('grid-row').first().locator('td').nth(1).dblclick();
+  await page.getByTestId('inline-editor').fill('Edited person');
+  await page.getByTestId('inline-editor').press('Enter');
   await expect(page.getByTestId('data-grid')).toContainText('Edited person');
 
-  page.once('dialog', async (dialog) => dialog.accept());
+  await page.getByTestId('grid-row').first().locator('td').nth(3).dblclick();
+  const cellSheet = page.getByTestId('cell-editor-sheet');
+  await expect(cellSheet).toBeVisible();
+  await expect(cellSheet.getByTestId('json-editor').locator('.monaco-editor')).toBeVisible();
+  await cellSheet.getByRole('button', { name: 'Close' }).click();
+
   await page.getByTestId('grid-row').first().getByRole('button', { name: 'Delete row' }).click();
+  const deleteDialog = page.locator('dialog.cs-alert-dialog');
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole('button', { name: 'Delete row' }).click();
   await expect(page.getByTestId('data-grid')).not.toContainText('Edited person');
 
   await page.getByTestId('object-notes').click();

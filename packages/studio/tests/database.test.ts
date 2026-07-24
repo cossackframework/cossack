@@ -66,11 +66,17 @@ describe('StudioDatabase', () => {
   });
 
   it('paginates rows in primary-key order', async () => {
-    const first = await studio.browse('people', 1);
-    const second = await studio.browse('people', 2);
+    const defaultPage = await studio.browse('people', 1);
+    const first = await studio.browse('people', 1, 50);
+    const second = await studio.browse('people', 2, 50);
+    expect(defaultPage.rows).toHaveLength(55);
+    expect(defaultPage.pageSize).toBe(100);
     expect(first.rows).toHaveLength(50);
     expect(second.rows).toHaveLength(5);
     expect(second.rows[0].id).toBe(51);
+    expect(second.totalRows).toBe(55);
+    expect(second.page).toBe(2);
+    expect(second.pageSize).toBe(50);
   });
 
   it('inserts omitted defaults and nulls, then updates and deletes composite-key rows', async () => {

@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "@cossackframework/ui/theme/base.css";
 @import "@cossackframework/ui/theme/theme.css";
-@import "@cossackframework/ui/theme/themes/slate.css";
 @source "../../node_modules/@cossackframework/ui/dist";
 
 :root {
@@ -11,6 +10,18 @@
 body {
   margin: 0;
   overflow: hidden;
+}
+
+.studio-grid .cs-input,
+.studio-grid .cs-textarea,
+.studio-grid select {
+  background-color: color-mix(in oklch, var(--input) 30%, var(--background));
+}
+
+.studio-grid .cs-input:disabled,
+.studio-grid .cs-textarea:disabled,
+.studio-grid select:disabled {
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
 }
 
 .studio-grid {
@@ -29,4 +40,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.studio-code-editor,
+.studio-code-editor .monaco-editor,
+.studio-code-editor .overflow-guard {
+  border-radius: inherit;
 }

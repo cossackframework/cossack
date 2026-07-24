@@ -20,15 +20,28 @@ export class StudioDatabase {
     return this.schema;
   }
 
-  async browse(name: string, page = 1, pageSize = 50): Promise<TransportQueryResult> {
+  async browse(name: string, page = 1, pageSize = 100): Promise<TransportQueryResult> {
     const object = findObject(await this.getSchema(true), name);
-    const safePage = Math.max(1, Math.floor(page));
-    const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
+    const safePageSize = Math.min(500, Math.max(1, Math.floor(pageSize)));
+    const countResult = await this.connection.execute(
+      `SELECT COUNT(*) AS ${quoteIdentifier('__cossack_total')} FROM ${quoteIdentifier(object.name)}`,
+    );
+    const rawTotal = countResult.rows[0]?.__cossack_total;
+    const totalRows = typeof rawTotal === 'bigint'
+      ? Number(rawTotal)
+      : Math.max(0, Number(rawTotal ?? 0));
+    const lastPage = Math.max(1, Math.ceil(totalRows / safePageSize));
+    const safePage = Math.min(lastPage, Math.max(1, Math.floor(page)));
     const order = this.primaryKey(object);
     const sql = `SELECT * FROM ${quoteIdentifier(object.name)}` +
       (order.length ? ` ORDER BY ${order.map(quoteIdentifier).join(', ')}` : '') +
       ` LIMIT ${safePageSize} OFFSET ${(safePage - 1) * safePageSize}`;
-    return normalizeQueryResult(await this.connection.execute(sql));
+    return {
+      ...normalizeQueryResult(await this.connection.execute(sql)),
+      totalRows,
+      page: safePage,
+      pageSize: safePageSize,
+    };
   }
 
   async executeSql(input: string): Promise<TransportQueryResult> {

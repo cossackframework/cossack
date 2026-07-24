@@ -264,6 +264,9 @@ importers:
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+      '@cossackframework/solar-icons':
+        specifier: ^0.7.1
+        version: 0.7.1
       '@cossackframework/ui':
         specifier: workspace:*
         version: link:../ui
@@ -289,6 +292,9 @@ importers:
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
+      monaco-editor:
+        specifier: ^0.52.2
+        version: 0.52.2
       tailwindcss:
         specifier: ^4.1.0
         version: 4.2.4
@@ -1956,6 +1962,9 @@ packages:
     resolution: {integrity: sha512-LW6ABMhCx/yIEFBLC/DO4yAhdm2T/G7jp7pr5T2kj895+CCIaHZqpMXdW9O6YE48LcYcCJChwWc8aEs1vpbTXw==}
     engines: {node: '>=22.0.0'}
     hasBin: true
+
+  monaco-editor@0.52.2:
+    resolution: {integrity: sha512-GEQWEZmfkOGLdd3XK8ryrfWz3AIP8YymVXiPHEdewrUq7mh0qrKrfHLNCXcbB6sTnMLnOZ3ztSiKcciFUkIJwQ==}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -4138,6 +4147,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  monaco-editor@0.52.2: {}
 
   ms@2.1.3: {}
 

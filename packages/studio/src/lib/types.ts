@@ -59,6 +59,9 @@ export interface TransportQueryResult {
   affectedRows: number;
   durationMs: number;
   truncated: boolean;
+  totalRows?: number;
+  page?: number;
+  pageSize?: number;
   error?: string;
 }
 

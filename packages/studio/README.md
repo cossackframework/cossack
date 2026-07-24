@@ -25,9 +25,11 @@ cossack studio --remote
 cossack studio --remote --database DB --env production
 ```
 
-Studio supports SQLite-family schema inspection, 50-row pagination, keyed row
-inserts/updates/deletes, and one arbitrary SQL statement per execution. Remote
-D1 changes affect deployed data immediately.
+Studio supports SQLite-family schema inspection, exact row counts, adjustable
+pagination (100 rows by default), inline and JSON-aware keyed row editing, and
+one arbitrary SQL statement per execution. Its SQL editor includes syntax
+highlighting plus table and column completion. Remote D1 changes affect
+deployed data immediately.
 
 For programmatic startup:
 
