@@ -5,6 +5,6 @@ import { App } from '../App';
 createClientApp({
   container: '#root',
   AppComponent: App,
-  viewTransitions: false,
+  viewTransitions: true,
   progressBar: true,
 });

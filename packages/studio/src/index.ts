@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -20,6 +21,7 @@ export interface StudioRunOptions {
   open?: boolean;
   signal?: AbortSignal;
   connection?: StudioConnection;
+  applicationName?: string;
 }
 
 async function loadCliClient(projectRoot: string): Promise<Kysely<any>> {
@@ -45,6 +47,34 @@ function inferLocalProvider(projectRoot: string): StudioProvider {
   if (process.env.TURSO_URL) return 'libsql';
   if (process.env.DB_PATH) return 'sqlite';
   return path.basename(projectRoot).includes('d1') ? 'd1-local' : 'unknown';
+}
+
+async function resolveApplicationName(projectRoot: string): Promise<string> {
+  try {
+    const packageJson = JSON.parse(
+      await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+    );
+    return typeof packageJson.displayName === 'string'
+      ? packageJson.displayName
+      : typeof packageJson.name === 'string'
+        ? packageJson.name
+        : path.basename(projectRoot);
+  } catch {
+    return path.basename(projectRoot);
+  }
+}
+
+function localDatabaseLabel(explicit?: string): string {
+  if (explicit) return explicit;
+  if (process.env.DB_PATH) return path.basename(process.env.DB_PATH);
+  if (process.env.TURSO_URL) {
+    try {
+      return new URL(process.env.TURSO_URL).hostname || 'Turso database';
+    } catch {
+      return 'Turso database';
+    }
+  }
+  return 'Local database';
 }
 
 function openBrowser(url: string): void {
@@ -91,10 +121,12 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
         client: await loadCliClient(projectRoot),
         info: {
           provider: inferLocalProvider(projectRoot),
-          label: options.database ?? 'Local database',
+          label: localDatabaseLabel(options.database),
         },
       }));
-  const database = new StudioDatabase(connection);
+  const database = new StudioDatabase(connection, {
+    applicationName: options.applicationName ?? await resolveApplicationName(projectRoot),
+  });
   await database.getSchema();
   setStudioDatabase(database);
 

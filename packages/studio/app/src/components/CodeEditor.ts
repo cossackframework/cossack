@@ -12,6 +12,7 @@ import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import 'monaco-editor/min/vs/editor/editor.main.css';
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import type { StudioSchema } from '../../../src/lib/types';
+import { studioSchemaCatalog } from '../schema-store';
 
 export interface CodeEditorProps {
   value: string;
@@ -19,6 +20,8 @@ export interface CodeEditorProps {
   theme?: 'light' | 'dark';
   schema?: StudioSchema;
   enabled?: boolean;
+  readOnly?: boolean;
+  lineNumbers?: 'on' | 'off';
   ariaLabel?: string;
   onChange?: (value: string) => void;
   onRun?: () => void;
@@ -66,6 +69,7 @@ export class CodeEditor extends Cossack {
 
       const [monaco] = await Promise.all([
         import('monaco-editor/esm/vs/editor/editor.api'),
+        import('monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController'),
         import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
         import('monaco-editor/esm/vs/language/json/monaco.contribution'),
       ]);
@@ -87,6 +91,17 @@ export class CodeEditor extends Cossack {
         scrollBeyondLastLine: false,
         tabSize: 2,
         wordWrap: this.props.language === 'sql' ? 'off' : 'on',
+        readOnly: this.props.readOnly ?? false,
+        lineNumbers: this.props.lineNumbers ?? 'on',
+        folding: this.props.lineNumbers !== 'off',
+        glyphMargin: false,
+        quickSuggestions: {
+          other: true,
+          comments: false,
+          strings: false,
+        },
+        suggestOnTriggerCharacters: true,
+        wordBasedSuggestions: 'off',
         ariaLabel: this.props.ariaLabel ?? 'Code editor',
       });
       this.editor.onDidChangeModelContent(() => {
@@ -120,15 +135,20 @@ export class CodeEditor extends Cossack {
       this.registerSqlCompletions();
     }
     this.monaco.editor.setTheme(this.props.theme === 'light' ? 'vs' : 'vs-dark');
+    this.editor.updateOptions({
+      readOnly: this.props.readOnly ?? false,
+      lineNumbers: this.props.lineNumbers ?? 'on',
+      folding: this.props.lineNumbers !== 'off',
+    });
   }
 
   @Client()
   private registerSqlCompletions() {
-    this.completionProvider?.dispose();
     if (!this.monaco || this.props.language !== 'sql') return;
+    this.completionProvider?.dispose();
     const monaco = this.monaco;
     this.completionProvider = monaco.languages.registerCompletionItemProvider('sql', {
-      triggerCharacters: ['.'],
+      triggerCharacters: ['.', ' '],
       provideCompletionItems: (model, position) => {
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -137,9 +157,24 @@ export class CodeEditor extends Cossack {
           startColumn: word.startColumn,
           endColumn: word.endColumn,
         };
-        const objects = this.props.schema?.objects ?? [];
-        const suggestions: Monaco.languages.CompletionItem[] = objects.flatMap((object) => [
-          {
+        const schema = this.props.schema ?? studioSchemaCatalog.get();
+        const objects = schema?.objects ?? [];
+        const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+        const qualifierMatch = line.match(
+          /(?:^|[\s,(])(?:"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|([A-Za-z_][\w$]*))\.\w*$/,
+        );
+        const qualifier = qualifierMatch
+          ? (qualifierMatch[1]?.replaceAll('""', '"') ??
+              qualifierMatch[2] ??
+              qualifierMatch[3] ??
+              qualifierMatch[4])
+          : undefined;
+        const qualifiedObject = qualifier
+          ? objects.find((object) => object.name.toLowerCase() === qualifier.toLowerCase())
+          : undefined;
+        const catalog = qualifiedObject ? [qualifiedObject] : objects;
+        const suggestions: Monaco.languages.CompletionItem[] = catalog.flatMap((object) => [
+          ...(qualifiedObject ? [] : [{
             label: object.name,
             insertText: sqlIdentifier(object.name),
             detail: object.kind === 'view' ? 'Database view' : 'Database table',
@@ -147,7 +182,7 @@ export class CodeEditor extends Cossack {
               ? monaco.languages.CompletionItemKind.Interface
               : monaco.languages.CompletionItemKind.Struct,
             range,
-          },
+          }]),
           ...object.columns.map((column) => ({
             label: column.name,
             insertText: sqlIdentifier(column.name),
@@ -168,6 +203,8 @@ export class CodeEditor extends Cossack {
       theme: _theme,
       schema: _schema,
       enabled: _enabled,
+      readOnly: _readOnly,
+      lineNumbers: _lineNumbers,
       ariaLabel: _ariaLabel,
       onChange: _onChange,
       onRun: _onRun,
@@ -179,7 +216,10 @@ export class CodeEditor extends Cossack {
         class="studio-code-editor overflow-hidden rounded-md border bg-background ${String(className)}"
         ...=${rest}
       >
-        <div ref=${this.containerRef} class="h-full min-h-[8rem]"></div>
+        <div
+          ref=${this.containerRef}
+          class="h-full ${this.props.lineNumbers === 'off' ? 'min-h-0' : 'min-h-[8rem]'}"
+        ></div>
       </div>
     `;
   }

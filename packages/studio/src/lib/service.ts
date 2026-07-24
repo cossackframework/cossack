@@ -1,9 +1,18 @@
-import { coerceCellValue, parseSingleStatement, quoteIdentifier, sqliteLiteral } from './sql.js';
+import {
+  coerceCellValue,
+  interpolateSqlParameters,
+  parseSingleStatement,
+  quoteIdentifier,
+} from './sql.js';
 import { findObject, introspectSchema } from './schema.js';
 import { normalizeQueryResult } from './transport.js';
 import type {
+  BrowseFilter,
+  BrowseOptions,
+  BrowseSort,
   InsertCell,
   MutationResult,
+  StudioColumn,
   StudioConnection,
   StudioObject,
   StudioSchema,
@@ -13,34 +22,66 @@ import type {
 export class StudioDatabase {
   private schema?: StudioSchema;
 
-  constructor(readonly connection: StudioConnection) {}
+  constructor(
+    readonly connection: StudioConnection,
+    private readonly options: { applicationName?: string } = {},
+  ) {}
 
   async getSchema(refresh = false): Promise<StudioSchema> {
-    if (!this.schema || refresh) this.schema = await introspectSchema(this.connection);
+    if (!this.schema || refresh) {
+      this.schema = await introspectSchema(
+        this.connection,
+        this.options.applicationName ?? 'Cossack application',
+      );
+    }
     return this.schema;
   }
 
-  async browse(name: string, page = 1, pageSize = 100): Promise<TransportQueryResult> {
+  async browse(
+    name: string,
+    optionsOrPage: BrowseOptions | number = {},
+    legacyPageSize = 100,
+  ): Promise<TransportQueryResult> {
     const object = findObject(await this.getSchema(true), name);
+    const options = typeof optionsOrPage === 'number'
+      ? { page: optionsOrPage, pageSize: legacyPageSize }
+      : optionsOrPage;
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 100;
     const safePageSize = Math.min(500, Math.max(1, Math.floor(pageSize)));
-    const countResult = await this.connection.execute(
-      `SELECT COUNT(*) AS ${quoteIdentifier('__cossack_total')} FROM ${quoteIdentifier(object.name)}`,
-    );
+    const predicate = this.browsePredicate(object, options.filters ?? []);
+    let countSql = `SELECT COUNT(*) AS ${quoteIdentifier('__cossack_total')} ` +
+      `FROM ${quoteIdentifier(object.name)}${predicate.sql}`;
+    let countParameters = [...predicate.parameters];
+    ({ sql: countSql, parameters: countParameters } = this.bind(countSql, countParameters));
+    const countResult = await this.connection.execute(countSql, countParameters);
     const rawTotal = countResult.rows[0]?.__cossack_total;
     const totalRows = typeof rawTotal === 'bigint'
       ? Number(rawTotal)
       : Math.max(0, Number(rawTotal ?? 0));
     const lastPage = Math.max(1, Math.ceil(totalRows / safePageSize));
     const safePage = Math.min(lastPage, Math.max(1, Math.floor(page)));
-    const order = this.primaryKey(object);
-    const sql = `SELECT * FROM ${quoteIdentifier(object.name)}` +
-      (order.length ? ` ORDER BY ${order.map(quoteIdentifier).join(', ')}` : '') +
+    const order = this.browseOrder(object, options.sort ?? []);
+    let sql = `SELECT * FROM ${quoteIdentifier(object.name)}${predicate.sql}` +
+      (order.length
+        ? ` ORDER BY ${order.map((item) =>
+            `${quoteIdentifier(item.column)} ${item.direction.toUpperCase()}`).join(', ')}`
+        : '') +
       ` LIMIT ${safePageSize} OFFSET ${(safePage - 1) * safePageSize}`;
+    const displayQuery = this.renderParameters(sql, predicate.parameters);
+    let parameters = [...predicate.parameters];
+    ({ sql, parameters } = this.bind(sql, parameters));
+    const normalized = normalizeQueryResult(await this.connection.execute(sql, parameters));
     return {
-      ...normalizeQueryResult(await this.connection.execute(sql)),
+      ...normalized,
+      columns: normalized.columns.length
+        ? normalized.columns
+        : object.columns.filter((column) => !column.hidden).map((column) => column.name),
       totalRows,
       page: safePage,
       pageSize: safePageSize,
+      objectName: object.name,
+      query: displayQuery,
     };
   }
 
@@ -80,10 +121,7 @@ export class StudioDatabase {
           if (!column.nullable) throw new Error(`${column.name} does not allow NULL.`);
           return null;
         }
-        if (column.affinity === 'blob') {
-          throw new Error(`Blob column ${column.name} cannot be edited in the grid.`);
-        }
-        return coerceCellValue(cell.value, column.affinity);
+        return this.coerceValue(cell.value, column);
       });
       sql = `INSERT INTO ${quoteIdentifier(object.name)} (` +
         `${columns.map((column) => quoteIdentifier(column.name)).join(', ')}) VALUES (` +
@@ -103,11 +141,9 @@ export class StudioDatabase {
     const object = await this.mutableTable(tableName);
     const column = object.columns.find((candidate) => candidate.name === columnName);
     if (!column) throw new Error(`Column "${columnName}" does not exist on "${tableName}".`);
-    if (column.primaryKeyPosition > 0) throw new Error('Primary-key cells are read-only.');
-    if (column.affinity === 'blob') throw new Error('Blob cells are read-only.');
     const nextValue = value.mode === 'null'
       ? null
-      : coerceCellValue(value.value, column.affinity);
+      : this.coerceValue(value.value, column);
     if (nextValue === null && !column.nullable) throw new Error(`${column.name} does not allow NULL.`);
     const where = this.keyPredicate(object, key);
     let sql = `UPDATE ${quoteIdentifier(object.name)} SET ${quoteIdentifier(column.name)} = ? ` +
@@ -134,6 +170,59 @@ export class StudioDatabase {
     return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
   }
 
+  async deleteMany(
+    tableName: string,
+    keys: Array<Record<string, unknown>>,
+  ): Promise<MutationResult> {
+    const object = await this.mutableTable(tableName);
+    if (!keys.length) throw new Error('Select at least one row.');
+    let affectedRows = 0;
+    for (const key of keys.slice(0, 1_000)) {
+      const where = this.keyPredicate(object, key);
+      let sql = `DELETE FROM ${quoteIdentifier(object.name)} WHERE ${where.sql}`;
+      let parameters = where.parameters;
+      ({ sql, parameters } = this.bind(sql, parameters));
+      const result = await this.connection.execute(sql, parameters);
+      if (result.affectedRows !== 1) {
+        throw new Error(
+          `Batch delete stopped after ${affectedRows} row(s): a selected row was stale.`,
+        );
+      }
+      affectedRows += result.affectedRows;
+    }
+    return { affectedRows, schema: await this.getSchema(true) };
+  }
+
+  async updateMany(
+    tableName: string,
+    keys: Array<Record<string, unknown>>,
+    columnName: string,
+    value: { mode: 'null' } | { mode: 'value'; value: string },
+  ): Promise<MutationResult> {
+    const object = await this.mutableTable(tableName);
+    const column = object.columns.find((candidate) => candidate.name === columnName);
+    if (!column) throw new Error(`Column "${columnName}" does not exist on "${tableName}".`);
+    if (!keys.length) throw new Error('Select at least one row.');
+    const nextValue = value.mode === 'null' ? null : this.coerceValue(value.value, column);
+    if (nextValue === null && !column.nullable) throw new Error(`${column.name} does not allow NULL.`);
+    let affectedRows = 0;
+    for (const key of keys.slice(0, 1_000)) {
+      const where = this.keyPredicate(object, key);
+      let sql = `UPDATE ${quoteIdentifier(object.name)} SET ${quoteIdentifier(column.name)} = ? ` +
+        `WHERE ${where.sql}`;
+      let parameters: unknown[] = [nextValue, ...where.parameters];
+      ({ sql, parameters } = this.bind(sql, parameters));
+      const result = await this.connection.execute(sql, parameters);
+      if (result.affectedRows !== 1) {
+        throw new Error(
+          `Batch update stopped after ${affectedRows} row(s): a selected row was stale.`,
+        );
+      }
+      affectedRows += result.affectedRows;
+    }
+    return { affectedRows, schema: await this.getSchema(true) };
+  }
+
   close(): Promise<void> {
     return this.connection.close();
   }
@@ -143,6 +232,95 @@ export class StudioDatabase {
       .filter((column) => column.primaryKeyPosition > 0)
       .sort((left, right) => left.primaryKeyPosition - right.primaryKeyPosition)
       .map((column) => column.name);
+  }
+
+  private browsePredicate(object: StudioObject, filters: BrowseFilter[]) {
+    const clauses: string[] = [];
+    const parameters: unknown[] = [];
+    for (const filter of filters.slice(0, 20)) {
+      const column = object.columns.find((candidate) => candidate.name === filter.column);
+      if (!column) throw new Error(`Column "${filter.column}" does not exist on "${object.name}".`);
+      const identifier = quoteIdentifier(column.name);
+      if (filter.operator === 'is-null') {
+        clauses.push(`${identifier} IS NULL`);
+        continue;
+      }
+      if (filter.operator === 'is-not-null') {
+        clauses.push(`${identifier} IS NOT NULL`);
+        continue;
+      }
+      const input = filter.value ?? '';
+      if (filter.operator === 'contains' || filter.operator === 'starts-with' ||
+          filter.operator === 'ends-with') {
+        const escaped = input.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+        const value = filter.operator === 'contains'
+          ? `%${escaped}%`
+          : filter.operator === 'starts-with' ? `${escaped}%` : `%${escaped}`;
+        clauses.push(`${identifier} LIKE ? ESCAPE '\\'`);
+        parameters.push(value);
+        continue;
+      }
+      const operators = {
+        eq: 'IS',
+        ne: 'IS NOT',
+        gt: '>',
+        gte: '>=',
+        lt: '<',
+        lte: '<=',
+      } as const;
+      clauses.push(`${identifier} ${operators[filter.operator]} ?`);
+      parameters.push(this.coerceValue(input, column));
+    }
+    return {
+      sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '',
+      parameters,
+    };
+  }
+
+  private browseOrder(object: StudioObject, supplied: BrowseSort[]): BrowseSort[] {
+    if (supplied.length) {
+      return supplied.slice(0, 5).map((sort) => {
+        if (!object.columns.some((column) => column.name === sort.column)) {
+          throw new Error(`Column "${sort.column}" does not exist on "${object.name}".`);
+        }
+        return {
+          column: sort.column,
+          direction: sort.direction === 'desc' ? 'desc' : 'asc',
+        };
+      });
+    }
+    return this.primaryKey(object).map((column) => ({ column, direction: 'asc' }));
+  }
+
+  private coerceValue(value: string, column: StudioColumn): unknown {
+    if (column.declaredKind === 'blob') {
+      const trimmed = value.trim();
+      if (/^(?:[0-9a-f]{2})+$/i.test(trimmed)) return Buffer.from(trimmed, 'hex');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(trimmed) || trimmed.length % 4 === 1) {
+        throw new Error(`Expected ${column.name} to be base64 or an even-length hexadecimal value.`);
+      }
+      return Buffer.from(trimmed, 'base64');
+    }
+    if (column.declaredKind === 'boolean') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return 1;
+      if (normalized === 'false' || normalized === '0') return 0;
+      throw new Error(`Expected a boolean for ${column.name}.`);
+    }
+    if (
+      column.declaredKind === 'varchar' ||
+      column.declaredKind === 'text' ||
+      column.declaredKind === 'json' ||
+      column.declaredKind === 'date' ||
+      column.declaredKind === 'datetime'
+    ) {
+      return value;
+    }
+    return coerceCellValue(value, column.affinity);
+  }
+
+  private renderParameters(sql: string, parameters: unknown[]): string {
+    return interpolateSqlParameters(sql, parameters);
   }
 
   private async mutableTable(name: string): Promise<StudioObject> {
@@ -176,12 +354,6 @@ export class StudioDatabase {
 
   private bind(sql: string, parameters: unknown[]): { sql: string; parameters: unknown[] } {
     if (!this.connection.info.remote) return { sql, parameters };
-    let index = 0;
-    const rendered = sql.replaceAll('?', () => {
-      if (index >= parameters.length) throw new Error('Missing SQL parameter.');
-      return sqliteLiteral(parameters[index++]);
-    });
-    if (index !== parameters.length) throw new Error('Too many SQL parameters.');
-    return { sql: rendered, parameters: [] };
+    return { sql: interpolateSqlParameters(sql, parameters), parameters: [] };
   }
 }

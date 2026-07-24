@@ -4,7 +4,9 @@ import {
   normalizeValue,
   parseSingleStatement,
   quoteIdentifier,
+  interpolateSqlParameters,
   sqliteAffinity,
+  sqliteDeclaredKind,
   sqliteLiteral,
 } from '../src/testing';
 
@@ -34,6 +36,21 @@ describe('SQLite values and identifiers', () => {
     expect(sqliteAffinity('double precision')).toBe('real');
     expect(sqliteAffinity('')).toBe('blob');
     expect(sqliteAffinity('decimal(10,2)')).toBe('numeric');
+  });
+
+  it('classifies declared editor types independently from SQLite affinity', () => {
+    expect(sqliteDeclaredKind('VARCHAR(100)')).toBe('varchar');
+    expect(sqliteDeclaredKind('TEXT')).toBe('text');
+    expect(sqliteDeclaredKind('JSON')).toBe('json');
+    expect(sqliteDeclaredKind('DATETIME')).toBe('datetime');
+    expect(sqliteDeclaredKind('INTEGER')).toBe('number');
+  });
+
+  it('interpolates only placeholders outside strings, identifiers, and comments', () => {
+    expect(interpolateSqlParameters(
+      `SELECT "odd?", '?', [also?] FROM "table?" WHERE id = ? -- ?\n`,
+      [7],
+    )).toBe(`SELECT "odd?", '?', [also?] FROM "table?" WHERE id = 7 -- ?\n`);
   });
 });
 

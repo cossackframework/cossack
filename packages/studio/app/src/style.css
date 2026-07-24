@@ -47,3 +47,56 @@ body {
 .studio-code-editor .overflow-guard {
   border-radius: inherit;
 }
+
+.studio-tab-panel {
+  view-transition-name: studio-tab-panel;
+}
+
+::view-transition-old(studio-tab-panel) {
+  animation: studio-tab-out 140ms ease both;
+}
+
+::view-transition-new(studio-tab-panel) {
+  animation: studio-tab-in 190ms ease both;
+}
+
+@keyframes studio-tab-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes studio-tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.studio-insert-collapse {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 220ms ease, opacity 160ms ease;
+}
+
+.studio-insert-collapse[data-open] {
+  max-height: 20rem;
+  opacity: 1;
+}
+
+.studio-insert-collapse > div {
+  max-height: 20rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(studio-tab-panel),
+  ::view-transition-new(studio-tab-panel) {
+    animation-duration: 1ms;
+  }
+
+  .studio-insert-collapse {
+    transition-duration: 1ms;
+  }
+}

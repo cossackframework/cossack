@@ -24,6 +24,25 @@ export function sqliteAffinity(type: string): 'integer' | 'real' | 'text' | 'blo
   return 'numeric';
 }
 
+export function sqliteDeclaredKind(
+  type: string,
+): 'varchar' | 'number' | 'date' | 'datetime' | 'text' | 'json' | 'blob' | 'boolean' | 'other' {
+  const normalized = type.trim().toUpperCase();
+  if (normalized.includes('JSON')) return 'json';
+  if (normalized.includes('BLOB') || normalized === '') return 'blob';
+  if (normalized.includes('DATETIME') || normalized.includes('TIMESTAMP') ||
+      normalized.includes('TIME')) return 'datetime';
+  if (normalized === 'DATE' || normalized.startsWith('DATE(')) return 'date';
+  if (normalized.includes('BOOL')) return 'boolean';
+  if (normalized.includes('VARCHAR') || normalized.includes('NVARCHAR') ||
+      normalized.includes('CHARACTER') || /^CHAR(?:\s*\(|$)/.test(normalized)) return 'varchar';
+  if (normalized.includes('TEXT') || normalized.includes('CLOB')) return 'text';
+  if (normalized.includes('INT') || normalized.includes('REAL') ||
+      normalized.includes('FLOA') || normalized.includes('DOUB') ||
+      normalized.includes('NUM') || normalized.includes('DEC')) return 'number';
+  return 'other';
+}
+
 export function sqliteLiteral(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
   if (typeof value === 'boolean') return value ? '1' : '0';
@@ -35,6 +54,70 @@ export function sqliteLiteral(value: unknown): string {
   if (value instanceof Date) return `'${value.toISOString().replaceAll("'", "''")}'`;
   if (value instanceof Uint8Array) return `X'${Buffer.from(value).toString('hex')}'`;
   return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+export function interpolateSqlParameters(sql: string, parameters: readonly unknown[]): string {
+  let mode: 'normal' | 'single' | 'double' | 'backtick' | 'bracket' | 'line-comment' | 'block-comment' =
+    'normal';
+  let parameterIndex = 0;
+  let output = '';
+
+  for (let index = 0; index < sql.length; index++) {
+    const char = sql[index];
+    const next = sql[index + 1];
+    output += char;
+
+    if (mode === 'line-comment') {
+      if (char === '\n') mode = 'normal';
+      continue;
+    }
+    if (mode === 'block-comment') {
+      if (char === '*' && next === '/') {
+        output += next;
+        index++;
+        mode = 'normal';
+      }
+      continue;
+    }
+    if (mode === 'single' || mode === 'double' || mode === 'backtick') {
+      const delimiter = mode === 'single' ? "'" : mode === 'double' ? '"' : '`';
+      if (char === delimiter) {
+        if (next === delimiter) {
+          output += next;
+          index++;
+        } else {
+          mode = 'normal';
+        }
+      }
+      continue;
+    }
+    if (mode === 'bracket') {
+      if (char === ']') mode = 'normal';
+      continue;
+    }
+    if (char === '-' && next === '-') {
+      output += next;
+      index++;
+      mode = 'line-comment';
+    } else if (char === '/' && next === '*') {
+      output += next;
+      index++;
+      mode = 'block-comment';
+    } else if (char === "'") {
+      mode = 'single';
+    } else if (char === '"') {
+      mode = 'double';
+    } else if (char === '`') {
+      mode = 'backtick';
+    } else if (char === '[') {
+      mode = 'bracket';
+    } else if (char === '?') {
+      if (parameterIndex >= parameters.length) throw new Error('Missing SQL parameter.');
+      output = output.slice(0, -1) + sqliteLiteral(parameters[parameterIndex++]);
+    }
+  }
+  if (parameterIndex !== parameters.length) throw new Error('Too many SQL parameters.');
+  return output;
 }
 
 export function coerceCellValue(

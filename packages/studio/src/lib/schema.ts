@@ -1,7 +1,8 @@
-import { quoteIdentifier, sqliteAffinity } from './sql.js';
+import { quoteIdentifier, sqliteAffinity, sqliteDeclaredKind } from './sql.js';
 import type {
   StudioColumn,
   StudioConnection,
+  StudioIndex,
   StudioObject,
   StudioSchema,
 } from './types.js';
@@ -21,6 +22,21 @@ interface PragmaColumn {
   hidden?: number;
 }
 
+interface PragmaIndex {
+  name: string;
+  unique?: number;
+  origin?: string;
+  partial?: number;
+}
+
+interface PragmaIndexColumn {
+  seqno?: number;
+  name?: string | null;
+  desc?: number;
+  coll?: string | null;
+  key?: number;
+}
+
 function editableReason(kind: 'table' | 'view', columns: StudioColumn[]): string | undefined {
   if (kind === 'view') return 'Views are read-only.';
   if (!columns.some((column) => column.primaryKeyPosition > 0)) {
@@ -29,7 +45,10 @@ function editableReason(kind: 'table' | 'view', columns: StudioColumn[]): string
   return undefined;
 }
 
-export async function introspectSchema(connection: StudioConnection): Promise<StudioSchema> {
+export async function introspectSchema(
+  connection: StudioConnection,
+  applicationName = 'Cossack application',
+): Promise<StudioSchema> {
   const result = await connection.execute(`
     SELECT name, type, sql
     FROM sqlite_schema
@@ -49,6 +68,7 @@ export async function introspectSchema(connection: StudioConnection): Promise<St
         name: column.name,
         dataType,
         affinity: sqliteAffinity(dataType),
+        declaredKind: sqliteDeclaredKind(dataType),
         nullable: !column.notnull && primaryKeyPosition === 0,
         defaultValue: column.dflt_value ?? null,
         primaryKeyPosition,
@@ -58,17 +78,39 @@ export async function introspectSchema(connection: StudioConnection): Promise<St
         hidden: Number(column.hidden ?? 0) !== 0,
       };
     });
+    const indexes: StudioIndex[] = [];
+    if (row.type === 'table') {
+      const indexList = await connection.execute(`PRAGMA index_list(${quoteIdentifier(row.name)})`);
+      for (const index of indexList.rows as unknown as PragmaIndex[]) {
+        const indexInfo = await connection.execute(`PRAGMA index_xinfo(${quoteIdentifier(index.name)})`);
+        indexes.push({
+          name: index.name,
+          unique: Number(index.unique ?? 0) !== 0,
+          origin: index.origin ?? 'c',
+          partial: Number(index.partial ?? 0) !== 0,
+          columns: (indexInfo.rows as unknown as PragmaIndexColumn[])
+            .filter((column) => Number(column.key ?? 1) !== 0)
+            .map((column) => ({
+              name: column.name ?? null,
+              position: Number(column.seqno ?? 0),
+              descending: Number(column.desc ?? 0) !== 0,
+              collation: column.coll ?? null,
+            })),
+        });
+      }
+    }
     const reason = editableReason(row.type, columns);
     objects.push({
       name: row.name,
       kind: row.type,
       sql: row.sql,
       columns,
+      indexes,
       editable: reason === undefined,
       readOnlyReason: reason,
     });
   }
-  return { connection: connection.info, objects };
+  return { connection: connection.info, applicationName, objects };
 }
 
 export function findObject(schema: StudioSchema, name: string): StudioObject {
