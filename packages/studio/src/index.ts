@@ -5,6 +5,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Kysely } from '@cossackframework/database';
 import { createLocalConnection } from './lib/local-connection.js';
+import {
+  databaseLabelFromEnvironment,
+  detectStudioProvider,
+  normalizeStudioProvider,
+} from './lib/provider.js';
 import { createRemoteD1Connection } from './lib/remote-d1.js';
 import { StudioDatabase } from './lib/service.js';
 import type { StudioConnection, StudioProvider } from './lib/types.js';
@@ -22,6 +27,7 @@ export interface StudioRunOptions {
   signal?: AbortSignal;
   connection?: StudioConnection;
   applicationName?: string;
+  provider?: StudioProvider;
 }
 
 async function loadCliClient(projectRoot: string): Promise<Kysely<any>> {
@@ -43,10 +49,26 @@ async function loadCliClient(projectRoot: string): Promise<Kysely<any>> {
   return module.getCliClient();
 }
 
-function inferLocalProvider(projectRoot: string): StudioProvider {
-  if (process.env.TURSO_URL) return 'libsql';
-  if (process.env.DB_PATH) return 'sqlite';
-  return path.basename(projectRoot).includes('d1') ? 'd1-local' : 'unknown';
+async function loadProjectEnvironment(projectRoot: string): Promise<void> {
+  let runtime: string | undefined;
+  try {
+    const packageJson = JSON.parse(
+      await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+    );
+    runtime = packageJson.cossack?.runtime;
+  } catch {}
+  const filenames = runtime === 'cloudflare'
+    ? ['.dev.vars', '.env']
+    : ['.env', '.dev.vars'];
+  for (const filename of filenames) {
+    const envPath = path.join(projectRoot, filename);
+    try {
+      await fs.access(envPath);
+      process.loadEnvFile(envPath);
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
 }
 
 async function resolveApplicationName(projectRoot: string): Promise<string> {
@@ -64,8 +86,10 @@ async function resolveApplicationName(projectRoot: string): Promise<string> {
   }
 }
 
-function localDatabaseLabel(explicit?: string): string {
+function localDatabaseLabel(provider: StudioProvider, explicit?: string): string {
   if (explicit) return explicit;
+  const detected = databaseLabelFromEnvironment(provider);
+  if (detected) return detected;
   if (process.env.DB_PATH) return path.basename(process.env.DB_PATH);
   if (process.env.TURSO_URL) {
     try {
@@ -75,6 +99,31 @@ function localDatabaseLabel(explicit?: string): string {
     }
   }
   return 'Local database';
+}
+
+async function createProjectConnection(
+  projectRoot: string,
+  options: StudioRunOptions,
+): Promise<StudioConnection> {
+  await loadProjectEnvironment(projectRoot);
+  const client = await loadCliClient(projectRoot);
+  const provider = options.provider
+    ? normalizeStudioProvider(options.provider)
+    : await detectStudioProvider(client);
+  if (!provider || provider === 'unknown' || provider === 'd1-remote') {
+    await client.destroy().catch(() => {});
+    throw new Error(
+      'Studio could not detect the database driver used by getCliClient(). ' +
+      'Set DB_CONNECTION (or COSSACK_STUDIO_DRIVER) to sqlite, turso, d1, postgres, or mysql.',
+    );
+  }
+  return createLocalConnection({
+    client,
+    info: {
+      provider,
+      label: localDatabaseLabel(provider, options.database),
+    },
+  });
 }
 
 function openBrowser(url: string): void {
@@ -117,13 +166,7 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
         binding: options.database,
         environment: options.env,
       })
-    : createLocalConnection({
-        client: await loadCliClient(projectRoot),
-        info: {
-          provider: inferLocalProvider(projectRoot),
-          label: localDatabaseLabel(options.database),
-        },
-      }));
+    : await createProjectConnection(projectRoot, options));
   const database = new StudioDatabase(connection, {
     applicationName: options.applicationName ?? await resolveApplicationName(projectRoot),
   });
@@ -185,3 +228,7 @@ export type {
   StudioConnectionInfo,
   StudioProvider,
 } from './lib/types.js';
+export {
+  detectStudioProvider,
+  normalizeStudioProvider,
+} from './lib/provider.js';

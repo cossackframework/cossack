@@ -26,6 +26,7 @@ describe('studio command', () => {
   it('documents the public flags', () => {
     expect(studioHelp()).toContain('--remote');
     expect(studioHelp()).toContain('--database <d1-binding>');
+    expect(studioHelp()).toContain('--driver <driver>');
     expect(studioHelp()).toContain('--env <wrangler-environment>');
     expect(studioHelp()).toContain('--port <number>');
     expect(studioHelp()).toContain('--no-open');
@@ -77,6 +78,7 @@ describe('studio command', () => {
     expect(await studioCommand([], context({
       remote: true,
       database: 'DB',
+      driver: 'postgres',
       env: 'production',
       port: '5001',
       'no-open': true,
@@ -85,6 +87,7 @@ describe('studio command', () => {
       projectRoot: root,
       remote: true,
       database: 'DB',
+      provider: 'postgres',
       env: 'production',
       port: 5001,
       open: false,

@@ -1,5 +1,6 @@
-import { CompiledQuery, type Kysely } from '@cossackframework/database';
+import { CompiledQuery, sql, type Kysely, type RawBuilder } from '@cossackframework/database';
 import { OperationQueue } from './queue.js';
+import { splitSqlParameters } from './sql.js';
 import type {
   StudioConnection,
   StudioConnectionInfo,
@@ -27,8 +28,17 @@ export class LocalStudioConnection implements StudioConnection {
   execute(sql: string, parameters: readonly unknown[] = []): Promise<StudioQueryResult> {
     return this.queue.run(async () => {
       const started = performance.now();
+      let query = CompiledQuery.raw(sql);
+      if (parameters.length) {
+        const fragments = splitSqlParameters(sql, parameters.length);
+        let builder: RawBuilder<unknown> = sqlApi.raw(fragments[0]);
+        for (let index = 0; index < parameters.length; index++) {
+          builder = sqlApi`${builder}${parameters[index]}${sqlApi.raw(fragments[index + 1])}`;
+        }
+        query = builder.compile(this.client);
+      }
       const result = await this.client.executeQuery<Record<string, unknown>>(
-        CompiledQuery.raw(sql, [...parameters]),
+        query,
       );
       return {
         rows: [...result.rows],
@@ -45,6 +55,10 @@ export class LocalStudioConnection implements StudioConnection {
     });
   }
 }
+
+// Avoid shadowing the execute() argument while keeping Kysely's template-tag
+// parameter compilation local to this Node-only connection.
+const sqlApi = sql;
 
 export function createLocalConnection(options: LocalConnectionOptions): LocalStudioConnection {
   return new LocalStudioConnection(options.client, options.info);

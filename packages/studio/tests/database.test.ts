@@ -123,7 +123,7 @@ describe('StudioDatabase', () => {
     });
     expect(result.rows).toHaveLength(1);
     expect(result.query).toContain('"odd?""table"');
-    expect(result.query).toContain('"value?""column" IS \'matched\'');
+    expect(result.query).toContain('"value?""column" = \'matched\'');
     expect(result.query).toContain('ORDER BY "id?" DESC');
   });
 

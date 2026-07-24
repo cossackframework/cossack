@@ -208,6 +208,11 @@ export default class StudioPage extends Cossack {
       this.theme = theme;
     });
     studioSchemaCatalog.set(this.activeSchema);
+    if (this.activeSchema.connection.provider === 'postgres') {
+      this.sql = 'SELECT version() AS version;';
+    } else if (this.activeSchema.connection.provider === 'mysql') {
+      this.sql = 'SELECT VERSION() AS version;';
+    }
     void this.restoreFromUrl();
   }
 
@@ -1140,9 +1145,12 @@ export default class StudioPage extends Cossack {
     const firstRow = totalRows ? (this.page - 1) * this.pageSize + 1 : 0;
     const lastRow = Math.min(totalRows, firstRow + rows.length - 1);
     const allSelected = rows.length > 0 && this.selectedRows.length === rows.length;
+    const quote = this.activeSchema.connection.provider === 'mysql'
+      ? `\`${object.name.replaceAll('`', '``')}\``
+      : `"${object.name.replaceAll('"', '""')}"`;
     const query = resultMatches
       ? this.browseResult.query ?? ''
-      : `SELECT * FROM "${object.name.replaceAll('"', '""')}" LIMIT ${this.pageSize} OFFSET 0`;
+      : `SELECT * FROM ${quote} LIMIT ${this.pageSize} OFFSET 0`;
 
     return html`
       <div class="${active ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col">

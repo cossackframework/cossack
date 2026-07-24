@@ -3,6 +3,7 @@ export * from './lib/sql.js';
 export * from './lib/transport.js';
 export * from './lib/queue.js';
 export * from './lib/local-connection.js';
+export * from './lib/provider.js';
 export * from './lib/remote-d1.js';
 export * from './lib/schema.js';
 export * from './lib/service.js';

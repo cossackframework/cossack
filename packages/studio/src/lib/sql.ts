@@ -1,7 +1,13 @@
+import type { StudioProvider } from './types.js';
+
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-export function quoteIdentifier(identifier: string): string {
+export function quoteIdentifier(
+  identifier: string,
+  provider: StudioProvider = 'sqlite',
+): string {
   if (!identifier) throw new Error('Database identifiers cannot be empty.');
+  if (provider === 'mysql') return `\`${identifier.replaceAll('`', '``')}\``;
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
@@ -43,29 +49,122 @@ export function sqliteDeclaredKind(
   return 'other';
 }
 
-export function sqliteLiteral(value: unknown): string {
+export function declaredColumnKind(
+  type: string,
+): ReturnType<typeof sqliteDeclaredKind> {
+  const normalized = type.trim().toUpperCase();
+  if (normalized === 'JSON' || normalized === 'JSONB') return 'json';
+  if (
+    normalized.includes('BYTEA') ||
+    normalized.includes('BINARY') ||
+    normalized.includes('BLOB')
+  ) return 'blob';
+  if (
+    normalized.includes('TIMESTAMP') ||
+    normalized.includes('DATETIME') ||
+    normalized.startsWith('TIME')
+  ) return 'datetime';
+  if (normalized === 'DATE') return 'date';
+  if (
+    normalized.includes('BOOL') ||
+    normalized === 'BIT' ||
+    normalized.startsWith('BIT(') ||
+    /^TINYINT\s*\(\s*1\s*\)/.test(normalized)
+  ) {
+    return 'boolean';
+  }
+  if (
+    normalized.includes('VARCHAR') ||
+    normalized.includes('CHARACTER VARYING') ||
+    normalized.includes('NVARCHAR') ||
+    /^CHAR(?:ACTER)?(?:\s*\(|$)/.test(normalized)
+  ) return 'varchar';
+  if (
+    normalized.includes('TEXT') ||
+    normalized.includes('CLOB') ||
+    normalized.includes('ENUM') ||
+    normalized.includes('SET')
+  ) return 'text';
+  if (
+    normalized.includes('INT') ||
+    normalized.includes('SERIAL') ||
+    normalized.includes('REAL') ||
+    normalized.includes('FLOA') ||
+    normalized.includes('DOUB') ||
+    normalized.includes('NUM') ||
+    normalized.includes('DEC') ||
+    normalized.includes('MONEY')
+  ) return 'number';
+  return sqliteDeclaredKind(type);
+}
+
+export function columnAffinity(
+  type: string,
+): ReturnType<typeof sqliteAffinity> {
+  const normalized = type.trim().toUpperCase();
+  if (
+    normalized.includes('BYTEA') ||
+    normalized.includes('BINARY') ||
+    normalized.includes('BLOB')
+  ) return 'blob';
+  if (normalized.includes('INT') || normalized.includes('SERIAL')) return 'integer';
+  if (
+    normalized.includes('REAL') ||
+    normalized.includes('FLOA') ||
+    normalized.includes('DOUB')
+  ) return 'real';
+  if (
+    normalized.includes('NUM') ||
+    normalized.includes('DEC') ||
+    normalized.includes('MONEY') ||
+    normalized.includes('BOOL') ||
+    normalized === 'BIT'
+  ) return 'numeric';
+  return 'text';
+}
+
+export function sqlLiteral(
+  value: unknown,
+  provider: StudioProvider = 'sqlite',
+): string {
   if (value === null || value === undefined) return 'NULL';
-  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'boolean') {
+    return provider === 'postgres' ? (value ? 'TRUE' : 'FALSE') : value ? '1' : '0';
+  }
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error('Non-finite numbers cannot be written to SQLite.');
+    if (!Number.isFinite(value)) throw new Error('Non-finite numbers cannot be written to SQL.');
     return String(value);
   }
   if (typeof value === 'bigint') return value.toString();
   if (value instanceof Date) return `'${value.toISOString().replaceAll("'", "''")}'`;
-  if (value instanceof Uint8Array) return `X'${Buffer.from(value).toString('hex')}'`;
+  if (value instanceof Uint8Array) {
+    const hex = Buffer.from(value).toString('hex');
+    return provider === 'postgres' ? `'\\\\x${hex}'::bytea` : `X'${hex}'`;
+  }
+  if (provider === 'mysql') {
+    return `'${String(value).replaceAll('\\', '\\\\').replaceAll("'", "''")}'`;
+  }
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-export function interpolateSqlParameters(sql: string, parameters: readonly unknown[]): string {
+export function sqliteLiteral(value: unknown): string {
+  return sqlLiteral(value, 'sqlite');
+}
+
+interface PlaceholderScan {
+  fragments: string[];
+  count: number;
+}
+
+function scanSqlPlaceholders(sql: string): PlaceholderScan {
   let mode: 'normal' | 'single' | 'double' | 'backtick' | 'bracket' | 'line-comment' | 'block-comment' =
     'normal';
-  let parameterIndex = 0;
-  let output = '';
+  const fragments: string[] = [];
+  let fragmentStart = 0;
 
   for (let index = 0; index < sql.length; index++) {
     const char = sql[index];
     const next = sql[index + 1];
-    output += char;
 
     if (mode === 'line-comment') {
       if (char === '\n') mode = 'normal';
@@ -73,7 +172,6 @@ export function interpolateSqlParameters(sql: string, parameters: readonly unkno
     }
     if (mode === 'block-comment') {
       if (char === '*' && next === '/') {
-        output += next;
         index++;
         mode = 'normal';
       }
@@ -83,7 +181,6 @@ export function interpolateSqlParameters(sql: string, parameters: readonly unkno
       const delimiter = mode === 'single' ? "'" : mode === 'double' ? '"' : '`';
       if (char === delimiter) {
         if (next === delimiter) {
-          output += next;
           index++;
         } else {
           mode = 'normal';
@@ -96,11 +193,9 @@ export function interpolateSqlParameters(sql: string, parameters: readonly unkno
       continue;
     }
     if (char === '-' && next === '-') {
-      output += next;
       index++;
       mode = 'line-comment';
     } else if (char === '/' && next === '*') {
-      output += next;
       index++;
       mode = 'block-comment';
     } else if (char === "'") {
@@ -112,11 +207,31 @@ export function interpolateSqlParameters(sql: string, parameters: readonly unkno
     } else if (char === '[') {
       mode = 'bracket';
     } else if (char === '?') {
-      if (parameterIndex >= parameters.length) throw new Error('Missing SQL parameter.');
-      output = output.slice(0, -1) + sqliteLiteral(parameters[parameterIndex++]);
+      fragments.push(sql.slice(fragmentStart, index));
+      fragmentStart = index + 1;
     }
   }
-  if (parameterIndex !== parameters.length) throw new Error('Too many SQL parameters.');
+  fragments.push(sql.slice(fragmentStart));
+  return { fragments, count: fragments.length - 1 };
+}
+
+export function splitSqlParameters(sql: string, expectedCount: number): string[] {
+  const scanned = scanSqlPlaceholders(sql);
+  if (scanned.count < expectedCount) throw new Error('Missing SQL parameter.');
+  if (scanned.count > expectedCount) throw new Error('Too many SQL parameters.');
+  return scanned.fragments;
+}
+
+export function interpolateSqlParameters(
+  sql: string,
+  parameters: readonly unknown[],
+  provider: StudioProvider = 'sqlite',
+): string {
+  const fragments = splitSqlParameters(sql, parameters.length);
+  let output = fragments[0];
+  for (let index = 0; index < parameters.length; index++) {
+    output += sqlLiteral(parameters[index], provider) + fragments[index + 1];
+  }
   return output;
 }
 

@@ -1,4 +1,11 @@
-export type StudioProvider = 'd1-local' | 'd1-remote' | 'sqlite' | 'libsql' | 'unknown';
+export type StudioProvider =
+  | 'd1-local'
+  | 'd1-remote'
+  | 'sqlite'
+  | 'libsql'
+  | 'postgres'
+  | 'mysql'
+  | 'unknown';
 
 export interface StudioConnectionInfo {
   provider: StudioProvider;

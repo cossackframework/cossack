@@ -8,6 +8,7 @@ import {
   sqliteAffinity,
   sqliteDeclaredKind,
   sqliteLiteral,
+  sqlLiteral,
 } from '../src/testing';
 
 describe('single-statement SQL parsing', () => {
@@ -28,6 +29,9 @@ describe('SQLite values and identifiers', () => {
     expect(quoteIdentifier('odd"name')).toBe('"odd""name"');
     expect(sqliteLiteral("a'b")).toBe("'a''b'");
     expect(sqliteLiteral(new Uint8Array([0, 255]))).toBe("X'00ff'");
+    expect(quoteIdentifier('odd`name', 'mysql')).toBe('`odd``name`');
+    expect(sqlLiteral(true, 'postgres')).toBe('TRUE');
+    expect(sqlLiteral(new Uint8Array([0, 255]), 'postgres')).toBe("'\\\\x00ff'::bytea");
   });
 
   it('uses SQLite type affinity rules', () => {
