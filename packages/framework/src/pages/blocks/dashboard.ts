@@ -14,6 +14,7 @@ import {
     Avatar,
     Progress,
     DropdownMenu,
+    Input,
     Sidebar,
 } from '@cossackframework/ui';
 
@@ -91,13 +92,12 @@ export default class DashboardBlocks extends Cossack {
                             <h1 class="text-lg font-semibold">Dashboards</h1>
                         </div>
                         <div class="flex gap-1 bg-muted rounded-md p-1">
-                            ${tabs.map((t, i) => html`
-                                <button
-                                    type="button"
-                                    class=${`px-3 py-1.5 text-sm font-medium rounded-sm cursor-pointer border-none transition-colors ${this.tab === i ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground bg-transparent'}`}
-                                    @click=${() => { this.tab = i; }}
-                                >${t}</button>
-                            `)}
+                            ${tabs.map((t, i) => component(Button, {
+                                type: 'button',
+                                variant: this.tab === i ? 'default' : 'ghost',
+                                size: 'sm',
+                                '@click': () => { this.tab = i; },
+                            }, t))}
                         </div>
                     </div>
                 </div>
@@ -142,9 +142,10 @@ export default class DashboardBlocks extends Cossack {
                             <p class="text-sm text-muted-foreground">${orders.length} transaction${orders.length !== 1 ? 's' : ''}</p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <input type="search" placeholder="Search orders..."
-                                class="w-48 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-muted-foreground"
-                                .value=${bind(this, 'search')} />
+                            <div class="w-48">${component(Input, {
+                                type: 'search', placeholder: 'Search orders...',
+                                '.value': bind(this, 'search'),
+                            })}</div>
                             ${component(Button, { variant: 'outline', size: 'sm' }, 'Export')}
                         </div>
                     </div>
@@ -226,18 +227,19 @@ export default class DashboardBlocks extends Cossack {
                             <div class="text-xs text-muted-foreground">hi@tan.ng</div>
                         </div>
                         <div class="h-px bg-border my-1"></div>
-                        <button class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left">Account</button>
-                        <button class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left">Settings</button>
+                        ${component(Button, { variant: 'ghost', block: true }, 'Account')}
+                        ${component(Button, { variant: 'ghost', block: true }, 'Settings')}
                         <div class="h-px bg-border my-1"></div>
-                        <button class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-destructive text-left">Log out</button>
+                        ${component(Button, { variant: 'destructive', block: true }, 'Log out')}
                     `),
                 })}
                 <div class="flex-1 p-6 space-y-6 overflow-x-hidden">
                     <div class="flex items-center justify-between">
                         <h2 class="text-xl font-bold text-foreground">Overview</h2>
-                        <input type="search" placeholder="Search..."
-                            class="w-64 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
-                            .value=${bind(this, 'search')} />
+                        <div class="w-64">${component(Input, {
+                            type: 'search', placeholder: 'Search...',
+                            '.value': bind(this, 'search'),
+                        })}</div>
                     </div>
                     ${this.statCards()}
                 </div>

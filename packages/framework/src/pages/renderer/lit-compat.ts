@@ -16,7 +16,7 @@ import {
     type CSSResultGroup,
     type TemplateResult,
 } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
+import { Button } from '@cossackframework/ui';
 
 const trustedAccent = unsafeCSS('#7c3aed');
 const SVG_COLORS = ['#7c3aed', '#db2777', '#0891b2'] as const;
@@ -320,10 +320,18 @@ export default class LitCompatibilityDemo extends Cossack {
 
         return html`
             <div class="demo-controls">
-                <button id="svg-color-toggle" @click=${this.cycleSvgColor}>Cycle color</button>
-                <button id="svg-size-toggle" @click=${this.toggleSvgSize}>
-                    ${this.svgExpanded ? 'Use compact geometry' : 'Expand geometry'}
-                </button>
+                ${component(Button, {
+                    id: 'svg-color-toggle',
+                    variant: 'outline',
+                    size: 'sm',
+                    '@click': this.cycleSvgColor,
+                }, 'Cycle color')}
+                ${component(Button, {
+                    id: 'svg-size-toggle',
+                    variant: 'outline',
+                    size: 'sm',
+                    '@click': this.toggleSvgSize,
+                }, this.svgExpanded ? 'Use compact geometry' : 'Expand geometry')}
             </div>
             <svg
                 id="svg-demo-stage"
@@ -367,12 +375,18 @@ export default class LitCompatibilityDemo extends Cossack {
 
         return html`
             <div class="demo-controls">
-                <button id="nothing-toggle" @click=${this.toggleNothingValues}>
-                    Render ${shown ? 'nothing' : 'values'}
-                </button>
-                <button id="event-toggle" @click=${this.toggleEventBinding}>
-                    ${this.eventEnabled ? 'Disable' : 'Enable'} event binding
-                </button>
+                ${component(Button, {
+                    id: 'nothing-toggle',
+                    variant: 'outline',
+                    size: 'sm',
+                    '@click': this.toggleNothingValues,
+                }, `Render ${shown ? 'nothing' : 'values'}`)}
+                ${component(Button, {
+                    id: 'event-toggle',
+                    variant: 'outline',
+                    size: 'sm',
+                    '@click': this.toggleEventBinding,
+                }, `${this.eventEnabled ? 'Disable' : 'Enable'} event binding`)}
             </div>
 
             <ul class="binding-list">
@@ -446,7 +460,7 @@ export default class LitCompatibilityDemo extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="renderer-demo" data-renderer-lit-demo>
                 <h1>More Lit-compatible rendering</h1>
                 <p class="demo-lead">
@@ -474,6 +488,6 @@ export default class LitCompatibilityDemo extends Cossack {
                     ${this.renderStylesDemo()}
                 </section>
             </div>
-        `);
+        `;
     }
 }

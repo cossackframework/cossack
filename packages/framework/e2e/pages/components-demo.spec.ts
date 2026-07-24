@@ -353,12 +353,13 @@ test.describe('Components Demo Page', () => {
     await page.locator('button:has-text("Open Sheet")').click();
 
     // The sheet dialog should be open.
-    await expect(page.locator('dialog.cs-sheet')).toHaveAttribute('open', '', { timeout: 5000 });
-    await expect(page.locator('dialog.cs-sheet h3:has-text("Sheet Panel")')).toBeVisible();
+    const sheet = page.locator('dialog.cs-sheet').filter({ hasText: 'Sheet Panel' });
+    await expect(sheet).toHaveAttribute('open', '', { timeout: 5000 });
+    await expect(sheet.locator('h3:has-text("Sheet Panel")')).toBeVisible();
 
     // Click Close inside the sheet.
-    await page.locator('dialog.cs-sheet button:has-text("Close")').click();
-    await expect(page.locator('dialog.cs-sheet')).not.toHaveAttribute('open', '', { timeout: 5000 });
+    await sheet.locator('button:has-text("Close")').click();
+    await expect(sheet).not.toHaveAttribute('open', '', { timeout: 5000 });
   });
 
   test('calendar renders a month grid and supports date selection', async ({ page }) => {
@@ -436,7 +437,7 @@ test.describe('Components Demo Page', () => {
   });
 
   test('sidebar renders nav items and collapses to icon rail', async ({ page }) => {
-    const sidebar = page.locator('.cs-sidebar');
+    const sidebar = page.locator('main .cs-sidebar');
     await expect(sidebar).toBeVisible();
     // Initial width ~260px.
     expect(await sidebar.locator('.cs-sidebar__link').count()).toBeGreaterThanOrEqual(3);
@@ -447,7 +448,8 @@ test.describe('Components Demo Page', () => {
   });
 
   test('sidebar footer collapses to avatar-only in icon-rail mode', async ({ page }) => {
-    const footer = page.locator('.cs-sidebar__footer');
+    const sidebar = page.locator('main .cs-sidebar');
+    const footer = sidebar.locator('.cs-sidebar__footer');
     await expect(footer).toBeVisible();
     // The trigger's name span (the first .text-sm.font-medium inside the trigger button).
     const nameInTrigger = footer.locator(
@@ -457,8 +459,8 @@ test.describe('Components Demo Page', () => {
     await expect(nameInTrigger).toBeVisible();
     await expect(nameInTrigger).toHaveText('Tan Nguyen');
     // Collapse the sidebar.
-    await page.locator('.cs-sidebar__toggle').click();
-    await expect(page.locator('.cs-sidebar')).toHaveClass(/cs-sidebar--collapsed/);
+    await sidebar.locator('.cs-sidebar__toggle').click();
+    await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
     // The footer carries the is-collapsed class so slotted content adapts.
     await expect(footer).toHaveClass(/is-collapsed/);
     // Avatar still visible; name hidden via group variant.

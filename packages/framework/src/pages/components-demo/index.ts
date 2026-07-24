@@ -1,7 +1,6 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 // Note: ClientState for sheetOpen is declared on the class below.
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
 import {
     Button,
     Input,
@@ -110,7 +109,7 @@ export class ComponentsDemo extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="space-y-8 max-w-3xl">
                 <h1>Components Demo</h1>
                 <p class="text-muted-foreground">
@@ -531,7 +530,7 @@ export class ComponentsDemo extends Cossack {
                         <div class="w-48">
                             ${component(AspectRatio, { ratio: 16 / 9 }, html`<div class="w-full h-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-xs">16:9</div>`)}
                         </div>
-                        <div class="flex-1 min-w-[200px] max-w-xs">
+                        <div class="flex-1 min-w-50 max-w-xs">
                             ${component(Field, { label: 'Username', hint: '3-20 characters', for: 'username-demo' },
                                 component(Input, { id: 'username-demo', placeholder: 'username' }))}
                         </div>
@@ -544,10 +543,11 @@ export class ComponentsDemo extends Cossack {
                 <!-- ButtonGroup -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">ButtonGroup</h2>
-                    ${component(ButtonGroup, {},
-                        html`<button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-l-md">Left</button>
-                             <button class="px-3 py-1.5 text-sm border border-r-0 border-border bg-background text-foreground hover:bg-muted cursor-pointer">Center</button>
-                             <button class="px-3 py-1.5 text-sm border border-border bg-background text-foreground hover:bg-muted cursor-pointer rounded-r-md">Right</button>`)}
+                    ${component(ButtonGroup, {}, html`
+                        ${component(Button, { variant: 'outline' }, 'Left')}
+                        ${component(Button, { variant: 'outline' }, 'Center')}
+                        ${component(Button, { variant: 'outline' }, 'Right')}
+                    `)}
                 </section>
 
                 <!-- AlertDialog + HoverCard -->
@@ -633,7 +633,7 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">Command · Combobox</h2>
                     <div class="flex flex-wrap items-start gap-6">
                         <div class="flex flex-col gap-2">
-                            <p class="text-sm text-muted-foreground">Press <kbd class="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1 text-xs font-medium rounded border border-border bg-muted">⌘</kbd> <kbd class="inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1 text-xs font-medium rounded border border-border bg-muted">K</kbd> anywhere</p>
+                            <p class="text-sm text-muted-foreground">Press <kbd class="inline-flex items-center justify-center min-w-6 h-5 px-1 text-xs font-medium rounded border border-border bg-muted">⌘</kbd> <kbd class="inline-flex items-center justify-center min-w-6 h-5 px-1 text-xs font-medium rounded border border-border bg-muted">K</kbd> anywhere</p>
                             ${component(Command, {
                                 items: [
                                     { id: 'home', label: 'Go to Home', group: 'Navigation' },
@@ -807,30 +807,30 @@ export class ComponentsDemo extends Cossack {
                                 </div>
                                 <hr class="border-t border-border my-1" />
                                 <!-- Upgrade banner -->
-                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
                                     <svg class="w-4 h-4 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 16.5 5.5 21l2-7.5L2 9h7l3-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
                                     <span class="flex-1">Upgrade to Pro</span>
-                                </button>
+                                `)}
                                 <hr class="border-t border-border my-1" />
                                 <!-- Account links -->
-                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                     <span class="flex-1">Account</span>
-                                </button>
-                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                `)}
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.5"/></svg>
                                     <span class="flex-1">Billing</span>
-                                </button>
-                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-foreground hover:bg-muted text-left">
+                                `)}
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 0112 0c0 5 2 6 2 6H4s2-1 2-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                     <span class="flex-1">Notifications</span>
-                                </button>
+                                `)}
                                 <hr class="border-t border-border my-1" />
                                 <!-- Log out -->
-                                <button type="button" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-sm cursor-pointer border-none bg-transparent text-destructive hover:bg-destructive/10 text-left">
+                                ${component(Button, { type: 'button', variant: 'destructive', block: true }, html`
                                     <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                     <span class="flex-1">Log out</span>
-                                </button>
+                                `)}
                             `),
                         })}
                     </div>
@@ -959,6 +959,6 @@ export class ComponentsDemo extends Cossack {
                 <!-- Toaster (mount once — renders toasts from the global store) -->
                 ${component(Toaster, {})}
             </div>
-        `);
+        `;
     }
 }

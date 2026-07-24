@@ -16,7 +16,7 @@ import {
     range,
     key,
 } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
+import { Button } from '@cossackframework/ui';
 
 /**
  * Directives demo. One section per directive showing a visible/live example.
@@ -134,7 +134,7 @@ export default class DirectivesDemo extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="p-5 m-5 border-2 border-dashed border-gray-300">
                 <h1>Renderer Directives</h1>
                 <p>
@@ -153,12 +153,13 @@ export default class DirectivesDemo extends Cossack {
                             () => html`<p class="text-blue-800">✅ The switch is ON.</p>`,
                             () => html`<p class="text-gray-500">⭕ The switch is OFF.</p>`,
                         )}</div>
-                        <button
-                            class="mt-2 border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.toggleWhen()}
-                        >
-                            Toggle (${this.whenOn ? 'on' : 'off'})
-                        </button>
+                        <div class="mt-2">
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.toggleWhen,
+                            }, `Toggle (${this.whenOn ? 'on' : 'off'})`)}
+                        </div>
                     </section>
 
                     <!-- choose -->
@@ -170,12 +171,13 @@ export default class DirectivesDemo extends Cossack {
                             ['loading', () => html`<p class="text-purple-800">⏳ Loading…</p>`],
                             ['error', () => html`<p class="text-red-700">⛔ Something went wrong.</p>`],
                         ], () => html`<p>Unknown status</p>`)}</div>
-                        <button
-                            class="mt-2 border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.cycleStatus()}
-                        >
-                            Cycle status
-                        </button>
+                        <div class="mt-2">
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.cycleStatus,
+                            }, 'Cycle status')}
+                        </div>
                     </section>
 
                     <!-- classMap & styleMap -->
@@ -189,18 +191,16 @@ export default class DirectivesDemo extends Cossack {
                             Watch me change style.
                         </div>
                         <div class="mt-2 flex gap-2">
-                            <button
-                                class="border border-gray-400 rounded px-3 py-1 bg-white"
-                                @click=${() => this.toggleActive()}
-                            >
-                                active=${String(this.active)}
-                            </button>
-                            <button
-                                class="border border-gray-400 rounded px-3 py-1 bg-white"
-                                @click=${() => this.toggleError()}
-                            >
-                                hasErrors=${String(this.hasErrors)}
-                            </button>
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.toggleActive,
+                            }, `active=${String(this.active)}`)}
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.toggleError,
+                            }, `hasErrors=${String(this.hasErrors)}`)}
                         </div>
                     </section>
 
@@ -214,12 +214,13 @@ export default class DirectivesDemo extends Cossack {
                         <a href="${ifDefined(this.href)}" class="text-blue-700 underline">
                             ${this.href ?? 'link (no href)'}
                         </a>
-                        <button
-                            class="block mt-2 border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.toggleHref()}
-                        >
-                            Toggle href
-                        </button>
+                        <div class="mt-2">
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.toggleHref,
+                            }, 'Toggle href')}
+                        </div>
                     </section>
 
                     <!-- repeat -->
@@ -234,24 +235,21 @@ export default class DirectivesDemo extends Cossack {
                             )}
                         </ul>
                         <div class="mt-2 flex gap-2 flex-wrap">
-                            <button
-                                class="border border-gray-400 rounded px-3 py-1 bg-white"
-                                @click=${() => this.addItem()}
-                            >
-                                Add
-                            </button>
-                            <button
-                                class="border border-gray-400 rounded px-3 py-1 bg-white"
-                                @click=${() => this.removeItem()}
-                            >
-                                Remove
-                            </button>
-                            <button
-                                class="border border-gray-400 rounded px-3 py-1 bg-white"
-                                @click=${() => this.shuffleItems()}
-                            >
-                                Reverse
-                            </button>
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.addItem,
+                            }, 'Add')}
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.removeItem,
+                            }, 'Remove')}
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.shuffleItems,
+                            }, 'Reverse')}
                         </div>
                     </section>
 
@@ -283,12 +281,13 @@ export default class DirectivesDemo extends Cossack {
                         <div class="mt-2">
                             ${key(this.keyCount, html`<span class="inline-block px-3 py-1 bg-orange-200 rounded animate-fade-in">mounted @ ${this.keyCount}</span>`)}
                         </div>
-                        <button
-                            class="mt-2 border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.bumpKey()}
-                        >
-                            Remount child
-                        </button>
+                        <div class="mt-2">
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.bumpKey,
+                            }, 'Remount child')}
+                        </div>
                     </section>
 
                     <!-- guard -->
@@ -318,33 +317,36 @@ export default class DirectivesDemo extends Cossack {
                                 this.showA
                                     ? html`<div>
                                         <p class="text-rose-700">Branch A (count: ${this.aCount})</p>
-                                        <button
-                                            class="mt-1 border border-gray-400 rounded px-3 py-1"
-                                            @click=${() => this.incA()}
-                                        >
-                                            increment A
-                                        </button>
+                                        <div class="mt-1">
+                                            ${component(Button, {
+                                                variant: 'outline',
+                                                size: 'sm',
+                                                '@click': this.incA,
+                                            }, 'increment A')}
+                                        </div>
                                       </div>`
                                     : html`<div>
                                         <p class="text-indigo-700">Branch B (count: ${this.bCount})</p>
-                                        <button
-                                            class="mt-1 border border-gray-400 rounded px-3 py-1"
-                                            @click=${() => this.incB()}
-                                        >
-                                            increment B
-                                        </button>
+                                        <div class="mt-1">
+                                            ${component(Button, {
+                                                variant: 'outline',
+                                                size: 'sm',
+                                                '@click': this.incB,
+                                            }, 'increment B')}
+                                        </div>
                                       </div>`,
                             )}
                         </div>
-                        <button
-                            class="mt-2 border border-gray-400 rounded px-3 py-1 bg-white"
-                            @click=${() => this.toggleCache()}
-                        >
-                            Switch to branch ${this.showA ? 'B' : 'A'}
-                        </button>
+                        <div class="mt-2">
+                            ${component(Button, {
+                                variant: 'outline',
+                                size: 'sm',
+                                '@click': this.toggleCache,
+                            }, `Switch to branch ${this.showA ? 'B' : 'A'}`)}
+                        </div>
                     </section>
                 </div>
             </div>
-        `);
+        `;
     }
 }

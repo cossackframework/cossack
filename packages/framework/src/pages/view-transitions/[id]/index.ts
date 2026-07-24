@@ -1,6 +1,5 @@
 import { Cossack, Page, State } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
 
 const items = [
     { id: 1, title: 'Mountain Sunset', color: '#f59e0b' },
@@ -31,7 +30,7 @@ export default class ViewTransitionsDetail extends Cossack {
     }
 
     render() {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <style>
                 .vt-detail-header {
                     height: 200px;
@@ -50,6 +49,6 @@ export default class ViewTransitionsDetail extends Cossack {
                 </div>
                 <p class="mt-4 text-gray-700">This is the detail page for item #${this.itemId}. The colored header morphed from the card you clicked, thanks to <code>view-transition-name</code> matching between the list and detail pages.</p>
             </div>
-        `);
+        `;
     }
 }

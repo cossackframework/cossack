@@ -1,8 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
-import { Button } from '@/components/Button';
-import { Layout } from '@/components/Layout';
+import { Button } from '@cossackframework/ui';
 
 // Example middleware
 const loggingMiddleware: MiddlewareHandler = async (c, next) => {
@@ -63,7 +62,6 @@ export class Greeting extends Cossack {
         const isNotificationLoading = this.loading['incrementNotifications'];
 
         return html`
-            ${component(Layout, { dir: 'ltr' }, html`
                 <div>
                     <h1>${this.greeting}</h1>
                     
@@ -85,7 +83,6 @@ export class Greeting extends Cossack {
                         }, isNotificationLoading ? 'Updating Notifications...' : 'Increment Notifications')}
                     </div>
                 </div>
-            `)}
         `;
     }
 }

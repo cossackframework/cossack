@@ -12,12 +12,10 @@ test.describe('Authentication Pages', () => {
     });
 
     test('should have link to register page', async ({ page }) => {
-      const registerLink = page.locator('a[href="/register"]');
-
-      if (await registerLink.isVisible()) {
-        await registerLink.click();
-        await page.waitForURL('/register');
-      }
+      const registerLink = page.getByRole('main').getByRole('link', { name: 'Register', exact: true });
+      await expect(registerLink).toBeVisible();
+      await registerLink.click();
+      await page.waitForURL('/register');
     });
 
     test('should submit login form', async ({ page }) => {
@@ -46,12 +44,10 @@ test.describe('Authentication Pages', () => {
     });
 
     test('should have link to login page', async ({ page }) => {
-      const loginLink = page.locator('a[href="/login"]');
-
-      if (await loginLink.isVisible()) {
-        await loginLink.click();
-        await page.waitForURL('/login');
-      }
+      const loginLink = page.getByRole('main').getByRole('link', { name: 'Login', exact: true });
+      await expect(loginLink).toBeVisible();
+      await loginLink.click();
+      await page.waitForURL('/login');
     });
 
     test('should submit registration form', async ({ page }) => {
@@ -77,16 +73,12 @@ test.describe('Authentication Pages', () => {
   test('should navigate between login and register pages', async ({ page }) => {
     await page.goto('/login');
 
-    const registerLink = page.locator('a[href="/register"]');
-    if (await registerLink.isVisible()) {
-      await registerLink.click();
-      await expect(page).toHaveURL('/register');
+    const registerLink = page.getByRole('main').getByRole('link', { name: 'Register', exact: true });
+    await registerLink.click();
+    await expect(page).toHaveURL('/register');
 
-      const loginLink = page.locator('a[href="/login"]');
-      if (await loginLink.isVisible()) {
-        await loginLink.click();
-        await expect(page).toHaveURL('/login');
-      }
-    }
+    const loginLink = page.getByRole('main').getByRole('link', { name: 'Login', exact: true });
+    await loginLink.click();
+    await expect(page).toHaveURL('/login');
   });
 });

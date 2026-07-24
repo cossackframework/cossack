@@ -1,7 +1,6 @@
 import { Cossack, Page, Server, State, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
-import { Button } from '@/components/Button';
+import { Button } from '@cossackframework/ui';
 
 @Page({
     transport: 'durable-object',
@@ -22,9 +21,7 @@ export class StatelessCounter extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, {
-            dir: 'ltr',
-        }, html`
+        return html`
             <div>
                 <h1>Stateless Counter</h1>
                 <p>
@@ -38,6 +35,6 @@ export class StatelessCounter extends Cossack {
 
                 ${component(Button, { '@click': this.increment }, 'Increment (+1)')}
             </div>
-        `);
+        `;
     }
 }

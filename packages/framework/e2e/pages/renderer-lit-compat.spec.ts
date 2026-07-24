@@ -22,6 +22,8 @@ test.describe('Renderer Lit compatibility demos', () => {
     const circle = page.locator('#svg-demo-stage circle').first();
     const foreignHtml = page.locator('[data-foreign-object-html]');
 
+    await expect(page.locator('#svg-color-toggle')).toHaveClass(/cs-button/);
+    await expect(page.locator('#svg-size-toggle')).toHaveClass(/cs-button/);
     await expect(circle).toHaveAttribute('fill', '#7c3aed');
     expect(await circle.evaluate((element) => element.namespaceURI)).toBe('http://www.w3.org/2000/svg');
     expect(await foreignHtml.evaluate((element) => element.namespaceURI)).toBe('http://www.w3.org/1999/xhtml');
@@ -43,6 +45,10 @@ test.describe('Renderer Lit compatibility demos', () => {
     const eventButton = page.locator('#nothing-event');
     const spread = page.locator('#nothing-spread');
 
+    await expect(page.locator('#nothing-toggle')).toHaveClass(/cs-button/);
+    await expect(page.locator('#event-toggle')).toHaveClass(/cs-button/);
+    await expect(booleanButton).not.toHaveClass(/cs-button/);
+    await expect(eventButton).not.toHaveClass(/cs-button/);
     await expect(child).toHaveText('managed child content');
     await expect(attribute).toHaveAttribute('data-demo-state', 'value-present-suffix');
     await expect(property).toBeChecked();

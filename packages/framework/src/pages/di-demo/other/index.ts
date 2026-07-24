@@ -1,6 +1,7 @@
 import { Component, Cossack, Inject, Page } from '@cossackframework/core';
 import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { CounterService } from '../../../services/CounterService';
+import { Button } from '@cossackframework/ui';
 
 @Component()
 class NestedCounterReadout extends Cossack {
@@ -22,7 +23,7 @@ export default class OtherDiPage extends Cossack {
             <h1>Second DI Page</h1>
             <p data-testid="page-service-count">${this.counter.formatCount()}</p>
             ${component(NestedCounterReadout)}
-            <button @click=${() => this.counter.goHome()}>Service redirect home</button>
+            ${component(Button, { '@click': () => this.counter.goHome() }, 'Service redirect home')}
             <p><a href="/">Leave DI layout</a></p>
         `;
     }

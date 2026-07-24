@@ -3,6 +3,9 @@ import { test, expect } from '../fixtures';
 test.describe('Tailwind Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/tailwind-demo');
+    await page.waitForFunction(() => (
+      window as typeof window & { __cossackReady?: boolean }
+    ).__cossackReady === true);
   });
 
   test('should render with Tailwind classes in the DOM', async ({ page }) => {
@@ -56,15 +59,12 @@ test.describe('Tailwind Demo Page', () => {
     await expect(counter).toHaveText('2');
   });
 
-  test('should render badges with rounded-full', async ({ page }) => {
-    const badge = page.locator('.rounded-full').first();
-
-    await expect.poll(
-      () => badge.evaluate((el) =>
-        Number.parseFloat(getComputedStyle(el).borderRadius),
-      ),
-      { timeout: 5000 },
-    ).toBeGreaterThanOrEqual(9999);
+  test('should render UI badge variants', async ({ page }) => {
+    const badges = page.locator('main .cs-badge');
+    await expect(badges).toHaveCount(3);
+    await expect(badges.nth(0)).toHaveClass(/cs-badge--destructive/);
+    await expect(badges.nth(1)).toHaveClass(/cs-badge--warning/);
+    await expect(badges.nth(2)).toHaveClass(/cs-badge--secondary/);
   });
 
 

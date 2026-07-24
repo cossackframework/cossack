@@ -1,5 +1,6 @@
 import { Cossack, Page, Server, State, Client, ClientState, HeadContext, HeadValue } from "@cossackframework/core";
-import { TemplateResult, html } from "@cossackframework/renderer";
+import { TemplateResult, component, html } from "@cossackframework/renderer";
+import { Button, Input } from "@cossackframework/ui";
 
 interface ChatMessage {
     role: 'user' | 'assistant';
@@ -120,14 +121,14 @@ export class SseChat extends Cossack {
                     ` : ''}
                 </div>
                 <form @submit=${this.handleSubmit}>
-                    <input
-                        type="text"
-                        placeholder="Type a message..."
-                        .value=${this.inputValue}
-                        @input=${this.handleInput}
-                        ?disabled=${this.isStreaming}
-                    />
-                    <button type="submit" ?disabled=${this.isStreaming}>Send</button>
+                    ${component(Input, {
+                        type: 'text',
+                        placeholder: 'Type a message...',
+                        '.value': this.inputValue,
+                        '@input': this.handleInput,
+                        disabled: this.isStreaming,
+                    })}
+                    ${component(Button, { type: 'submit', disabled: this.isStreaming }, 'Send')}
                 </form>
             </div>
         `;

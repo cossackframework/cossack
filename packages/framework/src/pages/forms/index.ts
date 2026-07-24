@@ -1,5 +1,6 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { component, html } from '@cossackframework/renderer';
+import { Button, Input, Label, Typography } from '@cossackframework/ui';
 
 // This page demonstrates a bare minimum form submission and redirection using the Cossack framework.
 // This concept of form handling and post requests is similar to how you would handle forms in a traditional web application, 
@@ -18,14 +19,14 @@ export default class FormIndex extends Cossack {
   render() {
     return html`
       <div>
-        <h1>Form</h1>
+        ${component(Typography, { variant: 'h1' }, 'Form')}
         <p>Hello, ${this.c.req.query('name') ? this.c.req.query('name') : 'Guest'}!</p>
-        <form method="post">
-          <div>
-            <label for="name">Name:</label>
-            <input type="text" id="name" name="name" required />
+        <form method="post" class="mt-6 max-w-md space-y-4">
+          <div class="space-y-2">
+            ${component(Label, { for: 'name' }, 'Name')}
+            ${component(Input, { type: 'text', id: 'name', name: 'name', required: true })}
           </div>
-          <button type="submit">Submit</button>
+          ${component(Button, { type: 'submit' }, 'Submit')}
         </form>
       </div>
     `;

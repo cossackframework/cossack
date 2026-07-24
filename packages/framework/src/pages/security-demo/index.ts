@@ -1,6 +1,5 @@
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
-import { Layout } from '../../components/Layout';
 
 /**
  * Regression page for the security-plugin transitive-preservation fix.
@@ -57,7 +56,7 @@ export class SecurityDemo extends Cossack {
     }
 
     render(): TemplateResult {
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div class="security-demo" ?data-reveal-ready="${this.revealReady}">
                 <h1>Security Demo</h1>
                 <p>Scroll down to reveal elements. The reveal logic lives in
@@ -70,6 +69,6 @@ export class SecurityDemo extends Cossack {
                 <div class="reveal" data-testid="reveal-2">Reveal 2</div>
                 <div class="reveal" data-testid="reveal-3">Reveal 3</div>
             </div>
-        `);
+        `;
     }
 }

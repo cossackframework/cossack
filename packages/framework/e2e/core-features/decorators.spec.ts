@@ -4,18 +4,16 @@ test.describe('Decorators', () => {
   test.describe('@Server Decorator', () => {
     test('should call server method and update state', async ({ page }) => {
       await page.goto('/counter-http');
+      await page.waitForFunction(() => (
+        window as typeof window & { __cossackReady?: boolean }
+      ).__cossackReady === true);
 
-      const body = await page.locator('body').textContent();
-      const initialMatch = body?.match(/Count:\s*(\d+)/);
+      const count = page.getByText(/^Count:\s*\d+$/);
+      const initialMatch = (await count.textContent())?.match(/Count:\s*(\d+)/);
       const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
 
-      await page.click('button:has-text("+")');
-
-      await page.waitForFunction((expected) => {
-        const text = document.body.textContent || '';
-        const match = text.match(/Count:\s*(\d+)/);
-        return match ? parseInt(match[1], 10) === expected : false;
-      }, initialValue + 1);
+      await page.getByRole('button', { name: 'Increment', exact: true }).click();
+      await expect(count).toHaveText(`Count: ${initialValue + 1}`);
     });
   });
 

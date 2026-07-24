@@ -1,5 +1,6 @@
 import { Client, ClientState, Cossack, Page, connectStore } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
+import { Button } from '@cossackframework/ui';
 import {
     describeBrowser,
     saveTheme,
@@ -64,13 +65,10 @@ export default class ClientOnlyModulesExample extends Cossack {
                         </div>
                     </dl>
 
-                    <button
-                        class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground"
-                        type="button"
-                        @click="${this.toggleTheme}"
-                    >
-                        Toggle client-only store
-                    </button>
+                    ${component(Button, {
+                        type: 'button',
+                        '@click': this.toggleTheme,
+                    }, 'Toggle client-only store')}
 
                     <p class="text-sm text-muted-foreground">
                         Keep client-only exports out of <code>render()</code>, <code>init()</code>,

@@ -1,18 +1,21 @@
 import { Cossack, Page } from '@cossackframework/core';
-import { html, type TemplateResult } from '@cossackframework/renderer';
+import { component, html } from '@cossackframework/renderer';
+import { Card, Typography } from '@cossackframework/ui';
 
 @Page({ transport: 'http' })
 export default class AuthLayout extends Cossack {
   render() {
     return html`
-      <div class="auth-layout flex justify-center items-center min-h-[80vh] bg-gray-100">
-        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-100">
-          <h2 class="text-center text-gray-800 mb-6">Cossack Auth</h2>
+      <div class="auth-layout flex min-h-[70vh] items-center justify-center">
+        ${component(Card, { class: 'w-full max-w-md' }, html`
+          <div class="mb-6 text-center">
+            ${component(Typography, { variant: 'h2' }, 'Cossack Auth')}
+          </div>
           ${this.children}
           <div class="mt-6 text-center text-sm">
-             <a href="/" class="text-gray-500">&larr; Back to Home</a>
+             <a href="/" class="text-muted-foreground hover:text-foreground">&larr; Back to overview</a>
           </div>
-        </div>
+        `)}
       </div>
     `;
   }

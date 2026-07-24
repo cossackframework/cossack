@@ -60,6 +60,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   function shouldProcessFile(id: string): boolean {
     // Skip node_modules
     if (id.includes('node_modules')) return false;
+    // Never transform the plugin's Node-only implementation when Vite/Vitest
+    // loads it as part of the build configuration.
+    if (/(^|\/)vite-security-plugin\.m?ts(?:$|[?#])/.test(id)) return false;
 
     // Skip framework packages. Use path-aware matching (surrounding path
     // separators) so a user path like `/src/@cossackframework/core-utils/x.ts`
@@ -103,6 +106,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
       // the regex anchors ($>) and readFileSync both see the real path.
       const cleanId = id.split('?')[0].split('#')[0];
+      if (/(^|\/)vite-security-plugin\.m?ts$/.test(cleanId)) return;
 
       // Browser-only modules are loaded verbatim by the client build. Every
       // server environment receives a shape-compatible, lazy throwing stub so

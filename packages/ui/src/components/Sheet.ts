@@ -63,6 +63,7 @@ export class Sheet extends Cossack {
             side = "right",
             size,
             closeOnBackdrop = true,
+            onClose: _onClose,
             ...rest
         } = this.props;
 
@@ -90,6 +91,7 @@ export class Sheet extends Cossack {
             <dialog
                 ref=${this.dialogRef}
                 class="cs-sheet"
+                ...=${rest}
                 @close=${() => {
                     const onClose = this.props.onClose ?? this.props["@close"];
                     if (typeof onClose === "function") onClose();

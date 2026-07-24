@@ -6,7 +6,7 @@ test.describe('Refs Page', () => {
   });
 
   test('should focus input on mount via @Ref', async ({ page }) => {
-    const input = page.locator('input').first();
+    const input = page.getByPlaceholder('I was focused automatically');
     await expect(input).toBeVisible();
 
     // Wait for hydration and onMount to run

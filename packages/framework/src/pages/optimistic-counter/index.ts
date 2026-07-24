@@ -1,6 +1,6 @@
 import { Cossack, Page, Server, State, ClientState, Optimistic, Client } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { Button } from '@/components/Button';
+import { Button } from '@cossackframework/ui';
 
 @Page({
     transport: 'durable-object',

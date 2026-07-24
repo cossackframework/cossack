@@ -1,7 +1,7 @@
 import { Cossack, Page, State, Server, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { cache } from '@/cache';
-import { Layout } from '@/components/Layout';
+import { Alert, Button, Typography } from '@cossackframework/ui';
 
 // Demonstrates the server-side cache facade. All cache calls live inside a
 // `@Server()` method (the cache is server-only, resolved per-request from
@@ -86,9 +86,9 @@ export default class CacheExample extends Cossack {
 
     render(): TemplateResult {
         const ran = this.storedAt !== '';
-        return component(Layout, { dir: 'ltr' }, html`
+        return html`
             <div>
-                <h1 class="text-2xl font-bold mb-2">Cache Example</h1>
+                ${component(Typography, { variant: 'h1' }, 'Cache Example')}
                 <p class="mb-4 text-gray-600">
                     This demo caches the current datetime using the default in-memory store,
                     waits ~3 seconds, then reads it back. If the cache works, the read value
@@ -96,25 +96,20 @@ export default class CacheExample extends Cossack {
                     retrieved, not recomputed.
                 </p>
 
-                <button
-                    class="px-4 py-2 bg-blue-500 text-white rounded ${this.loading['runCacheTest'] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-600'}"
-                    @click=${this.runCacheTest}
-                    ?disabled=${this.loading['runCacheTest']}
-                >
-                    ${this.loading['runCacheTest'] ? 'Running...' : 'Run cache test'}
-                </button>
+                ${component(Button, {
+                    '@click': this.runCacheTest,
+                    disabled: !!this.loading['runCacheTest'],
+                }, this.loading['runCacheTest'] ? 'Running...' : 'Run cache test')}
 
                 ${ran
                     ? html`
                         <h2 class="text-lg font-semibold mt-6 mb-2">Result</h2>
-                        <div class="mb-4 p-3 rounded-lg ${this.cacheHit
-                            ? 'bg-green-50 text-green-800 border border-green-300'
-                            : 'bg-red-50 text-red-800 border border-red-300'}">
+                        ${component(Alert, { variant: this.cacheHit ? 'success' : 'destructive', class: 'mb-4' }, html`
                             <strong>${this.cacheHit ? '✓ Cache works' : '✗ Cache miss'}</strong>
                             — ${this.cacheHit
                                 ? 'the cached value matched the original write; it was served from the cache.'
                                 : 'the cached value did not match (or was missing).'}
-                        </div>
+                        `)}
 
                         <table class="border-collapse mb-4">
                             ${this.row('Written to cache at', this.storedAt)}
@@ -132,6 +127,6 @@ export default class CacheExample extends Cossack {
                     `
                     : html`<p class="mt-4 text-gray-400">Click "Run cache test" to begin.</p>`}
             </div>
-        `);
+        `;
     }
 }

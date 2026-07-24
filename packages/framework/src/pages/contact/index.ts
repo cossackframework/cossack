@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { Button } from '@/components/Button';
+import { Button, Input, Label, Typography } from '@cossackframework/ui';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
 import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 
@@ -29,11 +29,11 @@ export class Contact extends Cossack {
 
     render(): TemplateResult {
         return html`
-            <h1 class="text-3xl text-red-500">Contact Page</h1>
-            <div>Hello ${this.greeting}</div>
-            <form method="post" action="/contact">
-                <label for="name">Name:</label>
-                <input type="text" id="name" name="name" value="${this.greeting}" />
+            ${component(Typography, { variant: 'h3' }, 'Contact page')}
+            <p class="my-4">Hello ${this.greeting}</p>
+            <form method="post" action="/contact" class="max-w-md space-y-3">
+                ${component(Label, { for: 'name' }, 'Name')}
+                ${component(Input, { type: 'text', id: 'name', name: 'name', value: this.greeting })}
                 ${component(Button, { type: 'submit' }, 'Submit')}
             </form> 
         `;

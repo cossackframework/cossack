@@ -1,4 +1,6 @@
 import { Cossack, Page, ClientState, PreventNavigation, html, Client } from '@cossackframework/core';
+import { component } from '@cossackframework/renderer';
+import { Alert, AlertDialog, Input, Typography } from '@cossackframework/ui';
 
 @Page()
 export default class PreventNavigationDemo extends Cossack {
@@ -23,41 +25,31 @@ export default class PreventNavigationDemo extends Cossack {
 
     render() {
         return html`
-            <h1>Prevent Navigation Demo</h1>
+            ${component(Typography, { variant: 'h1' }, 'Prevent Navigation Demo')}
             <p>Try typing in the box below and then clicking a link to navigate away.</p>
 
-            ${this.isDirty ? html`<div class="text-amber-500 font-bold mb-2.5">You have unsaved changes</div>` : ''}
+            ${this.isDirty ? component(Alert, { variant: 'warning' }, 'You have unsaved changes') : ''}
             ${this.inputValue ? html`<div>Current Input: <strong>${this.inputValue}</strong></div>` : ''}
 
-            <input
-                type="text"
-                value="${this.inputValue}"
-                @input="${this.onInput}"
-                placeholder="Type something..."
-                class="p-2 w-full box-border mb-5"
-            />
+            <div class="my-5">${component(Input, {
+                type: 'text', value: this.inputValue,
+                '@input': this.onInput, placeholder: 'Type something...',
+            })}</div>
 
             <p>
                 <a href="/">Go Home (Trigger Navigation)</a>
             </p>
 
             <!-- Custom Prompt UI -->
-            ${this._pendingNavigation ? html`
-                <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-1000">
-                    <div class="bg-white p-5 rounded-lg shadow-lg max-w-100">
-                        <h3>Unsaved Changes</h3>
-                        <p>You have unsaved text in the input field. Are you sure you want to leave?</p>
-                        <div class="mt-4 flex gap-2.5 justify-end">
-                            <button class="py-2 px-4 rounded cursor-pointer border-none bg-gray-200 text-black" @click="${() => this.confirmNavigation(false)}">
-                                Stay
-                            </button>
-                            <button class="py-2 px-4 rounded cursor-pointer border-none bg-red-500 text-white" @click="${() => this.confirmNavigation(true)}">
-                                Leave without saving
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ` : ''}
+            ${component(AlertDialog, {
+                open: !!this._pendingNavigation,
+                title: 'Unsaved changes',
+                description: 'You have unsaved text in the input field. Are you sure you want to leave?',
+                cancelLabel: 'Stay',
+                actionLabel: 'Leave without saving',
+                onClose: () => this.confirmNavigation(false),
+                onAction: () => this.confirmNavigation(true),
+            })}
         `;
     }
 }

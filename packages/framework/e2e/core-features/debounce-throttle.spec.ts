@@ -32,7 +32,7 @@ test.describe('@Debounce / @Throttle', () => {
     await page.waitForLoadState('networkidle');
 
     // Scope to the server-side card so the shared "Keystrokes:" label is unambiguous.
-    const card = page.locator('.bg-purple-50');
+    const card = page.locator('.cs-card').filter({ hasText: '@Server() @Debounce(500) search' });
     const input = card.locator('input[placeholder="Type to query the server..."]');
     const cardText = async () => (await card.textContent()) || '';
 

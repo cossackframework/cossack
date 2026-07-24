@@ -33,6 +33,10 @@ export class Command extends Cossack {
     @ClientState() private query = "";
     @ClientState() private activeIndex = 0;
 
+    get isOpen(): boolean {
+        return this.props.open === undefined ? this.open : !!this.props.open;
+    }
+
     @OnDocument("keydown")
     @Client()
     onGlobalKeydown(e: KeyboardEvent) {
@@ -58,14 +62,14 @@ export class Command extends Cossack {
     render() {
         const { placeholder = "Search..." } = this.props;
 
-        if (!this.open) return null;
+        if (!this.isOpen) return null;
 
         const filtered = this.getFiltered();
 
         return html`
             <div
                 class="cs-command fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]"
-                @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) { this.open = false; } }}
+                @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) this.setOpen(false); }}
             >
                 <div class="absolute inset-0 bg-black/50"></div>
                 <div class="cs-command__panel relative w-full max-w-xl mx-4 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden">
@@ -121,8 +125,14 @@ export class Command extends Cossack {
     @Client()
     private selectItem(id: string) {
         this.props.onSelect?.(id);
-        this.open = false;
+        this.setOpen(false);
         this.query = "";
         this.activeIndex = 0;
+    }
+
+    @Client()
+    private setOpen(open: boolean) {
+        this.open = open;
+        this.props.onOpenChange?.(open);
     }
 }

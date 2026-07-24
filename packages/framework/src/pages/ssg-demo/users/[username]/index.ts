@@ -1,6 +1,5 @@
 import { Cossack, Page, State } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Layout } from '@/components/Layout';
 
 /**
  * Dynamic SSG Example with generateStaticParams
@@ -49,7 +48,6 @@ export class UserProfile extends Cossack {
     const name = this.c.req.param('username') || this.username || 'Guest';
 
     return html`
-      ${component(Layout, { dir: 'ltr' }, html`
         <div class="user-profile">
           <h1>User Profile</h1>
 
@@ -101,7 +99,6 @@ export class UserProfile extends Cossack {
             <p>Build date: ${new Date().toISOString()}</p>
           </div>
         </div>
-      `)}
     `;
   }
 }
