@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createApp } from '@cossackframework/scaffold';
 import { flagString } from '../flags.js';
 
 export async function createCommand(args, ctx) {
@@ -14,20 +15,27 @@ export async function createCommand(args, ctx) {
     return 1;
   }
 
-  let createApp;
   try {
-    ({ createApp } = await import('create-cossack-app'));
-  } catch {
-    console.error(
-      'Could not load create-cossack-app. Ensure the "cossack" package is installed.',
-    );
-    return 1;
-  }
-
-  try {
-    const { projectDir, adapter: used } = await createApp(projectName, { adapter });
+    const yes = ctx.flags.yes === true || ctx.flags.y === true;
+    const { projectDir, adapter: used, recipe, status } = await createApp(projectName, {
+      cwd: ctx.cwd,
+      adapter,
+      preset: flagString(ctx.flags.preset),
+      features: ctx.flags.features,
+      database: flagString(ctx.flags.database),
+      oauth: ctx.flags.oauth,
+      theme: flagString(ctx.flags.theme),
+      dashboardModules: ctx.flags['dashboard-features'],
+      yes,
+      interactive: !yes,
+      force: ctx.force,
+    });
+    if (status === 'cancelled') {
+      console.log('Cancelled. No files were changed.');
+      return 0;
+    }
     const dirName = path.basename(projectDir);
-    console.log(`\nCossack app created in ${projectDir} (adapter: ${used})\n`);
+    console.log(`\nCossack app created in ${projectDir} (adapter: ${used}, preset: ${recipe.preset})\n`);
     console.log('Next steps:');
     console.log(`  cd ${dirName}`);
     console.log('  pnpm install');
@@ -50,5 +58,12 @@ export function createHelp() {
 Scaffold a new Cossack project.
 
 Options:
-  --adapter <cloudflare|node>   Skip the adapter prompt.`;
+  --adapter <cloudflare|node>
+  --preset <minimal|database|auth|full-stack>
+  --features <ui,database,auth,dashboard,examples>
+  --database <d1|sqlite|turso>
+  --oauth <github,google,gitlab,facebook,microsoft>
+  --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
+  --dashboard-features <users,sessions,settings,roles>
+  --yes                         Accept defaults and write without confirmation.`;
 }

@@ -110,7 +110,7 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (auth, database, ui).
+  add <feature>                Add a feature (ui, database, auth, dashboard, examples).
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run Kysely migrations under src/migrations/.

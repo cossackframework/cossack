@@ -24,9 +24,7 @@
   "files": [
     "bin",
     "index.js",
-    "index.d.ts",
-    "template",
-    "tsconfig.template.json"
+    "index.d.ts"
   ],
   "publishConfig": {
     "access": "public"
@@ -35,6 +33,6 @@
     "start": "node ./bin/create-cossack-app.js"
   },
   "dependencies": {
-    "prompts": "^2.4.2"
+    "@cossackframework/scaffold": "workspace:*"
   }
 }

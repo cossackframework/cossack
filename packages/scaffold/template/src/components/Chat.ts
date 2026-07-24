@@ -9,6 +9,7 @@ export interface ChatMessage {
 }
 
 interface ChatProps {
+    [key: string]: unknown;
     messages: ChatMessage[];
     streamingText: string;
     isStreaming: boolean;

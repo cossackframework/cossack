@@ -97,7 +97,21 @@ cossack upgrade --apply-template
 
 The CLI is a small, dependency-light Node.js program (no `commander`/`yargs`). Commands are registered in [`src/dispatch.js`](./src/dispatch.js); each command lives in [`src/commands/`](./src/commands) and follows the contract `async function run(args, ctx): Promise<exitCode>`. Generated file contents are pure template functions in [`src/templates.js`](./src/templates.js) (string in, string out) for easy testing.
 
-Scaffolding reuses [`create-cossack-app`](../create-cossack-app) so `cossack create` and `create-cossack-app` produce identical projects, and both write a `.cossack/scaffold.json` manifest that `cossack upgrade` uses for non-destructive template-drift detection.
+Scaffolding is powered by [`@cossackframework/scaffold`](../scaffold). Both
+`cossack create` and `create-cossack-app` resolve the same recipe and write a
+schema-v2 `.cossack/scaffold.json` manifest with capability ownership and
+baseline hashes. `cossack add` composes features into that recipe, while
+`cossack upgrade` re-renders only the installed capabilities.
+
+Available presets are `minimal`, `database`, `auth`, and `full-stack`.
+Composable features are `ui`, `database`, `auth`, `dashboard`, and `examples`.
+For example:
+
+```sh
+cossack create my-app --preset=minimal --yes
+cd my-app
+cossack add dashboard --features=users,sessions
+```
 
 ## Documentation
 

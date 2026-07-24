@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
+import { renderRecipe, resolveRecipe } from '@cossackframework/scaffold';
 
 import {
   exists,
@@ -31,14 +33,9 @@ const EXCLUDE_FROM_SYNC = new Set([
   '.cossack/scaffold.json',
 ]);
 
-// Files that `create-cossack-app`'s `configureNodeAdapter()` rewrites (or
-// deletes) when scaffolding a Node project. The bundled template only ships
-// their Cloudflare-flavored versions, so applying them to an existing Node
-// project would clobber its runtime contract — e.g. `src/index.ts` would lose
-// the named `app` export, `vite.config.ts` would re-add the Cloudflare plugin,
-// and `src/db/config.ts` would swap better-sqlite3 for D1 bindings. These must
-// be excluded from drift sync whenever the project's adapter is `node`.
-// Keep in sync with `configureNodeAdapter` in create-cossack-app/index.js.
+// Schema-v1 manifests predate recipe rendering and compare against the bundled
+// Cloudflare template. Protect files that older Node scaffolds rewrote. Schema
+// v2 renders adapter-specific files directly and does not need this fallback.
 const NODE_ADAPTER_REWRITES = new Set([
   'src/index.ts',
   'src/db/config.ts',
@@ -59,7 +56,7 @@ async function resolveAdapter(root, manifest) {
 /**
  * Files excluded from template sync for the given adapter. Node projects never
  * receive the bundled Cloudflare-flavored runtime files that
- * `configureNodeAdapter` rewrites at create time.
+ * older scaffolding rewrote at create time.
  */
 function adapterExclusions(adapter) {
   if (adapter === 'node') return NODE_ADAPTER_REWRITES;
@@ -219,7 +216,7 @@ export function _setTemplateDirOverride(dir) {
 async function bundledTemplateDir() {
   if (templateDirOverride !== null) return templateDirOverride;
   try {
-    const pkgPath = requireFromHere.resolve('create-cossack-app/package.json');
+    const pkgPath = requireFromHere.resolve('@cossackframework/scaffold/package.json');
     return path.join(path.dirname(pkgPath), 'template');
   } catch {
     return null;
@@ -259,9 +256,47 @@ async function buildDriftReport(root, ctx) {
     excluded: [],
     missing: [],
     templateAvailable: !!templateDir,
+    rendered: null,
   };
 
   if (!manifest) return report;
+
+  if (manifest.schemaVersion === 2) {
+    const recipe = resolveRecipe({
+      adapter: manifest.runtime ?? manifest.adapter,
+      preset: 'minimal',
+      features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+      database: manifest.config?.database,
+      oauth: manifest.config?.oauth,
+      theme: manifest.config?.theme,
+      dashboardModules: manifest.dashboardModules,
+    });
+    const rendered = await renderRecipe(recipe, {
+      projectName: projectPkgName(root),
+    });
+    report.rendered = rendered;
+    report.templateAvailable = true;
+    const paths = new Set([...Object.keys(manifest.files ?? {}), ...rendered.keys()]);
+    for (const rel of paths) {
+      const owned = manifest.files?.[rel];
+      const baseline = typeof owned === 'string' ? owned : owned?.hash;
+      const current = await hashFile(path.join(root, rel));
+      const candidate = rendered.get(rel);
+      const newHash = candidate
+        ? createHash('sha256').update(candidate.content).digest('hex')
+        : null;
+      const excluded = EXCLUDE_FROM_SYNC.has(rel);
+      if (!owned) {
+        if (current === null && candidate) report.canUpdate.push(rel);
+        else if (candidate && current === newHash) report.upToDate.push(rel);
+        else report.modified.push(rel);
+        continue;
+      }
+      const bucket = classifyFile({ baseline, current, newHash, excluded });
+      report[bucket].push(rel);
+    }
+    return report;
+  }
 
   const files = manifest.files || {};
   for (const rel of Object.keys(files)) {
@@ -278,6 +313,10 @@ async function buildDriftReport(root, ctx) {
     report[bucket].push(rel);
   }
   return report;
+}
+
+function projectPkgName(root) {
+  return path.basename(root);
 }
 
 function printReport(report) {
@@ -328,7 +367,12 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       applied.push(rel);
       continue;
     }
-    await fs.copyFile(path.join(templateDir, rel), path.join(root, rel));
+    await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
+    if (report.rendered?.has(rel)) {
+      await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
+    } else {
+      await fs.copyFile(path.join(templateDir, rel), path.join(root, rel));
+    }
     console.log(`  updated  ${rel}`);
     applied.push(rel);
   }
@@ -341,7 +385,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
   if (ctx.force) {
     for (const rel of report.missing) {
       const src = path.join(templateDir, rel);
-      if (!(await exists(src))) {
+      if (!report.rendered?.has(rel) && !(await exists(src))) {
         continue;
       }
       if (ctx.dryRun) {
@@ -349,7 +393,12 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
         forced.push(rel);
         continue;
       }
-      await fs.copyFile(src, path.join(root, rel));
+      await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
+      if (report.rendered?.has(rel)) {
+        await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
+      } else {
+        await fs.copyFile(src, path.join(root, rel));
+      }
       console.log(`  force-updated  ${rel}`);
       forced.push(rel);
     }
@@ -366,7 +415,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
   // bundled-template file that belongs to a different adapter — forcing a
   // Cloudflare runtime file (src/index.ts, vite.config.ts, ...) onto a Node
   // project would silently break its runtime contract.
-  const extraExcluded = adapterExclusions(report.adapter);
+  const extraExcluded = report.rendered ? new Set() : adapterExclusions(report.adapter);
   for (const rel of forceFiles) {
     if (extraExcluded.has(rel)) {
       console.error(
@@ -376,7 +425,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       continue;
     }
     const src = path.join(templateDir, rel);
-    if (!(await exists(src))) {
+    if (!report.rendered?.has(rel) && !(await exists(src))) {
       console.error(`  cannot force: ${rel} not in template`);
       continue;
     }
@@ -385,27 +434,43 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
       forced.push(rel);
       continue;
     }
-    await fs.copyFile(src, path.join(root, rel));
+    await fs.mkdir(path.dirname(path.join(root, rel)), { recursive: true });
+    if (report.rendered?.has(rel)) {
+      await fs.writeFile(path.join(root, rel), report.rendered.get(rel).content);
+    } else {
+      await fs.copyFile(src, path.join(root, rel));
+    }
     console.log(`  force-updated  ${rel}`);
     forced.push(rel);
   }
 
   // Refresh the manifest hashes after applying so a subsequent run is accurate.
   if (!ctx.dryRun && (applied.length > 0 || forced.length > 0)) {
-    await refreshManifest(root, [...applied, ...forced]);
+    await refreshManifest(root, [...applied, ...forced], report.rendered);
   }
 
   return { applied, forced };
 }
 
-async function refreshManifest(root, rels) {
+async function refreshManifest(root, rels, rendered) {
   const manifestPath = path.join(root, '.cossack/scaffold.json');
   const manifest = await readJsonIfExists(manifestPath);
   if (!manifest) return;
   manifest.files = manifest.files || {};
   for (const rel of rels) {
     const h = await hashFile(path.join(root, rel));
-    if (h) manifest.files[rel] = h;
+    if (h) {
+      if (manifest.schemaVersion === 2) {
+        const previous = manifest.files[rel];
+        manifest.files[rel] = {
+          capability: rendered?.get(rel)?.capability ??
+            (typeof previous === 'object' ? previous.capability : 'base'),
+          hash: h,
+        };
+      } else {
+        manifest.files[rel] = h;
+      }
+    }
   }
   manifest.templateVersion = await readTemplateVersion();
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
@@ -413,7 +478,7 @@ async function refreshManifest(root, rels) {
 
 async function readTemplateVersion() {
   try {
-    const pkgPath = requireFromHere.resolve('create-cossack-app/package.json');
+    const pkgPath = requireFromHere.resolve('@cossackframework/scaffold/package.json');
     // eslint-disable-next-line
     const pkg = requireFromHere(pkgPath);
     return pkg.version || '0.0.0';

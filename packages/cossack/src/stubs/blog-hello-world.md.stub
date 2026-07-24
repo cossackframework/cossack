@@ -1,8 +1,0 @@
----
-title: Hello, world!
-description: Meet your new Cossack application and its Markdown-powered routes.
----
-
-# Hello, world!
-
-Welcome to your new Cossack application. This native Markdown file automatically becomes the `/blog/hello-world` route.

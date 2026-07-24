@@ -22,6 +22,8 @@ const KNOWN_BOOL = new Set([
   'head',
   'no-index',
   'ni',
+  'yes',
+  'y',
 ]);
 
 export function parseFlags(argv) {

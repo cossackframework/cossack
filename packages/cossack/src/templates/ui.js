@@ -1,5 +1,3 @@
-import { loadStub } from './load-stub.js';
-
 // ---------------------------------------------------------------------------
 // `cossack add ui` — UI component catalog + barrel
 //
@@ -106,9 +104,4 @@ export const UI_COMPONENTS = {
   'password-input': { className: 'PasswordInput', template: fromPackage('PasswordInput') },
   'multi-select': { className: 'MultiSelect', template: fromPackage('MultiSelect') },
 };
-
-/** src/components/ui barrel re-exporting everything from the package. */
-export function uiBarrelTemplate() {
-  return loadStub('ui-barrel.ts.stub');
-}
 
