@@ -94,7 +94,10 @@ function buildDefinitions(
  * @param config.customProviders - additional {@link OAuthProviderDefinition}s keyed by id.
  */
 export function createOAuth(config: CreateOAuthConfig): OAuthKit {
-    if (!config.secret || config.secret.length < 16) {
+    if (
+        (typeof config.secret === 'string' && config.secret.length < 16) ||
+        (typeof config.secret !== 'string' && typeof config.secret !== 'function')
+    ) {
         throw new Error(
             'createOAuth: `secret` must be a string of at least 16 characters (use a 32+ byte random value from env).',
         );

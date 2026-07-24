@@ -57,9 +57,9 @@ importers:
       '@cossackframework/framework':
         specifier: workspace:*
         version: link:../framework
-      create-cossack-app:
+      '@cossackframework/scaffold':
         specifier: workspace:*
-        version: link:../create-cossack-app
+        version: link:../scaffold
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
@@ -70,12 +70,6 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
-
-  packages/create-cossack-app:
-    dependencies:
-      prompts:
-        specifier: ^2.4.2
-        version: 2.4.2
 
   packages/database:
     dependencies:
@@ -242,6 +236,16 @@ importers:
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
+
+  packages/scaffold:
+    dependencies:
+      prompts:
+        specifier: ^2.4.2
+        version: 2.4.2
+    devDependencies:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))

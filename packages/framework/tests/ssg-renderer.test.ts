@@ -1,7 +1,8 @@
 import 'reflect-metadata';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Cossack, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
+import { getCookie } from 'hono/cookie';
 import { filePathToRoutePath, renderSsgPage } from '../src/ssg-renderer';
 
 // Minimal Cossack App used to exercise renderSsgPage end-to-end.
@@ -22,6 +23,19 @@ class SsgTestPage extends Cossack {
   }
   render() {
     return html`<main><h1>Hello SSG</h1></main>`;
+  }
+}
+
+@Page({ transport: 'http' })
+class CookieReadingApp extends Cossack {
+  theme = 'unset';
+
+  async init() {
+    this.theme = getCookie(this.c, 'cs-theme') ?? 'none';
+  }
+
+  render() {
+    return html`<div data-theme="${this.theme}">${this.children}</div>`;
   }
 }
 
@@ -51,6 +65,12 @@ describe('ssg-renderer', () => {
     it('should handle root index correctly', () => {
       expect(filePathToRoutePath('/src/pages/index.ts')).toBe('/');
     });
+
+    it('removes route groups from public SSG paths', () => {
+      expect(filePathToRoutePath('/src/pages/(public)/blog/hello-world.md'))
+        .toBe('/blog/hello-world');
+      expect(filePathToRoutePath('/src/pages/(public)/index.ts')).toBe('/');
+    });
   });
 
   describe('renderSsgPage', () => {
@@ -62,6 +82,28 @@ describe('ssg-renderer', () => {
       // production asset path is used instead. Accept either form.
       expect(html).toContain('<script type="module"');
       expect(html).toMatch(/src=["']?(\/src\/client\/entry-client\.ts|\/assets\/entry-client\.[\w.]+\.js)["']?/);
+    });
+
+    it('provides a real request to App lifecycle methods during SSG', async () => {
+      const output = await renderSsgPage(
+        SsgTestPage,
+        '/ssg-test',
+        undefined,
+        {},
+        'https://example.com',
+        CookieReadingApp,
+      );
+
+      expect(output).toMatch(/data-theme=["']?none["']?/);
+    });
+
+    it('uses a server-safe fallback when no App component is supplied', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const output = await renderSsgPage(SsgTestPage, '/ssg-test');
+
+      expect(output).toContain('<h1>Hello SSG</h1>');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('No AppComponent'));
+      warn.mockRestore();
     });
 
     it('produces HTML containing window.__INITIAL_STATE__', async () => {

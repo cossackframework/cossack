@@ -8,7 +8,14 @@ The framework is built on a strict separation between the **library** (`core`, `
 
 -   **Libraries (`@cossackframework/core`, `@cossackframework/renderer`)**: These packages are completely agnostic of any specific application. They provide the tools, base classes, and rendering logic. The `core` library must never import from the `framework` or contain application-specific code.
 -   **Application (`@cossackframework/framework`)**: This is the runnable unit. It consumes the libraries and contains all the business logic, page components, routing, and the final Cloudflare Worker entrypoint.
--   **Database (`@cossackframework/database`)**: Database layer, included by default in new projects. Re-exports [Kysely](https://kysely.dev) and ships custom dialects for **Cloudflare D1** and **Turso/libSQL** (written against Kysely 0.29's `Dialect` interface — the community `kysely-d1`/`kysely-libsql` packages are stale). Exposes a per-request client via `createDbMiddleware` + a global `db()` helper (AsyncLocalStorage), plus Kysely Migrator-backed `cossack migration` / `cossack seeder` CLI commands. The framework itself does **not** depend on this package — it stays decoupled so users can swap to Drizzle, SurrealDB, or no database at all. The project template wires `dbMiddleware` in `src/bootstrap/middlewares.ts` and registers the database cache driver in `src/middlewares/db.ts`. New projects ship with default migrations (users, sessions, roles, permissions, oauth_accounts, cache_items).
+-   **Database (`@cossackframework/database`)**: Database layer used by the Database, Auth, and Full Stack recipes. Re-exports [Kysely](https://kysely.dev) and ships custom dialects for **Cloudflare D1** and **Turso/libSQL** (written against Kysely 0.29's `Dialect` interface — the community `kysely-d1`/`kysely-libsql` packages are stale). Exposes a per-request client via `createDbMiddleware` + a global `db()` helper (AsyncLocalStorage), plus Kysely Migrator-backed `cossack migration` / `cossack seeder` CLI commands. The framework itself does **not** depend on this package — it stays decoupled so users can swap to Drizzle, SurrealDB, or no database at all. Database-enabled recipes wire `dbMiddleware` in `src/bootstrap/middlewares.ts` and register the database cache driver in `src/middlewares/db.ts`.
+-   **Scaffold (`@cossackframework/scaffold`)**: Node-only recipe engine consumed
+    by the `cossack` CLI. It owns base and feature templates,
+    preset/provider/module registries, dependency resolution, conflict-safe
+    change sets, and schema-v2 scaffold manifests. Creation and later
+    `cossack add` operations render the same resolved recipe, so incremental
+    composition has the same owned files as equivalent initial onboarding.
+    Application runtime packages must not depend on this Node-only package.
 
 This separation ensures the framework's core is reusable, maintainable, and decoupled from any single implementation.
 

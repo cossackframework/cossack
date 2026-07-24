@@ -1,6 +1,6 @@
 import { loadStub } from './load-stub.js';
 
-// Database stubs (`cossack add database` + `cossack generate model|migration|seeder`)
+// Database stubs (`cossack generate model|migration|seeder`)
 // ===========================================================================
 
 /** `src/models/User.ts` — default User model + Database/User augmentations. */
@@ -17,54 +17,3 @@ export function migrationTemplate() {
 export function seederTemplate() {
   return loadStub('seeder.ts.stub');
 }
-
-/** `src/middlewares/db.ts` — the database request middleware (instantiated + exported). */
-export function dbMiddlewareFileTemplate() {
-  return loadStub('db-middleware.ts.stub');
-}
-
-/** `src/db/config.ts` for the Cloudflare D1 dialect. */
-export function dbConfigD1Template() {
-  return loadStub('db-config-d1.ts.stub');
-}
-
-/** `src/db/config.ts` for the Turso / libSQL dialect. */
-export function dbConfigTursoTemplate() {
-  return loadStub('db-config-turso.ts.stub');
-}
-
-// --- Default migrations shipped by `cossack add database` -------------------
-
-export function createUsersMigration() {
-  return loadStub('migration-users.ts.stub');
-}
-
-export function createSessionsMigration() {
-  return loadStub('migration-sessions.ts.stub');
-}
-
-export function createRolesMigration() {
-  return loadStub('migration-roles.ts.stub');
-}
-
-export function createOauthAccountsMigration() {
-  return loadStub('migration-oauth-accounts.ts.stub');
-}
-
-// --- Cache table migration (shipped by default via `cossack add database`) ----
-
-export function createCacheTableMigration() {
-  return loadStub('migration-cache-table.ts.stub');
-}
-
-// --- User↔role join (shipped by default via `cossack add database`) ----------
-// Permissions now live as a JSON column on `roles` (see migration-roles.ts.stub)
-// and the canonical permission list is config/permissions.ts, so the separate
-// permissions + role_permissions tables were removed in favor of this join.
-
-export function createUserRolesMigration() {
-  return loadStub('migration-user-roles.ts.stub');
-}
-
-// ===========================================================================
-

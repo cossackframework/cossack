@@ -7,11 +7,14 @@ Database support for the [Cossack Framework](https://github.com/cossackframework
 - Per-request client via Hono middleware **and** a global `db()` helper (AsyncLocalStorage).
 - Kysely migrator + seeder runners, driven by the `cossack` CLI.
 
-> Database support is **included by default** in new Cossack apps — the project template ships default migrations, wires the `dbMiddleware`, and registers the database cache driver. The framework itself stays decoupled (no hard dependency), so apps that don't need a database — or want a different client (Drizzle, SurrealDB, …) — can remove the package and middleware cleanly.
+> Database support is included by the Database, Auth, and Full Stack recipes.
+> Those recipes ship migrations, wire `dbMiddleware`, and register the database
+> cache driver. The framework itself stays decoupled (no hard dependency).
 
 ## Install
 
-Database support ships with every new project created via `create-cossack-app`. To add it to an existing project that predates it:
+Select the Database or Full Stack preset with `cossack create`, or add database
+support to an existing project:
 
 ```bash
 npx cossack add database

@@ -93,6 +93,41 @@ describe('createOAuth — redirect handler', () => {
             }),
         ).toThrow(/at least 16 characters/);
     });
+
+    it('supports request-scoped secret resolvers', async () => {
+        const resolver = vi.fn(() => SECRET);
+        const { app } = buildApp({
+            secret: resolver,
+            providers: {
+                github: {
+                    clientId: 'gh-id',
+                    clientSecret: 'gh-secret',
+                    redirectUrl: '/auth/github/callback',
+                },
+            },
+        });
+        const res = await app.request('/auth/github/redirect');
+        expect(res.status).toBe(302);
+        expect(resolver).toHaveBeenCalledOnce();
+    });
+
+    it('reports an invalid resolved secret at request time', async () => {
+        const { app } = buildApp({
+            secret: () => '',
+            providers: {
+                github: {
+                    clientId: 'gh-id',
+                    clientSecret: 'gh-secret',
+                    redirectUrl: '/auth/github/callback',
+                },
+            },
+        });
+        const res = await app.request('/auth/github/redirect');
+        expect(res.status).toBe(502);
+        expect((await res.json()) as { error: string }).toMatchObject({
+            error: expect.stringMatching(/at least 16 characters/),
+        });
+    });
 });
 
 describe('createOAuth — callback handler (happy path)', () => {

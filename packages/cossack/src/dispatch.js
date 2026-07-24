@@ -8,10 +8,12 @@
 import { versionCommand } from './commands/version.js';
 import { routesCommand } from './commands/routes.js';
 import { generateCommand } from './commands/generate.js';
+import { renderBanner } from './banner.js';
 import { deleteCommand } from './commands/delete.js';
 import { createCommand } from './commands/create.js';
 import { ssgCommand } from './commands/ssg.js';
 import { addCommand } from './commands/add.js';
+import { removeCommand } from './commands/remove.js';
 import { langCommand } from './commands/lang.js';
 import { migrationCommand } from './commands/migration.js';
 import { seederCommand } from './commands/seeder.js';
@@ -21,6 +23,7 @@ import { startCommand } from './commands/start.js';
 import { infoCommand } from './commands/info.js';
 import { upgradeCommand } from './commands/upgrade.js';
 import { imageCommand } from './commands/image.js';
+import { adapterCommand } from './commands/adapter.js';
 import { parseFlags } from './flags.js';
 
 const COMMANDS = {
@@ -33,6 +36,8 @@ const COMMANDS = {
   generate: { run: generateCommand, aliases: ['g'] },
   delete: { run: deleteCommand, aliases: ['d'] },
   add: { run: addCommand, aliases: [] },
+  remove: { run: removeCommand, aliases: [] },
+  adapter: { run: adapterCommand, aliases: [] },
   lang: { run: langCommand, aliases: [] },
   migration: { run: migrationCommand, aliases: ['migrate'] },
   seeder: { run: seederCommand, aliases: ['seed'] },
@@ -99,7 +104,9 @@ async function buildCtx(flags) {
 }
 
 function printHelp() {
-  console.log(`cossack <command> [args] [options]
+  console.log(`${renderBanner()}
+
+cossack <command> [args] [options]
 
 Commands:
   create <name>                Scaffold a new Cossack project.
@@ -110,7 +117,9 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (auth, database, ui).
+  add <feature>                Add a feature (ui, database, auth, dashboard, examples).
+  remove <feature>             Remove a feature and its dependents.
+  adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run Kysely migrations under src/migrations/.

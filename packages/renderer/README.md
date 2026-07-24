@@ -4,7 +4,9 @@ Cossack Renderer is a Lit-compatible rendering engine designed for **Light DOM**
 
 ## Installation
 
-This package is intended to use with the Cossack Framework via `create-cossack-app`, but can also be used standalone in any project that needs a lightweight rendering solution.
+This package is included by projects created with `cossack create`, but can
+also be used standalone in any project that needs a lightweight rendering
+solution.
 
 ```bash
 pnpm add @cossackframework/renderer

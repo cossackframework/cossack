@@ -28,7 +28,8 @@ export function filePathToRoutePath(filePath: string): string {
     // is a substring of '/index.mdx' and would otherwise leave a trailing 'x'.
     .replace('/index.mdx', '')
     .replace('/index.md', '')
-    .replace(/\.(ts|md|mdx)$/, '');
+    .replace(/\.(ts|md|mdx)$/, '')
+    .replace(/\/\([^)]+\)/g, ''); // route groups, e.g. /(public)/blog -> /blog
 
   // Normalize root: /index (from pages/index/index.ts) or empty (from pages/index.ts) -> /
   if (route === '/index' || route === '') {

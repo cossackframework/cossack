@@ -3,8 +3,7 @@
  *
  * Resolves the site base URL used for sitemap generation and canonical URLs.
  * The resolution is performed without any external dependencies so it can be
- * reused by both the framework's own SSG script and the `create-cossack-app`
- * template.
+ * reused by both the framework's own SSG script and generated applications.
  *
  * Resolution order (first match wins):
  *   1. process.env.APP_URL                     — explicit shell/CI override

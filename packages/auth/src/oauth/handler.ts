@@ -24,6 +24,19 @@ interface HandlerDeps {
     requestIsSecure: (c: Context) => boolean;
 }
 
+async function resolveSecret(config: CreateOAuthConfig, c: Context): Promise<string> {
+    // Static secrets are validated once by createOAuth(). Resolvers must be
+    // checked per request because their value may vary with the context.
+    if (typeof config.secret !== 'function') return config.secret;
+    const secret = await config.secret(c);
+    if (!secret || secret.length < 16) {
+        throw new Error(
+            'createOAuth: `secret` must resolve to a string of at least 16 characters (use a 32+ byte random value from env).',
+        );
+    }
+    return secret;
+}
+
 function defaultRequestIsSecure(c: Context): boolean {
     const url = new URL(c.req.raw.url);
     if (url.protocol === 'https:') return true;
@@ -94,10 +107,11 @@ export function createOAuthHandlers(
                 });
 
                 if (usePkce) {
+                    const secret = await resolveSecret(deps.config, c);
                     await setStateCookie(
                         c,
                         { state, codeVerifier: pkce!.codeVerifier },
-                        deps.config.secret,
+                        secret,
                         deps.cookieOptions,
                         deps.requestIsSecure(c),
                     );
@@ -136,7 +150,8 @@ export function createOAuthHandlers(
 
                 let storedVerifier: string | undefined;
                 if (!deps.config.stateless) {
-                    const stored = await consumeStateCookie(c, deps.config.secret, deps.cookieOptions);
+                    const secret = await resolveSecret(deps.config, c);
+                    const stored = await consumeStateCookie(c, secret, deps.cookieOptions);
                     if (!stored) {
                         throw new Error('OAuth state cookie missing, expired, or tampered.');
                     }
