@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "src/index.ts",
+    "src/testing.ts",
+    "src/prompts.d.ts",
+    "src/lib/**/*.ts",
+    "src/server/**/*.ts"
+  ]
+}

@@ -24,6 +24,8 @@ const KNOWN_BOOL = new Set([
   'ni',
   'yes',
   'y',
+  'remote',
+  'no-open',
   'help',
   'h',
 ]);

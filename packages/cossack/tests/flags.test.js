@@ -22,4 +22,11 @@ describe('parseFlags', () => {
       args: ['cloudflare'],
     });
   });
+
+  it('treats Studio remote and no-open flags as booleans', () => {
+    expect(parseFlags(['--remote', '--no-open', '--port', '5000'])).toEqual({
+      flags: { remote: true, 'no-open': true, port: '5000' },
+      args: [],
+    });
+  });
 });

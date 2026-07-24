@@ -40,6 +40,7 @@ jobs:
           pnpm --filter @cossackframework/database vitest --run
           pnpm --filter @cossackframework/ui test -- --run
           pnpm --filter @cossackframework/framework vitest --run tests/
+          pnpm --filter @cossackframework/studio test
           pnpm --filter @cossackframework/scaffold test
           pnpm --filter cossack vitest --run
 
@@ -79,6 +80,12 @@ jobs:
 
       - name: Publish @cossackframework/framework
         run: pnpm publish --filter @cossackframework/framework --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Studio ships a prebuilt Cossack app and depends on database, UI, and framework.
+      - name: Publish @cossackframework/studio
+        run: pnpm publish --filter @cossackframework/studio --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

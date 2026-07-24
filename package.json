@@ -4,8 +4,8 @@
   "packageManager": "pnpm@10.29.3",
   "scripts": {
     "dev": "pnpm --filter @cossackframework/framework run dev",
-    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter --filter @cossackframework/ui run build",
-    "test:unit": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/scaffold --filter cossack run test",
+    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter --filter @cossackframework/ui run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/studio run build",
+    "test:unit": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/studio --filter @cossackframework/scaffold --filter cossack run test",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e"
   },

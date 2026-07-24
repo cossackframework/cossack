@@ -1,5 +1,5 @@
 export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'database', 'auth', 'dashboard', 'examples'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'examples'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -8,6 +8,7 @@ export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
 export const FEATURE_REGISTRY = {
   ui: { requires: [] },
   database: { requires: [] },
+  studio: { requires: ['database'] },
   auth: { requires: ['ui', 'database'] },
   dashboard: { requires: ['auth'] },
   examples: { requires: ['ui'] },
@@ -68,6 +69,10 @@ export function removeFeature(explicit, feature) {
   const selected = new Set(requested.filter((selectedFeature) =>
     !resolveFeatures([selectedFeature]).includes(feature),
   ));
+  // Studio may add database support to an otherwise database-free project,
+  // but removing Studio intentionally leaves that useful database setup in
+  // place. Removing database still removes Studio as its dependent.
+  if (feature === 'studio' && requested.includes('studio')) selected.add('database');
   return FEATURES.filter((candidate) => selected.has(candidate));
 }
 

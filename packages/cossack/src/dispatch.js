@@ -24,6 +24,7 @@ import { infoCommand } from './commands/info.js';
 import { upgradeCommand } from './commands/upgrade.js';
 import { imageCommand } from './commands/image.js';
 import { adapterCommand } from './commands/adapter.js';
+import { studioCommand } from './commands/studio.js';
 import { parseFlags } from './flags.js';
 
 const COMMANDS = {
@@ -41,6 +42,7 @@ const COMMANDS = {
   lang: { run: langCommand, aliases: [] },
   migration: { run: migrationCommand, aliases: ['migrate'] },
   seeder: { run: seederCommand, aliases: ['seed'] },
+  studio: { run: studioCommand, aliases: [] },
   // introspection
   routes: { run: routesCommand, aliases: [] },
   info: { run: infoCommand, aliases: [] },
@@ -125,6 +127,7 @@ Commands:
   migration <sub> (migrate)    Run Kysely migrations under src/migrations/.
                                Subcommands: up, down, status.
   seeder <sub> (seed)          Run seeders under src/seeders/. Subcommands: run.
+  studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.

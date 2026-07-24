@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+@import "@cossackframework/ui/theme/themes/slate.css";
+@source "../../node_modules/@cossackframework/ui/dist";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.studio-grid {
+  grid-template-columns: 17rem minmax(0, 1fr);
+  grid-template-rows: 3.5rem minmax(0, 1fr);
+}
+
+.studio-cell {
+  max-width: 28rem;
+  min-width: 8rem;
+}
+
+.studio-cell-value {
+  display: block;
+  max-width: 26rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
