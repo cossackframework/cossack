@@ -84,6 +84,17 @@ async function useTarballs(projectDir, tarballs) {
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 }
 
+async function installGeneratedProject(projectDir) {
+  // Scaffold commands intentionally update package.json without installing.
+  // CI enables frozen lockfiles by default, so allow this temporary project's
+  // lockfile to follow each recipe and adapter change.
+  await run('pnpm', [
+    'install',
+    '--prefer-offline',
+    '--no-frozen-lockfile',
+  ], { cwd: projectDir });
+}
+
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
 const keep = process.env.COSSACK_KEEP_SMOKE === '1';
 
@@ -104,7 +115,7 @@ try {
 
   const projectDir = path.join(temporaryRoot, 'app');
   await useTarballs(projectDir, tarballs);
-  await run('pnpm', ['install', '--prefer-offline'], { cwd: projectDir });
+  await installGeneratedProject(projectDir);
   await run('pnpm', [
     'exec',
     'cossack',
@@ -120,7 +131,7 @@ try {
     'examples',
     '--yes',
   ], { cwd: projectDir });
-  await run('pnpm', ['install', '--prefer-offline'], { cwd: projectDir });
+  await installGeneratedProject(projectDir);
   await run('pnpm', [
     'exec',
     'cossack',
@@ -150,7 +161,7 @@ try {
     '--database=d1',
     '--yes',
   ], { cwd: projectDir });
-  await run('pnpm', ['install', '--prefer-offline'], { cwd: projectDir });
+  await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   const cloudflareManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
@@ -169,7 +180,7 @@ try {
     '--database=sqlite',
     '--yes',
   ], { cwd: projectDir });
-  await run('pnpm', ['install', '--prefer-offline'], { cwd: projectDir });
+  await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   const nodeManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
