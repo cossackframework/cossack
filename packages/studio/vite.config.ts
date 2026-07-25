@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -9,8 +10,15 @@ import {
 } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 
+const studioVersion = JSON.parse(
+  fs.readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'),
+).version;
+
 export default defineConfig({
   root: 'app',
+  define: {
+    __COSSACK_STUDIO_VERSION__: JSON.stringify(studioVersion),
+  },
   build: {
     emptyOutDir: true,
   },

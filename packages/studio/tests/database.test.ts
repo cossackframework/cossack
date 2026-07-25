@@ -54,6 +54,7 @@ describe('StudioDatabase', () => {
   it('discovers tables, views, columns, composite keys, and read-only objects', async () => {
     const schema = await studio.getSchema(true);
     expect(schema.applicationName).toBe('Fixture application');
+    expect(schema.connection.databaseVersion).toMatch(/^SQLite \d+/);
     expect(schema.objects.map((object) => object.name)).toEqual([
       'blob_keys',
       'logs',
@@ -72,10 +73,51 @@ describe('StudioDatabase', () => {
       unique: true,
       columns: [{ name: 'nickname', position: 0, descending: false, collation: 'BINARY' }],
     });
-    expect(schema.objects.find((object) => object.name === 'logs')?.readOnlyReason)
-      .toContain('no declared primary key');
+    expect(schema.objects.find((object) => object.name === 'logs')).toMatchObject({
+      editable: true,
+      rowLocators: [{
+        kind: 'sqlite-rowid',
+        columns: ['__cossack_rowid__'],
+        source: 'rowid',
+      }],
+    });
     expect(schema.objects.find((object) => object.name === 'adult_people')?.readOnlyReason)
       .toContain('Views');
+  });
+
+  it('discovers composite SQLite foreign-key metadata', async () => {
+    await connection.execute(`
+      CREATE TABLE accounts (
+        tenant_id INTEGER NOT NULL,
+        id INTEGER NOT NULL,
+        name TEXT,
+        PRIMARY KEY (tenant_id, id)
+      )
+    `);
+    await connection.execute(`
+      CREATE TABLE invoices (
+        tenant_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        total NUMERIC,
+        CONSTRAINT invoices_account_fk
+          FOREIGN KEY (tenant_id, account_id)
+          REFERENCES accounts (tenant_id, id)
+          ON UPDATE CASCADE
+          ON DELETE RESTRICT
+      )
+    `);
+    const schema = await studio.getSchema(true);
+    expect(schema.objects.find((object) => object.name === 'invoices')?.foreignKeys)
+      .toEqual([{
+        name: 'fk_invoices_0',
+        referencedTable: 'accounts',
+        columns: [
+          { column: 'tenant_id', referencedColumn: 'tenant_id', position: 0 },
+          { column: 'account_id', referencedColumn: 'id', position: 1 },
+        ],
+        onUpdate: 'CASCADE',
+        onDelete: 'RESTRICT',
+      }]);
   });
 
   it('paginates rows in primary-key order', async () => {
@@ -90,7 +132,11 @@ describe('StudioDatabase', () => {
     expect(second.totalRows).toBe(55);
     expect(second.page).toBe(2);
     expect(second.pageSize).toBe(50);
-    expect(second.query).toContain('ORDER BY "tenant_id" ASC, "id" ASC LIMIT 50 OFFSET 50');
+    expect(second.query).toContain(
+      'SELECT * FROM "people" ORDER BY "tenant_id" ASC, "id" ASC LIMIT 50 OFFSET 50',
+    );
+    expect(second.query).not.toContain('__cossack_rowid__');
+    expect(second.query).not.toContain('"rowid"');
   });
 
   it('filters, sorts, counts, and reports the generated browse query', async () => {
@@ -175,9 +221,91 @@ describe('StudioDatabase', () => {
     expect(selected.rows).toHaveLength(0);
   });
 
-  it('edits primary keys and blobs while preventing keyless/view/stale mutations', async () => {
-    await expect(studio.insert('logs', { message: { mode: 'value', value: 'x' } }))
-      .rejects.toThrow('primary key');
+  it('validates explicitly selected insert value types', async () => {
+    await studio.insert('people', {
+      tenant_id: { mode: 'value', value: '3', valueKind: 'number' },
+      id: { mode: 'value', value: '1', valueKind: 'number' },
+      name: { mode: 'value', value: 'Typed insert', valueKind: 'text' },
+      nickname: {
+        mode: 'value',
+        value: '018f6f6f-3f3b-7c4d-8f4f-a9c35f7a31d8',
+        valueKind: 'uuid-v7',
+      },
+      age: { mode: 'value', value: '42.5', valueKind: 'number' },
+      profile: { mode: 'value', value: '{"enabled":true}', valueKind: 'json' },
+      created_at: { mode: 'value', value: '2026-07-25T10:30', valueKind: 'datetime' },
+      photo: { mode: 'value', value: '010203', valueKind: 'blob' },
+    });
+    const selected = await studio.executeSql(
+      'SELECT tenant_id, id, nickname, age, profile, created_at, hex(photo) AS photo ' +
+      'FROM people WHERE tenant_id = 3 AND id = 1',
+    );
+    expect(selected.rows).toEqual([{
+      tenant_id: 3,
+      id: 1,
+      nickname: '018f6f6f-3f3b-7c4d-8f4f-a9c35f7a31d8',
+      age: 42.5,
+      profile: '{"enabled":true}',
+      created_at: '2026-07-25T10:30',
+      photo: '010203',
+    }]);
+
+    await studio.insert('people', {
+      tenant_id: { mode: 'value', value: '3', valueKind: 'number' },
+      id: { mode: 'value', value: '2', valueKind: 'number' },
+      name: { mode: 'value', value: 'Timestamp insert', valueKind: 'text' },
+      created_at: {
+        mode: 'value',
+        value: '2026-07-24T22:57:08.976+02:00',
+        valueKind: 'timestamp',
+      },
+    });
+    expect((await studio.executeSql(
+      'SELECT created_at FROM people WHERE tenant_id = 3 AND id = 2',
+    )).rows).toEqual([{ created_at: '2026-07-24T20:57:08.976Z' }]);
+
+    await expect(studio.insert('people', {
+      tenant_id: { mode: 'value', value: '4', valueKind: 'number' },
+      id: { mode: 'value', value: '1', valueKind: 'number' },
+      name: { mode: 'value', value: 'Invalid JSON' },
+      profile: { mode: 'value', value: '{broken', valueKind: 'json' },
+    })).rejects.toThrow('Expected valid JSON for profile');
+    await expect(studio.insert('people', {
+      tenant_id: { mode: 'value', value: '4', valueKind: 'number' },
+      id: { mode: 'value', value: '1', valueKind: 'number' },
+      name: { mode: 'value', value: 'Invalid UUID' },
+      nickname: { mode: 'value', value: 'not-a-uuid', valueKind: 'uuid-v4' },
+    })).rejects.toThrow('Expected a UUID v4 for nickname');
+    await expect(studio.insert('people', {
+      tenant_id: { mode: 'value', value: '4', valueKind: 'number' },
+      id: { mode: 'value', value: '1', valueKind: 'number' },
+      name: { mode: 'value', value: 'Invalid timestamp' },
+      created_at: {
+        mode: 'value',
+        value: '2026-07-24T20:57:08.976',
+        valueKind: 'timestamp',
+      },
+    })).rejects.toThrow('Expected an ISO 8601 timestamp with a timezone');
+  });
+
+  it('edits primary keys, blobs, and SQLite rowid tables while preventing view/stale mutations', async () => {
+    await studio.insert('logs', { message: { mode: 'value', value: 'x' } });
+    let logs = await studio.browse('logs');
+    expect(logs.columns).toEqual(['message']);
+    expect(logs.rows[0]).toMatchObject({
+      message: 'x',
+      __cossack_rowid__: 1,
+    });
+    await studio.update('logs', { __cossack_rowid__: 1 }, 'message', {
+      mode: 'value',
+      value: 'updated',
+    });
+    expect((await studio.executeSql('SELECT message FROM logs')).rows)
+      .toEqual([{ message: 'updated' }]);
+    await studio.delete('logs', { __cossack_rowid__: 1 });
+    logs = await studio.browse('logs');
+    expect(logs.rows).toHaveLength(0);
+
     await expect(studio.delete('adult_people', { tenant_id: 1, id: 18 }))
       .rejects.toThrow('Views');
     await studio.update('people', { tenant_id: 1, id: 1 }, 'id', {
@@ -197,6 +325,88 @@ describe('StudioDatabase', () => {
     )).rows).toEqual([{ photo: '010203' }]);
     await expect(studio.delete('people', { tenant_id: 99, id: 99 }))
       .rejects.toThrow('Stale delete');
+  });
+
+  it('updates multiple row properties atomically from a JSON object', async () => {
+    await studio.updateRow('people', { tenant_id: 1, id: 1 }, {
+      id: 101,
+      name: 'Edited as JSON',
+      age: 64,
+      profile: { enabled: true, roles: ['admin'] },
+    });
+    expect((await studio.executeSql(
+      'SELECT id, name, age, profile FROM people WHERE tenant_id = 1 AND id = 101',
+    )).rows).toEqual([{
+      id: 101,
+      name: 'Edited as JSON',
+      age: 64,
+      profile: '{"enabled":true,"roles":["admin"]}',
+    }]);
+
+    await expect(studio.updateRow('people', { tenant_id: 1, id: 2 }, {
+      missing_column: 'value',
+    })).rejects.toThrow('Column "missing_column" does not exist');
+    await expect(studio.updateRow('people', { tenant_id: 1, id: 2 }, {
+      tenant_id: null,
+    })).rejects.toThrow('tenant_id does not allow NULL');
+    await expect(studio.updateRow('people', { tenant_id: 99, id: 99 }, {
+      name: 'stale',
+    })).rejects.toThrow('Stale update');
+  });
+
+  it('falls back to SQLite rowid when a legacy primary-key value is NULL', async () => {
+    await connection.execute('CREATE TABLE nullable_keys (id TEXT PRIMARY KEY, value TEXT)');
+    await connection.execute('INSERT INTO nullable_keys (id, value) VALUES (NULL, ?)', ['legacy']);
+    const result = await studio.browse('nullable_keys');
+    expect(result.columns).toEqual(['id', 'value']);
+    expect(result.rows[0]).toMatchObject({
+      id: null,
+      value: 'legacy',
+      __cossack_rowid__: 1,
+    });
+
+    await studio.update('nullable_keys', { __cossack_rowid__: 1 }, 'id', {
+      mode: 'value',
+      value: 'repaired',
+    });
+    expect((await studio.executeSql('SELECT id, value FROM nullable_keys')).rows)
+      .toEqual([{ id: 'repaired', value: 'legacy' }]);
+  });
+
+  it('does not invent a SQLite rowid when all aliases are shadowed', async () => {
+    await connection.execute(
+      'CREATE TABLE shadowed_rows (rowid TEXT, _rowid_ TEXT, oid TEXT, value TEXT)',
+    );
+    const schema = await studio.getSchema(true);
+    expect(schema.objects.find((object) => object.name === 'shadowed_rows')).toMatchObject({
+      editable: false,
+      rowLocators: [],
+      readOnlyReason: 'This table has no safe row locator.',
+    });
+  });
+
+  it('avoids collisions between hidden row locators and user columns', async () => {
+    await connection.execute(
+      'CREATE TABLE alias_collision (__cossack_rowid__ TEXT, value TEXT)',
+    );
+    await connection.execute(
+      'INSERT INTO alias_collision (__cossack_rowid__, value) VALUES (?, ?)',
+      ['user value', 'row value'],
+    );
+    const schema = await studio.getSchema(true);
+    expect(schema.objects.find((object) => object.name === 'alias_collision')?.rowLocators)
+      .toEqual([{
+        kind: 'sqlite-rowid',
+        columns: ['__cossack_rowid_2__'],
+        source: 'rowid',
+      }]);
+    const result = await studio.browse('alias_collision');
+    expect(result.columns).toEqual(['__cossack_rowid__', 'value']);
+    expect(result.rows[0]).toMatchObject({
+      __cossack_rowid__: 'user value',
+      __cossack_rowid_2__: 1,
+      value: 'row value',
+    });
   });
 
   it('updates and deletes selected rows in batches', async () => {
@@ -229,5 +439,44 @@ describe('StudioDatabase', () => {
     expect(failed.error).toContain('missing_table');
     await studio.executeSql('CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT)');
     expect((await studio.getSchema()).objects.some((object) => object.name === 'projects')).toBe(true);
+  });
+
+  it('returns a SQLite query plan without executing the statement', async () => {
+    const explained = await studio.explainSql(
+      'SELECT * FROM people WHERE tenant_id = 1 AND id = 2',
+    );
+    expect(explained.error).toBeUndefined();
+    expect(explained.columns).toContain('detail');
+    expect(explained.rows.some((row) =>
+      String(row.detail).includes('SEARCH people'))).toBe(true);
+
+    const failed = await studio.explainSql('SELECT * FROM missing_table');
+    expect(failed.error).toContain('missing_table');
+    await expect(studio.explainSql('SELECT 1; SELECT 2'))
+      .rejects.toThrow('one SQL statement');
+  });
+
+  it('reads and updates a validated set of SQLite pragmas', async () => {
+    const pragmas = await studio.getPragmas();
+    expect(pragmas.find((pragma) => pragma.name === 'foreign_keys')).toMatchObject({
+      kind: 'boolean',
+      options: [
+        { value: '0', label: 'Off' },
+        { value: '1', label: 'On' },
+      ],
+    });
+    expect(pragmas.find((pragma) => pragma.name === 'user_version')).toMatchObject({
+      value: '0',
+      kind: 'number',
+    });
+
+    const updated = await studio.setPragma('user_version', '42');
+    expect(updated.find((pragma) => pragma.name === 'user_version')?.value).toBe('42');
+    await expect(studio.setPragma('not_a_real_pragma', '1'))
+      .rejects.toThrow('not editable');
+    await expect(studio.setPragma('user_version', '1; DROP TABLE people'))
+      .rejects.toThrow('expects an integer');
+    await expect(studio.setPragma('journal_mode', 'INVALID'))
+      .rejects.toThrow('Invalid value');
   });
 });

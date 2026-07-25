@@ -21,7 +21,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm run build:server && pnpm run build:app",
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "build": "pnpm run clean && pnpm run build:server && pnpm run build:app",
     "build:server": "tsc -p tsconfig.build.json",
     "build:app": "vite build && vite build --ssr src/entry-server.ts --outDir ../dist/app/server",
     "test": "vitest --run",

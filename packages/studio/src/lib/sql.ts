@@ -1,4 +1,4 @@
-import type { StudioProvider } from './types.js';
+import type { StudioProvider } from './schema-types.js';
 
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 

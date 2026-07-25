@@ -19,18 +19,23 @@ import { ExportIcon } from '@cossackframework/solar-icons/export';
 import { EyeIcon } from '@cossackframework/solar-icons/eye';
 import { FilterIcon } from '@cossackframework/solar-icons/filter';
 import { FiltersIcon } from '@cossackframework/solar-icons/filters';
+import { GraphIcon } from '@cossackframework/solar-icons/graph';
+import { HistoryIcon } from '@cossackframework/solar-icons/history';
 import { KeyIcon } from '@cossackframework/solar-icons/key';
+import { LinkIcon } from '@cossackframework/solar-icons/link';
 import { MoonIcon } from '@cossackframework/solar-icons/moon';
 import { MagnifierIcon } from '@cossackframework/solar-icons/magnifier';
 import { PenIcon } from '@cossackframework/solar-icons/pen';
 import { PlayIcon } from '@cossackframework/solar-icons/play';
 import { RefreshIcon } from '@cossackframework/solar-icons/refresh';
 import { SortIcon } from '@cossackframework/solar-icons/sort';
+import { StarIcon } from '@cossackframework/solar-icons/star';
 import { StructureIcon } from '@cossackframework/solar-icons/structure';
 import { SunIcon } from '@cossackframework/solar-icons/sun';
 import { TrashBinMinimalisticIcon } from '@cossackframework/solar-icons/trash-bin-minimalistic';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 import {
+  Alert,
   AlertDialog,
   Badge,
   Button,
@@ -39,30 +44,42 @@ import {
   DropdownMenu,
   Icon,
   Input,
+  InputGroup,
   Kbd,
+  Select,
   Sheet,
+  Switch,
   Textarea,
   Tooltip,
 } from '@cossackframework/ui';
+import type {
+  StudioColumn,
+  StudioForeignKey,
+  StudioObject,
+  StudioPragma,
+  StudioSchema,
+} from '../../../src/lib/schema-types';
 import type {
   BrowseFilter,
   BrowseFilterOperator,
   BrowseSort,
   InsertCell,
-  StudioColumn,
-  StudioObject,
-  StudioSchema,
+  InsertValueKind,
   TransportQueryResult,
   TransportValue,
-} from '../../../src/lib/types';
+} from '../../../src/lib/query-types';
 import { getStudioDatabase } from '../../../src/server/runtime';
 import { CodeEditor } from '../components/CodeEditor';
 import { studioSchemaCatalog } from '../schema-store';
 import { studioTheme, type StudioTheme } from '../theme.client';
 
+declare const __COSSACK_STUDIO_VERSION__: string;
+
 type CellMode = 'null' | 'value';
-type StudioTab = 'browse' | 'structure' | 'sql';
+type StudioTab = 'browse' | 'structure' | 'sql' | 'pragmas';
 type InsertMode = 'omit' | 'null' | 'value';
+type InsertSelection = InsertValueKind | Exclude<InsertMode, 'value'>;
+type CellSelection = InsertValueKind | 'null';
 type ExportFormat = 'json' | 'csv';
 
 interface CellEditor {
@@ -70,7 +87,13 @@ interface CellEditor {
   columnName: string;
   value: string;
   mode: CellMode;
-  kind: StudioColumn['declaredKind'];
+  kind: InsertValueKind;
+}
+
+interface RowEditorState {
+  rowIndex: number;
+  value: string;
+  error: string;
 }
 
 interface DeleteTarget {
@@ -82,12 +105,29 @@ interface ExportSheetState {
   rowIndexes: number[];
   format: ExportFormat;
   columns: string[];
+  collection: boolean;
 }
 
 interface BatchUpdateState {
   column: string;
   mode: CellMode;
   value: string;
+}
+
+interface InsertFieldState {
+  mode: InsertMode;
+  valueKind: InsertValueKind;
+  value: string;
+}
+
+interface QueryHistoryEntry {
+  id: string;
+  statement: string;
+  executedAt: number;
+  durationMs: number;
+  error: string | null;
+  favorite: boolean;
+  source: 'browse' | 'sql';
 }
 
 function displayValue(value: TransportValue | undefined): string {
@@ -136,6 +176,39 @@ const emptyResult: TransportQueryResult = {
 };
 
 const SYSTEM_TABLES = new Set(['kysely_migration', 'kysely_migration_lock']);
+const INSERT_VALUE_KINDS: Array<{ value: InsertValueKind; label: string }> = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'boolean', label: 'Boolean' },
+  { value: 'json', label: 'JSON' },
+  { value: 'date', label: 'Date' },
+  { value: 'datetime', label: 'Datetime (local)' },
+  { value: 'timestamp', label: 'Timestamp (UTC)' },
+  { value: 'uuid-v4', label: 'UUID v4' },
+  { value: 'uuid-v7', label: 'UUID v7' },
+  { value: 'blob', label: 'Blob' },
+];
+
+function defaultInsertValueKind(column: StudioColumn): InsertValueKind {
+  if (/\btimestamp\b/i.test(column.dataType)) return 'timestamp';
+  if (column.declaredKind === 'number' || column.declaredKind === 'boolean' ||
+      column.declaredKind === 'json' || column.declaredKind === 'date' ||
+      column.declaredKind === 'datetime' || column.declaredKind === 'blob') {
+    return column.declaredKind;
+  }
+  return 'text';
+}
+
+function localDateTimeDefaults(): { date: string; datetime: string; timestamp: string } {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+    .toISOString();
+  return {
+    date: local.slice(0, 10),
+    datetime: local.slice(0, 16),
+    timestamp: now.toISOString(),
+  };
+}
 const FILTER_OPERATORS: Array<{ value: BrowseFilterOperator; label: string }> = [
   { value: 'eq', label: 'equals' },
   { value: 'ne', label: 'does not equal' },
@@ -166,6 +239,8 @@ export default class StudioPage extends Cossack {
   @State() schema: StudioSchema | null = null;
   @State() browseResult: TransportQueryResult = emptyResult;
   @State() sqlResult: TransportQueryResult = emptyResult;
+  @State() explainResult: TransportQueryResult = emptyResult;
+  @State() pragmas: StudioPragma[] = [];
   @State() selected = '';
   @State() page = 1;
   @State() pageSize = 100;
@@ -180,8 +255,8 @@ export default class StudioPage extends Cossack {
   @ClientState() showFilter = false;
   @ClientState() showKyselyMigration = false;
   @ClientState() showKyselyMigrationLock = false;
-  @ClientState() insertValues: Record<string, string> = {};
-  @ClientState() insertModes: Record<string, InsertMode> = {};
+  @ClientState() insertFields: Record<string, InsertFieldState> = {};
+  @ClientState() insertError = '';
   @ClientState() filters: BrowseFilter[] = [];
   @ClientState() sort: BrowseSort[] = [];
   @ClientState() filterColumn = '';
@@ -190,17 +265,25 @@ export default class StudioPage extends Cossack {
   @ClientState() selectedRows: number[] = [];
   @ClientState() inlineEditor: CellEditor | null = null;
   @ClientState() sheetEditor: CellEditor | null = null;
+  @ClientState() rowEditor: RowEditorState | null = null;
   @ClientState() deleteTarget: DeleteTarget | null = null;
   @ClientState() exportSheet: ExportSheetState | null = null;
   @ClientState() batchUpdate: BatchUpdateState | null = null;
   @ClientState() browseLoading = false;
+  @ClientState() browseQuery = '';
+  @ClientState() customBrowseQuery = false;
   @ClientState() loadedObject = '';
   @ClientState() browseLoadFailed = false;
   @ClientState() paletteOpen = false;
   @ClientState() restoringUrl = false;
   @ClientState() theme: StudioTheme = 'dark';
+  @ClientState() pragmaDrafts: Record<string, string> = {};
+  @ClientState() queryHistory: QueryHistoryEntry[] = [];
+  @ClientState() historyOpen = false;
+  @ClientState() sqlOutput: 'results' | 'explain' = 'results';
 
   private disconnectTheme?: () => void;
+  private insertTemporalDefaults = { date: '', datetime: '', timestamp: '' };
 
   onMount() {
     this.theme = studioTheme.get();
@@ -213,6 +296,7 @@ export default class StudioPage extends Cossack {
     } else if (this.activeSchema.connection.provider === 'mysql') {
       this.sql = 'SELECT VERSION() AS version;';
     }
+    this.loadQueryHistory();
     void this.restoreFromUrl();
   }
 
@@ -226,6 +310,25 @@ export default class StudioPage extends Cossack {
 
   get activeObject(): StudioObject | undefined {
     return this.activeSchema.objects.find((object) => object.name === this.selected);
+  }
+
+  get queryHistoryStorageKey(): string {
+    const connection = this.activeSchema.connection;
+    return `cossack-studio:query-history:${connection.provider}:${connection.label}`;
+  }
+
+  get explainJson(): string | null {
+    if (this.explainResult.rows.length !== 1 || this.explainResult.columns.length !== 1) {
+      return null;
+    }
+    const value = editableValue(
+      this.explainResult.rows[0]?.[this.explainResult.columns[0]],
+    );
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return null;
+    }
   }
 
   head(_context: HeadContext): HeadValue {
@@ -274,13 +377,18 @@ export default class StudioPage extends Cossack {
     try {
       const params = new URL(window.location.href).searchParams;
       const requestedTab = params.get('tab');
-      this.tab = requestedTab === 'structure' || requestedTab === 'sql' ? requestedTab : 'browse';
+      this.tab = requestedTab === 'structure' ||
+        requestedTab === 'sql' ||
+        requestedTab === 'pragmas'
+        ? requestedTab
+        : 'browse';
       const requestedSize = Number(params.get('pageSize') ?? 100);
       this.pageSize = [25, 50, 100, 250, 500].includes(requestedSize) ? requestedSize : 100;
       const object = this.activeSchema.objects.find((candidate) => candidate.name === params.get('table'));
       if (!object) {
         this.selected = '';
         this.loadedObject = '';
+        if (this.tab === 'pragmas') await this.refreshPragmas();
         return;
       }
       this.selected = object.name;
@@ -309,6 +417,7 @@ export default class StudioPage extends Cossack {
       });
       const requestedPage = Math.max(1, Number(params.get('page') ?? 1) || 1);
       await this.reloadRows(object.name, requestedPage, this.pageSize, false);
+      if (this.tab === 'pragmas') await this.refreshPragmas();
     } finally {
       this.restoringUrl = false;
     }
@@ -320,30 +429,69 @@ export default class StudioPage extends Cossack {
   }
 
   @Client()
-  async chooseObject(name: string) {
+  async chooseObject(name: string, filters: BrowseFilter[] = []) {
     this.selected = name;
     this.loadedObject = '';
+    this.browseQuery = '';
+    this.customBrowseQuery = false;
     this.browseLoadFailed = false;
     this.page = 1;
     this.tab = 'browse';
-    this.filters = [];
+    this.filters = filters;
     this.sort = [];
     this.filterColumn = this.activeSchema.objects.find((object) => object.name === name)
       ?.columns[0]?.name ?? '';
     this.searchIndex = -1;
     this.inlineEditor = null;
     this.sheetEditor = null;
+    this.showInsert = false;
     this.selectedRows = [];
     this.syncUrl(true);
     await this.reloadRows(name, 1, this.pageSize);
   }
 
   @Client()
-  switchTab(tab: StudioTab) {
+  async switchTab(tab: StudioTab) {
     this.startViewTransition(() => {
       this.tab = tab;
       this.syncUrl(true);
     }, ['studio-tab']);
+    if (tab === 'pragmas') await this.refreshPragmas();
+  }
+
+  @Client()
+  async refreshPragmas() {
+    if (!['sqlite', 'libsql', 'd1-local', 'd1-remote']
+      .includes(this.activeSchema.connection.provider)) return;
+    try {
+      const pragmas = await this.loadPragmas();
+      this.pragmaDrafts = Object.fromEntries(
+        pragmas.map((pragma) => [pragma.name, pragma.value]),
+      );
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    }
+  }
+
+  @Client()
+  setPragmaDraft(name: string, value: string) {
+    this.pragmaDrafts = { ...this.pragmaDrafts, [name]: value };
+  }
+
+  @Client()
+  async savePragma(name: string) {
+    const value = this.pragmaDrafts[name];
+    if (value === undefined) return;
+    try {
+      const pragmas = await this.updatePragmaSetting(name, value);
+      this.pragmaDrafts = Object.fromEntries(
+        pragmas.map((pragma) => [pragma.name, pragma.value]),
+      );
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    }
   }
 
   @Client()
@@ -361,6 +509,8 @@ export default class StudioPage extends Cossack {
     try {
       await this.loadRows(name, page, pageSize, this.filters, this.sort);
       this.loadedObject = name;
+      this.browseQuery = this.browseResult.query ?? '';
+      this.customBrowseQuery = false;
       if (updateUrl) this.syncUrl();
     } catch (error: any) {
       this.loadedObject = '';
@@ -453,10 +603,135 @@ export default class StudioPage extends Cossack {
   }
 
   @Client()
+  loadQueryHistory() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(this.queryHistoryStorageKey) ?? '[]');
+      if (!Array.isArray(stored)) return;
+      this.queryHistory = stored.flatMap((entry): QueryHistoryEntry[] => {
+        if (
+          !entry ||
+          typeof entry.id !== 'string' ||
+          typeof entry.statement !== 'string' ||
+          typeof entry.executedAt !== 'number'
+        ) {
+          return [];
+        }
+        return [{
+          id: entry.id,
+          statement: entry.statement,
+          executedAt: entry.executedAt,
+          durationMs: typeof entry.durationMs === 'number' ? entry.durationMs : 0,
+          error: typeof entry.error === 'string' ? entry.error : null,
+          favorite: entry.favorite === true,
+          source: entry.source === 'browse' ? 'browse' : 'sql',
+        }];
+      }).slice(0, 200);
+    } catch {
+      this.queryHistory = [];
+    }
+  }
+
+  @Client()
+  persistQueryHistory() {
+    try {
+      localStorage.setItem(
+        this.queryHistoryStorageKey,
+        JSON.stringify(this.queryHistory.slice(0, 200)),
+      );
+    } catch {
+      // History is optional when browser storage is disabled or full.
+    }
+  }
+
+  @Client()
+  recordQuery(
+    statement: string,
+    result: TransportQueryResult,
+    source: QueryHistoryEntry['source'],
+  ) {
+    const normalized = statement.trim();
+    if (!normalized) return;
+    this.queryHistory = [{
+      id: globalThis.crypto?.randomUUID?.() ??
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      statement: normalized,
+      executedAt: Date.now(),
+      durationMs: result.durationMs,
+      error: result.error ?? null,
+      favorite: false,
+      source,
+    }, ...this.queryHistory].slice(0, 200);
+    this.persistQueryHistory();
+  }
+
+  @Client()
+  toggleQueryFavorite(id: string) {
+    this.queryHistory = this.queryHistory.map((entry) =>
+      entry.id === id ? { ...entry, favorite: !entry.favorite } : entry);
+    this.persistQueryHistory();
+  }
+
+  @Client()
+  clearQueryHistory() {
+    this.queryHistory = this.queryHistory.filter((entry) => entry.favorite);
+    this.persistQueryHistory();
+  }
+
+  @Client()
+  loadHistoryQuery(entry: QueryHistoryEntry) {
+    this.sql = entry.statement;
+    this.sqlOutput = 'results';
+    this.tab = 'sql';
+    this.historyOpen = false;
+    this.syncUrl(true);
+  }
+
+  @Client()
+  async runHistoryQuery(entry: QueryHistoryEntry) {
+    this.loadHistoryQuery(entry);
+    await this.runSqlFromEditor();
+  }
+
+  @Client()
+  setBrowseQuery(value: string) {
+    this.browseQuery = value;
+  }
+
+  @Client()
+  async runBrowseQuery() {
+    const statement = this.browseQuery.trim();
+    if (!statement || !this.selected) return;
+    this.browseLoading = true;
+    this.browseLoadFailed = false;
+    this.inlineEditor = null;
+    this.sheetEditor = null;
+    this.showInsert = false;
+    this.selectedRows = [];
+    try {
+      const executed = await this.executeBrowseStatement(statement);
+      if (executed && this.selected) {
+        this.loadedObject = this.selected;
+        this.customBrowseQuery = true;
+        studioSchemaCatalog.set(this.activeSchema);
+        this.recordQuery(statement, this.browseResult, 'browse');
+      }
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    } finally {
+      this.browseLoading = false;
+    }
+  }
+
+  @Client()
   async runSqlFromEditor() {
     try {
-      await this.executeStatement(this.sql, this.filters, this.sort);
+      const result = await this.executeStatement(this.sql, this.filters, this.sort);
       this.loadedObject = this.selected;
+      this.browseQuery = this.browseResult.query ?? this.browseQuery;
+      this.customBrowseQuery = false;
+      this.sqlOutput = 'results';
+      this.recordQuery(this.sql, result, 'sql');
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
       this.message = error?.message ?? String(error);
@@ -465,11 +740,49 @@ export default class StudioPage extends Cossack {
   }
 
   @Client()
+  async runExplainFromEditor() {
+    try {
+      await this.explainStatement(this.sql);
+      this.sqlOutput = 'explain';
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    }
+  }
+
+  @Client()
+  async followForeignKey(
+    foreignKey: StudioForeignKey,
+    rowIndex: number,
+  ) {
+    const target = this.activeSchema.objects.find(
+      (object) => object.name === foreignKey.referencedTable,
+    );
+    const row = this.browseResult.rows[rowIndex];
+    if (!target || !row) return;
+    const filters = foreignKey.columns.flatMap((column): BrowseFilter[] => {
+      const value = row[column.column];
+      return value === null || value === undefined
+        ? []
+        : [{
+            column: column.referencedColumn,
+            operator: 'eq',
+            value: editableValue(value),
+          }];
+    });
+    if (filters.length !== foreignKey.columns.length) return;
+    await this.chooseObject(target.name, filters);
+  }
+
+  @Client()
   keyForRow(object: StudioObject, rowIndex: number): Record<string, unknown> {
+    const row = this.browseResult.rows[rowIndex];
+    const locator = object.rowLocators.find((candidate) =>
+      candidate.columns.every((column) =>
+        row?.[column] !== null && row?.[column] !== undefined));
+    if (!locator) return {};
     return Object.fromEntries(
-      object.columns
-        .filter((column) => column.primaryKeyPosition > 0)
-        .map((column) => [column.name, this.browseResult.rows[rowIndex]?.[column.name]]),
+      locator.columns.map((column) => [column, row[column]]),
     );
   }
 
@@ -477,7 +790,7 @@ export default class StudioPage extends Cossack {
   beginCellEdit(rowIndex: number, columnName: string) {
     const object = this.activeObject;
     const column = object?.columns.find((candidate) => candidate.name === columnName);
-    if (!object?.editable || !column) return;
+    if (!object?.editable || !column || this.customBrowseQuery) return;
     const raw = this.browseResult.rows[rowIndex]?.[columnName];
     const value = editableValue(raw);
     const editor: CellEditor = {
@@ -487,7 +800,7 @@ export default class StudioPage extends Cossack {
         ? value === '1' ? 'true' : value === '0' ? 'false' : value
         : value,
       mode: raw === null ? 'null' : 'value',
-      kind: column.declaredKind,
+      kind: defaultInsertValueKind(column),
     };
     if (column.declaredKind === 'varchar' || column.declaredKind === 'number') {
       this.inlineEditor = editor;
@@ -549,13 +862,29 @@ export default class StudioPage extends Cossack {
   }
 
   @Client()
-  setSheetMode(mode: CellMode) {
-    if (this.sheetEditor) this.sheetEditor = { ...this.sheetEditor, mode };
-  }
-
-  @Client()
-  setSheetKind(kind: StudioColumn['declaredKind']) {
-    if (this.sheetEditor) this.sheetEditor = { ...this.sheetEditor, kind };
+  setSheetSelection(selection: CellSelection) {
+    const editor = this.sheetEditor;
+    if (!editor) return;
+    if (selection === 'null') {
+      this.sheetEditor = { ...editor, mode: 'null' };
+      return;
+    }
+    let value = editor.value;
+    const temporal = localDateTimeDefaults();
+    if (selection === 'boolean') value = value === 'false' ? 'false' : 'true';
+    if (selection === 'json' && !value.trim()) value = '{}';
+    if (selection === 'date' && !value.trim()) value = temporal.date;
+    if (selection === 'datetime' && !value.trim()) value = temporal.datetime;
+    if (selection === 'timestamp') value = temporal.timestamp;
+    if (selection === 'uuid-v4' || selection === 'uuid-v7') {
+      value = this.generateInsertUuid(selection);
+    }
+    this.sheetEditor = {
+      ...editor,
+      mode: 'value',
+      kind: selection,
+      value,
+    };
   }
 
   @Client()
@@ -577,7 +906,9 @@ export default class StudioPage extends Cossack {
         object.name,
         this.keyForRow(object, editor.rowIndex),
         editor.columnName,
-        editor.mode === 'null' ? { mode: 'null' } : { mode: 'value', value: editor.value },
+        editor.mode === 'null'
+          ? { mode: 'null' }
+          : { mode: 'value', value: editor.value, valueKind: editor.kind },
         this.page,
         this.pageSize,
         this.filters,
@@ -589,6 +920,83 @@ export default class StudioPage extends Cossack {
     } catch (error: any) {
       this.message = error?.message ?? String(error);
       this.messageError = true;
+    }
+  }
+
+  @Client()
+  rowJson(object: StudioObject, rowIndex: number): Record<string, unknown> {
+    const row = this.browseResult.rows[rowIndex] ?? {};
+    return Object.fromEntries(
+      object.columns
+        .filter((column) => !column.hidden)
+        .map((column) => [column.name, exportValue(row[column.name])]),
+    );
+  }
+
+  @Client()
+  openRowEditor(rowIndex: number) {
+    const object = this.activeObject;
+    if (!object?.editable || this.customBrowseQuery) return;
+    this.rowEditor = {
+      rowIndex,
+      value: JSON.stringify(this.rowJson(object, rowIndex), null, 2),
+      error: '',
+    };
+  }
+
+  @Client()
+  setRowEditorValue(value: string) {
+    if (this.rowEditor) this.rowEditor = { ...this.rowEditor, value, error: '' };
+  }
+
+  @Client()
+  async saveRowEditor() {
+    const editor = this.rowEditor;
+    const object = this.activeObject;
+    if (!editor || !object) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(editor.value);
+    } catch (error: any) {
+      this.rowEditor = {
+        ...editor,
+        error: `Invalid JSON: ${error?.message ?? String(error)}`,
+      };
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.rowEditor = { ...editor, error: 'The row must be a JSON object.' };
+      return;
+    }
+    const original = this.rowJson(object, editor.rowIndex);
+    const changes = Object.fromEntries(
+      Object.entries(parsed).filter(([name, value]) =>
+        JSON.stringify(value) !== JSON.stringify(original[name])),
+    );
+    if (!Object.keys(changes).length) {
+      this.rowEditor = null;
+      this.message = 'No row changes to save.';
+      this.messageError = false;
+      return;
+    }
+    try {
+      await this.updateGridRow(
+        object.name,
+        this.keyForRow(object, editor.rowIndex),
+        changes,
+        this.page,
+        this.pageSize,
+        this.filters,
+        this.sort,
+      );
+      this.loadedObject = object.name;
+      this.rowEditor = null;
+      studioSchemaCatalog.set(this.activeSchema);
+    } catch (error: any) {
+      this.rowEditor = {
+        ...editor,
+        error: error?.message ?? String(error),
+      };
     }
   }
 
@@ -636,51 +1044,190 @@ export default class StudioPage extends Cossack {
   toggleInsert() {
     const next = !this.showInsert;
     this.showInsert = next;
+    this.insertError = '';
     if (next && this.activeObject) {
-      this.insertModes = Object.fromEntries(
+      const defaults = localDateTimeDefaults();
+      this.insertTemporalDefaults = defaults;
+      this.insertFields = Object.fromEntries(
         this.activeObject.columns
           .filter((column) => !column.hidden)
-          .map((column) => [column.name, 'value']),
+          .map((column) => {
+            const valueKind = defaultInsertValueKind(column);
+            let value = '';
+            if (valueKind === 'boolean') value = 'true';
+            if (valueKind === 'json') value = '{}';
+            if (valueKind === 'date') value = defaults.date;
+            if (valueKind === 'datetime') value = defaults.datetime;
+            if (valueKind === 'timestamp') value = defaults.timestamp;
+            return [column.name, { mode: 'value', valueKind, value }];
+          }),
       );
+      void this.refreshInsertTemporalDefaults(this.activeObject.name, defaults);
+    }
+  }
+
+  @Client()
+  async refreshInsertTemporalDefaults(
+    objectName: string,
+    previous: { date: string; datetime: string; timestamp: string },
+  ) {
+    try {
+      const defaults = await this.getInsertTemporalDefaults();
+      if (!this.showInsert || this.activeObject?.name !== objectName) return;
+      this.insertFields = Object.fromEntries(
+        Object.entries(this.insertFields).map(([name, field]) => {
+          let value = field.value;
+          if (field.valueKind === 'date' && (value === previous.date || !value)) {
+            value = defaults.date;
+          }
+          if (field.valueKind === 'datetime' && (value === previous.datetime || !value)) {
+            value = defaults.datetime;
+          }
+          if (field.valueKind === 'timestamp' && (value === previous.timestamp || !value)) {
+            value = defaults.timestamp;
+          }
+          return [name, { ...field, value }];
+        }),
+      );
+      this.insertTemporalDefaults = defaults;
+    } catch {
+      // The browser-clock fallback remains usable if the server clock cannot be read.
     }
   }
 
   @Client()
   setInsertValue(name: string, value: string) {
-    this.insertValues = { ...this.insertValues, [name]: value };
-    this.insertModes = { ...this.insertModes, [name]: 'value' };
+    const field = this.insertFields[name] ?? {
+      mode: 'value',
+      valueKind: 'text',
+      value: '',
+    };
+    this.insertFields = {
+      ...this.insertFields,
+      [name]: { ...field, mode: 'value', value },
+    };
   }
 
   @Client()
-  setInsertMode(name: string, mode: InsertMode) {
-    this.insertModes = { ...this.insertModes, [name]: mode };
+  setInsertValueKind(name: string, kind: InsertValueKind) {
+    const field = this.insertFields[name] ?? {
+      mode: 'value',
+      valueKind: kind,
+      value: '',
+    };
+    let value = field.value;
+    if (kind === 'boolean') value = value === 'false' ? 'false' : 'true';
+    if (kind === 'json' && !value.trim()) value = '{}';
+    if (kind === 'date' && !value.trim()) value = this.insertTemporalDefaults.date;
+    if (kind === 'datetime' && !value.trim()) value = this.insertTemporalDefaults.datetime;
+    if (kind === 'timestamp') {
+      value = this.insertTemporalDefaults.timestamp;
+      void this.refreshInsertTimestamp(name);
+    }
+    if (kind === 'uuid-v4' || kind === 'uuid-v7') value = this.generateInsertUuid(kind);
+    this.insertFields = {
+      ...this.insertFields,
+      [name]: { mode: 'value', valueKind: kind, value },
+    };
+  }
+
+  @Client()
+  async refreshInsertTimestamp(name: string) {
+    try {
+      const defaults = await this.getInsertTemporalDefaults();
+      if (!this.showInsert || this.insertFields[name]?.valueKind !== 'timestamp') return;
+      this.setInsertValue(name, defaults.timestamp);
+      this.insertTemporalDefaults = defaults;
+    } catch {
+      // Keep the timestamp captured when the insert sheet opened.
+    }
+  }
+
+  @Client()
+  regenerateInsertUuid(name: string) {
+    const kind = this.insertFields[name]?.valueKind;
+    if (kind !== 'uuid-v4' && kind !== 'uuid-v7') return;
+    this.setInsertValue(name, this.generateInsertUuid(kind));
+  }
+
+  @Client()
+  generateInsertUuid(kind: 'uuid-v4' | 'uuid-v7'): string {
+    if (kind === 'uuid-v4') return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    let timestamp = Date.now();
+    for (let index = 5; index >= 0; index--) {
+      bytes[index] = timestamp & 0xff;
+      timestamp = Math.floor(timestamp / 256);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x70;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-` +
+      `${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  @Client()
+  setInsertSelection(name: string, selection: InsertSelection) {
+    const field = this.insertFields[name] ?? {
+      mode: 'value',
+      valueKind: 'text',
+      value: '',
+    };
+    if (selection === 'omit' || selection === 'null') {
+      this.insertFields = {
+        ...this.insertFields,
+        [name]: { ...field, mode: selection },
+      };
+      return;
+    }
+    this.setInsertValueKind(name, selection);
   }
 
   @Client()
   async submitInsert() {
     const object = this.activeObject;
     if (!object) return;
-    const cells = Object.fromEntries(object.columns.map((column) => {
-      const mode = this.insertModes[column.name] ?? 'value';
-      return [column.name, mode === 'value'
-        ? { mode, value: this.insertValues[column.name] ?? '' }
-        : { mode }];
-    })) as Record<string, InsertCell>;
+    this.insertError = '';
+    const cells = Object.fromEntries(
+      object.columns.filter((column) => !column.hidden).map((column) => {
+        const field = this.insertFields[column.name] ?? {
+          mode: 'value',
+          valueKind: defaultInsertValueKind(column),
+          value: '',
+        };
+        const mode = field.mode;
+        return [column.name, mode === 'value'
+          ? {
+              mode,
+              value: field.value,
+              valueKind: field.valueKind,
+            }
+          : { mode }];
+      }),
+    ) as Record<string, InsertCell>;
     try {
-      await this.insertGridRow(
+      const result = await this.insertGridRow(
         object.name,
         cells,
         this.pageSize,
         this.filters,
         this.sort,
       );
+      if (!result?.ok) {
+        const message = result?.error ?? 'The row could not be inserted. Check the server log for details.';
+        this.insertError = message;
+        this.message = message;
+        this.messageError = true;
+        return;
+      }
       this.loadedObject = object.name;
       this.showInsert = false;
-      this.insertModes = {};
-      this.insertValues = {};
+      this.insertFields = {};
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
-      this.message = error?.message ?? String(error);
+      const message = error?.message ?? String(error);
+      this.insertError = message;
+      this.message = message;
       this.messageError = true;
     }
   }
@@ -700,12 +1247,13 @@ export default class StudioPage extends Cossack {
   }
 
   @Client()
-  openExport(rowIndexes: number[]) {
+  openExport(rowIndexes: number[], collection = false) {
     const object = this.activeObject;
     if (!object) return;
     this.exportSheet = {
       rowIndexes,
       format: 'json',
+      collection,
       columns: this.browseResult.columns.length
         ? [...this.browseResult.columns]
         : object.columns.filter((column) => !column.hidden).map((column) => column.name),
@@ -735,7 +1283,7 @@ export default class StudioPage extends Cossack {
         state.columns.map((column) => [column, exportValue(row[column])]),
       ));
     const content = state.format === 'json'
-      ? JSON.stringify(rows.length === 1 ? rows[0] : rows, null, 2)
+      ? JSON.stringify(state.collection || rows.length !== 1 ? rows : rows[0], null, 2)
       : [
           state.columns.map(csvCell).join(','),
           ...rows.map((row) => state.columns.map((column) => csvCell(row[column])).join(',')),
@@ -746,7 +1294,7 @@ export default class StudioPage extends Cossack {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${object.name}-${rows.length === 1 ? 'row' : 'rows'}.${state.format}`;
+    anchor.download = `${object.name}-${state.collection || rows.length !== 1 ? 'rows' : 'row'}.${state.format}`;
     anchor.click();
     URL.revokeObjectURL(url);
     this.exportSheet = null;
@@ -801,7 +1349,27 @@ export default class StudioPage extends Cossack {
   }
 
   @Server()
-  async executeStatement(statement: string, filters: BrowseFilter[] = [], sort: BrowseSort[] = []) {
+  async loadPragmas(): Promise<StudioPragma[]> {
+    this.pragmas = await getStudioDatabase().getPragmas();
+    this.message = '';
+    this.messageError = false;
+    return this.pragmas;
+  }
+
+  @Server()
+  async updatePragmaSetting(name: string, value: string): Promise<StudioPragma[]> {
+    this.pragmas = await getStudioDatabase().setPragma(name, value);
+    this.message = `PRAGMA ${name} updated.`;
+    this.messageError = false;
+    return this.pragmas;
+  }
+
+  @Server()
+  async executeStatement(
+    statement: string,
+    filters: BrowseFilter[] = [],
+    sort: BrowseSort[] = [],
+  ): Promise<TransportQueryResult> {
     this.sqlResult = await getStudioDatabase().executeSql(statement);
     this.schema = await getStudioDatabase().getSchema();
     if (this.selected && this.schema.objects.some((object) => object.name === this.selected)) {
@@ -820,6 +1388,49 @@ export default class StudioPage extends Cossack {
       ? this.sqlResult.error
       : `Completed in ${this.sqlResult.durationMs.toFixed(1)} ms`;
     this.messageError = Boolean(this.sqlResult.error);
+    return this.sqlResult;
+  }
+
+  @Server()
+  async explainStatement(statement: string): Promise<TransportQueryResult> {
+    this.explainResult = await getStudioDatabase().explainSql(statement);
+    this.message = this.explainResult.error
+      ? this.explainResult.error
+      : `Query plan generated in ${this.explainResult.durationMs.toFixed(1)} ms`;
+    this.messageError = Boolean(this.explainResult.error);
+    return this.explainResult;
+  }
+
+  @Server()
+  async executeBrowseStatement(statement: string): Promise<boolean> {
+    const result = await getStudioDatabase().executeSql(statement);
+    this.schema = await getStudioDatabase().getSchema();
+    if (result.error) {
+      this.message = result.error;
+      this.messageError = true;
+      return false;
+    }
+    if (this.selected && !this.schema.objects.some((object) => object.name === this.selected)) {
+      this.selected = '';
+      this.browseResult = emptyResult;
+      this.message = `Completed in ${result.durationMs.toFixed(1)} ms`;
+      this.messageError = false;
+      return true;
+    }
+    this.browseResult = {
+      ...result,
+      totalRows: result.rows.length,
+      page: 1,
+      pageSize: result.rows.length || this.pageSize,
+      objectName: this.selected,
+      query: statement,
+    };
+    this.page = 1;
+    this.message = result.affectedRows
+      ? `${result.affectedRows} affected row${result.affectedRows === 1 ? '' : 's'} · ${result.durationMs.toFixed(1)} ms`
+      : `${result.rows.length} returned row${result.rows.length === 1 ? '' : 's'} · ${result.durationMs.toFixed(1)} ms`;
+    this.messageError = false;
+    return true;
   }
 
   @Server()
@@ -827,7 +1438,11 @@ export default class StudioPage extends Cossack {
     table: string,
     key: Record<string, unknown>,
     column: string,
-    value: { mode: 'null' } | { mode: 'value'; value: string },
+    value: { mode: 'null' } | {
+      mode: 'value';
+      value: string;
+      valueKind?: InsertValueKind;
+    },
     page: number,
     pageSize: number,
     filters: BrowseFilter[] = [],
@@ -841,6 +1456,25 @@ export default class StudioPage extends Cossack {
       filters,
       sort,
     });
+    this.page = this.browseResult.page ?? page;
+    this.message = 'Row updated.';
+    this.messageError = false;
+  }
+
+  @Server()
+  async updateGridRow(
+    table: string,
+    key: Record<string, unknown>,
+    values: Record<string, unknown>,
+    page: number,
+    pageSize: number,
+    filters: BrowseFilter[] = [],
+    sort: BrowseSort[] = [],
+  ) {
+    const database = getStudioDatabase();
+    const mutation = await database.updateRow(table, key, values);
+    this.schema = mutation.schema;
+    this.browseResult = await database.browse(table, { page, pageSize, filters, sort });
     this.page = this.browseResult.page ?? page;
     this.message = 'Row updated.';
     this.messageError = false;
@@ -887,25 +1521,42 @@ export default class StudioPage extends Cossack {
   }
 
   @Server()
+  async getInsertTemporalDefaults(): Promise<{
+    date: string;
+    datetime: string;
+    timestamp: string;
+  }> {
+    return localDateTimeDefaults();
+  }
+
+  @Server()
   async insertGridRow(
     table: string,
     cells: Record<string, InsertCell>,
     pageSize: number,
     filters: BrowseFilter[] = [],
     sort: BrowseSort[] = [],
-  ) {
-    const database = getStudioDatabase();
-    const mutation = await database.insert(table, cells);
-    this.schema = mutation.schema;
-    this.browseResult = await database.browse(table, {
-      page: 1,
-      pageSize,
-      filters,
-      sort,
-    });
-    this.page = 1;
-    this.message = 'Row inserted.';
-    this.messageError = false;
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const database = getStudioDatabase();
+      const mutation = await database.insert(table, cells);
+      this.schema = mutation.schema;
+      this.browseResult = await database.browse(table, {
+        page: 1,
+        pageSize,
+        filters,
+        sort,
+      });
+      this.page = 1;
+      this.message = 'Row inserted.';
+      this.messageError = false;
+      return { ok: true };
+    } catch (error: any) {
+      return {
+        ok: false,
+        error: error?.message ?? String(error),
+      };
+    }
   }
 
   iconButton(
@@ -947,6 +1598,14 @@ export default class StudioPage extends Cossack {
             </span>
             ${component(Badge, { variant: remote ? 'destructive' : 'secondary' },
               `${schema.connection.label}${remote ? ' · REMOTE D1' : ' · local'}`)}
+            ${schema.connection.databaseVersion ? html`
+              <span
+                class="hidden shrink-0 text-xs text-muted-foreground md:inline"
+                data-testid="database-version"
+              >
+                ${schema.connection.databaseVersion}
+              </span>
+            ` : ''}
           </div>
           <div class="flex items-center gap-3">
             ${remote ? html`
@@ -977,7 +1636,7 @@ export default class StudioPage extends Cossack {
               </span>
               ${component(Kbd, {}, 'Ctrl K')}
             `)}
-            ${component(Input, {
+            ${component(InputGroup, {
               placeholder: 'Search tables and views…',
               role: 'combobox',
               'aria-expanded': Boolean(objects.length),
@@ -991,32 +1650,45 @@ export default class StudioPage extends Cossack {
                 (event.target as HTMLInputElement).value,
               ),
               '@keydown': this.onSearchKeydown,
+              suffix: hiddenSystemTables.length
+                ? component(DropdownMenu, {
+                    side: 'bottom',
+                    align: 'end',
+                    trigger: component(Tooltip, {
+                      label: `System table: ${hiddenSystemTables.length}`,
+                      side: 'right',
+                    }, html`
+                      <span
+                        class="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        data-testid="system-table-trigger"
+                      >
+                        ${component(Icon, { entry: FiltersIcon, size: 15 })}
+                        <span class="sr-only">System table: ${hiddenSystemTables.length}</span>
+                      </span>
+                    `),
+                  }, html`
+                    <div class="grid gap-2 p-2" data-testid="system-table-menu">
+                      ${hiddenSystemTables.map((candidate) => component(Checkbox, {
+                        checked: candidate.name === 'kysely_migration'
+                          ? this.showKyselyMigration
+                          : this.showKyselyMigrationLock,
+                        '@change': (event: InputEvent) => {
+                          const checked = (event.target as HTMLInputElement).checked;
+                          if (candidate.name === 'kysely_migration') this.showKyselyMigration = checked;
+                          else this.showKyselyMigrationLock = checked;
+                        },
+                      }, candidate.name))}
+                    </div>
+                  `)
+                : component(Tooltip, {
+                    label: 'System table: 0',
+                    side: 'right',
+                  }, html`
+                    <span class="inline-flex h-7 w-7 items-center justify-center opacity-50">
+                      ${component(Icon, { entry: FiltersIcon, size: 15 })}
+                    </span>
+                  `),
             })}
-            ${hiddenSystemTables.length ? component(DropdownMenu, {
-              block: true,
-              side: 'bottom',
-              align: 'start',
-              trigger: html`
-                <span class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-                  ${component(Icon, { entry: FiltersIcon, size: 15 })}
-                  <span>System tables</span>
-                  <span class="ml-auto">${hiddenSystemTables.length}</span>
-                </span>
-              `,
-            }, html`
-              <div class="grid gap-2 p-2" data-testid="system-table-menu">
-                ${hiddenSystemTables.map((candidate) => component(Checkbox, {
-                  checked: candidate.name === 'kysely_migration'
-                    ? this.showKyselyMigration
-                    : this.showKyselyMigrationLock,
-                  '@change': (event: InputEvent) => {
-                    const checked = (event.target as HTMLInputElement).checked;
-                    if (candidate.name === 'kysely_migration') this.showKyselyMigration = checked;
-                    else this.showKyselyMigrationLock = checked;
-                  },
-                }, candidate.name))}
-              </div>
-            `) : ''}
           </div>
           <nav
             id="studio-object-list"
@@ -1052,6 +1724,12 @@ export default class StudioPage extends Cossack {
               `;
             })}
           </nav>
+          <div
+            class="shrink-0 border-t px-3 py-2 text-xs text-muted-foreground"
+            data-testid="studio-version"
+          >
+            Studio v${__COSSACK_STUDIO_VERSION__}
+          </div>
         </aside>
 
         <section class="row-start-2 flex min-w-0 flex-col overflow-hidden bg-background">
@@ -1061,6 +1739,7 @@ export default class StudioPage extends Cossack {
                 ['browse', DatabaseIcon, 'Browse'],
                 ['structure', StructureIcon, 'Structure'],
                 ['sql', CodeSquareIcon, 'SQL'],
+                ['pragmas', FiltersIcon, 'Pragmas'],
               ] as const).map(([item, icon, label]) => component(Button, {
                 variant: this.tab === item ? 'secondary' : 'ghost',
                 size: 'sm',
@@ -1076,10 +1755,18 @@ export default class StudioPage extends Cossack {
                     'data-testid': 'refresh-rows',
                   })
                 : ''}
-              ${this.tab === 'browse' && object?.editable
+              ${this.tab === 'browse' && object?.editable && !this.customBrowseQuery
                 ? this.iconButton(AddSquareIcon, this.showInsert ? 'Close insert form' : 'Insert row', this.toggleInsert, {
                     'data-testid': 'insert-row',
                     variant: this.showInsert ? 'secondary' : 'ghost',
+                  })
+                : ''}
+              ${this.tab === 'pragmas' &&
+                ['sqlite', 'libsql', 'd1-local', 'd1-remote']
+                  .includes(this.activeSchema.connection.provider)
+                ? this.iconButton(RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
+                    disabled: Boolean(this.loading.refreshPragmas),
+                    'data-testid': 'refresh-pragmas',
                   })
                 : ''}
             </div>
@@ -1095,10 +1782,14 @@ export default class StudioPage extends Cossack {
             ${this.renderBrowse(object, this.tab === 'browse')}
             ${this.renderStructure(object, this.tab === 'structure')}
             ${this.renderSql(this.tab === 'sql')}
+            ${this.renderPragmas(this.tab === 'pragmas')}
           </div>
         </section>
 
+        ${this.renderInsert(object)}
+        ${this.renderQueryHistory()}
         ${this.renderCellEditor(object)}
+        ${this.renderRowEditor(object)}
         ${this.renderExportSheet(object)}
         ${this.renderBatchUpdateSheet(object)}
         ${component(CommandPalette, {
@@ -1148,9 +1839,11 @@ export default class StudioPage extends Cossack {
     const quote = this.activeSchema.connection.provider === 'mysql'
       ? `\`${object.name.replaceAll('`', '``')}\``
       : `"${object.name.replaceAll('"', '""')}"`;
-    const query = resultMatches
+    const generatedQuery = resultMatches
       ? this.browseResult.query ?? ''
       : `SELECT * FROM ${quote} LIMIT ${this.pageSize} OFFSET 0`;
+    const query = this.browseQuery || generatedQuery;
+    const gridEditable = object.editable && !this.customBrowseQuery;
 
     return html`
       <div class="${active ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col">
@@ -1160,12 +1853,8 @@ export default class StudioPage extends Cossack {
           </div>
         ` : ''}
 
-        <div class="studio-insert-collapse shrink-0" data-open="${this.showInsert}">
-          <div>${this.renderInsert(object)}</div>
-        </div>
-
         <div class="shrink-0 border-b bg-muted/15 px-4 py-2">
-          <div class="mb-2 flex flex-wrap items-center gap-2">
+          <div class="mb-2 flex flex-wrap items-center gap-2" data-testid="browse-toolbar">
             ${this.iconButton(FilterIcon, this.showFilter ? 'Hide filters' : 'Add filter', () => {
               this.showFilter = !this.showFilter;
             }, { variant: this.showFilter ? 'secondary' : 'ghost' })}
@@ -1186,6 +1875,19 @@ export default class StudioPage extends Cossack {
                 ${this.sort[0].column} ${this.sort[0].direction.toUpperCase()}
               </span>
             ` : ''}
+            <span class="ml-auto">
+              ${this.iconButton(
+                PlayIcon,
+                this.browseLoading ? 'Running browse query' : 'Execute browse query',
+                this.runBrowseQuery,
+                {
+                  disabled: this.browseLoading,
+                  'data-testid': 'run-browse-query',
+                  variant: 'default',
+                  class: 'h-8 w-8 shadow-sm',
+                },
+              )}
+            </span>
           </div>
           ${this.showFilter ? html`
             <div class="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-card p-2">
@@ -1241,23 +1943,24 @@ export default class StudioPage extends Cossack {
             theme: this.theme,
             schema: this.activeSchema,
             enabled: active,
-            readOnly: true,
             lineNumbers: 'off',
             ariaLabel: 'Current browse query',
             'data-testid': 'browse-query',
+            onChange: this.setBrowseQuery,
+            onRun: this.runBrowseQuery,
           })}
         </div>
 
         ${this.selectedRows.length ? html`
           <div class="flex shrink-0 flex-wrap items-center gap-2 border-b bg-primary/5 px-4 py-2">
             <strong class="text-sm">${this.selectedRows.length} selected</strong>
-            ${object.editable ? component(Button, {
+            ${gridEditable ? component(Button, {
               variant: 'outline',
               size: 'sm',
               class: 'gap-2',
               '@click': this.requestDeleteSelected,
             }, html`${component(Icon, { entry: TrashBinMinimalisticIcon, size: 15 })}Delete selected`) : ''}
-            ${object.editable ? component(Button, {
+            ${gridEditable ? component(Button, {
               variant: 'outline',
               size: 'sm',
               class: 'gap-2',
@@ -1267,7 +1970,7 @@ export default class StudioPage extends Cossack {
               variant: 'outline',
               size: 'sm',
               class: 'gap-2',
-              '@click': () => this.openExport(this.selectedRows),
+              '@click': () => this.openExport(this.selectedRows, true),
             }, html`${component(Icon, { entry: ExportIcon, size: 15 })}Export selected`)}
             ${component(Button, {
               variant: 'ghost',
@@ -1295,21 +1998,23 @@ export default class StudioPage extends Cossack {
                   const sorting = this.sort.find((item) => item.column === column);
                   return html`
                     <th class="studio-cell border-b border-r px-3 py-2 text-left font-medium">
-                      <button
-                        type="button"
-                        class="flex w-full items-center gap-1.5 text-left hover:text-primary"
-                        title="Sort by ${column}"
-                        @click="${() => this.toggleSort(column)}"
-                      >
-                        <span>${column}</span>
-                        ${sorting ? html`
-                          <span class="text-xs text-primary">${sorting.direction === 'asc' ? '↑' : '↓'}</span>
-                        ` : ''}
-                      </button>
+                      ${this.customBrowseQuery ? html`<span>${column}</span>` : html`
+                        <button
+                          type="button"
+                          class="flex w-full items-center gap-1.5 text-left hover:text-primary"
+                          title="Sort by ${column}"
+                          @click="${() => this.toggleSort(column)}"
+                        >
+                          <span>${column}</span>
+                          ${sorting ? html`
+                            <span class="text-xs text-primary">${sorting.direction === 'asc' ? '↑' : '↓'}</span>
+                          ` : ''}
+                        </button>
+                      `}
                     </th>
                   `;
                 })}
-                <th class="w-24 border-b px-3 py-2">Actions</th>
+                <th class="w-28 border-b px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1344,10 +2049,17 @@ export default class StudioPage extends Cossack {
                     const column = object.columns.find((candidate) => candidate.name === columnName);
                     const editing = this.inlineEditor?.rowIndex === rowIndex &&
                       this.inlineEditor.columnName === columnName;
+                    const foreignKey = object.foreignKeys.find((candidate) =>
+                      candidate.columns.some((item) => item.column === columnName) &&
+                      this.activeSchema.objects.some(
+                        (target) => target.name === candidate.referencedTable,
+                      ) &&
+                      candidate.columns.every((item) =>
+                        row[item.column] !== null && row[item.column] !== undefined));
                     return html`
                       <td
                         class="studio-cell border-b border-r px-3 py-2 font-mono"
-                        title="${object.editable ? 'Double-click to edit' : ''}"
+                        title="${gridEditable ? 'Double-click to edit' : ''}"
                         @dblclick="${() => this.beginCellEdit(rowIndex, columnName)}"
                       >
                         ${editing ? html`
@@ -1377,6 +2089,18 @@ export default class StudioPage extends Cossack {
                               >NULL</button>
                             ` : ''}
                           </div>
+                        ` : foreignKey ? html`
+                          <button
+                            type="button"
+                            class="inline-flex max-w-full items-center gap-1.5 text-primary hover:underline"
+                            title="Open ${foreignKey.referencedTable}"
+                            data-testid="foreign-key-${columnName}-${rowIndex}"
+                            @click="${() => this.followForeignKey(foreignKey, rowIndex)}"
+                            @dblclick="${(event: MouseEvent) => event.stopPropagation()}"
+                          >
+                            <span class="truncate">${displayValue(row[columnName])}</span>
+                            ${component(Icon, { entry: LinkIcon, size: 13 })}
+                          </button>
                         ` : html`
                           <span class="studio-cell-value ${row[columnName] === null ? 'italic text-muted-foreground' : ''}">
                             ${displayValue(row[columnName])}
@@ -1387,8 +2111,13 @@ export default class StudioPage extends Cossack {
                   })}
                   <td class="border-b px-2 text-center">
                     <div class="flex justify-center gap-1">
+                      ${gridEditable
+                        ? this.iconButton(PenIcon, 'Edit row as JSON', () => this.openRowEditor(rowIndex), {
+                            'data-testid': `edit-row-${rowIndex}`,
+                          })
+                        : ''}
                       ${this.iconButton(ExportIcon, 'Export row', () => this.openExport([rowIndex]))}
-                      ${object.editable
+                      ${gridEditable
                         ? this.iconButton(TrashBinMinimalisticIcon, 'Delete row', () => this.requestDelete(rowIndex))
                         : ''}
                     </div>
@@ -1410,9 +2139,17 @@ export default class StudioPage extends Cossack {
           <div class="flex items-center gap-3 text-sm text-muted-foreground">
             <span data-testid="row-count">
               ${formatCount(totalRows)} row${totalRows === 1 ? '' : 's'}
-              ${totalRows ? ` · ${formatCount(firstRow)}–${formatCount(lastRow)}` : ''}
+              ${totalRows && !this.customBrowseQuery
+                ? ` · ${formatCount(firstRow)}–${formatCount(lastRow)}`
+                : ''}
             </span>
-            <label class="flex items-center gap-2">
+            ${this.customBrowseQuery ? html`
+              <span>
+                Custom query · read-only results
+                ${this.browseResult.truncated ? ' · truncated at 1,000 rows' : ''}
+                · Refresh to reset
+              </span>
+            ` : html`<label class="flex items-center gap-2">
               <span>Rows per page</span>
               <select
                 class="h-8 rounded-md border border-input bg-background px-2 text-foreground"
@@ -1426,9 +2163,9 @@ export default class StudioPage extends Cossack {
                   <option value="${size}" ?selected="${size === this.pageSize}">${size}</option>
                 `)}
               </select>
-            </label>
+            </label>`}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="${this.customBrowseQuery ? 'hidden' : 'flex'} items-center gap-2">
             <span class="mr-1 text-sm text-muted-foreground">Page ${this.page} of ${totalPages}</span>
             ${component(Button, {
               variant: 'outline',
@@ -1487,6 +2224,52 @@ export default class StudioPage extends Cossack {
         </table>
 
         <section class="mt-6">
+          <h3 class="mb-2 font-semibold">Row identity</h3>
+          ${object.rowLocators.length ? html`
+            <div class="flex flex-wrap gap-2" data-testid="row-locators">
+              ${object.rowLocators.map((locator) => component(Badge, {
+                variant: locator.kind === 'primary-key' ? 'default' : 'secondary',
+              }, locator.kind === 'primary-key'
+                ? `Primary key: ${locator.columns.join(', ')}`
+                : locator.kind === 'unique-index'
+                  ? `Unique index: ${locator.name}`
+                  : locator.kind === 'sqlite-rowid'
+                    ? `SQLite ${locator.source} fallback`
+                    : 'PostgreSQL tableoid + ctid fallback'))}
+            </div>
+          ` : html`
+            <p class="text-sm text-muted-foreground">${object.readOnlyReason}</p>
+          `}
+        </section>
+
+        <section class="mt-6">
+          <h3 class="mb-2 font-semibold">Foreign keys</h3>
+          ${object.foreignKeys.length ? html`
+            <table class="w-full text-sm" data-testid="foreign-key-table">
+              <thead><tr class="border-b text-left">
+                <th class="p-2">Name</th><th class="p-2">Columns</th>
+                <th class="p-2">References</th><th class="p-2">On update</th>
+                <th class="p-2">On delete</th>
+              </tr></thead>
+              <tbody>${object.foreignKeys.map((foreignKey) => html`
+                <tr class="border-b">
+                  <td class="p-2 font-mono">${foreignKey.name}</td>
+                  <td class="p-2 font-mono">
+                    ${foreignKey.columns.map((column) => column.column).join(', ')}
+                  </td>
+                  <td class="p-2 font-mono">
+                    ${foreignKey.referencedTable}
+                    (${foreignKey.columns.map((column) => column.referencedColumn).join(', ')})
+                  </td>
+                  <td class="p-2">${foreignKey.onUpdate ?? '—'}</td>
+                  <td class="p-2">${foreignKey.onDelete ?? '—'}</td>
+                </tr>
+              `)}</tbody>
+            </table>
+          ` : html`<p class="text-sm text-muted-foreground">No foreign keys declared.</p>`}
+        </section>
+
+        <section class="mt-6">
           <h3 class="mb-2 font-semibold">Indexes</h3>
           ${object.indexes.length ? html`
             <table class="w-full text-sm" data-testid="index-table">
@@ -1530,6 +2313,7 @@ export default class StudioPage extends Cossack {
   }
 
   renderSql(active: boolean) {
+    const output = this.sqlOutput === 'explain' ? this.explainResult : this.sqlResult;
     return html`
       <div class="${active ? 'grid' : 'hidden'} min-h-0 flex-1 grid-rows-[17rem_minmax(0,1fr)]">
         <div class="border-b bg-muted/20 p-4">
@@ -1549,91 +2333,468 @@ export default class StudioPage extends Cossack {
             <span class="text-xs text-muted-foreground">
               Ctrl/Cmd+Enter to execute · schema-aware completion is cached in browser memory
             </span>
-            ${this.iconButton(PlayIcon, this.loading.runSqlFromEditor ? 'Running SQL' : 'Run SQL', this.runSqlFromEditor, {
-              disabled: this.loading.runSqlFromEditor,
-              'data-testid': 'run-sql',
-              variant: 'default',
-            })}
+            <div class="flex items-center gap-1">
+              ${this.iconButton(HistoryIcon, 'Query history', () => {
+                this.historyOpen = true;
+              }, {
+                'data-testid': 'open-query-history',
+              })}
+              ${this.iconButton(
+                GraphIcon,
+                this.loading.runExplainFromEditor ? 'Generating query plan' : 'Explain query',
+                this.runExplainFromEditor,
+                {
+                  disabled: Boolean(this.loading.runExplainFromEditor || !this.sql.trim()),
+                  'data-testid': 'explain-sql',
+                  variant: this.sqlOutput === 'explain' ? 'secondary' : 'ghost',
+                },
+              )}
+              ${this.iconButton(PlayIcon, this.loading.runSqlFromEditor ? 'Running SQL' : 'Run SQL', this.runSqlFromEditor, {
+                disabled: Boolean(this.loading.runSqlFromEditor),
+                'data-testid': 'run-sql',
+                variant: 'default',
+              })}
+            </div>
           </div>
         </div>
-        <div class="overflow-auto">
-          <table class="w-full text-sm" data-testid="sql-results">
-            <thead class="sticky top-0 bg-muted"><tr>
-              ${this.sqlResult.columns.map((column) => html`
-                <th class="border-b border-r p-2 text-left">${column}</th>
-              `)}
-            </tr></thead>
-            <tbody>${this.sqlResult.rows.map((row) => html`<tr>
-              ${this.sqlResult.columns.map((column) => html`
-                <td class="border-b border-r p-2 font-mono">${displayValue(row[column])}</td>
-              `)}
-            </tr>`)}</tbody>
-          </table>
-          <div class="p-3 text-xs text-muted-foreground">
-            ${this.sqlResult.affectedRows} affected row(s) · ${this.sqlResult.durationMs.toFixed(1)} ms
-            ${this.sqlResult.truncated ? ' · Results truncated at 1,000 rows' : ''}
+        <div class="flex min-h-0 flex-col overflow-hidden">
+          <div class="flex h-10 shrink-0 items-center gap-1 border-b px-3">
+            ${component(Button, {
+              variant: this.sqlOutput === 'results' ? 'secondary' : 'ghost',
+              size: 'sm',
+              'data-testid': 'sql-output-results',
+              '@click': () => { this.sqlOutput = 'results'; },
+            }, 'Results')}
+            ${component(Button, {
+              variant: this.sqlOutput === 'explain' ? 'secondary' : 'ghost',
+              size: 'sm',
+              'data-testid': 'sql-output-explain',
+              '@click': () => { this.sqlOutput = 'explain'; },
+            }, 'Explain')}
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto">
+            ${this.sqlOutput === 'explain' && this.explainJson
+              ? component(CodeEditor, {
+                  class: 'h-full min-h-[14rem] rounded-none border-0',
+                  value: this.explainJson,
+                  language: 'json',
+                  theme: this.theme,
+                  enabled: active,
+                  readOnly: true,
+                  ariaLabel: 'JSON query plan',
+                  'data-testid': 'explain-json',
+                })
+              : html`
+                  <table
+                    class="w-full text-sm"
+                    data-testid="${this.sqlOutput === 'explain' ? 'explain-results' : 'sql-results'}"
+                  >
+                    <thead class="sticky top-0 bg-muted"><tr>
+                      ${output.columns.map((column) => html`
+                        <th class="border-b border-r p-2 text-left">${column}</th>
+                      `)}
+                    </tr></thead>
+                    <tbody>${output.rows.map((row) => html`<tr>
+                      ${output.columns.map((column) => html`
+                        <td class="border-b border-r p-2 font-mono">
+                          ${displayValue(row[column])}
+                        </td>
+                      `)}
+                    </tr>`)}</tbody>
+                  </table>
+                `}
+            <div class="p-3 text-xs text-muted-foreground">
+              ${this.sqlOutput === 'explain'
+                ? `Plan generated in ${output.durationMs.toFixed(1)} ms`
+                : `${output.affectedRows} affected row(s) · ${output.durationMs.toFixed(1)} ms`}
+              ${output.truncated ? ' · Results truncated at 1,000 rows' : ''}
+            </div>
           </div>
         </div>
       </div>
     `;
   }
 
-  renderInsert(object: StudioObject) {
-    return html`
-      <div class="max-h-72 overflow-auto border-b bg-muted/20 p-4" data-testid="insert-form">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          ${object.columns.filter((column) => !column.hidden).map((column) => {
-            const mode = this.insertModes[column.name] ?? 'value';
-            return html`
-              <label class="grid gap-1 text-sm" data-testid="insert-field-${column.name}">
-                <span>${column.name} <small class="text-muted-foreground">${column.dataType}</small></span>
-                <div class="flex gap-2">
-                  ${component(Input, {
-                    class: 'min-w-0 flex-1',
-                    type: column.declaredKind === 'number' ? 'number' :
-                      column.declaredKind === 'date' ? 'date' :
-                        column.declaredKind === 'datetime' ? 'datetime-local' : 'text',
-                    disabled: mode !== 'value',
-                    '.value': this.insertValues[column.name] ?? '',
-                    '@input': (event: InputEvent) => this.setInsertValue(
-                      column.name,
-                      (event.target as HTMLInputElement).value,
-                    ),
-                  })}
-                  <select
-                    class="w-36 rounded-md border border-input bg-background px-2 text-foreground"
-                    .value="${mode}"
-                    @change="${(event: InputEvent) => this.setInsertMode(
-                      column.name,
-                      (event.target as HTMLSelectElement).value as InsertMode,
-                    )}"
+  renderQueryHistory() {
+    const history = [...this.queryHistory].sort((left, right) =>
+      Number(right.favorite) - Number(left.favorite) ||
+      right.executedAt - left.executedAt);
+    return component(Sheet, {
+      open: this.historyOpen,
+      side: 'right',
+      size: 'min(36rem, 94vw)',
+      onClose: () => { this.historyOpen = false; },
+      'data-testid': 'query-history',
+    }, html`
+      <header class="flex shrink-0 items-start justify-between gap-4 border-b p-5">
+        <div>
+          <h2 class="font-semibold">Query history</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Stored only in this browser for ${this.activeSchema.connection.label}.
+          </p>
+        </div>
+        ${component(Button, {
+          variant: 'outline',
+          size: 'sm',
+          disabled: !history.some((entry) => !entry.favorite),
+          '@click': this.clearQueryHistory,
+        }, 'Clear history')}
+      </header>
+      <div class="min-h-0 flex-1 overflow-auto p-4">
+        ${history.length ? html`
+          <div class="grid gap-3">
+            ${history.map((entry) => html`
+              <article
+                class="rounded-lg border bg-card p-3"
+                data-testid="query-history-entry"
+              >
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                    ${component(Badge, {
+                      variant: entry.error ? 'destructive' : 'secondary',
+                    }, entry.source === 'browse' ? 'Browse' : 'SQL')}
+                    <span>${new Date(entry.executedAt).toLocaleString()}</span>
+                    <span>${entry.durationMs.toFixed(1)} ms</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="${entry.favorite ? 'text-warning' : 'text-muted-foreground'} rounded-md p-1.5 hover:bg-accent"
+                    aria-label="${entry.favorite ? 'Remove from saved queries' : 'Save query'}"
+                    @click="${() => this.toggleQueryFavorite(entry.id)}"
                   >
-                    <option value="value" ?selected="${mode === 'value'}">value</option>
-                    <option value="omit" ?selected="${mode === 'omit'}">omit / default</option>
-                    ${column.nullable
-                      ? html`<option value="null" ?selected="${mode === 'null'}">NULL</option>`
-                      : ''}
-                  </select>
+                    ${component(Icon, {
+                      entry: StarIcon,
+                      style: entry.favorite ? 'bold' : 'line',
+                      size: 17,
+                    })}
+                  </button>
                 </div>
-              </label>
-            `;
-          })}
+                <pre class="max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 text-xs">${entry.statement}</pre>
+                ${entry.error ? html`
+                  <p class="mt-2 line-clamp-2 text-xs text-destructive">${entry.error}</p>
+                ` : ''}
+                <div class="mt-3 flex justify-end gap-2">
+                  ${component(Button, {
+                    variant: 'outline',
+                    size: 'sm',
+                    '@click': () => this.loadHistoryQuery(entry),
+                  }, 'Load')}
+                  ${component(Button, {
+                    size: 'sm',
+                    class: 'gap-1.5',
+                    '@click': () => this.runHistoryQuery(entry),
+                  }, html`${component(Icon, { entry: PlayIcon, size: 14 })}Run`)}
+                </div>
+              </article>
+            `)}
+          </div>
+        ` : html`
+          <div class="grid min-h-64 place-items-center rounded-lg border border-dashed p-6 text-center">
+            <div>
+              ${component(Icon, { entry: HistoryIcon, size: 28 })}
+              <p class="mt-2 text-sm font-medium">No query history yet</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                Queries executed from Browse or SQL will appear here.
+              </p>
+            </div>
+          </div>
+        `}
+      </div>
+    `);
+  }
+
+  renderPragmas(active: boolean) {
+    const supported = ['sqlite', 'libsql', 'd1-local', 'd1-remote']
+      .includes(this.activeSchema.connection.provider);
+    if (!supported) {
+      return html`
+        <div
+          class="${active ? 'grid' : 'hidden'} min-h-0 flex-1 place-items-center p-6"
+          data-testid="pragmas-panel"
+        >
+          <div class="max-w-lg text-center">
+            <h2 class="text-lg font-semibold">Pragmas are not available</h2>
+            <p class="mt-2 text-sm text-muted-foreground">
+              PRAGMA is a SQLite-family interface. PostgreSQL and MySQL expose their
+              server settings through different commands and system views.
+            </p>
+          </div>
         </div>
-        <div class="mt-3 flex justify-end gap-2">
-          ${component(Button, {
-            variant: 'ghost',
-            size: 'sm',
-            '@click': this.toggleInsert,
-          }, 'Cancel')}
-          ${component(Button, {
-            size: 'sm',
-            disabled: this.loading.insertGridRow,
-            'data-testid': 'submit-insert',
-            '@click': this.submitInsert,
-          }, this.loading.insertGridRow ? 'Inserting…' : 'Insert Row')}
-        </div>
+      `;
+    }
+
+    return html`
+      <div
+        class="${active ? 'block' : 'hidden'} min-h-0 flex-1 overflow-auto p-5"
+        data-testid="pragmas-panel"
+      >
+        <header class="mb-5">
+          <h2 class="text-lg font-semibold">SQLite pragmas</h2>
+          <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Inspect and edit commonly used SQLite settings. Changes are applied immediately;
+            whether they affect this connection or the database file depends on the setting.
+          </p>
+        </header>
+
+        ${!this.pragmas.length && this.loading.refreshPragmas
+          ? html`<p class="text-sm text-muted-foreground">Loading pragmas…</p>`
+          : ''}
+        ${!this.pragmas.length && !this.loading.refreshPragmas
+          ? html`
+              <div class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                No editable pragmas were reported by this database.
+              </div>
+            `
+          : html`
+              <div class="overflow-hidden rounded-lg border">
+                <table class="w-full text-sm" data-testid="pragmas-table">
+                  <thead>
+                    <tr class="border-b bg-muted/40 text-left">
+                      <th class="w-52 p-3">Pragma</th>
+                      <th class="p-3">Description</th>
+                      <th class="w-64 p-3">Value</th>
+                      <th class="w-24 p-3"><span class="sr-only">Action</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${this.pragmas.map((pragma) => {
+                      const value = this.pragmaDrafts[pragma.name] ?? pragma.value;
+                      const changed = value !== pragma.value;
+                      return html`
+                        <tr class="border-b last:border-b-0" data-testid="pragma-${pragma.name}">
+                          <td class="p-3 align-top font-mono font-medium">${pragma.name}</td>
+                          <td class="p-3 align-top text-muted-foreground">${pragma.description}</td>
+                          <td class="p-3 align-top">
+                            ${pragma.kind === 'boolean'
+                              ? html`
+                                  <div class="flex h-8 items-center gap-3">
+                                    ${component(Switch, {
+                                      checked: value === '1',
+                                      'aria-label': `${pragma.name} value`,
+                                      '@change': (event: InputEvent) => this.setPragmaDraft(
+                                        pragma.name,
+                                        (event.target as HTMLInputElement).checked ? '1' : '0',
+                                      ),
+                                    })}
+                                    <span class="text-xs text-muted-foreground">
+                                      ${value === '1' ? 'On' : 'Off'}
+                                    </span>
+                                  </div>
+                                `
+                              : pragma.kind === 'number'
+                              ? component(Input, {
+                                  type: 'number',
+                                  size: 'sm',
+                                  '.value': value,
+                                  'aria-label': `${pragma.name} value`,
+                                  '@input': (event: InputEvent) => this.setPragmaDraft(
+                                    pragma.name,
+                                    (event.target as HTMLInputElement).value,
+                                  ),
+                                })
+                              : component(Select, {
+                                  size: 'sm',
+                                  '.value': value,
+                                  'aria-label': `${pragma.name} value`,
+                                  '@change': (event: InputEvent) => this.setPragmaDraft(
+                                    pragma.name,
+                                    (event.target as HTMLSelectElement).value,
+                                  ),
+                                }, html`
+                                  ${pragma.options?.map((option) => html`
+                                    <option value="${option.value}">${option.label}</option>
+                                  `)}
+                                `)}
+                          </td>
+                          <td class="p-3 text-right align-top">
+                            ${component(Button, {
+                              variant: changed ? 'default' : 'outline',
+                              size: 'sm',
+                              disabled: Boolean(!changed || this.loading.savePragma),
+                              'data-testid': `apply-pragma-${pragma.name}`,
+                              '@click': () => this.savePragma(pragma.name),
+                            }, this.loading.savePragma ? 'Applying…' : 'Apply')}
+                          </td>
+                        </tr>
+                      `;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            `}
       </div>
     `;
+  }
+
+  renderInsert(object: StudioObject | undefined) {
+    return component(Sheet, {
+      open: Boolean(this.showInsert && object?.editable),
+      side: 'right',
+      size: 'min(42rem, 94vw)',
+      onClose: () => { this.showInsert = false; },
+      'data-testid': 'insert-form',
+    }, html`
+      <header class="shrink-0 border-b p-5">
+        <h2 class="font-semibold">Insert row</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Add a new row to ${object?.name ?? 'the selected table'}.
+        </p>
+      </header>
+      <div class="min-h-0 flex-1 overflow-auto p-5">
+        ${this.insertError ? component(Alert, {
+          variant: 'destructive',
+          title: 'Could not insert row',
+          class: 'mb-4',
+          'data-testid': 'insert-error',
+        }, this.insertError) : ''}
+        <div class="grid grid-cols-1 gap-4">
+          ${object?.columns.filter((column) => !column.hidden).map((column) => {
+            const field = this.insertFields[column.name] ?? {
+              mode: 'value',
+              valueKind: defaultInsertValueKind(column),
+              value: '',
+            };
+            const mode = field.mode;
+            const valueKind = field.valueKind;
+            const selection: InsertSelection = mode === 'value' ? valueKind : mode;
+            const value = field.value;
+            const activeClass = mode === 'value'
+              ? 'studio-insert-value'
+              : 'bg-muted/60';
+            return html`
+              <div class="grid gap-1.5 text-sm" data-testid="insert-field-${column.name}">
+                <label class="font-medium" for="insert-value-${column.name}">
+                  ${column.name}
+                  <small class="ml-1 font-normal text-muted-foreground">${column.dataType}</small>
+                </label>
+                <div class="flex items-start gap-2">
+                  <div class="min-w-0 flex-1 ${mode === 'value'
+                    ? ''
+                    : 'pointer-events-none opacity-60'}">
+                    ${valueKind === 'json' ? component(CodeEditor, {
+                      class: `h-[10rem] ${activeClass}`,
+                      value,
+                      language: 'json',
+                      theme: this.theme,
+                      readOnly: mode !== 'value',
+                      lineNumbers: 'off',
+                      ariaLabel: `JSON value for ${column.name}`,
+                      'data-testid': `insert-value-${column.name}`,
+                      onChange: (nextValue: string) => this.setInsertValue(column.name, nextValue),
+                    }) : valueKind === 'date' ? html`
+                      <div
+                        id="insert-value-${column.name}"
+                        class="rounded-md ${activeClass}"
+                        data-testid="insert-value-${column.name}"
+                      >
+                        ${component(DatePicker, {
+                          value,
+                          onChange: (nextValue: string) =>
+                            this.setInsertValue(column.name, nextValue),
+                        })}
+                      </div>
+                    ` : valueKind === 'boolean' ? html`
+                      <select
+                        id="insert-value-${column.name}"
+                        class="h-10 w-full rounded-md border border-input px-3 ${activeClass}"
+                        data-testid="insert-value-${column.name}"
+                        ?disabled="${mode !== 'value'}"
+                        .value="${value}"
+                        @change="${(event: InputEvent) => this.setInsertValue(
+                          column.name,
+                          (event.target as HTMLSelectElement).value,
+                        )}"
+                      >
+                        <option value="true" ?selected="${value !== 'false'}">True</option>
+                        <option value="false" ?selected="${value === 'false'}">False</option>
+                      </select>
+                    ` : html`
+                      <div class="flex gap-2">
+                        ${component(Input, {
+                          id: `insert-value-${column.name}`,
+                          class: `min-w-0 flex-1 font-mono ${activeClass}`,
+                          type: valueKind === 'number' ? 'number' :
+                            valueKind === 'datetime' ? 'datetime-local' : 'text',
+                          disabled: mode !== 'value',
+                          'data-testid': `insert-value-${column.name}`,
+                          '.value': value,
+                          '@input': (event: InputEvent) => this.setInsertValue(
+                            column.name,
+                            (event.target as HTMLInputElement).value,
+                          ),
+                        })}
+                        ${valueKind === 'uuid-v4' || valueKind === 'uuid-v7' ||
+                          valueKind === 'timestamp'
+                          ? component(Button, {
+                              variant: 'outline',
+                              size: 'icon',
+                              title: valueKind === 'timestamp'
+                                ? 'Use current server timestamp'
+                                : `Generate another ${valueKind === 'uuid-v4'
+                                  ? 'UUID v4'
+                                  : 'UUID v7'}`,
+                              'aria-label': valueKind === 'timestamp'
+                                ? 'Use current server timestamp'
+                                : `Generate another ${valueKind === 'uuid-v4'
+                                  ? 'UUID v4'
+                                  : 'UUID v7'}`,
+                              '@click': () => valueKind === 'timestamp'
+                                ? this.refreshInsertTimestamp(column.name)
+                                : this.regenerateInsertUuid(column.name),
+                            }, component(Icon, { entry: RefreshIcon, size: 16 }))
+                          : ''}
+                      </div>
+                    `}
+                    ${valueKind === 'blob' ? html`
+                      <p class="mt-1 text-xs text-muted-foreground">
+                        Enter base64 or an even-length hexadecimal value.
+                      </p>
+                    ` : ''}
+                  </div>
+                  <select
+                    class="studio-insert-option h-10 w-40 shrink-0 rounded-md border border-input bg-background px-2 text-foreground"
+                    data-testid="insert-option-${column.name}"
+                    aria-label="Value type or insert mode for ${column.name}"
+                    .value="${selection}"
+                    @change="${(event: InputEvent) => this.setInsertSelection(
+                      column.name,
+                      (event.target as HTMLSelectElement).value as InsertSelection,
+                    )}"
+                  >
+                    <optgroup label="Value type">
+                      ${INSERT_VALUE_KINDS.map((kind) => html`
+                        <option value="${kind.value}" ?selected="${selection === kind.value}">
+                          ${kind.label}
+                        </option>
+                      `)}
+                    </optgroup>
+                    <optgroup label="Special">
+                      <option value="omit" ?selected="${selection === 'omit'}">
+                        Omit / default
+                      </option>
+                      ${column.nullable
+                        ? html`<option value="null" ?selected="${selection === 'null'}">NULL</option>`
+                        : ''}
+                    </optgroup>
+                  </select>
+                </div>
+              </div>
+            `;
+          }) ?? ''}
+        </div>
+      </div>
+      <footer class="flex shrink-0 justify-end gap-2 border-t p-4">
+        ${component(Button, {
+          variant: 'ghost',
+          '@click': this.toggleInsert,
+        }, 'Cancel')}
+        ${component(Button, {
+          disabled: Boolean(this.loading.insertGridRow),
+          'data-testid': 'submit-insert',
+          '@click': this.submitInsert,
+        }, this.loading.insertGridRow ? 'Inserting…' : 'Insert Row')}
+      </footer>
+    `);
   }
 
   renderCellEditor(object: StudioObject | undefined) {
@@ -1680,32 +2841,33 @@ export default class StudioPage extends Cossack {
       <div class="flex min-h-0 flex-1 flex-col gap-4 p-5">
         <div class="flex flex-wrap items-end gap-4">
           <label class="grid min-w-48 gap-1 text-sm font-medium">
-            Editor mode
+            Value type
             <select
-              class="h-10 rounded-md border border-input bg-background px-3 font-normal"
+              class="studio-insert-option h-10 rounded-md border border-input bg-background px-3 font-normal text-foreground"
               data-testid="cell-editor-mode"
-              .value="${activeEditor.kind}"
-              @change="${(event: InputEvent) => this.setSheetKind(
-                (event.target as HTMLSelectElement).value as StudioColumn['declaredKind'],
+              aria-label="Value type or edit mode for ${activeColumn.name}"
+              .value="${activeEditor.mode === 'null' ? 'null' : activeEditor.kind}"
+              @change="${(event: InputEvent) => this.setSheetSelection(
+                (event.target as HTMLSelectElement).value as CellSelection,
               )}"
             >
-              <option value="text">Text</option>
-              <option value="varchar">Short text</option>
-              <option value="number">Number</option>
-              <option value="date">Date</option>
-              <option value="datetime">Date and time</option>
-              <option value="boolean">Boolean</option>
-              <option value="json">JSON</option>
-              <option value="blob">Blob / binary</option>
-              <option value="other">Other</option>
+              <optgroup label="Value type">
+                ${INSERT_VALUE_KINDS.map((kind) => html`
+                  <option
+                    value="${kind.value}"
+                    ?selected="${activeEditor.mode === 'value' && activeEditor.kind === kind.value}"
+                  >
+                    ${kind.label}
+                  </option>
+                `)}
+              </optgroup>
+              ${activeColumn.nullable || activeEditor.mode === 'null' ? html`
+                <optgroup label="Special">
+                  <option value="null" ?selected="${activeEditor.mode === 'null'}">NULL</option>
+                </optgroup>
+              ` : ''}
             </select>
           </label>
-          ${activeColumn.nullable ? component(Checkbox, {
-            checked: activeEditor.mode === 'null',
-            '@change': (event: InputEvent) => this.setSheetMode(
-              (event.target as HTMLInputElement).checked ? 'null' : 'value',
-            ),
-          }, 'Set an explicit NULL value') : ''}
         </div>
         <p class="text-xs text-muted-foreground">
           SQLite does not retain application-level TypeScript types. Change the editor mode when
@@ -1749,6 +2911,35 @@ export default class StudioPage extends Cossack {
               />
             </label>
           </div>
+          <div class="${activeEditor.kind === 'timestamp' ||
+            activeEditor.kind === 'uuid-v4' ||
+            activeEditor.kind === 'uuid-v7' ? 'block' : 'hidden'}">
+            <div class="flex max-w-xl gap-2">
+              ${component(Input, {
+                class: 'min-w-0 flex-1 font-mono',
+                disabled: activeEditor.mode === 'null',
+                '.value': activeEditor.kind === 'timestamp' ||
+                  activeEditor.kind === 'uuid-v4' ||
+                  activeEditor.kind === 'uuid-v7'
+                  ? activeEditor.value
+                  : '',
+                '@input': (event: InputEvent) => this.updateSheetValue(
+                  (event.target as HTMLInputElement).value,
+                ),
+              })}
+              ${component(Button, {
+                variant: 'outline',
+                size: 'icon',
+                title: activeEditor.kind === 'timestamp'
+                  ? 'Use current timestamp'
+                  : 'Generate another UUID',
+                'aria-label': activeEditor.kind === 'timestamp'
+                  ? 'Use current timestamp'
+                  : 'Generate another UUID',
+                '@click': () => this.setSheetSelection(activeEditor.kind),
+              }, component(Icon, { entry: RefreshIcon, size: 16 }))}
+            </div>
+          </div>
           <div class="${activeEditor.kind === 'number' ? 'block' : 'hidden'}">
             ${component(Input, {
               type: 'number',
@@ -1776,7 +2967,10 @@ export default class StudioPage extends Cossack {
             activeEditor.kind !== 'date' &&
             activeEditor.kind !== 'datetime' &&
             activeEditor.kind !== 'number' &&
-            activeEditor.kind !== 'boolean' ? 'grid' : 'hidden'} h-full grid-rows-[auto_minmax(0,1fr)] gap-2">
+            activeEditor.kind !== 'boolean' &&
+            activeEditor.kind !== 'timestamp' &&
+            activeEditor.kind !== 'uuid-v4' &&
+            activeEditor.kind !== 'uuid-v7' ? 'grid' : 'hidden'} h-full grid-rows-[auto_minmax(0,1fr)] gap-2">
             <div class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-2">
               ${activeEditor.kind === 'blob' ? html`
                 <p class="text-xs text-muted-foreground">Enter a base64 or even-length hexadecimal blob value.</p>
@@ -1800,10 +2994,67 @@ export default class StudioPage extends Cossack {
           '@click': () => { this.sheetEditor = null; },
         }, 'Cancel')}
         ${component(Button, {
-          disabled: this.loading.updateGridCell,
+          disabled: Boolean(this.loading.updateGridCell),
           'data-testid': 'save-cell-editor',
           '@click': this.saveSheetEditor,
         }, this.loading.updateGridCell ? 'Saving…' : 'Save changes')}
+      </footer>
+    `);
+  }
+
+  renderRowEditor(object: StudioObject | undefined) {
+    const editor = this.rowEditor;
+    return component(Sheet, {
+      open: Boolean(editor && object),
+      side: 'right',
+      size: 'min(48rem, 94vw)',
+      onClose: () => { this.rowEditor = null; },
+      'data-testid': 'row-editor-sheet',
+    }, html`
+      <header class="flex shrink-0 items-start justify-between border-b p-5">
+        <div>
+          <h2 class="font-semibold">Edit row as JSON</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            ${object?.name ?? ''} · only changed properties are written
+          </p>
+        </div>
+        ${component(Button, {
+          variant: 'ghost',
+          size: 'sm',
+          '@click': () => { this.rowEditor = null; },
+        }, 'Close')}
+      </header>
+      <div class="flex min-h-0 flex-1 flex-col gap-4 p-5">
+        ${editor?.error ? component(Alert, {
+          variant: 'destructive',
+        }, editor.error) : ''}
+        ${component(CodeEditor, {
+          class: 'min-h-[24rem] flex-1',
+          value: editor?.value ?? '{}',
+          language: 'json',
+          theme: this.theme,
+          enabled: Boolean(editor),
+          ariaLabel: `JSON row for ${object?.name ?? 'table'}`,
+          'data-testid': 'row-json-editor',
+          onChange: this.setRowEditorValue,
+          onRun: this.saveRowEditor,
+        })}
+        <p class="text-xs text-muted-foreground">
+          Ctrl/Cmd+Enter saves. Remove a property to leave that column unchanged; use
+          <code class="mx-1 rounded bg-muted px-1 py-0.5">null</code>
+          to write SQL NULL.
+        </p>
+      </div>
+      <footer class="flex shrink-0 justify-end gap-2 border-t p-4">
+        ${component(Button, {
+          variant: 'ghost',
+          '@click': () => { this.rowEditor = null; },
+        }, 'Cancel')}
+        ${component(Button, {
+          disabled: Boolean(this.loading.updateGridRow),
+          'data-testid': 'save-row-editor',
+          '@click': this.saveRowEditor,
+        }, this.loading.updateGridRow ? 'Saving…' : 'Save row')}
       </footer>
     `);
   }
@@ -1936,7 +3187,7 @@ export default class StudioPage extends Cossack {
           '@click': () => { this.batchUpdate = null; },
         }, 'Cancel')}
         ${component(Button, {
-          disabled: this.loading.updateGridRows,
+          disabled: Boolean(this.loading.updateGridRows),
           '@click': this.submitBatchUpdate,
         }, this.loading.updateGridRows ? 'Updating…' : 'Update selected')}
       </footer>

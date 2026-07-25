@@ -15,13 +15,36 @@ body {
 .studio-grid .cs-input,
 .studio-grid .cs-textarea,
 .studio-grid select {
-  background-color: color-mix(in oklch, var(--input) 30%, var(--background));
+  background-color: var(--background);
 }
 
 .studio-grid .cs-input:disabled,
 .studio-grid .cs-textarea:disabled,
 .studio-grid select:disabled {
   background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
+}
+
+.studio-grid .studio-insert-value.cs-input:not(:disabled),
+.studio-grid select.studio-insert-value:not(:disabled),
+.studio-grid .studio-insert-value .cs-datepicker__trigger {
+  background-color: #fff;
+  color: #0f172a;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+}
+
+.dark .studio-grid .studio-insert-value.cs-input:not(:disabled),
+.dark .studio-grid select.studio-insert-value:not(:disabled),
+.dark .studio-grid .studio-insert-value .cs-datepicker__trigger {
+  background-color: #27272a;
+  color: #fafafa;
+  -webkit-text-fill-color: #fafafa;
+  caret-color: #fafafa;
+}
+
+.studio-grid .studio-insert-option {
+  color: var(--foreground);
+  -webkit-text-fill-color: var(--foreground);
 }
 
 .studio-grid {
@@ -74,29 +97,9 @@ body {
   }
 }
 
-.studio-insert-collapse {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 220ms ease, opacity 160ms ease;
-}
-
-.studio-insert-collapse[data-open] {
-  max-height: 20rem;
-  opacity: 1;
-}
-
-.studio-insert-collapse > div {
-  max-height: 20rem;
-}
-
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(studio-tab-panel),
   ::view-transition-new(studio-tab-panel) {
     animation-duration: 1ms;
-  }
-
-  .studio-insert-collapse {
-    transition-duration: 1ms;
   }
 }

@@ -1,5 +1,5 @@
 import { createStore } from '@cossackframework/core';
-import type { StudioSchema } from '../../src/lib/types';
+import type { StudioSchema } from '../../src/lib/schema-types';
 
 /**
  * Browser-memory catalog shared by every Monaco instance. Keeping this outside

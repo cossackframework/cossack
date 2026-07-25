@@ -1,4 +1,5 @@
-import type { StudioQueryResult, TransportQueryResult, TransportValue } from './types.js';
+import type { StudioQueryResult } from './schema-types.js';
+import type { TransportQueryResult, TransportValue } from './query-types.js';
 
 export function normalizeValue(value: unknown): TransportValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;

@@ -12,7 +12,7 @@ import {
 } from './lib/provider.js';
 import { createRemoteD1Connection } from './lib/remote-d1.js';
 import { StudioDatabase } from './lib/service.js';
-import type { StudioConnection, StudioProvider } from './lib/types.js';
+import type { StudioConnection, StudioProvider } from './lib/schema-types.js';
 import { serveStudioAsset, toWebRequest, writeWebResponse } from './server/http.js';
 import { setStudioDatabase } from './server/runtime.js';
 import { createStudioSecurity } from './server/security.js';
@@ -228,10 +228,32 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
 }
 
 export type {
+  StudioColumn,
   StudioConnection,
   StudioConnectionInfo,
+  StudioForeignKey,
+  StudioForeignKeyColumn,
+  StudioIndex,
+  StudioIndexColumn,
+  StudioObject,
+  StudioPragma,
+  StudioPragmaOption,
   StudioProvider,
-} from './lib/types.js';
+  StudioQueryResult,
+  StudioRowLocator,
+  StudioSchema,
+} from './lib/schema-types.js';
+export type {
+  BrowseFilter,
+  BrowseFilterOperator,
+  BrowseOptions,
+  BrowseSort,
+  InsertCell,
+  InsertValueKind,
+  MutationResult,
+  TransportQueryResult,
+  TransportValue,
+} from './lib/query-types.js';
 export {
   detectStudioProvider,
   normalizeStudioProvider,

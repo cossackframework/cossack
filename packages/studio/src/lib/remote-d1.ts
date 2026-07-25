@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import prompts from 'prompts';
 import { OperationQueue } from './queue.js';
-import type { StudioConnection, StudioQueryResult } from './types.js';
+import type { StudioConnection, StudioQueryResult } from './schema-types.js';
 
 export interface D1Binding {
   binding: string;

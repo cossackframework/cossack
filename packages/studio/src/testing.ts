@@ -1,4 +1,5 @@
-export * from './lib/types.js';
+export * from './lib/schema-types.js';
+export * from './lib/query-types.js';
 export * from './lib/sql.js';
 export * from './lib/transport.js';
 export * from './lib/queue.js';

@@ -1,5 +1,5 @@
 import { CompiledQuery, type Kysely } from '@cossackframework/database';
-import type { StudioProvider } from './types.js';
+import type { StudioProvider } from './schema-types.js';
 
 const PROVIDER_ALIASES: Record<string, StudioProvider> = {
   d1: 'd1-local',

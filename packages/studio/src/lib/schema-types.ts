@@ -11,6 +11,7 @@ export interface StudioConnectionInfo {
   provider: StudioProvider;
   label: string;
   remote: boolean;
+  databaseVersion?: string;
   binding?: string;
   environment?: string;
 }
@@ -32,7 +33,16 @@ export interface StudioColumn {
   name: string;
   dataType: string;
   affinity: 'integer' | 'real' | 'text' | 'blob' | 'numeric';
-  declaredKind: 'varchar' | 'number' | 'date' | 'datetime' | 'text' | 'json' | 'blob' | 'boolean' | 'other';
+  declaredKind:
+    | 'varchar'
+    | 'number'
+    | 'date'
+    | 'datetime'
+    | 'text'
+    | 'json'
+    | 'blob'
+    | 'boolean'
+    | 'other';
   nullable: boolean;
   defaultValue: string | null;
   primaryKeyPosition: number;
@@ -55,12 +65,48 @@ export interface StudioIndex {
   columns: StudioIndexColumn[];
 }
 
+export interface StudioForeignKeyColumn {
+  column: string;
+  referencedColumn: string;
+  position: number;
+}
+
+export interface StudioForeignKey {
+  name: string;
+  referencedTable: string;
+  columns: StudioForeignKeyColumn[];
+  onUpdate: string | null;
+  onDelete: string | null;
+}
+
+export type StudioRowLocator =
+  | {
+      kind: 'primary-key';
+      columns: string[];
+    }
+  | {
+      kind: 'unique-index';
+      columns: string[];
+      name: string;
+    }
+  | {
+      kind: 'sqlite-rowid';
+      columns: [string];
+      source: 'rowid' | '_rowid_' | 'oid';
+    }
+  | {
+      kind: 'postgres-ctid';
+      columns: [string, string];
+    };
+
 export interface StudioObject {
   name: string;
   kind: 'table' | 'view';
   sql: string | null;
   columns: StudioColumn[];
   indexes: StudioIndex[];
+  foreignKeys: StudioForeignKey[];
+  rowLocators: StudioRowLocator[];
   editable: boolean;
   readOnlyReason?: string;
 }
@@ -71,64 +117,15 @@ export interface StudioSchema {
   objects: StudioObject[];
 }
 
-export type BrowseFilterOperator =
-  | 'eq'
-  | 'ne'
-  | 'contains'
-  | 'starts-with'
-  | 'ends-with'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'is-null'
-  | 'is-not-null';
-
-export interface BrowseFilter {
-  column: string;
-  operator: BrowseFilterOperator;
-  value?: string;
+export interface StudioPragmaOption {
+  value: string;
+  label: string;
 }
 
-export interface BrowseSort {
-  column: string;
-  direction: 'asc' | 'desc';
-}
-
-export interface BrowseOptions {
-  page?: number;
-  pageSize?: number;
-  filters?: BrowseFilter[];
-  sort?: BrowseSort[];
-}
-
-export type TransportValue =
-  | null
-  | boolean
-  | number
-  | string
-  | { $type: 'bigint' | 'date' | 'blob' | 'number' | 'unsupported'; value: string };
-
-export interface TransportQueryResult {
-  columns: string[];
-  rows: Record<string, TransportValue>[];
-  affectedRows: number;
-  durationMs: number;
-  truncated: boolean;
-  totalRows?: number;
-  page?: number;
-  pageSize?: number;
-  objectName?: string;
-  query?: string;
-  error?: string;
-}
-
-export type InsertCell =
-  | { mode: 'omit' }
-  | { mode: 'null' }
-  | { mode: 'value'; value: string };
-
-export interface MutationResult {
-  affectedRows: number;
-  schema: StudioSchema;
+export interface StudioPragma {
+  name: string;
+  value: string;
+  kind: 'boolean' | 'number' | 'select';
+  description: string;
+  options?: StudioPragmaOption[];
 }

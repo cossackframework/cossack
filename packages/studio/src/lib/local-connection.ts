@@ -5,7 +5,7 @@ import type {
   StudioConnection,
   StudioConnectionInfo,
   StudioQueryResult,
-} from './types.js';
+} from './schema-types.js';
 
 export interface LocalConnectionOptions {
   client: Kysely<any>;

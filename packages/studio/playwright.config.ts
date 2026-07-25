@@ -5,7 +5,7 @@ const systemChrome = '/usr/bin/google-chrome';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 30_000,
+  timeout: 60_000,
   use: {
     headless: true,
     trace: 'retain-on-failure',

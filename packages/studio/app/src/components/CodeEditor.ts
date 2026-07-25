@@ -11,7 +11,7 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import 'monaco-editor/min/vs/editor/editor.main.css';
 import type * as Monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import type { StudioSchema } from '../../../src/lib/types';
+import type { StudioSchema } from '../../../src/lib/schema-types';
 import { studioSchemaCatalog } from '../schema-store';
 
 export interface CodeEditorProps {
@@ -38,6 +38,94 @@ function sqlIdentifier(name: string): string {
     : `"${name.replaceAll('"', '""')}"`;
 }
 
+const SQL_KEYWORDS = [
+  'ALL',
+  'ALTER',
+  'ANALYZE',
+  'AND',
+  'AS',
+  'ASC',
+  'ATTACH',
+  'BEGIN',
+  'BETWEEN',
+  'BY',
+  'CASCADE',
+  'CASE',
+  'CHECK',
+  'COLLATE',
+  'COMMIT',
+  'CONFLICT',
+  'CREATE',
+  'CROSS',
+  'DEFAULT',
+  'DELETE',
+  'DESC',
+  'DETACH',
+  'DISTINCT',
+  'DO',
+  'DROP',
+  'ELSE',
+  'END',
+  'ESCAPE',
+  'EXCEPT',
+  'EXISTS',
+  'EXPLAIN',
+  'FOREIGN',
+  'FROM',
+  'FULL',
+  'GLOB',
+  'GROUP',
+  'HAVING',
+  'IN',
+  'INDEX',
+  'INNER',
+  'INSERT',
+  'INTERSECT',
+  'INTO',
+  'IS',
+  'JOIN',
+  'KEY',
+  'LEFT',
+  'LIKE',
+  'LIMIT',
+  'MATCH',
+  'NOT',
+  'NOTHING',
+  'NULL',
+  'OFFSET',
+  'ON',
+  'OR',
+  'ORDER',
+  'OUTER',
+  'PRAGMA',
+  'PRIMARY',
+  'RECURSIVE',
+  'REFERENCES',
+  'REGEXP',
+  'RELEASE',
+  'REPLACE',
+  'RESTRICT',
+  'RETURNING',
+  'RIGHT',
+  'ROLLBACK',
+  'SAVEPOINT',
+  'SELECT',
+  'SET',
+  'TABLE',
+  'THEN',
+  'TRANSACTION',
+  'TRIGGER',
+  'UNION',
+  'UNIQUE',
+  'UPDATE',
+  'VACUUM',
+  'VALUES',
+  'VIEW',
+  'WHEN',
+  'WHERE',
+  'WITH',
+] as const;
+
 @Component()
 export class CodeEditor extends Cossack {
   declare props: CodeEditorProps;
@@ -50,6 +138,15 @@ export class CodeEditor extends Cossack {
   private initializing = false;
 
   onMount() {
+    void this.initializeEditor();
+  }
+
+  @Client()
+  private captureContainer(element: HTMLDivElement) {
+    this.containerRef.value = element;
+    // Child connectedCallback() runs before its first render, so a dynamically
+    // introduced editor cannot rely on onMount() seeing the ref. A function
+    // ref initializes Monaco at the point the container is committed.
     void this.initializeEditor();
   }
 
@@ -150,6 +247,7 @@ export class CodeEditor extends Cossack {
     this.completionProvider = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['.', ' '],
       provideCompletionItems: (model, position) => {
+        if (model !== this.editor?.getModel()) return { suggestions: [] };
         const word = model.getWordUntilPosition(position);
         const range = {
           startLineNumber: position.lineNumber,
@@ -173,24 +271,36 @@ export class CodeEditor extends Cossack {
           ? objects.find((object) => object.name.toLowerCase() === qualifier.toLowerCase())
           : undefined;
         const catalog = qualifiedObject ? [qualifiedObject] : objects;
-        const suggestions: Monaco.languages.CompletionItem[] = catalog.flatMap((object) => [
-          ...(qualifiedObject ? [] : [{
-            label: object.name,
-            insertText: sqlIdentifier(object.name),
-            detail: object.kind === 'view' ? 'Database view' : 'Database table',
-            kind: object.kind === 'view'
-              ? monaco.languages.CompletionItemKind.Interface
-              : monaco.languages.CompletionItemKind.Struct,
+        const suggestions: Monaco.languages.CompletionItem[] = [
+          ...(qualifiedObject ? [] : SQL_KEYWORDS.map((keyword) => ({
+            label: keyword,
+            insertText: keyword,
+            detail: 'SQL keyword',
+            kind: monaco.languages.CompletionItemKind.Keyword,
             range,
-          }]),
-          ...object.columns.map((column) => ({
-            label: column.name,
-            insertText: sqlIdentifier(column.name),
-            detail: `${object.name} · ${column.dataType || column.affinity}`,
-            kind: monaco.languages.CompletionItemKind.Field,
-            range,
-          })),
-        ]);
+            sortText: `0-${keyword}`,
+          }))),
+          ...catalog.flatMap((object) => [
+            ...(qualifiedObject ? [] : [{
+              label: object.name,
+              insertText: sqlIdentifier(object.name),
+              detail: object.kind === 'view' ? 'Database view' : 'Database table',
+              kind: object.kind === 'view'
+                ? monaco.languages.CompletionItemKind.Interface
+                : monaco.languages.CompletionItemKind.Struct,
+              range,
+              sortText: `1-${object.name}`,
+            }]),
+            ...object.columns.map((column) => ({
+              label: column.name,
+              insertText: sqlIdentifier(column.name),
+              detail: `${object.name} · ${column.dataType || column.affinity}`,
+              kind: monaco.languages.CompletionItemKind.Field,
+              range,
+              sortText: `2-${object.name}-${column.name}`,
+            })),
+          ]),
+        ];
         return { suggestions };
       },
     });
@@ -217,7 +327,7 @@ export class CodeEditor extends Cossack {
         ...=${rest}
       >
         <div
-          ref=${this.containerRef}
+          ref=${this.captureContainer}
           class="h-full ${this.props.lineNumbers === 'off' ? 'min-h-0' : 'min-h-[8rem]'}"
         ></div>
       </div>
