@@ -44,6 +44,24 @@ describe('Studio loopback security', () => {
     }
   });
 
+  it('allows the favicon without a session after validating Host and Origin', () => {
+    const security = createStudioSecurity(4983);
+    const favicon = response();
+    expect(security.authorize({
+      headers: { host: '127.0.0.1:4983' },
+      method: 'GET',
+      url: '/logo.svg',
+    } as any, favicon as any)).toBe(true);
+
+    const invalidHost = response();
+    expect(security.authorize({
+      headers: { host: 'evil.example' },
+      method: 'GET',
+      url: '/logo.svg',
+    } as any, invalidHost as any)).toBe(false);
+    expect(invalidHost.statusCode).toBe(403);
+  });
+
   it('sets restrictive browser headers', () => {
     const security = createStudioSecurity(4983);
     const target = response();

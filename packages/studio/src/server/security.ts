@@ -46,6 +46,12 @@ export function createStudioSecurity(port: number): StudioSecurity {
         return false;
       }
       const url = new URL(request.url ?? '/', origin);
+      if (
+        url.pathname === '/logo.svg' &&
+        ['GET', 'HEAD'].includes(request.method ?? 'GET')
+      ) {
+        return true;
+      }
       const launch = url.searchParams.get('token') ?? undefined;
       if (safeEqual(launch, launchToken)) {
         response.statusCode = 302;

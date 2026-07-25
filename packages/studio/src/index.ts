@@ -142,22 +142,6 @@ function openBrowser(url: string): void {
   child.unref();
 }
 
-function installNodeDomMetadataShims(): void {
-  // Framework declaration output includes legacy decorator metadata for DOM
-  // event parameter types. Node never constructs these classes during SSR,
-  // but the names must exist while the prebuilt server bundle is evaluated.
-  for (const name of [
-    'KeyboardEvent',
-    'MouseEvent',
-    'PointerEvent',
-    'InputEvent',
-    'SubmitEvent',
-    'FocusEvent',
-  ]) {
-    if (!(name in globalThis)) (globalThis as any)[name] = class extends Event {};
-  }
-}
-
 export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
   const projectRoot = path.resolve(options.projectRoot ?? process.cwd());
   const port = options.port ?? 4983;
@@ -190,7 +174,6 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
       if (authorized !== true) return;
       if (await serveStudioAsset(request, response, clientRoot)) return;
       if (!fetchApp) {
-        installNodeDomMetadataShims();
         const module = await import(pathToFileURL(serverEntry).href);
         fetchApp = (incoming, env) => module.app.fetch(incoming, env);
       }

@@ -200,6 +200,14 @@ export default class StudioPage extends Cossack {
     return {
       title: this.selected ? `${this.selected} · Cossack Studio` : 'Cossack Studio',
       description: 'Inspect and edit the current Cossack application database.',
+      links: [{
+        tag: 'link',
+        attributes: {
+          rel: 'icon',
+          type: 'image/svg+xml',
+          href: '/logo.svg',
+        },
+      }],
     };
   }
 
@@ -1456,7 +1464,19 @@ export default class StudioPage extends Cossack {
       <main class="studio-grid grid h-screen bg-muted/20">
         <header class="col-span-2 flex items-center justify-between gap-4 border-b bg-card px-5">
           <div class="flex min-w-0 items-center gap-3">
-            <strong class="shrink-0 tracking-tight">Cossack Studio</strong>
+            <strong
+              class="flex shrink-0 items-center gap-2 tracking-tight"
+              data-testid="studio-brand"
+            >
+              <img
+                src="/logo.svg"
+                width="20"
+                height="20"
+                alt="Cossack"
+                class="h-5 w-5"
+              />
+              <span>Studio</span>
+            </strong>
             <span class="hidden h-4 w-px bg-border sm:block"></span>
             <span class="hidden min-w-0 truncate text-sm font-medium sm:block" title="${schema.applicationName}">
               ${schema.applicationName}

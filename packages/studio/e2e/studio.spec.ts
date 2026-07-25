@@ -83,9 +83,17 @@ test.afterAll(async () => {
 });
 
 test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) => {
+  const faviconUrl = new URL('/logo.svg', launchUrl).href;
+  const faviconResponse = await page.request.get(faviconUrl);
+  expect(faviconResponse.status()).toBe(200);
+  expect(faviconResponse.headers()['content-type']).toBe('image/svg+xml');
+
   await page.goto(launchUrl);
-  await expect(page.getByText('Cossack Studio', { exact: true })).toBeVisible();
+  const studioBrand = page.getByTestId('studio-brand');
+  await expect(studioBrand.getByRole('img', { name: 'Cossack' })).toBeVisible();
+  await expect(studioBrand).toContainText('Studio');
   await expect(page).toHaveTitle('Cossack Studio');
+  await expect(page.locator('head link[rel="icon"]')).toHaveAttribute('href', '/logo.svg');
   await expect(page.getByTestId('studio-version')).toContainText(/Studio v\d+\.\d+\.\d+/);
   await expect(page.getByTestId('database-version')).toContainText(/SQLite \d+/);
 
