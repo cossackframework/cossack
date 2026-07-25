@@ -65,7 +65,7 @@ describe('recipe resolution', () => {
     expect(recipe.resolvedFeatures).toEqual(['database', 'studio']);
     const files = await renderRecipe(recipe);
     const pkg = JSON.parse(files.get('package.json').content.toString());
-    expect(pkg.devDependencies['@cossackframework/studio']).toBe('^0.7.4');
+    expect(pkg.devDependencies['@cossackframework/studio']).toBe(`^${scaffoldPackage.version}`);
     expect(pkg.scripts.studio).toBe('cossack studio');
   });
 
