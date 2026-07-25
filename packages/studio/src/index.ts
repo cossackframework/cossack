@@ -17,6 +17,10 @@ import { serveStudioAsset, toWebRequest, writeWebResponse } from './server/http.
 import { setStudioDatabase } from './server/runtime.js';
 import { createStudioSecurity } from './server/security.js';
 
+interface EnvFileProcess {
+  loadEnvFile(path: string): void;
+}
+
 export interface StudioRunOptions {
   projectRoot?: string;
   remote?: boolean;
@@ -64,7 +68,7 @@ async function loadProjectEnvironment(projectRoot: string): Promise<void> {
     const envPath = path.join(projectRoot, filename);
     try {
       await fs.access(envPath);
-      process.loadEnvFile(envPath);
+      (process as typeof process & EnvFileProcess).loadEnvFile(envPath);
     } catch (error: any) {
       if (error?.code !== 'ENOENT') throw error;
     }
