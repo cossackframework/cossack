@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/scaffold",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "type": "module",
   "description": "Recipe-driven scaffolding engine for Cossack applications",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "dependencyVersions": {
       "@cloudflare/vite-plugin": "^1.44.0",
       "@cossackframework/solar-icons": "^0.7.1",
-      "@cossackframework/studio": "^0.7.4",
+      "@cossackframework/studio": "^0.7.5",
       "@hono/node-server": "^1.13.0",
       "@tailwindcss/vite": "^4.1.0",
       "@tursodatabase/serverless": "^0.1.0",
