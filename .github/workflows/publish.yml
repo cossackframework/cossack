@@ -37,12 +37,12 @@ jobs:
         run: |
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
-          pnpm --filter @cossackframework/database vitest --run
+          pnpm --filter @cossackframework/database test --run
           pnpm --filter @cossackframework/ui test -- --run
-          pnpm --filter @cossackframework/framework vitest --run tests/
+          pnpm --filter @cossackframework/framework test --run tests/
           pnpm --filter @cossackframework/studio test
           pnpm --filter @cossackframework/scaffold test
-          pnpm --filter cossack vitest --run
+          pnpm --filter cossack test
 
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local
