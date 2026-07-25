@@ -250,6 +250,67 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.0.0)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
 
+  packages/studio:
+    dependencies:
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
+      '@cossackframework/database':
+        specifier: workspace:*
+        version: link:../database
+      '@cossackframework/framework':
+        specifier: workspace:*
+        version: link:../framework
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@cossackframework/solar-icons':
+        specifier: ^0.7.1
+        version: 0.7.1
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../ui
+      hono:
+        specifier: ^4.12.31
+        version: 4.12.31
+      prompts:
+        specifier: ^2.4.2
+        version: 2.4.2
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+    devDependencies:
+      '@libsql/client':
+        specifier: ^0.14.0
+        version: 0.14.0
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@tailwindcss/vite':
+        specifier: ^4.1.0
+        version: 4.2.4(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
+      '@types/node':
+        specifier: ^22.19.0
+        version: 22.20.1
+      monaco-editor:
+        specifier: ^0.52.2
+        version: 0.52.2
+      tailwindcss:
+        specifier: ^4.1.0
+        version: 4.2.4
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.1.4
+        version: 8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@22.20.1)(happy-dom@20.4.0)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
+
   packages/test-utils:
     dependencies:
       '@cossackframework/core':
@@ -1902,11 +1963,14 @@ packages:
     engines: {node: '>=22.0.0'}
     hasBin: true
 
+  monaco-editor@0.52.2:
+    resolution: {integrity: sha512-GEQWEZmfkOGLdd3XK8ryrfWz3AIP8YymVXiPHEdewrUq7mh0qrKrfHLNCXcbB6sTnMLnOZ3ztSiKcciFUkIJwQ==}
+
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  nanoid@3.3.15:
-    resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
+  nanoid@3.3.16:
+    resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -3193,6 +3257,13 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.2.4
       '@tailwindcss/oxide-win32-x64-msvc': 4.2.4
 
+  '@tailwindcss/vite@4.2.4(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))':
+    dependencies:
+      '@tailwindcss/node': 4.2.4
+      '@tailwindcss/oxide': 4.2.4
+      tailwindcss: 4.2.4
+      vite: 8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0)
+
   '@tailwindcss/vite@4.2.4(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
       '@tailwindcss/node': 4.2.4
@@ -4077,9 +4148,11 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  monaco-editor@0.52.2: {}
+
   ms@2.1.3: {}
 
-  nanoid@3.3.15: {}
+  nanoid@3.3.16: {}
 
   node-domexception@1.0.0: {}
 
@@ -4134,7 +4207,7 @@ snapshots:
 
   postcss@8.5.23:
     dependencies:
-      nanoid: 3.3.15
+      nanoid: 3.3.16
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

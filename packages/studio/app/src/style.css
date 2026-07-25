@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+@source "../../node_modules/@cossackframework/ui/dist";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.studio-grid .cs-input,
+.studio-grid .cs-textarea,
+.studio-grid select {
+  background-color: var(--background);
+}
+
+.studio-grid .cs-input:disabled,
+.studio-grid .cs-textarea:disabled,
+.studio-grid select:disabled {
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--background));
+}
+
+.studio-grid .studio-insert-value.cs-input:not(:disabled),
+.studio-grid select.studio-insert-value:not(:disabled),
+.studio-grid .studio-insert-value .cs-datepicker__trigger {
+  background-color: #fff;
+  color: #0f172a;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+}
+
+.dark .studio-grid .studio-insert-value.cs-input:not(:disabled),
+.dark .studio-grid select.studio-insert-value:not(:disabled),
+.dark .studio-grid .studio-insert-value .cs-datepicker__trigger {
+  background-color: #27272a;
+  color: #fafafa;
+  -webkit-text-fill-color: #fafafa;
+  caret-color: #fafafa;
+}
+
+.studio-grid .studio-insert-option {
+  color: var(--foreground);
+  -webkit-text-fill-color: var(--foreground);
+}
+
+.studio-grid {
+  grid-template-columns: 17rem minmax(0, 1fr);
+  grid-template-rows: 3.5rem minmax(0, 1fr);
+}
+
+.studio-cell {
+  max-width: 28rem;
+  min-width: 8rem;
+}
+
+.studio-cell-value {
+  display: block;
+  max-width: 26rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-code-editor,
+.studio-code-editor .monaco-editor,
+.studio-code-editor .overflow-guard {
+  border-radius: inherit;
+}
+
+.studio-tab-panel {
+  view-transition-name: studio-tab-panel;
+}
+
+::view-transition-old(studio-tab-panel) {
+  animation: studio-tab-out 140ms ease both;
+}
+
+::view-transition-new(studio-tab-panel) {
+  animation: studio-tab-in 190ms ease both;
+}
+
+@keyframes studio-tab-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes studio-tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(studio-tab-panel),
+  ::view-transition-new(studio-tab-panel) {
+    animation-duration: 1ms;
+  }
+}

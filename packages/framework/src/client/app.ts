@@ -290,6 +290,13 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
   const triggerAppUpdate = async () => {
       appInstance.children = composeContent();
+      // A service/layout update may already be rendering the App when a
+      // navigation commits. Joining that in-flight request after replacing
+      // `children` is racy: the active render may already have captured the
+      // previous tree, yet callers would treat its completion as if the new
+      // page had been committed. Wait for it to finish, then always schedule
+      // a fresh App pass for the latest composition.
+      await appInstance.updateComplete;
       await appInstance.requestUpdate();
       syncHead();
   };

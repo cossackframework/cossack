@@ -24,7 +24,7 @@ const argv = process.argv.slice(2);
 // inside `vite build` via the cossackSsg plugin — no tsx respawn needed.)
 const [command] = argv;
 const needsTsx = command === 'migration' || command === 'migrate' ||
-  command === 'seeder' || command === 'seed';
+  command === 'seeder' || command === 'seed' || command === 'studio';
 
 if (needsTsx && !process.env[RESPAWN_FLAG]) {
   // Resolve tsx from this package's own deps so it is found regardless of cwd.

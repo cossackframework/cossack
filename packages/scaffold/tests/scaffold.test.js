@@ -59,6 +59,16 @@ describe('recipe resolution', () => {
     expect(recipe.config.database).toBe('sqlite');
   });
 
+  it('keeps Studio optional and resolves database as its prerequisite', async () => {
+    expect(resolveRecipe({ preset: 'minimal' }).resolvedFeatures).not.toContain('studio');
+    const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: 'studio' });
+    expect(recipe.resolvedFeatures).toEqual(['database', 'studio']);
+    const files = await renderRecipe(recipe);
+    const pkg = JSON.parse(files.get('package.json').content.toString());
+    expect(pkg.devDependencies['@cossackframework/studio']).toBe('^0.7.4');
+    expect(pkg.scripts.studio).toBe('cossack studio');
+  });
+
   it('removes dependents and then unneeded automatic prerequisites', () => {
     expect(removeFeature(['dashboard', 'examples'], 'database'))
       .toEqual(['examples']);
@@ -66,6 +76,7 @@ describe('recipe resolution', () => {
       preset: 'minimal',
       features: removeFeature(['dashboard', 'examples'], 'database'),
     }).resolvedFeatures).toEqual(['ui', 'examples']);
+    expect(removeFeature(['studio', 'examples'], 'database')).toEqual(['examples']);
   });
 
   it('rejects invalid providers, invalid modules, and duplicate modules', () => {
@@ -118,6 +129,48 @@ describe('recipe resolution', () => {
 });
 
 describe('composition', () => {
+  it('adds and removes Studio with database dependency ownership', async () => {
+    const root = await temporaryDirectory();
+    const project = await createApp('app', {
+      cwd: root,
+      adapter: 'cloudflare',
+      preset: 'minimal',
+      interactive: false,
+    });
+    const added = await addFeature(project.projectDir, 'studio', {
+      interactive: false,
+    });
+    expect(added.addedFeatures).toEqual(['database', 'studio']);
+    let pkg = JSON.parse(await fs.readFile(
+      path.join(project.projectDir, 'package.json'),
+      'utf8',
+    ));
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+    expect(pkg.devDependencies).toHaveProperty('@cossackframework/studio');
+    expect(pkg.scripts.studio).toBe('cossack studio');
+
+    const removedStudio = await removeFeatureFromProject(project.projectDir, 'studio', {
+      interactive: false,
+      yes: true,
+    });
+    expect(removedStudio.recipe.resolvedFeatures).toEqual(['database']);
+    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
+    expect(pkg.devDependencies).not.toHaveProperty('@cossackframework/studio');
+    expect(pkg.scripts).not.toHaveProperty('studio');
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+
+    await addFeature(project.projectDir, 'studio', { interactive: false });
+    const removedDatabase = await removeFeatureFromProject(project.projectDir, 'database', {
+      interactive: false,
+      yes: true,
+    });
+    expect(removedDatabase.recipe.resolvedFeatures).toEqual([]);
+    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
+    expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+    expect(pkg.devDependencies).not.toHaveProperty('@cossackframework/studio');
+    expect(pkg.scripts).not.toHaveProperty('studio');
+  });
+
   it('produces the same recipe and owned contents incrementally and initially', async () => {
     const firstRoot = await temporaryDirectory();
     const secondRoot = await temporaryDirectory();

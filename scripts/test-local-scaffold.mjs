@@ -15,6 +15,7 @@ const packageDirectories = [
   'database',
   'ui',
   'framework',
+  'studio',
   'scaffold',
   'cossack',
 ];
@@ -35,6 +36,7 @@ async function buildPublishablePackages() {
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
+  await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
 }
 
 async function packPackages(destination) {
@@ -132,6 +134,22 @@ try {
     '--yes',
   ], { cwd: projectDir });
   await installGeneratedProject(projectDir);
+  await run('pnpm', [
+    'exec',
+    'cossack',
+    'add',
+    'studio',
+    '--yes',
+  ], { cwd: projectDir });
+  await installGeneratedProject(projectDir);
+  const studioPackage = JSON.parse(await fs.readFile(
+    path.join(projectDir, 'package.json'),
+    'utf8',
+  ));
+  if (!studioPackage.devDependencies?.['@cossackframework/studio'] ||
+      studioPackage.scripts?.studio !== 'cossack studio') {
+    throw new Error('Studio feature did not install its dependency and script');
+  }
   await run('pnpm', [
     'exec',
     'cossack',

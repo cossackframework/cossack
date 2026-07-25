@@ -424,6 +424,9 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
+  if (recipe.resolvedFeatures.includes('studio')) {
+    devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
+  }
   if (recipe.adapter === 'cloudflare') {
     devDependencies['@cloudflare/vite-plugin'] =
       dependencyVersion('@cloudflare/vite-plugin');
@@ -458,6 +461,9 @@ function packageJson(recipe, projectName) {
       recipe.config.database === 'sqlite') {
     scripts.migrate = 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up';
     scripts.postinstall = 'pnpm run migrate';
+  }
+  if (recipe.resolvedFeatures.includes('studio')) {
+    scripts.studio = 'cossack studio';
   }
   return JSON.stringify({
     name: projectName,
@@ -1539,6 +1545,7 @@ async function inferRecipe(projectDir, manifest) {
   const features = [];
   if (dependencies['@cossackframework/ui']) features.push('ui');
   if (dependencies['@cossackframework/database']) features.push('database');
+  if (dependencies['@cossackframework/studio']) features.push('studio');
   if (dependencies['@cossackframework/auth']) features.push('auth');
   const runtime = await detectProjectRuntime(projectDir, manifest);
   const recipe = resolveRecipe({
@@ -2047,7 +2054,12 @@ export async function addFeature(projectDir, feature, options = {}) {
       previous,
       startAtLast,
     );
-    const explicitFeatures = [...new Set([...current.explicitFeatures, feature])];
+    const explicitFeatures = [...new Set([
+      ...current.explicitFeatures,
+      ...(feature === 'studio' &&
+          !current.resolvedFeatures.includes('database') ? ['database'] : []),
+      feature,
+    ])];
     let dashboardModules = current.dashboardModules;
     if (feature === 'dashboard') {
       const requested = prompted.features ?? prompted.dashboardModules;

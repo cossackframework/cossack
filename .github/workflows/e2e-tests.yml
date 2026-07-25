@@ -36,7 +36,9 @@ jobs:
         run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
       - name: Run E2E tests
-        run: pnpm --filter @cossackframework/framework run test:e2e
+        run: |
+          pnpm --filter @cossackframework/framework run test:e2e
+          pnpm --filter @cossackframework/studio exec playwright test
         env:
           CI: true
 
@@ -45,5 +47,7 @@ jobs:
         if: always()
         with:
           name: playwright-report
-          path: packages/framework/playwright-report/
+          path: |
+            packages/framework/playwright-report/
+            packages/studio/playwright-report/
           retention-days: 30

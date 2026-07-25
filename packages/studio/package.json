@@ -1,0 +1,60 @@
+{
+  "name": "@cossackframework/studio",
+  "version": "0.7.4",
+  "type": "module",
+  "description": "A local, browser-based database inspector for Cossack applications",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/studio"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "build": "pnpm run clean && pnpm run build:server && pnpm run build:app",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:app": "vite build && vite build --ssr src/entry-server.ts --outDir ../dist/app/server",
+    "test": "vitest --run",
+    "test:e2e": "pnpm run build && playwright test"
+  },
+  "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/database": "workspace:*",
+    "@cossackframework/framework": "workspace:*",
+    "@cossackframework/renderer": "workspace:*",
+    "@cossackframework/solar-icons": "^0.7.1",
+    "@cossackframework/ui": "workspace:*",
+    "hono": "^4.12.31",
+    "prompts": "^2.4.2",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@libsql/client": "^0.14.0",
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^22.19.0",
+    "monaco-editor": "^0.52.2",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^7.0.2",
+    "tsx": "^4.23.0",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

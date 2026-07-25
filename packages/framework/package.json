@@ -30,6 +30,10 @@
       "types": "./dist/esm/client/app.d.ts",
       "import": "./dist/esm/client/app.js"
     },
+    "./blocks": {
+      "types": "./dist/esm/blocks/index.d.ts",
+      "import": "./dist/esm/blocks/index.js"
+    },
     "./vite-plugin": {
       "types": "./dist/esm/vite-plugin.d.ts",
       "import": "./dist/esm/vite-plugin.js"

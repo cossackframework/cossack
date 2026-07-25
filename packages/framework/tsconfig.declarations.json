@@ -4,6 +4,12 @@
     "noEmit": false,
     "allowImportingTsExtensions": false,
     "declaration": true,
+    // Framework components are precompiled and do not use reflected method
+    // parameter types. Leaving this enabled turns DOM-only TypeScript types
+    // such as KeyboardEvent into eager runtime references during SSR imports.
+    // Consumer applications keep emitDecoratorMetadata enabled for constructor
+    // injection into their own pages and services.
+    "emitDecoratorMetadata": false,
     "outDir": "dist/esm",
     "rootDir": "src"
   },

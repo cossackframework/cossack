@@ -1,5 +1,5 @@
 import { html, component } from '@cossackframework/renderer';
-import { Cossack, Component, ClientState, Client, OnWindow } from '@cossackframework/core';
+import { Cossack, Component, ClientState, Client, OnWindow, Shared } from '@cossackframework/core';
 import { Modal, Icon, Kbd } from '@cossackframework/ui';
 import { MagnifierIcon as magnifier } from '@cossackframework/solar-icons/magnifier';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
@@ -24,6 +24,10 @@ export interface CommandPaletteProps {
     placeholder?: string;
     /** Called when a command is selected (clicked or Enter). */
     onSelect?: (id: string) => void;
+    /** Controlled open state. Omit to let the palette manage its own state. */
+    open?: boolean;
+    /** Called whenever the palette opens or closes. */
+    onOpenChange?: (open: boolean) => void;
     [key: string]: any;
 }
 
@@ -52,21 +56,29 @@ export class CommandPalette extends Cossack {
     @ClientState() private activeIndex = 0;
 
     render() {
-        const { commands = [], placeholder = 'Type a command…' } = this.props;
+        const {
+            commands = [],
+            placeholder = 'Type a command…',
+            open: _open,
+            onOpenChange: _onOpenChange,
+            onSelect: _onSelect,
+            ...rest
+        } = this.props;
         const filtered = this.filterCommands(commands);
         const groups = this.groupCommands(filtered);
 
         return html`
             ${component(Modal, {
-                open: this.open,
-                onClose: () => { this.open = false; },
+                open: this.props.open ?? this.open,
+                onClose: () => { this.setOpen(false); },
                 closeOnBackdrop: true,
             }, html`
-                <div class="cs-command-palette flex flex-col gap-2">
+                <div class="cs-command-palette flex flex-col gap-2" ...=${rest}>
                     <div class="flex items-center gap-2 border-b pb-2">
                         ${component(Icon, { entry: magnifier, size: 18 })}
                         <input
                             type="text"
+                            autofocus
                             class="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground"
                             placeholder=${placeholder}
                             .value=${this.query}
@@ -106,12 +118,14 @@ export class CommandPalette extends Cossack {
         `;
     }
 
+    @Shared()
     private filterCommands(commands: CommandItem[]): CommandItem[] {
         const q = this.query.trim().toLowerCase();
         if (!q) return commands;
         return commands.filter((c) => c.label.toLowerCase().includes(q));
     }
 
+    @Shared()
     private groupCommands(items: CommandItem[]): Array<{ name: string; items: CommandItem[] }> {
         const map = new Map<string, CommandItem[]>();
         for (const item of items) {
@@ -140,17 +154,24 @@ export class CommandPalette extends Cossack {
 
     @Client()
     private select(id: string) {
-        this.open = false;
+        this.setOpen(false);
         this.query = '';
         this.activeIndex = 0;
         this.props.onSelect?.(id);
     }
 
+    @Client()
+    private setOpen(open: boolean) {
+        this.open = open;
+        this.props.onOpenChange?.(open);
+    }
+
     /** Toggle the palette open/closed — call from a button or menu. */
     @Client()
     toggle() {
-        this.open = !this.open;
-        if (!this.open) {
+        const next = !(this.props.open ?? this.open);
+        this.setOpen(next);
+        if (!next) {
             this.query = '';
             this.activeIndex = 0;
         }

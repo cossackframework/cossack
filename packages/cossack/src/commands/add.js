@@ -99,7 +99,7 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return `cossack add <ui|database|auth|dashboard|examples> [component]
+  return `cossack add <ui|database|studio|auth|dashboard|examples> [component]
 
 Options:
   component                         Eject a UI component for customization

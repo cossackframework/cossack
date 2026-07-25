@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "paths": {},
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "app/src/**/*.ts", "tests/**/*.ts"]
+}
