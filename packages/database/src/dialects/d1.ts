@@ -1,18 +1,24 @@
 // src/dialects/d1.ts
 import {
     SqliteAdapter,
-    SqliteIntrospector,
     SqliteQueryCompiler,
+    sql,
 } from 'kysely';
 import type {
     CompiledQuery,
     DatabaseConnection,
+    DatabaseMetadataOptions,
     DatabaseIntrospector,
     Dialect,
     Driver,
     Kysely,
     QueryResult,
+    TableMetadata,
 } from 'kysely';
+import {
+    DEFAULT_MIGRATION_LOCK_TABLE,
+    DEFAULT_MIGRATION_TABLE,
+} from 'kysely/migration';
 import type { D1DatabaseLike } from '../types';
 
 /**
@@ -41,8 +47,98 @@ export class D1Dialect implements Dialect {
         return new SqliteAdapter();
     }
     createIntrospector(db: Kysely<any>): DatabaseIntrospector {
-        return new SqliteIntrospector(db);
+        return new D1Introspector(db);
     }
+}
+
+interface D1TableRow {
+    name: string;
+    sql: string | null;
+    type: 'table' | 'view';
+}
+
+interface D1ColumnRow {
+    cid: number;
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: unknown;
+    pk: number;
+}
+
+/**
+ * D1 stores a protected `_cf_METADATA` table beside application tables.
+ * Kysely's stock SQLite introspector feeds every non-`sqlite_*` table into
+ * `pragma_table_info()`, which includes `_cf_METADATA`; D1 rejects inspection
+ * of that internal table with `SQLITE_AUTH`. Query application tables first,
+ * explicitly excluding `_cf_*`, then introspect each safe name separately.
+ */
+class D1Introspector implements DatabaseIntrospector {
+    constructor(private readonly db: Kysely<any>) {}
+
+    async getSchemas(): Promise<[]> {
+        return [];
+    }
+
+    async getTables(
+        options: DatabaseMetadataOptions = { withInternalKyselyTables: false },
+    ): Promise<TableMetadata[]> {
+        let query = this.db
+            .selectFrom('sqlite_master')
+            .where('type', 'in', ['table', 'view'])
+            .where('name', 'not like', 'sqlite_%')
+            .where(sql<boolean>`name not glob ${'_cf_*'}`)
+            .select(['name', 'sql', 'type'])
+            .orderBy('name');
+
+        if (!options.withInternalKyselyTables) {
+            query = query
+                .where('name', '!=', DEFAULT_MIGRATION_TABLE)
+                .where('name', '!=', DEFAULT_MIGRATION_LOCK_TABLE);
+        }
+
+        const tables = await query.execute() as D1TableRow[];
+        return Promise.all(tables.map(async (table): Promise<TableMetadata> => {
+            const result = await sql<D1ColumnRow>`
+                select * from pragma_table_info(${table.name})
+            `.execute(this.db);
+            const columns = result.rows;
+            const autoIncrementColumn = findAutoIncrementColumn(table.sql, columns);
+            return {
+                name: table.name,
+                isView: table.type === 'view',
+                isForeign: false,
+                columns: columns.map((column) => ({
+                    name: column.name,
+                    dataType: column.type,
+                    isNullable: !column.notnull,
+                    isAutoIncrementing: column.name === autoIncrementColumn,
+                    hasDefaultValue: column.dflt_value != null,
+                    comment: undefined,
+                })),
+            };
+        }));
+    }
+}
+
+function findAutoIncrementColumn(
+    tableSql: string | null,
+    columns: D1ColumnRow[],
+): string | undefined {
+    const declared = tableSql
+        ?.split(/[\(\),]/)
+        .find((part) => part.toLowerCase().includes('autoincrement'))
+        ?.trimStart()
+        .split(/\s+/)[0]
+        ?.replace(/["`]/g, '');
+    if (declared) return declared;
+
+    const primaryKeys = columns.filter((column) => column.pk > 0);
+    if (primaryKeys.length === 1 &&
+        primaryKeys[0].type.toLowerCase() === 'integer') {
+        return primaryKeys[0].name;
+    }
+    return undefined;
 }
 
 /** Marshals a Kysely parameter into a value D1's `bind()` accepts. */

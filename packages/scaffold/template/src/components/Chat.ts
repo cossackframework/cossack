@@ -1,7 +1,9 @@
 import { __, Component, Cossack } from '@cossackframework/core';
 import { Bubble, Button, Card, CardBody, CardHeader, Icon, Input, Message, MessageScroller } from '@cossackframework/ui';
-import { ArrowUpIcon as arrowUpIcon } from '@cossackframework/solar-icons/arrow-up';
+import { ArrowUpIcon as arrowUpIconSvg } from '@cossackframework/solar-icons/arrow-up/line';
 import { component, html } from '@cossackframework/renderer';
+
+const arrowUpIcon = { line: arrowUpIconSvg };
 
 export interface ChatMessage {
     role: 'user' | 'assistant';

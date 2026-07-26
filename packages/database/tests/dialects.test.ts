@@ -124,4 +124,85 @@ describe('D1Dialect (via mock binding)', () => {
         // D1 bind() doesn't accept booleans — the dialect converts true -> 1.
         expect(getLast().params).toContain(1);
     });
+
+    it('excludes protected Cloudflare tables during schema introspection', async () => {
+        const prepared: Array<{ sql: string; params: unknown[] }> = [];
+        const binding: D1DatabaseLike = {
+            prepare(query: string) {
+                const call = { sql: query, params: [] as unknown[] };
+                prepared.push(call);
+                const statement = {
+                    bind(...params: unknown[]) {
+                        call.params = params;
+                        return statement;
+                    },
+                    async all<T = unknown>(): Promise<D1ResultLike<T>> {
+                        if (query.includes('sqlite_master')) {
+                            return {
+                                results: [{
+                                    name: 'users',
+                                    sql: 'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)',
+                                    type: 'table',
+                                }] as T[],
+                                success: true,
+                            };
+                        }
+                        if (query.includes('pragma_table_info')) {
+                            return {
+                                results: [
+                                    {
+                                        cid: 0,
+                                        name: 'id',
+                                        type: 'INTEGER',
+                                        notnull: 1,
+                                        dflt_value: null,
+                                        pk: 1,
+                                    },
+                                    {
+                                        cid: 1,
+                                        name: 'email',
+                                        type: 'TEXT',
+                                        notnull: 0,
+                                        dflt_value: null,
+                                        pk: 0,
+                                    },
+                                ] as T[],
+                                success: true,
+                            };
+                        }
+                        return { results: [], success: true };
+                    },
+                    async run<T = unknown>(): Promise<D1ResultLike<T>> {
+                        return { results: [], success: true };
+                    },
+                    async first<T = unknown>(): Promise<T | null> {
+                        return null;
+                    },
+                };
+                return statement;
+            },
+        };
+        const db = makeDb({ dialect: 'd1', binding });
+
+        const tables = await db.introspection.getTables({
+            withInternalKyselyTables: true,
+        });
+
+        expect(tables).toEqual([expect.objectContaining({
+            name: 'users',
+            columns: [
+                expect.objectContaining({
+                    name: 'id',
+                    isAutoIncrementing: true,
+                }),
+                expect.objectContaining({ name: 'email' }),
+            ],
+        })]);
+        const tableQuery = prepared.find((call) =>
+            call.sql.includes('sqlite_master'));
+        expect(tableQuery?.params).toContain('_cf_*');
+        expect(prepared.some((call) =>
+            call.sql.includes('pragma_table_info') &&
+            call.params.includes('users'))).toBe(true);
+    });
 });

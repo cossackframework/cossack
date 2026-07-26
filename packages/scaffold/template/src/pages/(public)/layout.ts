@@ -2,10 +2,14 @@ import { Cossack, Page, State, Client, HeadContext, HeadValue, server$ } from '@
 import { NavigationMenu, Sheet, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
-import { SunIcon as sunIcon } from '@cossackframework/solar-icons/sun';
-import { MoonIcon as moonIcon } from '@cossackframework/solar-icons/moon';
-import { HamburgerMenuIcon as hamburgerIcon } from '@cossackframework/solar-icons/hamburger-menu';
+import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
+import { MoonIcon as moonIconSvg } from '@cossackframework/solar-icons/moon/line';
+import { HamburgerMenuIcon as hamburgerIconSvg } from '@cossackframework/solar-icons/hamburger-menu/line';
 import { themeStore } from '../../stores.client';
+
+const sunIcon = { line: sunIconSvg };
+const moonIcon = { line: moonIconSvg };
+const hamburgerIcon = { line: hamburgerIconSvg };
 /**
  * Public layout: header (logo + nav + theme toggle) and footer shared by all
  * marketing-style pages. Nav links are auth-aware: a logged-in visitor sees
@@ -13,7 +17,7 @@ import { themeStore } from '../../stores.client';
  *
  * Desktop nav uses the NavigationMenu component; on mobile a hamburger button
  * opens a slide-in Sheet with the same links. Theme state mirrors the App /
- * dashboard layout (both manipulate the same `<html>.dark` class + localStorage).
+ * dashboard layout (both manipulate the same `<html>.dark` class + cookie).
  *
  * This is a URL-stripped route group — the parens in `(public)` mean pages
  * here keep their normal URL (e.g. `(public)/index.ts` serves `/`), they only
@@ -47,10 +51,13 @@ export default class PublicLayout extends Cossack {
     }
 
     async init() {
-        // Seed theme from cookie at SSR so the toggle icon matches initial paint.
-        this.theme = this.c
-            ? (getCookie(this.c, 'cs-theme') === 'dark' ? 'dark' : 'light')
-            : this.theme;
+        // A valid cookie lets SSR render the matching toggle icon. With no
+        // cookie, root.ts resolves the system preference before first paint
+        // and the themeStore subscription synchronizes this state on mount.
+        const savedTheme = this.c ? getCookie(this.c, 'cs-theme') : undefined;
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+            this.theme = savedTheme;
+        }
 
         // Build the nav data once, server-side. this.user is available here
         // (request-scoped) but NOT on client re-renders, so derive here and

@@ -35,20 +35,22 @@ export interface StudioRunOptions {
 }
 
 async function loadCliClient(projectRoot: string): Promise<Kysely<any>> {
-  const configPath = path.resolve(projectRoot, 'src', 'db', 'config.ts');
-  let module: any;
+  const cliPath = path.resolve(projectRoot, 'src', 'db', 'cli.ts');
   try {
-    module = await import(`${pathToFileURL(configPath).href}?studio=${Date.now()}`);
+    await fs.access(cliPath);
   } catch (error: any) {
-    if (error?.code === 'ERR_MODULE_NOT_FOUND') {
+    if (error?.code === 'ENOENT') {
       throw new Error(
-        'No loadable src/db/config.ts was found. Run `cossack add database` first.',
+        'No loadable src/db/cli.ts was found. Run `cossack add database` first.',
       );
     }
     throw error;
   }
+  const module: any = await import(
+    `${pathToFileURL(cliPath).href}?studio=${Date.now()}`,
+  );
   if (typeof module.getCliClient !== 'function') {
-    throw new Error('src/db/config.ts must export getCliClient().');
+    throw new Error('src/db/cli.ts must export getCliClient().');
   }
   return module.getCliClient();
 }

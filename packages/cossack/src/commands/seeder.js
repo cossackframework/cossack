@@ -4,7 +4,7 @@
  *   cossack seeder run [--only <name>]
  *
  * The tsx respawn happens in bin/cossack.js; this module imports the user's
- * `src/db/config.ts` and `@cossackframework/database` at runtime.
+ * `src/db/cli.ts` and `@cossackframework/database` at runtime.
  */
 import { runSeederCommand } from './db-run.js';
 
@@ -38,5 +38,5 @@ Run seeder files under src/seeders/.
 Subcommands:
   run [--only <name>]    Run all (or one) seeder's default export run(db).
 
-The command loads src/db/config.ts → getCliClient() to build the client.`;
+The command loads src/db/cli.ts → getCliClient() to build the client.`;
 }

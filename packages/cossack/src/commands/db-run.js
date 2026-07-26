@@ -3,7 +3,7 @@
  *
  * These commands are respawned under tsx by bin/cossack.js, so by the time this
  * module runs the tsx loader is active and we can import the user's `.ts`
- * `src/db/config.ts` and `@cossackframework/database` directly.
+ * `src/db/cli.ts` and `@cossackframework/database` directly.
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -38,20 +38,20 @@ async function loadDatabaseApi(root) {
 }
 
 /**
- * Loads the user's `src/db/config.ts` and returns its `getCliClient()` result.
+ * Loads the user's `src/db/cli.ts` and returns its `getCliClient()` result.
  * Throws a friendly error if the file or export is missing.
  */
 export async function loadCliClient(root) {
-  const configPath = path.resolve(root, 'src', 'db', 'config.ts');
-  if (!(await exists(configPath))) {
+  const cliPath = path.resolve(root, 'src', 'db', 'cli.ts');
+  if (!(await exists(cliPath))) {
     throw new Error(
-      'No src/db/config.ts found. Run `cossack add database` first, or create ' +
+      'No src/db/cli.ts found. Run `cossack add database` first, or create ' +
         'one that exports `getCliClient()` returning a Kysely client.',
     );
   }
-  const mod = await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`);
+  const mod = await import(`${pathToFileURL(cliPath).href}?t=${Date.now()}`);
   if (typeof mod.getCliClient !== 'function') {
-    throw new Error('src/db/config.ts must export `getCliClient()` returning a Kysely client.');
+    throw new Error('src/db/cli.ts must export `getCliClient()` returning a Kysely client.');
   }
   return mod.getCliClient();
 }

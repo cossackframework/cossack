@@ -61,6 +61,7 @@ const ADAPTER_PATHS = new Set([
   'package.json',
   'scripts/dev.js',
   'src/config/database.ts',
+  'src/db/cli.ts',
   'src/db/config.ts',
   'src/index.ts',
   'tsconfig.json',
@@ -191,6 +192,8 @@ async function promptWizard(questions, initialAnswers = {}, startAtLast = false)
 const BASE_PATHS = new Set([
   '.prettierrc.json',
   '.vscode/cossack.code-snippets',
+  'AGENTS.md',
+  'README.md',
   'scripts/dev.js',
   'src/client/entry-client.ts',
   'src/config/app.ts',
@@ -212,6 +215,7 @@ const UI_PATHS = new Set([
 ]);
 const DATABASE_PATHS = new Set([
   'src/config/database.ts',
+  'src/db/cli.ts',
   'src/db/config.ts',
   'src/middlewares/db.ts',
   'src/migrations/0006_create_cache_table.ts',
@@ -362,7 +366,7 @@ function middlewareRegistry(recipe) {
 
 function wranglerConfig(recipe, projectName) {
   const database = recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1'
-    ? `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "<database_id>"\n  }]`
+    ? `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "00000000-0000-0000-0000-000000000000",\n    "preview_database_id": "${projectName}-local"\n  }]`
     : '';
   const email = recipe.resolvedFeatures.includes('auth') &&
       recipe.config.authMethods.includes('credentials')
@@ -438,11 +442,6 @@ function packageJson(recipe, projectName) {
         dependencyVersion('@types/better-sqlite3');
     }
   }
-  if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    devDependencies['better-sqlite3'] = dependencyVersion('better-sqlite3');
-    devDependencies['@types/better-sqlite3'] =
-      dependencyVersion('@types/better-sqlite3');
-  }
   const scripts = recipe.adapter === 'node'
     ? {
         dev: 'node --env-file-if-exists=.env scripts/dev.js',
@@ -450,16 +449,21 @@ function packageJson(recipe, projectName) {
         start: 'node --env-file-if-exists=.env dist/server/index.js',
       }
     : {
-        dev: 'vite dev',
+        dev: recipe.resolvedFeatures.includes('database') &&
+            recipe.config.database === 'd1'
+          ? 'cossack migration up && vite dev'
+          : 'vite dev',
         build: 'vite build',
         'build:ssg': 'vite build && cossack ssg',
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
-  if (recipe.adapter === 'node' &&
-      recipe.resolvedFeatures.includes('database') &&
-      recipe.config.database === 'sqlite') {
-    scripts.migrate = 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up';
-    scripts.postinstall = 'pnpm run migrate';
+  if (recipe.resolvedFeatures.includes('database')) {
+    scripts.migrate = recipe.adapter === 'node'
+      ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
+      : 'cossack migration up';
+    if (recipe.adapter === 'node' && recipe.config.database === 'sqlite') {
+      scripts.postinstall = 'pnpm run migrate';
+    }
   }
   if (recipe.resolvedFeatures.includes('studio')) {
     scripts.studio = 'cossack studio';
@@ -470,7 +474,16 @@ function packageJson(recipe, projectName) {
     description: 'The Borderless TypeScript Framework',
     cossack: { runtime: recipe.adapter },
     pnpm: {
-      onlyBuiltDependencies: ['better-sqlite3', 'esbuild', 'sharp', 'workerd'],
+      onlyBuiltDependencies: [
+        ...(recipe.adapter === 'node' &&
+            recipe.resolvedFeatures.includes('database') &&
+            recipe.config.database === 'sqlite'
+          ? ['better-sqlite3']
+          : []),
+        'esbuild',
+        'sharp',
+        'workerd',
+      ],
     },
     scripts,
     dependencies,
@@ -493,6 +506,12 @@ export function createClient(env: { TURSO_URL?: string; TURSO_TOKEN?: string } =
     }),
   });
 }
+`;
+}
+
+function tursoCliConfig() {
+  return `import type { DbClient } from '@cossackframework/database';
+import { createClient } from './config';
 
 export async function getCliClient(): Promise<DbClient> {
   return createClient();
@@ -508,6 +527,12 @@ export function createClient(env: { DB_PATH?: string } = {}): DbClient {
   const filename = env.DB_PATH ?? process.env.DB_PATH ?? './database.sqlite';
   return new Kysely({ dialect: new SqliteDialect({ database: new Database(filename) }) }) as DbClient;
 }
+`;
+}
+
+function sqliteCliConfig() {
+  return `import type { DbClient } from '@cossackframework/database';
+import { createClient } from './config';
 
 export async function getCliClient(): Promise<DbClient> {
   return createClient();
@@ -554,19 +579,60 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 
 function descriptor(module) {
   const definitions = {
-    users: ['Users', '/dashboard/users', 'admin'],
-    sessions: ['Sessions', '/dashboard/sessions', 'authenticated'],
-    settings: ['Settings', '/dashboard/profile', 'authenticated'],
-    roles: ['Roles', '/dashboard/roles', 'admin'],
+    users: {
+      label: 'Users',
+      href: '/dashboard/users',
+      permission: 'admin',
+      iconImport: "import { UsersGroupRoundedIcon as iconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';",
+      children: [
+        ['All users', '/dashboard/users'],
+        ['Add user', '/dashboard/users/new'],
+      ],
+    },
+    sessions: {
+      label: 'Sessions',
+      href: '/dashboard/sessions',
+      permission: 'authenticated',
+      iconImport: "import { MonitorSmartphoneIcon as iconSvg } from '@cossackframework/solar-icons/monitor-smartphone/line';",
+      placement: 'account',
+    },
+    settings: {
+      label: 'Profile settings',
+      href: '/dashboard/profile',
+      permission: 'authenticated',
+      iconImport: "import { UserCircleIcon as iconSvg } from '@cossackframework/solar-icons/user-circle/line';",
+      placement: 'account',
+    },
+    roles: {
+      label: 'Roles',
+      href: '/dashboard/roles',
+      permission: 'admin',
+      iconImport: "import { ShieldKeyholeIcon as iconSvg } from '@cossackframework/solar-icons/shield-keyhole/line';",
+      children: [
+        ['All roles', '/dashboard/roles'],
+        ['Add role', '/dashboard/roles/new'],
+      ],
+    },
   };
-  const [label, href, permission] = definitions[module];
+  const definition = definitions[module];
+  const children = definition.children
+    ? `\n  children: [\n${definition.children.map(([label, href]) =>
+      `    { label: '${label}', href: '${href}' },`).join('\n')}\n  ],`
+    : '';
+  const placement = definition.placement
+    ? `\n  placement: '${definition.placement}',`
+    : '';
   return `import type { DashboardModule } from '../types';
+${definition.iconImport}
+
+const icon = { line: iconSvg };
 
 const descriptor: DashboardModule = {
   id: '${module}',
-  label: '${label}',
-  href: '${href}',
-  authorization: '${permission}',
+  label: '${definition.label}',
+  href: '${definition.href}',
+  icon,
+  authorization: '${definition.permission}',${placement}${children}
 };
 
 export default descriptor;
@@ -583,37 +649,21 @@ export const dashboardModules: DashboardModule[] = [${modules.join(', ')}];
 }
 
 function dashboardTypes() {
-  return `export interface DashboardModule {
+  return `import type { IconEntry } from '@cossackframework/solar-icons/types';
+
+export interface DashboardModuleLink {
+  label: string;
+  href: string;
+}
+
+export interface DashboardModule {
   id: string;
   label: string;
   href: string;
+  icon: IconEntry;
   authorization: 'authenticated' | 'admin';
-}
-`;
-}
-
-function dashboardLayout() {
-  return `import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-import { dashboardModules } from '../../dashboard/registry';
-
-@Page({ transport: 'http' })
-export default class DashboardLayout extends Cossack {
-  render() {
-    const isAdmin = !!this.user?.roles?.some((role) => role.name === 'admin');
-    const modules = dashboardModules.filter((module) =>
-      module.authorization !== 'admin' || isAdmin,
-    );
-    return html\`
-      <div class="min-h-screen grid grid-cols-[16rem_1fr]">
-        <aside class="border-r p-4">
-          <a href="/dashboard">Dashboard</a>
-          <nav>\${modules.map((module) => html\`<a class="block py-2" href="\${module.href}">\${module.label}</a>\`)}</nav>
-        </aside>
-        <main class="p-8">\${this.children}</main>
-      </div>
-    \`;
-  }
+  placement?: 'navigation' | 'account';
+  children?: DashboardModuleLink[];
 }
 `;
 }
@@ -1023,8 +1073,10 @@ export async function renderRecipe(recipe, options = {}) {
   if (recipe.resolvedFeatures.includes('database')) {
     if (recipe.config.database === 'turso') {
       files.set('src/db/config.ts', { content: text(tursoConfig()), capability: 'database' });
+      files.set('src/db/cli.ts', { content: text(tursoCliConfig()), capability: 'database' });
     } else if (recipe.config.database === 'sqlite') {
       files.set('src/db/config.ts', { content: text(sqliteConfig()), capability: 'database' });
+      files.set('src/db/cli.ts', { content: text(sqliteCliConfig()), capability: 'database' });
     }
     if (!recipe.resolvedFeatures.includes('dashboard')) {
       files.set('src/seeders/database.seeder.ts', {
@@ -1043,10 +1095,6 @@ export async function renderRecipe(recipe, options = {}) {
     files.set('src/dashboard/types.ts', { content: text(dashboardTypes()), capability: 'dashboard' });
     files.set('src/dashboard/registry.ts', {
       content: text(dashboardRegistry(recipe.dashboardModules)),
-      capability: 'dashboard',
-    });
-    files.set('src/pages/dashboard/layout.ts', {
-      content: text(dashboardLayout()),
       capability: 'dashboard',
     });
     for (const module of recipe.dashboardModules) {
@@ -1249,10 +1297,14 @@ async function mergePackage(
   const previous = previousEntry
     ? JSON.parse(previousEntry.content.toString('utf8'))
     : {};
-  const allowedBuilds = [
-    ...(current.pnpm?.onlyBuiltDependencies ?? []),
-    ...(desired.pnpm?.onlyBuiltDependencies ?? []),
-  ];
+  const desiredBuilds = desired.pnpm?.onlyBuiltDependencies ?? [];
+  const previouslyManagedBuilds = new Set(
+    previous.pnpm?.onlyBuiltDependencies ?? [],
+  );
+  const userBuilds = (current.pnpm?.onlyBuiltDependencies ?? []).filter(
+    (name) => !previouslyManagedBuilds.has(name),
+  );
+  const allowedBuilds = [...desiredBuilds, ...userBuilds];
   const merged = {
     ...current,
     cossack: { ...(current.cossack ?? {}), ...(desired.cossack ?? {}) },
