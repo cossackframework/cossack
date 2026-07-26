@@ -121,10 +121,17 @@ describe('recipe resolution', () => {
     }
     expect(Boolean(pkg.dependencies['@cossackframework/database']))
       .toBe(recipe.resolvedFeatures.includes('database'));
+    expect(pkg.dependencies).not.toHaveProperty('reflect-metadata');
+    expect(files.get('src/index.ts').content.toString())
+      .not.toContain("import 'reflect-metadata'");
+    expect(JSON.parse(files.get('tsconfig.json').content.toString()).compilerOptions.types)
+      .not.toContain('reflect-metadata');
     expect(Boolean(pkg.dependencies['@cossackframework/auth']))
       .toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('.env')).toBe(adapter === 'node');
     expect(files.has('.env.example')).toBe(adapter === 'node');
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain('minify: true');
   });
 });
 

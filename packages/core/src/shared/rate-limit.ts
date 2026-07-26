@@ -1,5 +1,5 @@
 // src/shared/rate-limit.ts
-import 'reflect-metadata';
+import './metadata';
 import type { Context } from 'hono';
 
 export const RATE_LIMIT_METADATA_KEY = 'cossack:rate-limit';

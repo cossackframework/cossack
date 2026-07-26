@@ -97,6 +97,49 @@ async function installGeneratedProject(projectDir) {
   ], { cwd: projectDir });
 }
 
+async function eagerClientJavaScriptBytes(projectDir) {
+  const clientDir = path.join(projectDir, 'dist', 'client');
+  const manifest = JSON.parse(await fs.readFile(
+    path.join(clientDir, '.vite', 'manifest.json'),
+    'utf8',
+  ));
+  const seen = new Set();
+  let bytes = 0;
+
+  async function visit(key) {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const chunk = manifest[key];
+    if (!chunk) throw new Error(`Client manifest is missing eager import "${key}"`);
+    if (chunk.file?.endsWith('.js')) {
+      bytes += (await fs.stat(path.join(clientDir, chunk.file))).size;
+    }
+    for (const imported of chunk.imports ?? []) await visit(imported);
+  }
+
+  await visit('src/client/entry-client.ts');
+  return bytes;
+}
+
+async function assertStarterBundleBudgets(projectDir) {
+  const eagerClientBytes = await eagerClientJavaScriptBytes(projectDir);
+  const serverBytes = (await fs.stat(
+    path.join(projectDir, 'dist', 'ssr', 'index.js'),
+  )).size;
+  const clientBudget = 350 * 1024;
+  const serverBudget = 850 * 1024;
+  if (eagerClientBytes > clientBudget) {
+    throw new Error(
+      `Starter eager client JavaScript is ${eagerClientBytes} bytes; budget is ${clientBudget}`,
+    );
+  }
+  if (serverBytes > serverBudget) {
+    throw new Error(
+      `Starter server bundle is ${serverBytes} bytes; budget is ${serverBudget}`,
+    );
+  }
+}
+
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
 const keep = process.env.COSSACK_KEEP_SMOKE === '1';
 
@@ -181,6 +224,7 @@ try {
   ], { cwd: projectDir });
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
+  await assertStarterBundleBudgets(projectDir);
   const cloudflareManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
     'utf8',

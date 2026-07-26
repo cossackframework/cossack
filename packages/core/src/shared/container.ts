@@ -1,5 +1,5 @@
 // src/shared/container.ts
-import 'reflect-metadata';
+import './metadata';
 
 export interface ServiceMetadata {
     scope: 'singleton' | 'transient';

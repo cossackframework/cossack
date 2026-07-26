@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { proxyHttpMethods } from '../src/shared/method-proxy';
+import { isRpcCallableAction, proxyHttpMethods } from '../src/shared/method-proxy';
+import { Cossack } from '../src/shared/cossack';
+import type { TemplateResult } from '@cossackframework/renderer';
 
 describe('HTTP component RPC targeting', () => {
     afterEach(() => {
@@ -41,5 +43,15 @@ describe('HTTP component RPC targeting', () => {
             componentRouteId: 'layout-route-id',
             action: 'doLogout',
         });
+    });
+
+    it('keeps the universal redirect helper local instead of exposing it as RPC', () => {
+        class RedirectingComponent extends Cossack {
+            render(): TemplateResult {
+                return { strings: [], values: [] } as unknown as TemplateResult;
+            }
+        }
+
+        expect(isRpcCallableAction(RedirectingComponent, 'redirect')).toBe(false);
     });
 });

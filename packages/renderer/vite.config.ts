@@ -11,8 +11,21 @@ export default defineConfig({
       formats: ['es'],
     },
     rolldownOptions: {
-      // Ensure we don't bundle dependencies if we had any
-      external: [],
+      // Let application bundlers consume the focused css-tree entry points
+      // directly instead of copying its internal node_modules layout into the
+      // published renderer package.
+      external: [
+        'css-tree/parser',
+        'css-tree/generator',
+        'css-tree/walker',
+      ],
+      output: {
+        // Keep source modules separate in the published package. Downstream
+        // application builds can then tree-shake unused renderer exports
+        // instead of receiving one opaque pre-bundled module.
+        preserveModules: true,
+        preserveModulesRoot: resolve(__dirname, 'src'),
+      },
     },
   },
   test: {

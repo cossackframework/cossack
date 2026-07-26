@@ -1,5 +1,5 @@
 // src/shared/decorators.ts
-import 'reflect-metadata';
+import './metadata';
 import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
 import { CossackOptions } from './cossack';

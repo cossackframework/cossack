@@ -391,7 +391,6 @@ function packageJson(recipe, projectName) {
     '@cossackframework/renderer': `^${templateVersion}`,
     cossack: `^${templateVersion}`,
     hono: dependencyVersion('hono'),
-    'reflect-metadata': dependencyVersion('reflect-metadata'),
   };
   if (recipe.resolvedFeatures.includes('ui')) {
     dependencies['@cossackframework/ui'] = `^${templateVersion}`;
@@ -533,8 +532,7 @@ function nodeEntry(providers = []) {
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
   const routes = oauthRouteBlock(providers);
-  return `import 'reflect-metadata';
-import { serve } from '@hono/node-server';
+  return `import { serve } from '@hono/node-server';
 import { pathToFileURL } from 'node:url';
 import { createApp } from '@cossackframework/framework/router';
 import { App } from './App';
@@ -999,8 +997,8 @@ export async function renderRecipe(recipe, options = {}) {
       compilerOptions: {
         ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')).compilerOptions,
         types: recipe.adapter === 'node'
-          ? ['reflect-metadata', 'vite/client', 'node']
-          : ['reflect-metadata', './worker-configuration.d.ts', 'node'],
+          ? ['vite/client', 'node']
+          : ['./worker-configuration.d.ts', 'node'],
       },
     }, null, 2) + '\n'),
     capability: 'base',

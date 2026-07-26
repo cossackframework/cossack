@@ -21,6 +21,8 @@ export class SecurityDemo extends Cossack {
     @ClientState()
     revealReady = false;
 
+    private revealCleanup?: () => void;
+
     public head(context: HeadContext): HeadValue {
         return { title: 'Security Demo' };
     }
@@ -31,12 +33,22 @@ export class SecurityDemo extends Cossack {
         setTimeout(() => this.setupReveal(), 0);
     }
 
-    private setupReveal() {
+    onCleanup() {
+        this.revealCleanup?.();
+    }
+
+    private async setupReveal() {
         // Reachable from onMount -> preserved transitively.
         if (typeof document === 'undefined') return;
 
-        // Flip the deterministic flag so the e2e test can confirm the helper ran.
+        // Flip the deterministic flag so the e2e test can confirm the helper
+        // ran, then wait for the resulting page/App reconciliation. Querying
+        // before that commit would attach the observer to nodes that the
+        // reactive render immediately replaces.
         this.revealReady = true;
+        await this.requestUpdate();
+
+        this.revealCleanup?.();
 
         const observer = new IntersectionObserver((entries) => {
             for (const entry of entries) {
@@ -46,8 +58,27 @@ export class SecurityDemo extends Cossack {
             }
         }, { threshold: 0.1 });
 
-        const targets = document.querySelectorAll('.reveal');
-        targets.forEach((el) => observer.observe(el));
+        const observed = new WeakSet<Element>();
+        const scan = () => {
+            document.querySelectorAll('.reveal').forEach((element) => {
+                if (observed.has(element)) return;
+                observed.add(element);
+                observer.observe(element);
+            });
+        };
+
+        scan();
+
+        // A reactive App reconciliation can replace the page's DOM after
+        // onMount. Re-scan added subtrees so the observer always follows the
+        // live elements rather than detached pre-commit nodes.
+        const mutationObserver = new MutationObserver(scan);
+        mutationObserver.observe(document.body, { childList: true, subtree: true });
+
+        this.revealCleanup = () => {
+            observer.disconnect();
+            mutationObserver.disconnect();
+        };
     }
 
     private reveal(el: HTMLElement) {

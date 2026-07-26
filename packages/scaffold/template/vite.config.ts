@@ -25,6 +25,11 @@ export default defineConfig({
     // `vite build`. Remove or set `enabled: false` if you don't use SSG.
     cossackSsg(),
   ],
+  build: {
+    // Vite leaves SSR output unminified by default. This shared default also
+    // covers the separate `vite build --ssr` used by the Node adapter.
+    minify: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

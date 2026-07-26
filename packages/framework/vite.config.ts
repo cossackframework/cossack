@@ -92,6 +92,11 @@ export default defineConfig({
     cossackSsg(),
     cossackDevTools(),
   ],
+  build: {
+    // Keep production SSR/worker output minified. Client builds inherit this
+    // default as well (which matches Vite's normal production behavior).
+    minify: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

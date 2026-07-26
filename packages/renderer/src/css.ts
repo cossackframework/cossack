@@ -1,8 +1,14 @@
-// css-tree is deliberately bundled into the renderer build. It is a pure
-// JavaScript parser, so style finalization works in browsers, Node.js, and
-// Cloudflare Workers without relying on a DOM or Node-specific APIs.
+// css-tree is a pure JavaScript parser, so style finalization works in
+// browsers, Node.js, and Cloudflare Workers without DOM or Node-only APIs.
+// Import the focused entry points instead of css-tree's public barrel. The
+// barrel constructs the full syntax + lexer API (including MDN validation
+// data), while component style scoping only needs these three tools.
 // @ts-expect-error css-tree 3 does not publish TypeScript declarations.
-import { generate, parse, walk } from 'css-tree';
+import parse from 'css-tree/parser';
+// @ts-expect-error css-tree 3 does not publish TypeScript declarations.
+import generate from 'css-tree/generator';
+// @ts-expect-error css-tree 3 does not publish TypeScript declarations.
+import walk from 'css-tree/walker';
 
 const CSS_RESULT_TOKEN = Symbol('cossack-css-result');
 
