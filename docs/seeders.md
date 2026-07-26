@@ -59,7 +59,7 @@ cossack seeder run --only users   # run only seeders whose filename contains "us
 
 The runner:
 
-1. Loads `src/db/config.ts` → `getCliClient()` to build the client (same as [migrations](/docs/migrations.md)).
+1. Loads `src/db/cli.ts` → `getCliClient()` to build the client (same as [migrations](/docs/migrations.md)).
 2. Imports every `.ts`/`.js` file in `src/seeders/` (skipping `.d.ts`), sorted alphabetically by filename.
 3. Calls each file's `run(db)` in order.
 4. Destroys the client when done.
@@ -113,7 +113,10 @@ await db
 
 ## Environment
 
-Seeders typically run against your **development** database (the same client `getCliClient()` returns for migrations — see [Database](/docs/database.md)). For Turso this is your dev database via `TURSO_URL`/`TURSO_TOKEN`; for D1 this is a local SQLite file (or a remote D1 if you point the config at one).
+Seeders typically run against your **development** database (the same client
+`getCliClient()` returns for migrations — see [Database](/docs/database.md)).
+For Turso this is your dev database via `TURSO_URL`/`TURSO_TOKEN`; for D1 it is
+the persisted local binding exposed by Wrangler's platform proxy.
 
 > Never seed a production database by accident. Seeders run whatever `getCliClient()` returns — double-check your env vars before `cossack seeder run` in a production shell.
 

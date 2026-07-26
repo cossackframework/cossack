@@ -14,13 +14,15 @@
       "name": "EMAIL"
     }
   ],
-  // Cloudflare D1 binding. Replace <database_id> with the output of
-  // `npx wrangler d1 create <name>`, then run `cossack migration up`.
+  // Cloudflare D1 binding. Local development uses preview_database_id and
+  // `pnpm dev` applies pending migrations before Vite starts. Replace the
+  // production database_id with `pnpm exec wrangler d1 create <name>` output.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "app-db",
-      "database_id": "<database_id>"
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "app-local"
     }
   ],
   // "durable_objects": {

@@ -6,7 +6,7 @@
  *   cossack migration status    List migrations and their state.
  *
  * The tsx respawn happens in bin/cossack.js; this module imports the user's
- * `src/db/config.ts` and `@cossackframework/database` at runtime.
+ * `src/db/cli.ts` and `@cossackframework/database` at runtime.
  */
 import { runMigrationCommand, runMigrationStatus } from './db-run.js';
 
@@ -39,7 +39,7 @@ Subcommands:
   down      Revert the most recent migration.
   status    List migrations and whether each has run.
 
-The command loads src/db/config.ts → getCliClient() to build the client.
+The command loads src/db/cli.ts → getCliClient() to build the client.
 Options:
   --force, -f    (unused; accepted for consistency).`;
 }

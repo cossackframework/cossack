@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { processMarkdown } from '../src/markdown-processor';
+import { cossackPages } from '../src/vite-plugin';
 
 describe('Markdown processor', () => {
   it('extracts frontmatter and renders CommonMark, GFM, raw HTML, and slugs', async () => {
@@ -23,6 +24,31 @@ image: /guide.png
     expect(result.html).toContain('<del>removed</del>');
     expect(result.html).toContain('<a href="https://example.com">https://example.com</a>');
     expect(result.html).toContain('<aside data-test="raw"><b>trusted</b></aside>');
+  });
+
+  it('renders author and date frontmatter as a byline after the first heading', async () => {
+    const plugin = cossackPages();
+    const transform = plugin.transform as Function;
+    const result = await transform.call(
+      { environment: { mode: 'build', name: 'ssr' } },
+      `---
+title: A post
+author: Ada Lovelace
+date: 2026-07-26
+---
+# A post
+
+Post body.
+`,
+      '/src/pages/blog/a-post.md',
+    );
+
+    expect(result.code).toContain('const markdownAuthor = "Ada Lovelace"');
+    expect(result.code).toContain('const markdownDate = "2026-07-26"');
+    expect(result.code).toContain('class="mdx-byline');
+    expect(result.code).toContain('<time datetime=${markdownDate}>');
+    expect(result.code.indexOf('const markdownLead = "<h1'))
+      .toBeLessThan(result.code.indexOf('const byline ='));
   });
 
   it('generates a table of contents whose links match heading ids', async () => {

@@ -105,12 +105,23 @@ describe('recipe resolution', () => {
     const recipe = resolveRecipe({ adapter, preset });
     const files = await renderRecipe(recipe);
     const pkg = JSON.parse(files.get('package.json').content.toString());
+    expect(files.has('README.md')).toBe(true);
+    expect(files.has('AGENTS.md')).toBe(true);
     expect(files.has('src/App.ts')).toBe(true);
     expect(files.has('wrangler.jsonc')).toBe(adapter === 'cloudflare');
     expect(files.has('src/db/config.ts')).toBe(recipe.resolvedFeatures.includes('database'));
+    expect(files.has('src/db/cli.ts')).toBe(recipe.resolvedFeatures.includes('database'));
     expect(files.has('src/auth.ts')).toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('src/pages/dashboard/layout.ts'))
       .toBe(recipe.resolvedFeatures.includes('dashboard'));
+    if (recipe.resolvedFeatures.includes('dashboard')) {
+      const layout = files.get('src/pages/dashboard/layout.ts').content.toString();
+      expect(layout).toContain('component(Sidebar');
+      expect(layout).toContain('component(DropdownMenu');
+      expect(layout).toContain('collapsible:');
+      expect(layout).toContain('accountModules.map');
+      expect(layout).toContain('dashboardModules');
+    }
     expect(files.has('src/pages/(public)/index.ts'))
       .toBe(recipe.resolvedFeatures.includes('examples'));
     expect(Boolean(pkg.dependencies['@cossackframework/ui']))
@@ -121,6 +132,12 @@ describe('recipe resolution', () => {
     }
     expect(Boolean(pkg.dependencies['@cossackframework/database']))
       .toBe(recipe.resolvedFeatures.includes('database'));
+    if (recipe.resolvedFeatures.includes('database')) {
+      expect(files.get('src/db/config.ts').content.toString())
+        .not.toContain('getCliClient');
+      expect(files.get('src/db/cli.ts').content.toString())
+        .toContain('getCliClient');
+    }
     expect(pkg.dependencies).not.toHaveProperty('reflect-metadata');
     expect(files.get('src/index.ts').content.toString())
       .not.toContain("import 'reflect-metadata'");
@@ -132,6 +149,56 @@ describe('recipe resolution', () => {
     expect(files.has('.env.example')).toBe(adapter === 'node');
     expect(files.get('vite.config.ts').content.toString())
       .toContain('minify: true');
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("dedupe: [");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("'@cossackframework/solar-icons'");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("'hono'");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("exclude: ['@cossackframework/solar-icons']");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("ignored: ['**/.wrangler/**']");
+  });
+
+  it('preserves the pre-paint theme through hydration', async () => {
+    const files = await renderRecipe(resolveRecipe({
+      adapter: 'cloudflare',
+      preset: 'full-stack',
+    }));
+    const root = files.get('src/root.ts').content.toString();
+    const app = files.get('src/App.ts').content.toString();
+    const store = files.get('src/stores.client.ts').content.toString();
+
+    expect(root.indexOf('prefers-color-scheme')).toBeLessThan(
+      root.indexOf('{{ cossackScripts }}'),
+    );
+    expect(store).toContain("document.documentElement.classList.contains('dark')");
+    expect(app).not.toContain('themeStore.set(');
+    expect(app).not.toContain('savedTheme');
+  });
+
+  it('loads only the selected Solar icon variant in generated application code', async () => {
+    const files = await renderRecipe(resolveRecipe({
+      adapter: 'cloudflare',
+      preset: 'full-stack',
+    }));
+    const iconImports = [...files.values()]
+      .filter((file) => file.type !== 'binary')
+      .flatMap((file) => file.content.toString().match(
+        /from '@cossackframework\/solar-icons\/(?!types)[^']+'/g,
+      ) ?? []);
+
+    expect(iconImports.length).toBeGreaterThan(0);
+    expect(iconImports.every((statement) => statement.endsWith("/line'"))).toBe(true);
+
+    const viteConfig = files.get('vite.config.ts').content.toString();
+    expect(viteConfig).toContain("include: [");
+    expect(viteConfig).toContain("'@cossackframework/ui'");
+    expect(viteConfig).toContain("'@cossackframework/auth'");
+    expect(viteConfig).toContain("'@cossackframework/database'");
+    expect(viteConfig).toContain("'@cossackframework/framework/cache'");
+    expect(viteConfig).toContain("'hono/cookie'");
   });
 });
 
@@ -248,6 +315,15 @@ describe('composition', () => {
         expect(registry).not.toContain(`./modules/${other}`);
       }
       expect(files.has(`src/dashboard/modules/${module}.ts`)).toBe(true);
+      const descriptor = files.get(`src/dashboard/modules/${module}.ts`).content.toString();
+      expect(descriptor).toContain('@cossackframework/solar-icons/');
+      expect(descriptor).toContain('icon,');
+      if (module === 'users' || module === 'roles') {
+        expect(descriptor).toContain('children:');
+        expect(descriptor).toContain(`/dashboard/${module}/new`);
+      } else {
+        expect(descriptor).toContain("placement: 'account'");
+      }
     },
   );
 
@@ -423,15 +499,54 @@ describe('composition', () => {
       .toContain('APP_URL=http://localhost:3000');
   });
 
-  it('uses the non-deprecated better-sqlite3 release for D1 migration tooling', async () => {
+  it('uses Wrangler local D1 for migrations without native SQLite dependencies', async () => {
     const files = await renderRecipe(resolveRecipe({
       adapter: 'cloudflare',
       preset: 'database',
       database: 'd1',
-    }));
+    }), { projectName: 'd1-app' });
     const pkg = JSON.parse(files.get('package.json').content.toString());
-    expect(pkg.devDependencies['better-sqlite3'])
-      .toBe(dependencyVersions['better-sqlite3']);
+    expect(pkg.dependencies).not.toHaveProperty('better-sqlite3');
+    expect(pkg.devDependencies).not.toHaveProperty('better-sqlite3');
+    expect(pkg.devDependencies).not.toHaveProperty('@types/better-sqlite3');
+    expect(pkg.pnpm.onlyBuiltDependencies).not.toContain('better-sqlite3');
+    expect(pkg.scripts.migrate).toBe('cossack migration up');
+    expect(pkg.scripts.dev).toBe('cossack migration up && vite dev');
+    const runtimeConfig = files.get('src/db/config.ts').content.toString();
+    const cliConfig = files.get('src/db/cli.ts').content.toString();
+    expect(runtimeConfig).not.toContain('wrangler');
+    expect(runtimeConfig).not.toContain('getCliClient');
+    expect(cliConfig).toContain("import('wrangler')");
+    expect(cliConfig).toContain('getPlatformProxy');
+    const wrangler = files.get('wrangler.jsonc').content.toString();
+    expect(wrangler).toContain('"database_id": "00000000-0000-0000-0000-000000000000"');
+    expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
+  });
+
+  it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {
+    const root = await temporaryDirectory();
+    const project = await createApp('app', {
+      cwd: root,
+      adapter: 'cloudflare',
+      preset: 'full-stack',
+      interactive: false,
+    });
+
+    await expect(fs.readFile(path.join(project.projectDir, 'README.md'), 'utf8'))
+      .resolves.toContain('# Cossack Framework');
+    await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
+      .resolves.toContain('Cossack Framework');
+
+    const auth = await fs.readFile(path.join(project.projectDir, 'src/auth.ts'), 'utf8');
+    expect(auth).toContain('Session database is unavailable; continuing as guest.');
+    expect(auth).toContain('run `pnpm migrate`');
+
+    const post = await fs.readFile(
+      path.join(project.projectDir, 'src/pages/(public)/blog/hello-world.md'),
+      'utf8',
+    );
+    expect(post).toContain('date: 2026-07-26');
+    expect(post).toContain('author: Cossack Team');
   });
 
   it('detects a Node minimal project before adding auth', async () => {
@@ -456,6 +571,10 @@ describe('composition', () => {
       path.join(project.projectDir, 'src/db/config.ts'),
       'utf8',
     )).toContain("from 'better-sqlite3'");
+    expect(await fs.readFile(
+      path.join(project.projectDir, 'src/db/cli.ts'),
+      'utf8',
+    )).toContain('getCliClient');
     expect(await fs.readFile(
       path.join(project.projectDir, 'src/config/database.ts'),
       'utf8',

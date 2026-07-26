@@ -8,7 +8,7 @@ const { addFeatureMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@cossackframework/scaffold', () => ({
-  FEATURES: ['ui', 'database', 'auth', 'dashboard', 'examples'],
+  FEATURES: ['ui', 'database', 'studio', 'auth', 'dashboard', 'examples'],
   addFeature: addFeatureMock,
   parseList: (value) => String(value).split(','),
 }));
@@ -59,6 +59,16 @@ afterEach(async () => {
 });
 
 describe('add command UI component ejection', () => {
+  it('accepts Studio as a scaffold feature', async () => {
+    expect(await addCommand(['studio'], context())).toBe(0);
+    expect(addFeatureMock).toHaveBeenCalledWith(
+      root,
+      'studio',
+      expect.objectContaining({ interactive: false }),
+    );
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it('ejects a documented UI component even when UI is already installed', async () => {
     expect(await addCommand(['ui', 'button'], context())).toBe(0);
     expect(await fs.readFile(

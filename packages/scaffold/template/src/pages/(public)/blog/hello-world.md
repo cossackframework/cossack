@@ -1,6 +1,8 @@
 ---
 title: Hello, world!
 description: Meet your new Cossack application and its Markdown-powered routes.
+date: 2026-07-26
+author: Cossack Team
 ---
 
 # Hello, world!

@@ -42,7 +42,9 @@ src/
 │   ├── 0005_create_oauth_accounts.ts
 │   └── 0006_create_cache_table.ts
 ├── seeders/database.seeder.ts     # example seeder
-└── db/config.ts                   # client factory for requests + the CLI
+└── db/
+    ├── config.ts                  # runtime client factory for requests
+    └── cli.ts                     # Node-only client factory for CLI tools
 ```
 
 It also:
@@ -80,14 +82,21 @@ const db = createDatabase({
 
 For the escape hatch — a pre-built client of any libSQL-compatible shape — use the `libsql` dialect and pass the client directly.
 
-### The generated `src/db/config.ts`
+### Generated database modules
 
-`cossack add database` generates a config module that exports two functions:
+`cossack add database` keeps application runtime code separate from Node-only
+tooling:
 
-- `createClient(env)` — builds the per-request client (used by the middleware).
-- `getCliClient()` — builds a client for the CLI (migrations/seeders), which runs outside a Worker.
+- `src/db/config.ts` exports `createClient(env)` for the request middleware.
+- `src/db/cli.ts` exports `getCliClient()` for migrations, seeders, and Studio.
 
-For **D1**, `getCliClient()` opens the same SQLite file dialect locally with `better-sqlite3` (install once: `pnpm add -D better-sqlite3`). For **Turso**, it reuses the HTTP client with `TURSO_URL` / `TURSO_TOKEN` from your environment. The same migration files run unchanged against the production database.
+For **D1**, only `src/db/cli.ts` imports Wrangler and uses
+`getPlatformProxy()` to expose the configured local D1 binding to the
+Node-based CLI. Keeping Wrangler out of `src/db/config.ts` prevents application
+bundlers from scanning its Node-only dependency graph. Wrangler, the Cloudflare
+Vite plugin, and the migration command share the same persisted local database,
+so no native SQLite package is required. For **Turso**, the CLI module reuses
+the HTTP client with `TURSO_URL` / `TURSO_TOKEN` from your environment.
 
 ## Wiring the middleware
 

@@ -223,6 +223,7 @@ try {
     '--yes',
   ], { cwd: projectDir });
   await installGeneratedProject(projectDir);
+  await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await assertStarterBundleBudgets(projectDir);
   const cloudflareManifest = JSON.parse(await fs.readFile(

@@ -1,10 +1,10 @@
 import { Cossack, Page, State, Server, Client } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Button, Badge, Input, Icon, Pagination, AlertDialog } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { PenNewRoundIcon as editIcon } from '@cossackframework/solar-icons/pen-new-round';
-import { TrashBinMinimalisticIcon as deleteIcon } from '@cossackframework/solar-icons/trash-bin-minimalistic';
-import { UsersGroupRoundedIcon as usersIcon } from '@cossackframework/solar-icons/users-group-rounded';
-import { MagnifierIcon as searchIcon } from '@cossackframework/solar-icons/magnifier';
+import { PenNewRoundIcon as editIconSvg } from '@cossackframework/solar-icons/pen-new-round/line';
+import { TrashBinMinimalisticIcon as deleteIconSvg } from '@cossackframework/solar-icons/trash-bin-minimalistic/line';
+import { UsersGroupRoundedIcon as usersIconSvg } from '@cossackframework/solar-icons/users-group-rounded/line';
+import { MagnifierIcon as searchIconSvg } from '@cossackframework/solar-icons/magnifier/line';
 import { guard } from '../../../services/rbac';
 import {
     listRoles,
@@ -12,6 +12,11 @@ import {
     type RoleDetail,
     type ListRolesResult,
 } from '../../../services/roles';
+
+const editIcon = { line: editIconSvg };
+const deleteIcon = { line: deleteIconSvg };
+const usersIcon = { line: usersIconSvg };
+const searchIcon = { line: searchIconSvg };
 
 const PAGE_SIZE = 20;
 

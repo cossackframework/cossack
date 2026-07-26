@@ -70,7 +70,11 @@ Output of `migration status`:
 
 ### How the runner finds your client
 
-The CLI loads `src/db/config.ts` and calls its `getCliClient()` export to build the Kysely client, then runs the migrator against it. This is why `cossack add database` generates that config file — see [Database](/docs/database.md) for the D1 and Turso variants.
+The CLI loads `src/db/cli.ts` and calls its `getCliClient()` export to build the
+Kysely client, then runs the migrator against it. Runtime request handling uses
+the separate `src/db/config.ts` module, so Node-only CLI dependencies never
+enter the application bundle. See [Database](/docs/database.md) for the D1 and
+Turso variants.
 
 The runner discovers migration files in `src/migrations/` (sorted alphabetically) via Kysely's `FileMigrationProvider`.
 
@@ -84,25 +88,34 @@ The migrator runs under `tsx` (the CLI respawns itself with the loader, same as 
 
 ### D1
 
-D1 only exists **inside** a Worker, so for local migration development the generated `getCliClient()` opens a local SQLite file with `better-sqlite3` (same SQLite dialect):
+D1 normally exists inside a Worker. For local migration development, the
+generated `getCliClient()` asks Wrangler for a proxy to the configured local D1
+binding:
 
 ```ts
-// src/db/config.ts (D1, generated)
+// src/db/cli.ts (D1, generated)
 export async function getCliClient() {
-  const localPath = process.env.D1_LOCAL_PATH ?? './local.db';
-  const { Kysely, SqliteDialect } = await import('@cossackframework/database');
-  const Database = (await import('better-sqlite3')).default;
-  return new Kysely({ dialect: new SqliteDialect({ database: new Database(localPath) }) });
+  const { getPlatformProxy } = await import('wrangler');
+  const platform = await getPlatformProxy<{ DB: D1Database }>({
+    remoteBindings: false,
+  });
+  const client = createDatabase({ dialect: 'd1', binding: platform.env.DB });
+  const destroyClient = client.destroy.bind(client);
+  client.destroy = async () => {
+    try {
+      await destroyClient();
+    } finally {
+      await platform.dispose();
+    }
+  };
+  return client;
 }
 ```
 
-Install the driver once:
-
-```sh
-pnpm add -D better-sqlite3
-```
-
-Point `D1_LOCAL_PATH` at your wrangler local D1 file (under `.wrangler/state/v3/d1/...`) to migrate the same database `wrangler dev` uses, or leave it at the default `./local.db` for schema iteration. **The same migration files run unchanged against D1 in production** — only the client differs.
+Wrangler's default persistence directory is shared with the Cloudflare Vite
+plugin, so `cossack migration up` and `pnpm dev` use the same local database.
+The generated `pnpm dev` script applies pending migrations automatically before
+starting Vite.
 
 To apply migrations to the **production** D1 database, wire `getCliClient()` to a remote D1 client (or run the migrations inside a deploy step / Worker route).
 
@@ -111,12 +124,9 @@ To apply migrations to the **production** D1 database, wire `getCliClient()` to 
 For Turso, `getCliClient()` simply reads `TURSO_URL` and `TURSO_TOKEN` and connects over HTTP — local and remote are the same path, just different env vars:
 
 ```ts
-// src/db/config.ts (Turso, generated)
+// src/db/cli.ts (Turso, generated)
 export async function getCliClient() {
-  return createClient({
-    TURSO_URL: process.env.TURSO_URL!,
-    TURSO_TOKEN: process.env.TURSO_TOKEN,
-  });
+  return createClient();
 }
 ```
 

@@ -1,7 +1,6 @@
-import { Cossack, Page, State, Client } from '@cossackframework/core';
-import { html, component, type TemplateResult } from '@cossackframework/renderer';
+import { Cossack, Page } from '@cossackframework/core';
+import { html, component } from '@cossackframework/renderer';
 import { Toaster } from '@cossackframework/ui';
-import { getCookie } from 'hono/cookie';
 import { themeStore } from './stores.client';
 
 /**
@@ -19,9 +18,6 @@ import { themeStore } from './stores.client';
  */
 @Page({ transport: 'http' })
 export class App extends Cossack {
-    @State() savedTheme: 'light' | 'dark' | null = null;
-    @State() theme: 'light' | 'dark' = 'dark';
-
     private _unsub?: () => void;
 
     onCleanup() {
@@ -29,27 +25,14 @@ export class App extends Cossack {
     }
 
     onMount() {
-        themeStore.set(this.savedTheme ?? this.theme);
-
         // Keep <html> in sync with themeStore so toggles from any page update
         // the .dark class on the document root (where the CSS expects it).
         this._unsub = themeStore.subscribe((value) => {
-            this.theme = value;
             if (typeof document !== 'undefined') {
                 document.documentElement.classList.toggle('dark', value === 'dark');
                 document.documentElement.style.colorScheme = value;
             }
         });
-    }
-
-    async init() {
-        // Read theme from cookie (SSR) so the anti-FOUC script + initial paint
-        // match without a flash.
-        this.savedTheme = this.c
-            ? (getCookie(this.c, 'cs-theme') === 'dark' ? 'dark' : 'light')
-            : null;
-
-        this.theme = this.savedTheme ?? 'dark';
     }
 
     render() {

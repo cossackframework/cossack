@@ -20,7 +20,10 @@ support to an existing project:
 npx cossack add database
 ```
 
-This scaffolds `src/models/`, `src/migrations/`, `src/seeders/`, and `src/db/config.ts`, adds the dependency to `package.json`, and (for D1) injects a `[[d1_databases]]` binding into `wrangler.jsonc`.
+This scaffolds `src/models/`, `src/migrations/`, `src/seeders/`,
+`src/db/config.ts` for the application runtime, and `src/db/cli.ts` for
+Node-only tools. It also adds the dependency to `package.json` and (for D1)
+injects a `[[d1_databases]]` binding into `wrangler.jsonc`.
 
 ## Connecting
 
@@ -50,7 +53,8 @@ export function createClient(env: { TURSO_URL: string; TURSO_TOKEN?: string }) {
 }
 ```
 
-The generated `src/db/config.ts` also exports a `getCliClient()` for the migration/seeder CLI commands (see [Migrations](../../docs/migrations.md)).
+The generated `src/db/cli.ts` exports `getCliClient()` for migration, seeder,
+and Studio commands (see [Migrations](../../docs/migrations.md)).
 
 ### Wiring the middleware
 

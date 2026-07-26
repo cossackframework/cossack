@@ -2,11 +2,11 @@ import { Cossack, Page, State, Server } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Button, Badge, Tooltip, Icon } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
-import { MonitorSmartphoneIcon as monitorSmartphoneIcon } from '@cossackframework/solar-icons/monitor-smartphone';
-import { SmartphoneIcon as smartphoneIcon } from '@cossackframework/solar-icons/smartphone';
-import { LaptopIcon as laptopIcon } from '@cossackframework/solar-icons/laptop';
-import { TabletIcon as tabletIcon } from '@cossackframework/solar-icons/tablet';
-import { MonitorIcon as monitorIcon } from '@cossackframework/solar-icons/monitor';
+import { MonitorSmartphoneIcon as monitorSmartphoneIconSvg } from '@cossackframework/solar-icons/monitor-smartphone/line';
+import { SmartphoneIcon as smartphoneIconSvg } from '@cossackframework/solar-icons/smartphone/line';
+import { LaptopIcon as laptopIconSvg } from '@cossackframework/solar-icons/laptop/line';
+import { TabletIcon as tabletIconSvg } from '@cossackframework/solar-icons/tablet/line';
+import { MonitorIcon as monitorIconSvg } from '@cossackframework/solar-icons/monitor/line';
 import {
     listUserSessions,
     revokeSession,
@@ -15,6 +15,12 @@ import {
     SESSION_COOKIE_NAME,
     type SessionInfo,
 } from '../../../auth';
+
+const monitorSmartphoneIcon = { line: monitorSmartphoneIconSvg };
+const smartphoneIcon = { line: smartphoneIconSvg };
+const laptopIcon = { line: laptopIconSvg };
+const tabletIcon = { line: tabletIconSvg };
+const monitorIcon = { line: monitorIconSvg };
 
 /**
  * Parses a User-Agent string into device type + human-readable browser/OS.

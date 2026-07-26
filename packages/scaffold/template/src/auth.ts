@@ -30,6 +30,24 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 // auth sessions.
 type SessionMeta = { type: 'auth' } | { type: 'password_reset' };
 
+let warnedAboutSessionDatabase = false;
+
+/**
+ * Session lookup must never make a public request fail just because the
+ * database binding or auth migrations are not ready yet. The auth middleware
+ * treats the request as a guest and emits one actionable warning per isolate.
+ */
+function warnAboutSessionDatabase(error: unknown): void {
+  if (warnedAboutSessionDatabase) return;
+  warnedAboutSessionDatabase = true;
+  const detail = error instanceof Error ? ` (${error.message})` : '';
+  console.warn(
+    '[Cossack Auth] Session database is unavailable; continuing as guest. ' +
+    'Configure the DB binding and run `pnpm migrate` before using auth.' +
+    detail,
+  );
+}
+
 // --- Password hashing (PBKDF2 / Web Crypto, no extra deps) -----------------
 const ITERATIONS = 100_000;
 const KEY_LENGTH = 32; // 256 bits
@@ -181,23 +199,33 @@ async function createSessionRow(user: UserRow, c: Context): Promise<{ headers: H
 export const auth = createAuth<PublicUser>({
   extractSessionId: (c) => getCookie(c, SESSION_COOKIE),
   validateSessionId: async (sessionId) => {
-    const row = await db()
-      .selectFrom('sessions')
-      .where('id', '=', sessionId)
-      .where('expires_at', '>', new Date().toISOString())
-      .select('user_id')
-      .executeTakeFirst() as SessionRow | undefined;
-    return row?.user_id ?? null;
+    try {
+      const row = await db()
+        .selectFrom('sessions')
+        .where('id', '=', sessionId)
+        .where('expires_at', '>', new Date().toISOString())
+        .select('user_id')
+        .executeTakeFirst() as SessionRow | undefined;
+      return row?.user_id ?? null;
+    } catch (error) {
+      warnAboutSessionDatabase(error);
+      return null;
+    }
   },
   resolveUserById: async (userId) => {
-    const row = await db()
-      .selectFrom('users')
-      .where('id', '=', userId)
-      .select(['id', 'email', 'name', 'avatar', 'meta'])
-      .executeTakeFirst() as UserRow | undefined;
-    if (!row) return null;
-    const roles = await loadUserRoles(userId);
-    return publicUser(row, roles);
+    try {
+      const row = await db()
+        .selectFrom('users')
+        .where('id', '=', userId)
+        .select(['id', 'email', 'name', 'avatar', 'meta'])
+        .executeTakeFirst() as UserRow | undefined;
+      if (!row) return null;
+      const roles = await loadUserRoles(userId);
+      return publicUser(row, roles);
+    } catch (error) {
+      warnAboutSessionDatabase(error);
+      return null;
+    }
   },
   createSession: async (user, c) => {
     const full = await db()

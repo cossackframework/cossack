@@ -1,7 +1,7 @@
 # Cossack Studio
 
 `@cossackframework/studio` is the Node-only database inspector bundled with the
-Cossack CLI. It reads the database configured by `src/db/config.ts` without
+Cossack CLI. It reads the database configured by `src/db/cli.ts` without
 requiring application models.
 
 ```sh

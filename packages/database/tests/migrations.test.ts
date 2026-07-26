@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createClient } from '@libsql/client';
+import { Miniflare } from 'miniflare';
 import type { Kysely } from 'kysely';
 import { createDatabase, runMigrations, getMigrationStatus } from '../src';
 
@@ -70,6 +71,32 @@ describe('migrator', () => {
             expect(result.error).toBeUndefined();
             expect(result.results?.[0]?.direction).toBe('Down');
             await down.destroy();
+        });
+    });
+
+    it('applies migrations through a local D1 binding with protected Cloudflare tables', async () => {
+        await withTempMigrations(async (folder) => {
+            const miniflare = new Miniflare({
+                modules: true,
+                script: 'export default { fetch() { return new Response("ok") } }',
+                d1Databases: { DB: 'cossack-migration-test' },
+            });
+            try {
+                const binding = await miniflare.getD1Database('DB');
+                const client = createDatabase({ dialect: 'd1', binding });
+                const result = await runMigrations('latest', { client, folder });
+
+                expect(result.error).toBeUndefined();
+                expect(result.results?.[0]?.status).toBe('Success');
+                expect(await client.introspection.getTables()).toEqual(
+                    expect.arrayContaining([
+                        expect.objectContaining({ name: 'users' }),
+                    ]),
+                );
+                await client.destroy();
+            } finally {
+                await miniflare.dispose();
+            }
         });
     });
 

@@ -206,7 +206,7 @@ cossack add <feature> [options]
 
 #### `cossack add database`
 
-Adds `@cossackframework/database` (Kysely with D1 and Turso dialects), a default `User` model, starter migrations (`users`, `sessions`, `roles`, `permissions`, `oauth_accounts`, `cache_items`), a seeder, `src/db/config.ts`, the `dbMiddleware`, and the D1 binding in `wrangler.jsonc`. Prompts for the dialect (default: D1).
+Adds `@cossackframework/database` (Kysely with D1 and Turso dialects), a default `User` model, starter migrations (`users`, `sessions`, `roles`, `permissions`, `oauth_accounts`, `cache_items`), a seeder, runtime `src/db/config.ts`, CLI-only `src/db/cli.ts`, the `dbMiddleware`, and the D1 binding in `wrangler.jsonc`. Prompts for the dialect (default: D1).
 
 > **Note:** The Database and Full Stack presets include database support. Use
 > this command for Minimal projects or to compose it later.

@@ -89,13 +89,25 @@ export function cossackPages(): Plugin {
 
       if (id.endsWith('.mdx') || id.endsWith('.md')) {
         const { html: htmlContent, frontmatter } = await processMarkdown(code);
+        const headingEnd = htmlContent.indexOf('</h1>');
+        const contentLead = headingEnd >= 0
+          ? htmlContent.slice(0, headingEnd + '</h1>'.length)
+          : '';
+        const contentBody = headingEnd >= 0
+          ? htmlContent.slice(headingEnd + '</h1>'.length)
+          : htmlContent;
+        const author = typeof frontmatter.author === 'string' ? frontmatter.author : '';
+        const date = typeof frontmatter.date === 'string' ? frontmatter.date : '';
 
         return {
           code: `
             import { Cossack } from '@cossackframework/core';
             import { html, unsafeHTML } from '@cossackframework/renderer';
 
-            const markdownHtml = ${JSON.stringify(htmlContent)};
+            const markdownLead = ${JSON.stringify(contentLead)};
+            const markdownBody = ${JSON.stringify(contentBody)};
+            const markdownAuthor = ${JSON.stringify(author)};
+            const markdownDate = ${JSON.stringify(date)};
 
             class MdxPage extends Cossack {
               head() {
@@ -107,7 +119,18 @@ export function cossackPages(): Plugin {
               }
 
               render() {
-                return html\`<div class="mdx-content">\${unsafeHTML(markdownHtml)}</div>\`;
+                const byline = markdownAuthor || markdownDate
+                  ? html\`<p class="mdx-byline mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+                      \${markdownAuthor ? html\`<span>By \${markdownAuthor}</span>\` : ''}
+                      \${markdownAuthor && markdownDate ? html\`<span aria-hidden="true">·</span>\` : ''}
+                      \${markdownDate ? html\`<time datetime=\${markdownDate}>\${markdownDate}</time>\` : ''}
+                    </p>\`
+                  : '';
+                return html\`<div class="mdx-content">
+                  \${unsafeHTML(markdownLead)}
+                  \${byline}
+                  \${unsafeHTML(markdownBody)}
+                </div>\`;
               }
             }
 

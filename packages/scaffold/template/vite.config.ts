@@ -9,6 +9,19 @@ import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
 export default defineConfig({
+  // Local D1 updates its WAL/SHM files for authenticated reads and writes.
+  // Those runtime files are not source code and must never trigger Vite HMR.
+  server: {
+    watch: {
+      ignored: ['**/.wrangler/**'],
+    },
+  },
+  // Solar Icons ships as native ESM. Let Vite serve its deep imports directly
+  // so discovering icons from lazy-loaded pages cannot invalidate the client
+  // dependency bundle and force a post-load refresh.
+  optimizeDeps: {
+    exclude: ['@cossackframework/solar-icons'],
+  },
   plugins: [
     tailwindcss(),
     // @cossack:cloudflare-start
@@ -31,6 +44,20 @@ export default defineConfig({
     minify: true,
   },
   resolve: {
+    // Linked Cossack packages otherwise resolve shared dependencies from both
+    // the app and framework workspaces. A single project-root copy prevents
+    // Vite's dependency optimizer from repeatedly invalidating the browser.
+    dedupe: [
+      '@cossackframework/core',
+      '@cossackframework/renderer',
+      '@cossackframework/framework',
+      '@cossackframework/auth',
+      '@cossackframework/database',
+      '@cossackframework/ui',
+      '@cossackframework/solar-icons',
+      'hono',
+      'kysely',
+    ],
     alias: {
       '@': path.resolve(__dirname, './src'),
       '~': path.resolve(__dirname, './dist/client'),
@@ -54,7 +81,19 @@ export default defineConfig({
       },
     },
     ssr: {
-      // Configured by the cloudflare plugin via viteEnvironment: { name: 'ssr' }
+      // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
+      // the large shared packages avoids transforming their full dependency
+      // graphs one module at a time on every cold start.
+      optimizeDeps: {
+        include: [
+          '@cossackframework/ui',
+          '@cossackframework/auth',
+          '@cossackframework/database',
+          '@cossackframework/framework/cache',
+          'hono/cookie',
+        ],
+        exclude: ['@cossackframework/solar-icons'],
+      },
     },
   },
 });
