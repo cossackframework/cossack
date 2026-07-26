@@ -9,7 +9,6 @@
     "strict": true,
     "skipLibCheck": true,
     "types": [
-      "reflect-metadata",
       "./worker-configuration.d.ts"
     ],
     "experimentalDecorators": true,

@@ -1,5 +1,5 @@
 // src/shared/service-bootstrap.ts
-import 'reflect-metadata';
+import './metadata';
 import { isService } from './container';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';

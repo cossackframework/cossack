@@ -17,9 +17,7 @@ import {
     __hydrateLocale,
     getDefaultLocale,
 } from '@cossackframework/core';
-import { App } from '../App.js';
 import { CossackElement } from '@cossackframework/renderer';
-import { registerDevToolsInstance } from './devtools.js';
 import { filePathToRoutePath } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
@@ -51,7 +49,7 @@ declare global {
 
 export interface CreateClientAppOptions {
   container: HTMLElement | string;
-  AppComponent?: new (...args: any[]) => any;
+  AppComponent: new (...args: any[]) => any;
   /**
    * Enable browser View Transitions API for SPA navigations.
    * When true AND the browser supports `document.startViewTransition`,
@@ -77,10 +75,21 @@ export interface CreateClientAppOptions {
  * a page whose state was mutated server-side never serves stale content.
  */
 const PAGE_CACHE_MAX = 20;
-const pageCache = new Map<string, { html: string; state: any }>();
+type CachedPage = { html: string; state: any };
+const pageCache = new Map<string, CachedPage>();
+
+/**
+ * Cache route documents by the URL portion that affects the server response.
+ * Links can reach us as relative paths, absolute same-origin URLs, or URLs
+ * with fragments; treating those as different keys defeats revisit caching.
+ */
+function pageCacheKey(url: string): string {
+  const parsed = new URL(url, window.location.href);
+  return parsed.pathname + parsed.search;
+}
 
 function invalidatePageCache(url?: string) {
-  if (url) pageCache.delete(url);
+  if (url) pageCache.delete(pageCacheKey(url));
   else pageCache.clear();
 }
 
@@ -91,7 +100,7 @@ function invalidatePageCache(url?: string) {
 if (typeof globalThis !== 'undefined') {
   (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage = () => {
     try {
-      if (typeof location !== 'undefined') pageCache.delete(location.href);
+      if (typeof location !== 'undefined') invalidatePageCache(location.href);
     } catch { /* location unavailable */ }
   };
 }
@@ -126,7 +135,10 @@ function parseStateFromHTML(html: string) {
         try {
           return {
             state: JSON.parse(content.substring(jsonStart)),
-            title: doc.title
+            title: doc.title,
+            modulePreloads: Array.from(
+              doc.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]')
+            ).map((link) => link.href),
           };
         } catch (e) {
           console.error('Failed to parse state JSON', e);
@@ -138,30 +150,61 @@ function parseStateFromHTML(html: string) {
 }
 
 /**
+ * A document fetched on hover is inert, so its modulepreload hints would
+ * otherwise be ignored. Mirror them into the live document to download and
+ * parse the destination's route chunks before the click without evaluating
+ * the page module or applying destination styles early.
+ */
+function preloadPageModules(urls: readonly string[]): void {
+  for (const url of urls) {
+    const href = new URL(url, window.location.href).href;
+    const alreadyPreloaded = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"][href]')
+    ).some((link) => link.href === href);
+    if (alreadyPreloaded) continue;
+
+    const link = document.createElement('link');
+    link.rel = 'modulepreload';
+    link.href = href;
+    link.dataset.cossackPrefetch = '';
+    document.head.appendChild(link);
+  }
+}
+
+/**
  * In-flight fetch deduplication. A hover prefetch and the subsequent click
  * navigation can both call fetchPage(url) before the first resolves, issuing
  * two identical network requests. Track the live promise per URL and reuse it
  * so only one request is in flight at a time.
  */
-const inFlightPages = new Map<string, Promise<{ html: string; state: any }>>();
+const inFlightPages = new Map<string, Promise<CachedPage>>();
 
 async function fetchPage(url: string) {
-  if (pageCache.has(url)) {
-    return pageCache.get(url)!;
+  const key = pageCacheKey(url);
+  const cached = pageCache.get(key);
+  if (cached) {
+    // Refresh insertion order so eviction is genuinely least-recently-used.
+    pageCache.delete(key);
+    pageCache.set(key, cached);
+    return cached;
   }
-  const existing = inFlightPages.get(url);
+  const existing = inFlightPages.get(key);
   if (existing) {
     return existing;
   }
 
   const promise = (async () => {
-    const response = await fetch(url);
+    const response = await fetch(key);
+    if (!response.ok) {
+      throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
+    }
     const html = await response.text();
     const parsed = parseStateFromHTML(html);
 
     if (parsed) {
       const data = { html, state: parsed.state };
-      pageCache.set(url, data);
+      preloadPageModules(parsed.modulePreloads);
+      pageCache.set(key, data);
       // LRU eviction: drop the oldest entry once over capacity. Map iterates in
       // insertion order, so the first key is the least-recently-inserted.
       if (pageCache.size > PAGE_CACHE_MAX) {
@@ -174,9 +217,12 @@ async function fetchPage(url: string) {
     throw new Error('Failed to load page state');
   })();
 
-  inFlightPages.set(url, promise);
+  inFlightPages.set(key, promise);
   // Always clear the in-flight entry so a failed fetch can be retried later.
-  promise.finally(() => inFlightPages.delete(url));
+  void promise.then(
+    () => inFlightPages.delete(key),
+    () => inFlightPages.delete(key),
+  );
   return promise;
 }
 
@@ -190,6 +236,13 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     console.error('Could not find root container');
     return;
   }
+
+  // The SSR route is already available without a fetch. Seed it so navigating
+  // away and back honours the documented zero-network revisit behaviour.
+  pageCache.set(pageCacheKey(window.location.href), {
+    html: document.documentElement.outerHTML,
+    state: window.__INITIAL_STATE__,
+  });
 
   // Hydrate localization runtime from the build-time manifest and the
   // server-provided initial state. The active + default catalogs ship inline
@@ -271,7 +324,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   }
 
   const clientServiceRoot = createRootServiceScope();
-  const appInstance = createInstance(AppComponent ?? App, { serviceScope: clientServiceRoot });
+  const appInstance = createInstance(AppComponent, { serviceScope: clientServiceRoot });
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
@@ -462,7 +515,8 @@ export async function createClientApp({ container, AppComponent, viewTransitions
 
         // Register with DevTools for state inspection (use absolute path from Vite injection)
         const sourceFile = (componentInstance.constructor as any).__source?.file;
-        if (sourceFile) {
+        if (import.meta.env.DEV && sourceFile) {
+          const { registerDevToolsInstance } = await import('./devtools.js');
           registerDevToolsInstance(sourceFile, componentInstance);
         }
 
@@ -618,7 +672,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   enableClientNavigation(
     (url, options) => navigate(url, false, options),
     async (url) => {
-      if (!pageCache.has(url)) {
+      if (!pageCache.has(pageCacheKey(url))) {
         fetchPage(url).catch(() => {});
       }
     }

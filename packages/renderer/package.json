@@ -2,6 +2,7 @@
   "name": "@cossackframework/renderer",
   "version": "0.7.5",
   "type": "module",
+  "sideEffects": false,
   "description": "The rendering engine for Cossack Framework. Lit inspired, light dom, ssr",
   "license": "MIT",
   "repository": {

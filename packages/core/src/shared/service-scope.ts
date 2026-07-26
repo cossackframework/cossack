@@ -1,4 +1,4 @@
-import 'reflect-metadata';
+import './metadata';
 import type { Context } from 'hono';
 import type { User } from './user';
 import { getContainer, isService, type ServiceClass } from './container';

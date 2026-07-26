@@ -1,5 +1,4 @@
 // src/api-handler.ts
-import 'reflect-metadata';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { Cossack, enforceMethodRateLimit, createCossackContext } from '@cossackframework/core';

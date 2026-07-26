@@ -11,7 +11,7 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import { Client, PageOptions, Server, ClientState } from './decorators';
+import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -1990,7 +1990,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public redirect(url: string, status?: RedirectStatusCode): Response | void;
     public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): Response | void;
-    @Server()
+    // Redirect is intentionally universal: server actions return an HTTP
+    // redirect, while client handlers delegate to the SPA router. Marking it
+    // @Server caused client bootstrap to replace this implementation with an
+    // RPC proxy, turning local navigation into a /crpc call + full reload.
+    @Shared()
     public redirect(
         url: string,
         statusOrOptions: RedirectStatusCode | { status?: RedirectStatusCode; types?: string[] } = 302,

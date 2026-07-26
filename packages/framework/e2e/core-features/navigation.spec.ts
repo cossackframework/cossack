@@ -69,4 +69,52 @@ test.describe('Navigation', () => {
     await page.waitForURL(/\/contact/, { timeout: 10000 });
     await expect(page).toHaveURL(/\/contact/);
   });
+
+  test('hover prefetch navigates without RPC or a document reload and caches revisits', async ({ page }) => {
+    await page.goto('/validation');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
+
+    const requests: Array<{ pathname: string; type: string }> = [];
+    page.on('request', (request) => {
+      requests.push({
+        pathname: new URL(request.url()).pathname,
+        type: request.resourceType(),
+      });
+    });
+
+    await page.evaluate(() => {
+      (window as any).__softNavigationMarker = 'preserved';
+    });
+
+    const complexFormLink = page.locator('a[href="/forms/complex-form"]:visible').first();
+    await complexFormLink.hover();
+    await expect.poll(() =>
+      requests.filter(({ pathname, type }) =>
+        pathname === '/forms/complex-form' && type === 'fetch'
+      ).length
+    ).toBe(1);
+
+    await complexFormLink.click();
+    await expect(page).toHaveURL(/\/forms\/complex-form$/);
+    await expect(page.locator('body')).toContainText('Complex');
+
+    expect(await page.evaluate(() => (window as any).__softNavigationMarker)).toBe('preserved');
+    expect(requests.filter(({ type }) => type === 'document')).toHaveLength(0);
+    expect(requests.filter(({ pathname }) => pathname === '/crpc')).toHaveLength(0);
+    expect(requests.filter(({ pathname, type }) =>
+      pathname === '/forms/complex-form' && type === 'fetch'
+    )).toHaveLength(1);
+
+    const validationLink = page.locator('a[href="/validation"]:visible').first();
+    await validationLink.click();
+    await expect(page).toHaveURL(/\/validation$/);
+    await expect(page.locator('body')).toContainText('Validation');
+
+    // /validation was the initial SSR document and should have been seeded in
+    // the in-memory cache rather than fetched when revisited.
+    expect(requests.filter(({ pathname, type }) =>
+      pathname === '/validation' && type === 'fetch'
+    )).toHaveLength(0);
+    expect(requests.filter(({ type }) => type === 'document')).toHaveLength(0);
+  });
 });

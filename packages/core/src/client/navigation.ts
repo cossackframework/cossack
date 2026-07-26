@@ -69,7 +69,21 @@ export function enableClientNavigation(
     };
 
     // Intercept clicks on links
-    document.addEventListener('click', async (e) => {
+    const handleClick = async (e: MouseEvent) => {
+        // A component may own this link (for example Sidebar.onNavigate).
+        // Respecting preventDefault avoids running two SPA navigations for one
+        // click. Also preserve standard modified-click browser behaviour.
+        if (
+            e.defaultPrevented ||
+            e.button !== 0 ||
+            e.metaKey ||
+            e.ctrlKey ||
+            e.shiftKey ||
+            e.altKey
+        ) {
+            return;
+        }
+
         const target = (e.target as Element).closest('a');
         if (!target || !isLocalLink(target)) return;
 
@@ -85,11 +99,12 @@ export function enableClientNavigation(
         if (accepted) {
             window.history.pushState({}, '', href);
         }
-    });
+    };
+    document.addEventListener('click', handleClick);
 
     // Pre-fetch on hover
     let prefetchTimeout: any;
-    document.addEventListener('mouseover', (e) => {
+    const handleMouseOver = (e: MouseEvent) => {
         const target = (e.target as Element).closest('a');
         if (!target || !isLocalLink(target) || !onPreFetch) return;
 
@@ -100,13 +115,22 @@ export function enableClientNavigation(
         prefetchTimeout = setTimeout(() => {
             onPreFetch(href);
         }, 50);
-    });
+    };
+    document.addEventListener('mouseover', handleMouseOver);
 
     // Handle back/forward buttons.
     // Browser-initiated back/forward navigations carry no transition types —
     // matching Next.js's behavior. Authors who need "back" semantics can
     // detect them via `navigationType: 'spa'` in the `cossack:ready` event.
-    window.addEventListener('popstate', async () => {
+    const handlePopState = async () => {
         await onNavigate(window.location.pathname + window.location.search);
-    });
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+        clearTimeout(prefetchTimeout);
+        document.removeEventListener('click', handleClick);
+        document.removeEventListener('mouseover', handleMouseOver);
+        window.removeEventListener('popstate', handlePopState);
+    };
 }

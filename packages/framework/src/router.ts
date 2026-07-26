@@ -1,8 +1,7 @@
 // src/router.ts
-import 'reflect-metadata';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
 import {
   createInstance,
   createLayoutServiceScope,
@@ -35,14 +34,13 @@ function isRpcCallableActionOrService(constructor: unknown, action: unknown): bo
   }
   return false;
 }
-import { App } from './App.js';
 import { createApiHandler } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
-import { CossackElement, escapeHtml } from '@cossackframework/renderer';
+import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
   handleSseCrpc,
@@ -326,6 +324,13 @@ export interface CreateAppOptions {
   };
 }
 
+@Page({ transport: 'http' })
+class RouterFallbackApp extends Cossack {
+  render() {
+    return html`${this.children}`;
+  }
+}
+
 export function createApp(options: CreateAppOptions = {}) {
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
@@ -396,7 +401,7 @@ export function createApp(options: CreateAppOptions = {}) {
       try {
         const user = c.get('user');
         requestServiceScope.bindRequest({ context: c, user, env: c.env });
-        const appInstance = createInstance(options.AppComponent ?? App, { serviceScope: requestServiceScope });
+        const appInstance = createInstance(options.AppComponent ?? RouterFallbackApp, { serviceScope: requestServiceScope });
         const layoutInstances: any[] = [];
         const layoutPaths = getLayoutStack(path);
 
@@ -684,7 +689,7 @@ export function createApp(options: CreateAppOptions = {}) {
     // Handle App component (global component) specially
     let componentInstance: any;
     if (componentPath === '/src/App') {
-      componentInstance = createInstance(options.AppComponent ?? App);
+      componentInstance = createInstance(options.AppComponent ?? RouterFallbackApp);
       await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
       componentInstance._render();
     } else {

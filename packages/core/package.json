@@ -2,6 +2,10 @@
   "name": "@cossackframework/core",
   "version": "0.7.5",
   "type": "module",
+  "sideEffects": [
+    "./src/shared/metadata.ts",
+    "./dist/shared/metadata.js"
+  ],
   "description": "Core library for the Cossack Framework",
   "license": "MIT",
   "repository": {
@@ -30,14 +34,14 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@cossackframework/renderer": "workspace:*",
-    "reflect-metadata": "^0.2.2"
+    "@cossackframework/renderer": "workspace:*"
   },
   "devDependencies": {
     "@types/jsdom": "^28.0.3",
     "@types/node": "^22.19.0",
     "hono": "^4.12.31",
     "jsdom": "^29.1.1",
+    "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.10"

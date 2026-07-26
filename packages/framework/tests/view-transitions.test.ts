@@ -56,6 +56,7 @@ describe('View Transitions: security plugin', () => {
 
 describe('View Transitions: data-transition-types click interception', () => {
   let onNavigateCalls: { url: string; options?: { types?: string[] } }[];
+  let cleanupNavigation: (() => void) | undefined;
 
   beforeEach(() => {
     onNavigateCalls = [];
@@ -63,6 +64,8 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   afterEach(() => {
+    cleanupNavigation?.();
+    cleanupNavigation = undefined;
     vi.restoreAllMocks();
   });
 
@@ -74,7 +77,7 @@ describe('View Transitions: data-transition-types click interception', () => {
       return true;
     });
 
-    enableClientNavigation(onNavigate);
+    cleanupNavigation = enableClientNavigation(onNavigate);
 
     // Create an anchor with data-transition-types
     const link = document.createElement('a');
@@ -101,7 +104,7 @@ describe('View Transitions: data-transition-types click interception', () => {
       return true;
     });
 
-    enableClientNavigation(onNavigate);
+    cleanupNavigation = enableClientNavigation(onNavigate);
 
     const link = document.createElement('a');
     link.href = '/about';
@@ -124,7 +127,7 @@ describe('View Transitions: data-transition-types click interception', () => {
       return true;
     });
 
-    enableClientNavigation(onNavigate);
+    cleanupNavigation = enableClientNavigation(onNavigate);
 
     const link = document.createElement('a');
     link.href = '/empty';
@@ -137,5 +140,22 @@ describe('View Transitions: data-transition-types click interception', () => {
 
     expect(onNavigate).toHaveBeenCalledTimes(1);
     expect(onNavigateCalls[0].options).toBeUndefined();
+  });
+
+  it('does not navigate a link already handled by a component', async () => {
+    const { enableClientNavigation } = await import('@cossackframework/core');
+    const onNavigate = vi.fn(async () => true);
+
+    cleanupNavigation = enableClientNavigation(onNavigate);
+
+    const link = document.createElement('a');
+    link.href = '/component-owned';
+    link.addEventListener('click', (event) => event.preventDefault());
+    document.body.appendChild(link);
+
+    link.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 });

@@ -9,18 +9,25 @@ export default defineConfig({
   build: {
     sourcemap: true,
     lib: {
-      entry: path.resolve(__dirname, 'src/index.ts'),
+      entry: {
+        index: path.resolve(__dirname, 'src/index.ts'),
+      },
       name: '@cossackframework/core',
-      fileName: 'index',
       formats: ['es'],
     },
     outDir: 'dist',
     rolldownOptions: {
       external: [
         '@cossackframework/renderer',
-        'hono',
+        /^hono(?:\/|$)/,
         'reflect-metadata',
       ],
+      output: {
+        // Preserve public source-module boundaries so applications only retain
+        // the core capabilities they actually import.
+        preserveModules: true,
+        preserveModulesRoot: path.resolve(__dirname, 'src'),
+      },
     },
   },
 });

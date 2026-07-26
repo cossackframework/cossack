@@ -3,7 +3,7 @@ import type { Cossack } from './cossack';
 import type { User } from './user';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
-import 'reflect-metadata';
+import './metadata';
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
