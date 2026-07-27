@@ -3,6 +3,12 @@ import { createReadStream } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import {
+  constants as zlibConstants,
+  createBrotliCompress,
+  createGzip,
+} from 'node:zlib';
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -16,6 +22,33 @@ const contentTypes: Record<string, string> = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
 };
+
+const compressibleExtensions = new Set(['.css', '.html', '.js', '.json', '.map', '.svg']);
+
+function acceptsEncoding(header: string, encoding: string) {
+  return header.split(',').some((value) => {
+    const [name, ...parameters] = value.trim().toLowerCase().split(';');
+    if (name !== encoding && name !== '*') return false;
+    const quality = parameters
+      .map((parameter) => parameter.trim().match(/^q=(\d*(?:\.\d+)?)$/)?.[1])
+      .find((value) => value !== undefined);
+    return quality === undefined || Number(quality) > 0;
+  });
+}
+
+function acceptedCompression(request: IncomingMessage, extension: string, size: number) {
+  if (
+    request.method === 'HEAD' ||
+    size < 1_024 ||
+    !compressibleExtensions.has(extension)
+  ) {
+    return undefined;
+  }
+  const accepted = String(request.headers['accept-encoding'] ?? '');
+  if (acceptsEncoding(accepted, 'br')) return 'br';
+  if (acceptsEncoding(accepted, 'gzip')) return 'gzip';
+  return undefined;
+}
 
 export async function serveStudioAsset(
   request: IncomingMessage,
@@ -34,11 +67,38 @@ export async function serveStudioAsset(
     return false;
   }
   if (!stat.isFile()) return false;
+  const extension = path.extname(resolved);
+  const compression = acceptedCompression(request, extension, stat.size);
   response.statusCode = 200;
-  response.setHeader('Content-Type', contentTypes[path.extname(resolved)] ?? 'application/octet-stream');
-  response.setHeader('Content-Length', stat.size);
+  response.setHeader('Content-Type', contentTypes[extension] ?? 'application/octet-stream');
+  response.setHeader(
+    'Cache-Control',
+    relative.startsWith('assets/')
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+  );
+  if (compression) {
+    response.setHeader('Content-Encoding', compression);
+    response.setHeader('Vary', 'Accept-Encoding');
+  } else {
+    response.setHeader('Content-Length', stat.size);
+  }
   if (request.method === 'HEAD') response.end();
-  else createReadStream(resolved).pipe(response);
+  else if (compression === 'br') {
+    await pipeline(
+      createReadStream(resolved),
+      createBrotliCompress({
+        params: {
+          [zlibConstants.BROTLI_PARAM_QUALITY]: 4,
+        },
+      }),
+      response,
+    );
+  } else if (compression === 'gzip') {
+    await pipeline(createReadStream(resolved), createGzip(), response);
+  } else {
+    await pipeline(createReadStream(resolved), response);
+  }
   return true;
 }
 

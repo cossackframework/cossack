@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readPackageVersion } from './pkg.js';
 
 const SOURCE = fs.readFileSync(new URL('./ascii.txt', import.meta.url), 'utf8');
 const MAX_WIDTH = 52;
@@ -94,7 +95,9 @@ export function renderBanner(options = {}) {
   const lines = resizeBanner(width, height);
   const color = options.color ?? colorsEnabled(stream, options.env ?? process.env);
 
-  return lines
+  const artwork = lines
     .map((line, row) => color ? orange(line, row, lines.length) : line)
     .join('\n');
+  const version = options.version ?? readPackageVersion();
+  return `${artwork}\nCossack v${version}`;
 }

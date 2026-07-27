@@ -479,11 +479,16 @@ function generatedDefinition(
 }
 
 async function introspectSqlite(connection: StudioConnection): Promise<StudioObject[]> {
+  // D1 exposes protected metadata tables that reject PRAGMA inspection with SQLITE_AUTH.
+  const excludeCloudflareTables = connection.info.provider === 'd1-local' ||
+    connection.info.provider === 'd1-remote'
+    ? "\n      AND name NOT GLOB '_cf_*'"
+    : '';
   const result = await connection.execute(`
     SELECT name, type, sql
     FROM sqlite_schema
     WHERE type IN ('table', 'view')
-      AND name NOT LIKE 'sqlite_%'
+      AND name NOT LIKE 'sqlite_%'${excludeCloudflareTables}
     ORDER BY type, name
   `);
   const objects: StudioObject[] = [];

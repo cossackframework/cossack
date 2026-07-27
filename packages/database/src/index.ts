@@ -35,7 +35,7 @@ export { DatabaseCacheStore } from './cache-store';
 export type { CacheItemRow, CacheStoreLike } from './cache-store';
 
 // Dialects (advanced — for custom Kysely instances)
-export { D1Dialect } from './dialects/d1';
+export { D1Adapter, D1Dialect } from './dialects/d1';
 export { LibsqlDialect } from './dialects/libsql';
 
 // Migrations & seeders

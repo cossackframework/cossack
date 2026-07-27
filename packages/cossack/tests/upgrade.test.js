@@ -13,6 +13,7 @@ import {
 import {
   classifyFile,
   collectCossackDeps,
+  detectPackageManager,
   upgradeCommand,
 } from '../src/commands/upgrade.js';
 import { parseFlags } from '../src/flags.js';
@@ -95,6 +96,28 @@ describe('collectCossackDeps', () => {
   });
 });
 
+describe('upgrade package manager detection', () => {
+  it.each([
+    ['pnpm-lock.yaml', 'pnpm'],
+    ['yarn.lock', 'yarn'],
+    ['bun.lock', 'bun'],
+    ['bun.lockb', 'bun'],
+    ['deno.lock', 'deno'],
+    ['package-lock.json', 'npm'],
+  ])('detects %s', async (lockfile, manager) => {
+    await fs.writeFile(path.join(temporaryParent, lockfile), '');
+    await expect(detectPackageManager(temporaryParent)).resolves.toBe(manager);
+  });
+
+  it('uses packageManager metadata when no lockfile exists', async () => {
+    await fs.writeFile(
+      path.join(temporaryParent, 'package.json'),
+      JSON.stringify({ packageManager: 'bun@1.2.20' }),
+    );
+    await expect(detectPackageManager(temporaryParent)).resolves.toBe('bun');
+  });
+});
+
 describe('classifyFile', () => {
   const baseline = sha('baseline');
   const modified = sha('modified');
@@ -113,6 +136,35 @@ describe('classifyFile', () => {
 });
 
 describe('schema-v2 recipe upgrades', () => {
+  it('migrates legacy pnpm build approvals before reinstalling', async () => {
+    const project = await seedProject();
+    const packagePath = path.join(project.projectDir, 'package.json');
+    await fs.writeFile(
+      packagePath,
+      JSON.stringify({
+        name: 'app',
+        type: 'module',
+        pnpm: {
+          onlyBuiltDependencies: ['esbuild', 'sharp', 'workerd', 'canvas'],
+        },
+      }, null, 2) + '\n',
+    );
+    const workspacePath = path.join(project.projectDir, 'pnpm-workspace.yaml');
+    await fs.rm(workspacePath);
+
+    await runUpgrade(project.projectDir, ['--dry-run']);
+    expect(JSON.parse(await fs.readFile(packagePath, 'utf8')))
+      .toHaveProperty('pnpm.onlyBuiltDependencies');
+    await expect(fs.access(workspacePath)).rejects.toThrow();
+
+    await runUpgrade(project.projectDir, []);
+    expect(JSON.parse(await fs.readFile(packagePath, 'utf8')))
+      .not.toHaveProperty('pnpm');
+    const workspace = await fs.readFile(workspacePath, 'utf8');
+    expect(workspace).toContain('sharp: true');
+    expect(workspace).toContain('canvas: true');
+  });
+
   it('updates an unchanged scaffold file when its rendered recipe changes', async () => {
     const project = await seedProject();
     const relative = 'src/App.ts';

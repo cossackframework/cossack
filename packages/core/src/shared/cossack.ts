@@ -2077,7 +2077,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const transition = types && types.length
             ? (document as any).startViewTransition({ update, types })
             : (document as any).startViewTransition(update);
-        await transition.updateReady;
+        // A superseding transition may reject `ready` even though its DOM
+        // update still completes. Observe the animation promises to prevent
+        // unhandled rejections, and await the standard DOM-update promise.
+        void transition.ready.catch(() => {});
+        void transition.finished.catch(() => {});
+        await transition.updateCallbackDone;
         return result;
     }
 

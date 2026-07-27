@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DummyDriver,
+  D1Adapter,
   Kysely,
   MysqlAdapter,
   MysqlQueryCompiler,
@@ -416,11 +417,16 @@ describe('Studio dialect detection', () => {
       introspection: { constructor: { name: 'UnknownIntrospector' } },
       getExecutor: () => ({ adapter: new MysqlAdapter() }),
     };
+    const d1 = {
+      introspection: { constructor: { name: 'UnknownIntrospector' } },
+      getExecutor: () => ({ adapter: new D1Adapter() }),
+    };
     expect(await detectStudioProvider(
       postgres as any,
       { DB_CONNECTION: 'mysql' } as NodeJS.ProcessEnv,
     )).toBe('postgres');
     expect(await detectStudioProvider(mysql as any, {})).toBe('mysql');
+    expect(await detectStudioProvider(d1 as any, {})).toBe('d1-local');
   });
 
   it('supports environment hints for custom dialect wrappers', async () => {
@@ -437,6 +443,66 @@ describe('Studio dialect detection', () => {
       custom as any,
       { DB_CONNECTION: 'mariadb' } as NodeJS.ProcessEnv,
     )).toBe('mysql');
+  });
+});
+
+describe('D1 Studio adapter', () => {
+  it('excludes protected Cloudflare tables from schema introspection', async () => {
+    const connection = new FakeConnection(
+      { provider: 'd1-local', label: 'local D1', remote: false },
+      (sql) => {
+        if (sql === 'SELECT sqlite_version() AS version') {
+          return { rows: [{ version: '3.51.0' }] };
+        }
+        if (sql.includes('FROM sqlite_schema')) {
+          return {
+            rows: sql.includes("name NOT GLOB '_cf_*'")
+              ? [{
+                  name: 'users',
+                  type: 'table',
+                  sql: 'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)',
+                }]
+              : [
+                  {
+                    name: 'users',
+                    type: 'table',
+                    sql: 'CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)',
+                  },
+                  {
+                    name: '_cf_METADATA',
+                    type: 'table',
+                    sql: 'CREATE TABLE _cf_METADATA (key TEXT, value BLOB)',
+                  },
+                ],
+          };
+        }
+        if (sql.includes('_cf_METADATA')) {
+          throw new Error('D1_ERROR: not authorized: SQLITE_AUTH');
+        }
+        if (sql.includes('PRAGMA table_xinfo')) {
+          return {
+            rows: [{
+              cid: 0,
+              name: 'id',
+              type: 'INTEGER',
+              notnull: 0,
+              dflt_value: null,
+              pk: 1,
+              hidden: 0,
+            }],
+          };
+        }
+        if (sql.includes('PRAGMA index_list') || sql.includes('PRAGMA foreign_key_list')) {
+          return { rows: [] };
+        }
+        throw new Error(`Unexpected D1 query: ${sql}`);
+      },
+    );
+
+    const schema = await new StudioDatabase(connection).getSchema();
+
+    expect(schema.objects.map((object) => object.name)).toEqual(['users']);
+    expect(connection.queries.some(({ sql }) => sql.includes('_cf_METADATA'))).toBe(false);
   });
 });
 

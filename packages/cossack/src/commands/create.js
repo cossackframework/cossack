@@ -2,6 +2,13 @@ import path from 'node:path';
 import { createApp } from '@cossackframework/scaffold';
 import { renderBanner } from '../banner.js';
 import { flagString } from '../flags.js';
+import { readPackageVersion } from '../pkg.js';
+import {
+  detectInvokedPackageManager,
+  normalizePackageManager,
+  packageManagerCommands,
+} from '../package-manager.js';
+import { checkForCossackUpdate } from '../update-notice.js';
 
 export async function createCommand(args, ctx) {
   const [projectName] = args;
@@ -15,9 +22,22 @@ export async function createCommand(args, ctx) {
     console.error(`Invalid --adapter "${adapter}". Use cloudflare or node.`);
     return 1;
   }
+  const requestedPackageManager = flagString(ctx.flags['package-manager']);
+  const selectedPackageManager = normalizePackageManager(requestedPackageManager);
+  if (requestedPackageManager && !selectedPackageManager) {
+    console.error(
+      `Invalid --package-manager "${requestedPackageManager}". ` +
+      'Use npm, pnpm, yarn, bun, or deno.',
+    );
+    return 1;
+  }
 
   try {
-    console.log(`${renderBanner()}\n`);
+    const currentVersion = readPackageVersion();
+    const packageManager = selectedPackageManager ?? detectInvokedPackageManager();
+    const commands = packageManagerCommands(packageManager);
+    const update = checkForCossackUpdate(currentVersion);
+    console.log(`${renderBanner({ version: currentVersion })}\n`);
     const yes = ctx.flags.yes === true || ctx.flags.y === true;
     const { projectDir, adapter: used, recipe, status } = await createApp(projectName, {
       cwd: ctx.cwd,
@@ -41,12 +61,14 @@ export async function createCommand(args, ctx) {
     console.log(`\nCossack app created in ${projectDir} (adapter: ${used}, preset: ${recipe.preset})\n`);
     console.log('Next steps:');
     console.log(`  cd ${dirName}`);
-    console.log('  pnpm install');
-    if (used === 'node') {
-      console.log('  pnpm run build');
-      console.log('  pnpm start');
-    } else {
-      console.log('  cossack dev');
+    console.log(`  ${commands.install}`);
+    console.log(`  ${commands.dev}`);
+    const latestVersion = await update;
+    if (latestVersion) {
+      console.log(
+        `\nUpdate available: Cossack v${currentVersion} → v${latestVersion}`,
+      );
+      console.log(`  After installing dependencies, run: ${commands.upgrade}`);
     }
     return 0;
   } catch (error) {
@@ -63,6 +85,7 @@ Scaffold a new Cossack project.
 
 Options:
   --adapter <cloudflare|node>
+  --package-manager <manager>   npm|pnpm|yarn|bun|deno
   --preset <minimal|database|auth|full-stack>
   --features <ui,database,auth,dashboard,examples>
   --database <d1|sqlite|turso>

@@ -1,14 +1,15 @@
-import path from 'node:path';
 import {
   ADAPTERS,
   switchAdapter,
 } from '@cossackframework/scaffold';
 import {
-  exists,
   findProjectRoot,
-  readJsonIfExists,
 } from '../fs-utils.js';
 import { flagString } from '../flags.js';
+import {
+  detectProjectPackageManager,
+  packageManagerCommands,
+} from '../package-manager.js';
 
 export async function adapterCommand(args, ctx) {
   if (ctx.flags.help === true || ctx.flags.h === true) {
@@ -101,17 +102,7 @@ function printChanges(changes, prefix) {
 }
 
 export async function detectInstallCommand(root) {
-  if (await exists(path.join(root, 'pnpm-lock.yaml'))) return 'pnpm install';
-  if (await exists(path.join(root, 'yarn.lock'))) return 'yarn install';
-  if (await exists(path.join(root, 'bun.lock')) ||
-      await exists(path.join(root, 'bun.lockb'))) return 'bun install';
-  if (await exists(path.join(root, 'package-lock.json'))) return 'npm install';
-  const pkg = await readJsonIfExists(path.join(root, 'package.json'));
-  const manager = String(pkg?.packageManager ?? '').split('@')[0];
-  if (['pnpm', 'yarn', 'bun', 'npm'].includes(manager)) {
-    return `${manager} install`;
-  }
-  return 'npm install';
+  return packageManagerCommands(await detectProjectPackageManager(root)).install;
 }
 
 export function adapterHelp() {

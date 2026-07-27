@@ -245,6 +245,9 @@ importers:
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       vitest:
         specifier: ^4.1.10

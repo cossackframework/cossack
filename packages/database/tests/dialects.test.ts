@@ -5,7 +5,15 @@ import path from 'node:path';
 import os from 'node:os';
 import { createClient } from '@libsql/client';
 import type { Kysely } from 'kysely';
-import { createDatabase, type D1Config, type D1DatabaseLike, type D1ResultLike, type LibsqlConfig } from '../src';
+import {
+    createDatabase,
+    D1Adapter,
+    D1Dialect,
+    type D1Config,
+    type D1DatabaseLike,
+    type D1ResultLike,
+    type LibsqlConfig,
+} from '../src';
 
 /** Loose DB type — these tests exercise runtime dialect plumbing, not schema typing. */
 type AnyDb = Kysely<any>;
@@ -101,6 +109,14 @@ function createD1Mock() {
 }
 
 describe('D1Dialect (via mock binding)', () => {
+    it('uses a branded SQLite-compatible adapter', () => {
+        const { mock } = createD1Mock();
+        const adapter = new D1Dialect(mock).createAdapter();
+
+        expect(adapter).toBeInstanceOf(D1Adapter);
+        expect(adapter.cossackDialect).toBe('d1');
+    });
+
     it('executes queries through the binding and maps meta -> insertId/affected', async () => {
         const { mock } = createD1Mock();
         const db = makeDb({ dialect: 'd1', binding: mock });
