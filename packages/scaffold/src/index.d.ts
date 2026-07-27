@@ -124,6 +124,15 @@ export declare function renderRecipe(recipe: ScaffoldRecipe, options?: { project
   content: Buffer;
   capability: string;
 }>>;
+export declare function migratePnpmBuildSettings(
+  projectDir: string,
+  recipe: ScaffoldRecipe,
+  options?: { dryRun?: boolean },
+): Promise<{
+  changed: boolean;
+  packageChanged: boolean;
+  workspaceChanged: boolean;
+}>;
 export declare function planChanges(projectDir: string, recipe: ScaffoldRecipe, manifest?: unknown): Promise<ChangeSet>;
 export declare function readManifest(projectDir: string): Promise<any | null>;
 export declare function detectProjectRuntime(projectDir: string, manifest?: unknown): Promise<Adapter | undefined>;

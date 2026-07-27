@@ -42,6 +42,7 @@ export default defineConfig({
         emptyOutDir: true,
         target: 'esnext',
         manifest: true,
+        chunkSizeWarningLimit: 900,
         rolldownOptions: {
           input: 'src/client/entry-client.ts',
           output: {

@@ -22,6 +22,17 @@ import {
 import type { D1DatabaseLike } from '../types';
 
 /**
+ * Kysely's SQLite behavior with an explicit, duplicate-install-safe D1 brand.
+ *
+ * Consumers should inspect `cossackDialect` instead of relying on
+ * `instanceof` or constructor names, which can change across package copies
+ * and build tools.
+ */
+export class D1Adapter extends SqliteAdapter {
+    readonly cossackDialect = 'd1' as const;
+}
+
+/**
  * Kysely {@link Dialect} for Cloudflare D1.
  *
  * Uses Kysely's SQLite query compiler/adapter/introspector and a custom driver
@@ -43,8 +54,8 @@ export class D1Dialect implements Dialect {
     createQueryCompiler(): SqliteQueryCompiler {
         return new SqliteQueryCompiler();
     }
-    createAdapter(): SqliteAdapter {
-        return new SqliteAdapter();
+    createAdapter(): D1Adapter {
+        return new D1Adapter();
     }
     createIntrospector(db: Kysely<any>): DatabaseIntrospector {
         return new D1Introspector(db);

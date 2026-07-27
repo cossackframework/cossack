@@ -104,14 +104,18 @@ describe('Cossack.prototype.startViewTransition', () => {
   /**
    * Helper: create a mock startViewTransition that simulates the real browser
    * behavior — it invokes the update callback, waits for it to finish, then
-   * resolves transition.updateReady.
+   * resolves transition.updateCallbackDone.
    */
   function mockStartViewTransition() {
     const doc = { ...(document as any) };
     doc.startViewTransition = vi.fn((arg) => {
       const update = typeof arg === 'function' ? arg : arg.update;
-      const updateReady = update();
-      return { updateReady, finished: updateReady };
+      const updateCallbackDone = Promise.resolve().then(update);
+      return {
+        updateCallbackDone,
+        ready: updateCallbackDone.then(() => undefined),
+        finished: updateCallbackDone.then(() => undefined),
+      };
     });
     vi.stubGlobal('document', doc);
     return doc;
@@ -161,8 +165,12 @@ describe('Cossack.prototype.startViewTransition', () => {
   it('awaits requestUpdate inside the update callback', async () => {
     const doc = { ...(document as any) };
     doc.startViewTransition = vi.fn((updateFn) => {
-      const updateReady = updateFn();
-      return { updateReady, finished: updateReady };
+      const updateCallbackDone = Promise.resolve().then(updateFn);
+      return {
+        updateCallbackDone,
+        ready: updateCallbackDone.then(() => undefined),
+        finished: updateCallbackDone.then(() => undefined),
+      };
     });
     vi.stubGlobal('document', doc);
 
@@ -171,6 +179,45 @@ describe('Cossack.prototype.startViewTransition', () => {
 
     await component.startViewTransition(() => {});
     expect(requestUpdateSpy).toHaveBeenCalled();
+  });
+
+  it('does not resolve before the browser runs the update callback', async () => {
+    const doc = mockStartViewTransition();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let settled = false;
+
+    const result = component.startViewTransition(async () => {
+      await gate;
+      return 'committed';
+    }).then((value) => {
+      settled = true;
+      return value;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    await expect(result).resolves.toBe('committed');
+    expect(doc.startViewTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles animation readiness rejection when a transition is skipped', async () => {
+    const doc = { ...(document as any) };
+    const readyCatch = vi.fn().mockReturnValue(Promise.resolve());
+    const finishedCatch = vi.fn().mockReturnValue(Promise.resolve());
+    doc.startViewTransition = vi.fn((updateFn) => ({
+      updateCallbackDone: Promise.resolve().then(updateFn),
+      ready: { catch: readyCatch },
+      finished: { catch: finishedCatch },
+    }));
+    vi.stubGlobal('document', doc);
+
+    await expect(component.startViewTransition(() => 'done')).resolves.toBe('done');
+    expect(readyCatch).toHaveBeenCalledTimes(1);
+    expect(finishedCatch).toHaveBeenCalledTimes(1);
   });
 });
 

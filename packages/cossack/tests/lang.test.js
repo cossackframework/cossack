@@ -153,6 +153,25 @@ describe('lang dispatch', () => {
     expect(await langCommand(['init'], ctx)).toBe(0);
     expect(fs.existsSync(path.join(tmp, 'src/lang/en.json'))).toBe(true);
   });
+
+  it('prefers an explicit project root over an ancestor package', async () => {
+    const projectRoot = path.join(tmp, 'requested-project');
+    const ancestor = path.join(tmp, 'other-project');
+    const cwd = path.join(ancestor, 'nested');
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.writeFileSync(
+      path.join(ancestor, 'package.json'),
+      JSON.stringify({ name: 'other-project' }),
+    );
+
+    expect(await langCommand(['publish'], {
+      ...ctx,
+      projectRoot,
+      cwd,
+    })).toBe(0);
+    expect(fs.existsSync(path.join(projectRoot, 'src/lang/en.json'))).toBe(true);
+    expect(fs.existsSync(path.join(ancestor, 'src/lang/en.json'))).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

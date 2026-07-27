@@ -32,6 +32,14 @@ interface MonacoEnvironment {
   getWorker(_moduleId: string, label: string): Worker;
 }
 
+interface MonacoRuntime {
+  editor: Pick<typeof Monaco.editor, 'create' | 'setModelLanguage' | 'setTheme'>;
+  languages: Pick<typeof Monaco.languages, 'registerCompletionItemProvider'>;
+  KeyCode: typeof Monaco.KeyCode;
+  KeyMod: typeof Monaco.KeyMod;
+  CompletionItemKind: typeof Monaco.languages.CompletionItemKind;
+}
+
 function sqlIdentifier(name: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
     ? name
@@ -132,10 +140,11 @@ export class CodeEditor extends Cossack {
 
   containerRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
   private editor?: Monaco.editor.IStandaloneCodeEditor;
-  private monaco?: typeof Monaco;
+  private monaco?: MonacoRuntime;
   private completionProvider?: Monaco.IDisposable;
   private disposed = false;
   private initializing = false;
+  private loadedLanguages = new Set<CodeEditorProps['language']>(['plaintext']);
 
   onMount() {
     void this.initializeEditor();
@@ -164,15 +173,23 @@ export class CodeEditor extends Cossack {
         },
       };
 
-      const [monaco] = await Promise.all([
-        import('monaco-editor/esm/vs/editor/editor.api'),
+      const [editor, languages, { KeyMod }, { CompletionItemKind, KeyCode }] = await Promise.all([
+        import('monaco-editor/esm/vs/editor/standalone/browser/standaloneEditor'),
+        import('monaco-editor/esm/vs/editor/standalone/browser/standaloneLanguages'),
+        import('monaco-editor/esm/vs/editor/common/services/editorBaseApi'),
+        import('monaco-editor/esm/vs/editor/common/standalone/standaloneEnums'),
         import('monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController'),
-        import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
-        import('monaco-editor/esm/vs/language/json/monaco.contribution'),
+        this.loadLanguage(this.props.language),
       ]);
       if (this.disposed || !this.containerRef.value) return;
-      this.monaco = monaco;
-      this.editor = monaco.editor.create(this.containerRef.value, {
+      this.monaco = {
+        editor,
+        languages,
+        KeyMod,
+        KeyCode,
+        CompletionItemKind,
+      };
+      this.editor = editor.create(this.containerRef.value, {
         value: this.props.value,
         language: this.props.language,
         theme: this.props.theme === 'light' ? 'vs' : 'vs-dark',
@@ -205,7 +222,7 @@ export class CodeEditor extends Cossack {
         this.props.onChange?.(this.editor?.getValue() ?? '');
       });
       this.editor.addCommand(
-        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+        KeyMod.CtrlCmd | KeyCode.Enter,
         () => this.props.onRun?.(),
       );
       this.registerSqlCompletions();
@@ -228,6 +245,7 @@ export class CodeEditor extends Cossack {
     if (this.editor.getValue() !== value) this.editor.setValue(value);
     const model = this.editor.getModel();
     if (model && model.getLanguageId() !== this.props.language) {
+      await this.loadLanguage(this.props.language);
       this.monaco.editor.setModelLanguage(model, this.props.language);
       this.registerSqlCompletions();
     }
@@ -237,6 +255,17 @@ export class CodeEditor extends Cossack {
       lineNumbers: this.props.lineNumbers ?? 'on',
       folding: this.props.lineNumbers !== 'off',
     });
+  }
+
+  @Client()
+  private async loadLanguage(language: CodeEditorProps['language']) {
+    if (this.loadedLanguages.has(language)) return;
+    if (language === 'sql') {
+      await import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution');
+    } else if (language === 'json') {
+      await import('monaco-editor/esm/vs/language/json/monaco.contribution');
+    }
+    this.loadedLanguages.add(language);
   }
 
   @Client()
@@ -276,7 +305,7 @@ export class CodeEditor extends Cossack {
             label: keyword,
             insertText: keyword,
             detail: 'SQL keyword',
-            kind: monaco.languages.CompletionItemKind.Keyword,
+            kind: monaco.CompletionItemKind.Keyword,
             range,
             sortText: `0-${keyword}`,
           }))),
@@ -286,8 +315,8 @@ export class CodeEditor extends Cossack {
               insertText: sqlIdentifier(object.name),
               detail: object.kind === 'view' ? 'Database view' : 'Database table',
               kind: object.kind === 'view'
-                ? monaco.languages.CompletionItemKind.Interface
-                : monaco.languages.CompletionItemKind.Struct,
+                ? monaco.CompletionItemKind.Interface
+                : monaco.CompletionItemKind.Struct,
               range,
               sortText: `1-${object.name}`,
             }]),
@@ -295,7 +324,7 @@ export class CodeEditor extends Cossack {
               label: column.name,
               insertText: sqlIdentifier(column.name),
               detail: `${object.name} · ${column.dataType || column.affinity}`,
-              kind: monaco.languages.CompletionItemKind.Field,
+              kind: monaco.CompletionItemKind.Field,
               range,
               sortText: `2-${object.name}-${column.name}`,
             })),

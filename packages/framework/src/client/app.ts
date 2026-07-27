@@ -629,10 +629,14 @@ export async function createClientApp({ container, AppComponent, viewTransitions
         const transition = useTypes
           ? (document as any).startViewTransition({ update: commit, types: options.types })
           : (document as any).startViewTransition(commit);
-        // transition.updateReady rejects if the transition is skipped (e.g.
-        // user navigates again mid-transition). Swallow that so it doesn't
-        // trigger the outer error fallback.
-        await transition.updateReady?.catch(() => {});
+        // `ready` rejects when a newer transition supersedes this one, but the
+        // DOM update still runs. Handle that animation-only rejection so it
+        // never becomes an unhandled promise rejection. Navigation readiness
+        // follows `updateCallbackDone`, which is the standard promise that
+        // resolves after the async commit callback has actually completed.
+        void transition.ready.catch(() => {});
+        void transition.finished.catch(() => {});
+        await transition.updateCallbackDone;
       } else {
         await commit();
       }

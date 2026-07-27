@@ -26,6 +26,12 @@ pnpm add -g cossack
 
 Requires **Node.js >= 22**.
 
+`cossack create` detects whether it was invoked through npm, pnpm, Yarn, Bun,
+or Deno and prints matching install/dev commands. Globally installed users can
+override detection with `--package-manager <manager>`.
+For Deno, generated `package.json` scripts run through `deno task`; a
+`deno.json` file is not required.
+
 ## Usage
 
 ```bash
@@ -71,7 +77,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 ```bash
 # Scaffold and run
 cossack create my-app
-cd my-app && cossack dev
+cd my-app && pnpm dev
 
 # Generate code
 cossack g page dashboard --head --title "Dashboard"

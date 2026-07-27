@@ -41,6 +41,21 @@ function runtimeDialectName(client: Kysely<any>): string {
   return names.join(' ').toLowerCase();
 }
 
+type RuntimeCossackDialect = 'd1';
+
+function runtimeCossackDialect(
+  client: Kysely<any>,
+): RuntimeCossackDialect | undefined {
+  try {
+    const dialect = (
+      client.getExecutor().adapter as { cossackDialect?: unknown }
+    ).cossackDialect;
+    return dialect === 'd1' ? dialect : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function environmentProvider(
   environment: NodeJS.ProcessEnv,
 ): StudioProvider | undefined {
@@ -71,6 +86,8 @@ export async function detectStudioProvider(
   client: Kysely<any>,
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<StudioProvider> {
+  if (runtimeCossackDialect(client) === 'd1') return 'd1-local';
+
   const runtimeName = runtimeDialectName(client);
   if (runtimeName.includes('postgres')) return 'postgres';
   if (runtimeName.includes('mysql')) return 'mysql';

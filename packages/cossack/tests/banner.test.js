@@ -11,21 +11,22 @@ describe('CLI banner', () => {
   });
 
   it('adapts to narrow terminals', () => {
-    const banner = renderBanner({ color: false, columns: 32 });
+    const banner = renderBanner({ color: false, columns: 32, version: '1.2.3' });
     const lines = banner.split('\n');
 
-    expect(lines).toHaveLength(9);
+    expect(lines).toHaveLength(10);
     expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(32);
+    expect(lines.at(-1)).toBe('Cossack v1.2.3');
   });
 
   it('keeps the artwork left-aligned in wide terminals', () => {
-    const wide = renderBanner({ color: false, columns: 120 });
+    const wide = renderBanner({ color: false, columns: 120, version: '1.2.3' });
 
-    expect(wide).toBe(resizeBanner().join('\n'));
+    expect(wide).toBe(`${resizeBanner().join('\n')}\nCossack v1.2.3`);
   });
 
   it('uses a true-color orange gradient when color is enabled', () => {
-    const banner = renderBanner({ color: true, columns: 52 });
+    const banner = renderBanner({ color: true, columns: 52, version: '1.2.3' });
 
     expect(banner).toContain('\u001b[38;2;255;181;74m');
     expect(banner).toContain('\u001b[38;2;255;90;0m');

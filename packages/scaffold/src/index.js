@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
+import { parseDocument } from 'yaml';
 import {
   ADAPTERS,
   FEATURES,
@@ -55,6 +56,12 @@ const text = (value) => Buffer.from(value, 'utf8');
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 const LOCAL_ENV_CAPABILITY = 'local-environment';
 const LOCAL_ENV_PATHS = new Set(['.env', '.dev.vars']);
+const PNPM_MANAGED_BUILDS = new Set([
+  'better-sqlite3',
+  'esbuild',
+  'sharp',
+  'workerd',
+]);
 const ADAPTER_PATHS = new Set([
   '.env.example',
   '.dev.vars.example',
@@ -193,6 +200,7 @@ const BASE_PATHS = new Set([
   '.prettierrc.json',
   '.vscode/cossack.code-snippets',
   'AGENTS.md',
+  'pnpm-workspace.yaml',
   'README.md',
   'scripts/dev.js',
   'src/client/entry-client.ts',
@@ -462,7 +470,7 @@ function packageJson(recipe, projectName) {
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
       : 'cossack migration up';
     if (recipe.adapter === 'node' && recipe.config.database === 'sqlite') {
-      scripts.postinstall = 'pnpm run migrate';
+      scripts.postinstall = scripts.migrate;
     }
   }
   if (recipe.resolvedFeatures.includes('studio')) {
@@ -473,22 +481,24 @@ function packageJson(recipe, projectName) {
     type: 'module',
     description: 'The Borderless TypeScript Framework',
     cossack: { runtime: recipe.adapter },
-    pnpm: {
-      onlyBuiltDependencies: [
-        ...(recipe.adapter === 'node' &&
-            recipe.resolvedFeatures.includes('database') &&
-            recipe.config.database === 'sqlite'
-          ? ['better-sqlite3']
-          : []),
-        'esbuild',
-        'sharp',
-        'workerd',
-      ],
-    },
     scripts,
     dependencies,
     devDependencies,
   }, null, 2) + '\n';
+}
+
+function pnpmWorkspace(recipe) {
+  const builds = [
+    ...(recipe.adapter === 'node' &&
+        recipe.resolvedFeatures.includes('database') &&
+        recipe.config.database === 'sqlite'
+      ? ['better-sqlite3']
+      : []),
+    'esbuild',
+    'sharp',
+    'workerd',
+  ];
+  return `allowBuilds:\n${builds.map((name) => `  ${name}: true`).join('\n')}\n`;
 }
 
 function tursoConfig() {
@@ -1041,6 +1051,10 @@ export async function renderRecipe(recipe, options = {}) {
     content: text(packageJson(recipe, options.projectName ?? 'my-cossack-app')),
     capability: 'base',
   });
+  files.set('pnpm-workspace.yaml', {
+    content: text(pnpmWorkspace(recipe)),
+    capability: 'base',
+  });
   files.set('tsconfig.json', {
     content: text(JSON.stringify({
       ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')),
@@ -1228,7 +1242,9 @@ async function buildPlan(projectDir, rendered, manifest, force = false) {
     const userOwned = existingHash !== null && !baseline;
     const modified = baseline && existingHash !== baseline;
     const recipeChanged = baseline && nextHash !== baseline;
-    const mergeSafe = rel === 'package.json' || entry.capability === LOCAL_ENV_CAPABILITY;
+    const mergeSafe = rel === 'package.json' ||
+      rel === 'pnpm-workspace.yaml' ||
+      entry.capability === LOCAL_ENV_CAPABILITY;
     if (modified && !recipeChanged && !mergeSafe && !canForce(rel)) {
       preserved.push({
         path: rel,
@@ -1297,22 +1313,16 @@ async function mergePackage(
   const previous = previousEntry
     ? JSON.parse(previousEntry.content.toString('utf8'))
     : {};
-  const desiredBuilds = desired.pnpm?.onlyBuiltDependencies ?? [];
-  const previouslyManagedBuilds = new Set(
-    previous.pnpm?.onlyBuiltDependencies ?? [],
-  );
+  const previouslyManagedBuilds = new Set([
+    ...PNPM_MANAGED_BUILDS,
+    ...(previous.pnpm?.onlyBuiltDependencies ?? []),
+  ]);
   const userBuilds = (current.pnpm?.onlyBuiltDependencies ?? []).filter(
     (name) => !previouslyManagedBuilds.has(name),
   );
-  const allowedBuilds = [...desiredBuilds, ...userBuilds];
   const merged = {
     ...current,
     cossack: { ...(current.cossack ?? {}), ...(desired.cossack ?? {}) },
-    pnpm: {
-      ...(current.pnpm ?? {}),
-      ...(desired.pnpm ?? {}),
-      onlyBuiltDependencies: [...new Set(allowedBuilds)],
-    },
     scripts: mergePackageSection(
       current.scripts,
       desired.scripts,
@@ -1332,7 +1342,127 @@ async function mergePackage(
       forceManaged,
     ),
   };
+  if (current.pnpm) {
+    const pnpm = { ...current.pnpm };
+    delete pnpm.onlyBuiltDependencies;
+    if (Object.keys(pnpm).length > 0) merged.pnpm = pnpm;
+    else delete merged.pnpm;
+  }
   entry.content = text(JSON.stringify(merged, null, 2) + '\n');
+  await mergePnpmWorkspace(
+    projectDir,
+    rendered,
+    previousRendered,
+    userBuilds,
+  );
+}
+
+async function mergePnpmWorkspace(
+  projectDir,
+  rendered,
+  previousRendered = undefined,
+  migratedBuilds = [],
+) {
+  const entry = rendered.get('pnpm-workspace.yaml');
+  if (!entry) {
+    throw new Error('Scaffold recipe did not render pnpm-workspace.yaml');
+  }
+  const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
+  const currentSource = await access(workspacePath)
+    ? await fs.readFile(workspacePath, 'utf8')
+    : entry.content.toString('utf8');
+  const current = parseDocument(currentSource);
+  if (current.errors.length > 0) {
+    throw new Error(
+      `Cannot update pnpm-workspace.yaml: ${current.errors[0].message}`,
+    );
+  }
+  const desired = parseDocument(entry.content.toString('utf8')).toJS();
+  const previousEntry = previousRendered?.get('pnpm-workspace.yaml');
+  const previous = previousEntry
+    ? parseDocument(previousEntry.content.toString('utf8')).toJS()
+    : {};
+  const currentBuilds = current.get('allowBuilds')?.toJSON?.() ?? {};
+  const previousBuilds = previous.allowBuilds ?? {};
+  const desiredBuilds = desired.allowBuilds ?? {};
+  const mergedBuilds = {};
+  for (const [name, value] of Object.entries(desiredBuilds)) {
+    const userChanged = name in currentBuilds &&
+      (!(name in previousBuilds) || currentBuilds[name] !== previousBuilds[name]);
+    mergedBuilds[name] = userChanged ? currentBuilds[name] : value;
+  }
+  for (const [name, value] of Object.entries(currentBuilds)) {
+    if (name in desiredBuilds) continue;
+    if (name in previousBuilds && value === previousBuilds[name]) continue;
+    mergedBuilds[name] = value;
+  }
+  for (const name of migratedBuilds) {
+    if (!(name in mergedBuilds)) mergedBuilds[name] = true;
+  }
+
+  current.set('allowBuilds', mergedBuilds);
+  entry.content = text(current.toString());
+  return entry;
+}
+
+export async function migratePnpmBuildSettings(
+  projectDir,
+  recipe,
+  options = {},
+) {
+  const packagePath = path.join(projectDir, 'package.json');
+  const currentPackageSource = await fs.readFile(packagePath, 'utf8');
+  const pkg = JSON.parse(currentPackageSource);
+  const hasLegacyBuilds = pkg.pnpm &&
+    Object.hasOwn(pkg.pnpm, 'onlyBuiltDependencies');
+  const legacyBuilds = pkg.pnpm?.onlyBuiltDependencies ?? [];
+  const migratedBuilds = legacyBuilds.filter(
+    (name) => !PNPM_MANAGED_BUILDS.has(name),
+  );
+  if (hasLegacyBuilds) {
+    delete pkg.pnpm.onlyBuiltDependencies;
+    if (Object.keys(pkg.pnpm).length === 0) delete pkg.pnpm;
+  }
+  const nextPackageSource = hasLegacyBuilds
+    ? JSON.stringify(pkg, null, 2) + '\n'
+    : currentPackageSource;
+
+  const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
+  const workspaceExists = await access(workspacePath);
+  if (!hasLegacyBuilds && workspaceExists) {
+    return {
+      changed: false,
+      packageChanged: false,
+      workspaceChanged: false,
+    };
+  }
+  const rendered = await renderRecipe(recipe, {
+    projectName: path.basename(projectDir),
+  });
+  const workspaceEntry = await mergePnpmWorkspace(
+    projectDir,
+    rendered,
+    undefined,
+    migratedBuilds,
+  );
+  const currentWorkspaceSource = workspaceExists
+    ? await fs.readFile(workspacePath, 'utf8')
+    : null;
+  const nextWorkspaceSource = workspaceEntry.content.toString('utf8');
+  const packageChanged = currentPackageSource !== nextPackageSource;
+  const workspaceChanged = currentWorkspaceSource !== nextWorkspaceSource;
+
+  if (options.dryRun !== true) {
+    if (packageChanged) await fs.writeFile(packagePath, nextPackageSource);
+    if (workspaceChanged) {
+      await fs.writeFile(workspacePath, nextWorkspaceSource);
+    }
+  }
+  return {
+    changed: packageChanged || workspaceChanged,
+    packageChanged,
+    workspaceChanged,
+  };
 }
 
 async function applyPlan(projectDir, rendered, plan) {

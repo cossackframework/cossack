@@ -39,7 +39,7 @@ export async function langCommand(args, ctx) {
 async function publish(args, ctx) {
   const { flags } = parseSimpleFlags(args, ctx);
   const locale = flagString(flags.locale) || DEFAULT_LOCALE;
-  const root = await findProjectRoot(ctx.cwd);
+  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
 
   // When publishing a non-default locale, seed it with empty values against
@@ -96,7 +96,7 @@ async function addLocale(args, ctx) {
     return 1;
   }
 
-  const root = await findProjectRoot(ctx.cwd);
+  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
   if ((await exists(target)) && !ctx.force && !ctx.dryRun) {
     console.log(`  exists   src/lang/${locale}.json (use --force to overwrite)`);

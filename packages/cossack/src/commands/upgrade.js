@@ -4,7 +4,11 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
-import { renderRecipe, resolveRecipe } from '@cossackframework/scaffold';
+import {
+  migratePnpmBuildSettings,
+  renderRecipe,
+  resolveRecipe,
+} from '@cossackframework/scaffold';
 
 import {
   exists,
@@ -13,6 +17,7 @@ import {
   hashFile,
 } from '../fs-utils.js';
 import { flagString, flagList } from '../flags.js';
+import { detectProjectPackageManager } from '../package-manager.js';
 
 const execFileP = promisify(execFile);
 const requireFromHere = createRequire(import.meta.url);
@@ -25,6 +30,9 @@ const EXCLUDE_FROM_SYNC = new Set([
   'package-lock.json',
   'pnpm-lock.yaml',
   'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'deno.lock',
   'tsconfig.json',
   'tsconfig.declarations.json',
   'wrangler.jsonc',
@@ -63,14 +71,29 @@ export async function upgradeCommand(args, ctx) {
   // 2. Update package.json (unless dry-run).
   await updatePackageJson(root, projectPkg, resolved, ctx);
 
-  // 3. Reinstall (unless dry-run).
+  // 3. Move legacy pnpm build approvals before pnpm performs the reinstall.
+  if (manifest) {
+    const migration = await migratePnpmBuildSettings(
+      root,
+      recipeFromManifest(manifest),
+      { dryRun: ctx.dryRun },
+    );
+    if (migration.changed) {
+      console.log(
+        `${ctx.dryRun ? 'Would migrate' : 'Migrated'} pnpm build approvals ` +
+          'to pnpm-workspace.yaml.\n',
+      );
+    }
+  }
+
+  // 4. Reinstall (unless dry-run).
   if (!ctx.dryRun && resolved.updates.length > 0) {
     const pm = await detectPackageManager(root);
     console.log(`Reinstalling with ${pm}...\n`);
     await runInstall(pm, root);
   }
 
-  // 4. Drift report (always printed) + optional template apply.
+  // 5. Drift report (always printed) + optional template apply.
   const report = await buildDriftReport(
     root,
     projectPkg.name || path.basename(root),
@@ -170,16 +193,13 @@ async function updatePackageJson(root, pkg, resolved, ctx) {
   }
 }
 
-async function detectPackageManager(root) {
-  if (await exists(path.join(root, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (await exists(path.join(root, 'yarn.lock'))) return 'yarn';
-  return 'npm';
+export async function detectPackageManager(root) {
+  return detectProjectPackageManager(root);
 }
 
 async function runInstall(pm, cwd) {
-  const installArgs = pm === 'yarn' ? ['install'] : ['install'];
   try {
-    await execFileP(pm, installArgs, { cwd });
+    await execFileP(pm, ['install'], { cwd });
   } catch (err) {
     console.error(`  install failed: ${err.message}`);
   }
@@ -222,16 +242,7 @@ async function buildDriftReport(root, projectName) {
   if (manifest.schemaVersion !== 2) {
     throw unsupportedManifestError(manifest);
   }
-  const recipe = resolveRecipe({
-    adapter,
-    preset: 'minimal',
-    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
-    database: manifest.config?.database,
-    authMethods: manifest.config?.authMethods,
-    oauth: manifest.config?.oauth,
-    theme: manifest.config?.theme,
-    dashboardModules: manifest.dashboardModules,
-  });
+  const recipe = recipeFromManifest(manifest);
   const rendered = await renderRecipe(recipe, {
     projectName,
   });
@@ -256,6 +267,20 @@ async function buildDriftReport(root, projectName) {
     report[bucket].push(rel);
   }
   return report;
+}
+
+function recipeFromManifest(manifest) {
+  const adapter = manifest.runtime ?? manifest.adapter;
+  return resolveRecipe({
+    adapter,
+    preset: 'minimal',
+    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+    database: manifest.config?.database,
+    authMethods: manifest.config?.authMethods,
+    oauth: manifest.config?.oauth,
+    theme: manifest.config?.theme,
+    dashboardModules: manifest.dashboardModules,
+  });
 }
 
 function unsupportedManifestError(manifest) {

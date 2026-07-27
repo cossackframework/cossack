@@ -105,8 +105,12 @@ describe('recipe resolution', () => {
     const recipe = resolveRecipe({ adapter, preset });
     const files = await renderRecipe(recipe);
     const pkg = JSON.parse(files.get('package.json').content.toString());
+    const pnpmWorkspace = files.get('pnpm-workspace.yaml').content.toString();
     expect(files.has('README.md')).toBe(true);
     expect(files.has('AGENTS.md')).toBe(true);
+    expect(pkg).not.toHaveProperty('pnpm');
+    expect(pnpmWorkspace).toContain('allowBuilds:');
+    expect(pnpmWorkspace).toContain('sharp: true');
     expect(files.has('src/App.ts')).toBe(true);
     expect(files.has('wrangler.jsonc')).toBe(adapter === 'cloudflare');
     expect(files.has('src/db/config.ts')).toBe(recipe.resolvedFeatures.includes('database'));
@@ -455,8 +459,12 @@ describe('composition', () => {
     );
     expect(pkg.scripts.start).toContain('dist/server/index.js');
     expect(pkg.scripts.migrate).toContain('migration up');
-    expect(pkg.scripts.postinstall).toBe('pnpm run migrate');
-    expect(pkg.pnpm.onlyBuiltDependencies).toContain('better-sqlite3');
+    expect(pkg.scripts.postinstall).toBe(pkg.scripts.migrate);
+    expect(pkg).not.toHaveProperty('pnpm');
+    expect(await fs.readFile(
+      path.join(project.projectDir, 'pnpm-workspace.yaml'),
+      'utf8',
+    )).toContain('better-sqlite3: true');
     expect(pkg.dependencies['better-sqlite3']).toBe('^13.0.1');
     expect(await detectProjectRuntime(project.projectDir)).toBe('node');
     const environment = await fs.readFile(path.join(project.projectDir, '.env'), 'utf8');
@@ -509,7 +517,9 @@ describe('composition', () => {
     expect(pkg.dependencies).not.toHaveProperty('better-sqlite3');
     expect(pkg.devDependencies).not.toHaveProperty('better-sqlite3');
     expect(pkg.devDependencies).not.toHaveProperty('@types/better-sqlite3');
-    expect(pkg.pnpm.onlyBuiltDependencies).not.toContain('better-sqlite3');
+    expect(pkg).not.toHaveProperty('pnpm');
+    expect(files.get('pnpm-workspace.yaml').content.toString())
+      .not.toContain('better-sqlite3: true');
     expect(pkg.scripts.migrate).toBe('cossack migration up');
     expect(pkg.scripts.dev).toBe('cossack migration up && vite dev');
     const runtimeConfig = files.get('src/db/config.ts').content.toString();
@@ -697,6 +707,48 @@ describe('composition', () => {
     expect(await fs.readFile(page, 'utf8')).toContain('// local edit');
     const after = await readManifest(project.projectDir);
     expect(after.files[relative].hash).toBe(before.files[relative].hash);
+  });
+
+  it('migrates legacy pnpm build approvals and preserves explicit workspace choices', async () => {
+    const root = await temporaryDirectory();
+    const legacy = await createApp('legacy', {
+      cwd: root,
+      adapter: 'node',
+      preset: 'minimal',
+      interactive: false,
+    });
+    const legacyPackagePath = path.join(legacy.projectDir, 'package.json');
+    const legacyPackage = JSON.parse(await fs.readFile(legacyPackagePath, 'utf8'));
+    legacyPackage.pnpm = {
+      onlyBuiltDependencies: ['esbuild', 'sharp', 'workerd', 'canvas'],
+    };
+    await fs.writeFile(
+      legacyPackagePath,
+      JSON.stringify(legacyPackage, null, 2) + '\n',
+    );
+    await fs.rm(path.join(legacy.projectDir, 'pnpm-workspace.yaml'));
+
+    await addFeature(legacy.projectDir, 'database', { interactive: false });
+
+    const migratedPackage = JSON.parse(await fs.readFile(legacyPackagePath, 'utf8'));
+    const migratedWorkspace = await fs.readFile(
+      path.join(legacy.projectDir, 'pnpm-workspace.yaml'),
+      'utf8',
+    );
+    expect(migratedPackage).not.toHaveProperty('pnpm');
+    expect(migratedWorkspace).toContain('better-sqlite3: true');
+    expect(migratedWorkspace).toContain('canvas: true');
+
+    const workspacePath = path.join(legacy.projectDir, 'pnpm-workspace.yaml');
+    await fs.writeFile(
+      workspacePath,
+      migratedWorkspace.replace('sharp: true', 'sharp: false') +
+        'customSetting: kept\n',
+    );
+    await addFeature(legacy.projectDir, 'ui', { interactive: false });
+    const preservedWorkspace = await fs.readFile(workspacePath, 'utf8');
+    expect(preservedWorkspace).toContain('sharp: false');
+    expect(preservedWorkspace).toContain('customSetting: kept');
   });
 
   it('protects user-owned collisions before writing', async () => {
