@@ -119,7 +119,7 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (ui, database, auth, dashboard, examples).
+  add <feature>                Add a feature (ui, database, auth, dashboard, markdown, examples).
   remove <feature>             Remove a feature and its dependents.
   adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.

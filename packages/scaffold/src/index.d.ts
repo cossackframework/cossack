@@ -1,6 +1,6 @@
 export type Adapter = 'cloudflare' | 'node';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'auth' | 'dashboard' | 'examples';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples';
 export type AuthMethod = 'credentials' | 'oauth';
 export type DatabaseProvider = 'd1' | 'sqlite' | 'turso';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';

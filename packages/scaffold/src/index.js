@@ -254,6 +254,9 @@ const DASHBOARD_CORE_PATHS = new Set([
   'src/pages/dashboard/layout.ts',
   'src/seeders/database.seeder.ts',
 ]);
+const MARKDOWN_PATHS = new Set([
+  'src/markdown-processor.ts',
+]);
 const RBAC_PATHS = new Set([
   'src/config/permissions.ts',
   'src/lib/permissions.ts',
@@ -295,6 +298,7 @@ function capabilityFor(rel, recipe) {
   if (DATABASE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
   if (AUTH_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
   if (DASHBOARD_CORE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
+  if (MARKDOWN_PATHS.has(rel)) return recipe.resolvedFeatures.includes('markdown') ? 'markdown' : null;
   if (RBAC_PATHS.has(rel)) {
     const modules = recipe.dashboardModules;
     return modules.includes('users') || modules.includes('roles') ? 'dashboard:rbac' : null;
@@ -437,6 +441,24 @@ function packageJson(recipe, projectName) {
   };
   if (recipe.resolvedFeatures.includes('studio')) {
     devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
+  }
+  if (recipe.resolvedFeatures.includes('markdown')) {
+    for (const name of [
+      '@types/mdast',
+      'rehype-raw',
+      'rehype-slug',
+      'rehype-stringify',
+      'remark-frontmatter',
+      'remark-gfm',
+      'remark-parse',
+      'remark-rehype',
+      'remark-sugar-high',
+      'remark-toc',
+      'unified',
+      'vfile-matter',
+    ]) {
+      devDependencies[name] = dependencyVersion(name);
+    }
   }
   if (recipe.adapter === 'cloudflare') {
     devDependencies['@cloudflare/vite-plugin'] =
@@ -1003,6 +1025,15 @@ export async function renderRecipe(recipe, options = {}) {
     if (!capability) continue;
     let content = await fs.readFile(path.join(templateDir, rel));
     if (rel === 'src/style.css') content = text(applyTheme(content.toString('utf8'), recipe.config.theme));
+    if (rel === 'vite.config.ts' && recipe.resolvedFeatures.includes('markdown')) {
+      content = text(content.toString('utf8')
+        .replace(
+          "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';",
+          "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\n" +
+          "import { processMarkdown } from './src/markdown-processor';",
+        )
+        .replace('    cossackPages(),', '    cossackPages({ markdownProcessor: processMarkdown }),'));
+    }
     if (rel === 'src/config/database.ts') {
       content = text(content.toString('utf8').replace(
         "default: env('DB_CONNECTION', 'd1')",
@@ -1727,6 +1758,9 @@ async function inferRecipe(projectDir, manifest) {
   if (dependencies['@cossackframework/database']) features.push('database');
   if (dependencies['@cossackframework/studio']) features.push('studio');
   if (dependencies['@cossackframework/auth']) features.push('auth');
+  if (dependencies.unified && await access(path.join(projectDir, 'src/markdown-processor.ts'))) {
+    features.push('markdown');
+  }
   const runtime = await detectProjectRuntime(projectDir, manifest);
   const recipe = resolveRecipe({
     adapter: runtime ?? 'cloudflare',

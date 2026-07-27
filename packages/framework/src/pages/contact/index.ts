@@ -1,16 +1,15 @@
-import type { MiddlewareHandler } from 'hono';
+import { Cossack, HeadContext, HeadValue, Page, State } from '@cossackframework/core';
+import { component, html, type TemplateResult } from '@cossackframework/renderer';
 import { Button, Input, Label, Typography } from '@cossackframework/ui';
-import { html, type TemplateResult, component } from '@cossackframework/renderer';
-import { Cossack, isServer, Page, Server, State, HeadTag, HeadContext, HeadValue } from '@cossackframework/core';
 
 @Page({
     transport: 'http',
 })
 export class Contact extends Cossack {
-    @State() // 'global' is always a valid channel.
+    @State()
     private greeting: string = 'Tan';
 
-    public head(context: HeadContext): HeadValue {
+    public head(): HeadValue {
         return {
             title: 'Contact'
         };

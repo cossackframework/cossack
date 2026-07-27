@@ -1,6 +1,6 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { SettingsPanel, type SettingsSection } from '../../blocks/SettingsPanel';
+import { SettingsPanel, type SettingsSection } from '@cossackframework/ui/blocks';
 
 const SECTIONS: SettingsSection[] = [
     {

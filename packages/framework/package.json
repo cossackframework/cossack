@@ -11,8 +11,8 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/esm/index.d.ts",
-      "import": "./dist/esm/index.js"
+      "types": "./dist/esm/public.d.ts",
+      "import": "./dist/esm/public.js"
     },
     "./config": {
       "types": "./dist/esm/config.d.ts",
@@ -30,9 +30,9 @@
       "types": "./dist/esm/client/app.d.ts",
       "import": "./dist/esm/client/app.js"
     },
-    "./blocks": {
-      "types": "./dist/esm/blocks/index.d.ts",
-      "import": "./dist/esm/blocks/index.js"
+    "./client/devtools": {
+      "types": "./dist/esm/client/devtools.d.ts",
+      "import": "./dist/esm/client/devtools.js"
     },
     "./vite-plugin": {
       "types": "./dist/esm/vite-plugin.d.ts",
@@ -112,10 +112,12 @@
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
+    "@cossackframework/core": "workspace:*",
+    "@cossackframework/renderer": "workspace:*"
+  },
+  "devDependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
     "@aws-sdk/s3-request-presigner": "^3.1075.0",
-    "@cossackframework/core": "workspace:*",
-    "@cossackframework/renderer": "workspace:*",
     "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/ui": "workspace:*",
     "rehype-raw": "^7.0.0",
@@ -129,9 +131,7 @@
     "remark-toc": "^9.0.0",
     "tsx": "^4.23.0",
     "unified": "^11.0.5",
-    "vfile-matter": "^5.0.1"
-  },
-  "devDependencies": {
+    "vfile-matter": "^5.0.1",
     "@cloudflare/vite-plugin": "^1.47.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.1.0",
@@ -145,7 +145,8 @@
     "wrangler": "^4.114.0"
   },
   "peerDependencies": {
-    "hono": "^4.12.0"
+    "hono": "^4.12.0",
+    "vite": "^8.1.0"
   },
   "engines": {
     "node": ">=22"

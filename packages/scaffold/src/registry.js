@@ -1,5 +1,5 @@
 export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'examples'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -11,7 +11,8 @@ export const FEATURE_REGISTRY = {
   studio: { requires: ['database'] },
   auth: { requires: ['ui', 'database'] },
   dashboard: { requires: ['auth'] },
-  examples: { requires: ['ui'] },
+  markdown: { requires: [] },
+  examples: { requires: ['ui', 'markdown'] },
 };
 
 export const PRESET_REGISTRY = {

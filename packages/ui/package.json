@@ -18,6 +18,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./blocks": {
+      "types": "./dist/blocks/index.d.ts",
+      "import": "./dist/blocks/index.js"
+    },
     "./theme/base.css": "./src/theme/base.css",
     "./theme/theme.css": "./src/theme/theme.css",
     "./theme/themes/default.css": "./src/theme/themes/default.css",
@@ -33,6 +37,7 @@
   },
   "files": [
     "dist",
+    "src/blocks",
     "src/components",
     "src/theme"
   ],
@@ -42,6 +47,7 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.declarations.json",
     "prepublishOnly": "pnpm run build",
+    "pretest": "pnpm run build",
     "test": "vitest",
     "build:icons": "tsx src/scripts/build-icons.ts"
   },

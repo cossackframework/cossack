@@ -218,7 +218,13 @@ async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryMod
   // Dynamically import the cossack plugin factories so they (and their deps)
   // are not part of the config-bundle dependency graph. These run only during
   // SSG (inside closeBundle), never at config-evaluation time.
-  const { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } = await import(
+  const {
+    cossackPages,
+    cossackLang,
+    cossackMiddlewares,
+    cossackConfig,
+    getConfiguredMarkdownProcessor,
+  } = await import(
     './vite-plugin.js'
   );
   const { cossackSecurityPlugin } = await import('./vite-security-plugin.js');
@@ -238,7 +244,7 @@ async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryMod
     plugins: [
       // The same cossack plugins the project's vite.config.ts registers, so
       // virtual:cossack-pages/-config/-lang and the .mdx transform resolve.
-      cossackPages(),
+      cossackPages({ markdownProcessor: getConfiguredMarkdownProcessor() }),
       cossackLang(),
       cossackMiddlewares(),
       cossackConfig(),

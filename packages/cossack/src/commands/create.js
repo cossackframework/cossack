@@ -87,7 +87,7 @@ Options:
   --adapter <cloudflare|node>
   --package-manager <manager>   npm|pnpm|yarn|bun|deno
   --preset <minimal|database|auth|full-stack>
-  --features <ui,database,auth,dashboard,examples>
+  --features <ui,database,auth,dashboard,markdown,examples>
   --database <d1|sqlite|turso>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>

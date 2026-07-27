@@ -13,6 +13,40 @@
     "outDir": "dist/esm",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "worker-configuration.d.ts"],
-  "exclude": ["src/pages/**", "src/components/**"]
+  "include": [
+    "src/api-handler.ts",
+    "src/cache.ts",
+    "src/client/devtools.ts",
+    "src/client/index.ts",
+    "src/config.ts",
+    "src/DurableObject.ts",
+    "src/middlewares/cors.ts",
+    "src/public.ts",
+    "src/root.ts",
+    "src/route-ids.ts",
+    "src/router.ts",
+    "src/sitemap-generator.ts",
+    "src/ssg-config.ts",
+    "src/ssg-entry.ts",
+    "src/ssg-renderer.ts",
+    "src/vite-plugin.ts",
+    "src/vite-security-plugin.ts",
+    "src/vite-ssg-plugin.ts",
+    "src/vite-env.d.ts",
+    "worker-configuration.d.ts"
+  ],
+  "exclude": [
+    "src/App.ts",
+    "src/bootstrap/**",
+    "src/components/**",
+    "src/demo-catalog.ts",
+    "src/examples/**",
+    "src/index.ts",
+    "src/lang/**",
+    "src/markdown-processor.ts",
+    "src/models/**",
+    "src/pages/**",
+    "src/services/**",
+    "src/storage/**"
+  ]
 }

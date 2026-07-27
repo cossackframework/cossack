@@ -6,6 +6,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(__dirname, 'src/index.ts'),
+        'blocks/index': resolve(__dirname, 'src/blocks/index.ts'),
       },
       formats: ['es'],
     },

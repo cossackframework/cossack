@@ -1,12 +1,10 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client } from '@cossackframework/core';
-import {
-    Button,
-    Input,
-    PasswordInput,
-    Label,
-    Separator,
-} from '@cossackframework/ui';
+import { Button } from '../../components/Button.js';
+import { Input } from '../../components/Input.js';
+import { PasswordInput } from '../../components/PasswordInput.js';
+import { Label } from '../../components/Label.js';
+import { Separator } from '../../components/Separator.js';
 
 export interface AuthFormProps {
     /** "login" or "signup" mode. */

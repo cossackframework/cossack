@@ -15,11 +15,8 @@ export class CounterHttp extends Cossack {
             title: 'Counter (HTTP)'
         }
     }
-// ...
 
     async init() {
-        // This now runs on the server during the initial GET request.
-        // The client will hydrate with this initial state.
         this.count = 0;
     }
 

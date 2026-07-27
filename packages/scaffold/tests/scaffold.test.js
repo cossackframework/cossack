@@ -41,7 +41,9 @@ describe('recipe resolution', () => {
   it('keeps Full Stack as the default and resolves all dashboard modules', () => {
     const recipe = resolveRecipe({ adapter: 'cloudflare' });
     expect(recipe.preset).toBe('full-stack');
-    expect(recipe.resolvedFeatures).toEqual(['ui', 'database', 'auth', 'dashboard', 'examples']);
+    expect(recipe.resolvedFeatures).toEqual([
+      'ui', 'database', 'auth', 'dashboard', 'markdown', 'examples',
+    ]);
     expect(recipe.dashboardModules).toEqual(DASHBOARD_MODULES);
     expect(recipe.config.database).toBe('d1');
     expect(recipe.config.authMethods).toEqual(['credentials']);
@@ -75,7 +77,7 @@ describe('recipe resolution', () => {
     expect(resolveRecipe({
       preset: 'minimal',
       features: removeFeature(['dashboard', 'examples'], 'database'),
-    }).resolvedFeatures).toEqual(['ui', 'examples']);
+    }).resolvedFeatures).toEqual(['ui', 'markdown', 'examples']);
     expect(removeFeature(['studio', 'examples'], 'database')).toEqual(['examples']);
   });
 
@@ -207,6 +209,56 @@ describe('recipe resolution', () => {
 });
 
 describe('composition', () => {
+  it('creates, adds, and removes application-owned Markdown support', async () => {
+    const root = await temporaryDirectory();
+    const project = await createApp('app', {
+      cwd: root,
+      adapter: 'cloudflare',
+      preset: 'minimal',
+      interactive: false,
+    });
+
+    let viteConfig = await fs.readFile(
+      path.join(project.projectDir, 'vite.config.ts'),
+      'utf8',
+    );
+    let pkg = JSON.parse(await fs.readFile(
+      path.join(project.projectDir, 'package.json'),
+      'utf8',
+    ));
+    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).not.toContain('processMarkdown');
+    expect(pkg.devDependencies).not.toHaveProperty('unified');
+
+    const added = await addFeature(project.projectDir, 'markdown', {
+      interactive: false,
+    });
+    expect(added.status).toBe('added');
+    await expect(fs.readFile(
+      path.join(project.projectDir, 'src/markdown-processor.ts'),
+      'utf8',
+    )).resolves.toContain('export async function processMarkdown');
+    viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
+    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
+    expect(viteConfig).toContain('cossackPages({ markdownProcessor: processMarkdown })');
+    expect(pkg.devDependencies).toHaveProperty('unified');
+    expect(pkg.devDependencies).toHaveProperty('remark-parse');
+
+    const removed = await removeFeatureFromProject(project.projectDir, 'markdown', {
+      interactive: false,
+      yes: true,
+    });
+    expect(removed.status).toBe('removed');
+    await expect(fs.access(
+      path.join(project.projectDir, 'src/markdown-processor.ts'),
+    )).rejects.toThrow();
+    viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
+    pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
+    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).not.toContain('processMarkdown');
+    expect(pkg.devDependencies).not.toHaveProperty('unified');
+  });
+
   it('adds and removes Studio with database dependency ownership', async () => {
     const root = await temporaryDirectory();
     const project = await createApp('app', {
@@ -839,7 +891,7 @@ describe('composition', () => {
     });
     expect(result.status).toBe('removed');
     expect(result.recipe.explicitFeatures).toEqual(['examples']);
-    expect(result.recipe.resolvedFeatures).toEqual(['ui', 'examples']);
+    expect(result.recipe.resolvedFeatures).toEqual(['ui', 'markdown', 'examples']);
     const updated = JSON.parse(await fs.readFile(packagePath, 'utf8'));
     expect(updated.dependencies).not.toHaveProperty('@cossackframework/auth');
     expect(updated.dependencies).not.toHaveProperty('@cossackframework/database');

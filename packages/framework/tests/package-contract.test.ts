@@ -22,6 +22,94 @@ describe('Hono package contract', () => {
   });
 });
 
+describe('framework publication contract', () => {
+  const frameworkPackage = JSON.parse(fs.readFileSync(
+    path.resolve(process.cwd(), 'package.json'),
+    'utf8',
+  ));
+  const distDir = path.resolve(process.cwd(), 'dist', 'esm');
+
+  it('publishes every declared compiled export target and no blocks compatibility export', () => {
+    expect(frameworkPackage.exports).not.toHaveProperty('./blocks');
+    for (const [subpath, target] of Object.entries(frameworkPackage.exports) as Array<
+      [string, string | { types?: string; import?: string }]
+    >) {
+      if (subpath === './vite-env') continue;
+      for (const relativeTarget of typeof target === 'string'
+        ? [target]
+        : [target.types, target.import].filter(Boolean)) {
+        expect(
+          fs.existsSync(path.resolve(process.cwd(), relativeTarget!)),
+          `${subpath} -> ${relativeTarget}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('keeps the root runtime export side-effect-free and preserves its named APIs', () => {
+    expect(frameworkPackage.exports['.']).toEqual({
+      types: './dist/esm/public.d.ts',
+      import: './dist/esm/public.js',
+    });
+
+    const rootDeclaration = fs.readFileSync(path.join(distDir, 'public.d.ts'), 'utf8');
+    expect(rootDeclaration).toContain("export * from './router.js'");
+    expect(rootDeclaration).toContain("export { AppDurableObject } from './DurableObject.js'");
+    expect(rootDeclaration).toContain("export { CacheDurableObject } from './cache.js'");
+  });
+
+  it('retains required build tooling but excludes demo-only modules', () => {
+    for (const relativePath of [
+      'vite-plugin.js',
+      'vite-security-plugin.js',
+      'vite-ssg-plugin.js',
+      'ssg-entry.js',
+      'ssg-renderer.js',
+      'sitemap-generator.js',
+      'client/devtools.js',
+    ]) {
+      expect(fs.existsSync(path.join(distDir, relativePath)), relativePath).toBe(true);
+    }
+    for (const relativePath of [
+      'App.js',
+      'index.js',
+      'demo-catalog.js',
+      'markdown-processor.js',
+      'storage/s3.js',
+      'models/user.js',
+      'bootstrap/middlewares.js',
+    ]) {
+      expect(fs.existsSync(path.join(distDir, relativePath)), relativePath).toBe(false);
+    }
+    for (const directory of ['blocks', 'components', 'examples', 'pages', 'services']) {
+      expect(fs.existsSync(path.join(distDir, directory)), directory).toBe(false);
+    }
+  });
+
+  it('keeps only runtime libraries as production dependencies', () => {
+    expect(Object.keys(frameworkPackage.dependencies).sort()).toEqual([
+      '@cossackframework/core',
+      '@cossackframework/renderer',
+    ]);
+    for (const name of [
+      '@aws-sdk/client-s3',
+      '@aws-sdk/s3-request-presigner',
+      '@cossackframework/solar-icons',
+      '@cossackframework/ui',
+      'remark-parse',
+      'tsx',
+      'unified',
+    ]) {
+      expect(frameworkPackage.dependencies).not.toHaveProperty(name);
+      expect(frameworkPackage.devDependencies).toHaveProperty(name);
+    }
+    expect(frameworkPackage.peerDependencies).toMatchObject({
+      hono: '^4.12.0',
+      vite: '^8.1.0',
+    });
+  });
+});
+
 // Regression test for bug.md / bug-2.md: Node's native ESM resolver does not
 // append file extensions. Every relative import/export in emitted JS must use
 // an explicit, existing target. The Vite contract below separately ensures the

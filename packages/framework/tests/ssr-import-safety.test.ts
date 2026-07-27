@@ -19,7 +19,7 @@ async function importFresh(relativePath: string) {
 }
 
 describe('SSR import safety', () => {
-  it('imports precompiled components without browser event globals', async () => {
+  it('imports the precompiled root runtime without browser event globals', async () => {
     const descriptors = new Map<string, PropertyDescriptor | undefined>();
     for (const name of browserEventGlobals) {
       descriptors.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
@@ -27,10 +27,7 @@ describe('SSR import safety', () => {
     }
 
     try {
-      await expect(importFresh('App.js')).resolves.toBeDefined();
-      await expect(
-        importFresh('blocks/CommandPalette/index.js'),
-      ).resolves.toBeDefined();
+      await expect(importFresh('root.js')).resolves.toBeDefined();
 
       for (const name of browserEventGlobals) {
         expect(name in globalThis).toBe(false);

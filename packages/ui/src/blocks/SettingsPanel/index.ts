@@ -1,6 +1,11 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client } from '@cossackframework/core';
-import { Card, Switch, Separator, Input, Button, Badge } from '@cossackframework/ui';
+import { Card } from '../../components/Card.js';
+import { Switch } from '../../components/Switch.js';
+import { Separator } from '../../components/Separator.js';
+import { Input } from '../../components/Input.js';
+import { Button } from '../../components/Button.js';
+import { Badge } from '../../components/Badge.js';
 
 export interface SettingsSection {
     /** Section heading. */

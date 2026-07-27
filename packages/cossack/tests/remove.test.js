@@ -5,7 +5,7 @@ const { removeMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('@cossackframework/scaffold', () => ({
-  FEATURES: ['ui', 'database', 'studio', 'auth', 'dashboard', 'examples'],
+  FEATURES: ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples'],
   removeFeatureFromProject: removeMock,
 }));
 

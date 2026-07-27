@@ -1,6 +1,8 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, OnWindow, Shared } from '@cossackframework/core';
-import { Modal, Icon, Kbd } from '@cossackframework/ui';
+import { Modal } from '../../components/Modal.js';
+import { Icon } from '../../icons/Icon.js';
+import { Kbd } from '../../components/Kbd.js';
 import { MagnifierIcon as magnifier } from '@cossackframework/solar-icons/magnifier';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 
