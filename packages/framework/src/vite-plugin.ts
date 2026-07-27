@@ -2,7 +2,6 @@ import type { Plugin } from 'vite';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
-import { processMarkdown } from './markdown-processor.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
@@ -21,7 +20,48 @@ const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
  * The `writeBundle` hook below copies it to this non-ignored path after
  * the client build so `env.ASSETS.fetch` can reach it in production.
  */
-export function cossackPages(): Plugin {
+export interface MarkdownResult {
+  html: string;
+  frontmatter: Record<string, unknown>;
+}
+
+export type MarkdownProcessor = (
+  source: string,
+  id: string,
+) => MarkdownResult | Promise<MarkdownResult>;
+
+export interface CossackPagesOptions {
+  /**
+   * Application-owned Markdown compiler. Install one with
+   * `cossack add markdown`.
+   */
+  markdownProcessor?: MarkdownProcessor;
+}
+
+let configuredMarkdownProcessor: MarkdownProcessor | undefined;
+
+/** @internal Used by the SSG runner to reproduce the application's page plugin. */
+export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined {
+  return configuredMarkdownProcessor;
+}
+
+export function cossackPages(options: CossackPagesOptions = {}): Plugin {
+  if (options.markdownProcessor) {
+    configuredMarkdownProcessor = options.markdownProcessor;
+  }
+  const markdownEnabled = typeof options.markdownProcessor === 'function';
+  let warnedAboutMarkdown = false;
+  const warnIfMarkdownIsUnconfigured = (warn: (message: string) => void) => {
+    if (markdownEnabled || warnedAboutMarkdown) return;
+    const { markdownKeys } = scanPagesDir(resolve(process.cwd(), 'src', 'pages'), false);
+    if (markdownKeys.length === 0) return;
+    warnedAboutMarkdown = true;
+    warn(
+      '[cossack] Markdown routes were omitted because no markdownProcessor is configured. ' +
+      'Run `cossack add markdown` to enable .md and .mdx pages.',
+    );
+  };
+
   return {
     name: 'cossack-pages',
     enforce: 'pre',
@@ -37,6 +77,9 @@ export function cossackPages(): Plugin {
         },
       };
     },
+    buildStart() {
+      warnIfMarkdownIsUnconfigured((message) => this.warn(message));
+    },
     resolveId(id) {
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
@@ -49,8 +92,12 @@ export function cossackPages(): Plugin {
         // Client environment: lazy loading (code splitting for performance)
         const isSsrEnvironment = this.environment?.name !== 'client';
 
+        const pagePatterns = markdownEnabled
+          ? "['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '/src/pages/**/*.md', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']"
+          : "['/src/pages/**/*.ts', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']";
+
         return `
-          const pages = import.meta.glob(['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '/src/pages/**/*.md', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']${isSsrEnvironment ? ', { eager: true }' : ''});
+          const pages = import.meta.glob(${pagePatterns}${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Layouts: eager on SSR (synchronous server rendering), lazy on the
           // client. A layout often pulls in heavy deps (e.g. the dashboard
@@ -88,7 +135,11 @@ export function cossackPages(): Plugin {
       }
 
       if (id.endsWith('.mdx') || id.endsWith('.md')) {
-        const { html: htmlContent, frontmatter } = await processMarkdown(code);
+        if (!options.markdownProcessor) {
+          warnIfMarkdownIsUnconfigured((message) => this.warn(message));
+          return;
+        }
+        const { html: htmlContent, frontmatter } = await options.markdownProcessor(code, id);
         const headingEnd = htmlContent.indexOf('</h1>');
         const contentLead = headingEnd >= 0
           ? htmlContent.slice(0, headingEnd + '</h1>'.length)
@@ -180,7 +231,7 @@ export function cossackPages(): Plugin {
       // reads it instead of re-scanning `src/pages` and re-deriving IDs, so the
       // IDs can never drift from what the SSR router assigns here.
       try {
-        emitRoutesManifest(clientOutDir);
+        emitRoutesManifest(clientOutDir, markdownEnabled);
       } catch (e) {
         // Non-fatal: SSG will surface a clear error if the manifest is missing.
         console.warn('[cossack] Could not emit routes manifest:', e);
@@ -195,10 +246,14 @@ export function cossackPages(): Plugin {
  * layouts = `layout.ts`). Keys use the `/src/pages/<rel>` format with forward
  * slashes, exactly like Vite's glob keys.
  */
-function scanPagesDir(pagesDir: string): { pageKeys: string[]; layoutKeys: string[] } {
+function scanPagesDir(
+  pagesDir: string,
+  includeMarkdown: boolean,
+): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
   const pageKeys: string[] = [];
   const layoutKeys: string[] = [];
-  if (!existsSync(pagesDir)) return { pageKeys, layoutKeys };
+  const markdownKeys: string[] = [];
+  if (!existsSync(pagesDir)) return { pageKeys, layoutKeys, markdownKeys };
 
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -212,7 +267,10 @@ function scanPagesDir(pagesDir: string): { pageKeys: string[]; layoutKeys: strin
           layoutKeys.push(key);
         } else if (entry.name === 'loading.ts') {
           // Excluded — matches the glob's `!/src/pages/**/loading.ts`.
-        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
+        } else if (entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
+          markdownKeys.push(key);
+          if (includeMarkdown) pageKeys.push(key);
+        } else if (entry.name.endsWith('.ts')) {
           pageKeys.push(key);
         }
       }
@@ -220,12 +278,12 @@ function scanPagesDir(pagesDir: string): { pageKeys: string[]; layoutKeys: strin
   };
 
   walk(pagesDir);
-  return { pageKeys, layoutKeys };
+  return { pageKeys, layoutKeys, markdownKeys };
 }
 
-function emitRoutesManifest(clientOutDir: string) {
+function emitRoutesManifest(clientOutDir: string, includeMarkdown: boolean) {
   const pagesDir = resolve(process.cwd(), 'src', 'pages');
-  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir);
+  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir, includeMarkdown);
   const maps = computeRouteIds(pageKeys, layoutKeys);
   const manifest = buildRoutesManifest(pageKeys, layoutKeys, maps);
   if (!existsSync(clientOutDir)) mkdirSync(clientOutDir, { recursive: true });

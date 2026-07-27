@@ -101,24 +101,46 @@ importers:
 
   packages/framework:
     dependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1075.0
-        version: 3.1075.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1075.0
-        version: 3.1075.0
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
+    devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1075.0
+        version: 3.1075.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1075.0
+        version: 3.1075.0
+      '@cloudflare/vite-plugin':
+        specifier: ^1.47.0
+        version: 1.47.0(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))(wrangler@4.114.0)
       '@cossackframework/solar-icons':
         specifier: ^0.7.1
         version: 0.7.1
       '@cossackframework/ui':
         specifier: workspace:*
         version: link:../ui
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@tailwindcss/vite':
+        specifier: ^4.1.0
+        version: 4.2.4(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
+      cossack:
+        specifier: workspace:*
+        version: link:../cossack
+      hono:
+        specifier: ^4.12.31
+        version: 4.12.31
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       rehype-raw:
         specifier: ^7.0.0
         version: 7.0.0
@@ -146,6 +168,9 @@ importers:
       remark-toc:
         specifier: ^9.0.0
         version: 9.0.0
+      tailwindcss:
+        specifier: ^4.1.0
+        version: 4.2.4
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
@@ -155,31 +180,6 @@ importers:
       vfile-matter:
         specifier: ^5.0.1
         version: 5.0.1
-    devDependencies:
-      '@cloudflare/vite-plugin':
-        specifier: ^1.47.0
-        version: 1.47.0(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))(wrangler@4.114.0)
-      '@playwright/test':
-        specifier: ^1.61.1
-        version: 1.61.1
-      '@tailwindcss/vite':
-        specifier: ^4.1.0
-        version: 4.2.4(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0))
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
-      cossack:
-        specifier: workspace:*
-        version: link:../cossack
-      hono:
-        specifier: ^4.12.31
-        version: 4.12.31
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
-      tailwindcss:
-        specifier: ^4.1.0
-        version: 4.2.4
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.23.0)(yaml@2.9.0)

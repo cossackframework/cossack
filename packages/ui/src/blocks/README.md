@@ -32,11 +32,11 @@ components.
 
 ## Usage
 
-Blocks live in `src/blocks/` and are imported directly by pages. They use the
+Blocks are published from `@cossackframework/ui/blocks`. They use the
 `@cossackframework/ui` component library and expect the theme CSS to be wired.
 
 ```ts
-import { AuthForm } from '@/blocks/AuthForm';
+import { AuthForm } from '@cossackframework/ui/blocks';
 
 // In a page:
 render() {

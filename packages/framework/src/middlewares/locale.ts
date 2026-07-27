@@ -109,12 +109,12 @@ export function createLocaleMiddleware(
     const autoDetect = options.autoDetectBrowser === true;
     return async (c, next) => {
         ensureLocaleAlsWired();
-        seedCoreI18n(config('app.locale'));
+        seedCoreI18n(config<string>('app.locale', DEFAULT_LOCALE));
 
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
         if (supportedLocales.length === 0) {
-            const fallback = config('app.locale') || DEFAULT_LOCALE;
+            const fallback = config<string>('app.locale', DEFAULT_LOCALE);
             return runWithLocale({ locale: fallback, messages: {} }, () => next());
         }
 
@@ -139,7 +139,7 @@ export function createLocaleMiddleware(
         // 3. config('app.locale') — the deployment default (reads APP_LOCALE
         //    via src/config/app.ts, but config values can be overridden there).
         if (!locale) {
-            const envLocale = config('app.locale');
+            const envLocale = config<string>('app.locale');
             if (envLocale) locale = normalizeLocale(envLocale);
         }
 

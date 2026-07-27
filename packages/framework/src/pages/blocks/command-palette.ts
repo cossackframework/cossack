@@ -1,7 +1,7 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
 import { Kbd } from '@cossackframework/ui';
-import { CommandPalette, type CommandItem } from '../../blocks/CommandPalette';
+import { CommandPalette, type CommandItem } from '@cossackframework/ui/blocks';
 import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu';
 import { SettingsIcon } from '@cossackframework/solar-icons/settings';
 import { AddCircleIcon } from '@cossackframework/solar-icons/add-circle';

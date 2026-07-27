@@ -121,6 +121,77 @@ async function eagerClientJavaScriptBytes(projectDir) {
   return bytes;
 }
 
+async function listFilesRecursive(directory, predicate, files = []) {
+  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) await listFilesRecursive(absolute, predicate, files);
+    else if (entry.isFile() && predicate(absolute)) files.push(absolute);
+  }
+  return files;
+}
+
+async function productionBundleMetrics(projectDir) {
+  const clientDirectory = path.join(projectDir, 'dist', 'client');
+  const clientFiles = await listFilesRecursive(
+    clientDirectory,
+    (file) => file.endsWith('.js'),
+  );
+  const workerFiles = await listFilesRecursive(
+    path.join(projectDir, 'dist', 'ssr'),
+    (file) => file.endsWith('.js'),
+  );
+  return {
+    initialBrowserBytes: await eagerClientJavaScriptBytes(projectDir),
+    totalClientBytes: (await Promise.all(
+      clientFiles.map((file) => fs.stat(file)),
+    )).reduce((total, stat) => total + stat.size, 0),
+    workerBytes: (await Promise.all(
+      workerFiles.map((file) => fs.stat(file)),
+    )).reduce((total, stat) => total + stat.size, 0),
+    clientFiles,
+    workerFiles,
+  };
+}
+
+async function assertBundlesExclude(files, forbidden) {
+  for (const file of files) {
+    const source = await fs.readFile(file, 'utf8');
+    for (const marker of forbidden) {
+      if (source.includes(marker)) {
+        throw new Error(`${path.basename(file)} unexpectedly contains ${JSON.stringify(marker)}`);
+      }
+    }
+  }
+}
+
+async function verifyMinimalProductionBundles(projectDir) {
+  const metrics = await productionBundleMetrics(projectDir);
+  await assertBundlesExclude(metrics.clientFiles, [
+    '[Cossack] DevTools module loaded',
+    '[Cossack] DevTools enabled',
+    'Could not emit cossack-manifest.json',
+    'Could not parse src/auth.ts exports',
+    '@aws-sdk/client-s3',
+    'AWS4-HMAC-SHA256',
+    'X-Amz-Credential',
+  ]);
+  await assertBundlesExclude(metrics.workerFiles, [
+    'Could not emit cossack-manifest.json',
+    'Could not parse src/auth.ts exports',
+    '[cossack/ssg] Starting static rendering',
+    '[cossack/ssg] Generating sitemap',
+    '@aws-sdk/client-s3',
+    'AWS4-HMAC-SHA256',
+    'X-Amz-Credential',
+  ]);
+  console.log(
+    'Minimal production bundle sizes: ' +
+    `initial browser JS=${metrics.initialBrowserBytes} bytes, ` +
+    `total client JS=${metrics.totalClientBytes} bytes, ` +
+    `Worker JS=${metrics.workerBytes} bytes`,
+  );
+}
+
 async function assertStarterBundleBudgets(projectDir) {
   const eagerClientBytes = await eagerClientJavaScriptBytes(projectDir);
   const serverBytes = (await fs.stat(
@@ -148,6 +219,92 @@ try {
   await fs.mkdir(tarballDirectory);
   await buildPublishablePackages();
   const tarballs = await packPackages(tarballDirectory);
+
+  await run(process.execPath, [
+    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
+    'create',
+    'minimal-production',
+    '--adapter=cloudflare',
+    '--preset=minimal',
+    '--yes',
+  ], { cwd: temporaryRoot });
+  const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
+  await useTarballs(minimalProjectDir, tarballs);
+  await installGeneratedProject(minimalProjectDir);
+  await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
+  await verifyMinimalProductionBundles(minimalProjectDir);
+  await assertStarterBundleBudgets(minimalProjectDir);
+
+  await run('pnpm', [
+    'exec',
+    'cossack',
+    'add',
+    'markdown',
+    '--yes',
+  ], { cwd: minimalProjectDir });
+  await installGeneratedProject(minimalProjectDir);
+  const ssgPageDirectory = path.join(
+    minimalProjectDir,
+    'src',
+    'pages',
+    'packaging-check',
+  );
+  await fs.mkdir(ssgPageDirectory, { recursive: true });
+  await fs.writeFile(
+    path.join(ssgPageDirectory, 'index.md'),
+    '---\ntitle: Packaging check\n---\n# Packaging check\n\nStatic output only.\n',
+  );
+  const typedSsgPageDirectory = path.join(
+    minimalProjectDir,
+    'src',
+    'pages',
+    'ssg-packaging-check',
+  );
+  await fs.mkdir(typedSsgPageDirectory, { recursive: true });
+  await fs.writeFile(
+    path.join(typedSsgPageDirectory, 'index.ts'),
+    `import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+@Page({ transport: 'http', ssg: true })
+export default class PackagingSsgPage extends Cossack {
+  render() {
+    return html\`<main><h1>SSG packaging check</h1></main>\`;
+  }
+}
+`,
+  );
+  await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
+  await fs.access(path.join(
+    minimalProjectDir,
+    'dist',
+    'client',
+    'ssg-packaging-check',
+    'index.html',
+  ));
+  const routesManifest = await fs.readFile(
+    path.join(minimalProjectDir, 'dist', 'client', 'cossack-routes.json'),
+    'utf8',
+  );
+  if (!routesManifest.includes('/src/pages/packaging-check/index.md')) {
+    throw new Error('Markdown fixture was omitted from the generated routes manifest');
+  }
+  const sitemap = await fs.readFile(
+    path.join(minimalProjectDir, 'dist', 'client', 'sitemap.xml'),
+    'utf8',
+  );
+  if (!sitemap.includes('/ssg-packaging-check')) {
+    throw new Error('SSG sitemap did not include the static fixture');
+  }
+  const ssgMetrics = await productionBundleMetrics(minimalProjectDir);
+  await assertBundlesExclude(
+    [...ssgMetrics.clientFiles, ...ssgMetrics.workerFiles],
+    [
+      '[cossack/ssg] Starting static rendering',
+      '[cossack/ssg] Generating sitemap',
+      'generateSitemapFromUrls',
+    ],
+  );
 
   await run(process.execPath, [
     path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
@@ -225,7 +382,6 @@ try {
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
-  await assertStarterBundleBudgets(projectDir);
   const cloudflareManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
     'utf8',

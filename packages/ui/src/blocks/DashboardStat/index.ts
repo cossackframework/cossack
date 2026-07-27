@@ -1,6 +1,7 @@
 import { html, component } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
-import { Card, CardBody, Icon } from '@cossackframework/ui';
+import { Card, CardBody } from '../../components/Card.js';
+import { Icon } from '../../icons/Icon.js';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 
 export interface StatItem {

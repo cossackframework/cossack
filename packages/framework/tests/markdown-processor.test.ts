@@ -1,8 +1,38 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { processMarkdown } from '../src/markdown-processor';
 import { cossackPages } from '../src/vite-plugin';
 
 describe('Markdown processor', () => {
+  it('omits Markdown routes and warns once when no processor is configured', () => {
+    const plugin = cossackPages();
+    const load = plugin.load as Function;
+    const virtual = load.call(
+      { environment: { name: 'client' } },
+      '\0virtual:cossack-pages',
+    );
+    expect(virtual).toContain("'/src/pages/**/*.ts'");
+    expect(virtual).not.toContain("'/src/pages/**/*.md'");
+    expect(virtual).not.toContain("'/src/pages/**/*.mdx'");
+
+    const warn = vi.fn();
+    const buildStart = plugin.buildStart as Function;
+    buildStart.call({ warn });
+    buildStart.call({ warn });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cossack add markdown'));
+  });
+
+  it('includes Markdown route globs only when a processor is configured', () => {
+    const plugin = cossackPages({ markdownProcessor: processMarkdown });
+    const source = (plugin.load as Function).call(
+      { environment: { name: 'ssr' } },
+      '\0virtual:cossack-pages',
+    );
+    expect(source).toContain("'/src/pages/**/*.md'");
+    expect(source).toContain("'/src/pages/**/*.mdx'");
+    expect(source).toContain('{ eager: true }');
+  });
+
   it('extracts frontmatter and renders CommonMark, GFM, raw HTML, and slugs', async () => {
     const result = await processMarkdown(`---
 title: Guide
@@ -27,7 +57,7 @@ image: /guide.png
   });
 
   it('renders author and date frontmatter as a byline after the first heading', async () => {
-    const plugin = cossackPages();
+    const plugin = cossackPages({ markdownProcessor: processMarkdown });
     const transform = plugin.transform as Function;
     const result = await transform.call(
       { environment: { mode: 'build', name: 'ssr' } },

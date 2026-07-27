@@ -8,6 +8,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin';
 import { cossackSecurityPlugin } from './src/vite-security-plugin';
 import { cossackSsg } from './src/vite-ssg-plugin';
+import { processMarkdown } from './src/markdown-processor';
 
 function cossackDevTools(): Plugin {
   return {
@@ -83,14 +84,14 @@ export default defineConfig({
     cossackSecurityPlugin({
       devWarning: true,
     }),
-    cossackPages(),
+    cossackPages({ markdownProcessor: processMarkdown }),
     cossackLang(),
     cossackMiddlewares(),
     cossackConfig(),
     // SSG: renders pages marked `@Page({ ssg: true })` to static HTML during
     // `vite build` (via a closeBundle hook). No-op in dev and under vitest.
     cossackSsg(),
-    cossackDevTools(),
+    ...(process.env.VITEST ? [] : [cossackDevTools()]),
   ],
   build: {
     // Keep production SSR/worker output minified. Client builds inherit this

@@ -11,7 +11,7 @@ import {
   server$,
 } from '@cossackframework/core';
 import { component, html, repeat } from '@cossackframework/renderer';
-import { CommandPalette } from '@cossackframework/framework/blocks';
+import { CommandPalette } from '@cossackframework/ui/blocks';
 import { AddSquareIcon } from '@cossackframework/solar-icons/add-square';
 import { CodeSquareIcon } from '@cossackframework/solar-icons/code-square';
 import { DatabaseIcon } from '@cossackframework/solar-icons/database';

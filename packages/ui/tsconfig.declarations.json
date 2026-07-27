@@ -9,6 +9,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/index.ts", "src/components/**/*.ts", "src/icons/**/*.ts"],
+  "include": ["src/index.ts", "src/blocks/**/*.ts", "src/components/**/*.ts", "src/icons/**/*.ts"],
   "exclude": ["src/scripts", "src/**/*.test.ts", "tests"]
 }
