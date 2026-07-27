@@ -138,7 +138,7 @@ export default class RootLayout extends Cossack {
           'aria-label': 'Demo navigation',
         }, this.renderSidebar('offcanvas'))}
 
-        <div class="min-h-screen transition-[margin] duration-300 ${this.sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[260px]'}">
+        <div class="min-h-screen transition-[margin] duration-300 ${this.sidebarCollapsed ? 'md:ml-18' : 'md:ml-65'}">
           <header class="sticky top-0 z-40 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur md:px-6">
             <div class="md:hidden">
               ${component(Button, {

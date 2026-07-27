@@ -50,12 +50,13 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `start` | Start the production server. |
 | `generate <type> <name>` (`g`) | Generate a page/component/layout/middleware/service/model/migration/seeder. |
 | `delete <type> <name>` (`d`) | Delete a generated file/folder. |
-| `add <feature>` | Add `ui`, `database`, `auth`, `dashboard`, or `examples`. |
+| `add <feature>` | Add `ui`, `database`, `studio`, `auth`, `dashboard`, `markdown`, or `examples`. |
 | `remove <feature>` | Remove a feature and anything that depends on it. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
 | `migration <sub>` (`migrate`) | Run Kysely migrations (`up`, `down`, `status`). |
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
+| `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
@@ -88,9 +89,14 @@ cossack g migration create_posts
 
 # Add features
 cossack add database --database d1
+cossack add studio                 # Also adds database support when needed
 cossack add auth --auth-methods credentials,oauth --oauth github
 cossack add dashboard --features users,sessions
+cossack add markdown               # Enables .md and .mdx routes
 cossack remove database
+
+# Open the installed database Studio
+cossack studio
 
 # Switch runtimes (configuration/code only; database data is not migrated)
 cossack adapter node
@@ -119,7 +125,9 @@ re-renders the recorded recipe for another runtime, and `cossack upgrade`
 re-renders only the installed capabilities.
 
 Available presets are `minimal`, `database`, `auth`, and `full-stack`.
-Composable features are `ui`, `database`, `auth`, `dashboard`, and `examples`.
+Composable features are `ui`, `database`, `studio`, `auth`, `dashboard`,
+`markdown`, and `examples`. The `studio` feature requires `database`, while
+`examples` requires both `ui` and `markdown`.
 For example:
 
 ```sh
