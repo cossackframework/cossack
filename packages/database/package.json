@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/database",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "type": "module",
   "description": "Database support for the Cossack Framework — Kysely-based query builder with D1 and Turso dialects, migrations, and seeders",
   "license": "MIT",
