@@ -20,10 +20,12 @@ export class CounterHttp extends Cossack {
         this.count = 0;
     }
 
+    @Server()
     increment() {
         this.count++;
     }
 
+    @Server()
     decrement() {
         this.count--;
         this.redirect('/tasks'); // Example of redirecting after a server action
