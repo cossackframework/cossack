@@ -144,14 +144,12 @@ export function applyStateToComponent(component: any, data: Record<string, any>)
 }
 
 /**
- * Notify the client SPA (if present) that a server action is being dispatched,
- * so it can invalidate the cached initial state for the current page. Without
- * this, navigating away and back after a mutation returns the stale cached
- * state. The hook is registered by the framework's client app; calling it when
- * absent (SSR, tests) is a no-op.
+ * Notify the client SPA (if present) after a server action has succeeded so it
+ * can invalidate all cached route documents before a possible redirect.
+ * Calling the framework-private hook when absent (SSR, tests) is a no-op.
  */
-function invalidateCurrentClientPage(): void {
-    (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage?.();
+function invalidateClientPageCache(): void {
+    (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
 /**
@@ -260,6 +258,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                     if (xhr.status >= 200 && xhr.status < 300) {
                                         try {
                                             const data = JSON.parse(xhr.responseText);
+                                            invalidateClientPageCache();
                                             if (data._cossack_redirect) {
                                                 window.location.href = data._cossack_redirect;
                                                 resolve(undefined);
@@ -309,6 +308,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         }
 
                         const data = await response.json() as Record<string, any>;
+                        invalidateClientPageCache();
 
                         if (data._cossack_redirect) {
                             window.location.href = data._cossack_redirect;
@@ -462,6 +462,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                     throw new Error(msg);
                                 }
                                 const data = await response.json() as Record<string, any>;
+                                invalidateClientPageCache();
 
                                 if (data._cossack_redirect) {
                                     window.location.href = data._cossack_redirect;
@@ -553,7 +554,6 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
         // HTTP transport: standard async proxy
         const proxy = async (...args: any[]) => {
-            invalidateCurrentClientPage();
             // Optimistic UI Handler
             runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
 
@@ -599,6 +599,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (xhr.status >= 200 && xhr.status < 300) {
                                 try {
                                     const data = JSON.parse(xhr.responseText);
+                                    invalidateClientPageCache();
                                     if (data._cossack_redirect) {
                                         window.location.href = data._cossack_redirect;
                                         resolve(undefined);
@@ -651,6 +652,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     }
 
                     const data = await response.json() as Record<string, any>;
+                    invalidateClientPageCache();
 
                     if (data._cossack_redirect) {
                         window.location.href = data._cossack_redirect;
@@ -710,7 +712,6 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
         const { name, channel, provider } = method;
         if (isSharedMethod(component.constructor, name)) continue;
         const proxy = (...args: any[]) => {
-            invalidateCurrentClientPage();
             let ws = component.websockets.get(provider);
             if (!ws) {
                 const root = component.consume(RootContext);
@@ -746,6 +747,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     return;
                 }
                 ws.send(message);
+                invalidateClientPageCache();
             } else {
                 console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
             }

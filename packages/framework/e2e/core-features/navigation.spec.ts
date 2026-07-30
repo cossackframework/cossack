@@ -117,4 +117,28 @@ test.describe('Navigation', () => {
     )).toHaveLength(0);
     expect(requests.filter(({ type }) => type === 'document')).toHaveLength(0);
   });
+
+  test('successful mutation clears cached redirect destinations before soft navigation', async ({ page }) => {
+    await page.goto('/cache-regression/detail');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    const initial = Number(
+      (await page.locator('[data-cache-version]').textContent())?.match(/\d+/)?.[0],
+    );
+
+    const detailFetches: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === '/cache-regression/detail' && request.resourceType() === 'fetch') {
+        detailFetches.push(url.pathname);
+      }
+    });
+
+    await page.getByRole('link', { name: 'Edit version' }).click();
+    await expect(page).toHaveURL(/\/cache-regression\/edit$/);
+    await page.getByRole('button', { name: 'Save version' }).click();
+
+    await expect(page).toHaveURL(/\/cache-regression\/detail$/);
+    await expect(page.locator('[data-cache-version]')).toHaveText(`Version: ${initial + 1}`);
+    expect(detailFetches).toHaveLength(1);
+  });
 });

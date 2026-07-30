@@ -839,6 +839,23 @@ export class ComponentsDemo extends Cossack {
                 <!-- NativeSelect + InputGroup -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">NativeSelect · InputGroup</h2>
+                    <div id="surface-comparison" class="flex flex-wrap items-center gap-3 rounded-lg bg-card p-4">
+                        <div class="w-48">
+                            ${component(Input, {
+                                id: 'surface-input',
+                                placeholder: 'Transparent input',
+                            })}
+                        </div>
+                        <div class="w-48">
+                            ${component(NativeSelect, { id: 'surface-select' },
+                                html`<option>Transparent select</option><option>Another option</option>`)}
+                        </div>
+                        ${component(Button, {
+                            id: 'surface-button',
+                            type: 'button',
+                            variant: 'outline',
+                        }, 'Outline button')}
+                    </div>
                     <div class="flex flex-wrap items-start gap-6">
                         <div class="w-48">
                             <span class="text-sm text-muted-foreground mb-2 block">Native select</span>

@@ -25,7 +25,7 @@ const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
     destructive:
         "bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20 focus-visible:ring-destructive/20 focus-visible:border-destructive/40",
     outline:
-        "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
+        "border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground",
     ghost: "hover:bg-accent hover:text-accent-foreground",
     link: "text-primary underline-offset-4 hover:underline",
 };

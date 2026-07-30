@@ -40,6 +40,7 @@ import {
     Kbd,
     ButtonGroup,
     Command,
+    NativeSelect,
 } from "../src/index";
 import { toastStore } from "../src/components/Toast";
 
@@ -92,6 +93,12 @@ describe("Button", () => {
         expect(out).toContain("focus-visible:ring-ring/50");
     });
 
+    it("keeps the outline surface transparent", () => {
+        const out = renderComp(Button, { variant: "outline" }, "Outline");
+        expect(out).toContain("bg-transparent");
+        expect(out).not.toContain("bg-background");
+    });
+
     it("forwards arbitrary attributes via spread", () => {
         const out = renderComp(Button, { id: "save-btn", disabled: true }, "Save");
         expect(out).toContain('id="save-btn"');
@@ -112,6 +119,20 @@ describe("Input", () => {
         const out = renderComp(Input, { variant: "error" });
         expect(out).toContain("cs-input--error");
         expect(out).toContain("border-destructive");
+    });
+});
+
+describe("NativeSelect", () => {
+    it("uses a transparent closed surface while preserving native color-scheme", () => {
+        const out = renderComp(
+            NativeSelect,
+            {},
+            html`<option value="one">One</option>`,
+        );
+        expect(out).toContain("bg-transparent");
+        expect(out).not.toContain("bg-background");
+        expect(out).toContain("[color-scheme:light_dark]");
+        expect(out).toContain("dark:[color-scheme:dark]");
     });
 });
 

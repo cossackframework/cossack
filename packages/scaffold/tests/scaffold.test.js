@@ -518,6 +518,25 @@ describe('composition', () => {
       'utf8',
     )).toContain('better-sqlite3: true');
     expect(pkg.dependencies['better-sqlite3']).toBe('^13.0.1');
+    const devEntry = await fs.readFile(
+      path.join(project.projectDir, 'scripts/dev.js'),
+      'utf8',
+    );
+    const productionEntry = await fs.readFile(
+      path.join(project.projectDir, 'src/index.ts'),
+      'utf8',
+    );
+    expect(devEntry).toContain('...process.env');
+    expect(devEntry.indexOf('...process.env')).toBeLessThan(
+      devEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
+    );
+    expect(devEntry.indexOf('...process.env')).toBeLessThan(
+      devEntry.indexOf('env.EMAIL = createNodeEmailSender'),
+    );
+    expect(productionEntry).toContain('...process.env');
+    expect(productionEntry.indexOf('...process.env')).toBeLessThan(
+      productionEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
+    );
     expect(await detectProjectRuntime(project.projectDir)).toBe('node');
     const environment = await fs.readFile(path.join(project.projectDir, '.env'), 'utf8');
     const appSecret = environment.match(/^APP_SECRET=(.+)$/m)?.[1];
@@ -540,6 +559,21 @@ describe('composition', () => {
     expect(manifest.files).not.toHaveProperty('.env');
     expect(manifest.files).toHaveProperty('.env.example');
     expect(manifest.files).not.toHaveProperty('src/config/oauth.ts');
+  });
+
+  it('keeps arbitrary Node bindings and explicit overrides in the raw dev template', async () => {
+    const rawDevEntry = await fs.readFile(
+      new URL('../template/scripts/dev.js', import.meta.url),
+      'utf8',
+    );
+
+    expect(rawDevEntry).toContain('...process.env');
+    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
+      rawDevEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
+    );
+    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
+      rawDevEntry.indexOf('env.EMAIL = createNodeEmailSender'),
+    );
   });
 
   it('keeps Node minimal free of database dependencies while still providing env defaults', async () => {

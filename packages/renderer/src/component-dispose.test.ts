@@ -89,3 +89,39 @@ describe('component disposal calls destroy()', () => {
         container.remove();
     });
 });
+
+describe('component connection ordering', () => {
+    it('assigns direct props, props, and children before connectedCallback()', () => {
+        const observed: Array<Record<string, unknown>> = [];
+
+        class Child extends CossackElement {
+            value = 'default';
+
+            connectedCallback() {
+                observed.push({
+                    value: this.value,
+                    propsValue: this.props.value,
+                    children: this.children,
+                });
+                super.connectedCallback();
+            }
+
+            render() {
+                return html`<p>${this.value}:${this.children}</p>`;
+            }
+        }
+
+        const container = document.createElement('div');
+        render(html`${{
+            ...makeComponentResult(Child),
+            props: { value: 'passed' },
+            children: 'projected',
+        }}`, container);
+
+        expect(observed).toEqual([{
+            value: 'passed',
+            propsValue: 'passed',
+            children: 'projected',
+        }]);
+    });
+});

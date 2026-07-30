@@ -147,6 +147,19 @@ function postgresConnection() {
         };
       }
       if (sql.includes('FROM pg_catalog.pg_class AS table_class')) {
+        if (
+          /\bWITH ORDINALITY AS key\b|\bkey\./.test(sql)
+          || /\bpg_catalog\.pg_collation AS collation\b|\bcollation\./.test(sql)
+        ) {
+          throw new Error('PostgreSQL index introspection used a conflicting SQL alias');
+        }
+        if (
+          !sql.includes('WITH ORDINALITY AS index_key(attribute_number, ordinality)')
+          || !sql.includes('pg_catalog.pg_collation AS index_collation')
+          || !sql.includes('index_collation.collname AS collation')
+        ) {
+          throw new Error('PostgreSQL index introspection did not use deterministic aliases');
+        }
         if (parameters[0] === 'events' || parameters[0] === 'external_events') return { rows: [] };
         return {
           rows: [
@@ -580,6 +593,12 @@ describe('PostgreSQL Studio adapter', () => {
       name: 'people_pkey',
       unique: true,
       origin: 'pk',
+      columns: [{
+        name: 'id',
+        position: 0,
+        descending: false,
+        collation: null,
+      }],
     });
     expect(people.foreignKeys).toEqual([{
       name: 'people_account_fk',
