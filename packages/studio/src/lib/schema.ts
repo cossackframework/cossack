@@ -649,9 +649,9 @@ async function introspectPostgres(connection: StudioConnection): Promise<StudioO
           END AS origin,
           index_info.indpred IS NOT NULL AS partial,
           attribute.attname AS column_name,
-          key.ordinality - 1 AS position,
-          (index_info.indoption[key.ordinality - 1] & 1) = 1 AS descending,
-          collation.collname AS collation
+          index_key.ordinality - 1 AS position,
+          (index_info.indoption[index_key.ordinality - 1] & 1) = 1 AS descending,
+          index_collation.collname AS collation
         FROM pg_catalog.pg_class AS table_class
         JOIN pg_catalog.pg_namespace AS namespace
           ON namespace.oid = table_class.relnamespace
@@ -660,16 +660,16 @@ async function introspectPostgres(connection: StudioConnection): Promise<StudioO
         JOIN pg_catalog.pg_class AS index_class
           ON index_class.oid = index_info.indexrelid
         CROSS JOIN LATERAL unnest(index_info.indkey)
-          WITH ORDINALITY AS key(attribute_number, ordinality)
+          WITH ORDINALITY AS index_key(attribute_number, ordinality)
         LEFT JOIN pg_catalog.pg_attribute AS attribute
           ON attribute.attrelid = table_class.oid
-          AND attribute.attnum = key.attribute_number
-        LEFT JOIN pg_catalog.pg_collation AS collation
-          ON collation.oid = index_info.indcollation[key.ordinality - 1]
-          AND index_info.indcollation[key.ordinality - 1] <> 0
+          AND attribute.attnum = index_key.attribute_number
+        LEFT JOIN pg_catalog.pg_collation AS index_collation
+          ON index_collation.oid = index_info.indcollation[index_key.ordinality - 1]
+          AND index_info.indcollation[index_key.ordinality - 1] <> 0
         WHERE namespace.nspname = current_schema()
           AND table_class.relname = ?
-        ORDER BY index_class.relname, key.ordinality
+        ORDER BY index_class.relname, index_key.ordinality
       `, [row.name]);
       indexes = catalogIndexes(catalogIndexRows(indexResult.rows));
       const foreignKeyResult = await connection.execute(`

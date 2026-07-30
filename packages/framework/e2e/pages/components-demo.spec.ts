@@ -35,7 +35,7 @@ test.describe('Components Demo Page', () => {
 
     // Variant class flows through classMap.
     await expect(page.locator('button.cs-button--destructive:has-text("Delete")').first()).toBeVisible();
-    await expect(page.locator('button.cs-button--outline:has-text("Outline")')).toBeVisible();
+    await expect(page.locator('button.cs-button--outline:has-text("Outline")').first()).toBeVisible();
   });
 
   test('renders all badge variants', async ({ page }) => {
@@ -121,13 +121,35 @@ test.describe('Components Demo Page', () => {
   }) => {
     // The token chain resolves: bg-primary utility is generated from the
     // @theme --color-primary declared in @cossackframework/ui/theme/theme.css.
-    const primary = page.locator('button.cs-button--default').first();
+    const primary = page.locator('button.cs-button.bg-primary').first();
     const bg = await primary.evaluate(
       (el) => getComputedStyle(el).backgroundColor,
     );
     // Token-driven background is set (not the transparent default).
     expect(bg).not.toBe('rgba(0, 0, 0, 0)');
     expect(bg).not.toBe('transparent');
+  });
+
+  test('input, native select, and outline button share transparent light and dark surfaces', async ({
+    page,
+  }) => {
+    const readBackgrounds = () => page.evaluate(() => {
+      const background = (selector: string) =>
+        getComputedStyle(document.querySelector(selector)!).backgroundColor;
+      return {
+        input: background('#surface-input'),
+        select: background('#surface-select'),
+        button: background('#surface-button'),
+      };
+    });
+
+    await page.evaluate(() => document.documentElement.classList.remove('dark'));
+    const light = await readBackgrounds();
+    await page.evaluate(() => document.documentElement.classList.add('dark'));
+    const dark = await readBackgrounds();
+
+    expect(new Set(Object.values(light))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
+    expect(new Set(Object.values(dark))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
   });
 
   test('every variant utility is generated (regression guard for @source)', async ({
@@ -141,7 +163,7 @@ test.describe('Components Demo Page', () => {
       const bg = (el: Element | null) =>
         el ? getComputedStyle(el).backgroundColor : 'missing';
       return {
-        primary: bg(document.querySelector('button.cs-button--default')),
+        primary: bg(document.querySelector('button.cs-button.bg-primary')),
         secondary: bg(document.querySelector('button.cs-button--secondary')),
         destructive: bg(document.querySelector('button.cs-button--destructive')),
         success: bg(document.querySelector('span.cs-badge--success')),
@@ -491,7 +513,7 @@ test.describe('Components Demo Page', () => {
   });
 
   test('native select and input group render their native elements', async ({ page }) => {
-    await expect(page.locator('select.cs-native-select__input')).toBeVisible();
+    await expect(page.locator('select.cs-native-select__input').first()).toBeVisible();
     expect(await page.locator('select.cs-native-select__input option').count()).toBeGreaterThanOrEqual(3);
     await expect(page.locator('.cs-input-group__input')).toHaveCount(3);
     // Prefix @ and suffix USD are present.

@@ -77,6 +77,7 @@ export interface CreateClientAppOptions {
 const PAGE_CACHE_MAX = 20;
 type CachedPage = { html: string; state: any };
 const pageCache = new Map<string, CachedPage>();
+let pageCacheEpoch = 0;
 
 /**
  * Cache route documents by the URL portion that affects the server response.
@@ -88,21 +89,18 @@ function pageCacheKey(url: string): string {
   return parsed.pathname + parsed.search;
 }
 
-function invalidatePageCache(url?: string) {
-  if (url) pageCache.delete(pageCacheKey(url));
-  else pageCache.clear();
+function invalidatePageCache() {
+  pageCache.clear();
+  inFlightPages.clear();
+  pageCacheEpoch++;
 }
 
-// Allow the RPC layer (core method-proxy) to invalidate the current page's
-// cache entry after an action mutates server state, without a hard import
-// cycle (core → framework). Only the current page is dropped so unrelated
-// prefetched pages stay cached.
+// Allow the RPC layer (core method-proxy) to invalidate every cached route
+// document after a successful action, without a hard import cycle
+// (core → framework).
 if (typeof globalThis !== 'undefined') {
-  (globalThis as { __cossack_invalidateCurrentPage?: () => void }).__cossack_invalidateCurrentPage = () => {
-    try {
-      if (typeof location !== 'undefined') invalidatePageCache(location.href);
-    } catch { /* location unavailable */ }
-  };
+  (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache =
+    invalidatePageCache;
 }
 
 // Progress bar element. Only created when the `progressBar` option is enabled
@@ -193,6 +191,7 @@ async function fetchPage(url: string) {
     return existing;
   }
 
+  const requestEpoch = pageCacheEpoch;
   const promise = (async () => {
     const response = await fetch(key);
     if (!response.ok) {
@@ -204,6 +203,10 @@ async function fetchPage(url: string) {
     if (parsed) {
       const data = { html, state: parsed.state };
       preloadPageModules(parsed.modulePreloads);
+      // An RPC may have invalidated the cache while this prefetch was in
+      // flight. Return its result to the original caller, but never let that
+      // stale document repopulate the post-mutation cache.
+      if (requestEpoch !== pageCacheEpoch) return data;
       pageCache.set(key, data);
       // LRU eviction: drop the oldest entry once over capacity. Map iterates in
       // insertion order, so the first key is the least-recently-inserted.
@@ -220,8 +223,12 @@ async function fetchPage(url: string) {
   inFlightPages.set(key, promise);
   // Always clear the in-flight entry so a failed fetch can be retried later.
   void promise.then(
-    () => inFlightPages.delete(key),
-    () => inFlightPages.delete(key),
+    () => {
+      if (inFlightPages.get(key) === promise) inFlightPages.delete(key);
+    },
+    () => {
+      if (inFlightPages.get(key) === promise) inFlightPages.delete(key);
+    },
   );
   return promise;
 }

@@ -1066,12 +1066,6 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
       ));
     }
-    if (recipe.adapter === 'node' && rel === 'scripts/dev.js') {
-      content = text(content.toString('utf8').replace(
-        '  const env = {\\n    DB_PATH:',
-        '  const env = {\\n    ...process.env,\\n    DB_PATH:',
-      ));
-    }
     if (recipe.adapter === 'node' && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
     }

@@ -84,20 +84,45 @@ describe('WS payload keeps serializable objects', () => {
         errSpy.mockRestore();
     });
 
-    it('invokes the client page-cache invalidation hook on dispatch', () => {
+    it('invalidates the client page cache only after a successful send', () => {
         const component = makeComponent();
         const ws = new MockWS();
         component.websockets.set('page', ws as any);
         (globalThis as any).WebSocket = { OPEN: 1 };
 
         let invalidated = 0;
-        (globalThis as any).__cossack_invalidateCurrentPage = () => { invalidated++; };
+        (globalThis as any).__cossack_invalidatePageCache = () => { invalidated++; };
         try {
             proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
             component.doThing();
             expect(invalidated).toBe(1);
         } finally {
-            delete (globalThis as any).__cossack_invalidateCurrentPage;
+            delete (globalThis as any).__cossack_invalidatePageCache;
+        }
+    });
+
+    it('retains the client page cache when serialization or send fails', () => {
+        const component = makeComponent();
+        const ws = new MockWS();
+        component.websockets.set('page', ws as any);
+        (globalThis as any).WebSocket = { OPEN: 1 };
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const invalidate = vi.fn();
+        (globalThis as any).__cossack_invalidatePageCache = invalidate;
+
+        try {
+            proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
+            const circular: any = {};
+            circular.self = circular;
+            component.doThing(circular);
+            expect(invalidate).not.toHaveBeenCalled();
+
+            ws.send = () => { throw new Error('send failed'); };
+            expect(() => component.doThing('serializable')).toThrow('send failed');
+            expect(invalidate).not.toHaveBeenCalled();
+        } finally {
+            delete (globalThis as any).__cossack_invalidatePageCache;
+            errSpy.mockRestore();
         }
     });
 });

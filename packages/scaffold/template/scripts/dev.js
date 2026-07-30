@@ -41,6 +41,7 @@ async function loadInlineConfig() {
 /** Build env bindings mirroring Cloudflare's `env` (see src/index.ts). */
 async function buildEnv() {
   const env = {
+    ...process.env,
     DB_PATH: process.env.DB_PATH ?? './database.sqlite',
   };
   if (process.env.SMTP_HOST) {

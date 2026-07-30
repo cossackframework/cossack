@@ -1001,6 +1001,11 @@ class NodePart implements Part {
         }
       };
       this.componentInstance.addRenderListener(this.renderListener);
+      Object.assign(this.componentInstance, result.props);
+      if ('props' in this.componentInstance) {
+        (this.componentInstance as any).props = result.props;
+      }
+      this.componentInstance.children = result.children;
       this.componentInstance.connectedCallback();
     }
     const instance = this.componentInstance;
@@ -1111,6 +1116,11 @@ class NodePart implements Part {
         this.updateNode(template);
       };
       this.componentInstance.addRenderListener(this.renderListener);
+      Object.assign(this.componentInstance, result.props);
+      if ('props' in this.componentInstance) {
+        (this.componentInstance as any).props = result.props;
+      }
+      this.componentInstance.children = result.children;
       this.componentInstance.connectedCallback();
     }
     const instance = this.componentInstance;
