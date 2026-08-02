@@ -181,7 +181,7 @@ export default ({ env }) => ({
 The driver registration lives in `src/middlewares/orm.ts`:
 
 ```ts
-import { createDatabaseCacheStore } from '@cossackframework/orm/cossack';
+import { createDatabaseCacheStore } from '@cossackframework/database/cossack';
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 
 extendCacheDriver('database', () => createDatabaseCacheStore());

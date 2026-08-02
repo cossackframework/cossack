@@ -52,7 +52,7 @@ export default defineConfig({
       '@cossackframework/renderer',
       '@cossackframework/framework',
       '@cossackframework/auth',
-      '@cossackframework/orm',
+      '@cossackframework/database',
       '@cossackframework/ui',
       '@cossackframework/solar-icons',
       'hono',
@@ -88,7 +88,7 @@ export default defineConfig({
         include: [
           '@cossackframework/ui',
           '@cossackframework/auth',
-          '@cossackframework/orm',
+          '@cossackframework/database',
           '@cossackframework/framework/cache',
           'hono/cookie',
         ],

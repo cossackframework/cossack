@@ -86,8 +86,8 @@ Scaffold a new Cossack project.
 Options:
   --adapter <cloudflare|node>
   --package-manager <manager>   npm|pnpm|yarn|bun|deno
-  --preset <minimal|orm|auth|full-stack>
-  --features <ui,orm,studio,auth,dashboard,markdown,examples>
+  --preset <minimal|database|auth|full-stack>
+  --features <ui,database,studio,auth,dashboard,markdown,examples>
   --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>

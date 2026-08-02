@@ -9,7 +9,7 @@ const SESSION_STORE_CONTEXT_KEY = 'sessionStore';
 
 /**
  * ORM-agnostic persistent session contract. Applications can provide the ORM
- * store from `@cossackframework/orm/cossack`, or any structurally compatible
+ * store from `@cossackframework/database/cossack`, or any structurally compatible
  * implementation.
  */
 export interface SessionStore {

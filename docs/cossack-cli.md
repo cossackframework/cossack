@@ -204,9 +204,9 @@ Add an opinionated, working feature to the current project. Each feature wires i
 cossack add <feature> [options]
 ```
 
-#### `cossack add orm`
+#### `cossack add database`
 
-Adds `@cossackframework/orm`, decorated entities, deterministic migrations and
+Adds `@cossackframework/database`, decorated entities, deterministic migrations and
 seeders, `orm.config.ts`, a runtime-specific ORM factory, ORM/session/cache
 middleware, and the selected provider binding.
 
@@ -214,8 +214,8 @@ middleware, and the selected provider binding.
 > this command for Minimal projects or to compose it later.
 
 ```bash
-cossack add orm
-cossack add orm --database turso
+cossack add database
+cossack add database --database turso
 ```
 
 #### `cossack add auth`

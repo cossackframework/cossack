@@ -1,4 +1,4 @@
-import type { Migration } from '@cossackframework/orm';
+import type { Migration } from '@cossackframework/database';
 
 export default {
   name: '0005_create_oauth_accounts',

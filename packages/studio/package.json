@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/orm": "^1.1.0",
+    "@cossackframework/database": "workspace:*",
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/solar-icons": "^0.7.1",

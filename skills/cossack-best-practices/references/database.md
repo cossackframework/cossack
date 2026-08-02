@@ -1,11 +1,11 @@
 # ORM
 
-Cossack applications use `@cossackframework/orm` with decorated Active Record
+Cossack applications use `@cossackframework/database` with decorated Active Record
 models. The generated `ormMiddleware` establishes one request scope; model
 methods and the global parameterized `sql` tag resolve that scope.
 
 ```ts
-import { Like } from '@cossackframework/orm';
+import { Like } from '@cossackframework/database';
 import { User } from '@/models/User';
 
 const users = await User.find({
@@ -24,7 +24,7 @@ bundles.
 For joins and provider-specific operations, use parameterized scoped SQL:
 
 ```ts
-import { sql } from '@cossackframework/orm';
+import { sql } from '@cossackframework/database';
 
 const result = await sql`SELECT * FROM users WHERE id = ${id}`;
 ```

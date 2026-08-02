@@ -1,4 +1,4 @@
-import { defineSeeder } from '@cossackframework/orm';
+import { defineSeeder } from '@cossackframework/database';
 import { ALL_PERMISSIONS } from '../lib/permissions';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword } from '../auth';

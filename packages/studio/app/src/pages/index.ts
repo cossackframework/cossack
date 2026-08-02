@@ -27,8 +27,6 @@ import {
   AlertDialog,
   Badge,
   Button,
-  Checkbox,
-  DropdownMenu,
   Icon,
   InputGroup,
   Kbd,
@@ -70,7 +68,6 @@ import {
   exportValue,
   FILTER_OPERATORS,
   localDateTimeDefaults,
-  SYSTEM_TABLES,
   type BatchUpdateState,
   type CellEditor,
   type CellMode,
@@ -118,8 +115,6 @@ export default class StudioPage extends Cossack {
   @ClientState() tab: StudioTab = 'browse';
   @ClientState() showInsert = false;
   @ClientState() showFilter = false;
-  @ClientState() showKyselyMigration = false;
-  @ClientState() showKyselyMigrationLock = false;
   @ClientState() insertFields: Record<string, InsertFieldState> = {};
   @ClientState() insertError = '';
   @ClientState() filters: BrowseFilter[] = [];
@@ -214,8 +209,6 @@ export default class StudioPage extends Cossack {
   visibleObjects(schema = this.activeSchema): StudioObject[] {
     const query = this.search.trim().toLowerCase();
     return schema.objects.filter((candidate) => {
-      if (candidate.name === 'kysely_migration' && !this.showKyselyMigration) return false;
-      if (candidate.name === 'kysely_migration_lock' && !this.showKyselyMigrationLock) return false;
       return candidate.name.toLowerCase().includes(query);
     });
   }
@@ -1452,12 +1445,7 @@ export default class StudioPage extends Cossack {
     const schema = this.activeSchema;
     const object = this.activeObject;
     const objects = this.visibleObjects(schema);
-    const paletteObjects = schema.objects.filter((candidate) => {
-      if (candidate.name === 'kysely_migration') return this.showKyselyMigration;
-      if (candidate.name === 'kysely_migration_lock') return this.showKyselyMigrationLock;
-      return true;
-    });
-    const hiddenSystemTables = schema.objects.filter((candidate) => SYSTEM_TABLES.has(candidate.name));
+    const paletteObjects = schema.objects;
     const remote = schema.connection.remote;
 
     return html`
@@ -1535,44 +1523,6 @@ export default class StudioPage extends Cossack {
                 (event.target as HTMLInputElement).value,
               ),
               '@keydown': this.onSearchKeydown,
-              suffix: hiddenSystemTables.length
-                ? component(DropdownMenu, {
-                    side: 'bottom',
-                    align: 'end',
-                    trigger: component(Tooltip, {
-                      label: `System table: ${hiddenSystemTables.length}`,
-                      side: 'right',
-                    }, html`
-                      <span
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        data-testid="system-table-trigger"
-                      >
-                        ${component(Icon, { entry: FiltersIcon, size: 15 })}
-                        <span class="sr-only">System table: ${hiddenSystemTables.length}</span>
-                      </span>
-                    `),
-                  }, html`
-                    <div class="grid gap-2 p-2" data-testid="system-table-menu">
-                      ${hiddenSystemTables.map((candidate) => component(Checkbox, {
-                        checked: candidate.name === 'kysely_migration'
-                          ? this.showKyselyMigration
-                          : this.showKyselyMigrationLock,
-                        '@change': (event: InputEvent) => {
-                          const checked = (event.target as HTMLInputElement).checked;
-                          if (candidate.name === 'kysely_migration') this.showKyselyMigration = checked;
-                          else this.showKyselyMigrationLock = checked;
-                        },
-                      }, candidate.name))}
-                    </div>
-                  `)
-                : component(Tooltip, {
-                    label: 'System table: 0',
-                    side: 'right',
-                  }, html`
-                    <span class="inline-flex h-7 w-7 items-center justify-center opacity-50">
-                      ${component(Icon, { entry: FiltersIcon, size: 15 })}
-                    </span>
-                  `),
             })}
           </div>
           <nav

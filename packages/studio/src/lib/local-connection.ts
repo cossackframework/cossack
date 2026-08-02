@@ -1,4 +1,4 @@
-import type { ORM, OrmSchema } from '@cossackframework/orm';
+import type { ORM, OrmSchema } from '@cossackframework/database';
 import { OperationQueue } from './queue.js';
 import type {
   StudioConnection,
@@ -30,7 +30,7 @@ export class LocalStudioConnection implements StudioConnection {
     return this.queue.run(() => this.orm.run(async () => {
       const started = performance.now();
       const result = await this.orm.driver.execute(
-        { text, parameters: parameters as import('@cossackframework/orm').CompiledQuery['parameters'] },
+        { text, parameters: parameters as import('@cossackframework/database').CompiledQuery['parameters'] },
         'raw',
       );
       return {

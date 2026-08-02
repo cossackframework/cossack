@@ -286,8 +286,9 @@ function recipeFromManifest(manifest) {
 function unsupportedManifestError(manifest) {
   if (manifest.schemaVersion === 2) {
     return new Error(
-      'Scaffold manifest schema 2 uses the removed legacy database recipe. ' +
-      'Back up the database, convert models and queries to @cossackframework/orm, ' +
+      'Scaffold manifest schema 2 uses the removed legacy Kysely database API. ' +
+      'Back up the database, convert models and queries to the Active Record ' +
+      '@cossackframework/database API, ' +
       'run `cossack schema check`, and baseline migration history before upgrading.',
     );
   }

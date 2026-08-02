@@ -1,4 +1,4 @@
-import type { Migration } from '@cossackframework/orm';
+import type { Migration } from '@cossackframework/database';
 
 export default {
   name: '0006_create_cache_table',

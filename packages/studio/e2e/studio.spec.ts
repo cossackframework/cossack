@@ -1,5 +1,5 @@
-import { createORM } from '@cossackframework/orm';
-import { libsql } from '@cossackframework/orm/node';
+import { createORM } from '@cossackframework/database';
+import { libsql } from '@cossackframework/database/node';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { runStudio } from '../dist/index.js';
@@ -46,9 +46,7 @@ test.beforeAll(async () => {
     'INSERT INTO legacy_users (id, name) VALUES (NULL, ?), (NULL, ?)',
     ['Repair me', 'Delete me'],
   );
-  const legacyMigrationPrefix = 'ky' + 'sely_migration';
-  await connection.execute(`CREATE TABLE ${legacyMigrationPrefix} (name TEXT PRIMARY KEY)`);
-  await connection.execute(`CREATE TABLE ${legacyMigrationPrefix}_lock (id INTEGER PRIMARY KEY)`);
+  await connection.execute('CREATE TABLE _cossack_migrations (name TEXT PRIMARY KEY)');
   for (let index = 1; index <= 55; index++) {
     await connection.execute(
       'INSERT INTO people (name, nickname, age, created_at, department_id) VALUES (?, ?, ?, ?, ?)',
@@ -98,18 +96,7 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(page.getByTestId('studio-version')).toContainText(/Studio v\d+\.\d+\.\d+/);
   await expect(page.getByTestId('database-version')).toContainText(/SQLite \d+/);
 
-  await expect(page.getByTestId('object-kysely_migration')).toHaveCount(0);
-  const systemTableTrigger = page.getByTestId('system-table-trigger');
-  await expect(
-    page.getByTestId('object-search').locator('..').getByTestId('system-table-trigger'),
-  ).toBeVisible();
-  await systemTableTrigger.hover();
-  await expect(
-    page.getByRole('tooltip').filter({ hasText: 'System table: 2' }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: /System table: 2/ }).click();
-  await page.getByLabel('kysely_migration', { exact: true }).check();
-  await expect(page.getByTestId('object-kysely_migration')).toBeVisible();
+  await expect(page.getByTestId('object-_cossack_migrations')).toHaveCount(0);
 
   const rootWasDark = await page.locator('html').evaluate((element) => element.classList.contains('dark'));
   await page.getByTestId('theme-toggle').click();

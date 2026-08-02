@@ -59,7 +59,7 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 |---|---|---|
 | Call the server from the client | `@Server()` method, called as `this.method()` — **no `fetch()`** | Auto RPC proxy; see `references/server-client-rpc.md` |
 | Load read-only server data for rendering | `server$(() => query(), { initial })` | SSR, hydration, reactive deps; see `references/server-functions.md` |
-| Query a database | Decorated models from `@cossackframework/orm` | Use in `server$` for render data or `@Server()` for actions; see `references/database.md` |
+| Query a database | Decorated models from `@cossackframework/database` | Use in `server$` for render data or `@Server()` for actions; see `references/database.md` |
 | Cache an expensive result | `cache.remember(key, ttl, fn)` from `@cossackframework/framework/cache` | Server-only; KV recommended; see `references/cache.md` |
 | Validate a form field | `@Validate({ rules, config })` + `getError()` / `hasError()` / `validateAll()` | See `references/validation.md` |
 | Handle a form submission | Progressive: `<form method="post">` + `post()` + `flash`/`old`. Reactive: `@Store` + `@Validate` + `@Server` submit. | No `fetch()`; see `references/forms.md` |

@@ -86,7 +86,7 @@ export async function addCommand(args, ctx) {
     }
     if (result.status !== 'dry-run') {
       console.log('\nNext: run `pnpm install`.' +
-        (result.recipe.resolvedFeatures.includes('orm')
+        (result.recipe.resolvedFeatures.includes('database')
           ? '\nThen apply migrations with `cossack migration up`.'
           : ''));
     }
@@ -99,7 +99,7 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return `cossack add <ui|orm|studio|auth|dashboard|markdown|examples> [component]
+  return `cossack add <ui|database|studio|auth|dashboard|markdown|examples> [component]
 
 Options:
   component                         Eject a UI component for customization

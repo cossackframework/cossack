@@ -1,4 +1,4 @@
-import { sql } from '@cossackframework/orm';
+import { sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { hashPassword, type PublicUser } from '../auth';

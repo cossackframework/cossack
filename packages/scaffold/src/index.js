@@ -302,7 +302,7 @@ const EXAMPLE_PATHS = new Set([
 function capabilityFor(rel, recipe) {
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
   if (UI_PATHS.has(rel)) return recipe.resolvedFeatures.includes('ui') ? 'ui' : null;
-  if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('orm') ? 'orm' : null;
+  if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
   if (AUTH_PATHS.has(rel)) return recipe.resolvedFeatures.includes('auth') ? 'auth' : null;
   if (DASHBOARD_CORE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('dashboard') ? 'dashboard' : null;
   if (MARKDOWN_PATHS.has(rel)) return recipe.resolvedFeatures.includes('markdown') ? 'markdown' : null;
@@ -372,7 +372,7 @@ function minimalRoot() {
 function middlewareRegistry(recipe) {
   const imports = ["import type { MiddlewareHandler } from 'hono';"];
   const entries = [];
-  if (recipe.resolvedFeatures.includes('orm')) {
+  if (recipe.resolvedFeatures.includes('database')) {
     imports.push(
       "import { ormRequestMiddleware, sessionMiddleware } from '../middlewares/orm';",
     );
@@ -387,9 +387,9 @@ function middlewareRegistry(recipe) {
 
 function wranglerConfig(recipe, projectName) {
   let database = '';
-  if (recipe.resolvedFeatures.includes('orm') && recipe.config.database === 'd1') {
+  if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
     database = `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "00000000-0000-0000-0000-000000000000",\n    "preview_database_id": "${projectName}-local"\n  }]`;
-  } else if (recipe.resolvedFeatures.includes('orm') &&
+  } else if (recipe.resolvedFeatures.includes('database') &&
       recipe.config.database.startsWith('hyperdrive-')) {
     database = `,\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
   }
@@ -429,8 +429,8 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/solar-icons'] =
       dependencyVersion('@cossackframework/solar-icons');
   }
-  if (recipe.resolvedFeatures.includes('orm')) {
-    dependencies['@cossackframework/orm'] = '^1.1.0';
+  if (recipe.resolvedFeatures.includes('database')) {
+    dependencies['@cossackframework/database'] = `^${templateVersion}`;
     dependencies['reflect-metadata'] = '^0.2.2';
     if (recipe.config.database === 'turso') {
       dependencies['@libsql/client'] = dependencyVersion('@libsql/client');
@@ -489,7 +489,7 @@ function packageJson(recipe, projectName) {
   } else {
     devDependencies['@types/ws'] = dependencyVersion('@types/ws');
     if (
-      recipe.resolvedFeatures.includes('orm') &&
+      recipe.resolvedFeatures.includes('database') &&
       (recipe.config.database === 'postgres' ||
         recipe.config.database === 'hyperdrive-postgres')
     ) {
@@ -508,7 +508,7 @@ function packageJson(recipe, projectName) {
         'build:ssg': 'vite build && cossack ssg',
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
-  if (recipe.resolvedFeatures.includes('orm')) {
+  if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
       : 'cossack migration up';
@@ -555,8 +555,8 @@ function ormFactory(recipe) {
         : provider === 'postgres'
           ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
           : "mysql(required(env.DATABASE_URL, 'DATABASE_URL'))";
-    return `import { createORM, type ORM } from '@cossackframework/orm';
-import { ${adapterImport} } from '@cossackframework/orm/node';
+    return `import { createORM, type ORM } from '@cossackframework/database';
+import { ${adapterImport} } from '@cossackframework/database/node';
 import { models } from '../models';
 
 export type ORMEnvironment = Record<string, string | undefined>;
@@ -601,9 +601,9 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
     : provider === 'turso'
       ? 'TURSO_URL?: string;\n  TURSO_TOKEN?: string;'
       : 'HYPERDRIVE: Hyperdrive;';
-  return `import { createORM } from '@cossackframework/orm';
-import type { Adapter } from '@cossackframework/orm';
-import { ${runtimeImport} } from '@cossackframework/orm/cloudflare';
+  return `import { createORM } from '@cossackframework/database';
+import type { Adapter } from '@cossackframework/database';
+import { ${runtimeImport} } from '@cossackframework/database/cloudflare';
 import { models } from '../models';
 
 export interface ORMEnvironment {
@@ -626,7 +626,7 @@ export async function createRequestORM(env: ORMEnvironment) {
 }
 
 function ormTooling() {
-  return `import type { Adapter } from '@cossackframework/orm';
+  return `import type { Adapter } from '@cossackframework/database';
 import { getPlatformProxy } from 'wrangler';
 import {
   createRuntimeAdapter,
@@ -653,7 +653,7 @@ function ormConfiguration(recipe) {
   const toolingImport = recipe.adapter === 'node'
     ? "import { createToolingAdapter } from './src/orm/factory';"
     : "import { createToolingAdapter } from './src/orm/tooling';";
-  return `import { defineConfig } from '@cossackframework/orm';
+  return `import { defineConfig } from '@cossackframework/database';
 ${toolingImport}
 import { models } from './src/models';
 import { migrations } from './src/migrations';
@@ -681,7 +681,7 @@ export const ormRequestMiddleware = ormMiddleware(orm);`
   createDatabaseCacheStore,
   createDatabaseSessionStore,
   ormMiddleware,
-} from '@cossackframework/orm/cossack';
+} from '@cossackframework/database/cossack';
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
 ${factoryImport}
@@ -858,7 +858,7 @@ export interface DashboardModule {
 }
 
 function blankSeeder() {
-  return `import { defineSeeder } from '@cossackframework/orm';
+  return `import { defineSeeder } from '@cossackframework/database';
 
 export default defineSeeder({
   name: 'application',
@@ -1125,7 +1125,7 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
     ['CORS_ENABLED', 'true'],
     ['CORS_ORIGINS', 'http://localhost:3000'],
   ];
-  if (recipe.resolvedFeatures.includes('orm')) {
+  if (recipe.resolvedFeatures.includes('database')) {
     values.push(['DB_CONNECTION', recipe.config.database]);
     if (recipe.config.database === 'sqlite') {
       values.push(['DB_PATH', './database.sqlite']);
@@ -1166,7 +1166,7 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
 
 function cloudflareEnvironmentValues(recipe, example = false) {
   const values = [];
-  if (recipe.resolvedFeatures.includes('orm') && recipe.config.database === 'turso') {
+  if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'turso') {
     values.push(
       ['TURSO_URL', example ? 'libsql://your-database.turso.io' : ''],
       ['TURSO_TOKEN', example ? 'your-turso-token' : ''],
@@ -1315,28 +1315,28 @@ export async function renderRecipe(recipe, options = {}) {
   if (!recipe.resolvedFeatures.includes('examples')) {
     files.set('src/pages/index.ts', { content: text(minimalPage()), capability: 'base' });
   }
-  if (recipe.resolvedFeatures.includes('orm')) {
+  if (recipe.resolvedFeatures.includes('database')) {
     files.set('orm.config.ts', {
       content: text(ormConfiguration(recipe)),
-      capability: 'orm',
+      capability: 'database',
     });
     files.set('src/orm/factory.ts', {
       content: text(ormFactory(recipe)),
-      capability: 'orm',
+      capability: 'database',
     });
     if (recipe.adapter === 'cloudflare') {
       files.set('src/orm/tooling.ts', {
         content: text(ormTooling()),
-        capability: 'orm',
+        capability: 'database',
       });
     }
     files.set('src/middlewares/orm.ts', {
       content: text(ormMiddlewareModule(recipe)),
-      capability: 'orm',
+      capability: 'database',
     });
     files.set('src/models/index.ts', {
       content: text(modelsBarrel(recipe)),
-      capability: 'orm',
+      capability: 'database',
     });
     const migrationFiles = [
       ...(recipe.resolvedFeatures.includes('auth')
@@ -1354,17 +1354,17 @@ export async function renderRecipe(recipe, options = {}) {
     ];
     files.set('src/migrations/index.ts', {
       content: text(registeredBarrel('migrations', migrationFiles)),
-      capability: 'orm',
+      capability: 'database',
     });
     const seedFiles = ['application.seeder.ts'];
     files.set('src/seeders/index.ts', {
       content: text(registeredBarrel('seeds', seedFiles)),
-      capability: 'orm',
+      capability: 'database',
     });
     if (!recipe.resolvedFeatures.includes('dashboard')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
-        capability: 'orm',
+        capability: 'database',
       });
     }
   }
@@ -1439,7 +1439,7 @@ export async function renderRecipe(recipe, options = {}) {
     if (exampleValues.length) {
     files.set('.dev.vars.example', {
       content: text(environmentExample(exampleValues)),
-      capability: 'orm',
+      capability: 'database',
     });
     }
   }
@@ -1857,7 +1857,7 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
     options.database === undefined && {
       type: 'select', name: 'database', message: 'Database provider',
       choices: (answers) => databaseChoices(recipeFor(answers).adapter),
-      when: (answers) => recipeFor(answers).resolvedFeatures.includes('orm'),
+      when: (answers) => recipeFor(answers).resolvedFeatures.includes('database'),
     },
     options.theme === undefined && {
       type: 'select', name: 'theme', message: 'UI theme',
@@ -1975,8 +1975,9 @@ export async function createApp(projectName, options = {}) {
 async function inferRecipe(projectDir, manifest) {
   if (manifest?.schemaVersion === 2) {
     throw new Error(
-      'Scaffold manifest schema v2 uses the removed legacy database recipe. ' +
-      'Back up the database, convert models and queries to @cossackframework/orm, ' +
+      'Scaffold manifest schema v2 uses the removed legacy Kysely database API. ' +
+      'Back up the database, convert models and queries to the Active Record ' +
+      '@cossackframework/database API, ' +
       'run `cossack schema check`, baseline migration history, then regenerate ' +
       'the manifest with Cossack 1.0.',
     );
@@ -2003,7 +2004,7 @@ async function inferRecipe(projectDir, manifest) {
   const dependencies = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   const features = [];
   if (dependencies['@cossackframework/ui']) features.push('ui');
-  if (dependencies['@cossackframework/orm']) features.push('orm');
+  if (dependencies['@cossackframework/database']) features.push('database');
   if (dependencies['@cossackframework/studio']) features.push('studio');
   if (dependencies['@cossackframework/auth']) features.push('auth');
   if (dependencies.unified && await access(path.join(projectDir, 'src/markdown-processor.ts'))) {
@@ -2055,7 +2056,7 @@ function setEnvironmentValue(content, name, value) {
 
 function adapterEnvironmentDefaults(recipe) {
   const values = [];
-  if (recipe.resolvedFeatures.includes('orm')) {
+  if (recipe.resolvedFeatures.includes('database')) {
     values.push(['DB_CONNECTION', recipe.config.database]);
     if (recipe.config.database === 'turso') {
       values.push(['TURSO_URL', ''], ['TURSO_TOKEN', '']);
@@ -2226,11 +2227,11 @@ export async function switchAdapter(projectDir, target, options = {}) {
       current,
       empty,
       manifestPath,
-      current.resolvedFeatures.includes('orm'),
+      current.resolvedFeatures.includes('database'),
     );
   }
 
-  const databaseInstalled = current.resolvedFeatures.includes('orm');
+  const databaseInstalled = current.resolvedFeatures.includes('database');
   const targetDefault = target === 'cloudflare' ? 'd1' : 'sqlite';
   const currentCompatible = DATABASE_PROVIDERS[current.config.database]
     ?.adapters.includes(target);
@@ -2392,8 +2393,8 @@ async function promptAddOptions(
   const nextFeatures = resolveFeatures([
     ...new Set([...current.explicitFeatures, feature]),
   ]);
-  const databaseNeeded = !current.resolvedFeatures.includes('orm') &&
-    nextFeatures.includes('orm');
+  const databaseNeeded = !current.resolvedFeatures.includes('database') &&
+    nextFeatures.includes('database');
   const knownRuntime = ADAPTERS.includes(options.runtime)
     ? options.runtime
     : ADAPTERS.includes(options.adapter)
@@ -2404,7 +2405,7 @@ async function promptAddOptions(
 
   if (options.interactive !== true) {
     const database = options.database ??
-      (current.resolvedFeatures.includes('orm')
+      (current.resolvedFeatures.includes('database')
         ? current.config.database
         : undefined);
     const runtime = knownRuntime ??
@@ -2519,7 +2520,7 @@ export async function addFeature(projectDir, feature, options = {}) {
     const explicitFeatures = [...new Set([
       ...current.explicitFeatures,
       ...(feature === 'studio' &&
-          !current.resolvedFeatures.includes('orm') ? ['orm'] : []),
+          !current.resolvedFeatures.includes('database') ? ['database'] : []),
       feature,
     ])];
     let dashboardModules = current.dashboardModules;

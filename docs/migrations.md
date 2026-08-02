@@ -9,7 +9,7 @@ Migrations implement the ORM `Migration` contract and are registered
 deterministically in `src/migrations/index.ts`.
 
 ```ts
-import type { Migration } from '@cossackframework/orm';
+import type { Migration } from '@cossackframework/database';
 
 export default {
   name: '0008_create_posts',

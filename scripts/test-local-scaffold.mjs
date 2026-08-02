@@ -14,6 +14,7 @@ const packageDirectories = [
   'auth',
   'ui',
   'framework',
+  'database',
   'studio',
   'scaffold',
   'cossack',
@@ -30,24 +31,17 @@ async function run(command, args, options = {}) {
 }
 
 async function buildPublishablePackages() {
-  await run('pnpm', ['build'], { cwd: path.resolve(repositoryRoot, '../orm') });
   await run('pnpm', ['--filter', '@cossackframework/renderer', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/core', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
+  await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
 }
 
 async function packPackages(destination) {
   const tarballs = new Map();
-  const ormRoot = path.resolve(repositoryRoot, '../orm');
-  const beforeOrm = new Set(await fs.readdir(destination));
-  await run('pnpm', ['--dir', ormRoot, 'pack', '--pack-destination', destination]);
-  const ormTarball = (await fs.readdir(destination))
-    .find((entry) => entry.endsWith('.tgz') && !beforeOrm.has(entry));
-  if (!ormTarball) throw new Error('pnpm pack did not produce an ORM tarball');
-  tarballs.set('@cossackframework/orm', path.join(destination, ormTarball));
   for (const directory of packageDirectories) {
     const packageRoot = path.join(repositoryRoot, 'packages', directory);
     const pkg = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'));
@@ -223,7 +217,7 @@ async function verifyGeneratedORMApplication(projectDir) {
   await fs.writeFile(fixture, `import {
   createDatabaseCacheStore,
   createDatabaseSessionStore,
-} from '@cossackframework/orm/cossack';
+} from '@cossackframework/database/cossack';
 import { getORM } from './src/orm/factory';
 import { Role, User, UserRole } from './src/models';
 

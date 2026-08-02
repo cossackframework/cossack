@@ -1,4 +1,4 @@
-import { BaseEntity, Column, Entity, Index, PrimaryColumn } from '@cossackframework/orm';
+import { BaseEntity, Column, Entity, Index, PrimaryColumn } from '@cossackframework/database';
 
 @Entity({ tableName: 'cache_items' })
 export class CacheItem extends BaseEntity {

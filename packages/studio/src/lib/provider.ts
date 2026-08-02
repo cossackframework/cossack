@@ -1,4 +1,4 @@
-import type { ORM } from '@cossackframework/orm';
+import type { ORM } from '@cossackframework/database';
 import type { StudioProvider } from './schema-types.js';
 
 const PROVIDER_ALIASES: Record<string, StudioProvider> = {

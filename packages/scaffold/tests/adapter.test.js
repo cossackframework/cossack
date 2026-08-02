@@ -61,7 +61,7 @@ afterEach(async () => {
 });
 
 describe('adapter switching', () => {
-  it.each(['minimal', 'orm', 'auth', 'full-stack'])(
+  it.each(['minimal', 'database', 'auth', 'full-stack'])(
     'matches direct Node creation for the %s recipe',
     async (preset) => {
       const source = await create('cloudflare', preset);
@@ -77,7 +77,7 @@ describe('adapter switching', () => {
     },
   );
 
-  it.each(['minimal', 'orm', 'auth', 'full-stack'])(
+  it.each(['minimal', 'database', 'auth', 'full-stack'])(
     'matches direct Cloudflare creation for the %s recipe',
     async (preset) => {
       const source = await create('node', preset);
@@ -108,12 +108,12 @@ describe('adapter switching', () => {
   });
 
   it('preserves Turso and requires an explicit replacement for incompatible providers', async () => {
-    const turso = await create('cloudflare', 'orm', { database: 'turso' });
+    const turso = await create('cloudflare', 'database', { database: 'turso' });
     expect((await switchAdapter(turso.projectDir, 'node', {
       interactive: false,
     })).databaseChange.target).toBe('turso');
 
-    const d1 = await create('cloudflare', 'orm');
+    const d1 = await create('cloudflare', 'database');
     await expect(switchAdapter(d1.projectDir, 'node', {
       interactive: false,
     })).rejects.toThrow('Pass --database=sqlite or --database=turso');
@@ -137,7 +137,7 @@ describe('adapter switching', () => {
   });
 
   it('keeps dry runs completely read-only', async () => {
-    const project = await create('cloudflare', 'orm');
+    const project = await create('cloudflare', 'database');
     const before = await fs.readFile(
       path.join(project.projectDir, '.cossack/scaffold.json'),
       'utf8',
@@ -187,7 +187,7 @@ describe('adapter switching', () => {
   });
 
   it('targets force at runtime files while preserving application edits and migrations', async () => {
-    const project = await create('cloudflare', 'orm');
+    const project = await create('cloudflare', 'database');
     const runtime = path.join(project.projectDir, 'src/index.ts');
     const page = path.join(project.projectDir, 'src/pages/index.ts');
     const migration = path.join(
@@ -236,7 +236,7 @@ describe('adapter switching', () => {
   });
 
   it('supports cancellation, Escape/back, and Ctrl+C', async () => {
-    const cancelled = await create('cloudflare', 'orm');
+    const cancelled = await create('cloudflare', 'database');
     const input = new EventEmitter();
     let names = promptSequence(input, ['sqlite', false]);
     const result = await switchAdapter(cancelled.projectDir, 'node', {
@@ -246,7 +246,7 @@ describe('adapter switching', () => {
     expect(names).toEqual(['database', 'confirmed']);
     expect((await readManifest(cancelled.projectDir)).runtime).toBe('cloudflare');
 
-    const back = await create('cloudflare', 'orm');
+    const back = await create('cloudflare', 'database');
     names = promptSequence(input, ['sqlite', 'escape', 'turso', true]);
     const changed = await switchAdapter(back.projectDir, 'node', {
       interactive: true,
@@ -254,7 +254,7 @@ describe('adapter switching', () => {
     expect(changed.databaseChange.target).toBe('turso');
     expect(names).toEqual(['database', 'confirmed', 'database', 'confirmed']);
 
-    const aborted = await create('cloudflare', 'orm');
+    const aborted = await create('cloudflare', 'database');
     promptSequence(input, ['ctrl-c']);
     await expect(switchAdapter(aborted.projectDir, 'node', {
       interactive: true,

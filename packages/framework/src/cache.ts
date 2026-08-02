@@ -563,7 +563,7 @@ let defaultStoreOverride: CacheStore | null = null;
 
 /**
  * Register a custom driver factory (e.g. for the database driver from
- * `@cossackframework/orm/cossack`, Redis, or another backend). Once registered,
+ * `@cossackframework/database/cossack`, Redis, or another backend). Once registered,
  * the driver name can be used in `config/cache.ts` store declarations.
  *
  * The default project template registers the `'database'` driver in
@@ -573,7 +573,7 @@ let defaultStoreOverride: CacheStore | null = null;
  * @example
  * ```ts
  * import { extendCacheDriver } from '@cossackframework/framework/cache';
- * import { createDatabaseCacheStore } from '@cossackframework/orm/cossack';
+ * import { createDatabaseCacheStore } from '@cossackframework/database/cossack';
  * extendCacheDriver('database', () => createDatabaseCacheStore());
  * // or a custom backend:
  * extendCacheDriver('redis', (spec, env) => new RedisCacheStore(env.REDIS));
@@ -619,7 +619,7 @@ function ensureBuiltinDrivers(): void {
                 "[Cossack] Cache driver 'database' is not registered. " +
                     "The default project template registers it in src/middlewares/orm.ts — " +
                     'make sure that file is imported from src/bootstrap/middlewares.ts and that ' +
-                    "@cossackframework/orm is installed. To use a different cache backend, " +
+                    "@cossackframework/database is installed. To use a different cache backend, " +
                     "call extendCacheDriver('database', () => yourStore) or change CACHE_DRIVER.",
             );
         });

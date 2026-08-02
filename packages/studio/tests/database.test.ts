@@ -1,5 +1,5 @@
-import { createORM } from '@cossackframework/orm';
-import { libsql } from '@cossackframework/orm/node';
+import { createORM } from '@cossackframework/database';
+import { libsql } from '@cossackframework/database/node';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createLocalConnection,

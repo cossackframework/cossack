@@ -5,11 +5,11 @@ description: 'Decorated Active Record models for Cloudflare Workers and Node.js.
 
 # ORM
 
-Cossack applications use `@cossackframework/orm`. The Framework package remains
+Cossack applications use `@cossackframework/database`. The Framework package remains
 ORM-agnostic; generated applications install and compose the ORM explicitly.
 
 ```sh
-cossack add orm
+cossack add database
 pnpm install
 cossack migration up
 cossack schema check
@@ -41,7 +41,7 @@ import {
   Column,
   Entity,
   PrimaryColumn,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 
 @Entity({ tableName: 'users' })
 export class User extends BaseEntity {
@@ -62,7 +62,7 @@ physical column.
 ## Runtime middleware
 
 ```ts
-import { ormMiddleware } from '@cossackframework/orm/cossack';
+import { ormMiddleware } from '@cossackframework/database/cossack';
 import { createRequestORM } from '../orm/factory';
 
 export const ormRequestMiddleware = ormMiddleware(

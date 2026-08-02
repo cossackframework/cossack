@@ -15,16 +15,12 @@ import type {
   StudioRowLocator,
   StudioSchema,
 } from './schema-types.js';
-import type { OrmSchema } from '@cossackframework/orm';
+import type { OrmSchema } from '@cossackframework/database';
 
 const SQLITE_ROWID_ALIAS = '__cossack_rowid__';
 const POSTGRES_TABLEOID_ALIAS = '__cossack_tableoid__';
 const POSTGRES_CTID_ALIAS = '__cossack_ctid__';
-const INTERNAL_TABLES = new Set([
-  '_cossack_migrations',
-  'kysely_migration',
-  'kysely_migration_lock',
-]);
+const INTERNAL_TABLES = new Set(['_cossack_migrations']);
 
 interface SchemaRow {
   name: string;

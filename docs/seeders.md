@@ -9,7 +9,7 @@ Define seeders with `defineSeeder()` and register them explicitly in
 `src/seeders/index.ts`.
 
 ```ts
-import { defineSeeder } from '@cossackframework/orm';
+import { defineSeeder } from '@cossackframework/database';
 import { Role } from '../models/Role';
 
 export default defineSeeder({

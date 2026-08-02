@@ -39,7 +39,7 @@ const devConfig: UserConfig = {
         include: [
           '@cossackframework/ui',
           '@cossackframework/auth',
-          '@cossackframework/orm',
+          '@cossackframework/database',
         ],
       },
     },

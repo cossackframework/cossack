@@ -4,18 +4,31 @@
  * the generated project.
  */
 import { createRequire } from 'node:module';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findProjectRoot } from '../fs-utils.js';
 
 export async function loadORMTooling(root) {
   const requireFromProject = createRequire(path.join(root, 'package.json'));
+  const projectPackage = JSON.parse(
+    await fs.readFile(path.join(root, 'package.json'), 'utf8'),
+  );
+  const declared = projectPackage.dependencies?.['@cossackframework/database'] ??
+    projectPackage.devDependencies?.['@cossackframework/database'] ??
+    projectPackage.optionalDependencies?.['@cossackframework/database'];
+  if (!declared) {
+    throw new Error(
+      '@cossackframework/database is not installed in this project. Run `cossack add database` ' +
+      '(or `pnpm install`) first.',
+    );
+  }
   let packageJson;
   try {
-    packageJson = requireFromProject.resolve('@cossackframework/orm/package.json');
+    packageJson = requireFromProject.resolve('@cossackframework/database/package.json');
   } catch {
     throw new Error(
-      '@cossackframework/orm is not installed in this project. Run `cossack add orm` ' +
+      '@cossackframework/database is not installed in this project. Run `cossack add database` ' +
       '(or `pnpm install`) first.',
     );
   }
@@ -23,8 +36,8 @@ export async function loadORMTooling(root) {
   const tooling = await import(pathToFileURL(entry).href);
   if (typeof tooling.runORMCommand !== 'function') {
     throw new Error(
-      'The installed @cossackframework/orm does not export tooling support. ' +
-      'Upgrade it to version 1.1.0 or newer.',
+      'The installed @cossackframework/database does not export tooling support. ' +
+      'Upgrade it to version 1.0.0 or newer.',
     );
   }
   return tooling;

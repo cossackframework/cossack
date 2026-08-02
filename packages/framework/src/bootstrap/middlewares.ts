@@ -13,7 +13,7 @@ import type { MiddlewareHandler } from 'hono';
 
 // Example middleware definitions available in this project:
 // import { loggingMiddleware } from '../middlewares/logging';
-// ORM (after `cossack add orm`):
+// ORM (after `cossack add database`):
 // import { ormRequestMiddleware } from '../middlewares/orm';
 
 const middlewares: MiddlewareHandler[] = [

@@ -8,7 +8,7 @@ The framework is built on a strict separation between the **library** (`core`, `
 
 -   **Libraries (`@cossackframework/core`, `@cossackframework/renderer`)**: These packages are completely agnostic of any specific application. They provide the tools, base classes, and rendering logic. The `core` library must never import from the `framework` or contain application-specific code.
 -   **Application (`@cossackframework/framework`)**: This is the runnable unit. It consumes the libraries and contains all the business logic, page components, routing, and the final Cloudflare Worker entrypoint.
--   **ORM (`@cossackframework/orm`)**: Application-owned decorated entities, Active Record queries, deterministic migrations/seeders, schema drift tooling, and adapters for all supported Node and Workers providers. `ormMiddleware` owns request factories and scopes downstream work. The Framework package does not depend on the ORM; generated applications compose the packages structurally.
+-   **Database (`@cossackframework/database`)**: The workspace Active Record ORM package owns decorated entities, queries, deterministic migrations/seeders, schema drift tooling, and adapters for all supported Node and Workers providers. `ormMiddleware` owns request factories and scopes downstream work. The Framework package does not depend on the database package; generated applications compose the packages structurally.
 -   **Scaffold (`@cossackframework/scaffold`)**: Node-only recipe engine consumed
     by the `cossack` CLI. It owns base and feature templates,
     preset/provider/module registries, dependency resolution, conflict-safe

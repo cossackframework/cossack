@@ -67,7 +67,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     // Skip framework packages. Use path-aware matching (surrounding path
     // separators) so a user path like `/src/@cossackframework/core-utils/x.ts`
     // doesn't accidentally match.
-    const fwkPrefixes = ['core', 'renderer', 'auth', 'database', 'orm'];
+    const fwkPrefixes = ['core', 'renderer', 'auth', 'database'];
     if (fwkPrefixes.some((pkg) => {
       const needle = `@cossackframework/${pkg}`;
       // Match either `/@cossackframework/pkg/` or `\@cossackframework\pkg\`
@@ -141,7 +141,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       // General server-only detection: any other user module that imports from
-      // `@cossackframework/orm`, `@cossackframework/auth`, or a `node:`
+      // `@cossackframework/database`, `@cossackframework/auth`, or a `node:`
       // builtin is server-only (the import transitively pulls
       // `node:async_hooks`). This catches service/data-access modules (e.g.
       // `src/services/users.ts`, `src/db/config.ts`) that aren't `src/auth.ts`
@@ -196,8 +196,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 }
 
 function isServerOnlyImportSource(source: string): boolean {
-  return source === '@cossackframework/orm' ||
-    source.startsWith('@cossackframework/orm/') ||
+  return source === '@cossackframework/database' ||
+    source.startsWith('@cossackframework/database/') ||
     source === '@cossackframework/framework/session' ||
     source === '@cossackframework/auth' ||
     source.startsWith('@cossackframework/auth/') ||
@@ -465,7 +465,7 @@ function readClientOnlyExports(source: string, id: string): ClientOnlyExports {
 /**
  * Generate a client-side stub module for a server-only user module.
  *
- * A server-only module is one that imports from `@cossackframework/orm`
+ * A server-only module is one that imports from `@cossackframework/database`
  * (which pulls `node:async_hooks`), `@cossackframework/auth`, or a `node:`
  * builtin — none of which belong in the browser. Other modules (e.g. page
  * components) import named exports from it, but every real call lives inside a
@@ -580,7 +580,7 @@ function generateAuthClientStub(id: string): string {
  * by the `src/auth.ts` filename special-case.
  */
 const SERVER_ONLY_IMPORT_SOURCES = new Set([
-  '@cossackframework/orm',
+  '@cossackframework/database',
   '@cossackframework/framework/session',
 ]);
 
@@ -588,7 +588,7 @@ const SERVER_ONLY_IMPORT_SOURCES = new Set([
  * Read the import source specifiers from a TypeScript module on disk via the
  * Oxc AST. Covers static imports (`import x from 'y'`, `import { x } from 'y'`)
  * and dynamic `import('y')` calls. Returns the set of source strings (e.g.
- * `'@cossackframework/orm'`, `'node:fs'`).
+ * `'@cossackframework/database'`, `'node:fs'`).
  */
 export function readImportSources(id: string): string[] {
   const cleanId = id.split('?')[0].split('#')[0];
@@ -625,13 +625,13 @@ export function readImportSources(id: string): string[] {
  * Determine whether a user module is server-only by inspecting its imports.
  *
  * A module is server-only if it imports from:
- *   - any `@cossackframework/orm` / `@cossackframework/framework/session` specifier
+ *   - any `@cossackframework/database` / `@cossackframework/framework/session` specifier
  *     (these transitively pull `node:async_hooks` and other server-only code),
  *     OR
  *   - any `node:` builtin (these never exist in the browser).
  *
  * Subpath imports are matched by their package prefix (e.g.
- * `@cossackframework/orm` matches `@cossackframework/orm` exactly;
+ * `@cossackframework/database` matches `@cossackframework/database` exactly;
  * `node:` matches by prefix). Type-only imports (`import type { X } from 'y'`)
  * are excluded by the AST walker — they erase at compile time and never pull
  * runtime code.

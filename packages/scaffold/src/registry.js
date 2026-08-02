@@ -1,5 +1,5 @@
 export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'orm', 'studio', 'auth', 'dashboard', 'markdown', 'examples'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -7,9 +7,9 @@ export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
 
 export const FEATURE_REGISTRY = {
   ui: { requires: [] },
-  orm: { requires: [] },
-  studio: { requires: ['orm'] },
-  auth: { requires: ['ui', 'orm'] },
+  database: { requires: [] },
+  studio: { requires: ['database'] },
+  auth: { requires: ['ui', 'database'] },
   dashboard: { requires: ['auth'] },
   markdown: { requires: [] },
   examples: { requires: ['ui', 'markdown'] },
@@ -17,10 +17,10 @@ export const FEATURE_REGISTRY = {
 
 export const PRESET_REGISTRY = {
   minimal: { features: [] },
-  orm: { features: ['orm'] },
-  auth: { features: ['ui', 'orm', 'auth'] },
+  database: { features: ['database'] },
+  auth: { features: ['ui', 'database', 'auth'] },
   'full-stack': {
-    features: ['ui', 'orm', 'auth', 'dashboard', 'examples'],
+    features: ['ui', 'database', 'auth', 'dashboard', 'examples'],
     dashboardModules: DASHBOARD_MODULES,
   },
 };
@@ -74,9 +74,9 @@ export function removeFeature(explicit, feature) {
   const selected = new Set(requested.filter((selectedFeature) =>
     !resolveFeatures([selectedFeature]).includes(feature),
   ));
-  // Studio may add ORM support to an otherwise data-free project. Removing
+  // Studio may add database support to an otherwise data-free project. Removing
   // Studio intentionally leaves that useful setup in place.
-  if (feature === 'studio' && requested.includes('studio')) selected.add('orm');
+  if (feature === 'studio' && requested.includes('studio')) selected.add('database');
   return FEATURES.filter((candidate) => selected.has(candidate));
 }
 

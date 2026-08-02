@@ -5,7 +5,7 @@ import {
   OneToMany,
   PrimaryColumn,
   type Relation,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 import { OAuthAccount } from './OAuthAccount';
 import { Session } from './Session';
 import { UserRole } from './UserRole';

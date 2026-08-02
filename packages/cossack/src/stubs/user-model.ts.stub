@@ -2,7 +2,7 @@ import {
   BaseEntity,
   Entity,
   PrimaryGeneratedColumn,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 
 @Entity()
 export class {{className}} extends BaseEntity {

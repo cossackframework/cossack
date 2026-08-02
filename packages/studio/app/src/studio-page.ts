@@ -110,8 +110,6 @@ export const emptyResult: TransportQueryResult = {
   query: '',
 };
 
-export const SYSTEM_TABLES = new Set(['kysely_migration', 'kysely_migration_lock']);
-
 export const INSERT_VALUE_KINDS: Array<{ value: InsertValueKind; label: string }> = [
   { value: 'text', label: 'Text' },
   { value: 'number', label: 'Number' },

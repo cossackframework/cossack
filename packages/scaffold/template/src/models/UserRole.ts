@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryColumn,
   type Relation,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 import { Role } from './Role';
 import { User } from './User';
 

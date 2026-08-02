@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "skipLibCheck": true,
+    "paths": {
+      "@cossackframework/database": ["./src/index.ts"],
+      "@cossackframework/database/adapter": ["./src/adapter/index.ts"],
+      "@cossackframework/database/node": ["./src/runtime/node.ts"],
+      "@cossackframework/database/bun": ["./src/runtime/bun.ts"],
+      "@cossackframework/database/cloudflare": ["./src/runtime/cloudflare.ts"],
+      "@cossackframework/database/deno": ["./src/runtime/deno.ts"],
+      "@cossackframework/database/cossack": ["./src/cossack/index.ts"],
+      "@cossackframework/database/tooling": ["./src/tooling/index.ts"]
+    },
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "examples/sqlite-starter/**/*.ts",
+    "examples/multiple-connections/**/*.ts"
+  ]
+}

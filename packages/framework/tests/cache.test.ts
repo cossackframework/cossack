@@ -483,7 +483,7 @@ describe('cache facade — config-driven resolution', () => {
             stores: { database: { driver: 'database' } },
         };
         await withCacheScope(cfg, {}, async () => {
-            // The framework doesn't hard-depend on @cossackframework/orm.
+            // The framework doesn't hard-depend on @cossackframework/database.
             // The 'database' driver ships as a stub that throws a clear error
             // guiding the user to register it via extendCacheDriver() (the
             // default template does this in src/middlewares/db.ts).

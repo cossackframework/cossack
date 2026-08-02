@@ -38,6 +38,8 @@ jobs:
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
           pnpm --filter @cossackframework/ui test -- --run
+          pnpm --filter @cossackframework/database test
+          pnpm --filter @cossackframework/database audit:bundle
           pnpm --filter @cossackframework/framework test --run tests/
           pnpm --filter @cossackframework/studio test
           pnpm --filter @cossackframework/scaffold test
@@ -77,8 +79,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Studio ships a prebuilt Cossack app and depends on the separately published
-      # @cossackframework/orm package, UI, and framework.
+      - name: Publish @cossackframework/database
+        run: pnpm publish --filter @cossackframework/database --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Studio ships a prebuilt Cossack app and depends on the database
+      # workspace package, UI, and framework.
       - name: Publish @cossackframework/studio
         run: pnpm publish --filter @cossackframework/studio --access public --no-git-checks
         env:

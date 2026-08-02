@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryColumn,
   type Relation,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 import { User } from './User';
 
 @Entity({ tableName: 'oauth_accounts' })

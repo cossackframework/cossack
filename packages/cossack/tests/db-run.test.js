@@ -9,14 +9,20 @@ const temporaryDirectories = [];
 async function createProject(toolingSource) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-orm-tooling-'));
   temporaryDirectories.push(root);
-  const packageRoot = path.join(root, 'node_modules', '@cossackframework', 'orm');
+  const packageRoot = path.join(root, 'node_modules', '@cossackframework', 'database');
   await fs.mkdir(path.join(packageRoot, 'dist', 'tooling'), { recursive: true });
-  await fs.writeFile(path.join(root, 'package.json'), '{"type":"module"}\n');
+  await fs.writeFile(
+    path.join(root, 'package.json'),
+    JSON.stringify({
+      type: 'module',
+      dependencies: { '@cossackframework/database': '^1.0.0' },
+    }),
+  );
   await fs.writeFile(
     path.join(packageRoot, 'package.json'),
     JSON.stringify({
-      name: '@cossackframework/orm',
-      version: '1.1.0',
+      name: '@cossackframework/database',
+      version: '1.0.0',
       type: 'module',
       exports: { './package.json': './package.json' },
     }),
@@ -47,11 +53,11 @@ describe('application ORM tooling loading', () => {
     temporaryDirectories.push(root);
     await fs.writeFile(path.join(root, 'package.json'), '{"type":"module"}\n');
     await expect(loadORMTooling(root)).rejects.toThrow(
-      '@cossackframework/orm is not installed',
+      '@cossackframework/database is not installed',
     );
   });
 
-  it('requires ORM 1.1 tooling to export runORMCommand', async () => {
+  it('requires database 1.0 tooling to export runORMCommand', async () => {
     const root = await createProject('export const unsupported = true;\n');
     await expect(loadORMTooling(root)).rejects.toThrow(
       'does not export tooling support',

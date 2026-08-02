@@ -62,7 +62,7 @@ Use the scoped `sql` tag for joins or database-specific operations. Values are
 always parameters; identifiers must be explicit.
 
 ```ts
-import { sql } from '@cossackframework/orm';
+import { sql } from '@cossackframework/database';
 
 const result = await sql<{ id: string; role: string }>`
   SELECT users.id, roles.name AS role

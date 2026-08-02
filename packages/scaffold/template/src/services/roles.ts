@@ -1,4 +1,4 @@
-import { Like, Not, sql } from '@cossackframework/orm';
+import { Like, Not, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '../lib/uuid';
 import { PERMISSIONS, type Permission } from '../lib/permissions';

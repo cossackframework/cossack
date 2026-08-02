@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { ORM, ORMConfig } from '@cossackframework/orm';
+import type { ORM, ORMConfig } from '@cossackframework/database';
 import { createLocalConnection } from './lib/local-connection.js';
 import {
   databaseLabelFromEnvironment,
@@ -39,11 +39,11 @@ async function loadProjectORM(projectRoot: string): Promise<ORM> {
   const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
   let packageJsonPath: string;
   try {
-    packageJsonPath = requireFromProject.resolve('@cossackframework/orm/package.json');
+    packageJsonPath = requireFromProject.resolve('@cossackframework/database/package.json');
   } catch {
     throw new Error(
-      '@cossackframework/orm is not installed in this application. ' +
-      'Run `cossack add orm` or install dependencies.',
+      '@cossackframework/database is not installed in this application. ' +
+      'Run `cossack add database` or install dependencies.',
     );
   }
   const toolingPath = path.join(
@@ -58,7 +58,7 @@ async function loadProjectORM(projectRoot: string): Promise<ORM> {
   };
   if (!tooling.loadORMConfig || !tooling.createORMFromConfig) {
     throw new Error(
-      'Studio requires @cossackframework/orm 1.1.0 or newer with tooling exports.',
+      'Studio requires @cossackframework/database 1.0.0 or newer with tooling exports.',
     );
   }
   const config = await tooling.loadORMConfig(path.join(projectRoot, 'orm.config.ts'));

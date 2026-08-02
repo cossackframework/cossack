@@ -8,7 +8,7 @@ This document specifies the architecture of Cossack's server-side cache: the con
 2. **Lives in the framework.** The cache system is owned by `@cossackframework/framework` (exported from `@cossackframework/framework/cache`), not core, because it needs direct access to the config system (which is framework-owned). The framework already depends on core.
 3. **Server-only.** Cache data lives on the server. The facade resolves stores from the per-request config scope (set up by the config middleware). On the client there is no request scope.
 4. **Per-request resolution, per-isolate instances.** The *choice* of default store is resolved per-request from the config ALS (correct isolation — no first-request-wins bug). Store *instances* are memoized per-isolate keyed by driver+binding (bindings are stable per deployment, so reuse is safe and efficient).
-5. **Pluggable drivers.** Built-in drivers: `memory` (default), `kv`, `durable-object`. The `database` driver from `@cossackframework/orm/cossack` is registered in `src/middlewares/orm.ts` via `extendCacheDriver()`; Framework stays ORM-independent.
+5. **Pluggable drivers.** Built-in drivers: `memory` (default), `kv`, `durable-object`. The `database` driver from `@cossackframework/database/cossack` is registered in `src/middlewares/orm.ts` via `extendCacheDriver()`; Framework stays ORM-independent.
 6. **Multiple stores.** A config file can declare many stores (e.g. `memory` + `kv` + `database`). `cache.get()` uses the default; `cache.store('kv')` targets a named one.
 
 ## Package Responsibilities
@@ -17,7 +17,7 @@ This document specifies the architecture of Cossack's server-side cache: the con
 |---------|------|
 | `@cossackframework/framework` | Owns the cache system: `CacheStore` interface, built-in stores (`InMemoryCacheStore`, `KvCacheStore`, `DurableObjectCacheStore` + `CacheDurableObject`), the `CacheManager` (per-isolate instance cache + per-request config resolution), the `cache` facade, and `extendCacheDriver()`. Also owns `config/cache.ts` (the framework's own cache config). All exported from `@cossackframework/framework/cache`. |
 | `@cossackframework/core` | Provides `getRequestContext()` — the injection point the cache uses to resolve Worker bindings (`env.CACHE`, `env.CACHE_DO`) from the active request. No cache code lives in core. |
-| `@cossackframework/orm/cossack` | Owns `createDatabaseCacheStore()`, which lazily resolves the scoped ORM and structurally implements Framework's cache contract. The template registers it with `extendCacheDriver('database', () => createDatabaseCacheStore())`. |
+| `@cossackframework/database/cossack` | Owns `createDatabaseCacheStore()`, which lazily resolves the scoped ORM and structurally implements Framework's cache contract. The template registers it with `extendCacheDriver('database', () => createDatabaseCacheStore())`. |
 | `cossack` CLI | No longer owns a cache-specific command — the `cache_items` migration ships as a default (`0006_create_cache_table.ts`). |
 
 ## TTL Units

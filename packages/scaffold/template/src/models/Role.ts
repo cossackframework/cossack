@@ -5,7 +5,7 @@ import {
   OneToMany,
   PrimaryColumn,
   type Relation,
-} from '@cossackframework/orm';
+} from '@cossackframework/database';
 import { UserRole } from './UserRole';
 
 @Entity({ tableName: 'roles' })

@@ -19,7 +19,7 @@ import {
 generated ORM recipe composes the supplied database store:
 
 ```ts
-import { createDatabaseSessionStore } from '@cossackframework/orm/cossack';
+import { createDatabaseSessionStore } from '@cossackframework/database/cossack';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
 
 export const sessionMiddleware = createSessionMiddleware({

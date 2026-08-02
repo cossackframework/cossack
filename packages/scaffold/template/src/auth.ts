@@ -14,7 +14,7 @@
 import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 import { createAuth } from '@cossackframework/auth';
-import { MoreThan, Not, sql } from '@cossackframework/orm';
+import { MoreThan, Not, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '@/lib/uuid';
 import { User, type RoleAssignment } from '@/models/User';
