@@ -260,7 +260,7 @@ export async function betterSQLite(
   options: { readonly filename?: string } = {},
 ): Promise<Adapter> {
   const moduleName = "better-sqlite3";
-  const imported = await import(moduleName);
+  const imported = await import(/* @vite-ignore */ moduleName);
   const Constructor = imported.default as new (filename: string) => SQLiteDatabase;
   return adapter(new SQLiteDriver(new Constructor(options.filename ?? ":memory:")));
 }
@@ -269,7 +269,7 @@ export async function postgres(
   options: string | Readonly<Record<string, unknown>>,
 ): Promise<Adapter> {
   const moduleName = "pg";
-  const imported = await import(moduleName);
+  const imported = await import(/* @vite-ignore */ moduleName);
   const Pool = imported.Pool as new (options: unknown) => PGPool;
   const pool = new Pool(typeof options === "string" ? { connectionString: options } : options);
   return adapter(new PostgresDriver(pool, pool));
@@ -279,7 +279,7 @@ export async function mysql(
   options: string | Readonly<Record<string, unknown>>,
 ): Promise<Adapter> {
   const moduleName = "mysql2/promise";
-  const imported = await import(moduleName);
+  const imported = await import(/* @vite-ignore */ moduleName);
   const pool = imported.createPool(options) as MySQLPool;
   return adapter(new MySQLDriver(pool, pool));
 }
@@ -288,7 +288,7 @@ export async function libsql(
   options: string | Readonly<Record<string, unknown>>,
 ): Promise<Adapter> {
   const moduleName = "@libsql/client";
-  const imported = await import(moduleName);
+  const imported = await import(/* @vite-ignore */ moduleName);
   const client = imported.createClient(typeof options === "string" ? { url: options } : options) as {
     execute(input: { sql: string; args: readonly unknown[] }): Promise<{
       rows: unknown[];

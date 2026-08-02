@@ -166,6 +166,10 @@ describe('recipe resolution', () => {
       .toContain("exclude: ['@cossackframework/solar-icons']");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("path.resolve(import.meta.dirname, './src')");
+    expect(files.get('vite.config.ts').content.toString())
+      .not.toContain('__dirname');
   });
 
   it('preserves the pre-paint theme through hydration', async () => {
@@ -242,6 +246,7 @@ describe('composition', () => {
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
     expect(viteConfig).toContain('cossackPages({ markdownProcessor: processMarkdown })');
+    expect(viteConfig).toContain("from './src/markdown-processor.ts'");
     expect(pkg.devDependencies).toHaveProperty('unified');
     expect(pkg.devDependencies).toHaveProperty('remark-parse');
 

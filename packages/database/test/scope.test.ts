@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ORM } from "../src/orm.js";
 import {
   BaseEntity,
   Column,
@@ -22,6 +23,25 @@ class ScopedUser extends BaseEntity {
 }
 
 describe("ORM scopes", () => {
+  it("shares the active ORM registry across duplicated module graphs", async () => {
+    vi.resetModules();
+    const first = await import("../src/scope.js");
+    const scoped = {} as ORM;
+    const orm = {
+      isCurrentScope: () => true,
+      currentScopedORM: () => scoped,
+    } as ORM;
+    first.registerORM(orm);
+
+    vi.resetModules();
+    const second = await import("../src/scope.js");
+    try {
+      expect(second.currentORM()).toBe(scoped);
+    } finally {
+      second.unregisterORM(orm);
+    }
+  });
+
   it("throws actionable errors outside a run scope", () => {
     expect(() => ScopedUser.create({ name: "Ada" })).toThrow(ScopeError);
   });

@@ -1236,7 +1236,7 @@ export async function renderRecipe(recipe, options = {}) {
         .replace(
           "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';",
           "import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';\n" +
-          "import { processMarkdown } from './src/markdown-processor';",
+          "import { processMarkdown } from './src/markdown-processor.ts';",
         )
         .replace('    cossackPages(),', '    cossackPages({ markdownProcessor: processMarkdown }),'));
     }
