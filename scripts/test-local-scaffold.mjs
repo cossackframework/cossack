@@ -63,6 +63,7 @@ async function packPackages(destination) {
 
 async function useTarballs(projectDir, tarballs) {
   const packagePath = path.join(projectDir, 'package.json');
+  const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
   const pkg = JSON.parse(await fs.readFile(packagePath, 'utf8'));
   const overrides = {};
   for (const [name, tarball] of tarballs) {
@@ -77,14 +78,22 @@ async function useTarballs(projectDir, tarballs) {
     ...(pkg.devDependencies ?? {}),
     '@cossackframework/scaffold': `file:${tarballs.get('@cossackframework/scaffold')}`,
   };
-  pkg.pnpm = {
-    ...(pkg.pnpm ?? {}),
-    overrides: {
-      ...(pkg.pnpm?.overrides ?? {}),
-      ...overrides,
-    },
-  };
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+
+  // pnpm 11 moved overrides out of package.json's `pnpm` field. Keep the
+  // tarball acceptance project compatible with both pnpm 10 and 11 by writing
+  // the workspace setting used by current generated applications.
+  const workspace = await fs.readFile(workspacePath, 'utf8');
+  if (/^overrides:\s*$/m.test(workspace)) {
+    throw new Error('Local tarball smoke test expected no existing workspace overrides');
+  }
+  const renderedOverrides = Object.entries(overrides)
+    .map(([name, target]) => `  ${JSON.stringify(name)}: ${JSON.stringify(target)}`)
+    .join('\n');
+  await fs.writeFile(
+    workspacePath,
+    `${workspace.trimEnd()}\n\noverrides:\n${renderedOverrides}\n`,
+  );
 }
 
 async function installGeneratedProject(projectDir) {
