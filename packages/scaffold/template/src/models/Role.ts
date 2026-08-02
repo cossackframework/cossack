@@ -1,6 +1,7 @@
 import {
   BaseEntity,
   Column,
+  CreateDateColumn,
   Entity,
   OneToMany,
   PrimaryColumn,
@@ -16,11 +17,11 @@ export class Role extends BaseEntity {
   @Column({ type: 'varchar', name: 'name', length: 191, unique: true })
   declare name: string;
 
-  @Column({ type: 'text', name: 'permissions', nullable: true })
-  declare permissions: string | null;
+  @Column({ type: 'json', name: 'permissions', nullable: true })
+  declare permissions: string[] | null;
 
-  @Column({ type: 'varchar', name: 'created_at', length: 32 })
-  declare createdAt: string;
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
 
   @OneToMany(() => UserRole, (assignment) => assignment.role)
   declare userAssignments: Relation<UserRole[]>;

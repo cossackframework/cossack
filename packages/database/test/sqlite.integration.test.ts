@@ -5,10 +5,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  MigrationRunner,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   VersionColumn,
   createORM,
+  sql,
 } from "../src/index.js";
 import { nodeSQLite } from "../src/runtime/node.js";
 import { createTableDDL } from "../src/schema/ddl.js";
@@ -88,6 +90,48 @@ describe("Node SQLite integration", () => {
         });
       });
     });
+    await orm.close();
+  });
+
+  it("consolidates applied migrations into a squashed baseline without replaying it", async () => {
+    const orm = createORM({ adapter: await nodeSQLite(), entities: [] });
+    const original = new MigrationRunner(orm, [{
+      name: "001_create_items",
+      up({ schema }) {
+        schema.raw(sql.unsafe("CREATE TABLE items (id integer primary key)"));
+      },
+      down({ schema }) {
+        schema.raw(sql.unsafe("DROP TABLE items"));
+      },
+    }, {
+      name: "002_add_name",
+      up({ schema }) {
+        schema.raw(sql.unsafe("ALTER TABLE items ADD COLUMN name text"));
+      },
+      down({ schema }) {
+        schema.raw(sql.unsafe("ALTER TABLE items DROP COLUMN name"));
+      },
+    }]);
+    await orm.run(() => original.up());
+
+    const squashed = new MigrationRunner(orm, [{
+      name: "001_schema",
+      replaces: ["001_create_items", "002_add_name"],
+      up({ schema }) {
+        schema.raw(sql.unsafe("CREATE TABLE items (id integer primary key, name text)"));
+      },
+      down() {
+        throw new Error("baseline");
+      },
+    }]);
+    expect(await orm.run(() => squashed.up())).toEqual(["001_schema"]);
+    expect((await orm.run(() => squashed.applied())).map((item) => item.name))
+      .toEqual(["001_schema"]);
+    const table = await orm.executeFragment<{ name: string }>(
+      orm.sql.fragment`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items'`,
+      "select",
+    );
+    expect(table.rows).toEqual([{ name: "items" }]);
     await orm.close();
   });
 });

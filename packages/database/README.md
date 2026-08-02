@@ -174,13 +174,16 @@ import { seeders as seeds } from "./seeders/index.js";
 export default defineConfig({
   entities,
   migrations,
+  migrationDirectory: "./migrations",
   seeds,
   adapter: () => nodeSQLite({ filename: "app.db" }),
 });
 ```
 
 ```sh
+cossack-orm migration snapshot
 cossack-orm migration generate add_users
+cossack-orm migration squash 0001_schema --prune
 cossack-orm migration up
 cossack-orm migration down
 cossack-orm migration status
@@ -194,8 +197,10 @@ cossack-orm seed run
 cossack-orm seed run --only users,posts
 ```
 
-Generated migrations are reviewable TypeScript and are never run during
-application startup. Dropped tables/columns and narrowing changes require
+Generated migrations compare current decorators with a committed model schema
+snapshot; database introspection remains limited to `schema diff/check/pull`.
+Migrations are reviewable TypeScript and are never run during application
+startup. Dropped tables/columns and narrowing changes require
 `--allow-destructive`. Rename detection is never heuristic: set `renamedFrom` on
 the entity or column. `_cossack_migrations` stores the migration name, SHA-256
 checksum, batch, and application timestamp.

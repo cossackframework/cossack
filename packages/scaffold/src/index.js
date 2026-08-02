@@ -663,6 +663,7 @@ export default defineConfig({
   adapter: createToolingAdapter,
   entities: models,
   migrations,
+  migrationDirectory: './src/migrations',
   seeds,
 });
 `;
@@ -974,7 +975,7 @@ export async function handleOAuthUser(
       passwordHash: null,
       avatar: oauthUser.avatar ?? null,
       meta: null,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     });
     user = await User.findOne({ where: { id } });
   }
@@ -985,7 +986,7 @@ export async function handleOAuthUser(
       userId: user.id,
       provider,
       providerUserId: oauthUser.id,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     });
   }
   if (auth.createSession) {

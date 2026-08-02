@@ -10,7 +10,8 @@ import type { BatchStatement } from "../adapter/types.js";
 
 async function checksum(migration: Migration): Promise<string> {
   const bytes = new TextEncoder().encode(
-    `${migration.name}\n${migration.up.toString()}\n${migration.down.toString()}`,
+    `${migration.name}\n${JSON.stringify(migration.replaces ?? [])}\n` +
+      `${migration.up.toString()}\n${migration.down.toString()}`,
   );
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -75,6 +76,41 @@ export class MigrationRunner {
     const batch = Math.max(0, ...applied.map((item) => item.batch)) + 1;
     const names: string[] = [];
     for (const status of pending) {
+      const replacements = status.migration.replaces ?? [];
+      if (replacements.length) {
+        const currentlyApplied = new Set((await this.applied()).map((item) => item.name));
+        const appliedReplacements = replacements.filter((name) => currentlyApplied.has(name));
+        if (appliedReplacements.length && appliedReplacements.length !== replacements.length) {
+          throw new MigrationError(
+            `Cannot apply squashed migration ${status.migration.name}: only ` +
+            `${appliedReplacements.length} of ${replacements.length} replaced migrations are applied.`,
+          );
+        }
+        if (appliedReplacements.length === replacements.length) {
+          const consolidate = async () => {
+            const schema = new SchemaBuilder();
+            for (const name of replacements) {
+              schema.raw(this.orm.sql.fragment`
+                DELETE FROM ${this.orm.sql.id(this.tableName)}
+                WHERE ${this.orm.sql.id("name")} = ${name}
+              `);
+            }
+            await this.executeAtomic(
+              schema,
+              this.orm.sql.fragment`
+                INSERT INTO ${this.orm.sql.id(this.tableName)}
+                  (${this.orm.sql.id("name")}, ${this.orm.sql.id("checksum")}, ${this.orm.sql.id("batch")}, ${this.orm.sql.id("applied_at")})
+                VALUES (${status.migration.name}, ${status.checksum}, ${batch}, ${new Date().toISOString()})
+              `,
+              "insert",
+            );
+          };
+          if (this.orm.driver.capabilities.transactions) await this.orm.transaction(consolidate);
+          else await consolidate();
+          names.push(status.migration.name);
+          continue;
+        }
+      }
       const apply = async () => {
         const schema = new SchemaBuilder();
         await status.migration.up({ orm: this.orm, schema });

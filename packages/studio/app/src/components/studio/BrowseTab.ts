@@ -1,5 +1,6 @@
 import { Component, Cossack } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
+import { ArrowToTopRightIcon } from '@cossackframework/solar-icons/arrow-to-top-right';
 import { ExportIcon } from '@cossackframework/solar-icons/export';
 import { FilterIcon } from '@cossackframework/solar-icons/filter';
 import { LinkIcon } from '@cossackframework/solar-icons/link';
@@ -18,6 +19,7 @@ import {
 import type {
   StudioForeignKey,
   StudioObject,
+  StudioRelation,
   StudioSchema,
 } from '../../../../src/lib/schema-types';
 import type {
@@ -30,8 +32,11 @@ import {
   displayValue,
   FILTER_OPERATORS,
   formatCount,
+  relationKindLabel,
+  relationNavigation,
   type CellEditor,
   type CellMode,
+  type RelationExpansion,
 } from '../../studio-page';
 import type { StudioTheme } from '../../theme.client';
 import { CodeEditor } from '../CodeEditor';
@@ -57,6 +62,7 @@ interface BrowseTabProps {
   filterValue: string;
   theme: StudioTheme;
   inlineEditor: CellEditor | null;
+  relationExpansions: Record<string, RelationExpansion>;
   onToggleFilter: () => void;
   onRemoveFilter: (index: number) => void;
   onRunQuery: () => void;
@@ -78,6 +84,8 @@ interface BrowseTabProps {
   onSaveInlineEditor: () => void;
   onInlineModeChange: (mode: CellMode) => void;
   onFollowForeignKey: (foreignKey: StudioForeignKey, rowIndex: number) => void;
+  onToggleRelation: (relation: StudioRelation, rowIndex: number) => void;
+  onOpenRelation: (relationProperty: string, rowIndex: number) => void;
   onEditRow: (rowIndex: number) => void;
   onDeleteRow: (rowIndex: number) => void;
   onPageSizeChange: (value: string) => void;
@@ -140,6 +148,13 @@ export class BrowseTab extends Cossack {
       : `SELECT * FROM ${quote} LIMIT ${this.props.pageSize} OFFSET 0`;
     const query = this.props.query || generatedQuery;
     const gridEditable = object.editable && !this.props.customQuery;
+    const relationColumns = this.props.customQuery
+      ? []
+      : (object.relations ?? []).flatMap((relation) => {
+          const navigation = relationNavigation(this.props.schema, object, relation);
+          return navigation ? [{ relation, navigation }] : [];
+        });
+    const gridColumnCount = columns.length + relationColumns.length + 2;
 
     return html`
       <div class="${this.props.active ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col">
@@ -301,7 +316,7 @@ export class BrowseTab extends Cossack {
               variant: 'ghost',
               size: 'sm',
               '@click': this.props.onClearSelection,
-            }, 'Clear')}
+            }, 'Cancel Selected')}
           </div>
         ` : ''}
 
@@ -343,12 +358,26 @@ export class BrowseTab extends Cossack {
                     </th>
                   `;
                 })}
+                ${relationColumns.map(({ relation }) => html`
+                  <th
+                    class="studio-cell border-b border-r px-3 py-2 text-left font-medium"
+                    data-testid="relation-column-${relation.propertyName}"
+                  >
+                    <span class="flex items-center gap-1.5">
+                      ${component(Icon, { entry: LinkIcon, size: 13 })}
+                      <span>${relation.propertyName}</span>
+                    </span>
+                    <span class="block text-[10px] font-normal text-muted-foreground">
+                      ${relationKindLabel(relation.kind)} · ${relation.targetEntity}
+                    </span>
+                  </th>
+                `)}
                 <th class="w-28 border-b px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr class="${this.props.loading ? '' : 'hidden'}" data-testid="rows-loading">
-                <td class="p-8 text-center text-muted-foreground" colspan="${columns.length + 2}">
+                <td class="p-8 text-center text-muted-foreground" colspan="${gridColumnCount}">
                   Loading rows…
                 </td>
               </tr>
@@ -356,13 +385,20 @@ export class BrowseTab extends Cossack {
                 (this.props.loadFailed || !resultMatches)
                 ? ''
                 : 'hidden'}">
-                <td class="p-8 text-center text-destructive" colspan="${columns.length + 2}">
+                <td class="p-8 text-center text-destructive" colspan="${gridColumnCount}">
                   Rows could not be loaded. Use Refresh to try again.
                 </td>
               </tr>
-              ${rows.map((row, rowIndex) => html`
+              ${rows.map((row, rowIndex) => {
+                const expansion = this.props.relationExpansions[String(rowIndex)];
+                const relatedRows = expansion?.result.rows ?? [];
+                const relatedColumns = expansion?.result.columns ?? [];
+                const relatedTotal = expansion?.result.totalRows ?? relatedRows.length;
+                return html`
                 <tr
-                  class="${this.props.loading ? 'hidden' : ''} hover:bg-muted/40"
+                  class="${this.props.loading ? 'hidden' : ''} ${expansion
+                    ? 'bg-primary/5'
+                    : ''} hover:bg-muted/40"
                   data-testid="grid-row"
                 >
                   <td class="border-b border-r px-3 py-2">
@@ -457,6 +493,38 @@ export class BrowseTab extends Cossack {
                       </td>
                     `;
                   })}
+                  ${relationColumns.map(({ relation, navigation }) => {
+                    const value = row[navigation.sourceColumn];
+                    const available = value !== null && value !== undefined;
+                    const expanded = expansion?.relationProperty === relation.propertyName;
+                    const label = navigation.through
+                      ? `View links in ${navigation.targetTable}`
+                      : relation.kind === 'one-to-many'
+                        ? `View ${relation.targetTableName ?? relation.targetEntity}`
+                        : displayValue(value);
+                    return html`
+                      <td class="studio-cell border-b border-r px-3 py-2">
+                        ${available ? html`
+                          <button
+                            type="button"
+                            class="inline-flex max-w-full items-center gap-1.5 text-primary ${expanded
+                              ? 'font-medium'
+                              : ''} hover:underline"
+                            title="${expanded ? 'Collapse' : 'Expand'} ${relation.targetEntity} relation"
+                            aria-expanded="${expanded ? 'true' : 'false'}"
+                            aria-controls="${expanded ? `relation-panel-${rowIndex}` : ''}"
+                            data-testid="relation-${relation.propertyName}-${rowIndex}"
+                            @click="${() => this.props.onToggleRelation(relation, rowIndex)}"
+                          >
+                            <span class="truncate">${label}</span>
+                            <span aria-hidden="true" class="text-[10px]">
+                              ${expanded ? '▴' : '▾'}
+                            </span>
+                          </button>
+                        ` : html`<span class="italic text-muted-foreground">NULL</span>`}
+                      </td>
+                    `;
+                  })}
                   <td class="border-b px-2 text-center">
                     <div class="flex justify-center gap-1">
                       ${gridEditable ? iconButton(
@@ -478,14 +546,113 @@ export class BrowseTab extends Cossack {
                     </div>
                   </td>
                 </tr>
-              `)}
+                ${expansion ? html`
+                  <tr
+                    id="relation-panel-${rowIndex}"
+                    class="bg-muted/20"
+                    data-testid="relation-panel-${rowIndex}"
+                  >
+                    <td class="border-b p-0" colspan="${gridColumnCount}">
+                      <section class="border-l-4 border-primary/50 bg-muted/20 p-3">
+                        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div class="flex items-center gap-2 text-xs">
+                            ${component(Icon, { entry: LinkIcon, size: 14 })}
+                            <strong>${expansion.targetEntity}</strong>
+                            <span class="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-primary">
+                              ${relationKindLabel(expansion.relationKind)}
+                            </span>
+                            <span class="font-mono text-muted-foreground">
+                              ${expansion.targetTable}
+                            </span>
+                            ${iconButton(
+                              ArrowToTopRightIcon,
+                              `Open ${expansion.targetEntity} relation in a new tab`,
+                              () => this.props.onOpenRelation(
+                                expansion.relationProperty,
+                                rowIndex,
+                              ),
+                              {
+                                class: 'h-7 w-7',
+                                'data-testid': `open-relation-${rowIndex}`,
+                              },
+                            )}
+                          </div>
+                          ${!expansion.loading && !expansion.error ? html`
+                            <span class="text-xs text-muted-foreground">
+                              ${formatCount(relatedTotal)} related row${relatedTotal === 1 ? '' : 's'}
+                              ${relatedTotal > relatedRows.length
+                                ? ` · showing first ${relatedRows.length}`
+                                : ''}
+                            </span>
+                          ` : ''}
+                        </div>
+
+                        ${expansion.loading ? html`
+                          <div
+                            class="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground"
+                            data-testid="relation-loading-${rowIndex}"
+                          >
+                            Loading related rows…
+                          </div>
+                        ` : expansion.error ? html`
+                          <div class="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                            ${expansion.error}
+                          </div>
+                        ` : relatedRows.length ? html`
+                          <div class="overflow-x-auto rounded-md border bg-background shadow-sm">
+                            <table
+                              class="w-full border-collapse text-xs"
+                              data-testid="relation-table-${rowIndex}"
+                            >
+                              <thead class="bg-primary/15">
+                                <tr>
+                                  ${relatedColumns.map((column) => html`
+                                    <th class="border-b border-r px-3 py-2 text-left font-semibold last:border-r-0">
+                                      ${column}
+                                    </th>
+                                  `)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${relatedRows.map((relatedRow, relatedIndex) => html`
+                                  <tr
+                                    class="${relatedIndex % 2 === 0
+                                      ? 'bg-background'
+                                      : 'bg-muted/50'}"
+                                    data-testid="relation-row-${rowIndex}"
+                                  >
+                                    ${relatedColumns.map((column) => html`
+                                      <td class="studio-cell border-b border-r px-3 py-2 font-mono last:border-r-0">
+                                        <span class="studio-cell-value ${relatedRow[column] === null
+                                          ? 'italic text-muted-foreground'
+                                          : ''}">
+                                          ${displayValue(relatedRow[column])}
+                                        </span>
+                                      </td>
+                                    `)}
+                                  </tr>
+                                `)}
+                              </tbody>
+                            </table>
+                          </div>
+                        ` : html`
+                          <div class="rounded-md border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+                            No related rows.
+                          </div>
+                        `}
+                      </section>
+                    </td>
+                  </tr>
+                ` : ''}
+              `;
+              })}
               <tr
                 class="${!this.props.loading && resultMatches && !rows.length
                   ? ''
                   : 'hidden'}"
                 data-testid="rows-empty"
               >
-                <td class="p-8 text-center text-muted-foreground" colspan="${columns.length + 2}">
+                <td class="p-8 text-center text-muted-foreground" colspan="${gridColumnCount}">
                   No rows found.
                 </td>
               </tr>

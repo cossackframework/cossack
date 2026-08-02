@@ -41,6 +41,23 @@ before `orm.config.ts` is imported; existing shell variables keep precedence.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
+This means storage-oriented SQLite declarations can retain richer application
+semantics through model decorators:
+
+```ts
+@Column({ type: 'json', name: 'meta', nullable: true })
+declare meta: Record<string, unknown> | null;
+
+@CreateDateColumn({ name: 'created_at' })
+declare createdAt: Date;
+```
+
+The Structure tab shows both the ORM type (`json`, `datetime`) and physical
+database type (`TEXT`, `VARCHAR(32)`). The Browse tab adds relation-property
+columns for navigable ORM relations. Selecting one toggles a read-only related
+table directly below that row, loaded through the corresponding foreign-key
+filter. Relation data is fetched lazily and capped at 50 rows per expansion;
+the panel's new-tab action opens the fully browsable filtered relation.
 
 For programmatic startup:
 

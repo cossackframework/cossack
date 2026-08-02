@@ -2,6 +2,8 @@ import { runORMToolingCommand } from './db-run.js';
 
 const ACTIONS = new Set([
   'generate',
+  'snapshot',
+  'squash',
   'up',
   'down',
   'status',
@@ -29,7 +31,9 @@ export function migrationHelp() {
 Run deterministic ORM migrations from orm.config.ts.
 
 Subcommands:
-  generate <name>   Generate a migration from model/database schema diff.
+  generate <name>   Generate a migration from the model snapshot diff.
+  snapshot          Record current model metadata as the generation baseline.
+  squash <name>     Generate one baseline migration from the current models.
   up                Apply all pending migrations.
   down              Revert the most recent migration.
   status            List migration state.
@@ -39,5 +43,6 @@ Subcommands:
 Options:
   --config <path>              ORM config (default: orm.config.ts)
   --output <path>              Generated migration path
-  --allow-destructive          Allow destructive diff operations`;
+  --allow-destructive          Allow destructive diff operations
+  --prune                      With squash, replace migration files and the barrel`;
 }

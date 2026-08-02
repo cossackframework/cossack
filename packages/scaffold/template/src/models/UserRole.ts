@@ -1,6 +1,7 @@
 import {
   BaseEntity,
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -18,8 +19,8 @@ export class UserRole extends BaseEntity {
   @PrimaryColumn({ type: 'varchar', name: 'role_id', length: 191 })
   declare roleId: string;
 
-  @Column({ type: 'varchar', name: 'created_at', length: 32 })
-  declare createdAt: string;
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
 
   @ManyToOne(() => User, (user) => user.roleAssignments)
   @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })

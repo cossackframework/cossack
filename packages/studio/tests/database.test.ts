@@ -1,4 +1,16 @@
-import { createORM } from '@cossackframework/database';
+import 'reflect-metadata';
+import {
+  BaseEntity,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryColumn,
+  createORM,
+  type Relation,
+} from '@cossackframework/database';
 import { libsql } from '@cossackframework/database/node';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -9,6 +21,37 @@ import {
 
 let connection: LocalStudioConnection;
 let studio: StudioDatabase;
+
+@Entity({ tableName: 'studio_departments' })
+class StudioDepartment extends BaseEntity {
+  @PrimaryColumn({ type: 'integer' })
+  declare id: number;
+
+  @Column('text')
+  declare name: string;
+
+  @OneToMany(() => StudioPerson, (person) => person.department)
+  declare people: Relation<StudioPerson[]>;
+}
+
+@Entity({ tableName: 'studio_people' })
+class StudioPerson extends BaseEntity {
+  @PrimaryColumn({ type: 'integer' })
+  declare id: number;
+
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
+
+  @Column({ type: 'json', name: 'profile', nullable: true })
+  declare profile: Record<string, unknown> | null;
+
+  @Column({ type: 'integer', name: 'department_id' })
+  declare departmentId: number;
+
+  @ManyToOne(() => StudioDepartment, (department) => department.people)
+  @JoinColumn({ name: 'department_id', referencedColumnName: 'id' })
+  declare department: Relation<StudioDepartment>;
+}
 
 beforeEach(async () => {
   const orm = createORM({ adapter: await libsql({ url: ':memory:' }), entities: [] });
@@ -118,6 +161,60 @@ describe('StudioDatabase', () => {
         onUpdate: 'CASCADE',
         onDelete: 'RESTRICT',
       }]);
+  });
+
+  it('overlays ORM logical types and relation metadata on SQLite storage types', async () => {
+    const orm = createORM({
+      adapter: await libsql({ url: ':memory:' }),
+      entities: [StudioDepartment, StudioPerson],
+    });
+    const logicalConnection = createLocalConnection({
+      orm,
+      info: { provider: 'sqlite', label: 'logical fixture' },
+    });
+    const logicalStudio = new StudioDatabase(logicalConnection);
+    try {
+      await logicalConnection.execute(
+        'CREATE TABLE studio_departments (id INTEGER PRIMARY KEY, name TEXT NOT NULL)',
+      );
+      await logicalConnection.execute(`
+        CREATE TABLE studio_people (
+          id INTEGER PRIMARY KEY,
+          created_at VARCHAR(32) NOT NULL,
+          profile TEXT,
+          department_id INTEGER NOT NULL REFERENCES studio_departments(id)
+        )
+      `);
+      const schema = await logicalStudio.getSchema(true);
+      const people = schema.objects.find((object) => object.name === 'studio_people')!;
+      expect(people.columns.find((column) => column.name === 'created_at')).toMatchObject({
+        dataType: 'VARCHAR(32)',
+        logicalType: 'datetime',
+        declaredKind: 'datetime',
+        propertyName: 'createdAt',
+      });
+      expect(people.columns.find((column) => column.name === 'profile')).toMatchObject({
+        dataType: 'TEXT',
+        logicalType: 'json',
+        declaredKind: 'json',
+      });
+      expect(people.relations).toEqual([expect.objectContaining({
+        propertyName: 'department',
+        kind: 'many-to-one',
+        targetTableName: 'studio_departments',
+        joinColumn: 'department_id',
+        referencedColumn: 'id',
+      })]);
+      expect(schema.objects.find((object) => object.name === 'studio_departments')?.relations)
+        .toEqual([expect.objectContaining({
+          propertyName: 'people',
+          kind: 'one-to-many',
+          targetTableName: 'studio_people',
+          inverseProperty: 'department',
+        })]);
+    } finally {
+      await logicalStudio.close();
+    }
   });
 
   it('paginates rows in primary-key order', async () => {

@@ -11,8 +11,8 @@ never synchronizes models to the database during application startup.
 The normal workflow is:
 
 1. Change decorated models.
-2. Generate a migration from the schema diff.
-3. Review its SQL and write the inverse migration.
+2. Generate a migration from the committed model snapshot diff.
+3. Review its generated forward and inverse SQL.
 4. Apply it in development and CI.
 5. Commit the model and migration together.
 
@@ -30,6 +30,7 @@ export default defineConfig({
   adapter: () => nodeSQLite({ filename: "app.db" }),
   entities,
   migrations,
+  migrationDirectory: "./migrations",
 });
 ```
 
@@ -47,6 +48,15 @@ export const migrations = [
 
 ## Generate a migration
 
+Existing projects first record their current decorated models once:
+
+```sh
+cossack-orm migration snapshot
+```
+
+This writes `.cossack-schema.json` inside `migrationDirectory`. Commit the
+snapshot with the migrations. It is model metadata, not a database dump.
+
 ```sh
 cossack-orm migration generate add_user_profiles
 ```
@@ -58,10 +68,14 @@ cossack-orm migration generate add_user_profiles \
   --output ./src/database/migrations/0003_add_user_profiles.ts
 ```
 
-Generation compares `orm.introspect()` with decorated model metadata. The
-output is deterministic TypeScript containing reviewable SQL statements.
-Generated `down()` methods intentionally require review and implementation
-before a migration can be safely reverted.
+Generation compares the committed model snapshot with current decorated model
+metadata. It does not introspect the database. Adding or removing a `@Column()`,
+entity, rename marker, or index produces deterministic TypeScript containing
+reviewable `up()` and inverse `down()` SQL. The snapshot advances only after the
+migration file is written successfully. When the output is directly inside
+`migrationDirectory` and its `index.ts` exports the standard `migrations` array,
+the generator registers the new migration automatically; otherwise it prints a
+registration reminder.
 
 A migration has this contract:
 
@@ -89,6 +103,27 @@ export default {
 `sql.unsafe()` is appropriate here only because the statement is trusted,
 static, and reviewed. Use schema operations where they express the change
 portably.
+
+## Squash migration history
+
+Create one baseline migration directly from the current models:
+
+```sh
+cossack-orm migration squash 0001_schema
+```
+
+After reviewing it, prune the replaced migration source files and rewrite the
+migration barrel:
+
+```sh
+cossack-orm migration squash 0001_schema --prune
+```
+
+The squashed migration records the migration names it replaces. On a fresh
+database its full schema is applied. On an existing database where every
+replaced migration is already applied, `migration up` consolidates only the
+bookkeeping and does not replay schema creation. A partially applied replacement
+set is rejected. Squashed baselines are intentionally not reversible.
 
 ## Apply and revert
 
@@ -150,8 +185,9 @@ cossack-orm schema pull
 - `schema pull` generates decorated models with explicit physical names and
   logical types.
 
-Destructive differences also require `--allow-destructive` for `schema diff`
-and `schema check`.
+Unlike model-first migration generation, schema commands inspect the live
+database. Destructive differences also require `--allow-destructive` for
+`schema diff` and `schema check`.
 
 By default, pulled models are written to `src/entities.generated.ts`. Existing
 files are not overwritten unless `--force` is supplied:

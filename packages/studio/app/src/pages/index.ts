@@ -13,6 +13,7 @@ import {
 import { component, html, repeat } from '@cossackframework/renderer';
 import { CommandPalette } from '@cossackframework/ui/blocks';
 import { AddSquareIcon } from '@cossackframework/solar-icons/add-square';
+import { CheckCircleIcon } from '@cossackframework/solar-icons/check-circle';
 import { CodeSquareIcon } from '@cossackframework/solar-icons/code-square';
 import { DatabaseIcon } from '@cossackframework/solar-icons/database';
 import { EyeIcon } from '@cossackframework/solar-icons/eye';
@@ -36,6 +37,7 @@ import type {
   StudioForeignKey,
   StudioObject,
   StudioPragma,
+  StudioRelation,
   StudioSchema,
 } from '../../../src/lib/schema-types';
 import type {
@@ -68,6 +70,7 @@ import {
   exportValue,
   FILTER_OPERATORS,
   localDateTimeDefaults,
+  relationNavigation,
   type BatchUpdateState,
   type CellEditor,
   type CellMode,
@@ -78,6 +81,7 @@ import {
   type InsertFieldState,
   type InsertSelection,
   type QueryHistoryEntry,
+  type RelationExpansion,
   type RowEditorState,
   type StudioTab,
 } from '../studio-page';
@@ -141,6 +145,7 @@ export default class StudioPage extends Cossack {
   @ClientState() queryHistory: QueryHistoryEntry[] = [];
   @ClientState() historyOpen = false;
   @ClientState() sqlOutput: 'results' | 'explain' = 'results';
+  @ClientState() relationExpansions: Record<string, RelationExpansion> = {};
 
   private disconnectTheme?: () => void;
   private insertTemporalDefaults = { date: '', datetime: '', timestamp: '' };
@@ -372,6 +377,7 @@ export default class StudioPage extends Cossack {
     this.browseLoadFailed = false;
     this.inlineEditor = null;
     this.selectedRows = [];
+    this.relationExpansions = {};
     try {
       await this.loadRows(name, page, pageSize, this.filters, this.sort);
       this.loadedObject = name;
@@ -569,6 +575,7 @@ export default class StudioPage extends Cossack {
     if (!statement || !this.selected) return;
     this.browseLoading = true;
     this.browseLoadFailed = false;
+    this.relationExpansions = {};
     this.inlineEditor = null;
     this.sheetEditor = null;
     this.showInsert = false;
@@ -638,6 +645,80 @@ export default class StudioPage extends Cossack {
     });
     if (filters.length !== foreignKey.columns.length) return;
     await this.chooseObject(target.name, filters);
+  }
+
+  @Client()
+  async toggleRelation(relation: StudioRelation, rowIndex: number) {
+    const object = this.activeObject;
+    const row = this.browseResult.rows[rowIndex];
+    if (!object || !row) return;
+    const key = String(rowIndex);
+    if (this.relationExpansions[key]?.relationProperty === relation.propertyName) {
+      const { [key]: _closed, ...remaining } = this.relationExpansions;
+      this.relationExpansions = remaining;
+      return;
+    }
+    const navigation = relationNavigation(this.activeSchema, object, relation);
+    if (!navigation) return;
+    const value = row[navigation.sourceColumn];
+    if (value === null || value === undefined) return;
+    const pending: RelationExpansion = {
+      relationProperty: relation.propertyName,
+      relationKind: relation.kind,
+      targetEntity: relation.targetEntity,
+      targetTable: navigation.targetTable,
+      loading: true,
+      error: '',
+      result: emptyResult,
+    };
+    this.relationExpansions = { ...this.relationExpansions, [key]: pending };
+    try {
+      const result = await this.loadRelationRows(
+        navigation.targetTable,
+        navigation.targetColumn,
+        editableValue(value),
+      );
+      if (this.relationExpansions[key]?.relationProperty !== relation.propertyName) return;
+      this.relationExpansions = {
+        ...this.relationExpansions,
+        [key]: { ...pending, loading: false, result },
+      };
+    } catch (error: any) {
+      if (this.relationExpansions[key]?.relationProperty !== relation.propertyName) return;
+      this.relationExpansions = {
+        ...this.relationExpansions,
+        [key]: {
+          ...pending,
+          loading: false,
+          error: error?.message ?? String(error),
+        },
+      };
+    }
+  }
+
+  @Client()
+  openRelationInNewTab(relationProperty: string, rowIndex: number) {
+    const object = this.activeObject;
+    const row = this.browseResult.rows[rowIndex];
+    const relation = object?.relations?.find(
+      (candidate) => candidate.propertyName === relationProperty,
+    );
+    if (!object || !row || !relation) return;
+    const navigation = relationNavigation(this.activeSchema, object, relation);
+    if (!navigation) return;
+    const value = row[navigation.sourceColumn];
+    if (value === null || value === undefined) return;
+    const url = new URL(window.location.href);
+    for (const key of ['table', 'tab', 'page', 'filter', 'sort']) {
+      url.searchParams.delete(key);
+    }
+    url.searchParams.set('table', navigation.targetTable);
+    url.searchParams.append('filter', JSON.stringify({
+      column: navigation.targetColumn,
+      operator: 'eq',
+      value: editableValue(value),
+    } satisfies BrowseFilter));
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
   }
 
   @Client()
@@ -715,6 +796,7 @@ export default class StudioPage extends Cossack {
         this.sort,
       );
       this.loadedObject = object.name;
+      this.relationExpansions = {};
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
       this.message = error?.message ?? String(error);
@@ -781,6 +863,7 @@ export default class StudioPage extends Cossack {
         this.sort,
       );
       this.loadedObject = object.name;
+      this.relationExpansions = {};
       this.sheetEditor = null;
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
@@ -856,6 +939,7 @@ export default class StudioPage extends Cossack {
         this.sort,
       );
       this.loadedObject = object.name;
+      this.relationExpansions = {};
       this.rowEditor = null;
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
@@ -898,6 +982,7 @@ export default class StudioPage extends Cossack {
         this.sort,
       );
       this.loadedObject = target.table;
+      this.relationExpansions = {};
       this.selectedRows = [];
       studioSchemaCatalog.set(this.activeSchema);
     } catch (error: any) {
@@ -1087,6 +1172,7 @@ export default class StudioPage extends Cossack {
         return;
       }
       this.loadedObject = object.name;
+      this.relationExpansions = {};
       this.showInsert = false;
       this.insertFields = {};
       studioSchemaCatalog.set(this.activeSchema);
@@ -1189,6 +1275,7 @@ export default class StudioPage extends Cossack {
         this.sort,
       );
       this.loadedObject = object.name;
+      this.relationExpansions = {};
       this.batchUpdate = null;
       this.selectedRows = [];
       studioSchemaCatalog.set(this.activeSchema);
@@ -1212,6 +1299,19 @@ export default class StudioPage extends Cossack {
     this.pageSize = this.browseResult.pageSize ?? pageSize;
     this.message = '';
     this.messageError = false;
+  }
+
+  @Server()
+  async loadRelationRows(
+    table: string,
+    column: string,
+    value: string,
+  ): Promise<TransportQueryResult> {
+    return getStudioDatabase().browse(table, {
+      page: 1,
+      pageSize: 50,
+      filters: [{ column, operator: 'eq', value }],
+    });
   }
 
   @Server()
@@ -1608,8 +1708,22 @@ export default class StudioPage extends Cossack {
           </div>
 
           ${this.message ? html`
-            <div class="${this.messageError ? 'bg-destructive/10 text-destructive' : 'bg-muted/60 text-muted-foreground'} shrink-0 border-b px-4 py-2 text-sm" role="status">
-              ${this.message}
+            <div
+              class="${this.messageError
+                ? 'bg-destructive/10 text-destructive'
+                : 'bg-muted/60 text-muted-foreground'} flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm"
+              role="status"
+            >
+              ${this.messageError ? '' : html`
+                <span
+                  class="shrink-0 text-emerald-600 dark:text-emerald-400"
+                  data-testid="success-message-icon"
+                  aria-hidden="true"
+                >
+                  ${component(Icon, { entry: CheckCircleIcon, size: 17 })}
+                </span>
+              `}
+              <span>${this.message}</span>
             </div>
           ` : ''}
 
@@ -1676,6 +1790,7 @@ export default class StudioPage extends Cossack {
       filterValue: this.filterValue,
       theme: this.theme,
       inlineEditor: this.inlineEditor,
+      relationExpansions: this.relationExpansions,
       onToggleFilter: () => { this.showFilter = !this.showFilter; },
       onRemoveFilter: this.removeFilter,
       onRunQuery: this.runBrowseQuery,
@@ -1699,6 +1814,8 @@ export default class StudioPage extends Cossack {
       onSaveInlineEditor: this.saveInlineEditor,
       onInlineModeChange: this.setInlineMode,
       onFollowForeignKey: this.followForeignKey,
+      onToggleRelation: this.toggleRelation,
+      onOpenRelation: this.openRelationInNewTab,
       onEditRow: this.openRowEditor,
       onDeleteRow: this.requestDelete,
       onPageSizeChange: this.changePageSize,

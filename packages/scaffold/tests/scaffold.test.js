@@ -143,6 +143,8 @@ describe('recipe resolution', () => {
         .toContain('createORM');
       expect(files.get('orm.config.ts').content.toString())
         .toContain('createToolingAdapter');
+      expect(files.get('orm.config.ts').content.toString())
+        .toContain("migrationDirectory: './src/migrations'");
     }
     expect(Boolean(pkg.dependencies['reflect-metadata']))
       .toBe(recipe.resolvedFeatures.includes('database'));
@@ -624,6 +626,7 @@ describe('composition', () => {
     expect(toolingConfig).toContain("from 'wrangler'");
     expect(toolingConfig).toContain('getPlatformProxy');
     expect(cliConfig).toContain('createToolingAdapter');
+    expect(cliConfig).toContain("migrationDirectory: './src/migrations'");
     const wrangler = files.get('wrangler.jsonc').content.toString();
     expect(wrangler).toContain('"database_id": "00000000-0000-0000-0000-000000000000"');
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');

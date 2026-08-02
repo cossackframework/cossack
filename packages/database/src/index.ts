@@ -72,7 +72,7 @@ export {
 export { ExpressionBuilder } from "./query/expression.js";
 export { defineConfig, type ORMConfig } from "./config.js";
 export { SchemaBuilder } from "./schema/builder.js";
-export { diffSchemas, describeOperation } from "./schema/diff.js";
+export { diffSchemas, describeOperation, reverseSchemaOperations } from "./schema/diff.js";
 export { renderOperation, createTableDDL, columnDDL } from "./schema/ddl.js";
 export type { SchemaDiff, SchemaOperation } from "./schema/operations.js";
 export {

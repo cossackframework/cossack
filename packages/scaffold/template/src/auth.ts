@@ -106,15 +106,7 @@ export interface PublicUser {
 }
 
 function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
-  let meta: Record<string, unknown> | null = null;
-  if (u.meta) {
-    try {
-      meta = JSON.parse(u.meta);
-    } catch {
-      meta = null;
-    }
-  }
-  return { id: u.id, email: u.email, name: u.name ?? '', avatar: u.avatar, meta, roles };
+  return { id: u.id, email: u.email, name: u.name ?? '', avatar: u.avatar, meta: u.meta, roles };
 }
 
 // --- Roles -----------------------------------------------------------------
@@ -159,8 +151,7 @@ function captureRequestInfo(c: Context): { ip: string | null; userAgent: string 
 async function createSessionRow(user: User, c: Context): Promise<{ headers: Headers }> {
   const id = uuidv7();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
-  const createdAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
   const meta: SessionMeta = { type: 'auth' };
   const { ip, userAgent, location } = captureRequestInfo(c);
   await Session.insert({
@@ -168,8 +159,8 @@ async function createSessionRow(user: User, c: Context): Promise<{ headers: Head
     userId: user.id,
     data: null,
     expiresAt,
-    createdAt,
-    meta: JSON.stringify(meta),
+    createdAt: now,
+    meta,
     ipAddress: ip,
     userAgent,
     location,
@@ -194,7 +185,7 @@ export const auth = createAuth<PublicUser>({
   validateSessionId: async (sessionId) => {
     try {
       const row = await Session.findOne({
-        where: { id: sessionId, expiresAt: MoreThan(new Date().toISOString()) },
+        where: { id: sessionId, expiresAt: MoreThan(new Date()) },
       });
       return row?.userId ?? null;
     } catch (error) {
@@ -246,7 +237,7 @@ export async function registerUser(email: string, password: string, name?: strin
     passwordHash,
     avatar: null,
     meta: null,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   });
   return { id, email, name: name ?? '', avatar: null, meta: null, roles: [] };
 }
@@ -263,7 +254,7 @@ export async function updateUserProfile(userId: string, patch: ProfileUpdate): P
   const values: Partial<User> = {};
   if (patch.name !== undefined) values.name = patch.name;
   if (patch.avatar !== undefined) values.avatar = patch.avatar;
-  if (patch.meta !== undefined) values.meta = patch.meta === null ? null : JSON.stringify(patch.meta);
+  if (patch.meta !== undefined) values.meta = patch.meta;
   if (Object.keys(values).length === 0) return;
   await User.update({ id: userId }, values);
 }
@@ -274,15 +265,15 @@ async function createPasswordResetToken(email: string): Promise<string | null> {
   if (!user) return null; // do NOT leak whether the email exists
   const token = uuidv7();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hour
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
   const meta: SessionMeta = { type: 'password_reset' };
   await Session.insert({
     id: token,
     userId: user.id,
     data: null,
     expiresAt,
-    createdAt: now.toISOString(),
-    meta: JSON.stringify(meta),
+    createdAt: now,
+    meta,
     location: null,
     userAgent: null,
     ipAddress: null,
@@ -292,7 +283,7 @@ async function createPasswordResetToken(email: string): Promise<string | null> {
 
 async function consumePasswordResetToken(token: string): Promise<string | null> {
   const row = await Session.findOne({
-    where: { id: token, expiresAt: MoreThan(new Date().toISOString()) },
+    where: { id: token, expiresAt: MoreThan(new Date()) },
   });
   if (!row) return null;
   await Session.delete({ id: token });
@@ -368,8 +359,9 @@ export interface SessionInfo {
   ipAddress: string | null;
 }
 
-function parseMeta(raw: string | null): Record<string, unknown> | null {
+function parseMeta(raw: Record<string, unknown> | string | null): Record<string, unknown> | null {
   if (!raw) return null;
+  if (typeof raw === 'object') return raw;
   try {
     return JSON.parse(raw);
   } catch {
@@ -383,7 +375,7 @@ function parseMeta(raw: string | null): Record<string, unknown> | null {
  */
 export async function listUserSessions(userId: string, currentSessionId?: string): Promise<SessionInfo[]> {
   const rows = await Session.find({
-    where: { userId, expiresAt: MoreThan(new Date().toISOString()) },
+    where: { userId, expiresAt: MoreThan(new Date()) },
   });
   return rows
     .filter((row) => {
@@ -393,8 +385,8 @@ export async function listUserSessions(userId: string, currentSessionId?: string
     })
     .map((row) => ({
       id: row.id,
-      expiresAt: row.expiresAt,
-      createdAt: row.createdAt || row.expiresAt,
+      expiresAt: row.expiresAt.toISOString(),
+      createdAt: (row.createdAt || row.expiresAt).toISOString(),
       current: row.id === currentSessionId,
       meta: parseMeta(row.meta),
       location: row.location,

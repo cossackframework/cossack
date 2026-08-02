@@ -3,6 +3,7 @@ import { component, html } from '@cossackframework/renderer';
 import { KeyIcon } from '@cossackframework/solar-icons/key';
 import { Badge, Checkbox, Icon, Tooltip } from '@cossackframework/ui';
 import type { StudioObject, StudioSchema } from '../../../../src/lib/schema-types';
+import { relationKindLabel } from '../../studio-page';
 import type { StudioTheme } from '../../theme.client';
 import { CodeEditor } from '../CodeEditor';
 
@@ -37,7 +38,14 @@ export class StructureTab extends Cossack {
           <tbody>${object.columns.map((column) => html`
             <tr class="border-b">
               <td class="p-2 font-medium">${column.name}</td>
-              <td class="p-2 font-mono">${column.dataType || '—'}</td>
+              <td class="p-2 font-mono" data-testid="column-type-${column.name}">
+                <span>${column.logicalType || column.dataType || '—'}</span>
+                ${column.logicalType ? html`
+                  <span class="block text-[10px] text-muted-foreground">
+                    DB: ${column.dataType || column.affinity}
+                  </span>
+                ` : ''}
+              </td>
               <td class="p-2">${column.affinity}</td>
               <td class="p-2 text-center">${component(Checkbox, {
                 checked: column.nullable,
@@ -77,6 +85,38 @@ export class StructureTab extends Cossack {
             <p class="text-sm text-muted-foreground">${object.readOnlyReason}</p>
           `}
         </section>
+
+        ${object.relations?.length ? html`
+          <section class="mt-6">
+            <h3 class="mb-2 font-semibold">ORM relations</h3>
+            <table class="w-full text-sm" data-testid="relation-table">
+              <thead><tr class="border-b text-left">
+                <th class="p-2">Property</th><th class="p-2">Kind</th>
+                <th class="p-2">Target</th><th class="p-2">Join</th>
+              </tr></thead>
+              <tbody>${object.relations.map((relation) => html`
+                <tr class="border-b">
+                  <td class="p-2 font-mono">${relation.propertyName}</td>
+                  <td class="p-2" title="${relation.kind}">${relationKindLabel(relation.kind)}</td>
+                  <td class="p-2 font-mono">
+                    ${relation.targetEntity}${relation.targetTableName
+                      ? ` (${relation.targetTableName})`
+                      : ''}
+                  </td>
+                  <td class="p-2 font-mono">
+                    ${relation.joinTable
+                      ? relation.joinTable.name
+                      : relation.joinColumn && relation.referencedColumn
+                        ? `${relation.joinColumn} → ${relation.referencedColumn}`
+                        : relation.inverseProperty
+                          ? `inverse: ${relation.inverseProperty}`
+                          : 'virtual'}
+                  </td>
+                </tr>
+              `)}</tbody>
+            </table>
+          </section>
+        ` : ''}
 
         <section class="mt-6">
           <h3 class="mb-2 font-semibold">Foreign keys</h3>

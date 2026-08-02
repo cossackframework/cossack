@@ -54,7 +54,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `remove <feature>` | Remove a feature and anything that depends on it. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
-| `migration <sub>` (`migrate`) | Run ORM migrations (`generate`, `up`, `down`, `status`, `check`, `baseline`). |
+| `migration <sub>` (`migrate`) | Manage model-first ORM migrations (`generate`, `snapshot`, `squash`, `up`, `down`, `status`, `check`, `baseline`). |
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |

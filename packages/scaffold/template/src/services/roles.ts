@@ -45,22 +45,12 @@ function validatePermissions(permissions: string[]): Permission[] {
   return permissions as Permission[];
 }
 
-function parsedPermissions(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 function toDetail(role: Role): RoleDetail {
   return {
     id: role.id,
     name: role.name,
-    permissions: parsedPermissions(role.permissions),
-    createdAt: role.createdAt,
+    permissions: role.permissions ?? [],
+    createdAt: role.createdAt.toISOString(),
   };
 }
 
@@ -108,12 +98,12 @@ export async function createRole(input: CreateRoleInput): Promise<RoleDetail> {
   if (await Role.exists({ name: input.name })) {
     throw new ClientVisibleError('A role with this name already exists.');
   }
-  const now = new Date().toISOString();
+  const now = new Date();
   const permissions = validatePermissions([...(input.permissions ?? [])]);
   await Role.insert({
     id: uuidv7(),
     name: input.name,
-    permissions: JSON.stringify(permissions),
+    permissions,
     createdAt: now,
   });
   const role = await Role.findOne({ where: { name: input.name } });
@@ -130,7 +120,7 @@ export async function updateRole(id: string, patch: UpdateRoleInput): Promise<vo
     values.name = patch.name;
   }
   if (patch.permissions !== undefined) {
-    values.permissions = JSON.stringify(validatePermissions([...patch.permissions]));
+    values.permissions = validatePermissions([...patch.permissions]);
   }
   if (Object.keys(values).length) await Role.update({ id }, values);
 }

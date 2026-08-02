@@ -126,8 +126,8 @@ Commands:
   adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
-  migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, up,
-                               down, status, check, baseline.
+  migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
+                               squash, up, down, status, check, baseline.
   schema <sub>                 ORM schema commands: pull, diff, check.
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.

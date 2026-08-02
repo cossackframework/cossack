@@ -127,7 +127,7 @@ export async function getUser(id: string): Promise<UserDetail | null> {
     email: user.email,
     name: user.name ?? '',
     avatar: user.avatar,
-    createdAt: user.createdAt,
+    createdAt: user.createdAt.toISOString(),
     roles: parseRoles(await roleRowsForUsers([id])),
   };
 }
@@ -144,7 +144,7 @@ export async function createUser(input: CreateUserInput): Promise<PublicUser> {
     passwordHash: await hashPassword(input.password),
     avatar: null,
     meta: null,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   });
   return { id, email: input.email, name: input.name ?? '', avatar: null, meta: null, roles: [] };
 }
@@ -165,7 +165,7 @@ export async function deleteUser(id: string): Promise<void> {
 
 export async function assignRole(userId: string, roleId: string): Promise<void> {
   await UserRole.upsert(
-    { userId, roleId, createdAt: new Date().toISOString() },
+    { userId, roleId, createdAt: new Date() },
     ['userId', 'roleId'],
   );
 }
@@ -177,7 +177,7 @@ export async function removeRole(userId: string, roleId: string): Promise<void> 
 export async function syncUserRoles(userId: string, roleIds: string[]): Promise<void> {
   await UserRole.delete({ userId });
   if (roleIds.length) {
-    const createdAt = new Date().toISOString();
+    const createdAt = new Date();
     await UserRole.insert(roleIds.map((roleId) => ({ userId, roleId, createdAt })));
   }
 }

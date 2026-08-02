@@ -1,6 +1,7 @@
 import {
   BaseEntity,
   Column,
+  CreateDateColumn,
   Entity,
   OneToMany,
   PrimaryColumn,
@@ -33,11 +34,11 @@ export class User extends BaseEntity {
   @Column({ type: 'text', name: 'avatar', nullable: true })
   declare avatar: string | null;
 
-  @Column({ type: 'text', name: 'meta', nullable: true })
-  declare meta: string | null;
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
 
-  @Column({ type: 'varchar', name: 'created_at', length: 32 })
-  declare createdAt: string;
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
 
   @OneToMany(() => Session, (session) => session.user)
   declare sessions: Relation<Session[]>;

@@ -1,12 +1,17 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { register } from "tsx/esm/api";
 import type { ORMConfig } from "../config.js";
 import { createORM, type ORM } from "../orm.js";
 import { MigrationRunner } from "../migration/runner.js";
 import { SeederRunner } from "../seeding/runner.js";
-import { diffSchemas, describeOperation } from "../schema/diff.js";
+import {
+  diffSchemas,
+  describeOperation,
+  reverseSchemaOperations,
+} from "../schema/diff.js";
+import type { OrmSchema } from "../schema/types.js";
 import { generateMigration, generateModels } from "./generate.js";
 
 interface Arguments {
@@ -181,16 +186,178 @@ async function migrationCommand(
   } else if (args.action === "generate") {
     const name = args.rest[0] ??
       `migration_${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
-    const actual = await orm.introspect();
-    const diff = diffSchemas(actual, orm.schema(), {
+    const desired = orm.schema();
+    const paths = migrationPaths(config, cwd);
+    const previous = await readSchemaSnapshot(paths.snapshot);
+    if (!previous) {
+      throw new Error(
+        `No model schema snapshot found at ${paths.snapshot}. ` +
+        `Run "cossack migration snapshot" once for an existing project, ` +
+        `or "cossack migration squash <name>" to create a new baseline.`,
+      );
+    }
+    const diff = diffSchemas(previous, desired, {
       allowDestructive: args.flags.has("allow-destructive"),
     });
-    const output = resolve(cwd, String(args.flags.get("output") ?? `migrations/${name}.ts`));
+    if (diff.empty) {
+      out("No model changes since the last migration snapshot.");
+      return;
+    }
+    const output = resolve(cwd, String(args.flags.get("output") ?? join(paths.directory, `${name}.ts`)));
     await ensureAbsent(output);
     await mkdir(dirname(output), { recursive: true });
-    await writeFile(output, generateMigration(name, diff.operations, orm.driver.dialect), "utf8");
+    await writeFile(output, generateMigration(name, diff.operations, orm.driver.dialect, {
+      downOperations: reverseSchemaOperations(diff.operations, previous),
+    }), "utf8");
+    if (await registerMigration(paths.directory, output)) {
+      out(`Registered ${name} in ${join(paths.directory, "index.ts")}.`);
+    } else {
+      out(`Register ${output} in the migrations array before applying it.`);
+    }
+    await writeSchemaSnapshot(paths.snapshot, desired);
     out(`Generated ${output} with ${diff.operations.length} operation(s).`);
+    out(`Updated model schema snapshot ${paths.snapshot}.`);
+  } else if (args.action === "snapshot") {
+    const paths = migrationPaths(config, cwd);
+    if (!args.flags.has("force")) await ensureAbsent(paths.snapshot);
+    await writeSchemaSnapshot(paths.snapshot, orm.schema());
+    out(`Recorded model schema snapshot ${paths.snapshot}.`);
+  } else if (args.action === "squash") {
+    const name = args.rest[0] ??
+      `squashed_${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
+    const desired = orm.schema();
+    const paths = migrationPaths(config, cwd);
+    const empty: OrmSchema = {
+      version: 1,
+      ...(desired.dialect === undefined ? {} : { dialect: desired.dialect }),
+      entities: [],
+    };
+    const diff = diffSchemas(empty, desired, { allowDestructive: true });
+    const output = resolve(cwd, String(args.flags.get("output") ?? join(paths.directory, `${name}.ts`)));
+    if (args.flags.has("prune")) validatePruneOutput(paths.directory, output);
+    await ensureAbsent(output);
+    await mkdir(dirname(output), { recursive: true });
+    const replaces = (config.migrations ?? []).map((migration) => migration.name);
+    await writeFile(output, generateMigration(name, diff.operations, orm.driver.dialect, {
+      replaces,
+      reversible: false,
+    }), "utf8");
+    if (args.flags.has("prune")) {
+      await pruneMigrations(paths.directory, output);
+      out(`Pruned ${replaces.length} replaced migration(s) and rewrote ${join(paths.directory, "index.ts")}.`);
+    } else {
+      out("Review the squash, then replace the configured migration list or re-run with --prune.");
+    }
+    await writeSchemaSnapshot(paths.snapshot, desired);
+    out(`Generated squashed baseline ${output} with ${diff.operations.length} operation(s).`);
+    out(`Updated model schema snapshot ${paths.snapshot}.`);
   } else throw new Error(`Unknown migration action "${args.action ?? ""}".`);
+}
+
+function migrationPaths(config: ORMConfig, cwd: string): {
+  directory: string;
+  snapshot: string;
+} {
+  const directory = resolve(cwd, config.migrationDirectory ?? "migrations");
+  const snapshot = resolve(cwd, config.schemaSnapshot ?? join(directory, ".cossack-schema.json"));
+  return { directory, snapshot };
+}
+
+async function readSchemaSnapshot(path: string): Promise<OrmSchema | undefined> {
+  let source: string;
+  try {
+    source = await readFile(path, "utf8");
+  } catch (cause) {
+    if ((cause as { code?: string }).code === "ENOENT") return undefined;
+    throw cause;
+  }
+  const schema = JSON.parse(source, (_key, value: unknown) => {
+    if (
+      value &&
+      typeof value === "object" &&
+      Object.keys(value).length === 1 &&
+      typeof (value as { $cossackBigInt?: unknown }).$cossackBigInt === "string"
+    ) {
+      return BigInt((value as { $cossackBigInt: string }).$cossackBigInt);
+    }
+    return value;
+  }) as Partial<OrmSchema>;
+  if (schema.version !== 1 || !Array.isArray(schema.entities)) {
+    throw new Error(`${path} is not a supported Cossack model schema snapshot.`);
+  }
+  return schema as OrmSchema;
+}
+
+async function writeSchemaSnapshot(path: string, schema: OrmSchema): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const source = JSON.stringify(schema, (_key, value: unknown) =>
+    typeof value === "bigint" ? { $cossackBigInt: String(value) } : value, 2);
+  await writeFile(path, `${source}\n`, "utf8");
+}
+
+async function pruneMigrations(directory: string, output: string): Promise<void> {
+  validatePruneOutput(directory, output);
+  const outputName = basename(output);
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (
+      !entry.isFile() ||
+      entry.name === outputName ||
+      ["index.ts", "index.js", "index.mts", "index.mjs"].includes(entry.name)
+    ) continue;
+    if (![".ts", ".js", ".mts", ".mjs"].includes(extname(entry.name))) continue;
+    await rm(join(directory, entry.name));
+  }
+  const importPath = `./${outputName.slice(0, -extname(outputName).length)}`;
+  await writeFile(
+    join(directory, "index.ts"),
+    `import squashed from ${JSON.stringify(importPath)};\n\n` +
+      `export const migrations = [squashed] as const;\n`,
+    "utf8",
+  );
+}
+
+function validatePruneOutput(directory: string, output: string): void {
+  if (resolve(dirname(output)) !== resolve(directory)) {
+    throw new Error("--prune requires the squashed migration output to be inside migrationDirectory.");
+  }
+  const outputName = basename(output);
+  if (["index.ts", "index.js", "index.mts", "index.mjs"].includes(outputName)) {
+    throw new Error("--prune cannot use the migration barrel itself as the squash output.");
+  }
+}
+
+async function registerMigration(directory: string, output: string): Promise<boolean> {
+  if (resolve(dirname(output)) !== resolve(directory)) return false;
+  const barrel = join(directory, "index.ts");
+  let source: string;
+  try {
+    source = await readFile(barrel, "utf8");
+  } catch (cause) {
+    if ((cause as { code?: string }).code === "ENOENT") return false;
+    throw cause;
+  }
+  const declaration = /export\s+const\s+migrations\s*=\s*\[([\s\S]*?)\]\s*as const\s*;/;
+  const match = declaration.exec(source);
+  if (!match) return false;
+  const outputName = basename(output);
+  const importPath = `./${outputName.slice(0, -extname(outputName).length)}`;
+  if (source.includes(JSON.stringify(importPath)) || source.includes(`'${importPath}'`)) return true;
+  const baseIdentifier = `migration_${outputName
+    .slice(0, -extname(outputName).length)
+    .replace(/[^a-zA-Z0-9_$]/g, "_")}`;
+  let identifier = baseIdentifier;
+  let suffix = 2;
+  while (new RegExp(`\\b${identifier}\\b`).test(source)) identifier = `${baseIdentifier}_${suffix++}`;
+  const entries = match[1]!.trim();
+  const replacement = `export const migrations = [` +
+    `${entries}${entries && !entries.endsWith(",") ? "," : ""}` +
+    `${entries ? " " : ""}${identifier}] as const;`;
+  await writeFile(
+    barrel,
+    `import ${identifier} from ${JSON.stringify(importPath)};\n${source.replace(declaration, replacement)}`,
+    "utf8",
+  );
+  return true;
 }
 
 async function schemaCommand(
@@ -245,6 +412,8 @@ function help(): string {
   return `cossack-orm
 
   migration generate <name> [--output path] [--allow-destructive]
+  migration snapshot [--force]
+  migration squash <name> [--output path] [--prune]
   migration up | down | status | check | baseline
   schema pull [--output path] [--force]
   schema diff | check [--allow-destructive]

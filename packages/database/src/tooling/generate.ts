@@ -68,18 +68,33 @@ export function generateMigration(
   name: string,
   operations: readonly SchemaOperation[],
   dialectName: "sqlite" | "postgres" | "mysql",
+  options: {
+    readonly downOperations?: readonly SchemaOperation[];
+    readonly replaces?: readonly string[];
+    readonly reversible?: boolean;
+  } = {},
 ): string {
   const dialect = dialectFor(dialectName);
   const statements = operations.flatMap((operation) => renderOperation(operation, dialect));
+  const downStatements = (options.downOperations ?? [])
+    .flatMap((operation) => renderOperation(operation, dialect));
   const body = statements.length
     ? statements.map((statement) => `    schema.raw(sql.unsafe(${JSON.stringify(statement)}));`).join("\n")
     : "    // Schema is already up to date.";
+  const downBody = options.reversible === false
+    ? `    throw new Error("Squashed baseline migrations cannot be reverted automatically.");`
+    : downStatements.length
+      ? downStatements.map((statement) =>
+          `    schema.raw(sql.unsafe(${JSON.stringify(statement)}));`).join("\n")
+      : "    // Schema was already empty.";
   return `import { sql, type Migration } from "@cossackframework/database";\n\n` +
     `export default {\n` +
     `  name: ${JSON.stringify(name)},\n` +
+    (options.replaces?.length
+      ? `  replaces: ${JSON.stringify(options.replaces)},\n`
+      : "") +
     `  async up({ schema }) {\n${body}\n  },\n` +
-    `  async down() {\n` +
-    `    throw new Error("Write and review the inverse migration before applying this migration.");\n` +
+    `  async down({ schema }) {\n${downBody}\n` +
     `  },\n` +
     `} satisfies Migration;\n`;
 }

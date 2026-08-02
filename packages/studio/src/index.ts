@@ -235,6 +235,7 @@ export type {
   StudioPragmaOption,
   StudioProvider,
   StudioQueryResult,
+  StudioRelation,
   StudioRowLocator,
   StudioSchema,
 } from './lib/schema-types.js';

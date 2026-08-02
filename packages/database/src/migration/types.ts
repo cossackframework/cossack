@@ -8,6 +8,8 @@ export interface MigrationContext {
 
 export interface Migration {
   readonly name: string;
+  /** Migration names replaced by a squashed baseline. */
+  readonly replaces?: readonly string[];
   up(context: MigrationContext): Promise<void> | void;
   down(context: MigrationContext): Promise<void> | void;
 }

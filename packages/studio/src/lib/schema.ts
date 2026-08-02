@@ -872,9 +872,7 @@ export function mergeLogicalSchema(
     }
     object.modelName = entity.modelName;
     object.relations = entity.relations.map((relation) => ({
-      propertyName: relation.propertyName,
-      kind: relation.kind,
-      targetEntity: relation.targetEntity,
+      ...relation,
       provenance: 'orm' as const,
     }));
     const physicalColumns = new Map(object.columns.map((column) => [column.name, column]));
@@ -889,6 +887,7 @@ export function mergeLogicalSchema(
       }
       physical.logicalType = logicalColumn.logicalType;
       physical.propertyName = logicalColumn.propertyName;
+      physical.declaredKind = logicalDeclaredKind(logicalColumn.logicalType);
     }
   }
   for (const object of objects) {
@@ -897,6 +896,30 @@ export function mergeLogicalSchema(
     }
   }
   return drift;
+}
+
+function logicalDeclaredKind(
+  logicalType: import('@cossackframework/database').LogicalType,
+): StudioColumn['declaredKind'] {
+  switch (logicalType) {
+    case 'integer':
+    case 'bigint':
+    case 'decimal':
+      return 'number';
+    case 'boolean':
+    case 'date':
+    case 'datetime':
+    case 'json':
+    case 'blob':
+    case 'text':
+    case 'varchar':
+      return logicalType;
+    case 'uuid':
+    case 'enum':
+      return 'varchar';
+    default:
+      return 'other';
+  }
 }
 
 async function readDatabaseVersion(connection: StudioConnection): Promise<string | undefined> {

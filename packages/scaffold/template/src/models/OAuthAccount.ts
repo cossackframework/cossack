@@ -1,6 +1,7 @@
 import {
   BaseEntity,
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -23,8 +24,8 @@ export class OAuthAccount extends BaseEntity {
   @Column({ type: 'varchar', name: 'provider_user_id', length: 191 })
   declare providerUserId: string;
 
-  @Column({ type: 'varchar', name: 'created_at', length: 32 })
-  declare createdAt: string;
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
 
   @ManyToOne(() => User, (user) => user.oauthAccounts)
   @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })

@@ -10,16 +10,16 @@ export default defineSeeder({
   name: 'application',
   transaction: 'auto',
   async run() {
-    const now = new Date().toISOString();
-    const encodedPermissions = JSON.stringify(ALL_PERMISSIONS);
+    const now = new Date();
+    const permissions = [...ALL_PERMISSIONS];
 
     let adminRole = await Role.findOne({ where: { name: 'admin' } });
     if (!adminRole) {
       const id = uuidv7();
-      await Role.insert({ id, name: 'admin', permissions: encodedPermissions, createdAt: now });
+      await Role.insert({ id, name: 'admin', permissions, createdAt: now });
       adminRole = await Role.findOne({ where: { id } });
-    } else if (adminRole.permissions !== encodedPermissions) {
-      await Role.update({ id: adminRole.id }, { permissions: encodedPermissions });
+    } else if (JSON.stringify(adminRole.permissions ?? []) !== JSON.stringify(permissions)) {
+      await Role.update({ id: adminRole.id }, { permissions });
     }
     if (!adminRole) throw new Error('Unable to provision the admin role.');
 

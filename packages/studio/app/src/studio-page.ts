@@ -1,4 +1,9 @@
-import type { StudioColumn } from '../../src/lib/schema-types';
+import type {
+  StudioColumn,
+  StudioObject,
+  StudioRelation,
+  StudioSchema,
+} from '../../src/lib/schema-types';
 import type {
   BrowseFilterOperator,
   InsertValueKind,
@@ -30,6 +35,93 @@ export interface RowEditorState {
 export interface DeleteTarget {
   table: string;
   keys: Array<Record<string, unknown>>;
+}
+
+export interface StudioRelationNavigation {
+  sourceColumn: string;
+  targetColumn: string;
+  targetTable: string;
+  through: boolean;
+}
+
+export interface RelationExpansion {
+  relationProperty: string;
+  relationKind: StudioRelation['kind'];
+  targetEntity: string;
+  targetTable: string;
+  loading: boolean;
+  error: string;
+  result: TransportQueryResult;
+}
+
+const RELATION_KIND_LABELS: Record<StudioRelation['kind'], string> = {
+  'one-to-one': '1-1',
+  'one-to-many': '1-∞',
+  'many-to-one': '∞-1',
+  'many-to-many': '∞-∞',
+};
+
+export function relationKindLabel(kind: StudioRelation['kind']): string {
+  return RELATION_KIND_LABELS[kind];
+}
+
+export function relationNavigation(
+  schema: StudioSchema,
+  object: StudioObject,
+  relation: StudioRelation,
+): StudioRelationNavigation | undefined {
+  const available = (
+    navigation: StudioRelationNavigation,
+  ): StudioRelationNavigation | undefined => {
+    const target = schema.objects.find(
+      (candidate) => candidate.name === navigation.targetTable,
+    );
+    return object.columns.some((column) => column.name === navigation.sourceColumn) &&
+      target?.columns.some((column) => column.name === navigation.targetColumn)
+      ? navigation
+      : undefined;
+  };
+  if (relation.joinTable) {
+    const join = relation.joinTable;
+    return available({
+      sourceColumn: join.referencedColumn,
+      targetColumn: join.joinColumn,
+      targetTable: join.name,
+      through: true,
+    });
+  }
+  if (relation.joinColumn && relation.referencedColumn && relation.targetTableName) {
+    return available({
+      sourceColumn: relation.joinColumn,
+      targetColumn: relation.referencedColumn,
+      targetTable: relation.targetTableName,
+      through: false,
+    });
+  }
+  if (!relation.inverseProperty || !relation.targetTableName) return undefined;
+  const target = schema.objects.find(
+    (candidate) => candidate.name === relation.targetTableName,
+  );
+  const inverse = target?.relations?.find(
+    (candidate) => candidate.propertyName === relation.inverseProperty,
+  );
+  if (!target || !inverse) return undefined;
+  if (inverse.joinTable) {
+    const join = inverse.joinTable;
+    return available({
+      sourceColumn: join.inverseReferencedColumn,
+      targetColumn: join.inverseJoinColumn,
+      targetTable: join.name,
+      through: true,
+    });
+  }
+  if (!inverse.joinColumn || !inverse.referencedColumn) return undefined;
+  return available({
+    sourceColumn: inverse.referencedColumn,
+    targetColumn: inverse.joinColumn,
+    targetTable: target.name,
+    through: false,
+  });
 }
 
 export interface ExportSheetState {

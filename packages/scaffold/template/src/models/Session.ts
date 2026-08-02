@@ -1,6 +1,7 @@
 import {
   BaseEntity,
   Column,
+  CreateDateColumn,
   Entity,
   JoinColumn,
   ManyToOne,
@@ -17,11 +18,11 @@ export class Session extends BaseEntity {
   @Column({ type: 'varchar', name: 'user_id', length: 191, nullable: true })
   declare userId: string | null;
 
-  @Column({ type: 'text', name: 'data', nullable: true })
-  declare data: string | null;
+  @Column({ type: 'json', name: 'data', nullable: true })
+  declare data: Record<string, unknown> | null;
 
-  @Column({ type: 'text', name: 'meta', nullable: true })
-  declare meta: string | null;
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
 
   @Column({ type: 'text', name: 'location', nullable: true })
   declare location: string | null;
@@ -32,11 +33,11 @@ export class Session extends BaseEntity {
   @Column({ type: 'text', name: 'ip_address', nullable: true })
   declare ipAddress: string | null;
 
-  @Column({ type: 'varchar', name: 'created_at', length: 32, default: '' })
-  declare createdAt: string;
+  @CreateDateColumn({ name: 'created_at', default: '' })
+  declare createdAt: Date;
 
-  @Column({ type: 'varchar', name: 'expires_at', length: 32 })
-  declare expiresAt: string;
+  @Column({ type: 'datetime', name: 'expires_at' })
+  declare expiresAt: Date;
 
   @ManyToOne(() => User, (user) => user.sessions, { nullable: true })
   @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DestructiveSchemaChangeError,
   diffSchemas,
+  reverseSchemaOperations,
   type OrmSchema,
 } from "../src/index.js";
 import { introspectSQLite } from "../src/schema/introspection.js";
@@ -93,6 +94,48 @@ describe("schema diff", () => {
     ]);
   });
 
+  it("treats SQLite text-affinity JSON and datetime declarations as storage-compatible", () => {
+    const textColumn = (({ length: _length, ...column }) => column)(
+      base.entities[0]!.columns[1]!,
+    );
+    const existing: OrmSchema = {
+      ...base,
+      entities: [{
+        ...base.entities[0]!,
+        columns: [{
+          ...textColumn,
+          propertyName: "meta",
+          columnName: "meta",
+          logicalType: "text",
+        }, {
+          ...textColumn,
+          propertyName: "created_at",
+          columnName: "created_at",
+          logicalType: "varchar",
+          length: 32,
+        }],
+      }],
+    };
+    const desired: OrmSchema = {
+      ...existing,
+      entities: [{
+        ...existing.entities[0]!,
+        columns: [{
+          ...textColumn,
+          propertyName: "meta",
+          columnName: "meta",
+          logicalType: "json",
+        }, {
+          ...textColumn,
+          propertyName: "created_at",
+          columnName: "created_at",
+          logicalType: "datetime",
+        }],
+      }],
+    };
+    expect(diffSchemas(existing, desired).empty).toBe(true);
+  });
+
   it("guards destructive changes", () => {
     const desired: OrmSchema = {
       ...base,
@@ -100,5 +143,40 @@ describe("schema diff", () => {
     };
     expect(() => diffSchemas(base, desired)).toThrow(DestructiveSchemaChangeError);
     expect(diffSchemas(base, desired, { allowDestructive: true }).destructive).toHaveLength(1);
+  });
+
+  it("treats nullable-to-required changes as destructive", () => {
+    const existing: OrmSchema = {
+      ...base,
+      entities: [{
+        ...base.entities[0]!,
+        columns: base.entities[0]!.columns.map((column) =>
+          column.columnName === "name" ? { ...column, nullable: true } : column),
+      }],
+    };
+    expect(() => diffSchemas(existing, base)).toThrow(DestructiveSchemaChangeError);
+    expect(diffSchemas(existing, base, { allowDestructive: true }).destructive).toHaveLength(1);
+  });
+
+  it("reverses generated schema operations in reverse order", () => {
+    const desired: OrmSchema = {
+      ...base,
+      entities: [{
+        ...base.entities[0]!,
+        columns: [...base.entities[0]!.columns, {
+          ...base.entities[0]!.columns[1]!,
+          propertyName: "email",
+          columnName: "email",
+          unique: true,
+        }],
+      }],
+    };
+    const forward = diffSchemas(base, desired).operations;
+    expect(forward.map((operation) => operation.kind)).toEqual(["add-column"]);
+    expect(reverseSchemaOperations(forward, base)).toEqual([{
+      kind: "drop-column",
+      tableName: "users",
+      columnName: "email",
+    }]);
   });
 });

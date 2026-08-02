@@ -1,7 +1,6 @@
 import "reflect-metadata";
 import {
   BaseEntity,
-  Column,
   Entity,
   PrimaryGeneratedColumn,
   defineConfig,
@@ -12,17 +11,9 @@ import { MemoryDriver } from "../../src/adapter/index.js";
 class CliEntity extends BaseEntity {
   @PrimaryGeneratedColumn()
   declare id: number;
-
-  @Column("varchar")
-  declare name: string;
 }
 
 export default defineConfig({
   adapter: { driver: new MemoryDriver() },
   entities: [CliEntity],
-  migrations: [{
-    name: "0001_old",
-    up() {},
-    down() {},
-  }],
 });
