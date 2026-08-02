@@ -1,6 +1,5 @@
-import { CompiledQuery, sql, type Kysely, type RawBuilder } from '@cossackframework/database';
+import type { ORM, OrmSchema } from '@cossackframework/orm';
 import { OperationQueue } from './queue.js';
-import { splitSqlParameters } from './sql.js';
 import type {
   StudioConnection,
   StudioConnectionInfo,
@@ -8,15 +7,17 @@ import type {
 } from './schema-types.js';
 
 export interface LocalConnectionOptions {
-  client: Kysely<any>;
+  orm: ORM;
   info?: Partial<StudioConnectionInfo>;
 }
 
 export class LocalStudioConnection implements StudioConnection {
   readonly info: StudioConnectionInfo;
+  readonly logicalSchema: OrmSchema;
   private readonly queue = new OperationQueue();
 
-  constructor(private readonly client: Kysely<any>, info: Partial<StudioConnectionInfo> = {}) {
+  constructor(private readonly orm: ORM, info: Partial<StudioConnectionInfo> = {}) {
+    this.logicalSchema = orm.schema();
     this.info = {
       provider: info.provider ?? 'unknown',
       label: info.label ?? 'Local database',
@@ -25,41 +26,29 @@ export class LocalStudioConnection implements StudioConnection {
     };
   }
 
-  execute(sql: string, parameters: readonly unknown[] = []): Promise<StudioQueryResult> {
-    return this.queue.run(async () => {
+  execute(text: string, parameters: readonly unknown[] = []): Promise<StudioQueryResult> {
+    return this.queue.run(() => this.orm.run(async () => {
       const started = performance.now();
-      let query = CompiledQuery.raw(sql);
-      if (parameters.length) {
-        const fragments = splitSqlParameters(sql, parameters.length);
-        let builder: RawBuilder<unknown> = sqlApi.raw(fragments[0]);
-        for (let index = 0; index < parameters.length; index++) {
-          builder = sqlApi`${builder}${parameters[index]}${sqlApi.raw(fragments[index + 1])}`;
-        }
-        query = builder.compile(this.client);
-      }
-      const result = await this.client.executeQuery<Record<string, unknown>>(
-        query,
+      const result = await this.orm.driver.execute(
+        { text, parameters: parameters as import('@cossackframework/orm').CompiledQuery['parameters'] },
+        'raw',
       );
       return {
-        rows: [...result.rows],
-        affectedRows: Number(result.numAffectedRows ?? 0),
-        insertId: result.insertId === undefined ? undefined : String(result.insertId),
+        rows: [...result.rows] as Record<string, unknown>[],
+        affectedRows: Number(result.meta.rowsAffected ?? 0),
+        ...(result.meta.lastInsertId === undefined
+          ? {}
+          : { insertId: String(result.meta.lastInsertId) }),
         durationMs: performance.now() - started,
       };
-    });
+    }));
   }
 
   close(): Promise<void> {
-    return this.queue.close(async () => {
-      await this.client.destroy();
-    });
+    return this.queue.close(() => this.orm.close());
   }
 }
 
-// Avoid shadowing the execute() argument while keeping Kysely's template-tag
-// parameter compilation local to this Node-only connection.
-const sqlApi = sql;
-
 export function createLocalConnection(options: LocalConnectionOptions): LocalStudioConnection {
-  return new LocalStudioConnection(options.client, options.info);
+  return new LocalStudioConnection(options.orm, options.info);
 }

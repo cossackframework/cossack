@@ -3,7 +3,7 @@
 Node-only recipe engine consumed by the `cossack` CLI.
 
 It owns the application templates, preset and feature registries, dependency
-resolution, dashboard modules, conflict-safe change sets, and schema-v2
+resolution, dashboard modules, conflict-safe change sets, and schema-v3
 scaffold manifests.
 
 Versions for third-party packages written to generated applications are
@@ -44,7 +44,7 @@ await switchAdapter(project.projectDir, 'node', {
 });
 ```
 
-`switchAdapter()` requires a schema-v2 scaffold manifest and re-renders the
+`switchAdapter()` requires a schema-v3 scaffold manifest and re-renders the
 recorded recipe for the target runtime. It returns a conflict-safe change set
 for confirmation or dry-run use. Local `.env` and `.dev.vars` files are merged
 without becoming scaffold-owned, and the source environment file is retained.

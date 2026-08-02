@@ -11,7 +11,8 @@
 //   cookie().delete('old_session')                // delete
 //
 // Throws a clear `[Cossack]` error if called outside a request scope (client,
-// scripts, or before the middleware is registered) — same stance as `db()`.
+// scripts, or before the middleware is registered) — same request-scope stance
+// as other context-free server helpers.
 
 import type { Context } from 'hono';
 import {

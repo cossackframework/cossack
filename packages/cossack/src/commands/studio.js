@@ -65,7 +65,7 @@ export async function studioCommand(args, ctx) {
 export function studioHelp() {
   return `cossack studio [options]
 
-Open a loopback-only database inspector using this project's getCliClient().
+Open a loopback-only database inspector using this project's orm.config.ts.
 
 Options:
   --remote                       Connect to deployed Cloudflare D1 via Wrangler

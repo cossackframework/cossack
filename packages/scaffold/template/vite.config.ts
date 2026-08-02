@@ -52,11 +52,11 @@ export default defineConfig({
       '@cossackframework/renderer',
       '@cossackframework/framework',
       '@cossackframework/auth',
-      '@cossackframework/database',
+      '@cossackframework/orm',
       '@cossackframework/ui',
       '@cossackframework/solar-icons',
       'hono',
-      'kysely',
+      'reflect-metadata',
     ],
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -88,7 +88,7 @@ export default defineConfig({
         include: [
           '@cossackframework/ui',
           '@cossackframework/auth',
-          '@cossackframework/database',
+          '@cossackframework/orm',
           '@cossackframework/framework/cache',
           'hono/cookie',
         ],

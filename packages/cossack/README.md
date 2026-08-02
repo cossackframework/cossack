@@ -54,7 +54,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `remove <feature>` | Remove a feature and anything that depends on it. |
 | `adapter <node\|cloudflare>` | Switch the active runtime adapter. |
 | `lang <sub>` | Manage localization catalogs (`publish`, `add <locale>`). |
-| `migration <sub>` (`migrate`) | Run Kysely migrations (`up`, `down`, `status`). |
+| `migration <sub>` (`migrate`) | Run ORM migrations (`generate`, `up`, `down`, `status`, `check`, `baseline`). |
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
@@ -118,7 +118,7 @@ cossack upgrade --apply-template
 The CLI is a small, dependency-light Node.js program (no `commander`/`yargs`). Commands are registered in [`src/dispatch.js`](./src/dispatch.js); each command lives in [`src/commands/`](./src/commands) and follows the contract `async function run(args, ctx): Promise<exitCode>`. Generated file contents are pure template functions in [`src/templates.js`](./src/templates.js) (string in, string out) for easy testing.
 
 Scaffolding is powered by [`@cossackframework/scaffold`](../scaffold).
-`cossack create` writes a schema-v2 `.cossack/scaffold.json` manifest with
+`cossack create` writes a schema-v3 `.cossack/scaffold.json` manifest with
 capability ownership and baseline hashes. `cossack add` composes features,
 `cossack remove` removes features and their dependents, `cossack adapter`
 re-renders the recorded recipe for another runtime, and `cossack upgrade`

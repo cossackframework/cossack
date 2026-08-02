@@ -49,7 +49,7 @@ export async function removeCommand(args, ctx) {
 }
 
 export function removeHelp() {
-  return `cossack remove <ui|database|studio|auth|dashboard|markdown|examples>
+  return `cossack remove <ui|orm|studio|auth|dashboard|markdown|examples>
 
 Remove a feature and any installed features that depend on it. Automatically
 added prerequisites are removed when no remaining feature needs them.

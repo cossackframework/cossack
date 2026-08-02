@@ -12,7 +12,6 @@ const packageDirectories = [
   'core',
   'node-adapter',
   'auth',
-  'database',
   'ui',
   'framework',
   'studio',
@@ -31,6 +30,7 @@ async function run(command, args, options = {}) {
 }
 
 async function buildPublishablePackages() {
+  await run('pnpm', ['build'], { cwd: path.resolve(repositoryRoot, '../orm') });
   await run('pnpm', ['--filter', '@cossackframework/renderer', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/core', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
@@ -41,6 +41,13 @@ async function buildPublishablePackages() {
 
 async function packPackages(destination) {
   const tarballs = new Map();
+  const ormRoot = path.resolve(repositoryRoot, '../orm');
+  const beforeOrm = new Set(await fs.readdir(destination));
+  await run('pnpm', ['--dir', ormRoot, 'pack', '--pack-destination', destination]);
+  const ormTarball = (await fs.readdir(destination))
+    .find((entry) => entry.endsWith('.tgz') && !beforeOrm.has(entry));
+  if (!ormTarball) throw new Error('pnpm pack did not produce an ORM tarball');
+  tarballs.set('@cossackframework/orm', path.join(destination, ormTarball));
   for (const directory of packageDirectories) {
     const packageRoot = path.join(repositoryRoot, 'packages', directory);
     const pkg = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'));
@@ -209,6 +216,63 @@ async function assertStarterBundleBudgets(projectDir) {
       `Starter server bundle is ${serverBytes} bytes; budget is ${serverBudget}`,
     );
   }
+}
+
+async function verifyGeneratedORMApplication(projectDir) {
+  const fixture = path.join(projectDir, '.cossack-orm-acceptance.ts');
+  await fs.writeFile(fixture, `import {
+  createDatabaseCacheStore,
+  createDatabaseSessionStore,
+} from '@cossackframework/orm/cossack';
+import { getORM } from './src/orm/factory';
+import { Role, User, UserRole } from './src/models';
+
+const orm = await getORM();
+try {
+  await orm.run(async () => {
+    const user = await User.findOne({ where: { email: 'admin@example.com' } });
+    const role = await Role.findOne({ where: { name: 'admin' } });
+    if (!user || !role) throw new Error('Seeder did not create the admin user and role');
+    const assignment = await UserRole.findOne({
+      where: { userId: user.id, roleId: role.id },
+    });
+    if (!assignment) throw new Error('Seeder did not create the admin role assignment');
+
+    const cache = createDatabaseCacheStore(orm);
+    await cache.set('acceptance', { ok: true }, 60);
+    const cached = await cache.get<{ ok: boolean }>('acceptance');
+    if (!cached?.ok) throw new Error('ORM cache store round-trip failed');
+    await cache.delete('acceptance');
+
+    const sessions = createDatabaseSessionStore(orm);
+    const sessionId = await sessions.create(60_000);
+    await sessions.set(sessionId, 'acceptance', 'ok', 60_000);
+    await sessions.bindUser(sessionId, user.id);
+    if (await sessions.get(sessionId, 'acceptance') !== 'ok') {
+      throw new Error('ORM session store round-trip failed');
+    }
+    await sessions.destroy(sessionId);
+  });
+} finally {
+  await orm.close();
+}
+`);
+  await run('pnpm', ['exec', 'tsx', fixture], { cwd: projectDir });
+}
+
+async function verifyGeneratedStudio(projectDir) {
+  const smoke = `import { runStudio } from '@cossackframework/studio';
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 250);
+await runStudio({
+  projectRoot: process.cwd(),
+  port: 41739,
+  open: false,
+  signal: controller.signal,
+});`;
+  await run(process.execPath, ['--input-type=module', '--eval', smoke], {
+    cwd: projectDir,
+  });
 }
 
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
@@ -400,6 +464,11 @@ export default class PackagingSsgPage extends Cossack {
     '--yes',
   ], { cwd: projectDir });
   await installGeneratedProject(projectDir);
+  await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
+  await run('pnpm', ['exec', 'cossack', 'seeder', 'run'], { cwd: projectDir });
+  await run('pnpm', ['run', 'schema:check'], { cwd: projectDir });
+  await verifyGeneratedORMApplication(projectDir);
+  await verifyGeneratedStudio(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   const nodeManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),

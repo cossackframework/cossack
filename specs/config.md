@@ -5,7 +5,7 @@ This document specifies the architecture of Cossack's configuration system: how 
 ## Design Principles
 
 1. **Workers-correct by default.** Environment bindings (`c.env`) on Cloudflare Workers are only available inside the request handler, not at module-load time. Config must therefore be evaluated per request, not once at startup.
-2. **Per-request isolation.** A single Worker isolate serves many concurrent requests. Config values are scoped to the current request via AsyncLocalStorage (ALS), the same pattern used by `__()` (locale), `db()` (database client), `flash()` (flash data), and `getRequestContext()`.
+2. **Per-request isolation.** A single Worker isolate serves many concurrent requests. Config values are scoped to the current request via AsyncLocalStorage (ALS), the same pattern used by `__()` (locale), ORM scopes, `flash()`, and `getRequestContext()`.
 3. **Server-only.** Config files call `env()` to read secrets and bindings. They must never ship to the client bundle. Two enforcement layers guarantee this (see [Client-side exclusion](#client-side-exclusion)).
 4. **Library/application separation.** The config system (ALS store + `config()` / `env()` accessors) lives in `@cossackframework/framework` and is exported from `@cossackframework/framework/config`.
 
@@ -15,7 +15,7 @@ This document specifies the architecture of Cossack's configuration system: how 
 |---------|------|
 | `@cossackframework/framework` | Owns the entire config system: the `AsyncLocalStorage` instance, the `config()` / `env()` accessors, the `runWithConfig()` scope function, the config-building middleware (in `router.ts`), the `cossackConfig()` Vite plugin, the type inference machinery (`CossackConfigRegistry`, `DottedPaths`, `GetByPath`), and the SSG config wiring (`ssg-renderer.ts`, `ssg-entry.ts`). All exported from `@cossackframework/framework/config`. |
 
-Unlike locale (`__()`) and the database client (`db()`), which use the injection-point pattern (leaf accessors in core, ALS in framework), config lives entirely in the framework. This eliminates the `setConfigStoreGetter` indirection — `config()` calls `configAls.getStore()` directly.
+Unlike locale (`__()`) and the application-owned ORM, config lives entirely in Framework. This eliminates a store-getter indirection: `config()` calls `configAls.getStore()` directly.
 
 ## Config File Format
 
@@ -115,7 +115,7 @@ The flash middleware reads `c.env.APP_SECRET` directly (with legacy fallbacks to
 
 ## ALS Architecture
 
-The config system owns its `AsyncLocalStorage` instance directly in `src/config.ts` (not via an injection point). This differs from i18n (`__()`) and the database client (`db()`), which split the accessor and the ALS across core and framework. Config is consumed only within the framework, so the indirection was unnecessary.
+The config system owns its `AsyncLocalStorage` instance directly in `src/config.ts`. Config is consumed only within Framework, so an application injection point is unnecessary.
 
 - `runWithConfig(store, fn)` enters the ALS scope — called by the config middleware in `createApp()` and the SSG renderer.
 - `config()` and `env()` call `configAls.getStore()` directly. When no scope is active (client-side, outside a request), they return defaults.
@@ -153,4 +153,3 @@ Two internal conditional types walk the registry tree:
 2. **Untyped fallback:** `config<T = unknown>(key: string, ...)` — matches any string. Returns `T` (defaults to `unknown`).
 
 When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches — all calls fall through to overload 2, returning `unknown`. This makes type registration fully backward-compatible.
-

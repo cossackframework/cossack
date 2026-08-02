@@ -408,7 +408,8 @@ flash is actually exercised.
 ## Cookies
 
 The `cookie()` helper reads and writes cookies on the active request without an
-explicit `Context` argument — same context-free ergonomics as `db()`, `__()`,
+explicit `Context` argument — the same context-free ergonomics as ORM scopes,
+`__()`,
 and `flash()`. It delegates to Hono's `hono/cookie` under the hood.
 
 ```typescript
@@ -446,7 +447,7 @@ read-once), sessions are **database-backed** (D1/Turso via the `sessions`
 table), long-lived, and keyed off a session ID cookie.
 
 ```typescript
-import { session } from '@cossackframework/database';
+import { session } from '@cossackframework/framework/session';
 
 async get() {
     const cart = await session().get('cart');         // any value
@@ -467,7 +468,7 @@ in `src/bootstrap/middlewares.ts` and apply the `sessions` table migration
 
 ```typescript
 // src/middlewares/session.ts
-import { createSessionMiddleware } from '@cossackframework/database';
+import { createSessionMiddleware } from '@cossackframework/framework/session';
 export const sessionMiddleware = createSessionMiddleware();
 
 // src/bootstrap/middlewares.ts
@@ -485,7 +486,7 @@ cookie on first visit. To reuse the auth session ID when a user is logged in,
 pass `authCookieReader`:
 
 ```typescript
-import { createSessionMiddleware } from '@cossackframework/database';
+import { createSessionMiddleware } from '@cossackframework/framework/session';
 
 export const sessionMiddleware = createSessionMiddleware({
     // When authenticated, reuse the auth session ID; otherwise fall back to

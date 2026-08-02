@@ -14,7 +14,7 @@ Cossack Skills are instruction packs that teach AI coding assistants (Claude Cod
 | `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` (multi-file workflow) |
 | `/setup-websocket` | Task | Set up real-time features — pick SSE or Durable Object transport |
 | `/setup-ui` | Task | Set up the UI package (`@cossackframework/ui`) — theme, CSS imports, component usage, focus helpers, Toaster |
-| `cossack-best-practices` | Background | Auto-loaded guardrails: use built-in features (`@Server()` RPC, `@Validate`, `db()`, `cache.remember()`, `Image()`, `this.loading`, `@Ref()`, `@Task`/`@ServerTask`/`@ClientTask`, `createStore`, `@cossackframework/ui`, etc.) instead of reinventing them. Includes deep-dive references for server/client RPC, decorators, tasks, validation (incl. `coerce` + nested `@Store`), reactive store, UI components + focus management, forms, loading, database, cache, realtime, auth, and error handling |
+| `cossack-best-practices` | Background | Guardrails for `@Server()` RPC, ORM entities, validation, caching, UI, tasks, stores, auth, and error handling. |
 
 The `cossack-best-practices` skill is not user-invocable. It auto-loads when you work on Cossack-specific files (`src/pages/**`, `src/components/**`, `src/services/**`, `src/middlewares/**`, `src/App.ts`, `src/root.ts`) and steers the AI toward framework built-ins.
 

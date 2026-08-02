@@ -41,7 +41,7 @@ declare abstract class SendEmail {
 interface CloudflareBindings {
 	/** Cloudflare Workers Static Assets binding (wrangler.jsonc `assets`). */
 	ASSETS: Fetcher;
-	/** Cloudflare D1 database binding (wrangler.jsonc `d1_databases`). Used by db() / getDb(c). */
+	/** Cloudflare D1 binding used by the request-scoped ORM factory. */
 	DB: D1Database;
 	/** Cloudflare Email Routing binding (wrangler.jsonc `send_email`). Used by binding('EMAIL').send(...) in requestPasswordReset. */
 	EMAIL: SendEmail;

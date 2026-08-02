@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/studio",
-  "version": "0.7.7",
+  "version": "1.0.0",
   "type": "module",
   "description": "A local, browser-based database inspector for Cossack applications",
   "license": "MIT",
@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/database": "workspace:*",
+    "@cossackframework/orm": "^1.1.0",
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/solar-icons": "^0.7.1",

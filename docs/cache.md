@@ -64,7 +64,7 @@ For most apps, **KV is the recommended default**. It's the natural fit for the m
 
 ```ts
 const products = await cache.remember('products:featured', 600, () =>
-    db().selectFrom('products').where('featured', '=', 1).selectAll().execute(),
+    Product.find({ where: { featured: true } }),
 );
 ```
 
@@ -72,7 +72,7 @@ Why KV fits `remember()` so well:
 
 - **Eventual consistency is harmless.** `remember()` is idempotent — if two instances both miss and both recompute, the result is the same. Staleness is already bounded by your TTL.
 - **Native TTL = auto garbage collection.** KV's `expirationTtl` reaps expired keys for you — no unbounded growth, no `purgeExpired()` chore.
-- **It offloads the database.** A KV hit never touches D1/Turso — the whole point of caching a query result. (`DatabaseCacheStore` does *not* give you this — a cache read still hits the database.)
+- **It offloads the database.** A KV hit never touches D1/Turso; an ORM-backed cache hit still does.
 - **Globally fast reads.** KV is served from the edge region nearest the reader.
 - **Simplest persistent option.** One binding + a line in `config/cache.ts` — no entry-point code, no DO class export, no migration.
 
@@ -159,9 +159,9 @@ export default ({ env }) => ({
 
 ### Database (strongly consistent)
 
-`DatabaseCacheStore` stores cache data in your app's database (D1 or Turso) via the per-request `db()` client. It's part of `@cossackframework/database`, which is included by default in new Cossack apps.
+`createDatabaseCacheStore()` stores cache data through the request-scoped ORM.
 
-New projects ship with the database cache driver pre-registered in `src/middlewares/db.ts` and the `cache_items` migration included as a default (`0006_create_cache_table.ts`). To use it:
+New projects register it in `src/middlewares/orm.ts` and include migration `0006_create_cache_table.ts`.
 
 **1. Apply the migration** (if not already applied):
 
@@ -178,16 +178,16 @@ export default ({ env }) => ({
 });
 ```
 
-The driver registration lives in `src/middlewares/db.ts`:
+The driver registration lives in `src/middlewares/orm.ts`:
 
 ```ts
-import { DatabaseCacheStore } from '@cossackframework/database';
+import { createDatabaseCacheStore } from '@cossackframework/orm/cossack';
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 
-extendCacheDriver('database', () => new DatabaseCacheStore());
+extendCacheDriver('database', () => createDatabaseCacheStore());
 ```
 
-Remove that call (and the `'database'` store in `config/cache.ts`) if you don't use database-backed caching, or swap it for your own driver (Redis, R2, …). `DatabaseCacheStore()` resolves the per-request `db()` client lazily on each operation, so a single instance serves every request. Expired rows are reaped lazily on read; call `store.purgeExpired()` opportunistically to reclaim space.
+Remove that registration if you do not use database-backed caching. The store resolves the active ORM lazily, returns `undefined` for misses or corrupt payloads, and implements the complete Framework cache contract.
 
 ## API
 
@@ -245,7 +245,7 @@ export default ({ env }) => ({
 
 ```ts
 const products = await cache.remember('products:featured', 600, () =>
-    db().selectFrom('products').where('featured', '=', 1).selectAll().execute(),
+    Product.find({ where: { featured: true } }),
 );
 ```
 

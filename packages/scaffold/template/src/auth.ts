@@ -4,9 +4,8 @@
 // validate / resolve), credential helpers, password reset, logout, and
 // session management (list / revoke).
 //
-// All DB access uses the global request-scoped `db()` from
-// @cossackframework/database (it reads the per-request Kysely client from
-// AsyncLocalStorage via the db middleware). Runtime bindings (the send_email
+// All data access uses Active Record models scoped by the ORM middleware.
+// Runtime bindings (the send_email
 // binding, env vars) are read via the global `binding()` / `env()` helpers,
 // so none of the credential or reset helpers need a Hono `Context`. Only
 // `logout` takes `c`, because reading the session cookie and setting response
@@ -15,11 +14,11 @@
 import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 import { createAuth } from '@cossackframework/auth';
-import { db } from '@cossackframework/database';
+import { MoreThan, Not, sql } from '@cossackframework/orm';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '@/lib/uuid';
-import type { RoleAssignment, UserRow } from '@/models/User';
-import type { SessionRow } from '@/models/Session';
+import { User, type RoleAssignment } from '@/models/User';
+import { Session } from '@/models/Session';
 
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -96,10 +95,6 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<ArrayBuffe
 }
 
 // --- Types -----------------------------------------------------------------
-// Row types come from the models (Kysely-augmented). Importing them here keeps
-// a single source of truth so the query builder stays fully typed and inserts
-// pick up new columns (e.g. `created_at`) automatically.
-
 /** The safe user shape exposed to pages (`this.user`) — no password_hash. */
 export interface PublicUser {
   id: string;
@@ -110,7 +105,7 @@ export interface PublicUser {
   roles: RoleAssignment[];
 }
 
-function publicUser(u: UserRow, roles: RoleAssignment[] = []): PublicUser {
+function publicUser(u: User, roles: RoleAssignment[] = []): PublicUser {
   let meta: Record<string, unknown> | null = null;
   if (u.meta) {
     try {
@@ -127,12 +122,12 @@ function publicUser(u: UserRow, roles: RoleAssignment[] = []): PublicUser {
 // user_roles -> roles. Used by resolveUserById so c.get('user').roles is
 // available to the authorizer (src/services/rbac.ts) and the dashboard nav.
 async function loadUserRoles(userId: string): Promise<RoleAssignment[]> {
-  const rows = await db()
-    .selectFrom('user_roles')
-    .innerJoin('roles', 'roles.id', 'user_roles.role_id')
-    .where('user_roles.user_id', '=', userId)
-    .select(['roles.id as id', 'roles.name as name', 'roles.permissions as permissions'])
-    .execute() as Array<{ id: string; name: string; permissions: string | null }>;
+  const rows = (await sql<{ id: string; name: string; permissions: string | null }>`
+    SELECT roles.id, roles.name, roles.permissions
+    FROM user_roles
+    INNER JOIN roles ON roles.id = user_roles.role_id
+    WHERE user_roles.user_id = ${userId}
+  `).rows;
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -161,26 +156,24 @@ function captureRequestInfo(c: Context): { ip: string | null; userAgent: string 
   return { ip, userAgent, location };
 }
 
-async function createSessionRow(user: UserRow, c: Context): Promise<{ headers: Headers }> {
+async function createSessionRow(user: User, c: Context): Promise<{ headers: Headers }> {
   const id = uuidv7();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000).toISOString();
   const createdAt = now.toISOString();
   const meta: SessionMeta = { type: 'auth' };
   const { ip, userAgent, location } = captureRequestInfo(c);
-  await db()
-    .insertInto('sessions')
-    .values({
-      id,
-      user_id: user.id,
-      expires_at: expiresAt,
-      created_at: createdAt,
-      meta: JSON.stringify(meta),
-      ip_address: ip,
-      user_agent: userAgent,
-      location,
-    })
-    .execute();
+  await Session.insert({
+    id,
+    userId: user.id,
+    data: null,
+    expiresAt,
+    createdAt,
+    meta: JSON.stringify(meta),
+    ipAddress: ip,
+    userAgent,
+    location,
+  });
   // Serialize the Set-Cookie header directly into the returned headers bag so
   // the createAuth contract stays pure (callers apply it to the response).
   const cookieParts = [
@@ -200,13 +193,10 @@ export const auth = createAuth<PublicUser>({
   extractSessionId: (c) => getCookie(c, SESSION_COOKIE),
   validateSessionId: async (sessionId) => {
     try {
-      const row = await db()
-        .selectFrom('sessions')
-        .where('id', '=', sessionId)
-        .where('expires_at', '>', new Date().toISOString())
-        .select('user_id')
-        .executeTakeFirst() as SessionRow | undefined;
-      return row?.user_id ?? null;
+      const row = await Session.findOne({
+        where: { id: sessionId, expiresAt: MoreThan(new Date().toISOString()) },
+      });
+      return row?.userId ?? null;
     } catch (error) {
       warnAboutSessionDatabase(error);
       return null;
@@ -214,11 +204,7 @@ export const auth = createAuth<PublicUser>({
   },
   resolveUserById: async (userId) => {
     try {
-      const row = await db()
-        .selectFrom('users')
-        .where('id', '=', userId)
-        .select(['id', 'email', 'name', 'avatar', 'meta'])
-        .executeTakeFirst() as UserRow | undefined;
+      const row = await User.findOne({ where: { id: userId } });
       if (!row) return null;
       const roles = await loadUserRoles(userId);
       return publicUser(row, roles);
@@ -228,11 +214,7 @@ export const auth = createAuth<PublicUser>({
     }
   },
   createSession: async (user, c) => {
-    const full = await db()
-      .selectFrom('users')
-      .where('id', '=', user.id)
-      .selectAll()
-      .executeTakeFirst() as UserRow | undefined;
+    const full = await User.findOne({ where: { id: user.id } });
     if (!full) throw new Error('User not found');
     return createSessionRow(full, c);
   },
@@ -240,11 +222,9 @@ export const auth = createAuth<PublicUser>({
 
 // --- Credential helpers (used by the page @Server methods) -----------------
 export async function loginUser(email: string, password: string): Promise<PublicUser | null> {
-  const row = await db().selectFrom('users').where('email', '=', email).selectAll().executeTakeFirst() as
-    | UserRow
-    | undefined;
-  if (!row || !row.password_hash) return null;
-  const ok = await verifyPassword(password, row.password_hash);
+  const row = await User.findOne({ where: { email } });
+  if (!row || !row.passwordHash) return null;
+  const ok = await verifyPassword(password, row.passwordHash);
   if (!ok) return null;
   const roles = await loadUserRoles(row.id);
   return publicUser(row, roles);
@@ -254,16 +234,20 @@ export async function registerUser(email: string, password: string, name?: strin
   // Check for an existing email first so we surface a clean, user-facing
   // error instead of letting the raw UNIQUE-constraint rejection bubble up
   // as a generic HTTP 500.
-  const existing = await db().selectFrom('users').where('email', '=', email).select('id').executeTakeFirst();
-  if (existing) {
+  if (await User.exists({ email })) {
     throw new ClientVisibleError('An account with this email already exists.');
   }
   const id = uuidv7();
   const passwordHash = await hashPassword(password);
-  await db()
-    .insertInto('users')
-    .values({ id, email, name: name ?? null, password_hash: passwordHash, created_at: new Date().toISOString() })
-    .execute();
+  await User.insert({
+    id,
+    email,
+    name: name ?? null,
+    passwordHash,
+    avatar: null,
+    meta: null,
+    createdAt: new Date().toISOString(),
+  });
   return { id, email, name: name ?? '', avatar: null, meta: null, roles: [] };
 }
 
@@ -274,43 +258,45 @@ export interface ProfileUpdate {
   meta?: Record<string, unknown> | null;
 }
 
-/** Update editable profile fields. Uses the global db() — no Context needed. */
+/** Update editable profile fields. */
 export async function updateUserProfile(userId: string, patch: ProfileUpdate): Promise<void> {
-  const values: Record<string, unknown> = {};
+  const values: Partial<User> = {};
   if (patch.name !== undefined) values.name = patch.name;
   if (patch.avatar !== undefined) values.avatar = patch.avatar;
   if (patch.meta !== undefined) values.meta = patch.meta === null ? null : JSON.stringify(patch.meta);
   if (Object.keys(values).length === 0) return;
-  await db().updateTable('users').set(values).where('id', '=', userId).execute();
+  await User.update({ id: userId }, values);
 }
 
 // --- Password reset (uses the sessions table for tokens) -------------------
 async function createPasswordResetToken(email: string): Promise<string | null> {
-  const user = await db().selectFrom('users').where('email', '=', email).select('id').executeTakeFirst() as
-    | { id: string }
-    | undefined;
+  const user = await User.findOne({ where: { email } });
   if (!user) return null; // do NOT leak whether the email exists
   const token = uuidv7();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hour
   const meta: SessionMeta = { type: 'password_reset' };
-  await db()
-    .insertInto('sessions')
-    .values({ id: token, user_id: user.id, expires_at: expiresAt, created_at: now.toISOString(), meta: JSON.stringify(meta) })
-    .execute();
+  await Session.insert({
+    id: token,
+    userId: user.id,
+    data: null,
+    expiresAt,
+    createdAt: now.toISOString(),
+    meta: JSON.stringify(meta),
+    location: null,
+    userAgent: null,
+    ipAddress: null,
+  });
   return token;
 }
 
 async function consumePasswordResetToken(token: string): Promise<string | null> {
-  const row = await db()
-    .selectFrom('sessions')
-    .where('id', '=', token)
-    .where('expires_at', '>', new Date().toISOString())
-    .select('user_id')
-    .executeTakeFirst() as SessionRow | undefined;
+  const row = await Session.findOne({
+    where: { id: token, expiresAt: MoreThan(new Date().toISOString()) },
+  });
   if (!row) return null;
-  await db().deleteFrom('sessions').where('id', '=', token).execute();
-  return row.user_id;
+  await Session.delete({ id: token });
+  return row.userId;
 }
 
 /**
@@ -334,7 +320,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   const userId = await consumePasswordResetToken(token);
   if (!userId) return false;
   const passwordHash = await hashPassword(newPassword);
-  await db().updateTable('users').set({ password_hash: passwordHash }).where('id', '=', userId).execute();
+  await User.update({ id: userId }, { passwordHash });
   return true;
 }
 
@@ -347,7 +333,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
 export async function logout(c: Context): Promise<{ headers: Headers }> {
   const sessionId = getCookie(c, SESSION_COOKIE);
   if (sessionId) {
-    await db().deleteFrom('sessions').where('id', '=', sessionId).execute();
+    await Session.delete({ id: sessionId });
   }
   return { headers: expiredSessionCookie() };
 }
@@ -396,12 +382,9 @@ function parseMeta(raw: string | null): Record<string, unknown> | null {
  * Pass the calling session id to flag the current session.
  */
 export async function listUserSessions(userId: string, currentSessionId?: string): Promise<SessionInfo[]> {
-  const rows = await db()
-    .selectFrom('sessions')
-    .where('user_id', '=', userId)
-    .where('expires_at', '>', new Date().toISOString())
-    .select(['id', 'expires_at', 'created_at', 'meta', 'location', 'user_agent', 'ip_address'])
-    .execute() as SessionRow[];
+  const rows = await Session.find({
+    where: { userId, expiresAt: MoreThan(new Date().toISOString()) },
+  });
   return rows
     .filter((row) => {
       // Only show real auth sessions, not password-reset tokens.
@@ -410,28 +393,27 @@ export async function listUserSessions(userId: string, currentSessionId?: string
     })
     .map((row) => ({
       id: row.id,
-      expiresAt: row.expires_at,
-      createdAt: row.created_at ?? row.expires_at,
+      expiresAt: row.expiresAt,
+      createdAt: row.createdAt || row.expiresAt,
       current: row.id === currentSessionId,
       meta: parseMeta(row.meta),
       location: row.location,
-      userAgent: row.user_agent,
-      ipAddress: row.ip_address,
+      userAgent: row.userAgent,
+      ipAddress: row.ipAddress,
     }));
 }
 
 /** Revoke a single session by id. */
 export async function revokeSession(sessionId: string): Promise<void> {
-  await db().deleteFrom('sessions').where('id', '=', sessionId).execute();
+  await Session.delete({ id: sessionId });
 }
 
 /** Revoke all of a user's auth sessions, optionally keeping the current one. */
 export async function revokeAllUserSessions(userId: string, exceptSessionId?: string): Promise<void> {
-  let query = db().deleteFrom('sessions').where('user_id', '=', userId);
-  if (exceptSessionId) {
-    query = query.where('id', '!=', exceptSessionId);
-  }
-  await query.execute();
+  await Session.delete({
+    userId,
+    ...(exceptSessionId ? { id: Not(exceptSessionId) } : {}),
+  });
 }
 
 /** The session cookie name, exported so pages/middleware can read it. */

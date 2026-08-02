@@ -42,7 +42,7 @@ describe('recipe resolution', () => {
     const recipe = resolveRecipe({ adapter: 'cloudflare' });
     expect(recipe.preset).toBe('full-stack');
     expect(recipe.resolvedFeatures).toEqual([
-      'ui', 'database', 'auth', 'dashboard', 'markdown', 'examples',
+      'ui', 'orm', 'auth', 'dashboard', 'markdown', 'examples',
     ]);
     expect(recipe.dashboardModules).toEqual(DASHBOARD_MODULES);
     expect(recipe.config.database).toBe('d1');
@@ -56,7 +56,7 @@ describe('recipe resolution', () => {
       features: 'dashboard',
       dashboardModules: 'sessions',
     });
-    expect(recipe.resolvedFeatures).toEqual(['ui', 'database', 'auth', 'dashboard']);
+    expect(recipe.resolvedFeatures).toEqual(['ui', 'orm', 'auth', 'dashboard']);
     expect(recipe.dashboardModules).toEqual(['sessions']);
     expect(recipe.config.database).toBe('sqlite');
   });
@@ -64,7 +64,7 @@ describe('recipe resolution', () => {
   it('keeps Studio optional and resolves database as its prerequisite', async () => {
     expect(resolveRecipe({ preset: 'minimal' }).resolvedFeatures).not.toContain('studio');
     const recipe = resolveRecipe({ adapter: 'node', preset: 'minimal', features: 'studio' });
-    expect(recipe.resolvedFeatures).toEqual(['database', 'studio']);
+    expect(recipe.resolvedFeatures).toEqual(['orm', 'studio']);
     const files = await renderRecipe(recipe);
     const pkg = JSON.parse(files.get('package.json').content.toString());
     expect(pkg.devDependencies['@cossackframework/studio']).toBe(`^${scaffoldPackage.version}`);
@@ -72,13 +72,13 @@ describe('recipe resolution', () => {
   });
 
   it('removes dependents and then unneeded automatic prerequisites', () => {
-    expect(removeFeature(['dashboard', 'examples'], 'database'))
+    expect(removeFeature(['dashboard', 'examples'], 'orm'))
       .toEqual(['examples']);
     expect(resolveRecipe({
       preset: 'minimal',
-      features: removeFeature(['dashboard', 'examples'], 'database'),
+      features: removeFeature(['dashboard', 'examples'], 'orm'),
     }).resolvedFeatures).toEqual(['ui', 'markdown', 'examples']);
-    expect(removeFeature(['studio', 'examples'], 'database')).toEqual(['examples']);
+    expect(removeFeature(['studio', 'examples'], 'orm')).toEqual(['examples']);
   });
 
   it('rejects invalid providers, invalid modules, and duplicate modules', () => {
@@ -96,11 +96,11 @@ describe('recipe resolution', () => {
 
   it.each([
     ['cloudflare', 'minimal'],
-    ['cloudflare', 'database'],
+    ['cloudflare', 'orm'],
     ['cloudflare', 'auth'],
     ['cloudflare', 'full-stack'],
     ['node', 'minimal'],
-    ['node', 'database'],
+    ['node', 'orm'],
     ['node', 'auth'],
     ['node', 'full-stack'],
   ])('renders the %s/%s combination', async (adapter, preset) => {
@@ -115,8 +115,8 @@ describe('recipe resolution', () => {
     expect(pnpmWorkspace).toContain('sharp: true');
     expect(files.has('src/App.ts')).toBe(true);
     expect(files.has('wrangler.jsonc')).toBe(adapter === 'cloudflare');
-    expect(files.has('src/db/config.ts')).toBe(recipe.resolvedFeatures.includes('database'));
-    expect(files.has('src/db/cli.ts')).toBe(recipe.resolvedFeatures.includes('database'));
+    expect(files.has('src/orm/factory.ts')).toBe(recipe.resolvedFeatures.includes('orm'));
+    expect(files.has('orm.config.ts')).toBe(recipe.resolvedFeatures.includes('orm'));
     expect(files.has('src/auth.ts')).toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('src/pages/dashboard/layout.ts'))
       .toBe(recipe.resolvedFeatures.includes('dashboard'));
@@ -136,15 +136,16 @@ describe('recipe resolution', () => {
       expect(pkg.dependencies['@cossackframework/solar-icons'])
         .toBe(dependencyVersions['@cossackframework/solar-icons']);
     }
-    expect(Boolean(pkg.dependencies['@cossackframework/database']))
-      .toBe(recipe.resolvedFeatures.includes('database'));
-    if (recipe.resolvedFeatures.includes('database')) {
-      expect(files.get('src/db/config.ts').content.toString())
-        .not.toContain('getCliClient');
-      expect(files.get('src/db/cli.ts').content.toString())
-        .toContain('getCliClient');
+    expect(Boolean(pkg.dependencies['@cossackframework/orm']))
+      .toBe(recipe.resolvedFeatures.includes('orm'));
+    if (recipe.resolvedFeatures.includes('orm')) {
+      expect(files.get('src/orm/factory.ts').content.toString())
+        .toContain('createORM');
+      expect(files.get('orm.config.ts').content.toString())
+        .toContain('createToolingAdapter');
     }
-    expect(pkg.dependencies).not.toHaveProperty('reflect-metadata');
+    expect(Boolean(pkg.dependencies['reflect-metadata']))
+      .toBe(recipe.resolvedFeatures.includes('orm'));
     expect(files.get('src/index.ts').content.toString())
       .not.toContain("import 'reflect-metadata'");
     expect(JSON.parse(files.get('tsconfig.json').content.toString()).compilerOptions.types)
@@ -202,7 +203,7 @@ describe('recipe resolution', () => {
     expect(viteConfig).toContain("include: [");
     expect(viteConfig).toContain("'@cossackframework/ui'");
     expect(viteConfig).toContain("'@cossackframework/auth'");
-    expect(viteConfig).toContain("'@cossackframework/database'");
+    expect(viteConfig).toContain("'@cossackframework/orm'");
     expect(viteConfig).toContain("'@cossackframework/framework/cache'");
     expect(viteConfig).toContain("'hono/cookie'");
   });
@@ -270,12 +271,12 @@ describe('composition', () => {
     const added = await addFeature(project.projectDir, 'studio', {
       interactive: false,
     });
-    expect(added.addedFeatures).toEqual(['database', 'studio']);
+    expect(added.addedFeatures).toEqual(['orm', 'studio']);
     let pkg = JSON.parse(await fs.readFile(
       path.join(project.projectDir, 'package.json'),
       'utf8',
     ));
-    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/orm');
     expect(pkg.devDependencies).toHaveProperty('@cossackframework/studio');
     expect(pkg.scripts.studio).toBe('cossack studio');
 
@@ -283,20 +284,20 @@ describe('composition', () => {
       interactive: false,
       yes: true,
     });
-    expect(removedStudio.recipe.resolvedFeatures).toEqual(['database']);
+    expect(removedStudio.recipe.resolvedFeatures).toEqual(['orm']);
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
     expect(pkg.devDependencies).not.toHaveProperty('@cossackframework/studio');
     expect(pkg.scripts).not.toHaveProperty('studio');
-    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/orm');
 
     await addFeature(project.projectDir, 'studio', { interactive: false });
-    const removedDatabase = await removeFeatureFromProject(project.projectDir, 'database', {
+    const removedDatabase = await removeFeatureFromProject(project.projectDir, 'orm', {
       interactive: false,
       yes: true,
     });
     expect(removedDatabase.recipe.resolvedFeatures).toEqual([]);
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+    expect(pkg.dependencies).not.toHaveProperty('@cossackframework/orm');
     expect(pkg.devDependencies).not.toHaveProperty('@cossackframework/studio');
     expect(pkg.scripts).not.toHaveProperty('studio');
   });
@@ -424,6 +425,8 @@ describe('composition', () => {
       dashboardModules: 'users',
     }), { projectName: 'app' });
     expect(files.has('src/models/Role.ts')).toBe(true);
+    expect(files.has('src/models/OAuthAccount.ts')).toBe(true);
+    expect(files.has('src/models/CacheItem.ts')).toBe(true);
     expect(files.has('src/pages/dashboard/users/index.ts')).toBe(true);
     expect(files.has('src/pages/dashboard/roles/index.ts')).toBe(false);
     expect(files.has('src/dashboard/modules/roles.ts')).toBe(false);
@@ -462,7 +465,7 @@ describe('composition', () => {
       authMethods: 'credentials',
     }));
     expect(credentials.has('src/pages/auth/register/index.ts')).toBe(true);
-    expect(credentials.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(false);
+    expect(credentials.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(true);
     expect(credentials.has('.dev.vars')).toBe(false);
 
     const oauth = await renderRecipe(resolveRecipe({
@@ -511,13 +514,13 @@ describe('composition', () => {
     );
     expect(pkg.scripts.start).toContain('dist/server/index.js');
     expect(pkg.scripts.migrate).toContain('migration up');
-    expect(pkg.scripts.postinstall).toBe(pkg.scripts.migrate);
+    expect(pkg.scripts).not.toHaveProperty('postinstall');
     expect(pkg).not.toHaveProperty('pnpm');
     expect(await fs.readFile(
       path.join(project.projectDir, 'pnpm-workspace.yaml'),
       'utf8',
-    )).toContain('better-sqlite3: true');
-    expect(pkg.dependencies['better-sqlite3']).toBe('^13.0.1');
+    )).not.toContain('better-sqlite3');
+    expect(pkg.dependencies).not.toHaveProperty('better-sqlite3');
     const devEntry = await fs.readFile(
       path.join(project.projectDir, 'scripts/dev.js'),
       'utf8',
@@ -596,7 +599,7 @@ describe('composition', () => {
   it('uses Wrangler local D1 for migrations without native SQLite dependencies', async () => {
     const files = await renderRecipe(resolveRecipe({
       adapter: 'cloudflare',
-      preset: 'database',
+      preset: 'orm',
       database: 'd1',
     }), { projectName: 'd1-app' });
     const pkg = JSON.parse(files.get('package.json').content.toString());
@@ -607,16 +610,52 @@ describe('composition', () => {
     expect(files.get('pnpm-workspace.yaml').content.toString())
       .not.toContain('better-sqlite3: true');
     expect(pkg.scripts.migrate).toBe('cossack migration up');
-    expect(pkg.scripts.dev).toBe('cossack migration up && vite dev');
-    const runtimeConfig = files.get('src/db/config.ts').content.toString();
-    const cliConfig = files.get('src/db/cli.ts').content.toString();
+    expect(pkg.scripts.dev).toBe('vite dev');
+    const runtimeConfig = files.get('src/orm/factory.ts').content.toString();
+    const toolingConfig = files.get('src/orm/tooling.ts').content.toString();
+    const cliConfig = files.get('orm.config.ts').content.toString();
+    expect(runtimeConfig).toContain("from '@cossackframework/orm/cloudflare'");
     expect(runtimeConfig).not.toContain('wrangler');
-    expect(runtimeConfig).not.toContain('getCliClient');
-    expect(cliConfig).toContain("import('wrangler')");
-    expect(cliConfig).toContain('getPlatformProxy');
+    expect(toolingConfig).toContain("from 'wrangler'");
+    expect(toolingConfig).toContain('getPlatformProxy');
+    expect(cliConfig).toContain('createToolingAdapter');
     const wrangler = files.get('wrangler.jsonc').content.toString();
     expect(wrangler).toContain('"database_id": "00000000-0000-0000-0000-000000000000"');
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
+  });
+
+  it('renders isolated recipes for all eight ORM provider targets', async () => {
+    const targets = [
+      ['node', 'sqlite', 'nodeSQLite', undefined, undefined],
+      ['node', 'turso', 'libsql', '@libsql/client', undefined],
+      ['node', 'postgres', 'postgres', 'pg', undefined],
+      ['node', 'mysql', 'mysql', 'mysql2', undefined],
+      ['cloudflare', 'd1', 'd1', undefined, 'nodejs_als'],
+      ['cloudflare', 'turso', 'libsql', '@libsql/client', 'nodejs_als'],
+      ['cloudflare', 'hyperdrive-postgres', 'hyperdrivePostgres', 'pg', 'nodejs_compat'],
+      ['cloudflare', 'hyperdrive-mysql', 'hyperdriveMySQL', 'mysql2', 'nodejs_compat'],
+    ];
+
+    for (const [adapter, database, factory, driver, compatibilityFlag] of targets) {
+      const files = await renderRecipe(resolveRecipe({
+        adapter,
+        preset: 'orm',
+        database,
+      }));
+      const pkg = JSON.parse(files.get('package.json').content.toString());
+      const runtime = files.get('src/orm/factory.ts').content.toString();
+      expect(runtime).toContain(factory);
+      for (const candidate of ['@libsql/client', 'pg', 'mysql2']) {
+        expect(Boolean(pkg.dependencies[candidate])).toBe(candidate === driver);
+      }
+      if (adapter === 'cloudflare') {
+        expect(files.get('wrangler.jsonc').content.toString())
+          .toContain(`"compatibility_flags": ["${compatibilityFlag}"]`);
+        expect(runtime).not.toContain('wrangler');
+      } else {
+        expect(files.has('wrangler.jsonc')).toBe(false);
+      }
+    }
   });
 
   it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {
@@ -664,17 +703,13 @@ describe('composition', () => {
     expect(result.recipe.adapter).toBe('node');
     expect(result.recipe.config.database).toBe('sqlite');
     expect(await fs.readFile(
-      path.join(project.projectDir, 'src/db/config.ts'),
+      path.join(project.projectDir, 'src/orm/factory.ts'),
       'utf8',
-    )).toContain("from 'better-sqlite3'");
+    )).toContain('nodeSQLite');
     expect(await fs.readFile(
-      path.join(project.projectDir, 'src/db/cli.ts'),
+      path.join(project.projectDir, 'orm.config.ts'),
       'utf8',
-    )).toContain('getCliClient');
-    expect(await fs.readFile(
-      path.join(project.projectDir, 'src/config/database.ts'),
-      'utf8',
-    )).toContain("env('DB_CONNECTION', 'sqlite')");
+    )).toContain('createToolingAdapter');
     expect(await fs.readFile(
       path.join(project.projectDir, '.env'),
       'utf8',
@@ -781,7 +816,7 @@ describe('composition', () => {
     const page = path.join(project.projectDir, relative);
     await fs.appendFile(page, '\n// local edit\n');
 
-    const result = await addFeature(project.projectDir, 'database', {
+    const result = await addFeature(project.projectDir, 'orm', {
       interactive: false,
     });
     expect(result.status).toBe('added');
@@ -814,7 +849,7 @@ describe('composition', () => {
     );
     await fs.rm(path.join(legacy.projectDir, 'pnpm-workspace.yaml'));
 
-    await addFeature(legacy.projectDir, 'database', { interactive: false });
+    await addFeature(legacy.projectDir, 'orm', { interactive: false });
 
     const migratedPackage = JSON.parse(await fs.readFile(legacyPackagePath, 'utf8'));
     const migratedWorkspace = await fs.readFile(
@@ -822,7 +857,7 @@ describe('composition', () => {
       'utf8',
     );
     expect(migratedPackage).not.toHaveProperty('pnpm');
-    expect(migratedWorkspace).toContain('better-sqlite3: true');
+    expect(migratedWorkspace).not.toContain('better-sqlite3');
     expect(migratedWorkspace).toContain('canvas: true');
 
     const workspacePath = path.join(legacy.projectDir, 'pnpm-workspace.yaml');
@@ -920,7 +955,7 @@ describe('composition', () => {
     pkg.scripts.custom = 'echo custom';
     await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 
-    const result = await removeFeatureFromProject(project.projectDir, 'database', {
+    const result = await removeFeatureFromProject(project.projectDir, 'orm', {
       interactive: false,
     });
     expect(result.status).toBe('removed');
@@ -928,7 +963,7 @@ describe('composition', () => {
     expect(result.recipe.resolvedFeatures).toEqual(['ui', 'markdown', 'examples']);
     const updated = JSON.parse(await fs.readFile(packagePath, 'utf8'));
     expect(updated.dependencies).not.toHaveProperty('@cossackframework/auth');
-    expect(updated.dependencies).not.toHaveProperty('@cossackframework/database');
+    expect(updated.dependencies).not.toHaveProperty('@cossackframework/orm');
     expect(updated.dependencies).toHaveProperty('user-package', '^1.0.0');
     expect(updated.scripts).not.toHaveProperty('migrate');
     expect(updated.scripts).not.toHaveProperty('postinstall');
@@ -943,17 +978,17 @@ describe('composition', () => {
     const project = await createApp('app', {
       cwd: root,
       adapter: 'node',
-      preset: 'database',
+      preset: 'orm',
       interactive: false,
     });
-    const middleware = path.join(project.projectDir, 'src/middlewares/db.ts');
+    const middleware = path.join(project.projectDir, 'src/middlewares/orm.ts');
     await fs.appendFile(middleware, '\n// local edit\n');
-    await expect(removeFeatureFromProject(project.projectDir, 'database', {
+    await expect(removeFeatureFromProject(project.projectDir, 'orm', {
       interactive: false,
     })).rejects.toThrow('Scaffold conflicts');
     expect(await fs.readFile(middleware, 'utf8')).toContain('// local edit');
 
-    const forced = await removeFeatureFromProject(project.projectDir, 'database', {
+    const forced = await removeFeatureFromProject(project.projectDir, 'orm', {
       interactive: false,
       force: true,
     });

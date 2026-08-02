@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Kysely } from '@cossackframework/database';
+import type { ORM, ORMConfig } from '@cossackframework/orm';
 import { createLocalConnection } from './lib/local-connection.js';
 import {
   databaseLabelFromEnvironment,
@@ -34,25 +35,34 @@ export interface StudioRunOptions {
   provider?: StudioProvider;
 }
 
-async function loadCliClient(projectRoot: string): Promise<Kysely<any>> {
-  const cliPath = path.resolve(projectRoot, 'src', 'db', 'cli.ts');
+async function loadProjectORM(projectRoot: string): Promise<ORM> {
+  const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
+  let packageJsonPath: string;
   try {
-    await fs.access(cliPath);
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') {
-      throw new Error(
-        'No loadable src/db/cli.ts was found. Run `cossack add database` first.',
-      );
-    }
-    throw error;
+    packageJsonPath = requireFromProject.resolve('@cossackframework/orm/package.json');
+  } catch {
+    throw new Error(
+      '@cossackframework/orm is not installed in this application. ' +
+      'Run `cossack add orm` or install dependencies.',
+    );
   }
-  const module: any = await import(
-    `${pathToFileURL(cliPath).href}?studio=${Date.now()}`,
+  const toolingPath = path.join(
+    path.dirname(packageJsonPath),
+    'dist',
+    'tooling',
+    'index.js',
   );
-  if (typeof module.getCliClient !== 'function') {
-    throw new Error('src/db/cli.ts must export getCliClient().');
+  const tooling = await import(pathToFileURL(toolingPath).href) as {
+    loadORMConfig?: (path: string) => Promise<ORMConfig>;
+    createORMFromConfig?: (config: ORMConfig) => Promise<ORM>;
+  };
+  if (!tooling.loadORMConfig || !tooling.createORMFromConfig) {
+    throw new Error(
+      'Studio requires @cossackframework/orm 1.1.0 or newer with tooling exports.',
+    );
   }
-  return module.getCliClient();
+  const config = await tooling.loadORMConfig(path.join(projectRoot, 'orm.config.ts'));
+  return tooling.createORMFromConfig(config);
 }
 
 async function loadProjectEnvironment(projectRoot: string): Promise<void> {
@@ -112,19 +122,19 @@ async function createProjectConnection(
   options: StudioRunOptions,
 ): Promise<StudioConnection> {
   await loadProjectEnvironment(projectRoot);
-  const client = await loadCliClient(projectRoot);
+  const orm = await loadProjectORM(projectRoot);
   const provider = options.provider
     ? normalizeStudioProvider(options.provider)
-    : await detectStudioProvider(client);
+    : await detectStudioProvider(orm);
   if (!provider || provider === 'unknown' || provider === 'd1-remote') {
-    await client.destroy().catch(() => {});
+    await orm.close().catch(() => {});
     throw new Error(
-      'Studio could not detect the database driver used by getCliClient(). ' +
+      'Studio could not detect the ORM database driver. ' +
       'Set DB_CONNECTION (or COSSACK_STUDIO_DRIVER) to sqlite, turso, d1, postgres, or mysql.',
     );
   }
   return createLocalConnection({
-    client,
+    orm,
     info: {
       provider,
       label: localDatabaseLabel(provider, options.database),

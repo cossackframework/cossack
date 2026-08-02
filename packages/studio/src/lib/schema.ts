@@ -15,10 +15,16 @@ import type {
   StudioRowLocator,
   StudioSchema,
 } from './schema-types.js';
+import type { OrmSchema } from '@cossackframework/orm';
 
 const SQLITE_ROWID_ALIAS = '__cossack_rowid__';
 const POSTGRES_TABLEOID_ALIAS = '__cossack_tableoid__';
 const POSTGRES_CTID_ALIAS = '__cossack_ctid__';
+const INTERNAL_TABLES = new Set([
+  '_cossack_migrations',
+  'kysely_migration',
+  'kysely_migration_lock',
+]);
 
 interface SchemaRow {
   name: string;
@@ -829,7 +835,7 @@ export async function introspectSchema(
   const provider = connection.info.provider;
   const providerName = String(provider);
   const databaseVersion = knownDatabaseVersion ?? await readDatabaseVersion(connection);
-  const objects = providerName === 'postgres'
+  const physicalObjects = providerName === 'postgres'
     ? await introspectPostgres(connection)
     : providerName === 'mysql'
       ? await introspectMysql(connection)
@@ -841,6 +847,8 @@ export async function introspectSchema(
             );
           })()
         : await introspectSqlite(connection);
+  const objects = physicalObjects.filter((object) => !INTERNAL_TABLES.has(object.name));
+  const drift = mergeLogicalSchema(objects, connection.logicalSchema);
   return {
     connection: {
       ...connection.info,
@@ -848,7 +856,51 @@ export async function introspectSchema(
     },
     applicationName,
     objects,
+    ...(drift.length ? { drift } : {}),
   };
+}
+
+export function mergeLogicalSchema(
+  objects: StudioObject[],
+  logical?: OrmSchema,
+): string[] {
+  if (!logical) return [];
+  const drift: string[] = [];
+  const byTable = new Map(objects.map((object) => [object.name, object]));
+  const modeledTables = new Set(logical.entities.map((entity) => entity.tableName));
+  for (const entity of logical.entities) {
+    const object = byTable.get(entity.tableName);
+    if (!object) {
+      drift.push(`Missing table ${entity.tableName} for model ${entity.modelName}`);
+      continue;
+    }
+    object.modelName = entity.modelName;
+    object.relations = entity.relations.map((relation) => ({
+      propertyName: relation.propertyName,
+      kind: relation.kind,
+      targetEntity: relation.targetEntity,
+      provenance: 'orm' as const,
+    }));
+    const physicalColumns = new Map(object.columns.map((column) => [column.name, column]));
+    for (const logicalColumn of entity.columns) {
+      const physical = physicalColumns.get(logicalColumn.columnName);
+      if (!physical) {
+        drift.push(
+          `Missing column ${entity.tableName}.${logicalColumn.columnName} ` +
+          `for ${entity.modelName}.${logicalColumn.propertyName}`,
+        );
+        continue;
+      }
+      physical.logicalType = logicalColumn.logicalType;
+      physical.propertyName = logicalColumn.propertyName;
+    }
+  }
+  for (const object of objects) {
+    if (object.kind === 'table' && !modeledTables.has(object.name)) {
+      drift.push(`Unmanaged table ${object.name}`);
+    }
+  }
+  return drift;
 }
 
 async function readDatabaseVersion(connection: StudioConnection): Promise<string | undefined> {

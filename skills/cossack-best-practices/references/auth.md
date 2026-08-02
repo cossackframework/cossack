@@ -32,7 +32,8 @@ The provider you pass in defines the session lifecycle:
 
 ## The scaffolded `src/auth.ts`
 
-`cossack add auth` generates a module that wires `createAuth` against the `users` and `sessions` tables (via `c.get('db')` / Kysely). The shape (condensed):
+`cossack add auth` generates a module that wires `createAuth` against decorated
+`User` and `Session` entities in the active ORM scope.
 
 ```typescript
 import { getCookie, setCookie } from 'hono/cookie';

@@ -36,8 +36,8 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
         // and exporting CacheDurableObject from your Worker entry.
         'durable-object': { driver: 'durable-object', binding: 'CACHE_DO' },
 
-        // Database cache driver (DatabaseCacheStore from @cossackframework/database).
-        // Registered by the project template in src/middlewares/db.ts via
+        // Database cache driver from @cossackframework/orm/cossack.
+        // Registered by the project template in src/middlewares/orm.ts via
         // extendCacheDriver(). Requires the `cache_items` table (default
         // migration 0006_create_cache_table.ts).
         database: { driver: 'database' },

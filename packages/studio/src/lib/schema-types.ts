@@ -25,6 +25,7 @@ export interface StudioQueryResult {
 
 export interface StudioConnection {
   readonly info: StudioConnectionInfo;
+  readonly logicalSchema?: import('@cossackframework/orm').OrmSchema;
   execute(sql: string, parameters?: readonly unknown[]): Promise<StudioQueryResult>;
   close(): Promise<void>;
 }
@@ -48,6 +49,8 @@ export interface StudioColumn {
   primaryKeyPosition: number;
   autoIncrement: boolean;
   hidden: boolean;
+  logicalType?: import('@cossackframework/orm').LogicalType;
+  propertyName?: string;
 }
 
 export interface StudioIndexColumn {
@@ -109,12 +112,20 @@ export interface StudioObject {
   rowLocators: StudioRowLocator[];
   editable: boolean;
   readOnlyReason?: string;
+  modelName?: string;
+  relations?: Array<{
+    propertyName: string;
+    kind: string;
+    targetEntity: string;
+    provenance: 'orm';
+  }>;
 }
 
 export interface StudioSchema {
   connection: StudioConnectionInfo;
   applicationName: string;
   objects: StudioObject[];
+  drift?: string[];
 }
 
 export interface StudioPragmaOption {

@@ -1,5 +1,5 @@
-import { createClient } from '@libsql/client';
-import { createDatabase } from '@cossackframework/database';
+import { createORM } from '@cossackframework/orm';
+import { libsql } from '@cossackframework/orm/node';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createLocalConnection,
@@ -11,9 +11,9 @@ let connection: LocalStudioConnection;
 let studio: StudioDatabase;
 
 beforeEach(async () => {
-  const client = createClient({ url: ':memory:' });
+  const orm = createORM({ adapter: await libsql({ url: ':memory:' }), entities: [] });
   connection = createLocalConnection({
-    client: createDatabase({ dialect: 'libsql', client }),
+    orm,
     info: { provider: 'libsql', label: 'fixture' },
   });
   studio = new StudioDatabase(connection, { applicationName: 'Fixture application' });

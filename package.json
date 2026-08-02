@@ -16,5 +16,10 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "pnpm": {
+    "overrides": {
+      "@cossackframework/orm": "link:../orm"
+    }
+  }
 }

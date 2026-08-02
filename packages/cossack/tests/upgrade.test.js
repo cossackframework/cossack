@@ -135,7 +135,7 @@ describe('classifyFile', () => {
   });
 });
 
-describe('schema-v2 recipe upgrades', () => {
+describe('schema-v3 recipe upgrades', () => {
   it('migrates legacy pnpm build approvals before reinstalling', async () => {
     const project = await seedProject();
     const packagePath = path.join(project.projectDir, 'package.json');

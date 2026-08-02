@@ -75,7 +75,7 @@ async loadUser(id: number) {
 // ✅ Use the built-in RPC.
 @Server()
 async loadUser(id: number) {
-    this.user = await db().selectFrom('users')…;
+    this.user = await User.findOne({ where: { id } });
 }
 ```
 

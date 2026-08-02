@@ -1,19 +1,27 @@
-/**
- * The `roles` table row shape. `permissions` is a JSON array of Permission
- * strings (see config/permissions.ts); null means no permissions granted.
- * `id` and `created_at` are set by the app (uuidv7 + ISO timestamp), so they're
- * plain `string` — not Kysely `Generated`.
- */
-export interface RoleRow {
-    id: string;
-    name: string;
-    permissions: string | null;
-    created_at: string;
-}
+import {
+  BaseEntity,
+  Column,
+  Entity,
+  OneToMany,
+  PrimaryColumn,
+  type Relation,
+} from '@cossackframework/orm';
+import { UserRole } from './UserRole';
 
-// Map the table name -> row type so Kysely's query builder is fully typed.
-declare module '@cossackframework/database' {
-    interface Database {
-        roles: RoleRow;
-    }
+@Entity({ tableName: 'roles' })
+export class Role extends BaseEntity {
+  @PrimaryColumn({ type: 'varchar', name: 'id', length: 191 })
+  declare id: string;
+
+  @Column({ type: 'varchar', name: 'name', length: 191, unique: true })
+  declare name: string;
+
+  @Column({ type: 'text', name: 'permissions', nullable: true })
+  declare permissions: string | null;
+
+  @Column({ type: 'varchar', name: 'created_at', length: 32 })
+  declare createdAt: string;
+
+  @OneToMany(() => UserRole, (assignment) => assignment.role)
+  declare userAssignments: Relation<UserRole[]>;
 }

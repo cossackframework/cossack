@@ -16,7 +16,6 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/renderer" },
-    { "path": "./packages/database" },
     { "path": "./packages/node-adapter" },
     { "path": "./packages/test-utils" },
     { "path": "./packages/ui" },

@@ -108,12 +108,12 @@ export async function detectInstallCommand(root) {
 export function adapterHelp() {
   return `cossack adapter <node|cloudflare>
 
-Switch a schema-v2 scaffolded project to one runtime adapter. The complete
+Switch a schema-v3 scaffolded project to one runtime adapter. The complete
 recorded recipe is re-rendered; application features and unrelated edits are
 preserved. Database contents are never migrated.
 
 Options:
-  --database <d1|sqlite|turso>  Select a compatible database provider
+  --database <provider>          Select a compatible ORM database provider
   --yes                         Apply without confirmation
   --dry-run                     Preview every change without writing
   --force                       Replace conflicting runtime/provider files`;

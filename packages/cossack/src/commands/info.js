@@ -19,7 +19,7 @@ export async function infoCommand(args, ctx) {
     '@cossackframework/framework',
     '@cossackframework/node-adapter',
     '@cossackframework/auth',
-    '@cossackframework/database',
+    '@cossackframework/orm',
     'cossack',
   ]) {
     const v = resolvePackageVersion(name);

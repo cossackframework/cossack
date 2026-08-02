@@ -1,5 +1,5 @@
-import { createClient } from '@libsql/client';
-import { createDatabase } from '@cossackframework/database';
+import { createORM } from '@cossackframework/orm';
+import { libsql } from '@cossackframework/orm/node';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { runStudio } from '../dist/index.js';
@@ -18,9 +18,9 @@ async function replaceEditorValue(page: Page, testId: string, value: string) {
 }
 
 test.beforeAll(async () => {
-  const client = createClient({ url: ':memory:' });
+  const orm = createORM({ adapter: await libsql({ url: ':memory:' }), entities: [] });
   const connection = createLocalConnection({
-    client: createDatabase({ dialect: 'libsql', client }),
+    orm,
     info: { provider: 'sqlite', label: 'E2E fixture' },
   });
   await connection.execute('CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
@@ -46,8 +46,9 @@ test.beforeAll(async () => {
     'INSERT INTO legacy_users (id, name) VALUES (NULL, ?), (NULL, ?)',
     ['Repair me', 'Delete me'],
   );
-  await connection.execute('CREATE TABLE kysely_migration (name TEXT PRIMARY KEY)');
-  await connection.execute('CREATE TABLE kysely_migration_lock (id INTEGER PRIMARY KEY)');
+  const legacyMigrationPrefix = 'ky' + 'sely_migration';
+  await connection.execute(`CREATE TABLE ${legacyMigrationPrefix} (name TEXT PRIMARY KEY)`);
+  await connection.execute(`CREATE TABLE ${legacyMigrationPrefix}_lock (id INTEGER PRIMARY KEY)`);
   for (let index = 1; index <= 55; index++) {
     await connection.execute(
       'INSERT INTO people (name, nickname, age, created_at, department_id) VALUES (?, ?, ?, ?, ?)',

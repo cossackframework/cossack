@@ -1,4 +1,4 @@
-import { CompiledQuery, type Kysely } from '@cossackframework/database';
+import type { ORM } from '@cossackframework/orm';
 import type { StudioProvider } from './schema-types.js';
 
 const PROVIDER_ALIASES: Record<string, StudioProvider> = {
@@ -23,99 +23,38 @@ export function normalizeStudioProvider(value: unknown): StudioProvider | undefi
 function providerFromUrl(value: string | undefined): StudioProvider | undefined {
   if (!value) return undefined;
   try {
-    const protocol = new URL(value).protocol.replace(':', '').toLowerCase();
-    return normalizeStudioProvider(protocol);
+    return normalizeStudioProvider(new URL(value).protocol.replace(':', ''));
   } catch {
     return undefined;
   }
 }
 
-function runtimeDialectName(client: Kysely<any>): string {
-  const names: string[] = [];
-  try {
-    names.push(client.introspection.constructor.name);
-  } catch {}
-  try {
-    names.push(client.getExecutor().adapter.constructor.name);
-  } catch {}
-  return names.join(' ').toLowerCase();
-}
-
-type RuntimeCossackDialect = 'd1';
-
-function runtimeCossackDialect(
-  client: Kysely<any>,
-): RuntimeCossackDialect | undefined {
-  try {
-    const dialect = (
-      client.getExecutor().adapter as { cossackDialect?: unknown }
-    ).cossackDialect;
-    return dialect === 'd1' ? dialect : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function environmentProvider(
-  environment: NodeJS.ProcessEnv,
-): StudioProvider | undefined {
+function environmentProvider(environment: NodeJS.ProcessEnv): StudioProvider | undefined {
   const explicit = normalizeStudioProvider(
     environment.COSSACK_STUDIO_DRIVER ?? environment.DB_CONNECTION,
   );
   if (explicit) return explicit;
-  const urlProvider = providerFromUrl(
+  const url = providerFromUrl(
     environment.DATABASE_URL ?? environment.POSTGRES_URL ?? environment.MYSQL_URL,
   );
-  if (urlProvider) return urlProvider;
+  if (url) return url;
   if (environment.PGHOST || environment.PGDATABASE) return 'postgres';
   if (environment.MYSQL_HOST || environment.MYSQL_DATABASE) return 'mysql';
   if (environment.TURSO_URL) return 'libsql';
-  if (environment.DB_PATH) return 'sqlite';
   if (environment.D1_LOCAL_PATH) return 'd1-local';
+  if (environment.DB_PATH) return 'sqlite';
   return undefined;
 }
 
-/**
- * Detect the concrete dialect behind getCliClient().
- *
- * Kysely exposes its runtime adapter and introspector, which is more reliable
- * than inferring a driver from credentials. Environment hints remain useful
- * for custom dialect wrappers and for distinguishing the SQLite family.
- */
 export async function detectStudioProvider(
-  client: Kysely<any>,
+  orm: ORM,
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<StudioProvider> {
-  if (runtimeCossackDialect(client) === 'd1') return 'd1-local';
-
-  const runtimeName = runtimeDialectName(client);
-  if (runtimeName.includes('postgres')) return 'postgres';
-  if (runtimeName.includes('mysql')) return 'mysql';
-
   const hint = environmentProvider(environment);
-  if (runtimeName.includes('sqlite')) {
-    return hint === 'libsql' || hint === 'd1-local' || hint === 'sqlite'
-      ? hint
-      : 'sqlite';
-  }
-  if (hint) return hint;
-
-  // Custom Kysely dialects may not use the built-in class names. These probes
-  // are read-only and only run when runtime metadata and environment hints
-  // were inconclusive.
-  try {
-    const result = await client.executeQuery<Record<string, unknown>>(
-      CompiledQuery.raw('SELECT version() AS version'),
-    );
-    const version = String(result.rows[0]?.version ?? '').toLowerCase();
-    if (version.includes('postgres')) return 'postgres';
-    if (version.includes('mysql') || version.includes('mariadb')) return 'mysql';
-  } catch {}
-  try {
-    await client.executeQuery(CompiledQuery.raw('SELECT sqlite_version() AS version'));
-    return 'sqlite';
-  } catch {}
-  return 'unknown';
+  if (orm.driver.dialect === 'postgres') return 'postgres';
+  if (orm.driver.dialect === 'mysql') return 'mysql';
+  if (hint === 'd1-local' || hint === 'libsql' || hint === 'sqlite') return hint;
+  return orm.driver.dialect === 'sqlite' ? 'sqlite' : 'unknown';
 }
 
 export function databaseLabelFromEnvironment(
@@ -128,9 +67,9 @@ export function databaseLabelFromEnvironment(
   if (url) {
     try {
       const parsed = new URL(url);
-      const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
-      if (database) return database;
-      if (parsed.hostname) return parsed.hostname;
+      return decodeURIComponent(parsed.pathname.replace(/^\/+/, '')) ||
+        parsed.hostname ||
+        undefined;
     } catch {}
   }
   if (provider === 'postgres') return environment.PGDATABASE;

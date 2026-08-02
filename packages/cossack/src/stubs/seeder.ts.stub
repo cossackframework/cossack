@@ -1,8 +1,9 @@
-import type { DbClient } from '@cossackframework/database';
+import { defineSeeder } from '@cossackframework/orm';
 
-export default {
-  async run(db: DbClient) {
-    // TODO: seed your database — e.g.
-    // await db.insertInto('users').values({ email: 'demo@cossack.dev' }).execute();
+export default defineSeeder({
+  name: '{{name}}',
+  transaction: 'auto',
+  async run({ orm, sql }) {
+    // Seed through Active Record models, Entity.query(), or bound `sql`.
   },
-};
+});

@@ -17,6 +17,7 @@ import { removeCommand } from './commands/remove.js';
 import { langCommand } from './commands/lang.js';
 import { migrationCommand } from './commands/migration.js';
 import { seederCommand } from './commands/seeder.js';
+import { schemaCommand } from './commands/schema.js';
 import { devCommand } from './commands/dev.js';
 import { buildCommand } from './commands/build.js';
 import { startCommand } from './commands/start.js';
@@ -42,6 +43,7 @@ const COMMANDS = {
   lang: { run: langCommand, aliases: [] },
   migration: { run: migrationCommand, aliases: ['migrate'] },
   seeder: { run: seederCommand, aliases: ['seed'] },
+  schema: { run: schemaCommand, aliases: [] },
   studio: { run: studioCommand, aliases: [] },
   // introspection
   routes: { run: routesCommand, aliases: [] },
@@ -119,14 +121,15 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (ui, database, auth, dashboard, markdown, examples).
+  add <feature>                Add a feature (ui, orm, studio, auth, dashboard, markdown, examples).
   remove <feature>             Remove a feature and its dependents.
   adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
-  migration <sub> (migrate)    Run Kysely migrations under src/migrations/.
-                               Subcommands: up, down, status.
-  seeder <sub> (seed)          Run seeders under src/seeders/. Subcommands: run.
+  migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, up,
+                               down, status, check, baseline.
+  schema <sub>                 ORM schema commands: pull, diff, check.
+  seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
   upgrade [dir]                Upgrade Cossack deps + report template drift.

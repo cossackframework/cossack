@@ -152,7 +152,7 @@ render() {
 ```ts
 @Server()
 async saveSettings() {
-    await db().updateTable('settings')...;
+    await Setting.update({ id }, patch);
     toast.success("Settings saved!");   // fires on the client
 }
 ```

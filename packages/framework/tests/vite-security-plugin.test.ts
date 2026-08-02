@@ -22,6 +22,50 @@ import {
   isClientOnlyModuleId,
 } from '../src/vite-security-plugin';
 
+describe('ORM and session server-only imports', () => {
+  const paths: string[] = [];
+  let sequence = 0;
+
+  afterEach(() => {
+    for (const path of paths.splice(0)) rmSync(path, { force: true });
+  });
+
+  const fixture = (source: string) => {
+    const path = join(tmpdir(), `cossack-orm-security-${sequence++}.ts`);
+    writeFileSync(path, source, 'utf8');
+    paths.push(path);
+    return path;
+  };
+
+  it('classifies direct, subpath, re-export, and framework session imports', () => {
+    expect(isServerOnlyModule(fixture(
+      `import { BaseEntity } from '@cossackframework/orm'; export { BaseEntity };`,
+    ))).toBe(true);
+    expect(isServerOnlyModule(fixture(
+      `export { ormMiddleware } from '@cossackframework/orm/cossack';`,
+    ))).toBe(true);
+    expect(isServerOnlyModule(fixture(
+      `import { session } from '@cossackframework/framework/session'; export { session };`,
+    ))).toBe(true);
+  });
+
+  it('removes stripped ORM imports and rejects client-safe leaks', () => {
+    const safe = stripClientServerOnlyImports(`
+      import { User } from './models/User';
+      import { sql } from '@cossackframework/orm';
+      class Page {
+        render() { return User.name; }
+      }
+    `, '/src/page.ts');
+    expect(safe).not.toContain('@cossackframework/orm');
+
+    expect(() => stripClientServerOnlyImports(`
+      import { sql } from '@cossackframework/orm';
+      export const leaked = sql;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+});
+
 describe('client-only modules', () => {
   const paths: string[] = [];
   let seq = 0;
@@ -133,9 +177,9 @@ describe('server$ compiler macro', () => {
   it('removes loader-only database imports from the client module', () => {
     const source = `
       import { server$ } from '@cossackframework/core';
-      import { db } from '@cossackframework/database';
+      import { sql } from '@cossackframework/orm';
       class Users extends Cossack {
-        users = server$(() => db().selectFrom('users').selectAll().execute(), { initial: [] });
+        users = server$(() => sql.selectFrom('users').selectAll().execute(), { initial: [] });
         render() { return this.users.length; }
       }`;
     const macro = transformServerResources(source, '/src/pages/users/index.ts');
@@ -147,16 +191,16 @@ describe('server$ compiler macro', () => {
       true,
     );
     const result = stripClientServerOnlyImports(stripped, '/src/pages/users/index.ts');
-    expect(result).not.toContain("from '@cossackframework/database'");
+    expect(result).not.toContain("from '@cossackframework/orm'");
     expect(result).not.toContain("selectFrom('users')");
   });
 
   it('fails when a server-only import remains in client-safe code', () => {
     const source = `
-      import { db } from '@cossackframework/database';
-      class Users extends Cossack { render() { return db(); } }`;
+      import { sql } from '@cossackframework/orm';
+      class Users extends Cossack { render() { return sql; } }`;
     expect(() => stripClientServerOnlyImports(source, '/src/pages/users/index.ts'))
-      .toThrow('references server-only import "@cossackframework/database" from client-safe code (db)');
+      .toThrow('references server-only import "@cossackframework/orm" from client-safe code (sql)');
   });
 });
 
@@ -747,13 +791,13 @@ export class TestPage extends Cossack {
 export class TestPage extends Cossack {
     @Server()
     async getUserData() {
-      const result = await db.select().from('users').where('id', '=', userId);
+      const result = await sql.select().from('users').where('id', '=', userId);
       return result;
     }
 }`;
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-      expect(result).not.toContain('db.select()');
+      expect(result).not.toContain('sql.select()');
       expect(result).not.toContain('.from(\'users\')');
     });
 
@@ -1165,7 +1209,7 @@ describe('SSG generateStaticParams stripping', () => {
   ssg: {
     generateStaticParams: async () => {
       const apiKey = 'SECRET_KEY';
-      const rows = await db.select().from('users');
+      const rows = await sql.select().from('users');
       return rows;
     }
   }
@@ -1175,7 +1219,7 @@ export class P extends Cossack {}`;
     const result = stripSsgGenerateStaticParams(code);
     expect(result).toContain('generateStaticParams: async () => []');
     expect(result).not.toContain('SECRET_KEY');
-    expect(result).not.toContain('db.select');
+    expect(result).not.toContain('sql.select');
     expect(result).not.toContain("from('users')");
   });
 
@@ -1210,7 +1254,7 @@ export class P extends Cossack {}`;
   ssg: {
     enabled: true,
     generateStaticParams: async () => {
-      return db.query('SELECT ...');
+      return sql.query('SELECT ...');
     }
   }
 })
@@ -1219,7 +1263,7 @@ export class P extends Cossack {}`;
     const result = stripSsgGenerateStaticParams(code);
     expect(result).toContain('enabled: true');
     expect(result).toContain('generateStaticParams: async () => []');
-    expect(result).not.toContain('db.query');
+    expect(result).not.toContain('sql.query');
   });
 
   it('preserves other @Page options', () => {
@@ -1267,7 +1311,7 @@ export class P extends Cossack {}`;
     const code = `@Component({
   ssg: {
     generateStaticParams: async () => {
-      return db.list();
+      return sql.list();
     }
   }
 })
@@ -1275,7 +1319,7 @@ export class P extends Cossack {}`;
 
     const result = stripSsgGenerateStaticParams(code);
     expect(result).toContain('generateStaticParams: async () => []');
-    expect(result).not.toContain('db.list');
+    expect(result).not.toContain('sql.list');
   });
 
   it('does not touch string/template-literal occurrences of generateStaticParams', () => {
@@ -1299,18 +1343,18 @@ export class P extends Cossack {
 
   it('processes multiple @Page decorators in the same file independently', () => {
     const code = `@Page({
-  ssg: { generateStaticParams: async () => db.a() }
+  ssg: { generateStaticParams: async () => sql.a() }
 })
 export class A extends Cossack {}
 
 @Page({
-  ssg: { generateStaticParams: async () => db.b() }
+  ssg: { generateStaticParams: async () => sql.b() }
 })
 export class B extends Cossack {}`;
 
     const result = stripSsgGenerateStaticParams(code);
-    expect(result).not.toContain('db.a');
-    expect(result).not.toContain('db.b');
+    expect(result).not.toContain('sql.a');
+    expect(result).not.toContain('sql.b');
     expect((result.match(/generateStaticParams: async \(\) => \[\]/g) || []).length).toBe(2);
   });
 
@@ -1334,7 +1378,7 @@ import { Layout } from '@/components/Layout';
     enabled: true,
     generateStaticParams: async () => {
       const apiKey = process.env.SECRET_DB_KEY;
-      const users = await db.select().from('users');
+      const users = await sql.select().from('users');
       return users.map(u => ({ username: u.name }));
     }
   },
@@ -1362,7 +1406,7 @@ export class UserProfile extends Cossack {
     // generateStaticParams body stripped
     expect(result).toContain('generateStaticParams: async () => []');
     expect(result).not.toContain('SECRET_DB_KEY');
-    expect(result).not.toContain('db.select');
+    expect(result).not.toContain('sql.select');
     // Other decorator options preserved
     expect(result).toContain('enabled: true');
     expect(result).toContain("transport: 'http'");
@@ -1417,7 +1461,7 @@ export class TestPage extends Cossack {
 
   @Server()
   async save() {
-    await db.insert();
+    await sql.insert();
   }
 
   render() { return html\`<p>hi</p>\`; }
@@ -1438,7 +1482,7 @@ export class TestPage extends Cossack {
 export class TestPage extends Cossack {
   @Server()
   async save() {
-    await db.insert();
+    await sql.insert();
   }
 
   render() { return html\`<p>hi</p>\`; }
@@ -1642,13 +1686,13 @@ export class TestPage extends Cossack {
   @Server()
   dbQuery = async () => {
     const apiKey = process.env.DB_KEY;
-    return await db.query(apiKey);
+    return await sql.query(apiKey);
   };
   render() { return html\`<p>q</p>\`; }
 }`;
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).not.toContain('DB_KEY');
-      expect(result).not.toContain('db.query');
+      expect(result).not.toContain('sql.query');
       // Async arrow stub uses rest params (class fields forbid `arguments`).
       expect(result).toContain('dbQuery = async (...args) =>');
       expect(result).toContain("__cossack_proxies?.get('dbQuery')");
@@ -1892,7 +1936,7 @@ export class Page extends Cossack {
 // Server-only module detection & stubbing
 // ---------------------------------------------------------------------------
 // Regression for the `node:async_hooks` leak: a user service module that does
-// `import { db } from '@cossackframework/database'` pulls ALS into the client
+// `import { sql } from '@cossackframework/orm'` pulls ALS into the client
 // bundle. The security plugin must auto-detect such modules and stub their
 // named exports on the client (same pattern as src/auth.ts).
 describe('server-only module detection', () => {
@@ -1921,13 +1965,13 @@ describe('server-only module detection', () => {
 
   describe('readImportSources()', () => {
     it('collects static import sources', () => {
-      const p = track(tempFile('static.ts', `import { db } from '@cossackframework/database';\nimport { x } from './local';\n`));
-      expect(readImportSources(p).sort()).toEqual(['./local', '@cossackframework/database']);
+      const p = track(tempFile('static.ts', `import { sql } from '@cossackframework/orm';\nimport { x } from './local';\n`));
+      expect(readImportSources(p).sort()).toEqual(['./local', '@cossackframework/orm']);
     });
 
     it('collects re-export sources', () => {
-      const p = track(tempFile('reexport.ts', `export { db } from '@cossackframework/database';\nexport * from './other';\n`));
-      expect(readImportSources(p).sort()).toEqual(['./other', '@cossackframework/database']);
+      const p = track(tempFile('reexport.ts', `export { sql } from '@cossackframework/orm';\nexport * from './other';\n`));
+      expect(readImportSources(p).sort()).toEqual(['./other', '@cossackframework/orm']);
     });
 
     it('returns an empty array when the file cannot be read', () => {
@@ -1936,8 +1980,8 @@ describe('server-only module detection', () => {
   });
 
   describe('isServerOnlyModule()', () => {
-    it('flags a module importing from @cossackframework/database', () => {
-      const p = track(tempFile('svc.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => db().selectFrom('users');\n`));
+    it('flags a module importing from @cossackframework/orm', () => {
+      const p = track(tempFile('svc.ts', `import { sql } from '@cossackframework/orm';\nexport const listUsers = () => sql.selectFrom('users');\n`));
       expect(isServerOnlyModule(p)).toBe(true);
     });
 
@@ -1945,8 +1989,8 @@ describe('server-only module detection', () => {
       // The auth package is pure TypeScript (hono type imports only, no Node
       // built-ins). createAuthorizer / `guard` must run on the client so
       // `@Page({ middlewares: [guard.requireRole('admin')] })` can evaluate at
-      // module load. (A file that uses the server-only createAuth + db is caught
-      // by the @cossackframework/database rule or the src/auth.ts special-case.)
+      // module load. (A file that uses the server-only createAuth + sql is caught
+      // by the @cossackframework/orm rule or the src/auth.ts special-case.)
       const p = track(tempFile('rbac.ts', `import { createAuthorizer } from '@cossackframework/auth';\nexport const guard = createAuthorizer({ hasRole: () => true });\n`));
       expect(isServerOnlyModule(p)).toBe(false);
     });
@@ -1956,9 +2000,9 @@ describe('server-only module detection', () => {
       expect(isServerOnlyModule(p)).toBe(true);
     });
 
-    it('does NOT flag a type-only import from @cossackframework/database', () => {
+    it('does NOT flag a type-only import from @cossackframework/orm', () => {
       // `import type` erases at compile time and never pulls runtime code.
-      const p = track(tempFile('model.ts', `import type { Generated } from '@cossackframework/database';\nexport interface User { id: Generated<string>; }\n`));
+      const p = track(tempFile('model.ts', `import type { BaseEntity } from '@cossackframework/orm';\nexport interface User { id: BaseEntity<string>; }\n`));
       expect(isServerOnlyModule(p)).toBe(false);
     });
 
@@ -1970,7 +2014,7 @@ describe('server-only module detection', () => {
 
   describe('generateServerOnlyStub()', () => {
     it('stubs each named export as a throwing function', () => {
-      const p = track(tempFile('users.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => [];\nexport async function deleteUser(id: string) {}\n`));
+      const p = track(tempFile('users.ts', `import { sql } from '@cossackframework/orm';\nexport const listUsers = () => [];\nexport async function deleteUser(id: string) {}\n`));
       const stub = generateServerOnlyStub(p, 'services/users');
       expect(stub).toContain('// [cossack-security] services/users is server-only');
       expect(stub).toContain("export const listUsers = stub('listUsers');");
@@ -1980,7 +2024,7 @@ describe('server-only module detection', () => {
     });
 
     it('skips type-only exports (no runtime binding)', () => {
-      const p = track(tempFile('types.ts', `import { db } from '@cossackframework/database';\nexport const listUsers = () => [];\nexport type User = { id: string };\n`));
+      const p = track(tempFile('types.ts', `import { sql } from '@cossackframework/orm';\nexport const listUsers = () => [];\nexport type User = { id: string };\n`));
       const stub = generateServerOnlyStub(p, 'svc');
       expect(stub).toContain("export const listUsers = stub('listUsers');");
       // `export type User` must NOT produce a runtime stub binding.
@@ -2000,7 +2044,7 @@ describe('server-only module detection', () => {
     });
 
     it('strips a vite query suffix before deriving', () => {
-      expect(moduleLabelFromId('/app/src/db/config.ts?v=abc')).toBe('db/config');
+      expect(moduleLabelFromId('/app/src/sql/config.ts?v=abc')).toBe('sql/config');
     });
 
     it('handles backslash paths', () => {
