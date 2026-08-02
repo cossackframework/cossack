@@ -24,6 +24,7 @@
     "src/public.ts",
     "src/root.ts",
     "src/route-ids.ts",
+    "src/session.ts",
     "src/router.ts",
     "src/sitemap-generator.ts",
     "src/ssg-config.ts",

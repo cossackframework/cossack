@@ -1,39 +1,55 @@
-/**
- * A role assigned to a user, with its parsed permissions. Populated by
- * `resolveUserById` (src/auth.ts) and read by the authorizer (src/services/rbac.ts).
- */
+import {
+  BaseEntity,
+  Column,
+  CreateDateColumn,
+  Entity,
+  OneToMany,
+  PrimaryColumn,
+  type Relation,
+} from '@cossackframework/database';
+import { OAuthAccount } from './OAuthAccount';
+import { Session } from './Session';
+import { UserRole } from './UserRole';
+
 export interface RoleAssignment {
-    id: string;
-    name: string;
-    permissions: string[];
-}
-
-/**
- * The `users` table row shape. Column names match the migration (snake_case).
- * `id` and `created_at` are set by the app (uuidv7 + ISO timestamp), so they're
- * plain `string` — not Kysely `Generated` (which would make them optional on
- * insert and widen the read type). Add columns here as your app grows.
- */
-export interface UserRow {
   id: string;
-  email: string;
-  name: string | null;
-  password_hash: string | null;
-  avatar: string | null;
-  meta: string | null;
-  created_at: string;
+  name: string;
+  permissions: string[];
 }
 
-// Map the table name -> row type so Kysely's query builder is fully typed.
-declare module '@cossackframework/database' {
-  interface Database {
-    users: UserRow;
-  }
+@Entity({ tableName: 'users' })
+export class User extends BaseEntity {
+  @PrimaryColumn({ type: 'varchar', name: 'id', length: 191 })
+  declare id: string;
+
+  @Column({ type: 'varchar', name: 'email', length: 191, unique: true })
+  declare email: string;
+
+  @Column({ type: 'text', name: 'name', nullable: true })
+  declare name: string | null;
+
+  @Column({ type: 'text', name: 'password_hash', nullable: true })
+  declare passwordHash: string | null;
+
+  @Column({ type: 'text', name: 'avatar', nullable: true })
+  declare avatar: string | null;
+
+  @Column({ type: 'json', name: 'meta', nullable: true })
+  declare meta: Record<string, unknown> | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
+
+  @OneToMany(() => Session, (session) => session.user)
+  declare sessions: Relation<Session[]>;
+
+  @OneToMany(() => OAuthAccount, (account) => account.user)
+  declare oauthAccounts: Relation<OAuthAccount[]>;
+
+  @OneToMany(() => UserRole, (assignment) => assignment.user)
+  declare roleAssignments: Relation<UserRole[]>;
 }
 
-// Expose a safe subset as `this.user` / `c.get('user')`.
-// `password_hash` is intentionally excluded from the request context.
-// `roles` is populated at session resolution so the authorizer + nav can read it.
 declare module '@cossackframework/core' {
   interface User {
     id: string;

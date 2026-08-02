@@ -241,6 +241,21 @@ async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryMod
         '~': path.resolve(projectRoot, 'dist/client'),
       },
     },
+    environments: {
+      inline: {
+        resolve: {
+          // `runnerImport()` externalizes dependencies to Node by default.
+          // UI's published JavaScript still has runtime imports from Solar
+          // Icons, whose package exports point at TypeScript source. Transform
+          // both packages inside the runner so Node never tries to strip a
+          // `.ts` file from node_modules (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING).
+          noExternal: [
+            '@cossackframework/ui',
+            '@cossackframework/solar-icons',
+          ],
+        },
+      },
+    },
     plugins: [
       // The same cossack plugins the project's vite.config.ts registers, so
       // virtual:cossack-pages/-config/-lang and the .mdx transform resolve.

@@ -243,14 +243,14 @@ describe('delete', () => {
 });
 
 describe('generate model / migration / seeder', () => {
-  it('creates a typed User model under src/models/', async () => {
+  it('creates a decorated Active Record model under src/models/', async () => {
     expect(await generateCommand(['model', 'User'], ctx)).toBe(0);
     const file = path.join(tmp, 'src/models/User.ts');
     expect(fs.existsSync(file)).toBe(true);
     const content = fs.readFileSync(file, 'utf8');
-    expect(content).toContain('export interface UserRow');
-    expect(content).toContain("declare module '@cossackframework/database'");
-    expect(content).toContain("declare module '@cossackframework/core'");
+    expect(content).toContain('export class User extends BaseEntity');
+    expect(content).toContain('@Entity()');
+    expect(content).toContain('@PrimaryGeneratedColumn()');
   });
 
   it('creates a timestamped migration under src/migrations/', async () => {
@@ -260,8 +260,9 @@ describe('generate model / migration / seeder', () => {
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/^\d{4}_\d{2}_\d{2}_\d{6}_create_posts\.ts$/);
     const content = fs.readFileSync(path.join(dir, files[0]), 'utf8');
-    expect(content).toContain('export async function up');
-    expect(content).toContain('export async function down');
+    expect(content).toContain("name: 'create_posts'");
+    expect(content).toContain('async up({ orm, schema })');
+    expect(content).toContain('async down({ orm, schema })');
   });
 
   it('creates a seeder under src/seeders/', async () => {
@@ -269,7 +270,8 @@ describe('generate model / migration / seeder', () => {
     const file = path.join(tmp, 'src/seeders/users.ts');
     expect(fs.existsSync(file)).toBe(true);
     const content = fs.readFileSync(file, 'utf8');
-    expect(content).toContain('export default');
-    expect(content).toContain('async run(db');
+    expect(content).toContain('defineSeeder');
+    expect(content).toContain("name: 'users'");
+    expect(content).toContain('async run({ orm, sql })');
   });
 });

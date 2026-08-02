@@ -1,18 +1,32 @@
-import type { Generated } from '@cossackframework/database';
+import {
+  BaseEntity,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryColumn,
+  type Relation,
+} from '@cossackframework/database';
+import { Role } from './Role';
+import { User } from './User';
 
-/**
- * The `user_roles` join-table row shape — links a user to a role.
- * The (user_id, role_id) pair is the primary key, so each role is assigned
- * to a user at most once.
- */
-export interface UserRoleRow {
-    user_id: string;
-    role_id: string;
-    created_at: Generated<string>;
-}
+@Entity({ tableName: 'user_roles' })
+export class UserRole extends BaseEntity {
+  @PrimaryColumn({ type: 'varchar', name: 'user_id', length: 191 })
+  declare userId: string;
 
-declare module '@cossackframework/database' {
-    interface Database {
-        user_roles: UserRoleRow;
-    }
+  @PrimaryColumn({ type: 'varchar', name: 'role_id', length: 191 })
+  declare roleId: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  declare createdAt: Date;
+
+  @ManyToOne(() => User, (user) => user.roleAssignments)
+  @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })
+  declare user: Relation<User>;
+
+  @ManyToOne(() => Role, (role) => role.userAssignments)
+  @JoinColumn({ name: 'role_id', referencedColumnName: 'id' })
+  declare role: Relation<Role>;
 }

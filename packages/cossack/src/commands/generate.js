@@ -137,11 +137,11 @@ async function generateService(raw, root, ctx) {
   return report(target, result, ctx);
 }
 
-/** `cossack g model User` — scaffolds a typed model + Database/User augmentations. */
+/** `cossack g model Invoice` — scaffolds a decorated Active Record entity. */
 async function generateModel(raw, root, ctx) {
   const t = resolveFileTarget(raw, 'models', { pascal: true });
   const target = path.resolve(root, `${t.full}${t.ext}`);
-  const content = userModelTemplate();
+  const content = userModelTemplate({ className: toPascal(t.pascal) });
   const result = await writeFile(target, content, ctx);
   return report(target, result, ctx);
 }
@@ -150,7 +150,7 @@ async function generateModel(raw, root, ctx) {
 async function generateMigration(raw, root, ctx) {
   const t = resolveMigrationTarget(raw);
   const target = path.resolve(root, t.full);
-  const content = migrationTemplate();
+  const content = migrationTemplate({ name: t.kebab.replaceAll('-', '_') });
   const result = await writeFile(target, content, ctx);
   return report(target, result, ctx);
 }
@@ -159,7 +159,7 @@ async function generateMigration(raw, root, ctx) {
 async function generateSeeder(raw, root, ctx) {
   const t = resolveFileTarget(raw, 'seeders', { pascal: false });
   const target = path.resolve(root, `${t.full}${t.ext}`);
-  const content = seederTemplate();
+  const content = seederTemplate({ name: t.kebab });
   const result = await writeFile(target, content, ctx);
   return report(target, result, ctx);
 }

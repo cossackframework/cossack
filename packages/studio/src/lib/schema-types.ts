@@ -25,6 +25,7 @@ export interface StudioQueryResult {
 
 export interface StudioConnection {
   readonly info: StudioConnectionInfo;
+  readonly logicalSchema?: OrmSchema;
   execute(sql: string, parameters?: readonly unknown[]): Promise<StudioQueryResult>;
   close(): Promise<void>;
 }
@@ -48,6 +49,8 @@ export interface StudioColumn {
   primaryKeyPosition: number;
   autoIncrement: boolean;
   hidden: boolean;
+  logicalType?: LogicalType;
+  propertyName?: string;
 }
 
 export interface StudioIndexColumn {
@@ -77,6 +80,11 @@ export interface StudioForeignKey {
   columns: StudioForeignKeyColumn[];
   onUpdate: string | null;
   onDelete: string | null;
+}
+
+export interface StudioRelation extends RelationSchema {
+  readonly kind: RelationKind;
+  readonly provenance: 'orm';
 }
 
 export type StudioRowLocator =
@@ -109,12 +117,15 @@ export interface StudioObject {
   rowLocators: StudioRowLocator[];
   editable: boolean;
   readOnlyReason?: string;
+  modelName?: string;
+  relations?: StudioRelation[];
 }
 
 export interface StudioSchema {
   connection: StudioConnectionInfo;
   applicationName: string;
   objects: StudioObject[];
+  drift?: string[];
 }
 
 export interface StudioPragmaOption {
@@ -129,3 +140,9 @@ export interface StudioPragma {
   description: string;
   options?: StudioPragmaOption[];
 }
+import type {
+  LogicalType,
+  OrmSchema,
+  RelationKind,
+  RelationSchema,
+} from '@cossackframework/database';

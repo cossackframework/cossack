@@ -27,7 +27,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`node-adapter`**: The Node.js runtime adapter.
 -   **`framework`**: The meta framework package
 -   **`auth`**: Auth package
--   **`database`**: Database support — Kysely-based query builder with D1 + Turso dialects, migrations, and seeders. Re-exports Kysely. Included by default in new projects (the framework stays decoupled — no hard dependency); use `cossack add database` to add to existing projects.
+-   **`database`**: The `@cossackframework/database` workspace package provides decorated Active Record entities, migrations, seeders, and D1/libSQL/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
 -   **`test-utils`**: Test helpers
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.

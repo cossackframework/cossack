@@ -8,7 +8,7 @@ This document specifies the architecture of Cossack's server-side cache: the con
 2. **Lives in the framework.** The cache system is owned by `@cossackframework/framework` (exported from `@cossackframework/framework/cache`), not core, because it needs direct access to the config system (which is framework-owned). The framework already depends on core.
 3. **Server-only.** Cache data lives on the server. The facade resolves stores from the per-request config scope (set up by the config middleware). On the client there is no request scope.
 4. **Per-request resolution, per-isolate instances.** The *choice* of default store is resolved per-request from the config ALS (correct isolation — no first-request-wins bug). Store *instances* are memoized per-isolate keyed by driver+binding (bindings are stable per deployment, so reuse is safe and efficient).
-5. **Pluggable drivers.** Built-in drivers: `memory` (default), `kv`, `durable-object`. The `database` driver (`DatabaseCacheStore` from `@cossackframework/database`) is registered by the project template in `src/middlewares/db.ts` via `extendCacheDriver()` — the framework itself stays free of a database-package dependency. The framework installs a stub for `'database'` that throws a helpful error if the driver isn't registered. Custom drivers (Redis, R2, etc.) register the same way.
+5. **Pluggable drivers.** Built-in drivers: `memory` (default), `kv`, `durable-object`. The `database` driver from `@cossackframework/database/cossack` is registered in `src/middlewares/orm.ts` via `extendCacheDriver()`; Framework stays ORM-independent.
 6. **Multiple stores.** A config file can declare many stores (e.g. `memory` + `kv` + `database`). `cache.get()` uses the default; `cache.store('kv')` targets a named one.
 
 ## Package Responsibilities
@@ -17,7 +17,7 @@ This document specifies the architecture of Cossack's server-side cache: the con
 |---------|------|
 | `@cossackframework/framework` | Owns the cache system: `CacheStore` interface, built-in stores (`InMemoryCacheStore`, `KvCacheStore`, `DurableObjectCacheStore` + `CacheDurableObject`), the `CacheManager` (per-isolate instance cache + per-request config resolution), the `cache` facade, and `extendCacheDriver()`. Also owns `config/cache.ts` (the framework's own cache config). All exported from `@cossackframework/framework/cache`. |
 | `@cossackframework/core` | Provides `getRequestContext()` — the injection point the cache uses to resolve Worker bindings (`env.CACHE`, `env.CACHE_DO`) from the active request. No cache code lives in core. |
-| `@cossackframework/database` | Owns the database cache driver: `DatabaseCacheStore` (Kysely-backed, resolves `db()` lazily per operation). Declares a local `CacheStoreLike` interface (structurally identical to the framework's `CacheStore`) so the package stays free of a framework dependency. The framework does **not** depend on this package — the project template registers the driver via `extendCacheDriver('database', () => new DatabaseCacheStore())` in `src/middlewares/db.ts`. |
+| `@cossackframework/database/cossack` | Owns `createDatabaseCacheStore()`, which lazily resolves the scoped ORM and structurally implements Framework's cache contract. The template registers it with `extendCacheDriver('database', () => createDatabaseCacheStore())`. |
 | `cossack` CLI | No longer owns a cache-specific command — the `cache_items` migration ships as a default (`0006_create_cache_table.ts`). |
 
 ## TTL Units
@@ -76,9 +76,9 @@ The factory runs per request with access to `c.env` — so the binding-timing pr
 
 ### Database (`database`)
 
-`DatabaseCacheStore` (in `@cossackframework/database`) — SQLite via the per-request `db()` Kysely client. Table `cache_items(key, value, expires_at, updated_at)` with an index on `expires_at`. Upserts via `onConflict doUpdateSet`; lazy expiry on read plus explicit `purgeExpired()`. The client is resolved lazily per operation (not at construction), so a single instance serves every request.
+`createDatabaseCacheStore()` uses the request-scoped ORM and the physical table `cache_items(key, value, expires_at, updated_at)`. It handles upserts, lazy expiry, corrupt payloads, bulk operations, flushes, and misses.
 
-Not hard-imported by the framework (which stays decoupled). The project template registers it via `extendCacheDriver('database', () => new DatabaseCacheStore())` in `src/middlewares/db.ts`. If that registration is missing, the framework throws a helpful error pointing to the fix. Requires the `cache_items` table — shipped as a default migration (`0006_create_cache_table.ts`); apply with `cossack migration up`.
+Not hard-imported by Framework. The project template registers it from `src/middlewares/orm.ts`. It requires `cache_items`, shipped in migration `0006_create_cache_table.ts`.
 
 ## CacheManager
 
@@ -111,4 +111,4 @@ For binding *objects* (KV/DO namespaces), the cache uses `getRequestContext().en
 - `__resetCacheForTests()` resets manager state, called in `beforeEach`/`afterEach`.
 - Driver tests use structural fakes (`FakeKv implements CacheKvNamespace`, a fake DO namespace routing to one `CacheDurableObject` with an in-memory storage fake).
 - Manager/config tests scope a `ConfigStore` with a `cache` key via `runWithConfig()` and wire `setRequestContextGetter` to return a fake env for binding resolution.
-- `DatabaseCacheStore` tests (in the database package) use a real libsql SQLite DB, scoped via `runWithDb()`.
+- ORM cache contract tests use a real Node SQLite database inside `orm.run()`.

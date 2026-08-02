@@ -13,9 +13,7 @@ import { auth } from '../auth';
 import { authGuard } from '../middlewares/auth';
 
 const middlewares: MiddlewareHandler[] = [
-  // Order matters: dbMiddleware runs first to establish the AsyncLocalStorage
-  // scope that the global db() reads from. auth.middleware calls db() during
-  // session validation, and the authGuard reads the resulting c.get('user').
+  // Order matters: ORM scope, generic session, auth, then guards.
   dbMiddleware,
   auth.middleware,
   authGuard,

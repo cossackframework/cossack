@@ -13,12 +13,12 @@ import type { MiddlewareHandler } from 'hono';
 
 // Example middleware definitions available in this project:
 // import { loggingMiddleware } from '../middlewares/logging';
-// Database (after `cossack add database`):
-// import { dbMiddleware } from '../middlewares/db';
+// ORM (after `cossack add database`):
+// import { ormRequestMiddleware } from '../middlewares/orm';
 
 const middlewares: MiddlewareHandler[] = [
   // loggingMiddleware,        // logs every request — see src/middlewares/logging.ts
-  // dbMiddleware,             // exposes c.get('db') + the db() helper — requires @cossackframework/database
+  // ormRequestMiddleware,     // exposes c.get('orm') and scopes ORM operations
 ];
 
 export default middlewares;

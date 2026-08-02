@@ -56,11 +56,11 @@ export default defineConfig({
       '@cossackframework/ui',
       '@cossackframework/solar-icons',
       'hono',
-      'kysely',
+      'reflect-metadata',
     ],
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '~': path.resolve(__dirname, './dist/client'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '~': path.resolve(import.meta.dirname, './dist/client'),
     },
   },
   environments: {

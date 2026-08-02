@@ -1,5 +1,16 @@
-import { createClient } from '@libsql/client';
-import { createDatabase } from '@cossackframework/database';
+import 'reflect-metadata';
+import {
+  BaseEntity,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryColumn,
+  createORM,
+} from '@cossackframework/database';
+import { libsql } from '@cossackframework/database/node';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { runStudio } from '../dist/index.js';
@@ -8,6 +19,30 @@ import { createLocalConnection } from '../src/testing';
 let launchUrl = '';
 let abort: AbortController;
 let running: Promise<void>;
+
+class Department extends BaseEntity {}
+PrimaryColumn({ type: 'integer' })(Department.prototype, 'id');
+Column('text')(Department.prototype, 'name');
+OneToMany(() => Person, (person: any) => person.department)(Department.prototype, 'people');
+Entity({ tableName: 'departments' })(Department);
+
+class Person extends BaseEntity {}
+PrimaryColumn({ type: 'integer' })(Person.prototype, 'id');
+Column('text')(Person.prototype, 'name');
+Column({ type: 'varchar', nullable: true, length: 80 })(Person.prototype, 'nickname');
+Column({ type: 'integer', nullable: true })(Person.prototype, 'age');
+Column({ type: 'json', nullable: true })(Person.prototype, 'profile');
+CreateDateColumn({ name: 'created_at' })(Person.prototype, 'createdAt');
+Column({ type: 'integer', name: 'department_id' })(Person.prototype, 'departmentId');
+ManyToOne(() => Department, (department: any) => department.people)(
+  Person.prototype,
+  'department',
+);
+JoinColumn({ name: 'department_id', referencedColumnName: 'id' })(
+  Person.prototype,
+  'department',
+);
+Entity({ tableName: 'people' })(Person);
 
 async function replaceEditorValue(page: Page, testId: string, value: string) {
   const editor = page.getByTestId(testId);
@@ -18,9 +53,12 @@ async function replaceEditorValue(page: Page, testId: string, value: string) {
 }
 
 test.beforeAll(async () => {
-  const client = createClient({ url: ':memory:' });
+  const orm = createORM({
+    adapter: await libsql({ url: ':memory:' }),
+    entities: [Department, Person],
+  });
   const connection = createLocalConnection({
-    client: createDatabase({ dialect: 'libsql', client }),
+    orm,
     info: { provider: 'sqlite', label: 'E2E fixture' },
   });
   await connection.execute('CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
@@ -34,8 +72,8 @@ test.beforeAll(async () => {
       name TEXT NOT NULL,
       nickname VARCHAR(80),
       age INTEGER,
-      profile JSON,
-      created_at DATETIME NOT NULL,
+      profile TEXT,
+      created_at VARCHAR(32) NOT NULL,
       department_id INTEGER REFERENCES departments(id)
     )
   `);
@@ -46,8 +84,7 @@ test.beforeAll(async () => {
     'INSERT INTO legacy_users (id, name) VALUES (NULL, ?), (NULL, ?)',
     ['Repair me', 'Delete me'],
   );
-  await connection.execute('CREATE TABLE kysely_migration (name TEXT PRIMARY KEY)');
-  await connection.execute('CREATE TABLE kysely_migration_lock (id INTEGER PRIMARY KEY)');
+  await connection.execute('CREATE TABLE _cossack_migrations (name TEXT PRIMARY KEY)');
   for (let index = 1; index <= 55; index++) {
     await connection.execute(
       'INSERT INTO people (name, nickname, age, created_at, department_id) VALUES (?, ?, ?, ?, ?)',
@@ -56,7 +93,7 @@ test.beforeAll(async () => {
         `p${index}`,
         index,
         `2026-01-${String((index % 28) + 1).padStart(2, '0')} 12:00:00`,
-        index % 2 ? 1 : 2,
+        1,
       ],
     );
   }
@@ -97,18 +134,7 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(page.getByTestId('studio-version')).toContainText(/Studio v\d+\.\d+\.\d+/);
   await expect(page.getByTestId('database-version')).toContainText(/SQLite \d+/);
 
-  await expect(page.getByTestId('object-kysely_migration')).toHaveCount(0);
-  const systemTableTrigger = page.getByTestId('system-table-trigger');
-  await expect(
-    page.getByTestId('object-search').locator('..').getByTestId('system-table-trigger'),
-  ).toBeVisible();
-  await systemTableTrigger.hover();
-  await expect(
-    page.getByRole('tooltip').filter({ hasText: 'System table: 2' }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: /System table: 2/ }).click();
-  await page.getByLabel('kysely_migration', { exact: true }).check();
-  await expect(page.getByTestId('object-kysely_migration')).toBeVisible();
+  await expect(page.getByTestId('object-_cossack_migrations')).toHaveCount(0);
 
   const rootWasDark = await page.locator('html').evaluate((element) => element.classList.contains('dark'));
   await page.getByTestId('theme-toggle').click();
@@ -127,9 +153,41 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(page).toHaveURL(/table=people/);
   await expect(page.getByTestId('rows-empty')).toBeHidden();
   await expect(page.getByTestId('grid-row')).toHaveCount(55);
-  await expect(page.getByTestId('rows-loading')).toBeHidden();
-  await expect(page.getByTestId('row-count')).toContainText('55 rows');
-  await expect(page.getByTestId('page-size')).toHaveValue('100');
+  await expect(page.getByTestId('relation-column-department')).toContainText('Department');
+  await expect(page.getByTestId('relation-column-department')).toContainText('∞-1');
+  await page.getByTestId('relation-department-0').click();
+  await expect(page).toHaveURL(/table=people/);
+  await expect(page.getByTestId('relation-department-0')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('relation-panel-0')).toBeVisible();
+  await expect(page.getByTestId('relation-table-0')).toContainText('Engineering');
+  await expect(page.getByTestId('relation-row-0')).toHaveCount(1);
+  await page.getByTestId('relation-department-0').click();
+  await expect(page.getByTestId('relation-panel-0')).toHaveCount(0);
+  await page.getByTestId('object-departments').click();
+  await expect(page.getByTestId('relation-column-people')).toContainText('Person');
+  await expect(page.getByTestId('relation-column-people')).toContainText('1-∞');
+  await page.getByTestId('relation-people-0').click();
+  await expect(page).toHaveURL(/table=departments/);
+  await expect(page.getByTestId('relation-panel-0')).toContainText('55 related rows');
+  await expect(page.getByTestId('relation-panel-0')).toContainText('showing first 50');
+  await expect(page.getByTestId('relation-row-0')).toHaveCount(50);
+  const relatedTabPromise = page.context().waitForEvent('page');
+  await page.getByRole('button', { name: 'Open Person relation in a new tab' }).click();
+  const relatedTab = await relatedTabPromise;
+  await relatedTab.waitForLoadState('domcontentloaded');
+  await expect(relatedTab).toHaveURL(/table=people/);
+  await expect(relatedTab).toHaveURL(/filter=/);
+  await expect(relatedTab.getByTestId('grid-row')).toHaveCount(55);
+  await relatedTab.close();
+  await page.getByTestId('object-people').click();
+  await expect(page.getByTestId('grid-row')).toHaveCount(55);
+  await page.getByTestId('tab-structure').click();
+  await expect(page.getByTestId('column-type-created_at')).toContainText('datetime');
+  await expect(page.getByTestId('column-type-created_at')).toContainText('DB: VARCHAR(32)');
+  await expect(page.getByTestId('column-type-profile')).toContainText('json');
+  await expect(page.getByTestId('relation-table')).toContainText('department');
+  await expect(page.getByTestId('relation-table')).toContainText('∞-1');
+  await page.getByTestId('tab-browse').click();
   await page.getByTestId('foreign-key-department_id-0').click();
   await expect(page).toHaveURL(/table=departments/);
   await expect(page).toHaveURL(/filter=/);
@@ -256,6 +314,7 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await userVersion.getByLabel('user_version value').fill('42');
   await userVersion.getByTestId('apply-pragma-user_version').click();
   await expect(page.getByRole('status')).toContainText('PRAGMA user_version updated');
+  await expect(page.getByTestId('success-message-icon')).toBeVisible();
   await expect(userVersion.getByLabel('user_version value')).toHaveValue('42');
   await page.reload();
   await expect(page.getByTestId('pragmas-table')).toBeVisible();
@@ -424,6 +483,11 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(page.getByTestId('data-grid')).toContainText('999');
   await expect(page.getByRole('status')).toContainText('2 rows updated');
   await expect(page.getByTestId('rows-loading')).toBeHidden();
+
+  await page.getByTestId('grid-row').first().getByLabel('Select row 1').check();
+  await page.getByRole('button', { name: 'Cancel Selected' }).click();
+  await expect(page.getByRole('button', { name: 'Cancel Selected' })).toHaveCount(0);
+  await expect(page.getByTestId('grid-row').first().getByLabel('Select row 1')).not.toBeChecked();
 
   await page.getByTestId('grid-row').filter({ hasText: 'Inserted person' })
     .getByRole('button', { name: 'Delete row' }).click();

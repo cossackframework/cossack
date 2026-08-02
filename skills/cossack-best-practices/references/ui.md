@@ -213,7 +213,7 @@ html`${component(Toaster, {})}`;
 // fire a toast from anywhere:
 @Server()
 async save() {
-    await db().updateTable('settings')...;
+    await Setting.update({ id }, patch);
     toast.success('Settings saved!');
 }
 ```

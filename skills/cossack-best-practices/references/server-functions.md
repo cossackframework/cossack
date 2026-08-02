@@ -14,8 +14,9 @@ result.
 | Broadcast or server-to-client action | `@Server()` |
 | Code that runs on both sides | `@Shared()` |
 
-Do not invent `this.server$`, `this.db`, `session$`, or `env$`. Import `server$`
-from core; call `db()`, `config()`, `session()`, and `flash()` inside loaders.
+Do not invent `this.server$`, `this.orm`, `session$`, or `env$`. Import
+`server$` from core; use decorated models, `config()`, `session()`, and
+`flash()` inside loaders.
 
 ## Named resource
 
@@ -23,12 +24,12 @@ Class fields require `{ initial }` and expose the value directly:
 
 ```typescript
 import { Cossack, Page, server$ } from '@cossackframework/core';
-import { db } from '@cossackframework/database';
+import { User } from '@/models/User';
 
 @Page({ transport: 'http' })
 export default class UsersPage extends Cossack {
     users = server$(
-        () => db().selectFrom('users').selectAll().execute(),
+        () => User.find({ order: { createdAt: 'desc' } }),
         { initial: [] },
     );
 

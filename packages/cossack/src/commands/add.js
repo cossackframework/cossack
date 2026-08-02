@@ -103,7 +103,7 @@ export function addHelp() {
 
 Options:
   component                         Eject a UI component for customization
-  --database <d1|sqlite|turso>
+  --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
   --runtime <cloudflare|node>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>

@@ -9,24 +9,25 @@ Cossack integrates directly with Hono's middleware system. Middleware functions 
 
 There are two kinds of middleware in Cossack:
 
-- **[Global request middleware](#global-request-middleware)** — runs on *every* request, sets up request-scoped context (database client, auth session, feature flags). Defined in `src/middlewares/*.ts` and registered in `src/bootstrap/middlewares.ts`.
+- **[Global request middleware](#global-request-middleware)** — runs on *every* request and sets up ORM, session, auth, or feature-flag context.
 - **[Route-level middleware](#colocated-middleware)** — runs for specific pages/layouts via `@Page({ middlewares })`. Used for per-route concerns like auth guards ("redirect to /login").
 
 ## Global request middleware
 
-For middleware that must run on every request and set up context the rest of the app reads (`c.get('db')`, `c.get('user')`, etc.), use the **`src/bootstrap/middlewares.ts` registry**. `createApp()` auto-loads this file and registers each middleware with `app.use('*', ...)` in array order, before the locale middleware.
+For middleware that must run on every request and set up context the rest of the app reads (`c.get('orm')`, `c.get('session')`, `c.get('user')`), use the **`src/bootstrap/middlewares.ts` registry**.
 
 This is a Laravel-style "kernel" list: middleware *definitions* live in `src/middlewares/*.ts`, and `src/bootstrap/middlewares.ts` only holds the ordered references — so adding or removing a feature is a clean one-line edit (no surgery on your `createApp()` call).
 
 ```ts
 // src/bootstrap/middlewares.ts
 import type { MiddlewareHandler } from 'hono';
-import { dbMiddleware } from '../middlewares/db';
-import { sessionMiddleware } from '../middlewares/session';
+import { ormRequestMiddleware, sessionMiddleware } from '../middlewares/orm';
+import { auth } from '../auth';
 
 const middlewares: MiddlewareHandler[] = [
-  sessionMiddleware, // resolves c.get('user')
-  dbMiddleware,      // exposes c.get('db') + the db() helper
+  ormRequestMiddleware,
+  sessionMiddleware,
+  auth.middleware,
 ];
 
 export default middlewares;
@@ -42,7 +43,8 @@ export const loggingMiddleware = defineServerMiddleware(async (c, next) => {
 });
 ```
 
-Feature commands add to the registry for you — for example `cossack add auth` registers the auth middleware. New projects ship with `dbMiddleware` already registered (see [Database](/docs/database.md)). The locale middleware is framework-built-in and always runs (a no-op without `src/lang/`); it doesn't need an entry in this file.
+Feature commands maintain this order automatically. The locale middleware is
+Framework-built-in and does not need an entry.
 
 > If `src/bootstrap/middlewares.ts` is absent, no global middlewares run — existing apps are unaffected.
 

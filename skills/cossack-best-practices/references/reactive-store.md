@@ -118,7 +118,7 @@ import { toast } from './toast';
 
 @Server()
 async saveSettings() {
-    await db().updateTable('settings')...;
+    await Setting.update({ id }, patch);
     toast.success('Settings saved!');
 }
 ```

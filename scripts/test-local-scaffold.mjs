@@ -12,9 +12,9 @@ const packageDirectories = [
   'core',
   'node-adapter',
   'auth',
-  'database',
   'ui',
   'framework',
+  'database',
   'studio',
   'scaffold',
   'cossack',
@@ -36,6 +36,7 @@ async function buildPublishablePackages() {
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
+  await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
 }
 
@@ -62,6 +63,7 @@ async function packPackages(destination) {
 
 async function useTarballs(projectDir, tarballs) {
   const packagePath = path.join(projectDir, 'package.json');
+  const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
   const pkg = JSON.parse(await fs.readFile(packagePath, 'utf8'));
   const overrides = {};
   for (const [name, tarball] of tarballs) {
@@ -76,14 +78,22 @@ async function useTarballs(projectDir, tarballs) {
     ...(pkg.devDependencies ?? {}),
     '@cossackframework/scaffold': `file:${tarballs.get('@cossackframework/scaffold')}`,
   };
-  pkg.pnpm = {
-    ...(pkg.pnpm ?? {}),
-    overrides: {
-      ...(pkg.pnpm?.overrides ?? {}),
-      ...overrides,
-    },
-  };
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+
+  // pnpm 11 moved overrides out of package.json's `pnpm` field. Keep the
+  // tarball acceptance project compatible with both pnpm 10 and 11 by writing
+  // the workspace setting used by current generated applications.
+  const workspace = await fs.readFile(workspacePath, 'utf8');
+  if (/^overrides:\s*$/m.test(workspace)) {
+    throw new Error('Local tarball smoke test expected no existing workspace overrides');
+  }
+  const renderedOverrides = Object.entries(overrides)
+    .map(([name, target]) => `  ${JSON.stringify(name)}: ${JSON.stringify(target)}`)
+    .join('\n');
+  await fs.writeFile(
+    workspacePath,
+    `${workspace.trimEnd()}\n\noverrides:\n${renderedOverrides}\n`,
+  );
 }
 
 async function installGeneratedProject(projectDir) {
@@ -209,6 +219,63 @@ async function assertStarterBundleBudgets(projectDir) {
       `Starter server bundle is ${serverBytes} bytes; budget is ${serverBudget}`,
     );
   }
+}
+
+async function verifyGeneratedORMApplication(projectDir) {
+  const fixture = path.join(projectDir, '.cossack-orm-acceptance.ts');
+  await fs.writeFile(fixture, `import {
+  createDatabaseCacheStore,
+  createDatabaseSessionStore,
+} from '@cossackframework/database/cossack';
+import { getORM } from './src/orm/factory';
+import { Role, User, UserRole } from './src/models';
+
+const orm = await getORM();
+try {
+  await orm.run(async () => {
+    const user = await User.findOne({ where: { email: 'admin@example.com' } });
+    const role = await Role.findOne({ where: { name: 'admin' } });
+    if (!user || !role) throw new Error('Seeder did not create the admin user and role');
+    const assignment = await UserRole.findOne({
+      where: { userId: user.id, roleId: role.id },
+    });
+    if (!assignment) throw new Error('Seeder did not create the admin role assignment');
+
+    const cache = createDatabaseCacheStore(orm);
+    await cache.set('acceptance', { ok: true }, 60);
+    const cached = await cache.get<{ ok: boolean }>('acceptance');
+    if (!cached?.ok) throw new Error('ORM cache store round-trip failed');
+    await cache.delete('acceptance');
+
+    const sessions = createDatabaseSessionStore(orm);
+    const sessionId = await sessions.create(60_000);
+    await sessions.set(sessionId, 'acceptance', 'ok', 60_000);
+    await sessions.bindUser(sessionId, user.id);
+    if (await sessions.get(sessionId, 'acceptance') !== 'ok') {
+      throw new Error('ORM session store round-trip failed');
+    }
+    await sessions.destroy(sessionId);
+  });
+} finally {
+  await orm.close();
+}
+`);
+  await run('pnpm', ['exec', 'tsx', fixture], { cwd: projectDir });
+}
+
+async function verifyGeneratedStudio(projectDir) {
+  const smoke = `import { runStudio } from '@cossackframework/studio';
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 250);
+await runStudio({
+  projectRoot: process.cwd(),
+  port: 41739,
+  open: false,
+  signal: controller.signal,
+});`;
+  await run(process.execPath, ['--input-type=module', '--eval', smoke], {
+    cwd: projectDir,
+  });
 }
 
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
@@ -400,6 +467,11 @@ export default class PackagingSsgPage extends Cossack {
     '--yes',
   ], { cwd: projectDir });
   await installGeneratedProject(projectDir);
+  await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
+  await run('pnpm', ['exec', 'cossack', 'seeder', 'run'], { cwd: projectDir });
+  await run('pnpm', ['run', 'schema:check'], { cwd: projectDir });
+  await verifyGeneratedORMApplication(projectDir);
+  await verifyGeneratedStudio(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   const nodeManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),

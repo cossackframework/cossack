@@ -66,7 +66,7 @@ cossack create my-app --adapter node --preset full-stack
 
 ### `cossack adapter <node|cloudflare>`
 
-Switch an existing schema-v2 scaffolded project to one active runtime. The
+Switch an existing schema-v3 scaffolded project to one active runtime. The
 command re-renders the complete recorded recipe, previews the change set,
 preserves installed features and unrelated local edits, and updates the
 manifest and `package.json` runtime metadata.
@@ -206,7 +206,9 @@ cossack add <feature> [options]
 
 #### `cossack add database`
 
-Adds `@cossackframework/database` (Kysely with D1 and Turso dialects), a default `User` model, starter migrations (`users`, `sessions`, `roles`, `permissions`, `oauth_accounts`, `cache_items`), a seeder, runtime `src/db/config.ts`, CLI-only `src/db/cli.ts`, the `dbMiddleware`, and the D1 binding in `wrangler.jsonc`. Prompts for the dialect (default: D1).
+Adds `@cossackframework/database`, decorated entities, deterministic migrations and
+seeders, `orm.config.ts`, a runtime-specific ORM factory, ORM/session/cache
+middleware, and the selected provider binding.
 
 > **Note:** The Database and Full Stack presets include database support. Use
 > this command for Minimal projects or to compose it later.
@@ -276,7 +278,7 @@ See [Localization](/docs/localization.md) for details.
 
 ### `cossack migration` (alias: `migrate`)
 
-Run [Kysely](https://kysely.dev/) migrations under `src/migrations/`.
+Run deterministic ORM migrations registered by `orm.config.ts`.
 
 ```bash
 cossack migration up        # Apply all pending migrations

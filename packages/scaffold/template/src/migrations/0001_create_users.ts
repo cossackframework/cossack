@@ -1,20 +1,21 @@
-import type { Kysely } from '@cossackframework/database';
+import type { Migration } from '@cossackframework/database';
 
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('users')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('email', 'text', (c) => c.notNull().unique())
-    .addColumn('name', 'text')
-    .addColumn('password_hash', 'text')
-    // avatar is a URL to the user's profile picture (nullable until set).
-    .addColumn('avatar', 'text')
-    // meta is a JSON bag for arbitrary user metadata (preferences, flags, ...).
-    .addColumn('meta', 'text')
-    .addColumn('created_at', 'text', (c) => c.notNull())
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('users').ifExists().execute();
-}
+export default {
+  name: '0001_create_users',
+  up({ orm, schema }) {
+    schema.raw(orm.sql.unsafe(`
+      CREATE TABLE users (
+        id VARCHAR(191) PRIMARY KEY,
+        email VARCHAR(191) NOT NULL UNIQUE,
+        name TEXT,
+        password_hash TEXT,
+        avatar TEXT,
+        meta TEXT,
+        created_at VARCHAR(32) NOT NULL
+      )
+    `));
+  },
+  down({ schema }) {
+    schema.dropTable('users');
+  },
+} satisfies Migration;

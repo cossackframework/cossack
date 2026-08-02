@@ -1,188 +1,275 @@
-# @cossackframework/database
+# `@cossackframework/database`
 
-Database support for the [Cossack Framework](https://github.com/cossackframework/cossack) — a type-safe query builder built on [Kysely](https://kysely.dev), with first-class dialects for **Cloudflare D1** and **Turso** (libSQL), plus migrations and seeders.
-
-- Re-exports Kysely — no need to install it separately (`import { Kysely, Generated, sql } from '@cossackframework/database'`).
-- Custom D1 and libSQL/Turso dialects written against Kysely 0.29 (the community `kysely-d1` / `kysely-libsql` packages are stale).
-- Per-request client via Hono middleware **and** a global `db()` helper (AsyncLocalStorage).
-- Kysely migrator + seeder runners, driven by the `cossack` CLI.
-
-> Database support is included by the Database, Auth, and Full Stack recipes.
-> Those recipes ship migrations, wire `dbMiddleware`, and register the database
-> cache driver. The framework itself stays decoupled (no hard dependency).
+An ESM-only, serverless-first Active Record ORM for Cossack. It provides decorated
+models, safe SQL, a fluent query builder, explicit request scopes, schema metadata,
+introspection, and deterministic migrations without a repository layer or a
+runtime schema-sync mode.
 
 ## Install
 
-Select the Database or Full Stack preset with `cossack create`, or add database
-support to an existing project:
-
-```bash
-npx cossack add database
+```sh
+pnpm add @cossackframework/database reflect-metadata
 ```
 
-This scaffolds `src/models/`, `src/migrations/`, `src/seeders/`,
-`src/db/config.ts` for the application runtime, and `src/db/cli.ts` for
-Node-only tools. It also adds the dependency to `package.json` and (for D1)
-injects a `[[d1_databases]]` binding into `wrangler.jsonc`.
+Install only the optional driver used by the application (`pg`, `mysql2`,
+`@libsql/client`, or `better-sqlite3`). Node 22's built-in `node:sqlite`, Bun SQL,
+and Cloudflare D1 need no third-party database driver.
 
-## Connecting
-
-A Kysely client is created with `createDatabase()`, which selects the dialect. Pick one (the `cossack add database` command generates the right one for your chosen dialect):
-
-**Cloudflare D1** — pass the binding:
-
-```ts
-import { createDatabase } from '@cossackframework/database'
-
-export function createClient(env: { DB: D1Database }) {
-  return createDatabase({ dialect: 'd1', binding: env.DB })
-}
-```
-
-**Turso / libSQL** — pass a client built from `@tursodatabase/serverless/compat` (recommended, fetch-based) or `@libsql/client/web`. Works on Workers + Node:
-
-```ts
-import { createDatabase } from '@cossackframework/database'
-import { createClient as createLibsqlClient } from '@tursodatabase/serverless/compat'
-
-export function createClient(env: { TURSO_URL: string; TURSO_TOKEN?: string }) {
-  return createDatabase({
-    dialect: 'libsql',
-    client: createLibsqlClient({ url: env.TURSO_URL, authToken: env.TURSO_TOKEN }),
-  })
-}
-```
-
-The generated `src/db/cli.ts` exports `getCliClient()` for migration, seeder,
-and Studio commands (see [Migrations](../../docs/migrations.md)).
-
-### Wiring the middleware
-
-`cossack add database` registers the middleware in `src/bootstrap/middlewares.ts` — the project's global request middleware registry, which `createApp()` auto-loads. No `src/index.ts` edits:
-
-```ts
-// src/bootstrap/middlewares.ts
-import type { MiddlewareHandler } from 'hono'
-import { dbMiddleware } from '../middlewares/db'
-
-const middlewares: MiddlewareHandler[] = [
-  dbMiddleware,
-]
-export default middlewares
-```
-
-The middleware is defined in `src/middlewares/db.ts`:
-
-```ts
-// src/middlewares/db.ts
-import { createDbMiddleware } from '@cossackframework/database'
-import { createClient } from '../db/config'
-
-export const dbMiddleware = createDbMiddleware({
-  client: (c) => createClient(c.env),
-})
-```
-
-This exposes the client on the request (`c.get('db')` / `getDb(c)`) and wraps the request in a scope so the global `db()` helper resolves to it.
-
-## Querying
-
-From a component method:
-
-```ts
-import { db } from '@cossackframework/database'
-
-@Server()
-async getUsers() {
-  return await db().selectFrom('users').selectAll().execute()
-}
-```
-
-From an API route:
-
-```ts
-import { getDb } from '@cossackframework/database'
-
-export default async (c: Context) => {
-  const users = await getDb(c).selectFrom('users').selectAll().execute()
-  return c.json(users)
-}
-```
-
-## Typing your schema
-
-The `Database` interface (table → row) and the `User` (auth) interface are both empty by default and augmented from `src/models/`:
-
-```ts
-// src/models/User.ts
-import type { Generated } from '@cossackframework/database'
-
-export interface UserRow {
-  id: Generated<string>
-  email: string
-  name: string
-  passwordHash: string
-}
-
-declare module '@cossackframework/database' {
-  interface Database { users: UserRow }
-}
-
-// Safe subset exposed as this.user / c.get('user') (no passwordHash)
-declare module '@cossackframework/core' {
-  interface User { id: string; email: string; name: string }
-}
-```
-
-## Migrations & seeders (CLI)
-
-```bash
-cossack generate migration create_users
-cossack migration up        # apply pending
-cossack migration down      # revert the latest
-cossack migration status
-
-cossack generate seeder users
-cossack seeder run
-```
-
-## Transactions
-
-- **Turso / libSQL** supports interactive transactions via Kysely's `db().transaction().execute(async (trx) => { ... })`.
-- **D1** does **not** support `BEGIN`/`COMMIT` through its binding. For atomic multi-statement writes, use the raw D1 binding's `.batch([...])` with prepared statements (e.g. `c.env.DB.batch([...])`) — Kysely has no `.batch()`; for single-statement writes, just call the Kysely builder directly.
-
-The migrator is unaffected — the SQLite adapter reports `supportsTransactionalDdl: false`, so each migration runs without a transaction wrapper.
-
-## Dialects
-
-| Dialect | Config | Where it runs | Driver |
-|---|---|---|---|
-| **D1** | `{ dialect: 'd1', binding: env.DB }` | Cloudflare Workers | The D1 binding (no extra dep) |
-| **Turso / libSQL** | `{ dialect: 'libsql', client }` | Workers + Node | `@tursodatabase/serverless/compat` (recommended) or `@libsql/client/web` |
-
-Postgres and MySQL adapters are planned for a later release.
-
-## No build step
-
-This package is **published and consumed as TypeScript source** — there is no `build` script and no `dist/` directory, just like `@cossackframework/auth`. The `package.json` entry points straight at `src/index.ts`:
+Use TypeScript legacy decorators:
 
 ```json
 {
-  "main": "src/index.ts",
-  "exports": { ".": { "types": "./src/index.ts", "import": "./src/index.ts" } },
-  "files": ["src"]
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false
+  }
 }
 ```
 
-Consumers compile it at their own build/run time:
+## Documentation
 
-- **User apps** — the framework's Vite build bundles it into the Worker (SSR) bundle; it never reaches the client bundle (server-only).
-- **The `cossack` CLI** — the `migration` / `seeder` commands run under `tsx`, which loads the `.ts` source directly.
+- [Introduction](./docs/introduction.md)
+- [Installation](./docs/installation.md)
+- [Models](./docs/models.md)
+- [Queries](./docs/queries.md)
+- [Relationships](./docs/relationships.md)
+- [Raw queries](./docs/raw-queries.md)
+- [Runtimes](./docs/runtimes.md)
+- [Migrations](./docs/migrations.md)
+- [Seeders](./docs/seeders.md)
+- [Advanced usage](./docs/advanced.md)
+- [Comparison](./docs/comparison.md)
 
-This keeps the source debuggable, avoids a stale `dist/` to rebuild before every change, and means the publish workflow needs no build step — it runs `pnpm publish --filter @cossackframework/database` straight from `src/`.
+## Models and request scope
 
-To work on this package locally: edit files under `src/`, then run `pnpm vitest --run` from the package directory (or `pnpm tsc --noEmit` to typecheck). The [root tsconfig](../tsconfig.json) maps `@cossackframework/database` to `./packages/database/src` so workspace consumers resolve your edits immediately.
+```ts
+import "reflect-metadata";
+import {
+  BaseEntity,
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  createORM,
+} from "@cossackframework/database";
+import { nodeSQLite } from "@cossackframework/database/node";
 
-## License
+@Entity()
+export class User extends BaseEntity {
+  @PrimaryGeneratedColumn()
+  declare id: number;
 
-MIT
+  @Column()
+  declare email: string;
+
+  @Column({ type: "json" })
+  declare preferences: Record<string, unknown>;
+
+  @CreateDateColumn()
+  declare createdAt: Date;
+}
+
+const orm = createORM({
+  adapter: await nodeSQLite({ filename: "app.db" }),
+  entities: [User],
+});
+
+await orm.run(async () => {
+  const user = User.create({
+    email: "ada@example.com",
+    preferences: { theme: "dark" },
+  });
+  await user.save();
+
+  const active = await User.query("user")
+    .where((where) => where.like("email", "%@example.com"))
+    .orderBy("createdAt", "desc")
+    .limit(20)
+    .getMany();
+});
+```
+
+Static Active Record methods and the global `sql` tag deliberately throw outside
+`orm.run()`. Put one scope around each request, queue job, scheduled task, or CLI
+operation. Runtime adapters provide async-local isolation; a nested transaction
+rebinds the scope to its transaction client and uses savepoints when supported.
+
+## Safe SQL
+
+```ts
+import { sql } from "@cossackframework/database";
+
+await orm.run(async () => {
+  const email = "'; DROP TABLE users; --";
+  const result = await sql`
+    SELECT ${sql.id("id")}, ${sql.id("email")}
+    FROM ${sql.id("users")}
+    WHERE ${sql.id("email")} = ${email}
+  `;
+});
+```
+
+Values always become parameters. `sql.id()` is the identifier escape hatch,
+`sql.fragment` composes queries, `sql.join()` builds lists, and `sql.values()`
+builds object/bulk insert tuples. `sql.unsafe()` is the only API that injects
+literal SQL.
+
+`new SQL({ adapter })` creates a standalone Bun-compatible tagged client. In Node,
+`new SQL("postgres://…")`, `new SQL("mysql://…")`, `new SQL("libsql://…")`, and
+SQLite paths select an adapter lazily. Workers intentionally require a binding or
+explicit adapter rather than environment URL guessing.
+
+## Relations
+
+Relations load only when requested:
+
+```ts
+const users = await User.find({
+  where: { enabled: true },
+  relations: ["roles"],
+});
+```
+
+The loader batches keys and chunks them at the adapter's parameter limit. Owning
+relations expose both logical metadata and physical join columns. Many-to-many
+associations require `@JoinTable()` on one side. Cascades are opt-in with
+`{ cascade: ["insert", "update"] }`; delete cascades remain database behavior and
+are never replayed across an in-memory object graph.
+
+## Runtime adapters
+
+| Runtime entry | Adapters |
+| --- | --- |
+| `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `libsql` |
+| `@cossackframework/database/bun` | `bun` over the documented Bun SQL core API |
+| `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL` |
+| `@cossackframework/database/deno` | `deno` with an injected remote or SQLite driver |
+| `@cossackframework/database/adapter` | public dialect, driver, result, scope, and capability contracts |
+| `@cossackframework/database/cossack` | middleware plus database cache/session stores |
+
+D1 uses prepared statements and `batch()`. It supports atomic migration batches,
+but rejects interactive transactions, savepoints, and connection reservation with
+`UnsupportedCapabilityError`. Enable Workers' narrow `nodejs_als` compatibility
+flag for request scope isolation.
+
+Hyperdrive creates and closes a request-local `pg`/`mysql2` client while
+Hyperdrive owns the global pool. Workers need `nodejs_compat`; `mysql2` uses
+`disableEval: true`. See Cloudflare's current
+[D1 binding API](https://developers.cloudflare.com/d1/worker-api/),
+[Hyperdrive guide](https://developers.cloudflare.com/hyperdrive/get-started/),
+and [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/).
+
+## Schema and migrations
+
+`orm.config.ts` is the single configuration used by the CLI and Studio:
+
+```ts
+import { defineConfig } from "@cossackframework/database";
+import { nodeSQLite } from "@cossackframework/database/node";
+import { entities } from "./src/entities/index.js";
+import { migrations } from "./migrations/index.js";
+import { seeders as seeds } from "./seeders/index.js";
+
+export default defineConfig({
+  entities,
+  migrations,
+  migrationDirectory: "./migrations",
+  seeds,
+  adapter: () => nodeSQLite({ filename: "app.db" }),
+});
+```
+
+```sh
+cossack-orm migration snapshot
+cossack-orm migration generate add_users
+cossack-orm migration squash 0001_schema --prune
+cossack-orm migration up
+cossack-orm migration down
+cossack-orm migration status
+cossack-orm migration check
+cossack-orm migration baseline
+cossack-orm schema pull
+cossack-orm schema diff
+cossack-orm schema check
+cossack-orm seed list
+cossack-orm seed run
+cossack-orm seed run --only users,posts
+```
+
+Generated migrations compare current decorators with a committed model schema
+snapshot; database introspection remains limited to `schema diff/check/pull`.
+Migrations are reviewable TypeScript and are never run during application
+startup. Dropped tables/columns and narrowing changes require
+`--allow-destructive`. Rename detection is never heuristic: set `renamedFrom` on
+the entity or column. `_cossack_migrations` stores the migration name, SHA-256
+checksum, batch, and application timestamp.
+
+`orm.schema()` returns versioned, serializable `OrmSchema` metadata. Studio can
+merge it with `orm.introspect()` to display logical types and virtual relations
+even where SQLite's physical affinity is less specific.
+
+## Seeders
+
+Declare named seeders and keep their execution order in one exported array:
+
+```ts
+import {
+  SeederRunner,
+  defineSeeder,
+} from "@cossackframework/database";
+
+export const usersSeeder = defineSeeder({
+  name: "users",
+  transaction: "auto",
+  async run({ orm, sql, signal }) {
+    // Active Record calls are already in ORM scope.
+  },
+});
+
+export const seeders = [usersSeeder] as const;
+
+const results = await new SeederRunner(orm, seeders).run({
+  only: ["users"],
+});
+```
+
+Seeders run sequentially in configuration order and stop at the first failure.
+`"auto"` uses one transaction per seeder where supported, `"required"` fails
+before writing when interactive transactions are unavailable, and `"none"`
+executes without a runner-managed transaction. On D1, `"auto"` runs without an
+interactive transaction; use a database-specific batch inside a `"none"` seeder
+when the work must be atomic.
+
+`SeederRunner` owns scope, selection, transaction policy, cancellation, and
+failure attribution. Framework CLIs should load `orm.config.ts` and delegate to
+this runner instead of implementing their own seed loop. Environment and
+production-confirmation policies belong in the framework CLI. Seed data remains
+application-owned and should be idempotent through stable keys, existence checks,
+or upserts; seeders are not recorded as migrations.
+
+## Deliberate v1 boundaries
+
+There is no Data Mapper/repository API, legacy query-builder compatibility layer, automatic
+schema mutation at startup, NoSQL/GraphQL integration, or ORM query-result cache.
+Database-specific operations remain available through safe SQL fragments and
+custom third-party adapters.
+
+## Complete SQLite example
+
+[`examples/sqlite-starter`](./examples/sqlite-starter/README.md) contains
+related `User` and `Post` models, a versioned migration, an idempotent seeder,
+and executable create/migrate/seed/query scripts:
+
+```sh
+pnpm example:sqlite
+pnpm exec tsx ./examples/sqlite-starter/query.ts
+```
+
+[`examples/multiple-connections`](./examples/multiple-connections/README.md)
+demonstrates two independent SQLite connections with separate models,
+migrations, transactions, CLI configs, and concurrent explicit-manager queries:
+
+```sh
+pnpm example:multiple-connections
+```

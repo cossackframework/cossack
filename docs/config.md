@@ -351,7 +351,8 @@ On Cloudflare Workers, a single isolate serves many concurrent requests. To prev
 2. It stores the resulting tree in an ALS scope.
 3. `config()` and `env()` read from the scope, so every request gets its own values.
 
-This mirrors the same ALS pattern used by `__()` (locale), `db()` (database client), `flash()` (flash data), and `getRequestContext()`.
+This mirrors the ALS pattern used by `__()` (locale), application ORM scopes,
+`flash()`, and `getRequestContext()`.
 
 ### SSG
 

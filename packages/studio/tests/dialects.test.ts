@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DummyDriver,
-  D1Adapter,
-  Kysely,
-  MysqlAdapter,
-  MysqlQueryCompiler,
-  PostgresAdapter,
-  PostgresQueryCompiler,
-  SqliteIntrospector,
-} from '@cossackframework/database';
-import {
-  createLocalConnection,
   detectStudioProvider,
   StudioDatabase,
   type StudioConnection,
@@ -419,43 +408,31 @@ function mysqlConnection() {
 }
 
 describe('Studio dialect detection', () => {
-  it('uses Kysely runtime dialect metadata before environment heuristics', async () => {
-    class PostgresIntrospector {}
-    class MysqlAdapter {}
-    const postgres = {
-      introspection: new PostgresIntrospector(),
-      getExecutor: () => ({ adapter: { constructor: { name: 'UnknownAdapter' } } }),
-    };
-    const mysql = {
-      introspection: { constructor: { name: 'UnknownIntrospector' } },
-      getExecutor: () => ({ adapter: new MysqlAdapter() }),
-    };
-    const d1 = {
-      introspection: { constructor: { name: 'UnknownIntrospector' } },
-      getExecutor: () => ({ adapter: new D1Adapter() }),
-    };
+  it('uses ORM driver dialect metadata before environment heuristics', async () => {
+    const postgres = { driver: { dialect: 'postgres' } };
+    const mysql = { driver: { dialect: 'mysql' } };
+    const d1 = { driver: { dialect: 'sqlite' } };
     expect(await detectStudioProvider(
       postgres as any,
       { DB_CONNECTION: 'mysql' } as NodeJS.ProcessEnv,
     )).toBe('postgres');
     expect(await detectStudioProvider(mysql as any, {})).toBe('mysql');
-    expect(await detectStudioProvider(d1 as any, {})).toBe('d1-local');
+    expect(await detectStudioProvider(
+      d1 as any,
+      { DB_CONNECTION: 'd1' } as NodeJS.ProcessEnv,
+    )).toBe('d1-local');
   });
 
-  it('supports environment hints for custom dialect wrappers', async () => {
-    const custom = {
-      introspection: { constructor: { name: 'CustomIntrospector' } },
-      getExecutor: () => ({ adapter: { constructor: { name: 'CustomAdapter' } } }),
-      executeQuery: async () => { throw new Error('not connected in unit test'); },
-    };
+  it('supports environment hints for SQLite-family ORM adapters', async () => {
+    const custom = { driver: { dialect: 'sqlite' } };
     expect(await detectStudioProvider(
       custom as any,
-      { DATABASE_URL: 'postgresql://localhost/app' } as NodeJS.ProcessEnv,
-    )).toBe('postgres');
+      { TURSO_URL: 'libsql://example.turso.io' } as NodeJS.ProcessEnv,
+    )).toBe('libsql');
     expect(await detectStudioProvider(
       custom as any,
-      { DB_CONNECTION: 'mariadb' } as NodeJS.ProcessEnv,
-    )).toBe('mysql');
+      { DB_CONNECTION: 'd1' } as NodeJS.ProcessEnv,
+    )).toBe('d1-local');
   });
 });
 
@@ -516,53 +493,6 @@ describe('D1 Studio adapter', () => {
 
     expect(schema.objects.map((object) => object.name)).toEqual(['users']);
     expect(connection.queries.some(({ sql }) => sql.includes('_cf_METADATA'))).toBe(false);
-  });
-});
-
-describe('local dialect parameter compilation', () => {
-  function captureDialect(
-    adapter: PostgresAdapter | MysqlAdapter,
-    compiler: PostgresQueryCompiler | MysqlQueryCompiler,
-  ) {
-    const db = new Kysely<any>({
-      dialect: {
-        createAdapter: () => adapter,
-        createDriver: () => new DummyDriver(),
-        createIntrospector: (client) => new SqliteIntrospector(client),
-        createQueryCompiler: () => compiler,
-      },
-    });
-    let compiledSql = '';
-    let compiledParameters: readonly unknown[] = [];
-    const client = new Proxy(db, {
-      get(target, property, receiver) {
-        if (property === 'executeQuery') {
-          return async (query: { sql: string; parameters: readonly unknown[] }) => {
-            compiledSql = query.sql;
-            compiledParameters = query.parameters;
-            return { rows: [] };
-          };
-        }
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-    });
-    return {
-      connection: createLocalConnection({ client }),
-      get query() {
-        return { sql: compiledSql, parameters: compiledParameters };
-      },
-    };
-  }
-
-  it('lets Kysely compile portable placeholders for PostgreSQL and MySQL', async () => {
-    const postgres = captureDialect(new PostgresAdapter(), new PostgresQueryCompiler());
-    await postgres.connection.execute('SELECT ? AS value, \'?\' AS literal', [42]);
-    expect(postgres.query).toEqual({ sql: 'SELECT $1 AS value, \'?\' AS literal', parameters: [42] });
-
-    const mysql = captureDialect(new MysqlAdapter(), new MysqlQueryCompiler());
-    await mysql.connection.execute('SELECT ? AS value, \'?\' AS literal', [42]);
-    expect(mysql.query).toEqual({ sql: 'SELECT ? AS value, \'?\' AS literal', parameters: [42] });
   });
 });
 

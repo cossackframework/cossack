@@ -1,27 +1,23 @@
-import type { Kysely } from '@cossackframework/database';
+import type { Migration } from '@cossackframework/database';
 
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema
-    .createTable('sessions')
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    // user_id is nullable so anonymous sessions (carts, wizards, A/B) work
-    // without auth. Authenticated sessions set it on login.
-    .addColumn('user_id', 'text')
-    // data holds a JSON key/value bag for general-purpose session storage
-    // (the session() helper). Nullable until first write.
-    .addColumn('data', 'text')
-    // meta holds a JSON bag for auth-session metadata (type discriminator, ...).
-    .addColumn('meta', 'text')
-    // Tracking fields for authenticated sessions (populated at login).
-    // location comes from Cloudflare request.cf (country/city); null off-CF.
-    .addColumn('location', 'text')
-    .addColumn('user_agent', 'text')
-    .addColumn('ip_address', 'text')
-    .addColumn('created_at', 'text', (c) => c.notNull().defaultTo(''))
-    .addColumn('expires_at', 'text', (c) => c.notNull())
-    .execute();
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.dropTable('sessions').ifExists().execute();
-}
+export default {
+  name: '0002_create_sessions',
+  up({ orm, schema }) {
+    schema.raw(orm.sql.unsafe(`
+      CREATE TABLE sessions (
+        id VARCHAR(191) PRIMARY KEY,
+        user_id VARCHAR(191),
+        data TEXT,
+        meta TEXT,
+        location TEXT,
+        user_agent TEXT,
+        ip_address TEXT,
+        created_at VARCHAR(32) NOT NULL DEFAULT '',
+        expires_at VARCHAR(32) NOT NULL
+      )
+    `));
+  },
+  down({ schema }) {
+    schema.dropTable('sessions');
+  },
+} satisfies Migration;

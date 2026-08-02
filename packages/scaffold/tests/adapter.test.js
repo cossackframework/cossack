@@ -262,7 +262,7 @@ describe('adapter switching', () => {
     expect((await readManifest(aborted.projectDir)).runtime).toBe('cloudflare');
   });
 
-  it('rejects invalid targets and projects without schema-v2 manifests', async () => {
+  it('rejects invalid targets and projects without schema-v3 manifests', async () => {
     const project = await create('node');
     await expect(switchAdapter(project.projectDir, 'deno', {
       interactive: false,
@@ -271,6 +271,6 @@ describe('adapter switching', () => {
     await fs.writeFile(path.join(root, 'package.json'), '{}\n');
     await expect(switchAdapter(root, 'node', {
       interactive: false,
-    })).rejects.toThrow('requires a schema-v2');
+    })).rejects.toThrow('requires a schema-v3');
   });
 });

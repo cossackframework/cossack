@@ -1,46 +1,118 @@
 {
   "name": "@cossackframework/database",
-  "version": "0.7.7",
+  "version": "0.8.0",
+  "description": "Serverless-first Active Record ORM for Cossack",
   "type": "module",
-  "description": "Database support for the Cossack Framework — Kysely-based query builder with D1 and Turso dialects, migrations, and seeders",
   "license": "MIT",
-  "main": "src/index.ts",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/database"
+  },
+  "homepage": "https://github.com/cossackframework/cossack/tree/main/packages/database#readme",
+  "bugs": {
+    "url": "https://github.com/cossackframework/cossack/issues"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "cossack-orm": "dist/cli.js"
   },
   "files": [
-    "src"
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./adapter": {
+      "types": "./dist/adapter/index.d.ts",
+      "import": "./dist/adapter/index.js"
+    },
+    "./node": {
+      "types": "./dist/runtime/node.d.ts",
+      "import": "./dist/runtime/node.js"
+    },
+    "./bun": {
+      "types": "./dist/runtime/bun.d.ts",
+      "import": "./dist/runtime/bun.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/runtime/cloudflare.d.ts",
+      "import": "./dist/runtime/cloudflare.js"
+    },
+    "./deno": {
+      "types": "./dist/runtime/deno.d.ts",
+      "import": "./dist/runtime/deno.js"
+    },
+    "./cossack": {
+      "types": "./dist/cossack/index.d.ts",
+      "import": "./dist/cossack/index.js"
+    },
+    "./tooling": {
+      "types": "./dist/tooling/index.d.ts",
+      "import": "./dist/tooling/index.js"
+    },
+    "./cli": "./dist/cli.js",
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "test": "vitest"
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:bundle": "node scripts/audit-bundles.mjs",
+    "example:sqlite": "tsx ./examples/sqlite-starter/run.ts",
+    "example:sqlite:reset": "tsx ./examples/sqlite-starter/run.ts --reset",
+    "example:sqlite:create": "tsx ./examples/sqlite-starter/create-database.ts",
+    "example:sqlite:migrate": "tsx ./examples/sqlite-starter/migrate.ts",
+    "example:sqlite:seed": "tsx ./examples/sqlite-starter/seed.ts",
+    "example:sqlite:query": "tsx ./examples/sqlite-starter/query.ts",
+    "example:multiple-connections": "tsx ./examples/multiple-connections/run.ts",
+    "example:multiple-connections:reset": "tsx ./examples/multiple-connections/run.ts --reset",
+    "prepack": "pnpm build && pnpm test && pnpm audit:bundle"
   },
   "dependencies": {
-    "kysely": "^0.29.3"
+    "tsx": "^4.23.0"
   },
   "peerDependencies": {
-    "@libsql/client": "^0.14.0",
-    "@tursodatabase/serverless": "^0.1.0",
-    "hono": "^4.12.0"
+    "@libsql/client": ">=0.14",
+    "better-sqlite3": ">=11",
+    "hono": "^4.12.0",
+    "mysql2": ">=3.11",
+    "pg": ">=8.13",
+    "reflect-metadata": ">=0.2"
   },
   "peerDependenciesMeta": {
-    "@tursodatabase/serverless": {
+    "@libsql/client": {
       "optional": true
     },
-    "@libsql/client": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "reflect-metadata": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@libsql/client": "^0.14.0",
     "@types/node": "^22.19.0",
     "hono": "^4.12.31",
-    "miniflare": "^4.20260722.0",
+    "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

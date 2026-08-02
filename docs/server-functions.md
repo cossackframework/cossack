@@ -9,11 +9,12 @@ description: "Load reactive, read-only server data inline with server$, includin
 
 ```typescript
 import { Cossack, Page, server$ } from '@cossackframework/core';
+import { User } from '@/models/User';
 
 @Page({ transport: 'http' })
 export default class UsersPage extends Cossack {
     users = server$(
-        () => db().selectFrom('users').selectAll().execute(),
+        () => User.find({ order: { createdAt: 'desc' } }),
         { initial: [] },
     );
 
@@ -59,7 +60,7 @@ Use `deps` to declare values that select a resource invocation. The dependency v
 userId = '42';
 
 user = server$(
-    (id) => db().selectFrom('users').where('id', '=', id).selectAll().executeTakeFirst(),
+    (id) => User.findOne({ where: { id } }),
     {
         deps: () => [this.userId] as const,
         initial: null,
@@ -120,7 +121,7 @@ account = server$(
 );
 ```
 
-Existing request-scoped helpers such as `db()`, `config()`, `session()`, and `flash()` can be called inside a loader. Cossack intentionally does not add `this.db`, `this.server$`, or broad helpers such as `session$` and `env$`.
+Request-scoped ORM models plus `config()`, `session()`, and `flash()` can be called inside a loader. Cossack intentionally does not add `this.orm`, `this.server$`, or broad helpers such as `session$` and `env$`.
 
 ## Queries, not mutations
 
@@ -134,7 +135,7 @@ Use `server$` for repeatable, read-only queries. Continue using `@Server()` meth
 ```typescript
 @Server()
 async deleteUser(id: string) {
-    await db().deleteFrom('users').where('id', '=', id).execute();
+    await User.delete({ id });
     await this.refresh$('users');
 }
 ```

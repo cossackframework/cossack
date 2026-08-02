@@ -57,7 +57,7 @@ export async function upgradeCommand(args, ctx) {
   const manifest = await readJsonIfExists(
     path.join(root, '.cossack/scaffold.json'),
   );
-  if (manifest && manifest.schemaVersion !== 2) {
+  if (manifest && manifest.schemaVersion !== 3) {
     throw unsupportedManifestError(manifest);
   }
 
@@ -239,7 +239,7 @@ async function buildDriftReport(root, projectName) {
   };
 
   if (!manifest) return report;
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion !== 3) {
     throw unsupportedManifestError(manifest);
   }
   const recipe = recipeFromManifest(manifest);
@@ -284,6 +284,14 @@ function recipeFromManifest(manifest) {
 }
 
 function unsupportedManifestError(manifest) {
+  if (manifest.schemaVersion === 2) {
+    return new Error(
+      'Scaffold manifest schema 2 uses the removed legacy Kysely database API. ' +
+      'Back up the database, convert models and queries to the Active Record ' +
+      '@cossackframework/database API, ' +
+      'run `cossack schema check`, and baseline migration history before upgrading.',
+    );
+  }
   return new Error(
     `Unsupported scaffold manifest schema ${manifest.schemaVersion ?? '(missing)'}. ` +
     'Recreate the project with the current alpha CLI.',
@@ -318,7 +326,7 @@ async function applyTemplateUpdates(root, report, forceFiles, ctx) {
   const forced = [];
 
   if (!report.rendered) {
-    console.error('  cannot apply: schema-v2 recipe is unavailable.');
+    console.error('  cannot apply: schema-v3 recipe is unavailable.');
     return { applied, forced };
   }
 

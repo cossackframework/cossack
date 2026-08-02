@@ -39,7 +39,7 @@ async loadUser(id: number) {
 // ✅ The built-in: define @Server(), call it directly.
 @Server()
 async loadUser(id: number) {
-    this.user = await db().selectFrom('users')…;  // runs on server, state syncs back
+    this.user = await User.findOne({ where: { id } }); // server-only, state syncs back
 }
 // client: await this.loadUser(42)  — no fetch, no API route
 ```
@@ -59,7 +59,7 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 |---|---|---|
 | Call the server from the client | `@Server()` method, called as `this.method()` — **no `fetch()`** | Auto RPC proxy; see `references/server-client-rpc.md` |
 | Load read-only server data for rendering | `server$(() => query(), { initial })` | SSR, hydration, reactive deps; see `references/server-functions.md` |
-| Query a database | `db()` from `@cossackframework/database` (Kysely, re-exported) | Use in `server$` for render data or `@Server()` for actions; see `references/database.md` |
+| Query a database | Decorated models from `@cossackframework/database` | Use in `server$` for render data or `@Server()` for actions; see `references/database.md` |
 | Cache an expensive result | `cache.remember(key, ttl, fn)` from `@cossackframework/framework/cache` | Server-only; KV recommended; see `references/cache.md` |
 | Validate a form field | `@Validate({ rules, config })` + `getError()` / `hasError()` / `validateAll()` | See `references/validation.md` |
 | Handle a form submission | Progressive: `<form method="post">` + `post()` + `flash`/`old`. Reactive: `@Store` + `@Validate` + `@Server` submit. | No `fetch()`; see `references/forms.md` |
@@ -226,8 +226,7 @@ for each.
 
 - **Writing `fetch('/api/...')` to call the server.** Use a `@Server()` method and call it as `this.method()`. The framework installs an automatic RPC proxy — no API route, no serialization boilerplate. See `references/server-client-rpc.md`.
 - **Using `init() + @State() + @Server()` for read-only render data.** Prefer a named `server$` resource with `{ initial }` and explicit `deps`. Keep `@Server()` for effects. See `references/server-functions.md`.
-- **Calling `db()` or `cache` directly from `@Client()` / `@Shared()` / `render()`.** Put reads in a `server$` loader or effects in `@Server()`. A `server$` loader is compiler-extracted even when the macro call appears in `render()`.
-- **Calling `db()` or `cache` from a `@Client()` / `@Shared()` / `render()`.** Both are server-only. Put database queries and cache reads inside `@Server()` methods. See `references/database.md` and `references/cache.md`.
+- **Calling ORM models or `cache` directly from `@Client()` / `@Shared()` / `render()`.** Put reads in a `server$` loader or effects in `@Server()`. A `server$` loader is compiler-extracted even when the macro call appears in `render()`.
 - **Stripped method ran as no-op on client.** Add `@Client()` / `@Shared()` / `@Optimistic()`.
 - **`@Validate()` used alone.** It must stack on `@State()` / `@ClientState()` / `@Store()` / `@ClientStore()`.
 - **Forgetting to declare the `errors` property.** `@Validate` writes to `config.errorProperty` (default `'errors'`), but does **not** create the property for you. Declare `@State() errors: Record<string, string> = {};` or errors are silently swallowed.
@@ -254,7 +253,7 @@ for each.
 - `references/reactive-store.md` — `createStore()` / `connectStore()` for global reactive state, the imperative-API pattern (e.g. `toast`)
 - `references/ui.md` — `@cossackframework/ui` components, theming, icons, ejecting; focus-management helpers (`focusTrap`/`focusNext`/…)
 - `references/loading.md` — the four loading mechanisms (`loading.ts`, `loadingTemplate()`, `this.loading`, `clientInit()`)
-- `references/database.md` — `db()` / `getDb()`, Kysely queries, request scoping, setup
+- `references/database.md` — decorated entities, Active Record queries, scoped SQL, providers
 - `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation
 - `references/realtime.md` — SSE vs Durable Object transports, scope, channels, streaming, event-driven re-fetch
 - `references/auth.md` — `cossack add auth` scaffold, `createAuth()` flow, the session/PBKDF2 module, guards, `this.user`

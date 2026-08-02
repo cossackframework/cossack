@@ -29,6 +29,10 @@ export const DATABASE_PROVIDERS = {
   d1: { adapters: ['cloudflare'] },
   sqlite: { adapters: ['node'] },
   turso: { adapters: ADAPTERS },
+  postgres: { adapters: ['node'] },
+  mysql: { adapters: ['node'] },
+  'hyperdrive-postgres': { adapters: ['cloudflare'] },
+  'hyperdrive-mysql': { adapters: ['cloudflare'] },
 };
 
 export function parseList(value) {
@@ -70,9 +74,8 @@ export function removeFeature(explicit, feature) {
   const selected = new Set(requested.filter((selectedFeature) =>
     !resolveFeatures([selectedFeature]).includes(feature),
   ));
-  // Studio may add database support to an otherwise database-free project,
-  // but removing Studio intentionally leaves that useful database setup in
-  // place. Removing database still removes Studio as its dependent.
+  // Studio may add database support to an otherwise data-free project. Removing
+  // Studio intentionally leaves that useful setup in place.
   if (feature === 'studio' && requested.includes('studio')) selected.add('database');
   return FEATURES.filter((candidate) => selected.has(candidate));
 }

@@ -8,11 +8,11 @@ Cossack ships a **server-side** cache with a Laravel-inspired API and a config-d
 
 ```typescript
 import { cache } from '@cossackframework/framework/cache';
-import { db } from '@cossackframework/database';
+import { Product } from '@/models/Product';
 
 // Read-through cache: compute + store on a miss, return the stored value on a hit.
 const products = await cache.remember('products:featured', 600, () =>
-    db().selectFrom('products').where('featured', '=', 1).selectAll().execute(),
+    Product.find({ where: { featured: true } }),
 );
 
 // Explicit set / get (TTLs are in SECONDS).
@@ -80,13 +80,13 @@ For most apps, **KV is the recommended default** — it's the natural fit for re
 
 - **Eventual consistency is harmless.** `remember()` is idempotent — if two isolates both miss and recompute, the result is the same. Staleness is already bounded by your TTL.
 - **Native TTL = auto garbage collection.** KV's `expirationTtl` reaps expired keys for you — no unbounded growth, no `purgeExpired()` chore.
-- **It offloads the database.** A KV hit never touches D1/Turso. (`DatabaseCacheStore` does *not* give you this — a cache read still hits the database.)
+- **It offloads the database.** A KV hit never touches D1/Turso; an ORM-backed cache hit still does.
 - **Globally fast reads** from the edge region nearest the reader.
 
 Reach for the others when:
 - **`memory`** — dev/test, or single-isolate ephemeral caches that don't need to survive restarts.
 - **`durable-object`** — you need strong consistency or per-room/per-session cache isolation.
-- **`database`** — you want the cache to live alongside your data in D1/Turso and accept the read cost. Registered via `extendCacheDriver('database', () => new DatabaseCacheStore())` (the app template wires this in `src/middlewares/db.ts`).
+- **`database`** — co-located cache data, registered with `createDatabaseCacheStore()` in `src/middlewares/orm.ts`.
 
 ## Real example
 

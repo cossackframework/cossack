@@ -2,14 +2,34 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadCliClient } from '../src/commands/db-run.js';
+import { loadORMTooling } from '../src/commands/db-run.js';
 
 const temporaryDirectories = [];
 
-async function createProject() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-db-run-'));
+async function createProject(toolingSource) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-orm-tooling-'));
   temporaryDirectories.push(root);
-  await fs.mkdir(path.join(root, 'src', 'db'), { recursive: true });
+  const packageRoot = path.join(root, 'node_modules', '@cossackframework', 'database');
+  await fs.mkdir(path.join(packageRoot, 'dist', 'tooling'), { recursive: true });
+  await fs.writeFile(
+    path.join(root, 'package.json'),
+    JSON.stringify({
+      type: 'module',
+      dependencies: { '@cossackframework/database': '^1.0.0' },
+    }),
+  );
+  await fs.writeFile(
+    path.join(packageRoot, 'package.json'),
+    JSON.stringify({
+      name: '@cossackframework/database',
+      version: '1.0.0',
+      type: 'module',
+      exports: { './package.json': './package.json' },
+    }),
+  );
+  if (toolingSource !== undefined) {
+    await fs.writeFile(path.join(packageRoot, 'dist', 'tooling', 'index.js'), toolingSource);
+  }
   return root;
 }
 
@@ -19,40 +39,28 @@ afterEach(async () => {
   ));
 });
 
-describe('database CLI client loading', () => {
-  it('loads getCliClient from the CLI-only database module', async () => {
-    const root = await createProject();
-    await fs.writeFile(
-      path.join(root, 'src', 'db', 'cli.ts'),
-      'export async function getCliClient() { return { source: "cli" }; }\n',
+describe('application ORM tooling loading', () => {
+  it('loads runORMCommand from the application ORM package', async () => {
+    const root = await createProject(
+      'export async function runORMCommand() { return 0; }\n',
     );
-    await fs.writeFile(
-      path.join(root, 'src', 'db', 'config.ts'),
-      'throw new Error("runtime config must not be loaded");\n',
-    );
-
-    await expect(loadCliClient(root)).resolves.toEqual({ source: 'cli' });
+    const tooling = await loadORMTooling(root);
+    await expect(tooling.runORMCommand([])).resolves.toBe(0);
   });
 
-  it('does not fall back to the runtime database module', async () => {
-    const root = await createProject();
-    await fs.writeFile(
-      path.join(root, 'src', 'db', 'config.ts'),
-      'export async function getCliClient() { return { source: "legacy" }; }\n',
+  it('does not fall back when the application ORM package is absent', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-orm-tooling-'));
+    temporaryDirectories.push(root);
+    await fs.writeFile(path.join(root, 'package.json'), '{"type":"module"}\n');
+    await expect(loadORMTooling(root)).rejects.toThrow(
+      '@cossackframework/database is not installed',
     );
-
-    await expect(loadCliClient(root)).rejects.toThrow('No src/db/cli.ts found');
   });
 
-  it('requires getCliClient to be exported by the CLI module', async () => {
-    const root = await createProject();
-    await fs.writeFile(
-      path.join(root, 'src', 'db', 'cli.ts'),
-      'export const createClient = () => ({});\n',
-    );
-
-    await expect(loadCliClient(root)).rejects.toThrow(
-      'src/db/cli.ts must export `getCliClient()`',
+  it('requires database 1.0 tooling to export runORMCommand', async () => {
+    const root = await createProject('export const unsupported = true;\n');
+    await expect(loadORMTooling(root)).rejects.toThrow(
+      'does not export tooling support',
     );
   });
 });
