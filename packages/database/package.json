@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/database",
-  "version": "1.0.0",
+  "version": "0.8.0",
   "description": "Serverless-first Active Record ORM for Cossack",
   "type": "module",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/studio",
-  "version": "1.0.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "A local, browser-based database inspector for Cossack applications",
   "license": "MIT",
