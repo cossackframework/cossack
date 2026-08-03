@@ -101,7 +101,7 @@ rebinds the scope to its transaction client and uses savepoints when supported.
 import { sql } from "@cossackframework/database";
 
 await orm.run(async () => {
-  const email = "'; DROP TABLE users; --";
+  const email = "ada@example.com"; // Treat this as untrusted user input.
   const result = await sql`
     SELECT ${sql.id("id")}, ${sql.id("email")}
     FROM ${sql.id("users")}
