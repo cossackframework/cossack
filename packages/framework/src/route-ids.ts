@@ -172,6 +172,8 @@ export interface RouterContext {
   layouts: Record<string, any>;
   /** Allowed Origin values for WS/SSE upgrades. Defaults to same-origin. */
   allowedOrigins?: string[];
+  /** Resolve framework-owned runtime identity for reconstructed components. */
+  runtimeInfo?: () => Promise<import('@cossackframework/core').CossackRuntimeInfo>;
 }
 
 /**

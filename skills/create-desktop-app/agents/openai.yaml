@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Desktop App"
+  short_description: "Create Deno Desktop apps with Cossack"
+  default_prompt: "Use $create-desktop-app to add a Deno Desktop target to my Cossack application."

@@ -79,6 +79,14 @@ export interface CossackOptions {
   Channels?: string;
 }
 
+export type CossackRuntimePlatform = 'web' | 'desktop';
+
+/** Runtime identity available to component server methods and hydrated clients. */
+export interface CossackRuntimeInfo extends Record<string, unknown> {
+  platform: CossackRuntimePlatform;
+  adapter?: string;
+}
+
 /**
  * Options for {@link Cossack.bootstrap}.
  * All fields are optional; pass `{}` (or omit) to bootstrap with defaults.
@@ -94,6 +102,8 @@ export interface BootstrapOptions {
   user?: User;
   /** Environment bindings (server) or emulated env (client). */
   env?: any;
+  /** Runtime target and adapter metadata. Defaults to the web platform. */
+  runtime?: CossackRuntimeInfo;
   /** Current page route identifier. */
   page?: string;
   /** WebSocket provider name (server only). */

@@ -465,6 +465,9 @@ function packageJson(recipe, projectName) {
   } else if (recipe.adapter === 'deno') {
     dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
   }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
+  }
   const devDependencies = {
     '@types/node': dependencyVersion('@types/node'),
     '@tailwindcss/vite': dependencyVersion('@tailwindcss/vite'),
@@ -474,7 +477,9 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
-  if (recipe.adapter === 'deno') devDependencies['@types/deno'] = '^2.3.0';
+  if (recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')) {
+    devDependencies['@types/deno'] = '^2.3.0';
+  }
   if (recipe.resolvedFeatures.includes('studio')) {
     devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
   }
@@ -522,10 +527,6 @@ function packageJson(recipe, projectName) {
           build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
           start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
           deploy: 'deno task build && deno deploy',
-          ...(recipe.resolvedFeatures.includes('desktop') ? {
-            'desktop:dev': 'deno desktop --hmr .',
-            'desktop:build': 'deno task build && deno desktop .',
-          } : {}),
         }
       : {
         dev: 'vite dev',
@@ -533,6 +534,11 @@ function packageJson(recipe, projectName) {
         'build:ssg': 'vite build && cossack ssg',
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    scripts['build:desktop'] = 'vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop-server --minify false';
+    scripts['desktop:dev'] = 'deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
+    scripts['desktop:build'] = 'deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
+  }
   if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
@@ -852,17 +858,16 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 `;
 }
 
-function denoEntry(providers = [], desktop = false) {
+function denoEntry(providers = []) {
   const oauthImport = providers.length
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
-  const desktopImport = desktop ? "import './desktop/index';\n" : '';
   const routes = oauthRouteBlock(providers, 'frameworkApp');
   return `import { createApp } from '@cossackframework/framework/router';
 import { createDenoAdapter } from '@cossackframework/deno-adapter';
 import { App } from './App';
 import { template } from './root';
-${oauthImport}${desktopImport}
+${oauthImport}
 export const env: Record<string, unknown> = Deno.env.toObject();
 export const runtime = createDenoAdapter({ env });
 export const frameworkApp = createApp({
@@ -883,16 +888,17 @@ if (import.meta.main && typeof (Deno as any).BrowserWindow !== 'function') {
 }
 
 function denoConfiguration(recipe, projectName) {
-  const tasks = {
-    dev: 'vite dev',
-    build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
+  const tasks = recipe.adapter === 'deno' ? {
+    dev: 'pnpm run dev',
+    build: 'pnpm run build',
     start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
     deploy: 'deno task build && deno deploy',
-    ...(recipe.resolvedFeatures.includes('desktop') ? {
-      'desktop:dev': 'deno desktop --hmr .',
-      'desktop:build': 'deno task build && deno desktop .',
-    } : {}),
-  };
+  } : {};
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    tasks['build:desktop'] = 'pnpm run build:desktop';
+    tasks['desktop:dev'] = 'deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
+    tasks['desktop:build'] = 'deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
+  }
   return JSON.stringify({
     nodeModulesDir: 'auto',
     imports: {
@@ -904,18 +910,39 @@ function denoConfiguration(recipe, projectName) {
       desktop: {
         app: { name: projectName },
         backend: recipe.config.desktopBackend ?? 'webview',
+        output: {
+          linux: './dist/desktop',
+          macos: './dist/desktop',
+          windows: './dist/desktop',
+        },
       },
     } : {}),
   }, null, 2) + '\n';
 }
 
 function desktopEntry() {
-  return `import { defineDesktopBindings } from '@cossackframework/deno-adapter/desktop';
+  return `import { createApp } from '@cossackframework/framework/router';
+import { createDenoAdapter } from '@cossackframework/deno-adapter';
+import { App } from '../App';
+import { template } from '../root';
 
-export const desktopBindings = defineDesktopBindings({
-  // Add allowlisted, machine-local capabilities here. Handlers must validate
-  // every path, identifier, and domain value supplied by the webview.
+const deno = (globalThis as any).Deno;
+export const env: Record<string, unknown> = deno.env.toObject();
+export const runtime = createDenoAdapter({ env });
+export const app = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
+  runtimeAdapter: runtime,
 });
+
+export default {
+  fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
+    runtime.fetch(app, request, requestEnv),
+};
+
+if (import.meta.main && typeof deno.BrowserWindow !== 'function') {
+  runtime.serve(app);
+}
 `;
 }
 
@@ -1434,7 +1461,6 @@ export async function renderRecipe(recipe, options = {}) {
     if (recipe.adapter === 'deno' && rel === 'src/index.ts') {
       content = text(denoEntry(
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
-        recipe.resolvedFeatures.includes('desktop'),
       ));
     }
     if ((recipe.adapter === 'node' || recipe.adapter === 'deno') && rel === 'vite.config.ts') {
@@ -1456,11 +1482,16 @@ export async function renderRecipe(recipe, options = {}) {
       ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')),
       compilerOptions: {
         ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')).compilerOptions,
-        types: recipe.adapter === 'node'
-          ? ['vite/client', 'node']
-          : recipe.adapter === 'deno'
-            ? ['vite/client', 'node', '@types/deno']
-          : ['./worker-configuration.d.ts', 'node'],
+        types: [
+          ...(recipe.adapter === 'node'
+            ? ['vite/client', 'node']
+            : recipe.adapter === 'deno'
+              ? ['vite/client', 'node']
+              : ['./worker-configuration.d.ts', 'node']),
+          ...(recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')
+            ? ['@types/deno']
+            : []),
+        ],
       },
     }, null, 2) + '\n'),
     capability: 'base',
@@ -1560,17 +1591,17 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
-  if (recipe.adapter === 'deno') {
+  if (recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')) {
     files.set('deno.json', {
       content: text(denoConfiguration(recipe, options.projectName ?? 'my-cossack-app')),
-      capability: 'base',
+      capability: recipe.adapter === 'deno' ? 'base' : 'desktop',
     });
-    if (recipe.resolvedFeatures.includes('desktop')) {
-      files.set('src/desktop/index.ts', {
-        content: text(desktopEntry()),
-        capability: 'desktop',
-      });
-    }
+  }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    files.set('src/desktop/index.ts', {
+      content: text(desktopEntry()),
+      capability: 'desktop',
+    });
   }
   if (recipe.adapter === 'cloudflare' &&
       recipe.resolvedFeatures.includes('auth') &&
@@ -2408,11 +2439,6 @@ export async function switchAdapter(projectDir, target, options = {}) {
     desktopBackend: manifest.config?.desktopBackend,
     dashboardModules: manifest.dashboardModules,
   });
-  if (current.resolvedFeatures.includes('desktop') && target !== 'deno') {
-    throw new Error(
-      'Remove the desktop feature before switching this project away from the deno adapter.',
-    );
-  }
   const empty = { writes: [], deletes: [], conflicts: [], preserved: [] };
   if (current.adapter === target) {
     return adapterSwitchResult(

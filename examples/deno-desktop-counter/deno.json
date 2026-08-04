@@ -3,8 +3,6 @@
   "imports": {
     "@cossackframework/core": "../../packages/core/dist/index.js",
     "@cossackframework/deno-adapter": "../../packages/deno-adapter/dist/index.js",
-    "@cossackframework/deno-adapter/desktop": "../../packages/deno-adapter/dist/desktop.js",
-    "@cossackframework/deno-adapter/desktop/client": "../../packages/deno-adapter/dist/desktop-client.js",
     "@cossackframework/framework/router": "../../packages/framework/dist/esm/router.js",
     "@cossackframework/framework/vite-plugin": "../../packages/framework/dist/esm/vite-plugin.js",
     "@cossackframework/framework/vite-security-plugin": "../../packages/framework/dist/esm/vite-security-plugin.js",
@@ -14,14 +12,20 @@
     "vite": "npm:vite@^8.1.4"
   },
   "tasks": {
-    "dev": "vite dev",
-    "build": "vite build && vite build --ssr src/index.ts --outDir dist/server",
+    "dev": "pnpm run dev",
+    "build": "pnpm run build",
     "start": "deno run --allow-env --allow-net --allow-read dist/server/index.js",
-    "desktop:dev": "deno desktop --hmr .",
-    "desktop:build": "deno task build && deno desktop ."
+    "build:desktop": "pnpm run build:desktop",
+    "desktop:dev": "deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js",
+    "desktop:build": "deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js"
   },
   "desktop": {
     "app": { "name": "Cossack Counter", "identifier": "dev.cossack.counter" },
-    "backend": "webview"
+    "backend": "webview",
+    "output": {
+      "linux": "./dist/desktop",
+      "macos": "./dist/desktop",
+      "windows": "./dist/desktop"
+    }
   }
 }

@@ -35,7 +35,7 @@ import {
     mergeHead as mergeHeadFn,
     applyHeadTags as applyHeadTagsFn,
 } from './head';
-import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext, CossackContext } from './context';
+import { createCossackContext, HydratedContext, EnvContext, UserContext, RequestContext, RuntimeContext, CossackContext } from './context';
 import {
     getError as getErrorFn,
     hasError as hasErrorFn,
@@ -67,6 +67,7 @@ import type {
     DynamicFunction,
     CossackElementInternal,
     CossackInternalState,
+    CossackRuntimeInfo,
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
@@ -83,6 +84,7 @@ export type {
     SerializedComponentState,
     CossackOptions,
     BootstrapOptions,
+    CossackRuntimeInfo,
 };
 
 export const RootContext = createContext<Cossack | null>(null);
@@ -254,6 +256,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _c!: Context;
     private _user?: User;
     private _env!: Env;
+    private _runtimeInfo?: CossackRuntimeInfo;
 
     protected get c(): Context & CossackContext {
         // The context is wrapped by `createCossackContext`, whose proxy adds
@@ -270,6 +273,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     protected get env(): Env { return this._env || this.consume(EnvContext) as Env; }
     protected set env(val: Env) { this._env = val; }
+
+    /** Runtime target for shared server code (`web` or local `desktop`). */
+    protected get runtime(): CossackRuntimeInfo {
+        return this._runtimeInfo || this.consume(RuntimeContext) || { platform: 'web' };
+    }
+    protected set runtime(val: CossackRuntimeInfo) { this._runtimeInfo = val; }
+
+    /** True when this component is executing in the local Deno Desktop target. */
+    protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
 
     protected providers!: Map<string, StateProvider>;
     public props: Record<string, any> = {};
@@ -761,7 +773,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, page, providerName, skipInit, deferMount }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, skipInit, deferMount }: BootstrapOptions = {}) {
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -788,10 +800,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
             this.c = createCossackContext(context, true);
             this.env = env;
+            this.runtime = runtime ?? { platform: 'web' };
             this._cossack_provider_name = providerName;
             this.initializeProviders();
         } else {
             const clientInitialState = initialState || this.getInitialStateFromWindow();
+            this.runtime = (clientInitialState?.runtime as CossackRuntimeInfo | undefined) ?? { platform: 'web' };
             // Access metadata from the new state structure
             const metadata = clientInitialState?.metadata || {};
             this.user = metadata.user;
@@ -826,6 +840,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.provide(EnvContext, this.env);
         this.provide(UserContext, this.user);
         this.provide(RequestContext, this.c);
+        this.provide(RuntimeContext, this.runtime);
 
         this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
 

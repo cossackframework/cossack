@@ -163,7 +163,13 @@ export function handleSseEndpoint(ctx: RouterContext) {
             // Cold start: create instance on demand
             const user = c.get('user');
             const componentInstance = createInstance(PageComponent) as any;
-            await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+            await componentInstance.bootstrap({
+                context: c,
+                user,
+                env: c.env,
+                runtime: await ctx.runtimeInfo?.(),
+                skipInit: true,
+            });
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);

@@ -46,6 +46,7 @@ test-results
 .claude
 reasonix.toml
 .reasonix
+.zcode
 # Planning documents (local scratch)
 plan-*.md
 reviews.md

@@ -116,9 +116,6 @@ export function resolveRecipe(options = {}) {
   if (!DATABASE_PROVIDERS[database].adapters.includes(adapter)) {
     throw new Error(`Database provider "${database}" is not supported by the ${adapter} adapter`);
   }
-  if (resolvedFeatures.includes('desktop') && adapter !== 'deno') {
-    throw new Error('The desktop feature is only supported by the deno adapter');
-  }
   const desktopBackend = options.desktopBackend ?? 'webview';
   if (resolvedFeatures.includes('desktop') && !DESKTOP_BACKENDS.includes(desktopBackend)) {
     throw new Error(

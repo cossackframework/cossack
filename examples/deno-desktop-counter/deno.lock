@@ -615,6 +615,7 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:hono@^4.12.31",
       "npm:vite@^8.1.4"
     ],
     "packageJson": {

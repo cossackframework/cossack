@@ -63,7 +63,7 @@ afterEach(async () => {
 });
 
 describe('adapter switching', () => {
-  it('adds/removes Desktop on Deno and blocks switching while it is enabled', async () => {
+  it('keeps the independent Deno Desktop target while switching web adapters', async () => {
     const project = await create('deno');
     const added = await addFeature(project.projectDir, 'desktop', {
       interactive: false,
@@ -72,15 +72,17 @@ describe('adapter switching', () => {
     expect(added.status).toBe('added');
     expect(added.recipe.config.desktopBackend).toBe('cef');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
-    await expect(switchAdapter(project.projectDir, 'node', { interactive: false }))
-      .rejects.toThrow('Remove the desktop feature');
+    const switched = await switchAdapter(project.projectDir, 'node', { interactive: false });
+    expect(switched.status).toBe('changed');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(project.projectDir, 'deno.json'))).resolves.toBeUndefined();
 
     const removed = await removeFeatureFromProject(project.projectDir, 'desktop', {
       interactive: false,
     });
     expect(removed.status).toBe('removed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
-    expect((await switchAdapter(project.projectDir, 'node', { interactive: false })).status)
+    expect((await switchAdapter(project.projectDir, 'deno', { interactive: false })).status)
       .toBe('changed');
   });
 

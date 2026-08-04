@@ -65,6 +65,8 @@ class TestComponent extends Cossack<{}> {
   @Shared()
   async formatCountAsync(prefix: string) { return `${prefix}:${this.count}`; }
 
+  runtimePlatform() { return this.runtime.platform; }
+
   render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
@@ -91,6 +93,7 @@ describe('Cossack Core: Client-Side', () => {
       routePath: '/test',
       channels: ['global', 'private'],
       providerTargets: { page: 'durable-object-id-123' },
+      runtime: { adapter: 'deno', platform: 'desktop' },
   };
 
   beforeEach(() => {
@@ -123,6 +126,11 @@ describe('Cossack Core: Client-Side', () => {
       await component.bootstrap();
       expect(component.count).toBe(10);
       expect(component.message).toBe('from server');
+  });
+
+  it('hydrates runtime identity for shared rendering decisions', async () => {
+      await component.bootstrap();
+      expect(component.runtimePlatform()).toBe('desktop');
   });
 
   it('should setup context with params from initial state', async () => {

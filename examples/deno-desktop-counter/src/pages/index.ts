@@ -1,37 +1,38 @@
-import { Client, ClientState, Cossack, Page } from '@cossackframework/core';
+import { Cossack, Page, State } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { Button } from '@cossackframework/ui';
-import { createDesktopClient } from '@cossackframework/deno-adapter/desktop/client';
-import type { desktopBindings } from '../desktop/bindings';
 
-const desktop = createDesktopClient<typeof desktopBindings>();
+const STORAGE_KEY = 'cossack.desktop.counter';
 
 @Page({ transport: 'http' })
 export default class CounterPage extends Cossack {
-  @ClientState() count = 0;
+  @State() count = 0;
 
-  @Client()
-  async clientInit() {
-    if (desktop.available) this.count = await desktop.invoke('loadCount');
+  async init() {
+    if (!this.isDesktop) return;
+    const value = Number.parseInt(localStorage.getItem(STORAGE_KEY) ?? '0', 10);
+    this.count = Number.isFinite(value) ? value : 0;
   }
 
-  @Client()
-  async increment() {
+  increment() {
     this.count += 1;
-    if (desktop.available) await desktop.invoke('saveCount', this.count);
+    if (this.isDesktop) {
+      localStorage.setItem(STORAGE_KEY, String(this.count));
+    }
   }
 
-  @Client()
-  async decrement() {
+  decrement() {
     this.count -= 1;
-    if (desktop.available) await desktop.invoke('saveCount', this.count);
+    if (this.isDesktop) {
+      localStorage.setItem(STORAGE_KEY, String(this.count));
+    }
   }
 
   render() {
     return html`
       <main class="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-6 p-8 text-center">
         <div>
-          <p class="text-sm text-muted-foreground">${desktop.available ? 'Deno Desktop · persistent' : 'Web · in memory'}</p>
+          <p class="text-sm text-muted-foreground">${this.isDesktop ? 'Deno Desktop · persistent' : 'Web · in memory'}</p>
           <h1 class="text-3xl font-semibold">Cossack counter</h1>
         </div>
         <output class="text-7xl font-bold tabular-nums" aria-live="polite">${this.count}</output>

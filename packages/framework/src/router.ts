@@ -1,7 +1,7 @@
 // src/router.ts
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
 import {
   createInstance,
   createLayoutServiceScope,
@@ -342,6 +342,14 @@ export function createApp(options: CreateAppOptions = {}) {
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
 
+  const resolveRuntimeInfo = async (): Promise<CossackRuntimeInfo> => ({
+    platform: 'web',
+    ...(options.runtimeAdapter ? {
+      ...(await options.runtimeAdapter.getClientMetadata?.()),
+      adapter: options.runtimeAdapter.name,
+    } : {}),
+  });
+
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {
     routeIdMap,
@@ -350,6 +358,7 @@ export function createApp(options: CreateAppOptions = {}) {
     pages,
     layouts,
     allowedOrigins: options.allowedOrigins,
+    runtimeInfo: resolveRuntimeInfo,
   };
 
   // Request-context middleware — scopes the Hono `Context` into
@@ -401,6 +410,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
       const inlineCss = await getInlineCss(c.env);
+      const runtimeInfo = await resolveRuntimeInfo();
       const requestServiceScope = createRootServiceScope();
 
       try {
@@ -458,7 +468,7 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         // Bootstrap App
-        await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+        await appInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
@@ -472,7 +482,7 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           layoutServiceScope.bindRequest({ context: c, user, env: c.env });
           const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-          await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+          await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
           layoutInstances.push(lInst);
           layoutStates[lPath] = lInst.getInitialState();
           activeServiceScope = layoutServiceScope;
@@ -493,6 +503,7 @@ export function createApp(options: CreateAppOptions = {}) {
           context: c,
           user,
           env: c.env,
+          runtime: runtimeInfo,
           page: c.req.path,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
@@ -580,12 +591,7 @@ export function createApp(options: CreateAppOptions = {}) {
           // fallback if different) so `__()` works on the client immediately.
           // Other locales are dynamic-imported on demand by `setLocale()`.
           __cossackLang: buildLocaleHydrationData(),
-          ...(options.runtimeAdapter ? {
-            runtime: {
-              adapter: options.runtimeAdapter.name,
-              ...(await options.runtimeAdapter.getClientMetadata?.()),
-            },
-          } : {}),
+          runtime: runtimeInfo,
         };
 
         c.header('Content-Type', 'text/html');
@@ -661,6 +667,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
       const pathname = c.req.query('pathname') || '/';
       const user = c.get('user');
+      const runtimeInfo = await resolveRuntimeInfo();
       return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
         target,
         provider,
@@ -670,7 +677,7 @@ export function createApp(options: CreateAppOptions = {}) {
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
           const instance = createInstance(ComponentClass) as Cossack;
-          await instance.bootstrap({ context: c, user, env: c.env, page: pathname, providerName: provider });
+          await instance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
           instance._render();
           return instance;
         },
@@ -687,6 +694,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const isStreamRequest = !!body._cossack_stream;
     const user = c.get('user');
+    const runtimeInfo = await resolveRuntimeInfo();
 
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
@@ -759,7 +767,7 @@ export function createApp(options: CreateAppOptions = {}) {
     let componentInstance: any;
     if (componentPath === '/src/App') {
       componentInstance = createInstance(options.AppComponent ?? RouterFallbackApp);
-      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
       componentInstance._render();
     } else {
       const module = pages[componentPath] || layouts[componentPath];
@@ -767,7 +775,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const PageComponent = Object.values(module as object)[0] as new () => Cossack;
       if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
       componentInstance = createInstance(PageComponent) as any;
-      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
 
       // Rebuild component tree
       componentInstance._render();

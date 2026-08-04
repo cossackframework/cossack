@@ -11,7 +11,7 @@
     "./desktop": { "types": "./dist/desktop.d.ts", "import": "./dist/desktop.js" },
     "./desktop/client": { "types": "./dist/desktop-client.d.ts", "import": "./dist/desktop-client.js" }
   },
-  "files": ["dist"],
+  "files": ["dist", "docs", "README.md"],
   "publishConfig": { "access": "public" },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.declarations.json",

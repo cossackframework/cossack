@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   transformCossackClass,
+  injectAutomaticServerMethodMetadata,
   isClientSafeMethod,
   stripSsgGenerateStaticParams,
   isServerOnlyModule,
@@ -771,6 +772,58 @@ export class TestPage extends Cossack {
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).not.toContain('__registerServerOnlyMethods()');
+    });
+
+    it('registers undecorated methods exposed as render handlers for automatic RPC', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      this.count += 1;
+    }
+
+    private unreachableHelper() {
+      return 'server-only helper';
+    }
+
+    render() {
+      return html\`<button @click=\${this.increment}>+</button>\`;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'counter.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("__cossack_proxies?.get('increment')");
+      expect(result).not.toContain('["unreachableHelper"]');
+    });
+
+    it('injects the same automatic RPC allowlist into the server build without stripping bodies', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      localStorage.setItem('count', '1');
+    }
+
+    private unreachableHelper() {
+      return 'not remotely callable';
+    }
+
+    render() {
+      return html\`<button @click=\${this.increment}>+</button>\`;
+    }
+}`;
+
+      const result = injectAutomaticServerMethodMetadata(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+      );
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("localStorage.setItem('count', '1')");
+      expect(result).toContain("return 'not remotely callable'");
+      expect(result).not.toContain('["unreachableHelper"]');
     });
   });
 

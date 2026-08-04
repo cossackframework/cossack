@@ -172,7 +172,7 @@ describe('recipe resolution', () => {
     expect(files.get('vite.config.ts').content.toString())
       .toContain("exclude: ['@cossackframework/solar-icons']");
     expect(files.get('vite.config.ts').content.toString()).toMatch(
-      /environments: \{[\s\S]*ssr: \{[\s\S]*resolve: \{[\s\S]*noExternal: \['@cossackframework\/ui', '@cossackframework\/solar-icons'\]/,
+      /environments: \{[\s\S]*ssr: \{[\s\S]*resolve: \{[\s\S]*noExternal: \['@cossackframework\/ui', '@cossackframework\/solar-icons', 'hono'\]/,
     );
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
@@ -685,9 +685,22 @@ describe('composition', () => {
     }
   });
 
-  it('adds desktop only to Deno recipes and selects the embedded Turso client', async () => {
-    expect(() => resolveRecipe({ adapter: 'node', preset: 'minimal', features: 'desktop' }))
-      .toThrow('only supported by the deno adapter');
+  it('adds a Deno Desktop target beside every web adapter and selects the embedded Turso client for Deno', async () => {
+    for (const adapter of ['cloudflare', 'node', 'deno']) {
+      const target = resolveRecipe({ adapter, preset: 'minimal', features: 'desktop' });
+      const targetFiles = await renderRecipe(target, { projectName: `${adapter}-desktop` });
+      const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
+      const targetDeno = JSON.parse(targetFiles.get('deno.json').content.toString());
+
+      expect(targetPackage.dependencies['@cossackframework/deno-adapter']).toBeDefined();
+      expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
+      expect(targetPackage.scripts['desktop:dev']).toContain('dist/desktop-server/index.js');
+      expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
+      expect(targetDeno.tasks['build:desktop']).toBe('pnpm run build:desktop');
+      expect(targetDeno.desktop.backend).toBe('webview');
+      expect(targetDeno.desktop.output.linux).toBe('./dist/desktop');
+    }
+
     const recipe = resolveRecipe({ adapter: 'deno', preset: 'database', features: 'desktop' });
     const files = await renderRecipe(recipe, { projectName: 'desktop-app' });
     const pkg = JSON.parse(files.get('package.json').content.toString());
@@ -695,8 +708,9 @@ describe('composition', () => {
     expect(recipe.config.database).toBe('turso');
     expect(pkg.dependencies['@tursodatabase/database']).toBeDefined();
     expect(pkg.dependencies['@tursodatabase/serverless']).toBeUndefined();
-    expect(pkg.scripts['desktop:dev']).toBe('deno desktop --hmr .');
+    expect(pkg.scripts['desktop:dev']).toContain('deno desktop -A --hmr');
     expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
+    expect(deno.tasks.build).toBe('pnpm run build');
     expect(deno.imports.hono).toMatch(/^npm:hono@/);
     expect(deno.imports.vite).toMatch(/^npm:vite@/);
     expect(deno.desktop.backend).toBe('webview');

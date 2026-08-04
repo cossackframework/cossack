@@ -66,6 +66,8 @@ class TestComponent extends Cossack<{}> {
   @Shared()
   async formatCountAsync(prefix: string) { return `${prefix}:${this.count}`; }
 
+  runtimePlatform() { return this.runtime.platform; }
+
   render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
@@ -96,6 +98,16 @@ describe('Cossack Core: Server-Side', () => {
     await component.bootstrap({ context: mockContext });
 
     expect((component as any).c).toEqual(mockContext);
+  });
+
+  it('exposes the runtime platform to colocated server methods', async () => {
+    const mockContext = { req: { param: vi.fn() } } as unknown as Context;
+    await component.bootstrap({
+      context: mockContext,
+      runtime: { adapter: 'deno', platform: 'desktop' },
+    });
+
+    expect(component.runtimePlatform()).toBe('desktop');
   });
 
   it('should initialize state with default values', async () => {
