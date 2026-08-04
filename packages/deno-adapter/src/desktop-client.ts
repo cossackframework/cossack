@@ -1,6 +1,6 @@
 import type { DesktopBindingRegistry } from './desktop.js';
-export { DesktopUnavailableError } from './desktop-error.js';
 import { DesktopUnavailableError } from './desktop-error.js';
+export { DesktopUnavailableError };
 
 type AwaitedReturn<Fn> = Fn extends (...args: any[]) => infer Result ? Awaited<Result> : never;
 type BindingArgs<Fn> = Fn extends (...args: infer Args) => any ? Args : never;

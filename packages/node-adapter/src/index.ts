@@ -1,11 +1,13 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { NodeWebSocketRuntime } from './runtime';
-import type { Cossack } from '@cossackframework/core';
+import type { Cossack, PageOptions } from '@cossackframework/core';
 import { isOriginAllowed, createInstance } from '@cossackframework/core';
 import { URL } from 'url';
 
 export * from './runtime';
+/** Pass to `createApp({ runtimeAdapter })` so SSR emits process-runtime targets. */
+export const nodeRuntimeAdapter = { name: 'node' } as const;
 export { serveStatic, type StaticServeOptions } from './static-serve';
 export {
     createNodeEmailSender,
@@ -52,6 +54,22 @@ export interface CossackNodeAdapterOptions {
 interface NodeRuntimeEntry {
     runtime: NodeWebSocketRuntime;
     lastActive: number;
+}
+
+function decodeRouteParams(encoded: string | null): Record<string, string> {
+    if (encoded === null) return {};
+    const parsed: unknown = JSON.parse(encoded);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new TypeError('WebSocket route params must be a JSON object');
+    }
+    const routeParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value !== 'string') {
+            throw new TypeError('WebSocket route params must contain strings');
+        }
+        routeParams[key] = value;
+    }
+    return routeParams;
 }
 
 export class CossackNodeAdapter {
@@ -101,10 +119,73 @@ export class CossackNodeAdapter {
             const provider = pathParts.pop(); // second to last is provider
             
             const params = url.searchParams;
-            const componentId = params.get('componentId');
+            // Current clients send the public route path. Keep componentId as
+            // a legacy fallback for applications built before route metadata.
+            const componentId = params.get('routePath') ||
+                params.get('componentPath') || params.get('componentId');
             
             if (!target || !componentId) {
-                ws.close(1008, 'Missing target or componentId');
+                ws.close(1008, 'Missing target or routePath');
+                return;
+            }
+
+            let routeParams: Record<string, string>;
+            try {
+                routeParams = decodeRouteParams(params.get('params'));
+            } catch {
+                ws.close(1008, 'Invalid route params');
+                return;
+            }
+
+            const ComponentClass = this.componentRegistry.get(componentId);
+            if (!ComponentClass) {
+                ws.close(1008, 'Component not found');
+                return;
+            }
+
+            // Resolve the connecting user before accepting its scope target.
+            // This prevents a client from joining another user's instance by
+            // guessing its target key.
+            let user: unknown;
+            try {
+                user = this.authenticate ? await this.authenticate(request) : this.defaultUser;
+            } catch (e) {
+                console.error('[Cossack] Authentication failed, rejecting upgrade:', e);
+                ws.close(1008, 'Authentication failed');
+                return;
+            }
+
+            const pathname = params.get('pathname') || '/';
+            const context = {
+                get: (key: string) => key === 'user' ? user : undefined,
+                req: {
+                    path: pathname,
+                    param: (key?: string) => {
+                        if (key) return routeParams[key];
+                        return { ...routeParams };
+                    },
+                    query: (key?: string) => {
+                        if (key) return params.get(key);
+                        const q: Record<string, string> = {};
+                        params.forEach((v, k) => { q[k] = v; });
+                        return q;
+                    }
+                }
+            } as any;
+
+            const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+            let expectedTarget: string;
+            try {
+                expectedTarget = pageOptions?.scope
+                    ? await pageOptions.scope(context)
+                    : `user:${(user as { id?: unknown } | undefined)?.id || 'anonymous'}`;
+            } catch (error) {
+                console.error('[Cossack] Failed to resolve Node WebSocket scope:', error);
+                ws.close(1008, 'Invalid WebSocket scope');
+                return;
+            }
+            if (target !== expectedTarget) {
+                ws.close(1008, 'Invalid WebSocket scope');
                 return;
             }
 
@@ -112,47 +193,24 @@ export class CossackNodeAdapter {
             this.pruneInstances(true);
             let entry = this.instances.get(instanceKey);
             let runtime = entry?.runtime;
-
             if (!runtime) {
                 if (this.instances.size >= this.maxInstances) {
                     ws.close(1013, 'Runtime instance limit reached');
-                    return;
-                }
-                const ComponentClass = this.componentRegistry.get(componentId);
-                if (!ComponentClass) {
-                    ws.close(1008, 'Component not found');
                     return;
                 }
 
                 // Use the DI container so @Service-injected dependencies are
                 // resolved (new ComponentClass() bypassed the container).
                 const componentInstance = createInstance(ComponentClass) as Cossack;
-                const pathname = params.get('pathname') || '/';
-
-                const context = {
-                    req: {
-                        path: pathname,
-                        param: (key?: string) => {
-                            if (key) return params.get(key);
-                            const p: Record<string, string> = {};
-                            params.forEach((v, k) => { p[k] = v; });
-                            return p;
-                        },
-                        query: (key?: string) => {
-                            if (key) return params.get(key);
-                            const q: Record<string, string> = {};
-                            params.forEach((v, k) => { q[k] = v; });
-                            return q;
-                        }
-                    }
-                } as any;
                 
                 // We need to bootstrap the component.
                 // Thread the configured `env` (bindings such as EMAIL polyfills)
                 // so `this.env` works identically to Cloudflare's runtime.
                 await componentInstance.bootstrap({
                     context,
+                    user: user as any,
                     env: this.env,
+                    runtime: { platform: 'web', adapter: 'node' },
                     page: pathname,
                     providerName: provider
                 });
@@ -164,19 +222,6 @@ export class CossackNodeAdapter {
                 this.instances.set(instanceKey, entry);
             }
             entry!.lastActive = Date.now();
-
-            // Resolve the connecting user via the authenticate hook (cookies,
-            // JWT, etc.) so per-user state/authorization works. Without a hook,
-            // connections run as the configured defaultUser (anonymous) — never
-            // a forged identity.
-            let user: unknown;
-            try {
-                user = this.authenticate ? await this.authenticate(request) : this.defaultUser;
-            } catch (e) {
-                console.error('[Cossack] Authentication failed, rejecting upgrade:', e);
-                ws.close(1008, 'Authentication failed');
-                return;
-            }
 
             runtime.addClient(ws, user);
             

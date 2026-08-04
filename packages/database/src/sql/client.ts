@@ -99,7 +99,7 @@ async function resolveAutoAdapter(
   const module = await import("../runtime/node.js");
   if (url.startsWith("postgres:") || url.startsWith("postgresql:")) return module.postgres(options);
   if (url.startsWith("mysql:")) return module.mysql(options);
-  if (url.startsWith("https:")) {
+  if (url.startsWith("libsql:") || url.startsWith("https:")) {
     return module.turso(typeof options === "string" ? { url: options } : options as any);
   }
   return module.nodeSQLite({

@@ -57,3 +57,39 @@ Deno.test('serves HTTP and upgrades a real WebSocket', async () => {
     await server.shutdown();
   }
 });
+
+Deno.test('closes the socket when a WebSocket action fails', async () => {
+  const component = {
+    _id: 'root',
+    activeComponents: new Map(),
+    getInitialState: () => ({ public: {} }),
+    executeAction: async () => { throw new Error('action failed'); },
+  };
+  const adapter = createDenoAdapter({ port: 0, assetsRoot: './missing' });
+  const app = new Hono();
+  app.get('/ws', (c) => adapter.handleWebSocketUpgrade!(c, {
+    target: 'scope', provider: 'page', componentId: 'counter', pathname: '/',
+    user: undefined, env: {}, createComponent: async () => component as any,
+  }));
+
+  const server = adapter.serve(app) as any;
+  try {
+    const socket = new WebSocket(`ws://127.0.0.1:${server.addr.port}/ws`);
+    const closed = new Promise<CloseEvent>((resolve, reject) => {
+      socket.onerror = () => reject(new Error('WebSocket failure test could not connect'));
+      socket.onmessage = (event) => {
+        const message = JSON.parse(String(event.data));
+        if (message.type === 'state-update') {
+          socket.send(JSON.stringify({ type: 'action', action: 'fail', payload: [] }));
+        }
+      };
+      socket.onclose = resolve;
+    });
+    const event = await closed;
+    if (event.code !== 1013 || event.reason !== 'Runtime unavailable') {
+      throw new Error(`Unexpected WebSocket close: ${event.code} ${event.reason}`);
+    }
+  } finally {
+    await server.shutdown();
+  }
+});

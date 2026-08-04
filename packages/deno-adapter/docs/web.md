@@ -76,6 +76,12 @@ target gets an isolated instance. Malformed client frames are isolated, action
 calls retain the authenticated client identity, nested component targets are
 supported, and instances with no clients are eligible for eviction.
 
+An instance is bootstrapped from the first connection for its route/provider/
+scope key and reused by later connections to that same key. WebSocket actions
+must read request-specific identity from `this.user`, which the runtime tracks
+per socket; do not treat headers or cookies on the instance's original
+`this.c` as belonging to the client that sent the current action.
+
 Do not set `stateful: true` on Deno. There is no durable WebSocket persistence
 or cross-process broadcast in this adapter. Store durable state in a database
 and use the socket as a synchronization channel.

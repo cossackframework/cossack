@@ -169,8 +169,9 @@ the façade because Deno Desktop does not yet expose a first-class native picker
   one process. They do not synchronize across Deno Deploy instances.
 - `stateful: true` is rejected on the Deno adapter. Persist durable application
   data through a database.
-- Normal undecorated/`@Server()` methods are the automatic Desktop bridge and
-  remain the right place for application logic and machine-local Deno APIs.
+- Explicit `@Server()` methods and undecorated methods used directly as render
+  event handlers use normal Cossack RPC and remain the right place for
+  application logic and machine-local Deno APIs.
 - Low-level direct bindings remain available for unusual per-window operations
   that intentionally bypass component RPC, but ordinary page actions do not
   need them.

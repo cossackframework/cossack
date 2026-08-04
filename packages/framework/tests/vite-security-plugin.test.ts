@@ -797,6 +797,24 @@ export class CounterPage extends Cossack {
       expect(result).not.toContain('["unreachableHelper"]');
     });
 
+    it('registers undecorated methods used as component handler properties', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      this.count += 1;
+    }
+
+    render() {
+      return component(Button, { '@click': this.increment });
+    }
+}`;
+
+      const result = transformCossackClass(code, 'counter.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("__cossack_proxies?.get('increment')");
+    });
+
     it('injects the same automatic RPC allowlist into the server build without stripping bodies', () => {
       const code = `
 @Page({ transport: 'http' })
@@ -824,6 +842,38 @@ export class CounterPage extends Cossack {
       expect(result).toContain("localStorage.setItem('count', '1')");
       expect(result).toContain("return 'not remotely callable'");
       expect(result).not.toContain('["unreachableHelper"]');
+    });
+
+    it('does not authorize unrelated bare method references as RPC endpoints', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    sensitiveHelper() {
+      return 'server-only';
+    }
+
+    render() {
+      const reference = this.sensitiveHelper;
+      return html\`<p>safe</p>\`;
+    }
+}`;
+
+      const clientResult = transformCossackClass(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+        true,
+      );
+      const serverResult = injectAutomaticServerMethodMetadata(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+      );
+
+      expect(clientResult).not.toContain('["sensitiveHelper"]');
+      expect(serverResult).not.toContain('["sensitiveHelper"]');
     });
   });
 

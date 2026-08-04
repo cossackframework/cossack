@@ -48,12 +48,13 @@ To use the Node.js adapter, your application entry point must initialize a Node.
 
 ```typescript
 import { serve } from '@hono/node-server';
-import { CossackNodeAdapter } from '@cossackframework/node-adapter';
+import { CossackNodeAdapter, nodeRuntimeAdapter } from '@cossackframework/node-adapter';
 import { createApp } from './router';
 // Import your pages/components registry logic here
 
-const app = createApp();
-const componentRegistry = ...; // Map of ComponentName -> ComponentClass
+const app = createApp({ runtimeAdapter: nodeRuntimeAdapter });
+// Keys must match Cossack route paths, e.g. '/account/:id'.
+const componentRegistry = ...; // Map<RoutePath, ComponentClass>
 
 const server = serve({
     fetch: app.fetch,

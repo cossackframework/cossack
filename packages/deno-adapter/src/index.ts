@@ -132,10 +132,16 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         }
       },
       async onMessage(event, socket) {
-        entryPromise ??= getEntry();
-        const entry = await entryPromise;
-        entry.lastActive = Date.now();
-        await entry.runtime.onClientMessage(socket as unknown as DenoSocket, String(event.data));
+        const client = socket as unknown as DenoSocket;
+        try {
+          entryPromise ??= getEntry();
+          const entry = await entryPromise;
+          entry.lastActive = Date.now();
+          await entry.runtime.onClientMessage(client, String(event.data));
+        } catch (error) {
+          console.error('[Cossack] Deno WebSocket message failed:', error);
+          client.close(1013, 'Runtime unavailable');
+        }
       },
       async onClose(_event, socket) {
         if (!entryPromise) return;

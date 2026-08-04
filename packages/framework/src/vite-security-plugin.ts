@@ -178,12 +178,11 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         return { code, map: null };
       }
 
-      // Undecorated methods are server-only by default. When one is exposed as
-      // a bare handler reference from client-safe code (for example
-      // `@click=${this.increment}` in render()), register it in both the server
-      // and client class metadata. The server registration makes the RPC
-      // allowlist accept it; the client registration lets bootstrap replace
-      // its stripped stub with the normal transport proxy.
+      // Undecorated methods are server-only by default. When one is exposed in
+      // a render event slot (for example `@click=${this.increment}`), register
+      // it in both the server and client class metadata. The server registration
+      // makes the RPC allowlist accept it; the client registration lets
+      // bootstrap replace its stripped stub with the normal transport proxy.
       if (!isClientEnvironment) {
         return {
           code: injectAutomaticServerMethodMetadata(
@@ -922,16 +921,30 @@ function collectThisCalls(node: any): string[] {
   return names;
 }
 
-/**
- * Collect bare `this.<method>` references, excluding direct calls such as
- * `this.method()`. A bare reference from `render()` or another client-safe
- * method is how Cossack methods are normally passed to event handlers.
- */
-function collectThisBareReferences(node: any): string[] {
+/** Helpers for recognizing bare method values in render event-handler slots. */
+function propertyName(node: any): string | null {
+  if (node?.type === 'Identifier' || node?.type === 'PrivateIdentifier') return node.name;
+  if (node?.type === 'Literal' && typeof node.value === 'string') return node.value;
+  return null;
+}
+
+function isHandlerProperty(node: any): boolean {
+  const name = propertyName(node);
+  return name !== null && (name.startsWith('@') || /^on[A-Z]/.test(name));
+}
+
+function isTemplateEventBinding(quasi: any): boolean {
+  const raw = quasi?.value?.raw;
+  return typeof raw === 'string' && /@[A-Za-z0-9_.:-]+\s*=\s*["']?$/.test(raw);
+}
+
+/** Collect method values used in event slots, excluding unrelated bare references. */
+function collectRenderHandlerReferences(node: any): string[] {
   const names: string[] = [];
-  const visit = (n: any, parent?: any) => {
+  const visit = (n: any, parent?: any, handlerPosition = false) => {
     if (!n || typeof n.type !== 'string') return;
     if (
+      handlerPosition &&
       n.type === 'MemberExpression' &&
       n.object?.type === 'ThisExpression' &&
       !n.computed &&
@@ -940,12 +953,31 @@ function collectThisBareReferences(node: any): string[] {
       const isDirectCall = parent?.type === 'CallExpression' && parent.callee === n;
       if (!isDirectCall) names.push(n.property.name);
     }
+
+    if (n.type === 'TaggedTemplateExpression' && n.quasi?.type === 'TemplateLiteral') {
+      visit(n.tag, n, false);
+      for (let index = 0; index < n.quasi.expressions.length; index++) {
+        visit(
+          n.quasi.expressions[index],
+          n.quasi,
+          isTemplateEventBinding(n.quasi.quasis[index]),
+        );
+      }
+      return;
+    }
+
+    if (n.type === 'Property') {
+      if (n.computed) visit(n.key, n, false);
+      visit(n.value, n, isHandlerProperty(n.key));
+      return;
+    }
+
     for (const k of Object.keys(n)) {
       const v = n[k];
       if (Array.isArray(v)) {
-        for (const c of v) visit(c, n);
+        for (const c of v) visit(c, n, handlerPosition);
       } else if (v && typeof v.type === 'string') {
-        visit(v, n);
+        visit(v, n, handlerPosition);
       }
     }
   };
@@ -953,7 +985,7 @@ function collectThisBareReferences(node: any): string[] {
   return names;
 }
 
-/** Methods exposed by client-safe code as handler values become automatic RPC endpoints. */
+/** Undecorated methods exposed as render event handlers become automatic RPC endpoints. */
 function computeAutomaticRpcSet(
   cls: any,
   methods: AstMethod[],
@@ -964,7 +996,7 @@ function computeAutomaticRpcSet(
 
   for (const member of cls?.body?.body ?? []) {
     const name = memberKeyName(member.key);
-    if (name === null || !preserved.has(name)) continue;
+    if (name !== 'render' || !preserved.has(name)) continue;
     const body = member.type === 'MethodDefinition'
       ? member.value?.body
       : member.type === 'PropertyDefinition'
@@ -972,7 +1004,7 @@ function computeAutomaticRpcSet(
         : undefined;
     if (!body) continue;
 
-    for (const reference of collectThisBareReferences(body)) {
+    for (const reference of collectRenderHandlerReferences(body)) {
       const target = byName.get(reference);
       if (target && !preserved.has(reference) && !target.hasServerDecorator) {
         automatic.add(reference);

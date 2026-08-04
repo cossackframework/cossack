@@ -95,7 +95,7 @@ export default class CounterPage extends Cossack {
             variant: 'outline',
             'data-counter-action': 'decrement',
             '@click': this.decrement,
-          }, '−')}
+          }, '-')}
           ${component(Button, {
             'data-counter-action': 'increment',
             '@click': this.increment,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { turso } from '../src/runtime/deno';
+import { turso } from '../src/runtime/deno.js';
 
 describe('current Turso adapter', () => {
   it('uses @tursodatabase/database for embedded SQL with request scoping', async () => {
