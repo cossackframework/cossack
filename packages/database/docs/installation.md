@@ -63,10 +63,10 @@ for the runtime where the application executes:
 
 | Runtime | Import | Available adapters |
 | --- | --- | --- |
-| Node.js | `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `libsql` |
+| Node.js | `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso` |
+| Deno | `@cossackframework/database/deno` | `deno`, `denoSQLite`, `postgres`, `mysql`, `turso` |
 | Bun | `@cossackframework/database/bun` | `bun` for SQLite, PostgreSQL, or MySQL |
-| Cloudflare Workers | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL` |
-| Deno | `@cossackframework/database/deno` | `deno` with an injected driver |
+| Cloudflare Workers | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL`, `turso` |
 
 Some Node and Workers adapters require an optional peer driver:
 
@@ -74,7 +74,8 @@ Some Node and Workers adapters require an optional peer driver:
 # Install only what the application uses.
 pnpm add pg
 pnpm add mysql2
-pnpm add @libsql/client
+pnpm add @tursodatabase/database   # embedded SQLite / Desktop
+pnpm add @tursodatabase/serverless # remote Turso / edge runtimes
 pnpm add better-sqlite3
 ```
 

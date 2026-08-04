@@ -10,7 +10,8 @@ eagerly include Node built-ins, native SQLite packages, or unused drivers.
 
 | Runtime entry | Adapters |
 | --- | --- |
-| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, libSQL |
+| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso |
+| `@cossackframework/database/deno` | Turso embedded SQLite, PostgreSQL, MySQL, remote Turso, or an injected driver |
 | `@cossackframework/database/bun` | Native Bun SQL for SQLite, PostgreSQL, MySQL |
 | `@cossackframework/database/cloudflare` | D1 and Hyperdrive PostgreSQL/MySQL |
 | `@cossackframework/database/deno` | Injected SQLite, PostgreSQL, MySQL-compatible drivers |
@@ -78,16 +79,19 @@ const adapter = await mysql({
 });
 ```
 
-libSQL or Turso:
+Turso (choose the client matching the connection):
 
 ```sh
-pnpm add @libsql/client
+pnpm add @tursodatabase/database   # embedded SQLite / Desktop
+pnpm add @tursodatabase/serverless # remote Turso / Deno Deploy
 ```
 
 ```ts
-import { libsql } from "@cossackframework/database/node";
+import { turso } from "@cossackframework/database/node";
 
-const adapter = await libsql({
+const embedded = await turso({ path: "./app.turso" });
+
+const adapter = await turso({
   url: process.env.TURSO_DATABASE_URL!,
   authToken: process.env.TURSO_AUTH_TOKEN!,
 });

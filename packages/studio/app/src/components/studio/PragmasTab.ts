@@ -20,7 +20,7 @@ export class PragmasTab extends Cossack {
   declare props: PragmasTabProps;
 
   render() {
-    const supported = ['sqlite', 'libsql', 'd1-local', 'd1-remote']
+    const supported = ['sqlite', 'turso', 'd1-local', 'd1-remote']
       .includes(this.props.schema.connection.provider);
     if (!supported) {
       return html`

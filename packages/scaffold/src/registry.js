@@ -1,9 +1,10 @@
-export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples'];
+export const ADAPTERS = ['cloudflare', 'node', 'deno'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
 export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
+export const DESKTOP_BACKENDS = ['webview', 'cef'];
 
 export const FEATURE_REGISTRY = {
   ui: { requires: [] },
@@ -13,6 +14,7 @@ export const FEATURE_REGISTRY = {
   dashboard: { requires: ['auth'] },
   markdown: { requires: [] },
   examples: { requires: ['ui', 'markdown'] },
+  desktop: { requires: [] },
 };
 
 export const PRESET_REGISTRY = {
@@ -27,10 +29,10 @@ export const PRESET_REGISTRY = {
 
 export const DATABASE_PROVIDERS = {
   d1: { adapters: ['cloudflare'] },
-  sqlite: { adapters: ['node'] },
+  sqlite: { adapters: ['node', 'deno'] },
   turso: { adapters: ADAPTERS },
-  postgres: { adapters: ['node'] },
-  mysql: { adapters: ['node'] },
+  postgres: { adapters: ['node', 'deno'] },
+  mysql: { adapters: ['node', 'deno'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
 };
@@ -107,12 +109,22 @@ export function resolveRecipe(options = {}) {
   const resolvedFeatures = resolveFeatures(explicitFeatures);
 
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
+    (adapter === 'cloudflare' ? 'd1' : adapter === 'deno' ? 'turso' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }
   if (!DATABASE_PROVIDERS[database].adapters.includes(adapter)) {
     throw new Error(`Database provider "${database}" is not supported by the ${adapter} adapter`);
+  }
+  if (resolvedFeatures.includes('desktop') && adapter !== 'deno') {
+    throw new Error('The desktop feature is only supported by the deno adapter');
+  }
+  const desktopBackend = options.desktopBackend ?? 'webview';
+  if (resolvedFeatures.includes('desktop') && !DESKTOP_BACKENDS.includes(desktopBackend)) {
+    throw new Error(
+      `Desktop backend "${desktopBackend}" is not supported. ` +
+      `Cossack requires an HTML backend: ${DESKTOP_BACKENDS.join(', ')}`,
+    );
   }
 
   const oauth = parseList(options.oauth);
@@ -146,6 +158,12 @@ export function resolveRecipe(options = {}) {
     explicitFeatures,
     resolvedFeatures,
     dashboardModules,
-    config: { database, authMethods, oauth, theme },
+    config: {
+      database,
+      authMethods,
+      oauth,
+      theme,
+      ...(resolvedFeatures.includes('desktop') ? { desktopBackend } : {}),
+    },
   };
 }

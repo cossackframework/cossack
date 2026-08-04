@@ -7,6 +7,7 @@ import {
   createLayoutServiceScope,
   createRootServiceScope,
   getServiceState,
+  isOriginAllowed,
   isRpcCallableAction,
   sanitizeClientState,
   sanitizeServiceState,
@@ -56,6 +57,8 @@ import { createRequestContextMiddleware } from './middlewares/request-context.js
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
+import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
+import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -322,6 +325,8 @@ export interface CreateAppOptions {
   i18n?: {
     autoDetectBrowser?: boolean;
   };
+  /** Optional process runtime integration (for example the Deno adapter). */
+  runtimeAdapter?: CossackRuntimeAdapter;
 }
 
 @Page({ transport: 'http' })
@@ -415,7 +420,8 @@ export function createApp(options: CreateAppOptions = {}) {
         if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
           doIdName = scopeKey;
         }
-        if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
+        assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
+        if (!options.runtimeAdapter && pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
           try {
             const doBinding = c.env.COSSACK_OBJECT;
             const id = doBinding.idFromName(doIdName);
@@ -534,7 +540,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // For durable-object transport, add the DO ID to providerTargets
         // Also add routePath to metadata for client WebSocket connections
-        if (pageOptions?.transport === 'durable-object') {
+        if (pageOptions?.transport === 'durable-object' && options.runtimeAdapter) {
+          pageInitialState.providerTargets = {
+            ...(pageInitialState.providerTargets || {}),
+            page: scopeKey,
+          };
+          if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
+        } else if (pageOptions?.transport === 'durable-object') {
           const doBinding = c.env.COSSACK_OBJECT;
           // Use scoped ID (from scope function) or URL-based ID (default)
           const doId = doBinding.idFromName(doIdName);
@@ -568,6 +580,12 @@ export function createApp(options: CreateAppOptions = {}) {
           // fallback if different) so `__()` works on the client immediately.
           // Other locales are dynamic-imported on demand by `setLocale()`.
           __cossackLang: buildLocaleHydrationData(),
+          ...(options.runtimeAdapter ? {
+            runtime: {
+              adapter: options.runtimeAdapter.name,
+              ...(await options.runtimeAdapter.getClientMetadata?.()),
+            },
+          } : {}),
         };
 
         c.header('Content-Type', 'text/html');
@@ -609,7 +627,58 @@ export function createApp(options: CreateAppOptions = {}) {
   };
 
   // Transport routes
-  app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+  if (options.runtimeAdapter?.handleWebSocketUpgrade) {
+    app.get('/ws/:provider/:id', async (c) => {
+      if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
+        return c.text('Origin not allowed', 403);
+      }
+      const { provider, id: target } = c.req.param();
+      const routePath = c.req.query('routePath') || c.req.query('componentPath');
+      if (!routePath) return c.text('routePath or componentPath query parameter is required', 400);
+      const componentPath = routePathToFilePathMap.get(routePath) || routePath;
+      const componentModule = pages[componentPath] || layouts[componentPath];
+      if (!componentModule) return c.text('Component not found', 404);
+      const ComponentClass = Object.values(componentModule as object)[0] as new () => Cossack;
+      const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+      try {
+        assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
+      } catch (error) {
+        return c.text(error instanceof Error ? error.message : String(error), 400);
+      }
+      // Default scopes are recomputed from the authenticated user. Custom
+      // scope functions receive the same query values emitted during SSR.
+      let routeParams: Record<string, string>;
+      try {
+        routeParams = decodeRuntimeRouteParams(c.req.query('params'));
+      } catch {
+        return c.text('Invalid WebSocket route params', 400);
+      }
+      const expectedTarget = await resolveSseScopeKey(
+        withRuntimeRouteParams(c, routeParams),
+        pageOptions,
+      );
+      if (target !== expectedTarget) return c.text('Invalid WebSocket scope', 403);
+
+      const pathname = c.req.query('pathname') || '/';
+      const user = c.get('user');
+      return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
+        target,
+        provider,
+        componentId: componentPath,
+        pathname,
+        user,
+        env: c.env as unknown as Record<string, unknown>,
+        createComponent: async () => {
+          const instance = createInstance(ComponentClass) as Cossack;
+          await instance.bootstrap({ context: c, user, env: c.env, page: pathname, providerName: provider });
+          instance._render();
+          return instance;
+        },
+      });
+    });
+  } else {
+    app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+  }
   app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
   app.post('/upload', handleUpload(routerContext));
 

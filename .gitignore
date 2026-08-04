@@ -10,6 +10,9 @@ packages/*/pnpm-lock.yaml
 **/dist
 **/build
 
+# Packaged Deno Desktop example (executable, runtime library, and markers)
+/examples/deno-desktop-counter/Cossack Counter/
+
 # TypeScript incremental build cache
 **/*.tsbuildinfo
 

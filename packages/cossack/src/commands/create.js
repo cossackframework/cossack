@@ -18,8 +18,8 @@ export async function createCommand(args, ctx) {
   }
 
   const adapter = flagString(ctx.flags.adapter);
-  if (adapter && adapter !== 'cloudflare' && adapter !== 'node') {
-    console.error(`Invalid --adapter "${adapter}". Use cloudflare or node.`);
+  if (adapter && adapter !== 'cloudflare' && adapter !== 'node' && adapter !== 'deno') {
+    console.error(`Invalid --adapter "${adapter}". Use cloudflare, node, or deno.`);
     return 1;
   }
   const requestedPackageManager = flagString(ctx.flags['package-manager']);
@@ -49,6 +49,7 @@ export async function createCommand(args, ctx) {
       oauth: ctx.flags.oauth,
       theme: flagString(ctx.flags.theme),
       dashboardModules: ctx.flags['dashboard-features'],
+      desktopBackend: flagString(ctx.flags['desktop-backend']),
       yes,
       interactive: !yes,
       force: ctx.force,
@@ -84,14 +85,15 @@ export function createHelp() {
 Scaffold a new Cossack project.
 
 Options:
-  --adapter <cloudflare|node>
+  --adapter <cloudflare|node|deno>
   --package-manager <manager>   npm|pnpm|yarn|bun|deno
   --preset <minimal|database|auth|full-stack>
-  --features <ui,database,studio,auth,dashboard,markdown,examples>
+  --features <ui,database,studio,auth,dashboard,markdown,examples,desktop>
   --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
   --dashboard-features <users,sessions,settings,roles>
+  --desktop-backend <webview|cef>  Desktop rendering backend (default: webview)
   --yes                         Accept defaults and write without confirmation.`;
 }

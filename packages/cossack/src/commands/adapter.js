@@ -72,9 +72,9 @@ export async function adapterCommand(args, ctx) {
           'Review `DB_PATH` in `.env`, then run `cossack migration up`.',
         );
       } else {
-        const environment = result.targetAdapter === 'node' ? '.env' : '.dev.vars';
+        const environment = result.targetAdapter === 'cloudflare' ? '.dev.vars' : '.env';
         console.log(
-          `Configure \`TURSO_URL\` and \`TURSO_TOKEN\` in \`${environment}\`, ` +
+          `Configure \`TURSO_DATABASE_URL\` and \`TURSO_AUTH_TOKEN\` in \`${environment}\`, ` +
           'then run `cossack migration up`.',
         );
       }
@@ -106,7 +106,7 @@ export async function detectInstallCommand(root) {
 }
 
 export function adapterHelp() {
-  return `cossack adapter <node|cloudflare>
+  return `cossack adapter <node|cloudflare|deno>
 
 Switch a schema-v3 scaffolded project to one runtime adapter. The complete
 recorded recipe is re-rendered; application features and unrelated edits are

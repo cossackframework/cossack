@@ -43,17 +43,28 @@ export interface CossackNodeAdapterOptions {
      * `this.env.EMAIL.send(...)` call works on both runtimes.
      */
     env?: Record<string, unknown>;
+    /** Maximum number of process-local component instances. Defaults to 512. */
+    maxInstances?: number;
+    /** Evict disconnected instances after this idle period. Defaults to 15 minutes. */
+    idleTimeoutMs?: number;
+}
+
+interface NodeRuntimeEntry {
+    runtime: NodeWebSocketRuntime;
+    lastActive: number;
 }
 
 export class CossackNodeAdapter {
     private wss: WebSocketServer;
     // Map of target ID -> Runtime instance
-    private instances: Map<string, NodeWebSocketRuntime> = new Map();
+    private instances: Map<string, NodeRuntimeEntry> = new Map();
     private componentRegistry: Map<string, new () => Cossack>;
     private allowedOrigins?: string[];
     private authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
     private defaultUser: unknown;
     private env?: Record<string, unknown>;
+    private maxInstances: number;
+    private idleTimeoutMs: number;
 
     constructor(options: CossackNodeAdapterOptions) {
         this.wss = new WebSocketServer({ noServer: true });
@@ -62,6 +73,8 @@ export class CossackNodeAdapter {
         this.authenticate = options.authenticate;
         this.defaultUser = options.defaultUser ?? { id: 'anonymous' };
         this.env = options.env;
+        this.maxInstances = options.maxInstances ?? 512;
+        this.idleTimeoutMs = options.idleTimeoutMs ?? 15 * 60_000;
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -95,9 +108,16 @@ export class CossackNodeAdapter {
                 return;
             }
 
-            let runtime = this.instances.get(target);
+            const instanceKey = `${componentId}:${provider ?? 'page'}:${target}`;
+            this.pruneInstances(true);
+            let entry = this.instances.get(instanceKey);
+            let runtime = entry?.runtime;
 
             if (!runtime) {
+                if (this.instances.size >= this.maxInstances) {
+                    ws.close(1013, 'Runtime instance limit reached');
+                    return;
+                }
                 const ComponentClass = this.componentRegistry.get(componentId);
                 if (!ComponentClass) {
                     ws.close(1008, 'Component not found');
@@ -140,8 +160,10 @@ export class CossackNodeAdapter {
                 // init() and get() are now automatically called during bootstrap
 
                 runtime = new NodeWebSocketRuntime(componentInstance);
-                this.instances.set(target, runtime);
+                entry = { runtime, lastActive: Date.now() };
+                this.instances.set(instanceKey, entry);
             }
+            entry!.lastActive = Date.now();
 
             // Resolve the connecting user via the authenticate hook (cookies,
             // JWT, etc.) so per-user state/authorization works. Without a hook,
@@ -162,5 +184,23 @@ export class CossackNodeAdapter {
             const initialState = (runtime as any).component.getInitialState();
             ws.send(JSON.stringify({ type: 'state-update', state: initialState }));
         });
+    }
+
+    private pruneInstances(reserveSlot = false): void {
+        const now = Date.now();
+        for (const [key, entry] of this.instances) {
+            if (entry.runtime.clientCount === 0 && now - entry.lastActive >= this.idleTimeoutMs) {
+                this.instances.delete(key);
+            }
+        }
+        const targetSize = Math.max(0, this.maxInstances - (reserveSlot ? 1 : 0));
+        if (this.instances.size <= targetSize) return;
+        const idle = [...this.instances.entries()]
+            .filter(([, entry]) => entry.runtime.clientCount === 0)
+            .sort((a, b) => a[1].lastActive - b[1].lastActive);
+        for (const [key] of idle) {
+            if (this.instances.size <= targetSize) break;
+            this.instances.delete(key);
+        }
     }
 }

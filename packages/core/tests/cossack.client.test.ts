@@ -136,7 +136,7 @@ describe('Cossack Core: Client-Side', () => {
       expect(global.WebSocket).toHaveBeenCalledTimes(1);
       // Expected URL based on new logic: /ws/{provider}/{target}?routePath=...&pathname=...&params...
       // pathname and routePath come from mockInitialState
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&name=cossack');
+      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&params=%7B%22name%22%3A%22cossack%22%7D');
   });
 
   it('should proxy server methods to send WebSocket messages', async () => {

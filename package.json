@@ -4,8 +4,8 @@
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "pnpm --filter @cossackframework/framework run dev",
-    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/node-adapter --filter @cossackframework/ui --filter @cossackframework/database run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/studio run build",
-    "test:unit": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/database --filter @cossackframework/studio --filter @cossackframework/scaffold --filter cossack run test",
+    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/node-adapter --filter @cossackframework/deno-adapter --filter @cossackframework/ui --filter @cossackframework/database run build && pnpm --filter @cossackframework/studio run build",
+    "test:unit": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer --filter @cossackframework/deno-adapter --filter @cossackframework/database --filter @cossackframework/studio --filter @cossackframework/scaffold --filter cossack run test",
     "audit:bundle": "pnpm --filter @cossackframework/database run audit:bundle",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",

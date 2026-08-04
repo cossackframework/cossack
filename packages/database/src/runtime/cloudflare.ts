@@ -1,7 +1,6 @@
 import type {
   Adapter,
   BatchStatement,
-  DatabaseValue,
   Driver,
   DriverCapabilities,
   QueryOperation,
@@ -268,22 +267,23 @@ export async function hyperdriveMySQL(binding: HyperdriveBinding): Promise<Adapt
   };
 }
 
-export interface CloudflareLibSQLOptions {
+export interface CloudflareTursoOptions {
   readonly url: string;
   readonly authToken?: string;
-  readonly encryptionKey?: string;
 }
 
-interface LibSQLClient {
-  execute(input: { sql: string; args: readonly DatabaseValue[] }): Promise<{
-    rows: readonly unknown[];
-    rowsAffected: number;
-    lastInsertRowid?: string | number | bigint;
-  }>;
-  close(): void;
+interface TursoServerlessConnection {
+  prepare(text: string): Promise<{
+    all(...parameters: readonly unknown[]): Promise<unknown>;
+    run(...parameters: readonly unknown[]): Promise<unknown>;
+  }> | {
+    all(...parameters: readonly unknown[]): Promise<unknown>;
+    run(...parameters: readonly unknown[]): Promise<unknown>;
+  };
+  close?(): void | Promise<void>;
 }
 
-class CloudflareLibSQLDriver implements Driver {
+class CloudflareTursoDriver implements Driver {
   readonly dialect = "sqlite" as const;
   readonly capabilities = capabilities({
     transactions: false,
@@ -292,22 +292,25 @@ class CloudflareLibSQLDriver implements Driver {
     parameterLimit: 999,
   });
 
-  constructor(private readonly client: LibSQLClient) {}
+  constructor(private readonly connection: TursoServerlessConnection) {}
 
   async execute<Row = Record<string, unknown>>(
     query: CompiledQuery,
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
-    const result = await this.client.execute({
-      sql: query.text,
-      args: query.parameters as readonly DatabaseValue[],
-    });
+    const statement = await this.connection.prepare(query.text);
+    const readsRows = operation === "select" || /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)/i.test(query.text) ||
+      /\bRETURNING\b/i.test(query.text);
+    const result = await (readsRows
+      ? statement.all(...query.parameters)
+      : statement.run(...query.parameters)) as any;
+    const rows = Array.isArray(result) ? result : (result?.rows ?? []);
     return {
-      rows: result.rows as readonly Row[],
+      rows: rows as readonly Row[],
       meta: meta("sqlite", operation, start, {
-        rowsAffected: result.rowsAffected,
-        ...(result.lastInsertRowid === undefined
+        rowsAffected: Number(result?.rowsAffected ?? result?.changes ?? 0),
+        ...(result?.lastInsertRowid === undefined
           ? {}
           : { lastInsertId: result.lastInsertRowid }),
       }),
@@ -320,19 +323,19 @@ class CloudflareLibSQLDriver implements Driver {
   }
 
   async close(): Promise<void> {
-    this.client.close();
+    await this.connection.close?.();
   }
 }
 
-/** Workers-safe libSQL/Turso adapter. Imports the web client only. */
-export async function libsql(
-  options: string | CloudflareLibSQLOptions,
+/** Workers-safe remote Turso adapter using the current fetch-only client. */
+export async function turso(
+  options: string | CloudflareTursoOptions,
 ): Promise<Adapter> {
-  const imported = await import("@libsql/client/web");
-  const client = imported.createClient(
+  const imported = await import("@tursodatabase/serverless");
+  const connection = imported.connect(
     typeof options === "string" ? { url: options } : options,
-  ) as unknown as LibSQLClient;
-  return { driver: new CloudflareLibSQLDriver(client) };
+  ) as TursoServerlessConnection;
+  return { driver: new CloudflareTursoDriver(connection) };
 }
 
-export { D1Driver, CloudflareLibSQLDriver };
+export { D1Driver, CloudflareTursoDriver };

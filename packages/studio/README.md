@@ -26,7 +26,7 @@ cossack studio --remote
 cossack studio --remote --database DB --env production
 ```
 
-Studio supports Cloudflare D1, SQLite, Turso/libSQL, PostgreSQL, and MySQL
+Studio supports Cloudflare D1, SQLite, Turso, PostgreSQL, and MySQL
 schema inspection, exact row counts, adjustable pagination (100 rows by
 default), inline and JSON-aware keyed row editing, and one arbitrary SQL
 statement per execution. Its SQL editor includes syntax highlighting plus table

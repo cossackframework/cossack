@@ -6,8 +6,7 @@ const PROVIDER_ALIASES: Record<string, StudioProvider> = {
   'd1-local': 'd1-local',
   sqlite: 'sqlite',
   sqlite3: 'sqlite',
-  libsql: 'libsql',
-  turso: 'libsql',
+  turso: 'turso',
   pg: 'postgres',
   postgres: 'postgres',
   postgresql: 'postgres',
@@ -40,7 +39,7 @@ function environmentProvider(environment: NodeJS.ProcessEnv): StudioProvider | u
   if (url) return url;
   if (environment.PGHOST || environment.PGDATABASE) return 'postgres';
   if (environment.MYSQL_HOST || environment.MYSQL_DATABASE) return 'mysql';
-  if (environment.TURSO_URL) return 'libsql';
+  if (environment.TURSO_DATABASE_URL) return 'turso';
   if (environment.D1_LOCAL_PATH) return 'd1-local';
   if (environment.DB_PATH) return 'sqlite';
   return undefined;
@@ -53,7 +52,7 @@ export async function detectStudioProvider(
   const hint = environmentProvider(environment);
   if (orm.driver.dialect === 'postgres') return 'postgres';
   if (orm.driver.dialect === 'mysql') return 'mysql';
-  if (hint === 'd1-local' || hint === 'libsql' || hint === 'sqlite') return hint;
+  if (hint === 'd1-local' || hint === 'turso' || hint === 'sqlite') return hint;
   return orm.driver.dialect === 'sqlite' ? 'sqlite' : 'unknown';
 }
 

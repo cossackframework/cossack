@@ -171,7 +171,7 @@ try {
 }
 ```
 
-In Node.js, URL or path inference supports PostgreSQL, MySQL, libSQL, and
+In Node.js, URL or path inference supports PostgreSQL, MySQL, Turso HTTPS URLs, and
 SQLite. Bun delegates to native Bun SQL. Workers and Deno require an explicit
 adapter rather than environment guessing:
 

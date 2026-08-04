@@ -332,7 +332,7 @@ export default class StudioPage extends Cossack {
 
   @Client()
   async refreshPragmas() {
-    if (!['sqlite', 'libsql', 'd1-local', 'd1-remote']
+    if (!['sqlite', 'turso', 'd1-local', 'd1-remote']
       .includes(this.activeSchema.connection.provider)) return;
     try {
       const pragmas = await this.loadPragmas();
@@ -1697,7 +1697,7 @@ export default class StudioPage extends Cossack {
                   })
                 : ''}
               ${this.tab === 'pragmas' &&
-                ['sqlite', 'libsql', 'd1-local', 'd1-remote']
+                ['sqlite', 'turso', 'd1-local', 'd1-remote']
                   .includes(this.activeSchema.connection.provider)
                 ? this.iconButton(RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
                     disabled: Boolean(this.loading.refreshPragmas),

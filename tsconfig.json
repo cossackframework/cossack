@@ -17,6 +17,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/renderer" },
     { "path": "./packages/node-adapter" },
+    { "path": "./packages/deno-adapter" },
     { "path": "./packages/database" },
     { "path": "./packages/test-utils" },
     { "path": "./packages/ui" },

@@ -29,7 +29,7 @@ import { sql } from '@cossackframework/database';
 const result = await sql`SELECT * FROM users WHERE id = ${id}`;
 ```
 
-Node SQLite, libSQL, PostgreSQL, and MySQL support `sql.transaction()`. D1 uses
+Node SQLite, PostgreSQL, and MySQL support `sql.transaction()`. D1 uses
 native transactional batches and never emulates interactive transactions.
 
 Generated applications register entities, migrations, and seeders as explicit

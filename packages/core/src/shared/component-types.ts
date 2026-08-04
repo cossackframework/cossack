@@ -71,6 +71,8 @@ export interface SerializedComponentState {
     scopeKey?: string;
     /** Resolved compiler-generated server$ invocations. */
     serverResources?: Record<string, unknown>;
+    /** Runtime-specific, browser-safe metadata contributed by an adapter. */
+    runtime?: Record<string, unknown>;
 }
 
 export interface CossackOptions {

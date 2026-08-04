@@ -5,9 +5,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   _setPromptTestOverrides,
+  addFeature,
   createApp,
   PromptAbortedError,
   readManifest,
+  removeFeatureFromProject,
   switchAdapter,
 } from '../src/index.js';
 
@@ -61,6 +63,27 @@ afterEach(async () => {
 });
 
 describe('adapter switching', () => {
+  it('adds/removes Desktop on Deno and blocks switching while it is enabled', async () => {
+    const project = await create('deno');
+    const added = await addFeature(project.projectDir, 'desktop', {
+      interactive: false,
+      desktopBackend: 'cef',
+    });
+    expect(added.status).toBe('added');
+    expect(added.recipe.config.desktopBackend).toBe('cef');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
+    await expect(switchAdapter(project.projectDir, 'node', { interactive: false }))
+      .rejects.toThrow('Remove the desktop feature');
+
+    const removed = await removeFeatureFromProject(project.projectDir, 'desktop', {
+      interactive: false,
+    });
+    expect(removed.status).toBe('removed');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
+    expect((await switchAdapter(project.projectDir, 'node', { interactive: false })).status)
+      .toBe('changed');
+  });
+
   it.each(['minimal', 'database', 'auth', 'full-stack'])(
     'matches direct Node creation for the %s recipe',
     async (preset) => {
@@ -164,7 +187,7 @@ describe('adapter switching', () => {
     await fs.writeFile(
       path.join(project.projectDir, '.dev.vars'),
       'APP_URL=https://source.example\nGITHUB_CLIENT_ID=source-id\n' +
-      'TURSO_URL=libsql://source\nSOURCE_ONLY=keep-at-source\n',
+      'TURSO_DATABASE_URL=https://source.turso.io\nTURSO_AUTH_TOKEN=source-token\nSOURCE_ONLY=keep-at-source\n',
     );
     await fs.writeFile(
       path.join(project.projectDir, '.env'),
@@ -178,7 +201,8 @@ describe('adapter switching', () => {
     const source = await fs.readFile(path.join(project.projectDir, '.dev.vars'), 'utf8');
     expect(target).toContain('APP_URL=https://target.example');
     expect(target).toContain('GITHUB_CLIENT_ID=source-id');
-    expect(target).toContain('TURSO_URL=libsql://source');
+    expect(target).toContain('TURSO_DATABASE_URL=https://source.turso.io');
+    expect(target).toContain('TURSO_AUTH_TOKEN=source-token');
     expect(target).toContain('DB_CONNECTION=turso');
     expect(target).toContain('CUSTOM_TARGET=value');
     expect(target).not.toContain('SOURCE_ONLY=');
@@ -264,9 +288,9 @@ describe('adapter switching', () => {
 
   it('rejects invalid targets and projects without schema-v3 manifests', async () => {
     const project = await create('node');
-    await expect(switchAdapter(project.projectDir, 'deno', {
+    await expect(switchAdapter(project.projectDir, 'bun', {
       interactive: false,
-    })).rejects.toThrow('Supported values: cloudflare, node');
+    })).rejects.toThrow('Supported values: cloudflare, node, deno');
     const root = await temporaryDirectory();
     await fs.writeFile(path.join(root, 'package.json'), '{}\n');
     await expect(switchAdapter(root, 'node', {

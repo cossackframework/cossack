@@ -78,7 +78,7 @@ Studio still binds parameters and uses safe row locators for edits.
 
 ## Transactions
 
-Node SQLite, libSQL, PostgreSQL, and MySQL support interactive transactions:
+Node SQLite, PostgreSQL, and MySQL support interactive transactions:
 
 ```ts
 await sql.transaction(async () => {

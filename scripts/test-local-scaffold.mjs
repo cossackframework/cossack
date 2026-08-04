@@ -13,6 +13,7 @@ const packageDirectories = [
   'renderer',
   'core',
   'node-adapter',
+  'deno-adapter',
   'auth',
   'ui',
   'framework',
@@ -36,6 +37,7 @@ async function buildPublishablePackages() {
   await run('pnpm', ['--filter', '@cossackframework/renderer', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/core', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
+  await run('pnpm', ['--filter', '@cossackframework/deno-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
   await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
@@ -390,6 +392,36 @@ try {
   await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
   await verifyMinimalProductionBundles(minimalProjectDir);
   await assertStarterBundleBudgets(minimalProjectDir);
+
+  await run(process.execPath, [
+    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
+    'create',
+    'deno-production',
+    '--adapter=deno',
+    '--preset=minimal',
+    '--yes',
+  ], { cwd: temporaryRoot });
+  const denoProjectDir = path.join(temporaryRoot, 'deno-production');
+  await useTarballs(denoProjectDir, tarballs);
+  await installGeneratedProject(denoProjectDir);
+  await run('pnpm', ['run', 'build'], { cwd: denoProjectDir });
+  await fs.access(path.join(denoProjectDir, 'dist', 'server', 'index.js'));
+  const denoPackage = JSON.parse(await fs.readFile(
+    path.join(denoProjectDir, 'package.json'),
+    'utf8',
+  ));
+  if (!String(denoPackage.dependencies?.['@cossackframework/deno-adapter'])
+    .startsWith('file:')) {
+    throw new Error('Deno scaffold did not consume the locally packed adapter');
+  }
+  const denoConfig = JSON.parse(await fs.readFile(
+    path.join(denoProjectDir, 'deno.json'),
+    'utf8',
+  ));
+  if (denoConfig.tasks?.start !==
+      'deno run --allow-env --allow-net --allow-read dist/server/index.js') {
+    throw new Error('Deno scaffold did not emit the production start task');
+  }
 
   await run('pnpm', [
     'exec',

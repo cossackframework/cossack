@@ -37,6 +37,7 @@ jobs:
         run: |
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
+          pnpm --filter @cossackframework/deno-adapter test
           pnpm --filter @cossackframework/ui test -- --run
           pnpm --filter @cossackframework/database test
           pnpm --filter @cossackframework/database audit:bundle
@@ -76,6 +77,11 @@ jobs:
 
       - name: Publish @cossackframework/framework
         run: pnpm publish --filter @cossackframework/framework --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @cossackframework/deno-adapter
+        run: pnpm publish --filter @cossackframework/deno-adapter --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

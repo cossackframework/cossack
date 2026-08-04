@@ -5,5 +5,6 @@
  * applications create and export their own runtime handler from src/index.ts.
  */
 export * from './router.js';
+export * from './runtime-adapter.js';
 export { AppDurableObject } from './DurableObject.js';
 export { CacheDurableObject } from './cache.js';

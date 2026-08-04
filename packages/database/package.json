@@ -85,7 +85,8 @@
     "tsx": "^4.23.0"
   },
   "peerDependencies": {
-    "@libsql/client": ">=0.14",
+    "@tursodatabase/database": "^0.7.2",
+    "@tursodatabase/serverless": "^1.4.0",
     "better-sqlite3": ">=11",
     "hono": "^4.12.0",
     "mysql2": ">=3.11",
@@ -93,7 +94,10 @@
     "reflect-metadata": ">=0.2"
   },
   "peerDependenciesMeta": {
-    "@libsql/client": {
+    "@tursodatabase/database": {
+      "optional": true
+    },
+    "@tursodatabase/serverless": {
       "optional": true
     },
     "better-sqlite3": {

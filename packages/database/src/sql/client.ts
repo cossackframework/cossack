@@ -84,7 +84,7 @@ async function resolveAutoAdapter(
   };
   if (runtime.WebSocketPair && !runtime.Bun && !runtime.Deno) {
     throw new ConfigurationError(
-      "Workers do not guess database URLs. Pass an explicit D1/libSQL/Hyperdrive adapter from @cossackframework/database/cloudflare.",
+      "Workers do not guess database URLs. Pass an explicit D1/Turso/Hyperdrive adapter from @cossackframework/database/cloudflare.",
     );
   }
   if (runtime.Bun) {
@@ -99,7 +99,9 @@ async function resolveAutoAdapter(
   const module = await import("../runtime/node.js");
   if (url.startsWith("postgres:") || url.startsWith("postgresql:")) return module.postgres(options);
   if (url.startsWith("mysql:")) return module.mysql(options);
-  if (url.startsWith("libsql:") || url.startsWith("https:")) return module.libsql(options);
+  if (url.startsWith("https:")) {
+    return module.turso(typeof options === "string" ? { url: options } : options as any);
+  }
   return module.nodeSQLite({
     filename: url.startsWith("sqlite:") ? url.slice("sqlite:".length) : (url || ":memory:"),
   });

@@ -1,11 +1,12 @@
-export type Adapter = 'cloudflare' | 'node';
+export type Adapter = 'cloudflare' | 'node' | 'deno';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop';
 export type AuthMethod = 'credentials' | 'oauth';
-export type DatabaseProvider = 'd1' | 'sqlite' | 'turso';
+export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';
 export type UITheme = 'default' | 'neutral' | 'zinc' | 'stone' | 'gray' | 'slate' | 'blue' | 'green' | 'red';
 export type DashboardModule = 'users' | 'sessions' | 'settings' | 'roles';
+export type DesktopBackend = 'webview' | 'cef';
 
 export interface ScaffoldRecipe {
   adapter: Adapter;
@@ -18,6 +19,7 @@ export interface ScaffoldRecipe {
     authMethods: AuthMethod[];
     oauth: OAuthProvider[];
     theme: UITheme;
+    desktopBackend?: DesktopBackend;
   };
 }
 
@@ -32,6 +34,7 @@ export interface CreateAppOptions {
   theme?: UITheme;
   dashboardModules?: DashboardModule[] | string;
   dashboardFeatures?: DashboardModule[] | string;
+  desktopBackend?: DesktopBackend;
   interactive?: boolean;
   confirm?: boolean;
   yes?: boolean;
@@ -59,6 +62,7 @@ export declare const AUTH_METHODS: readonly AuthMethod[];
 export declare const OAUTH_PROVIDERS: readonly OAuthProvider[];
 export declare const UI_THEMES: readonly UITheme[];
 export declare const DASHBOARD_MODULES: readonly DashboardModule[];
+export declare const DESKTOP_BACKENDS: readonly DesktopBackend[];
 export declare const FEATURE_REGISTRY: Record<Feature, { requires: Feature[] }>;
 export declare const PRESET_REGISTRY: Record<Preset, { features: Feature[]; dashboardModules?: readonly DashboardModule[] }>;
 export declare const DATABASE_PROVIDERS: Record<DatabaseProvider, { adapters: readonly Adapter[] }>;

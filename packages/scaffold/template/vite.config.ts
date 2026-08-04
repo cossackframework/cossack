@@ -86,7 +86,7 @@ export default defineConfig({
         // Bundle the parent UI graph and those icons into Node SSR output
         // instead of leaving imports that Node refuses to type-strip from
         // node_modules in production.
-        noExternal: ['@cossackframework/ui', '@cossackframework/solar-icons'],
+        noExternal: ['@cossackframework/ui', '@cossackframework/solar-icons', 'hono'],
       },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency

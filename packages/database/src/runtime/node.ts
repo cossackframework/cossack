@@ -47,7 +47,7 @@ class SQLiteDriver implements Driver {
     const statement = this.database.prepare(query.text);
     if (
       operation === "select" ||
-      /^\s*(SELECT|WITH|PRAGMA)/i.test(query.text) ||
+      /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)/i.test(query.text) ||
       /\bRETURNING\b/i.test(query.text)
     ) {
       const rows = statement.all(...query.parameters) as Row[];
@@ -284,39 +284,5 @@ export async function mysql(
   return adapter(new MySQLDriver(pool, pool));
 }
 
-export async function libsql(
-  options: string | Readonly<Record<string, unknown>>,
-): Promise<Adapter> {
-  const moduleName = "@libsql/client";
-  const imported = await import(/* @vite-ignore */ moduleName);
-  const client = imported.createClient(typeof options === "string" ? { url: options } : options) as {
-    execute(input: { sql: string; args: readonly unknown[] }): Promise<{
-      rows: unknown[];
-      rowsAffected: number;
-      lastInsertRowid?: string | number | bigint;
-    }>;
-    close(): void;
-  };
-  const driver: Driver = {
-    dialect: "sqlite",
-    capabilities: capabilities({ parameterLimit: 999 }),
-    async execute<Row = Record<string, unknown>>(
-      query: CompiledQuery,
-      operation: QueryOperation = "raw",
-    ): Promise<QueryResult<Row>> {
-      const start = performance.now();
-      const result = await client.execute({ sql: query.text, args: query.parameters });
-      return {
-        rows: result.rows as Row[],
-        meta: meta("sqlite", operation, start, {
-          rowsAffected: result.rowsAffected,
-          ...(result.lastInsertRowid === undefined ? {} : { lastInsertId: result.lastInsertRowid }),
-        }),
-      };
-    },
-    async close() { client.close(); },
-  };
-  return adapter(driver);
-}
-
 export { SQLiteDriver, PostgresDriver, MySQLDriver };
+export { turso, type TursoOptions, type TursoEmbeddedOptions, type TursoRemoteOptions } from "./turso.js";

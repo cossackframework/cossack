@@ -107,9 +107,9 @@ function localDatabaseLabel(provider: StudioProvider, explicit?: string): string
   const detected = databaseLabelFromEnvironment(provider);
   if (detected) return detected;
   if (process.env.DB_PATH) return path.basename(process.env.DB_PATH);
-  if (process.env.TURSO_URL) {
+  if (process.env.TURSO_DATABASE_URL) {
     try {
-      return new URL(process.env.TURSO_URL).hostname || 'Turso database';
+      return new URL(process.env.TURSO_DATABASE_URL).hostname || 'Turso database';
     } catch {
       return 'Turso database';
     }

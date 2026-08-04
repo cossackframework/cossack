@@ -2,7 +2,7 @@ export type StudioProvider =
   | 'd1-local'
   | 'd1-remote'
   | 'sqlite'
-  | 'libsql'
+  | 'turso'
   | 'postgres'
   | 'mysql'
   | 'unknown';
