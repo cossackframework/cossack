@@ -137,6 +137,112 @@ Validate all paths, identifiers, and domain values even though the method is
 local. Cossack RPC only exposes registered server methods and sanitizes incoming
 state, but the webview is still an input boundary.
 
+## Native shell façade
+
+`createDesktopShell()` adopts Deno Desktop's implicit startup
+`BrowserWindow`. The adapter shares that one adopted window with
+`defineDesktopBindings()`; passing `{ window }` instead scopes a shell to an
+additional window.
+
+```ts
+import {
+  createDesktopShell,
+  type DesktopMenuItem,
+} from '@cossackframework/deno-adapter/desktop';
+
+const shell = createDesktopShell();
+if (!shell.available || !shell.window) throw new Error('Desktop required');
+
+const menu: DesktopMenuItem[] = [
+  { item: { label: 'Show', id: 'show', enabled: true } },
+  { item: { label: 'Quit', id: 'quit', enabled: true } },
+];
+shell.window.setApplicationMenu([{ submenu: { label: 'App', items: menu } }]);
+shell.window.addEventListener('menuclick', (event) => {
+  if (event.detail.id === 'show') shell.window?.show();
+  if (event.detail.id === 'quit') Deno.exit(0);
+});
+```
+
+The shell returns structural interfaces over Deno's native objects:
+
+- `window` supports native application menus, context menus, events, and
+  lifecycle calls.
+- `createTray()` returns a native-lifecycle tray with PNG byte icons, tooltip,
+  menu/click events, bounds, `attachPanel()`, `destroy()`, and `trayId`.
+- `dock` supports badges, bounce/urgency, visibility, menus, and reopen events.
+- `dialogs` wraps native `alert()`, `confirm()`, and `prompt()`.
+- `notifications` exposes explicit permission requests and event-capable
+  notification handles.
+
+Outside Desktop, `available` is false and `window` is `undefined`. Every native
+operation throws the same `DesktopUnavailableError` exported by both Desktop
+server and client entry points.
+
+### Tray and close lifecycle
+
+Tray creation may be unsupported by the current Linux desktop environment or
+backend. Deno signals that with `tray.trayId === 0`; subsequent tray calls are
+no-ops. Only intercept the last window's close when the tray is actually
+available:
+
+Deno 2.9.4's published Laufey 0.5.0 WebView and CEF Linux backends compile the
+AppIndicator implementation as a stub, so they return `trayId === 0` even on
+Ubuntu installations that expose AppIndicators. Changing between those two
+prebuilt backends does not restore tray support; use a future or locally rebuilt
+backend that was compiled with AppIndicator.
+
+```ts
+const tray = shell.createTray();
+let quitting = false;
+
+shell.window?.addEventListener('close', (event) => {
+  if (!quitting && tray.trayId !== 0) {
+    event.preventDefault();
+    shell.window?.hide();
+  }
+});
+```
+
+Provide an explicit Quit action that sets `quitting`, destroys the tray, and
+exits. Dock methods retain native cross-platform semantics: unsupported
+operations are no-ops; badge and urgency presentation varies by OS.
+
+### Dialogs and notifications
+
+Dialogs pause the Deno-side handler while the rendered UI remains responsive.
+Notifications use the standard event lifecycle and never prompt implicitly:
+
+```ts
+const permission = shell.notifications.permission === 'granted'
+  ? 'granted'
+  : await shell.notifications.requestPermission();
+
+if (permission === 'granted') {
+  const notification = shell.notifications.show('Saved', { body: 'Ready.' });
+  notification.addEventListener('click', () => shell.window?.focus());
+}
+```
+
+A stable `desktop.app.identifier` is required for reliable packaged notification
+identity, especially on macOS. Use `data:` URLs for per-notification icons.
+The façade does not expose file/folder pickers because Deno Desktop does not yet
+provide a first-class native picker API.
+
+### Application icons
+
+Configure platform assets under `desktop.app.icons`. macOS accepts a PNG size
+array, Windows requires a multi-resolution ICO, and Linux uses a large PNG.
+Tray icons are separate PNG bytes; use a transparent 22×22 template-style image
+and optionally call `setIconDark()`.
+
+See Deno's official guides for
+[menus](https://docs.deno.com/runtime/desktop/menus/),
+[tray and Dock](https://docs.deno.com/runtime/desktop/tray_and_dock/),
+[dialogs](https://docs.deno.com/runtime/desktop/dialogs/),
+[notifications](https://docs.deno.com/runtime/desktop/notifications/), and
+[application icons](https://docs.deno.com/runtime/desktop/configuration/#appicons).
+
 ## Different web and Desktop runtimes
 
 The scaffold treats Desktop as an independent build target:
@@ -194,6 +300,22 @@ deno desktop -A \
   dist/desktop-server/index.js
 ```
 
+The Desktop entry must give the Deno adapter an absolute client-assets path.
+Application-grid launchers do not inherit the project directory as their
+working directory, so the adapter's web-server default of `./dist/client`
+cannot be used by a packaged app:
+
+```ts
+import { fileURLToPath } from 'node:url';
+
+const assetsRoot = fileURLToPath(new URL('../client/', Deno.mainModule));
+const runtime = createDenoAdapter({ env: Deno.env.toObject(), assetsRoot });
+```
+
+`Deno.mainModule` points at `dist/desktop-server/index.js`; Deno's compiled
+virtual filesystem keeps the adjacent included `dist/client` directory
+available after installation.
+
 The default output directory lives under ignored `dist/desktop`. Keep
 `deno.lock` committed, but do not commit packaged executables, runtime `.so`
 files, launcher metadata, `.deno-desktop-app`, or `.downloaded` markers.
@@ -212,6 +334,6 @@ persist through Deno-side `localStorage` when `this.isDesktop` is true.
 
 - Desktop server state and WebSockets remain process-local.
 - `stateful: true` is unsupported on the Deno adapter.
-- Menus, tray integration, deep links, auto-update, signing/notarization
-  automation, and Desktop OAuth flows are outside the v1 adapter surface.
+- Native file/folder pickers, deep links, auto-update, signing/notarization
+  automation, and Desktop OAuth flows are outside the adapter surface.
 - The raw renderer backend is unsupported.

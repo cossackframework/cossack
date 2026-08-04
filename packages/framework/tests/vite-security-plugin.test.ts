@@ -1964,6 +1964,31 @@ export class Page extends Cossack {
     expect(result).not.toContain("__cossack_proxies?.get('helper')");
   });
 
+  it('does not preserve an explicit @Server method called by a @Client method', () => {
+    const code = `
+@Page()
+export class Page extends Cossack {
+  @Client()
+  openMenu(event) {
+    event.preventDefault();
+    this.showNativeMenu(event.clientX, event.clientY);
+  }
+
+  @Server()
+  async showNativeMenu(x, y) {
+    const { createDesktopShell } = await import('@cossackframework/deno-adapter/desktop');
+    createDesktopShell().window?.showContextMenu(x, y, []);
+  }
+
+  render() { return html\`<main @contextmenu=\"\${this.openMenu}\"></main>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+
+    expect(result).toContain("__cossack_proxies?.get('showNativeMenu')");
+    expect(result).not.toContain('@cossackframework/deno-adapter/desktop');
+    expect(result).not.toContain('showContextMenu(x, y');
+  });
+
   it('warns and skips stripping when the source cannot be parsed', () => {
     // Security plugin: a parse failure must NOT silently ship server-only code.
     // It returns the source unchanged (fail-open is unavoidable — we can't strip

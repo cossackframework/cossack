@@ -63,6 +63,11 @@ src/
 Reserve other `src/desktop/` modules for native windows, menus, and Deno-only
 infrastructure. Do not add a second Desktop route tree.
 
+Generated Desktop targets must have a stable `desktop.app.identifier`. The
+scaffold derives `dev.cossack.<project-name>` by lowercasing the project
+basename, replacing non-alphanumeric runs with hyphens, trimming hyphens, and
+falling back to `app`.
+
 ## 4. Use automatic server-method RPC
 
 Leave actions undecorated, or mark them `@Server()` explicitly. Cossack strips
@@ -137,7 +142,34 @@ Do not use direct bindings for ordinary page actions, persistence, business
 logic, database access, or remote services. Those belong in Cossack server
 methods.
 
-## 7. Develop and package
+## 7. Use the native shell façade
+
+Import `createDesktopShell()` from
+`@cossackframework/deno-adapter/desktop` in Desktop bootstrap code or inside an
+ordinary server method. Do not add another browser bridge.
+
+The shell adopts the startup `BrowserWindow` once and exposes native menus,
+context menus, trays and tray panels, Dock/taskbar controls, dialogs, and
+notifications. Passing `{ window }` creates a shell scoped to an additional
+window.
+
+- Preserve native `Deno.MenuItem` shapes and rebuild menus to change them.
+- Pass PNG bytes to trays. Check `tray.trayId !== 0` before implementing
+  close-to-tray; otherwise allow close so the app cannot become inaccessible.
+- Add an explicit Quit action that bypasses close-to-tray and destroys the tray.
+- Treat unsupported Dock operations as platform no-ops.
+- Check notification permission and request it only after an explicit user
+  action. Handle `denied` and `default`, and use notification click events to
+  focus the window.
+- Do not implement file/folder pickers until Deno provides a first-class native
+  API.
+
+Configure native app icons per platform: a PNG size array for macOS, a
+multi-resolution ICO for Windows, a 512px PNG for Linux, and a separate
+transparent 22px tray PNG. Keep all configured paths committed and ensure the
+packaging command includes runtime-read tray assets.
+
+## 8. Develop and package
 
 Use the generated tasks:
 
@@ -154,7 +186,21 @@ The Desktop tasks build both the shared browser client and the independent
 explicit entry rather than running bare `deno desktop .`, which can be detected
 as a client-only Vite app.
 
-## 8. Verify
+Resolve the packaged asset directory from the compiled main module, not the
+process working directory:
+
+```ts
+import { fileURLToPath } from 'node:url';
+
+const assetsRoot = fileURLToPath(new URL('../client/', Deno.mainModule));
+const runtime = createDenoAdapter({ env: Deno.env.toObject(), assetsRoot });
+```
+
+GNOME, Windows, and macOS launchers may start outside the project directory;
+leaving the adapter at `./dist/client` breaks the manifest, styles, images,
+hydration, and RPC handlers in an installed package.
+
+## 9. Verify
 
 Run:
 
@@ -172,6 +218,15 @@ Then launch the app and verify:
 3. Undecorated actions execute locally without manual binding calls.
 4. Closing and relaunching restores any promised local persistent value.
 5. Generated Desktop artifacts remain ignored by version control.
+6. Every configured icon exists and has the intended dimensions/ICO frames.
+7. The client bundle contains no Deno shell implementation or native imports.
+
+Follow the official Deno Desktop documentation for
+[menus](https://docs.deno.com/runtime/desktop/menus/),
+[tray and Dock](https://docs.deno.com/runtime/desktop/tray_and_dock/),
+[dialogs](https://docs.deno.com/runtime/desktop/dialogs/),
+[notifications](https://docs.deno.com/runtime/desktop/notifications/), and
+[app icons](https://docs.deno.com/runtime/desktop/configuration/#appicons).
 
 Use the adapter guides at
 `packages/deno-adapter/docs/{introduction,installation,web,desktop}.md` when the

@@ -887,6 +887,14 @@ if (import.meta.main && typeof (Deno as any).BrowserWindow !== 'function') {
 `;
 }
 
+function desktopIdentifier(projectName) {
+  const slug = path.basename(projectName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `dev.cossack.${slug || 'app'}`;
+}
+
 function denoConfiguration(recipe, projectName) {
   const tasks = recipe.adapter === 'deno' ? {
     dev: 'pnpm run dev',
@@ -908,7 +916,10 @@ function denoConfiguration(recipe, projectName) {
     tasks,
     ...(recipe.resolvedFeatures.includes('desktop') ? {
       desktop: {
-        app: { name: projectName },
+        app: {
+          name: projectName,
+          identifier: desktopIdentifier(projectName),
+        },
         backend: recipe.config.desktopBackend ?? 'webview',
         output: {
           linux: './dist/desktop',
@@ -923,12 +934,14 @@ function denoConfiguration(recipe, projectName) {
 function desktopEntry() {
   return `import { createApp } from '@cossackframework/framework/router';
 import { createDenoAdapter } from '@cossackframework/deno-adapter';
+import { fileURLToPath } from 'node:url';
 import { App } from '../App';
 import { template } from '../root';
 
 const deno = (globalThis as any).Deno;
 export const env: Record<string, unknown> = deno.env.toObject();
-export const runtime = createDenoAdapter({ env });
+const assetsRoot = fileURLToPath(new URL('../client/', deno.mainModule));
+export const runtime = createDenoAdapter({ env, assetsRoot });
 export const app = createApp({
   AppComponent: App,
   htmlTemplate: template,

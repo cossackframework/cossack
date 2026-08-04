@@ -1,17 +1,12 @@
 import type { DesktopBindingRegistry } from './desktop.js';
+export { DesktopUnavailableError } from './desktop-error.js';
+import { DesktopUnavailableError } from './desktop-error.js';
 
 type AwaitedReturn<Fn> = Fn extends (...args: any[]) => infer Result ? Awaited<Result> : never;
 type BindingArgs<Fn> = Fn extends (...args: infer Args) => any ? Args : never;
 
 interface NativeBindings {
   __cossackDesktopInvoke(token: string, name: string, args: unknown[]): Promise<unknown>;
-}
-
-export class DesktopUnavailableError extends Error {
-  constructor() {
-    super('Desktop bindings are unavailable in this web build.');
-    this.name = 'DesktopUnavailableError';
-  }
 }
 
 export interface DesktopClient<Registry extends DesktopBindingRegistry> {

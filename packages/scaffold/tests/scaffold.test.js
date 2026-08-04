@@ -696,8 +696,11 @@ describe('composition', () => {
       expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
       expect(targetPackage.scripts['desktop:dev']).toContain('dist/desktop-server/index.js');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain('createDenoAdapter({ env, assetsRoot })');
       expect(targetDeno.tasks['build:desktop']).toBe('pnpm run build:desktop');
       expect(targetDeno.desktop.backend).toBe('webview');
+      expect(targetDeno.desktop.app.identifier).toBe(`dev.cossack.${adapter}-desktop`);
       expect(targetDeno.desktop.output.linux).toBe('./dist/desktop');
     }
 
@@ -714,6 +717,7 @@ describe('composition', () => {
     expect(deno.imports.hono).toMatch(/^npm:hono@/);
     expect(deno.imports.vite).toMatch(/^npm:vite@/);
     expect(deno.desktop.backend).toBe('webview');
+    expect(deno.desktop.app.identifier).toBe('dev.cossack.desktop-app');
     expect(files.has('src/desktop/index.ts')).toBe(true);
     expect(files.get('src/orm/factory.ts').content.toString()).toContain("turso({ path:");
 

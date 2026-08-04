@@ -21,6 +21,8 @@ Cossack requires an HTML webview.
 - Keep shared UI and routing in `src/pages/`.
 - Keep the selected web adapter in `src/index.ts`.
 - Use `src/desktop/index.ts` for the local Deno server entry.
+- Resolve `dist/client` from `Deno.mainModule` and pass the absolute path as
+  `createDenoAdapter({ assetsRoot })`; packaged launchers have no stable cwd.
 - Keep native windows, menus, and other Deno-only infrastructure under
   `src/desktop/`.
 - Do not introduce a Desktop-specific route tree.
@@ -84,6 +86,42 @@ window explicitly.
 
 Do not manually call `desktop.invoke()` for ordinary page actions, local
 persistence, business logic, database access, or remote services.
+
+## Use the native shell without another bridge
+
+Use `createDesktopShell()` in `src/desktop/` bootstrap modules or ordinary
+server-only methods. It adopts the startup window once and delegates Deno's
+native object shapes for application/context menus, trays and panels, Dock or
+taskbar controls, dialogs, and notifications.
+
+```ts
+const { createDesktopShell } = await import(
+  '@cossackframework/deno-adapter/desktop'
+);
+const shell = createDesktopShell();
+```
+
+- Outside Desktop, check `available`; native calls throw
+  `DesktopUnavailableError`.
+- A tray with `trayId === 0` is unsupported. Never hide the last window on
+  close in that case.
+- Add an explicit Quit path when implementing close-to-tray.
+- Unsupported Dock operations intentionally remain no-ops.
+- Request notification permission only in response to a user action and report
+  denial. Notification handles support show, click, close, error, and `close()`.
+- Keep file/folder pickers out of the shell until Deno exposes a native picker.
+
+Package a macOS PNG size array, a multi-resolution Windows ICO, a 512px Linux
+PNG, and a separate transparent 22px tray PNG. A stable
+`desktop.app.identifier` gives packaged notifications a stable OS identity.
+
+Use Deno's official
+[menus](https://docs.deno.com/runtime/desktop/menus/),
+[tray/Dock](https://docs.deno.com/runtime/desktop/tray_and_dock/),
+[dialogs](https://docs.deno.com/runtime/desktop/dialogs/),
+[notifications](https://docs.deno.com/runtime/desktop/notifications/), and
+[icon configuration](https://docs.deno.com/runtime/desktop/configuration/#appicons)
+guides for current platform behavior.
 
 ## Build and verification
 

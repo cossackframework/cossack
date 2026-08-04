@@ -76,6 +76,8 @@ describe('adapter switching', () => {
     expect(switched.status).toBe('changed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
     await expect(fs.access(path.join(project.projectDir, 'deno.json'))).resolves.toBeUndefined();
+    expect(JSON.parse(await fs.readFile(path.join(project.projectDir, 'deno.json'), 'utf8'))
+      .desktop.app.identifier).toBe('dev.cossack.app');
 
     const removed = await removeFeatureFromProject(project.projectDir, 'desktop', {
       interactive: false,
@@ -84,6 +86,33 @@ describe('adapter switching', () => {
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
     expect((await switchAdapter(project.projectDir, 'deno', { interactive: false })).status)
       .toBe('changed');
+  });
+
+  it('generates stable Desktop identifiers for direct creation, later addition, and unusual names', async () => {
+    const direct = await create('deno', 'minimal', { features: 'desktop' });
+    expect(JSON.parse(await fs.readFile(path.join(direct.projectDir, 'deno.json'), 'utf8'))
+      .desktop.app.identifier).toBe('dev.cossack.app');
+
+    const root = await temporaryDirectory();
+    const unusual = await createApp('My SUPER__App!!!', {
+      cwd: root,
+      adapter: 'cloudflare',
+      preset: 'minimal',
+      features: 'desktop',
+      interactive: false,
+    });
+    expect(JSON.parse(await fs.readFile(path.join(unusual.projectDir, 'deno.json'), 'utf8'))
+      .desktop.app.identifier).toBe('dev.cossack.my-super-app');
+
+    const fallback = await createApp('___', {
+      cwd: root,
+      adapter: 'node',
+      preset: 'minimal',
+      interactive: false,
+    });
+    await addFeature(fallback.projectDir, 'desktop', { interactive: false });
+    expect(JSON.parse(await fs.readFile(path.join(fallback.projectDir, 'deno.json'), 'utf8'))
+      .desktop.app.identifier).toBe('dev.cossack.app');
   });
 
   it.each(['minimal', 'database', 'auth', 'full-stack'])(

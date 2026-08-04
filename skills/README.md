@@ -21,7 +21,7 @@ Invoke explicitly for multi-step workflows.
 | Command | What it generates |
 |---|---|
 | [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` config, middleware wiring, login route, protected pages. |
-| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add a Deno Desktop side target without changing the web adapter, use automatic local server-method RPC, then build and package it. |
+| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add a Deno Desktop side target without changing the web adapter; configure native shell menus, tray/Dock lifecycle, dialogs, notifications, icons, RPC, and packaging. |
 | [`/setup-websocket`](./setup-websocket/SKILL.md) | Real-time setup: pick SSE or Durable Object transport, wire channels/scope, configure the DO binding. |
 | [`/setup-ui`](./setup-ui/SKILL.md) | UI package setup: `cossack add ui`, theme selection, component usage with `component()`, ejecting components, focus helpers, the global Toaster. |
 
@@ -53,7 +53,7 @@ After installing, restart your tool (or run `/reload-plugins` in Claude Code).
 # wires @cossackframework/ui: theme, CSS imports, component usage, Toaster
 
 > /create-desktop-app
-# adds a Deno Desktop target beside the existing web runtime, with automatic local RPC and packaging
+# adds a Desktop target beside the web runtime, with native shell capabilities, local RPC, icons, and packaging
 ```
 
 ## Compatibility

@@ -157,10 +157,12 @@ the generated `src/desktop/index.ts`:
 ```ts
 import { createDenoAdapter } from '@cossackframework/deno-adapter';
 import { createApp } from '@cossackframework/framework/router';
+import { fileURLToPath } from 'node:url';
 import { App } from '../App.ts';
 import { template } from '../root.ts';
 
-const runtime = createDenoAdapter({ env: Deno.env.toObject() });
+const assetsRoot = fileURLToPath(new URL('../client/', Deno.mainModule));
+const runtime = createDenoAdapter({ env: Deno.env.toObject(), assetsRoot });
 const app = createApp({
   AppComponent: App,
   htmlTemplate: template,

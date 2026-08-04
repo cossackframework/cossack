@@ -1047,7 +1047,11 @@ function computePreservedSet(
       const body = bodyByName.get(name);
       if (!body) continue;
       for (const callee of collectThisCalls(body)) {
-        if (byName.has(callee)) preserved.add(callee);
+        const target = byName.get(callee);
+        // A client-safe method can call an explicit @Server method through its
+        // generated RPC proxy. Keeping that body would ship server-only code
+        // (and any native imports it uses) to the browser.
+        if (target && !target.hasServerDecorator) preserved.add(callee);
       }
     }
     if (preserved.size === before) break;

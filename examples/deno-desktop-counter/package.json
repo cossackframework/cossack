@@ -7,8 +7,8 @@
     "build": "vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "deno run --allow-env --allow-net --allow-read dist/server/index.js",
     "build:desktop": "vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop-server --minify false",
-    "desktop:dev": "deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js",
-    "desktop:build": "deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js"
+    "desktop:dev": "deno task build:desktop && deno desktop -A --hmr --output ./dist/desktop-dev --exclude-unused-npm --include dist/client --include icons dist/desktop-server/index.js",
+    "desktop:build": "deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client --include icons dist/desktop-server/index.js"
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
