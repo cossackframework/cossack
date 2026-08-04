@@ -29,7 +29,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`auth`**: Auth package
 -   **`database`**: The `@cossackframework/database` workspace package provides decorated Active Record entities, migrations, seeders, and D1/libSQL/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
 -   **`test-utils`**: Test helpers
--   **`scaffold`**: Node-only recipe engine for creation and feature composition.
+-   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.
 -   **`ui`**: UI components package. shadcn-ui inspired components.
 
@@ -37,14 +37,6 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 
 1.  **Build Dependencies**: Build `core`, `renderer`, `node-adapter`, `database`, and `auth` first.
 2.  **Run Application**: Use `pnpm run dev`.
-
-## 5. Key Architectural Decisions & "Gotchas"
-
--   **`isServer` Check**: `typeof window === 'undefined' || typeof window.document === 'undefined'`.
--   **Metadata Merging**: Always use `head(context: HeadContext): HeadValue`. The framework automatically handles category preservation and auto-expands SEO shortcuts (`description`, `image`) into OG/Twitter tags.
--   **Client-Side Persistence**: The Global `App` component is bootstrapped once and persists across all navigations.
--   **Auto-Binding**: All component methods are automatically bound to the instance during `bootstrap`. Standard class methods can be used as event handlers without manual binding or arrow functions.
--   **Hierarchical Error Boundaries**: The router searches for the nearest `error/index.ts` or `404/index.ts` up the directory tree relative to the current route.
 
 ## Security: Code Stripping
 

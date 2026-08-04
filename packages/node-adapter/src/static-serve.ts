@@ -12,6 +12,8 @@ export interface StaticServeOptions {
     prefix?: string;
     /** Whether to try index.html for directory requests (default: true) */
     index?: boolean;
+    /** Cache-Control value, or a resolver based on the matched file and URL. */
+    cacheControl?: string | ((filePath: string, urlPath: string) => string | undefined);
 }
 
 /**
@@ -52,7 +54,7 @@ function normalizeUrlPath(urlPath: string): string {
  * @returns Hono middleware
  */
 export function serveStatic(options: StaticServeOptions) {
-    const { root, prefix = '/', index = true } = options;
+    const { root, prefix = '/', index = true, cacheControl } = options;
     // Resolve root once; every served path must resolve to within it.
     const resolvedRoot = path.resolve(root);
     const rootPrefix = resolvedRoot + path.sep;
@@ -82,6 +84,7 @@ export function serveStatic(options: StaticServeOptions) {
         // Build full file path
         let filePath: string;
         if (relativePath === '/') {
+            if (!index) return next();
             filePath = path.join(root, 'index.html');
         } else {
             // Try direct file first
@@ -126,10 +129,15 @@ export function serveStatic(options: StaticServeOptions) {
             // text/html for every asset (CSS, JS, images, fonts).
             const content = await fs.promises.readFile(filePath);
             const contentType = getContentType(filePath);
+            const headers = new Headers({ 'Content-Type': contentType });
+            const resolvedCacheControl = typeof cacheControl === 'function'
+                ? cacheControl(filePath, urlPath)
+                : cacheControl;
+            if (resolvedCacheControl) headers.set('Cache-Control', resolvedCacheControl);
 
             return new Response(new Uint8Array(content), {
                 status: 200,
-                headers: { 'Content-Type': contentType },
+                headers,
             });
         } catch (e) {
             // File doesn't exist or other error
@@ -147,7 +155,11 @@ function getContentType(filePath: string): string {
         '.html': 'text/html',
         '.css': 'text/css',
         '.js': 'application/javascript',
+        '.mjs': 'application/javascript',
+        '.cjs': 'application/javascript',
         '.json': 'application/json',
+        '.map': 'application/json',
+        '.webmanifest': 'application/manifest+json',
         '.xml': 'application/xml',
         '.txt': 'text/plain',
         '.png': 'image/png',

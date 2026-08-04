@@ -39,7 +39,7 @@ import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -823,7 +823,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // path position — and `import.meta.glob` yields keys in lexicographic order,
   // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
-  const pagePaths = Object.keys(pages).sort((a, b) =>
+  const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
   );
   for (const path of pagePaths) {

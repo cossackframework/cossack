@@ -728,13 +728,13 @@ export const ${kind} = [${files.map((_, index) => `item${index}`).join(', ')}] a
 `;
 }
 
-function oauthRouteBlock(providers) {
+function oauthRouteBlock(providers, appName = 'app') {
   if (!providers.length) return '';
-  return providers.map((provider) => `app.get(
+  return providers.map((provider) => `${appName}.get(
   '/auth/${provider}/redirect',
   oauth.redirect('${provider}'),
 );
-app.get(
+${appName}.get(
   '/auth/${provider}/callback',
   oauth.callback('${provider}', {
     onUser: (user, tokens, c) => handleOAuthUser('${provider}', user, tokens, c),
@@ -746,16 +746,28 @@ function nodeEntry(providers = []) {
   const oauthImport = providers.length
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
-  const routes = oauthRouteBlock(providers);
+  const routes = oauthRouteBlock(providers, 'frameworkApp');
   return `import { serve } from '@hono/node-server';
-import { pathToFileURL } from 'node:url';
+import { Hono } from 'hono';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createApp } from '@cossackframework/framework/router';
+import { serveStatic } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
 
-export const app = createApp({ AppComponent: App, htmlTemplate: template });
+const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template });
 ${routes}
+export const app = new Hono();
+app.use('*', serveStatic({
+  root: fileURLToPath(new URL('../client', import.meta.url)),
+  index: false,
+  cacheControl: (_filePath, urlPath) => urlPath.startsWith('/assets/') && /\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/.test(urlPath)
+    ? 'public, max-age=31536000, immutable'
+    : 'public, max-age=0, must-revalidate',
+}));
+app.route('/', frameworkApp);
+
 export const env: Record<string, unknown> = {
   ...process.env,
   DB_PATH: process.env.DB_PATH ?? './database.sqlite',

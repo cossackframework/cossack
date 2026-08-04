@@ -5,7 +5,7 @@ import {
   reverseSchemaOperations,
   type OrmSchema,
 } from "../src/index.js";
-import { introspectSQLite } from "../src/schema/introspection.js";
+import { introspectPostgres, introspectSQLite } from "../src/schema/introspection.js";
 
 const base: OrmSchema = {
   version: 1,
@@ -178,5 +178,163 @@ describe("schema diff", () => {
       tableName: "users",
       columnName: "email",
     }]);
+  });
+});
+
+describe("PostgreSQL introspection", () => {
+  it("preserves supported PostgreSQL column and index semantics", async () => {
+    const schema = await introspectPostgres(async (text) => {
+      if (text.includes("FROM pg_catalog.pg_attribute")) {
+        return { rows: [
+          {
+            table_name: "places",
+            column_name: "id",
+            data_type: "integer",
+            not_null: true,
+            column_default: "nextval('places_id_seq'::regclass)",
+            identity_kind: "",
+            generated_kind: "",
+            is_primary: true,
+            is_unique: false,
+          },
+          {
+            table_name: "places",
+            column_name: "regionID",
+            data_type: "character varying(64)",
+            not_null: true,
+            column_default: null,
+            identity_kind: "",
+            generated_kind: "",
+            is_primary: false,
+            is_unique: false,
+          },
+          {
+            table_name: "places",
+            column_name: "metadata",
+            data_type: "jsonb",
+            not_null: false,
+            column_default: null,
+            identity_kind: "",
+            generated_kind: "",
+            is_primary: false,
+            is_unique: false,
+          },
+          {
+            table_name: "places",
+            column_name: "created_at",
+            data_type: "timestamp with time zone",
+            not_null: true,
+            column_default: "now()",
+            identity_kind: "",
+            generated_kind: "",
+            is_primary: false,
+            is_unique: false,
+          },
+          {
+            table_name: "places",
+            column_name: "location",
+            data_type: "geometry(Point,4326)",
+            not_null: true,
+            column_default: null,
+            identity_kind: "",
+            generated_kind: "",
+            is_primary: false,
+            is_unique: false,
+          },
+        ] } as any;
+      }
+      if (text.includes("FROM pg_catalog.pg_index")) {
+        return { rows: [{
+          table_name: "places",
+          index_name: "places_region_idx",
+          is_unique: false,
+          is_primary: false,
+          access_method: "btree",
+          constraint_type: null,
+          is_expression: false,
+          is_partial: false,
+          definition: "CREATE INDEX places_region_idx ON public.places USING btree (\"regionID\")",
+          index_columns: ['"regionID"'],
+        }] } as any;
+      }
+      return { rows: [] } as any;
+    });
+
+    expect(schema.entities[0]?.columns).toMatchObject([
+      { columnName: "id", logicalType: "integer", generated: "increment", primary: true },
+      { columnName: "regionID", logicalType: "varchar", length: 64 },
+      { columnName: "metadata", logicalType: "json" },
+      { columnName: "created_at", logicalType: "datetime", default: "now()" },
+      { columnName: "location", logicalType: "custom:geometry(Point,4326)" },
+    ]);
+    expect(schema.entities[0]?.indexes).toEqual([{
+      name: "places_region_idx",
+      columns: ["regionID"],
+      unique: false,
+    }]);
+  });
+
+  it("refuses unsupported PostGIS, operator-class, expression, and constraint objects", async () => {
+    await expect(introspectPostgres(async (text) => {
+      if (text.includes("FROM pg_catalog.pg_attribute")) {
+        return { rows: [{
+          table_name: "places",
+          column_name: "location",
+          data_type: "geometry(Point,4326)",
+          not_null: true,
+          column_default: null,
+          identity_kind: "",
+          generated_kind: "",
+          is_primary: false,
+          is_unique: false,
+        }] } as any;
+      }
+      if (text.includes("FROM pg_catalog.pg_index")) {
+        return { rows: [
+          {
+            table_name: "places",
+            index_name: "places_location_gist",
+            is_unique: false,
+            is_primary: false,
+            access_method: "gist",
+            constraint_type: null,
+            is_expression: false,
+            is_partial: false,
+            definition: "CREATE INDEX places_location_gist ON public.places USING gist (location)",
+            index_columns: ["location"],
+          },
+          {
+            table_name: "places",
+            index_name: "places_name_trgm",
+            is_unique: false,
+            is_primary: false,
+            access_method: "gin",
+            constraint_type: null,
+            is_expression: false,
+            is_partial: false,
+            definition: "CREATE INDEX places_name_trgm ON public.places USING gin (name gin_trgm_ops)",
+            index_columns: ["name gin_trgm_ops"],
+          },
+          {
+            table_name: "places",
+            index_name: "places_metadata_kind",
+            is_unique: false,
+            is_primary: false,
+            access_method: "btree",
+            constraint_type: null,
+            is_expression: true,
+            is_partial: false,
+            definition: "CREATE INDEX places_metadata_kind ON public.places USING btree ((metadata ->> 'kind'))",
+            index_columns: ["(metadata ->> 'kind'::text)"],
+          },
+        ] } as any;
+      }
+      return { rows: [{
+        table_name: "places",
+        constraint_name: "places_metadata_object",
+        constraint_type: "c",
+        definition: "CHECK (jsonb_typeof(metadata) = 'object'::text)",
+      }] } as any;
+    })).rejects.toThrow(/places_location_gist.*places_name_trgm.*places_metadata_kind.*places_metadata_object.*were stopped/);
   });
 });

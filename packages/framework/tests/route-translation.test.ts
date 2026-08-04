@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { filePathToHttpRoute, filePathToRoutePath, compareHttpRoutes, APP_ROUTE_ID } from '../src/route-ids';
+import {
+  APP_ROUTE_ID,
+  buildRoutesManifest,
+  compareHttpRoutes,
+  computeRouteIds,
+  filePathToHttpRoute,
+  filePathToRoutePath,
+  resolvePageRouteFiles,
+} from '../src/route-ids';
 
 describe('filePathToHttpRoute', () => {
   it('converts a dynamic segment', () => {
@@ -90,6 +98,36 @@ describe('compareHttpRoutes (registration specificity)', () => {
     const rolesId = routes.indexOf('/dashboard/roles/:id');
     expect(usersNew).toBeLessThan(usersId);
     expect(rolesNew).toBeLessThan(rolesId);
+  });
+});
+
+describe('duplicate public page routes', () => {
+  const direct = '/src/pages/index.ts';
+  const grouped = '/src/pages/(public)/index.ts';
+
+  it('uses the file with fewer route-group segments everywhere', () => {
+    const pageKeys = [grouped, direct];
+    expect(resolvePageRouteFiles(pageKeys)).toEqual([direct]);
+
+    const maps = computeRouteIds(pageKeys, []);
+    expect(maps.routePathToFilePathMap.get('/')).toBe(direct);
+    expect([...maps.routePathToIdMap.keys()]).toEqual([direct]);
+    expect(buildRoutesManifest(pageKeys, [], maps).pageKeys).toEqual([direct]);
+  });
+
+  it('rejects equal-precedence collisions with both source paths', () => {
+    const first = '/src/pages/index.ts';
+    const second = '/src/pages/index/index.ts';
+    expect(() => resolvePageRouteFiles([first, second])).toThrowError(
+      new RegExp(`${first}.*${second}`),
+    );
+  });
+
+  it('treats differently named dynamic segments as the same public route', () => {
+    expect(() => resolvePageRouteFiles([
+      '/src/pages/users/[id]/index.ts',
+      '/src/pages/users/[slug]/index.ts',
+    ])).toThrow(/Duplicate page route/);
   });
 });
 

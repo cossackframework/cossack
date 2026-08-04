@@ -166,6 +166,9 @@ describe('recipe resolution', () => {
       .toContain("'hono'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("exclude: ['@cossackframework/solar-icons']");
+    expect(files.get('vite.config.ts').content.toString()).toMatch(
+      /environments: \{[\s\S]*ssr: \{[\s\S]*resolve: \{[\s\S]*noExternal: \['@cossackframework\/ui', '@cossackframework\/solar-icons'\]/,
+    );
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
     expect(files.get('vite.config.ts').content.toString())
@@ -544,6 +547,13 @@ describe('composition', () => {
       devEntry.indexOf('env.EMAIL = createNodeEmailSender'),
     );
     expect(productionEntry).toContain('...process.env');
+    expect(productionEntry).toContain("import { serveStatic } from '@cossackframework/node-adapter'");
+    expect(productionEntry).toContain("new URL('../client', import.meta.url)");
+    expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
+    expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");
+    expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
+    expect(productionEntry.indexOf("app.use('*', serveStatic"))
+      .toBeLessThan(productionEntry.indexOf("app.route('/', frameworkApp)"));
     expect(productionEntry.indexOf('...process.env')).toBeLessThan(
       productionEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
     );

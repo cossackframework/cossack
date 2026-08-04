@@ -72,7 +72,7 @@ class SsgFallbackApp extends Cossack {
 // imported it from ssg-renderer keep working, without maintaining a
 // divergent copy here.
 export { filePathToRoutePath, getModulePreloads } from './route-ids.js';
-import { filePathToRoutePath, getModulePreloads } from './route-ids.js';
+import { filePathToRoutePath, getModulePreloads, resolvePageRouteFiles } from './route-ids.js';
 
 /**
  * One-time locale setup for the SSG build. The caller resolves the locale
@@ -142,7 +142,7 @@ function getLayoutStack(pagePath: string, layouts: Record<string, LayoutModule>)
 export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record<string, LayoutModule>): SsgRoute[] {
   const routes: SsgRoute[] = [];
 
-  for (const path in pages) {
+  for (const path of resolvePageRouteFiles(Object.keys(pages))) {
     const module = pages[path] as any;
 
     // Skip API routes
