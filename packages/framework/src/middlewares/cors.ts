@@ -88,6 +88,17 @@ export function createCorsMiddleware(
       throw new Error('[Cossack] Invalid CORS configuration: credentials cannot be enabled with the global "*" origin. Configure explicit origins instead.');
     }
 
+    // Hono's CORS middleware terminates every OPTIONS request with 204. Only
+    // an OPTIONS request carrying both required preflight headers is actually
+    // a CORS preflight; ordinary OPTIONS requests must reach the application's
+    // middleware and explicit route handler.
+    if (
+      c.req.method === 'OPTIONS' &&
+      (!c.req.header('origin') || !c.req.header('access-control-request-method'))
+    ) {
+      return next();
+    }
+
     return cors({
       origin: createOriginResolver(settings.origins),
       allowMethods: settings.methods.map((method) => method.toUpperCase()),

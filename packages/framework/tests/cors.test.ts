@@ -78,11 +78,26 @@ describe('built-in API CORS middleware', () => {
     expect(downstream).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['without an Origin header', { 'Access-Control-Request-Method': 'GET' }],
+    ['without an Access-Control-Request-Method header', { Origin: 'https://app.example.com' }],
+    ['without either preflight header', {}],
+  ])('delegates an ordinary OPTIONS request %s', async (_name, headers) => {
+    const { app, downstream } = appWith({ origins: ['https://app.example.com'] });
+    const res = await app.request('/api/users', { method: 'OPTIONS', headers });
+    expect(res.status).toBe(200);
+    expect(downstream).toHaveBeenCalledOnce();
+  });
+
   it('uses configured allow headers instead of reflection', async () => {
     const { app } = appWith({ origins: ['*'], headers: ['Authorization'] });
     const res = await app.request('/api/x', {
       method: 'OPTIONS',
-      headers: { Origin: 'https://client.test', 'Access-Control-Request-Headers': 'X-Untrusted' },
+      headers: {
+        Origin: 'https://client.test',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'X-Untrusted',
+      },
     });
     expect(res.headers.get('access-control-allow-headers')).toBe('Authorization');
   });

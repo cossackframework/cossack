@@ -1,5 +1,7 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -278,6 +280,93 @@ await runStudio({
   });
 }
 
+async function reservePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Could not reserve a Node smoke-test port');
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return address.port;
+}
+
+async function verifyNodeProductionAssets(projectDir) {
+  const clientDirectory = path.join(projectDir, 'dist', 'client');
+  const manifest = JSON.parse(await fs.readFile(
+    path.join(clientDirectory, '.vite', 'manifest.json'),
+    'utf8',
+  ));
+  const entry = manifest['src/client/entry-client.ts'];
+  if (!entry?.file) throw new Error('Node production smoke test could not find the client entry asset');
+  const stylesheets = await listFilesRecursive(clientDirectory, (file) => file.endsWith('.css'));
+  if (!stylesheets.length) throw new Error('Node production smoke test could not find an emitted stylesheet');
+
+  const requests = [
+    { path: `/${entry.file}`, contentType: 'application/javascript', immutable: true },
+    {
+      path: `/${path.relative(clientDirectory, stylesheets[0]).split(path.sep).join('/')}`,
+      contentType: 'text/css',
+      immutable: true,
+    },
+    { path: '/logo.svg', contentType: 'image/svg+xml', immutable: false },
+  ];
+  const port = await reservePort();
+  const child = spawn(process.execPath, [
+    '--env-file-if-exists=.env',
+    'dist/server/index.js',
+  ], {
+    cwd: projectDir,
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += String(chunk); });
+  child.stderr.on('data', (chunk) => { output += String(chunk); });
+
+  try {
+    const deadline = Date.now() + 15_000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null) {
+        throw new Error(`Node production entry exited before serving assets:\n${output}`);
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}${requests[0].path}`);
+        if (response.ok) {
+          ready = true;
+          break;
+        }
+      } catch {
+        // The server may still be starting; retry until the deadline.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!ready) throw new Error(`Node production entry did not start within 15 seconds:\n${output}`);
+
+    for (const expected of requests) {
+      const response = await fetch(`http://127.0.0.1:${port}${expected.path}`);
+      if (!response.ok) throw new Error(`${expected.path} returned ${response.status}`);
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.startsWith(expected.contentType)) {
+        throw new Error(`${expected.path} returned Content-Type ${JSON.stringify(contentType)}`);
+      }
+      const cacheControl = response.headers.get('cache-control') ?? '';
+      if (expected.immutable !== cacheControl.includes('immutable')) {
+        throw new Error(`${expected.path} returned unexpected Cache-Control ${JSON.stringify(cacheControl)}`);
+      }
+    }
+  } finally {
+    if (child.exitCode === null) child.kill('SIGTERM');
+    await Promise.race([
+      once(child, 'exit'),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+}
+
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
 const keep = process.env.COSSACK_KEEP_SMOKE === '1';
 
@@ -473,6 +562,7 @@ export default class PackagingSsgPage extends Cossack {
   await verifyGeneratedORMApplication(projectDir);
   await verifyGeneratedStudio(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
+  await verifyNodeProductionAssets(projectDir);
   const nodeManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
     'utf8',

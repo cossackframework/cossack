@@ -18,7 +18,7 @@ import {
     getDefaultLocale,
 } from '@cossackframework/core';
 import { CossackElement } from '@cossackframework/renderer';
-import { filePathToRoutePath } from '../route-ids.js';
+import { filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
@@ -32,7 +32,7 @@ const { pages, layouts, loadings } = registry;
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
-for (const filePath in pages) {
+for (const filePath of resolvePageRouteFiles(Object.keys(pages))) {
     const routePath = filePathToRoutePath(filePath);
     routeToFilePath.set(routePath, filePath);
 }

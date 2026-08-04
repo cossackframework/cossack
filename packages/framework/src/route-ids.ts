@@ -104,6 +104,51 @@ export function compareHttpRoutes(a: string, b: string): number {
   return sa.length - sb.length;
 }
 
+function routeGroupCount(filePath: string): number {
+  return filePath.match(/\/\([^)]+\)/g)?.length ?? 0;
+}
+
+/**
+ * Canonical collision key for a public page route. Parameter names do not
+ * affect matching, so `[id]` and `[slug]` at the same position collide just
+ * like two routes made identical by removing route groups.
+ */
+function pageRouteCollisionKey(filePath: string): string {
+  return filePathToHttpRoute(filePath).replace(/:[^/*]+(\*)?/g, (_match, star) =>
+    star ? ':*' : ':param');
+}
+
+/**
+ * Resolve page files to the single component that owns each public route.
+ * A file with fewer route-group segments is more direct and wins. If the
+ * highest-priority candidates are still tied, there is no safe implicit
+ * choice, so fail with both source paths instead of depending on glob order.
+ */
+export function resolvePageRouteFiles(pageKeys: string[]): string[] {
+  const candidates = new Map<string, string[]>();
+  for (const path of pageKeys) {
+    const key = pageRouteCollisionKey(path);
+    const paths = candidates.get(key) ?? [];
+    paths.push(path);
+    candidates.set(key, paths);
+  }
+
+  const resolved: string[] = [];
+  for (const [route, paths] of candidates) {
+    paths.sort((a, b) => routeGroupCount(a) - routeGroupCount(b) || a.localeCompare(b));
+    const winningGroupCount = routeGroupCount(paths[0]!);
+    const tied = paths.filter((path) => routeGroupCount(path) === winningGroupCount);
+    if (tied.length > 1) {
+      throw new Error(
+        `[Cossack] Duplicate page route "${route}": ${tied.join(' and ')} have equal precedence. ` +
+        'Remove one route or place the lower-priority route inside an additional route group.',
+      );
+    }
+    resolved.push(paths[0]!);
+  }
+  return resolved.sort();
+}
+
 export interface RouteIdMaps {
   /** component route id (cmp_N) -> filePath */
   routeIdMap: Map<string, string>;
@@ -191,13 +236,25 @@ export function computeRouteIds(pageKeys: string[], layoutKeys: string[]): Route
   // Register the App component (global component) with a special ID.
   routeIdMap.set(APP_ROUTE_ID, APP_FILE_PATH);
 
-  [...pageKeys, ...layoutKeys].sort().forEach((path, index) => {
+  const resolvedPageKeys = resolvePageRouteFiles(pageKeys);
+  [...resolvedPageKeys, ...layoutKeys].sort().forEach((path, index) => {
     const id = `cmp_${index.toString(36)}`;
     routeIdMap.set(id, path);
     routePathToIdMap.set(path, id);
-    const routePath = filePathToRoutePath(path);
-    routePathToFilePathMap.set(routePath, path);
   });
+
+  // Public route paths identify pages. Preserve the old layout fallback only
+  // when no page owns that path, so a colocated layout can never overwrite the
+  // page selected by SSR and the browser.
+  for (const path of resolvedPageKeys) {
+    routePathToFilePathMap.set(filePathToRoutePath(path), path);
+  }
+  for (const path of [...layoutKeys].sort()) {
+    const routePath = filePathToRoutePath(path);
+    if (!routePathToFilePathMap.has(routePath)) {
+      routePathToFilePathMap.set(routePath, path);
+    }
+  }
 
   return { routeIdMap, routePathToIdMap, routePathToFilePathMap };
 }
@@ -225,7 +282,7 @@ export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], ma
   }
   return {
     appRouteId: APP_ROUTE_ID,
-    pageKeys: [...pageKeys].sort(),
+    pageKeys: resolvePageRouteFiles(pageKeys),
     layoutKeys: [...layoutKeys].sort(),
     filePathToId,
   };
