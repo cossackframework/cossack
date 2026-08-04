@@ -18,8 +18,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
@@ -29,7 +29,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.declarations.json",
+    "build": "vite build && tsc -p tsconfig.declarations.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "dev": "vite build",
     "test": "vitest"
   },

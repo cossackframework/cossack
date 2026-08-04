@@ -1,3 +1,11 @@
+/// <reference lib="dom" />
+
+// Core's Durable Object declarations share the public entry point with the
+// process adapters. The smoke test only needs the global name to exist.
+declare global {
+  interface DurableObjectState {}
+}
+
 import { Hono } from 'hono';
 import { createDenoAdapter } from '../src/index.ts';
 
