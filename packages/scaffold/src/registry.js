@@ -4,7 +4,6 @@ export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
 export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
-export const DESKTOP_BACKENDS = ['webview', 'cef'];
 
 export const FEATURE_REGISTRY = {
   ui: { requires: [] },
@@ -116,14 +115,6 @@ export function resolveRecipe(options = {}) {
   if (!DATABASE_PROVIDERS[database].adapters.includes(adapter)) {
     throw new Error(`Database provider "${database}" is not supported by the ${adapter} adapter`);
   }
-  const desktopBackend = options.desktopBackend ?? 'webview';
-  if (resolvedFeatures.includes('desktop') && !DESKTOP_BACKENDS.includes(desktopBackend)) {
-    throw new Error(
-      `Desktop backend "${desktopBackend}" is not supported. ` +
-      `Cossack requires an HTML backend: ${DESKTOP_BACKENDS.join(', ')}`,
-    );
-  }
-
   const oauth = parseList(options.oauth);
   assertKnown(oauth, OAUTH_PROVIDERS, 'OAuth provider');
   const authMethods = options.authMethods === undefined
@@ -160,7 +151,6 @@ export function resolveRecipe(options = {}) {
       authMethods,
       oauth,
       theme,
-      ...(resolvedFeatures.includes('desktop') ? { desktopBackend } : {}),
     },
   };
 }

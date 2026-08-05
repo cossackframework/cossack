@@ -1,0 +1,42 @@
+{
+  "name": "@cossackframework/desktop",
+  "version": "0.8.1",
+  "type": "module",
+  "description": "Secure Electron desktop runtime for Cossack applications",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/desktop"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "cossack-desktop": "./dist/dev.js"
+  },
+  "files": ["dist", "docs", "README.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.declarations.json && chmod +x dist/dev.js",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@cossackframework/framework": "workspace:*"
+  },
+  "peerDependencies": {
+    "electron": ">=37.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "electron": "^43.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}

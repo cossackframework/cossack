@@ -280,7 +280,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
     protected set runtime(val: CossackRuntimeInfo) { this._runtimeInfo = val; }
 
-    /** True when this component is executing in the local Deno Desktop target. */
+    /** True when this component is executing in a local Cossack Desktop target. */
     protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
 
     protected providers!: Map<string, StateProvider>;

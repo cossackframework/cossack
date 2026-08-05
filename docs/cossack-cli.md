@@ -54,17 +54,25 @@ These work across every command:
 
 ### `cossack create <name>`
 
-Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers or Node.js) unless `--adapter` is provided.
+Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers, Node.js, or Deno) unless `--adapter` is provided.
 
 ```bash
 cossack create my-app
 cossack create my-app --adapter node --preset full-stack
+cossack create my-app --adapter cloudflare --preset minimal --features desktop
 ```
 
 `cossack create` writes a `.cossack/scaffold.json` manifest used by
 `cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
 
-### `cossack adapter <node|cloudflare>`
+### `cossack add desktop`
+
+Add the independent Electron target without changing the web adapter. The
+command writes `src/desktop/index.ts`, `forge.config.ts`, platform icons,
+Electron/Forge dependencies, and `desktop:dev`, `desktop:package`, and
+`desktop:make` scripts. Electron installers are built on their native host.
+
+### `cossack adapter <node|cloudflare|deno>`
 
 Switch an existing schema-v3 scaffolded project to one active runtime. The
 command re-renders the complete recorded recipe, previews the change set,

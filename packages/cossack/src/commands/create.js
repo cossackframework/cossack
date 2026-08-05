@@ -49,7 +49,6 @@ export async function createCommand(args, ctx) {
       oauth: ctx.flags.oauth,
       theme: flagString(ctx.flags.theme),
       dashboardModules: ctx.flags['dashboard-features'],
-      desktopBackend: flagString(ctx.flags['desktop-backend']),
       yes,
       interactive: !yes,
       force: ctx.force,
@@ -94,6 +93,5 @@ Options:
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
   --dashboard-features <users,sessions,settings,roles>
-  --desktop-backend <webview|cef>  Desktop rendering backend (default: webview)
   --yes                         Accept defaults and write without confirmation.`;
 }

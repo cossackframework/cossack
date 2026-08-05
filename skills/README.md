@@ -12,7 +12,7 @@ These load automatically when you work on Cossack files. You don't invoke them.
 
 | Skill | What it does |
 |---|---|
-| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, Deno Desktop, and errors. |
+| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, Electron Desktop, and errors. |
 
 ### Slash commands
 
@@ -21,7 +21,7 @@ Invoke explicitly for multi-step workflows.
 | Command | What it generates |
 |---|---|
 | [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` config, middleware wiring, login route, protected pages. |
-| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add a Deno Desktop side target without changing the web adapter; configure native shell menus, tray/Dock lifecycle, dialogs, notifications, icons, RPC, and packaging. |
+| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add an Electron Desktop side target without changing the web adapter; configure secure local RPC, native shell lifecycle, icons, and Forge packaging. |
 | [`/setup-websocket`](./setup-websocket/SKILL.md) | Real-time setup: pick SSE or Durable Object transport, wire channels/scope, configure the DO binding. |
 | [`/setup-ui`](./setup-ui/SKILL.md) | UI package setup: `cossack add ui`, theme selection, component usage with `component()`, ejecting components, focus helpers, the global Toaster. |
 

@@ -83,7 +83,7 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 | Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadContext` | `description`/`image` auto-expand to OG/Twitter |
 | Handle errors / 404 | `error/index.ts` and `404/index.ts` near the route | Hierarchical boundaries; see `references/errors.md` |
 | Add auth | `cossack add auth` (scaffolds it all) → `createAuth()` + `auth.middleware` from `@cossackframework/auth` | No hand-rolled session checks; see `references/auth.md` |
-| Add a native desktop target | `cossack add desktop` with any web adapter | Keep routes shared; normal server methods run on the local Deno Desktop target automatically; see `references/desktop.md` |
+| Add a native desktop target | `cossack add desktop` with any web adapter | Keep routes shared; normal server methods run in the Electron main process through local RPC; see `references/desktop.md` |
 | Real-time state sync | `@Page({ transport: 'sse' \| 'durable-object' })` + `channels`/`scope` | Default to `sse`; see `references/realtime.md` |
 | Broadcast a stateless event | `@Server() broadcastEvent(name)` + `@OnEvent(name)` | |
 | Register server middleware | `defineServerMiddleware()` + `@Page({ middlewares })` | No route-wrapper hacks |
@@ -241,7 +241,7 @@ for each.
 - **Forgetting to unsubscribe a `connectStore()`.** Call the returned unsubscribe function in `onCleanup()`, or you'll leak a subscriber after the component is destroyed. See `references/reactive-store.md`.
 - **Using `focusTrap` on a native `<dialog>` (Modal/Sheet).** The `<dialog>` element traps focus automatically — `focusTrap` is only for custom overlays that DON'T use `<dialog>`. See `references/ui.md#focus-management`.
 - **Hand-rolling list/conditional/memoization logic in `render()`.** Use the renderer directives instead: `repeat`/`map`/`join`/`range` (lists), `when`/`choose` (conditionals), `classMap`/`styleMap`, `ifDefined`, `guard`/`cache` (memoization), `bind` (two-way binding). They handle SSR, hydration, and dirty-checking correctly. See `references/directives.md`.
-- **Manually calling `desktop.invoke()` for normal page actions.** Leave the method undecorated (or use `@Server()`): Cossack proxies it to the web runtime or the local Deno Desktop server automatically. Use direct bindings only for exceptional per-window calls. See `references/desktop.md`.
+- **Adding renderer IPC for normal Desktop actions.** Leave the method undecorated (or use `@Server()`): Cossack proxies it to the web runtime or Electron automatically. Use the window-scoped `COSSACK_DESKTOP` binding in server code. See `references/desktop.md`.
 
 ## References
 
@@ -259,5 +259,5 @@ for each.
 - `references/cache.md` — `cache` facade, `remember()`, stores, KV recommendation
 - `references/realtime.md` — SSE vs Durable Object transports, scope, channels, streaming, event-driven re-fetch
 - `references/auth.md` — `cossack add auth` scaffold, `createAuth()` flow, the session/PBKDF2 module, guards, `this.user`
-- `references/desktop.md` — independent Deno Desktop target, shared routes, automatic local server RPC, runtime compatibility, persistence, and packaging
+- `references/desktop.md` — independent Electron target, shared routes, automatic local server RPC, secure native APIs, persistence, and Forge packaging
 - `references/errors.md` — `404/index.ts` and `error/index.ts` hierarchical boundaries

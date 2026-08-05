@@ -1,0 +1,47 @@
+name: Desktop installers
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install Linux packaging and display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg xvfb
+      - run: pnpm install --frozen-lockfile
+      - name: Build libraries and Desktop targets
+        run: |
+          pnpm run build
+          pnpm --filter @cossackframework/example-desktop-counter build
+          pnpm --filter @cossackframework/example-desktop-counter build:desktop
+      - name: Create unpacked application and native installer
+        run: |
+          pnpm --filter @cossackframework/example-desktop-counter desktop:package
+          pnpm --filter @cossackframework/example-desktop-counter desktop:make
+      - name: Smoke packaged app (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke-desktop.mjs
+      - name: Smoke packaged app
+        if: runner.os != 'Linux'
+        run: node scripts/smoke-desktop.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cossack-desktop-${{ runner.os }}
+          path: |
+            examples/desktop-counter/out/make/**
+            examples/desktop-counter/out/*-*/**

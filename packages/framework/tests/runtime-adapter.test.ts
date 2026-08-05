@@ -21,6 +21,24 @@ describe('runtime adapter contract', () => {
     })).not.toThrow();
   });
 
+  it('rejects transports excluded by an adapter capability declaration', () => {
+    const electron = {
+      name: 'electron',
+      supportedTransports: ['http'],
+    } satisfies CossackRuntimeAdapter;
+
+    expect(() => assertRuntimeTransportSupport(electron, { transport: 'http' })).not.toThrow();
+    expect(() => assertRuntimeTransportSupport(electron, { transport: 'sse' }))
+      .toThrow('electron runtime does not support the "sse" transport');
+    expect(() => assertRuntimeTransportSupport(electron, { transport: 'durable-object' }))
+      .toThrow('Supported transports: http');
+  });
+
+  it('preserves existing adapter behavior when capabilities are omitted', () => {
+    expect(() => assertRuntimeTransportSupport(deno, { transport: 'sse' })).not.toThrow();
+    expect(() => assertRuntimeTransportSupport(deno, { transport: 'durable-object' })).not.toThrow();
+  });
+
   it('hydrates the adapter runtime identity for shared components', async () => {
     const app = createApp({
       runtimeAdapter: {

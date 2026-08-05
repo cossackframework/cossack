@@ -2026,8 +2026,8 @@ export class Page extends Cossack {
 
   @Server()
   async showNativeMenu(x, y) {
-    const { createDesktopShell } = await import('@cossackframework/deno-adapter/desktop');
-    createDesktopShell().window?.showContextMenu(x, y, []);
+    const { Menu } = await import('@cossackframework/desktop');
+    Menu.buildFromTemplate([]).popup({ window: this.env.COSSACK_DESKTOP.window, x, y });
   }
 
   render() { return html\`<main @contextmenu=\"\${this.openMenu}\"></main>\`; }
@@ -2035,8 +2035,8 @@ export class Page extends Cossack {
     const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
 
     expect(result).toContain("__cossack_proxies?.get('showNativeMenu')");
-    expect(result).not.toContain('@cossackframework/deno-adapter/desktop');
-    expect(result).not.toContain('showContextMenu(x, y');
+    expect(result).not.toContain('@cossackframework/desktop');
+    expect(result).not.toContain('Menu.buildFromTemplate');
   });
 
   it('warns and skips stripping when the source cannot be parsed', () => {

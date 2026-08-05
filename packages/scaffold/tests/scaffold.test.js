@@ -685,50 +685,58 @@ describe('composition', () => {
     }
   });
 
-  it('adds a Deno Desktop target beside every web adapter and selects the embedded Turso client for Deno', async () => {
+  it('adds an Electron Desktop target beside every web adapter', async () => {
     for (const adapter of ['cloudflare', 'node', 'deno']) {
       const target = resolveRecipe({ adapter, preset: 'minimal', features: 'desktop' });
       const targetFiles = await renderRecipe(target, { projectName: `${adapter}-desktop` });
       const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
-      const targetDeno = JSON.parse(targetFiles.get('deno.json').content.toString());
-
-      expect(targetPackage.dependencies['@cossackframework/deno-adapter']).toBeDefined();
+      expect(targetPackage.dependencies['@cossackframework/desktop']).toBeDefined();
+      expect(targetPackage.devDependencies.electron).toBeDefined();
+      expect(targetPackage.devDependencies['@electron-forge/cli']).toBeDefined();
+      expect(targetPackage.main).toBe('dist/desktop/index.js');
+      expect(targetPackage.engines.node).toBe('>=22 <26');
       expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
-      expect(targetPackage.scripts['desktop:dev']).toContain('dist/desktop-server/index.js');
+      expect(targetPackage.scripts['desktop:dev']).toBe('cossack-desktop');
+      expect(targetPackage.scripts['desktop:package']).toContain('electron-forge package');
+      expect(targetPackage.scripts['desktop:make']).toContain('electron-forge make');
+      expect(targetPackage.scripts['desktop:build']).toBe('pnpm run desktop:make');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
-        .toContain('createDenoAdapter({ env, assetsRoot })');
-      expect(targetDeno.tasks['build:desktop']).toBe('pnpm run build:desktop');
-      expect(targetDeno.desktop.backend).toBe('webview');
-      expect(targetDeno.desktop.app.identifier).toBe(`dev.cossack.${adapter}-desktop`);
-      expect(targetDeno.desktop.output.linux).toBe('./dist/desktop');
+        .toContain('createDesktopApp({');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .not.toContain('export const desktop = await');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain('void main().catch');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain("behavior: 'quit'");
+      expect(targetFiles.get('forge.config.ts').content.toString())
+        .toContain(`appBundleId: 'dev.cossack.${adapter}-desktop'`);
+      expect(targetFiles.get('desktop-assets/linux.desktop.ejs').content.toString())
+        .toContain('Exec=<%= name %> --ozone-platform=x11 %U');
+      for (const icon of ['icon.icns', 'icon.ico', 'icon-512.png', 'tray-macosTemplate@2x.png']) {
+        expect(targetFiles.has(`desktop-assets/${icon}`)).toBe(true);
+      }
+      const trayPng = Buffer.from(targetFiles.get('desktop-assets/tray-linux-22.png').content);
+      expect(trayPng.readUInt8(24)).toBe(8);
+      expect(trayPng.readUInt8(25)).toBe(6);
+      if (adapter !== 'deno') expect(targetFiles.has('deno.json')).toBe(false);
     }
 
     const recipe = resolveRecipe({ adapter: 'deno', preset: 'database', features: 'desktop' });
     const files = await renderRecipe(recipe, { projectName: 'desktop-app' });
     const pkg = JSON.parse(files.get('package.json').content.toString());
-    const deno = JSON.parse(files.get('deno.json').content.toString());
     expect(recipe.config.database).toBe('turso');
-    expect(pkg.dependencies['@tursodatabase/database']).toBeDefined();
-    expect(pkg.dependencies['@tursodatabase/serverless']).toBeUndefined();
-    expect(pkg.scripts['desktop:dev']).toContain('deno desktop -A --hmr');
+    expect(pkg.dependencies['@tursodatabase/serverless']).toBeDefined();
+    expect(pkg.dependencies['@tursodatabase/database']).toBeUndefined();
+    expect(pkg.scripts['desktop:dev']).toBe('cossack-desktop');
     expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
+    const deno = JSON.parse(files.get('deno.json').content.toString());
     expect(deno.tasks.build).toBe('pnpm run build');
     expect(deno.imports.hono).toMatch(/^npm:hono@/);
     expect(deno.imports.vite).toMatch(/^npm:vite@/);
-    expect(deno.desktop.backend).toBe('webview');
-    expect(deno.desktop.app.identifier).toBe('dev.cossack.desktop-app');
+    expect(deno.desktop).toBeUndefined();
     expect(files.has('src/desktop/index.ts')).toBe(true);
-    expect(files.get('src/orm/factory.ts').content.toString()).toContain("turso({ path:");
-
-    const cefRecipe = resolveRecipe({
-      adapter: 'deno', preset: 'minimal', features: 'desktop', desktopBackend: 'cef',
-    });
-    const cefFiles = await renderRecipe(cefRecipe);
-    expect(JSON.parse(cefFiles.get('deno.json').content.toString()).desktop.backend).toBe('cef');
-    expect(() => resolveRecipe({
-      adapter: 'deno', preset: 'minimal', features: 'desktop', desktopBackend: 'raw',
-    })).toThrow('requires an HTML backend');
+    expect(files.get('src/orm/factory.ts').content.toString()).toContain('TURSO_DATABASE_URL');
   });
 
   it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {

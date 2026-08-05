@@ -14,6 +14,7 @@ const packageDirectories = [
   'core',
   'node-adapter',
   'deno-adapter',
+  'desktop',
   'auth',
   'ui',
   'framework',
@@ -40,6 +41,7 @@ async function buildPublishablePackages() {
   await run('pnpm', ['--filter', '@cossackframework/deno-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
+  await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
 }

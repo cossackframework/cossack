@@ -19,6 +19,19 @@ The framework is built on a strict separation between the **library** (`core`, `
 
 This separation ensures the framework's core is reusable, maintainable, and decoupled from any single implementation.
 
+## Desktop runtime boundary
+
+`@cossackframework/desktop` is the sole native application runtime. Its
+Electron main process serves renderer assets and framework SSR/RPC through the
+private `cossack://app` protocol and injects `ASSETS` plus a window-scoped
+`COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare,
+Node, or Deno web adapter and supports HTTP page transport only.
+
+Renderer code has no Electron client entry, preload bridge, Node integration,
+or generic IPC channel. Native calls run in bootstrap modules or server-only
+component methods. The Desktop package may use Node/Electron APIs; core and
+shared library packages remain Web Standard compatible.
+
 ## Request Lifecycle
 
 The lifecycle of a user interaction is split into two main phases: the initial server-side render and the subsequent client-side interactivity.

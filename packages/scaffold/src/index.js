@@ -11,7 +11,6 @@ import {
   OAUTH_PROVIDERS,
   UI_THEMES,
   DASHBOARD_MODULES,
-  DESKTOP_BACKENDS,
   FEATURE_REGISTRY,
   PRESET_REGISTRY,
   DATABASE_PROVIDERS,
@@ -29,7 +28,6 @@ export {
   OAUTH_PROVIDERS,
   UI_THEMES,
   DASHBOARD_MODULES,
-  DESKTOP_BACKENDS,
   FEATURE_REGISTRY,
   PRESET_REGISTRY,
   DATABASE_PROVIDERS,
@@ -301,7 +299,26 @@ const EXAMPLE_PATHS = new Set([
   'src/pages/(public)/index.ts',
   'src/pages/(public)/layout.ts',
 ]);
-const DESKTOP_PATHS = new Set(['src/desktop/index.ts']);
+const DESKTOP_PATHS = new Set([
+  '.npmrc',
+  'src/desktop/index.ts',
+  'forge.config.ts',
+  'desktop-assets/icon.icns',
+  'desktop-assets/icon.ico',
+  'desktop-assets/linux.desktop.ejs',
+  'desktop-assets/icon-16.png',
+  'desktop-assets/icon-32.png',
+  'desktop-assets/icon-64.png',
+  'desktop-assets/icon-128.png',
+  'desktop-assets/icon-256.png',
+  'desktop-assets/icon-512.png',
+  'desktop-assets/tray-linux-22.png',
+  'desktop-assets/tray-linux-44.png',
+  'desktop-assets/tray-macosTemplate.png',
+  'desktop-assets/tray-macosTemplate@2x.png',
+  'desktop-assets/tray-windows-16.png',
+  'desktop-assets/tray-windows-32.png',
+]);
 
 function capabilityFor(rel, recipe) {
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
@@ -438,11 +455,7 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/database'] = `^${templateVersion}`;
     dependencies['reflect-metadata'] = '^0.2.2';
     if (recipe.config.database === 'turso') {
-      if (recipe.adapter === 'deno' && recipe.resolvedFeatures.includes('desktop')) {
-        dependencies['@tursodatabase/database'] = dependencyVersion('@tursodatabase/database');
-      } else {
-        dependencies['@tursodatabase/serverless'] = dependencyVersion('@tursodatabase/serverless');
-      }
+      dependencies['@tursodatabase/serverless'] = dependencyVersion('@tursodatabase/serverless');
     } else if (recipe.adapter === 'deno' && recipe.config.database === 'sqlite') {
       dependencies['@tursodatabase/database'] = dependencyVersion('@tursodatabase/database');
     } else if (
@@ -466,7 +479,7 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
-    dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
+    dependencies['@cossackframework/desktop'] = `^${templateVersion}`;
   }
   const devDependencies = {
     '@types/node': dependencyVersion('@types/node'),
@@ -477,8 +490,18 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
-  if (recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')) {
+  if (recipe.adapter === 'deno') {
     devDependencies['@types/deno'] = '^2.3.0';
+  }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    devDependencies.electron = dependencyVersion('electron');
+    for (const name of [
+      '@electron-forge/cli',
+      '@electron-forge/maker-deb',
+      '@electron-forge/maker-dmg',
+      '@electron-forge/maker-wix',
+      '@electron-forge/shared-types',
+    ]) devDependencies[name] = dependencyVersion(name);
   }
   if (recipe.resolvedFeatures.includes('studio')) {
     devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
@@ -535,9 +558,11 @@ function packageJson(recipe, projectName) {
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
   if (recipe.resolvedFeatures.includes('desktop')) {
-    scripts['build:desktop'] = 'vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop-server --minify false';
-    scripts['desktop:dev'] = 'deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
-    scripts['desktop:build'] = 'deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
+    scripts['build:desktop'] = 'vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
+    scripts['desktop:dev'] = 'cossack-desktop';
+    scripts['desktop:package'] = 'pnpm run build:desktop && electron-forge package';
+    scripts['desktop:make'] = 'pnpm run build:desktop && electron-forge make';
+    scripts['desktop:build'] = 'pnpm run desktop:make';
   }
   if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
@@ -552,22 +577,30 @@ function packageJson(recipe, projectName) {
   }
   return JSON.stringify({
     name: projectName,
+    version: '0.1.0',
     type: 'module',
+    ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22 <26' } } : {}),
     description: 'The Borderless TypeScript Framework',
     cossack: { runtime: recipe.adapter },
     scripts,
     dependencies,
     devDependencies,
+    ...(recipe.resolvedFeatures.includes('desktop') ? { main: 'dist/desktop/index.js' } : {}),
   }, null, 2) + '\n';
 }
 
 function pnpmWorkspace(recipe) {
   const builds = [
+    ...(recipe.resolvedFeatures.includes('desktop') ? ['@bitdisaster/exe-icon-extractor'] : []),
     'esbuild',
     'sharp',
     'workerd',
+    ...(recipe.resolvedFeatures.includes('desktop') ? ['electron'] : []),
   ];
-  return `allowBuilds:\n${builds.map((name) => `  ${name}: true`).join('\n')}\n`;
+  const overrides = recipe.resolvedFeatures.includes('desktop')
+    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n`
+    : '\n';
+  return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
 
 function ormFactory(recipe) {
@@ -581,9 +614,7 @@ function ormFactory(recipe) {
     const adapterExpression = provider === 'sqlite'
       ? "denoSQLite({ filename: env.DB_PATH ?? './database.sqlite' })"
       : provider === 'turso'
-        ? recipe.resolvedFeatures.includes('desktop')
-          ? "turso({ path: env.DB_PATH ?? './database.turso' })"
-          : `turso({
+        ? `turso({
       url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
       authToken: env.TURSO_AUTH_TOKEN,
     })`
@@ -881,7 +912,7 @@ export default {
     runtime.fetch(frameworkApp, request, requestEnv),
 };
 
-if (import.meta.main && typeof (Deno as any).BrowserWindow !== 'function') {
+if (import.meta.main) {
   runtime.serve(frameworkApp);
 }
 `;
@@ -895,18 +926,13 @@ function desktopIdentifier(projectName) {
   return `dev.cossack.${slug || 'app'}`;
 }
 
-function denoConfiguration(recipe, projectName) {
-  const tasks = recipe.adapter === 'deno' ? {
+function denoConfiguration() {
+  const tasks = {
     dev: 'pnpm run dev',
     build: 'pnpm run build',
     start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
     deploy: 'deno task build && deno deploy',
-  } : {};
-  if (recipe.resolvedFeatures.includes('desktop')) {
-    tasks['build:desktop'] = 'pnpm run build:desktop';
-    tasks['desktop:dev'] = 'deno task build:desktop && deno desktop -A --hmr --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
-    tasks['desktop:build'] = 'deno task build:desktop && deno desktop -A --exclude-unused-npm --include dist/client dist/desktop-server/index.js';
-  }
+  };
   return JSON.stringify({
     nodeModulesDir: 'auto',
     imports: {
@@ -914,48 +940,127 @@ function denoConfiguration(recipe, projectName) {
       vite: `npm:vite@${dependencyVersion('vite')}`,
     },
     tasks,
-    ...(recipe.resolvedFeatures.includes('desktop') ? {
-      desktop: {
-        app: {
-          name: projectName,
-          identifier: desktopIdentifier(projectName),
-        },
-        backend: recipe.config.desktopBackend ?? 'webview',
-        output: {
-          linux: './dist/desktop',
-          macos: './dist/desktop',
-          windows: './dist/desktop',
-        },
-      },
-    } : {}),
   }, null, 2) + '\n';
 }
 
-function desktopEntry() {
-  return `import { createApp } from '@cossackframework/framework/router';
-import { createDenoAdapter } from '@cossackframework/deno-adapter';
+function desktopEntry(projectName) {
+  return `import { app as electronApp, configureDesktopClose, createDesktopApp, electronRuntimeAdapter } from '@cossackframework/desktop';
+import { createApp } from '@cossackframework/framework/router';
 import { fileURLToPath } from 'node:url';
 import { App } from '../App';
 import { template } from '../root';
 
-const deno = (globalThis as any).Deno;
-export const env: Record<string, unknown> = deno.env.toObject();
-const assetsRoot = fileURLToPath(new URL('../client/', deno.mainModule));
-export const runtime = createDenoAdapter({ env, assetsRoot });
-export const app = createApp({
+export const env: Record<string, unknown> = { ...process.env };
+export const frameworkApp = createApp({
   AppComponent: App,
   htmlTemplate: template,
-  runtimeAdapter: runtime,
+  runtimeAdapter: electronRuntimeAdapter,
 });
 
-export default {
-  fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
-    runtime.fetch(app, request, requestEnv),
+async function main() {
+  const desktop = await createDesktopApp({
+    identifier: '${desktopIdentifier(projectName)}',
+    productName: '${projectName.replaceAll("'", "\\'")}',
+    assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
+    env,
+    fetch: (request, requestEnv) => frameworkApp.fetch(request, requestEnv),
+    window: {
+      title: '${projectName.replaceAll("'", "\\'")}',
+      icon: fileURLToPath(new URL('../../desktop-assets/icon-256.png', import.meta.url)),
+    },
+  });
+  configureDesktopClose({
+    window: desktop.mainWindow,
+    behavior: 'quit',
+    onQuit: () => desktop.quit(),
+  });
+}
+
+void main().catch((error) => {
+  console.error('Cossack Desktop failed to start.', error);
+  electronApp.exit(1);
+});
+`;
+}
+
+function forgeConfiguration(projectName) {
+  const identifier = desktopIdentifier(projectName);
+  const executableName = identifier.slice('dev.cossack.'.length);
+  const safeName = projectName.replaceAll("'", "\\'");
+  return `import path from 'node:path';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerDMG } from '@electron-forge/maker-dmg';
+import { MakerWix } from '@electron-forge/maker-wix';
+import type { ForgeConfig } from '@electron-forge/shared-types';
+
+const config: ForgeConfig = {
+  packagerConfig: {
+    asar: true,
+    prune: false,
+    ignore: [/^\\/node_modules(?:\\/|$)/, /^\\/src(?:\\/|$)/, /^\\/public(?:\\/|$)/],
+    name: '${safeName}',
+    executableName: '${executableName}',
+    appBundleId: '${identifier}',
+    appCategoryType: 'public.app-category.developer-tools',
+    icon: process.platform === 'darwin'
+      ? 'desktop-assets/icon.icns'
+      : process.platform === 'win32'
+        ? 'desktop-assets/icon.ico'
+        : 'desktop-assets/icon-512.png',
+    ...(process.env.APPLE_IDENTITY ? { osxSign: { identity: process.env.APPLE_IDENTITY } } : {}),
+    ...(process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID ? {
+      osxNotarize: {
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID,
+      },
+    } : {}),
+  },
+  makers: [
+    new MakerDeb({
+      options: {
+        name: '${executableName}',
+        productName: '${safeName}',
+        genericName: '${safeName}',
+        description: '${safeName} desktop application',
+        bin: '${executableName}',
+        maintainer: 'Cossack Framework <maintainers@cossack.dev>',
+        homepage: 'https://cossack.dev',
+        desktopTemplate: path.resolve('desktop-assets/linux.desktop.ejs'),
+        icon: 'desktop-assets/icon-512.png',
+        categories: ['Utility'],
+        section: 'utils',
+      },
+    }),
+    new MakerWix({
+      name: '${safeName}',
+      manufacturer: 'Cossack Framework',
+      appUserModelId: '${identifier}',
+      icon: 'desktop-assets/icon.ico',
+      exe: '${executableName}.exe',
+    }),
+    new MakerDMG({
+      name: '${safeName}',
+      format: 'ULFO',
+    }),
+  ],
 };
 
-if (import.meta.main && typeof deno.BrowserWindow !== 'function') {
-  runtime.serve(app);
+export default config;
+`;
 }
+
+function linuxDesktopTemplate(projectName) {
+  return `[Desktop Entry]
+Name=<%= productName %>
+Comment=<%= description %>
+GenericName=<%= genericName %>
+Exec=<%= name %> --ozone-platform=x11 %U
+Icon=<%= name %>
+Type=Application
+StartupNotify=true
+StartupWMClass=${desktopIdentifier(projectName)}
+Categories=<%= categories.join(';') %>;
 `;
 }
 
@@ -1324,12 +1429,8 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
     if (recipe.config.database === 'sqlite') {
       values.push(['DB_PATH', './database.sqlite']);
     } else if (recipe.config.database === 'turso') {
-      if (recipe.adapter === 'deno' && recipe.resolvedFeatures.includes('desktop')) {
-        values.push(['DB_PATH', './database.turso']);
-      } else {
-        values.push(['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : '']);
-        values.push(['TURSO_AUTH_TOKEN', example ? 'your-turso-token' : '']);
-      }
+      values.push(['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : '']);
+      values.push(['TURSO_AUTH_TOKEN', example ? 'your-turso-token' : '']);
     } else {
       values.push(['DATABASE_URL', example
         ? `${recipe.config.database}://user:password@localhost:5432/database`
@@ -1501,9 +1602,7 @@ export async function renderRecipe(recipe, options = {}) {
             : recipe.adapter === 'deno'
               ? ['vite/client', 'node']
               : ['./worker-configuration.d.ts', 'node']),
-          ...(recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')
-            ? ['@types/deno']
-            : []),
+          ...(recipe.adapter === 'deno' ? ['@types/deno'] : []),
         ],
       },
     }, null, 2) + '\n'),
@@ -1514,7 +1613,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\n.env\n.dev.vars\n'),
+    content: text('node_modules/\ndist/\nout/\n.env\n.dev.vars\n'),
     capability: 'base',
   });
 
@@ -1604,15 +1703,27 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
-  if (recipe.adapter === 'deno' || recipe.resolvedFeatures.includes('desktop')) {
+  if (recipe.adapter === 'deno') {
     files.set('deno.json', {
-      content: text(denoConfiguration(recipe, options.projectName ?? 'my-cossack-app')),
-      capability: recipe.adapter === 'deno' ? 'base' : 'desktop',
+      content: text(denoConfiguration()),
+      capability: 'base',
     });
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
+    files.set('.npmrc', {
+      content: text('node-linker=hoisted\n'),
+      capability: 'desktop',
+    });
     files.set('src/desktop/index.ts', {
-      content: text(desktopEntry()),
+      content: text(desktopEntry(options.projectName ?? 'my-cossack-app')),
+      capability: 'desktop',
+    });
+    files.set('forge.config.ts', {
+      content: text(forgeConfiguration(options.projectName ?? 'my-cossack-app')),
+      capability: 'desktop',
+    });
+    files.set('desktop-assets/linux.desktop.ejs', {
+      content: text(linuxDesktopTemplate(options.projectName ?? 'my-cossack-app')),
       capability: 'desktop',
     });
   }
@@ -2225,7 +2336,6 @@ async function inferRecipe(projectDir, manifest) {
       authMethods: manifest.config?.authMethods,
       oauth: manifest.config?.oauth,
       theme: manifest.config?.theme,
-      desktopBackend: manifest.config?.desktopBackend,
       dashboardModules: manifest.dashboardModules,
     });
   }
@@ -2287,11 +2397,7 @@ function adapterEnvironmentDefaults(recipe) {
   if (recipe.resolvedFeatures.includes('database')) {
     values.push(['DB_CONNECTION', recipe.config.database]);
     if (recipe.config.database === 'turso') {
-      if (recipe.adapter === 'deno' && recipe.resolvedFeatures.includes('desktop')) {
-        values.push(['DB_PATH', './database.turso']);
-      } else {
-        values.push(['TURSO_DATABASE_URL', ''], ['TURSO_AUTH_TOKEN', '']);
-      }
+      values.push(['TURSO_DATABASE_URL', ''], ['TURSO_AUTH_TOKEN', '']);
     }
   }
   if (recipe.resolvedFeatures.includes('auth') &&
@@ -2449,7 +2555,6 @@ export async function switchAdapter(projectDir, target, options = {}) {
     authMethods: manifest.config?.authMethods,
     oauth: manifest.config?.oauth,
     theme: manifest.config?.theme,
-    desktopBackend: manifest.config?.desktopBackend,
     dashboardModules: manifest.dashboardModules,
   });
   const empty = { writes: [], deletes: [], conflicts: [], preserved: [] };
@@ -2512,7 +2617,6 @@ export async function switchAdapter(projectDir, target, options = {}) {
       authMethods: manifest.config?.authMethods,
       oauth: manifest.config?.oauth,
       theme: manifest.config?.theme,
-      desktopBackend: manifest.config?.desktopBackend,
       dashboardModules: manifest.dashboardModules,
     });
     recipe = ensureEnvironmentSecrets(recipe, {
@@ -2779,7 +2883,6 @@ export async function addFeature(projectDir, feature, options = {}) {
       authMethods: prompted.authMethods ?? current.config.authMethods,
       oauth: prompted.oauth ?? current.config.oauth,
       theme: prompted.theme ?? current.config.theme,
-      desktopBackend: prompted.desktopBackend ?? current.config.desktopBackend,
       dashboardModules,
     });
     recipe = ensureEnvironmentSecrets(recipe, environment.secrets);
@@ -2883,7 +2986,6 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
     authMethods: current.config.authMethods,
     oauth: current.config.oauth,
     theme: current.config.theme,
-    desktopBackend: current.config.desktopBackend,
     dashboardModules: current.dashboardModules,
   });
   const previousRendered = await renderRecipe(current, {

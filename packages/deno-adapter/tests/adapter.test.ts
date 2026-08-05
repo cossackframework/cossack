@@ -48,17 +48,8 @@ describe('Deno adapter fetch handler', () => {
       .toThrow('requires Deno 2.9 or newer');
   });
 
-  it('identifies web and Desktop runtime targets', async () => {
+  it('identifies Deno as a web runtime', async () => {
     const adapter = createDenoAdapter();
     expect(await adapter.getClientMetadata?.()).toMatchObject({ platform: 'web' });
-
-    (globalThis as any).Deno = { BrowserWindow: class {} };
-    try {
-      expect(await adapter.getClientMetadata?.()).toMatchObject({
-        platform: 'desktop',
-      });
-    } finally {
-      delete (globalThis as any).Deno;
-    }
   });
 });

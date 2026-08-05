@@ -15,6 +15,11 @@ application/OAuth secrets, plus a tracked `.env.example` containing documented
 placeholder values. Their generated pnpm configuration allows the trusted
 native build dependencies used by SQLite and Vite.
 
+The `desktop` feature is an independent Electron side target for every web
+adapter. It generates the main-process entry, Forge config, native icon set,
+host package scripts, and pnpm settings required by Forge. Adding or removing
+the feature owns those files without changing the selected web runtime.
+
 ```js
 import {
   createApp,
@@ -42,6 +47,8 @@ await switchAdapter(project.projectDir, 'node', {
   database: 'sqlite',
   interactive: false,
 });
+
+await addFeature(project.projectDir, 'desktop', { interactive: false });
 ```
 
 `switchAdapter()` requires a schema-v3 scaffold manifest and re-renders the

@@ -63,35 +63,35 @@ afterEach(async () => {
 });
 
 describe('adapter switching', () => {
-  it('keeps the independent Deno Desktop target while switching web adapters', async () => {
+  it('keeps the independent Electron Desktop target while switching web adapters', async () => {
     const project = await create('deno');
     const added = await addFeature(project.projectDir, 'desktop', {
       interactive: false,
-      desktopBackend: 'cef',
     });
     expect(added.status).toBe('added');
-    expect(added.recipe.config.desktopBackend).toBe('cef');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(project.projectDir, 'forge.config.ts'))).resolves.toBeUndefined();
     const switched = await switchAdapter(project.projectDir, 'node', { interactive: false });
     expect(switched.status).toBe('changed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(project.projectDir, 'deno.json'))).resolves.toBeUndefined();
-    expect(JSON.parse(await fs.readFile(path.join(project.projectDir, 'deno.json'), 'utf8'))
-      .desktop.app.identifier).toBe('dev.cossack.app');
+    await expect(fs.access(path.join(project.projectDir, 'deno.json'))).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'))
+      .dependencies['@cossackframework/desktop']).toBeDefined();
 
     const removed = await removeFeatureFromProject(project.projectDir, 'desktop', {
       interactive: false,
     });
     expect(removed.status).toBe('removed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
+    await expect(fs.access(path.join(project.projectDir, 'forge.config.ts'))).rejects.toThrow();
     expect((await switchAdapter(project.projectDir, 'deno', { interactive: false })).status)
       .toBe('changed');
   });
 
   it('generates stable Desktop identifiers for direct creation, later addition, and unusual names', async () => {
     const direct = await create('deno', 'minimal', { features: 'desktop' });
-    expect(JSON.parse(await fs.readFile(path.join(direct.projectDir, 'deno.json'), 'utf8'))
-      .desktop.app.identifier).toBe('dev.cossack.app');
+    expect(await fs.readFile(path.join(direct.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.app'");
 
     const root = await temporaryDirectory();
     const unusual = await createApp('My SUPER__App!!!', {
@@ -101,8 +101,10 @@ describe('adapter switching', () => {
       features: 'desktop',
       interactive: false,
     });
-    expect(JSON.parse(await fs.readFile(path.join(unusual.projectDir, 'deno.json'), 'utf8'))
-      .desktop.app.identifier).toBe('dev.cossack.my-super-app');
+    expect(await fs.readFile(path.join(unusual.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.my-super-app'");
+    expect(await fs.readFile(path.join(unusual.projectDir, 'desktop-assets/linux.desktop.ejs'), 'utf8'))
+      .toContain('StartupWMClass=dev.cossack.my-super-app');
 
     const fallback = await createApp('___', {
       cwd: root,
@@ -111,8 +113,8 @@ describe('adapter switching', () => {
       interactive: false,
     });
     await addFeature(fallback.projectDir, 'desktop', { interactive: false });
-    expect(JSON.parse(await fs.readFile(path.join(fallback.projectDir, 'deno.json'), 'utf8'))
-      .desktop.app.identifier).toBe('dev.cossack.app');
+    expect(await fs.readFile(path.join(fallback.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.app'");
   });
 
   it.each(['minimal', 'database', 'auth', 'full-stack'])(

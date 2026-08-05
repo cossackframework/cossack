@@ -2,7 +2,6 @@ import { Hono, type Context } from 'hono';
 import { serveStatic, upgradeWebSocket } from 'hono/deno';
 import { InMemoryWebSocketRuntime } from '@cossackframework/core';
 import type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/framework/runtime-adapter';
-import { getDesktopClientMetadata, isDesktopRuntime } from './desktop.js';
 
 export interface DenoAdapterOptions {
   env?: Record<string, unknown>;
@@ -160,10 +159,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
   return {
     name: 'deno',
     get instanceCount() { return instances.size; },
-    getClientMetadata: () => ({
-      platform: isDesktopRuntime() ? 'desktop' : 'web',
-      ...getDesktopClientMetadata(),
-    }),
+    getClientMetadata: () => ({ platform: 'web' }),
     handleWebSocketUpgrade,
     fetch(app, request, env) {
       return getFetchHandler(app)(request, env);

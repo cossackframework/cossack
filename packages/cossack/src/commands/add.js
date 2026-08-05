@@ -33,7 +33,6 @@ export async function addCommand(args, ctx) {
       authMethods: ctx.flags['auth-methods'],
       oauth: ctx.flags.oauth,
       theme: flagString(ctx.flags.theme),
-      desktopBackend: flagString(ctx.flags['desktop-backend']),
       features: feature === 'dashboard' && ctx.flags.features !== undefined
         ? parseList(ctx.flags.features)
         : undefined,
@@ -110,6 +109,5 @@ Options:
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
   --features <users,sessions,settings,roles>  Dashboard modules
-  --desktop-backend <webview|cef>             Desktop rendering backend
   --yes                                      Apply without confirmation`;
 }
