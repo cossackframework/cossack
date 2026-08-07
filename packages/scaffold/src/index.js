@@ -578,7 +578,7 @@ function packageJson(recipe, projectName) {
     name: projectName,
     version: '0.1.0',
     type: 'module',
-    ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22 <26' } } : {}),
+    ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22' } } : {}),
     description: 'The Borderless TypeScript Framework',
     cossack: { runtime: recipe.adapter },
     scripts,

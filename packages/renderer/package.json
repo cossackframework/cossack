@@ -38,6 +38,7 @@
     "css-tree": "^3.2.1"
   },
   "devDependencies": {
+    "happy-dom": "^20.11.1",
     "oxlint": "^1.41.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",

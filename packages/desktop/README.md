@@ -47,9 +47,9 @@ An unpacked Forge executable bypasses that desktop entry; launch it with both
 `--no-sandbox` and `--ozone-platform=x11` when testing directly from `out/`.
 The sandbox flag is only appropriate for that uninstalled test package.
 
-Use Node 22 or 24 LTS for Forge packaging. The current Forge/Packager ZIP stack
-can extract Electron pathologically slowly under Node 26; generated Desktop
-projects declare `node: ">=22 <26"` until that upstream combination is fixed.
+Node 22 or 24 LTS is recommended for Forge packaging. Node 26 is supported, but
+the current Forge/Packager ZIP stack can extract Electron pathologically slowly
+there; generated Desktop projects declare `node: ">=22"`.
 
 Use Electron APIs in the bootstrap or through ordinary `@Server()` methods via
 `this.env.COSSACK_DESKTOP`. There is deliberately no renderer client or generic
