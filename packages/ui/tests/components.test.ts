@@ -133,6 +133,8 @@ describe("NativeSelect", () => {
         expect(out).not.toContain("bg-background");
         expect(out).toContain("[color-scheme:light_dark]");
         expect(out).toContain("dark:[color-scheme:dark]");
+        expect(out).toContain("[&amp;&gt;option]:bg-popover");
+        expect(out).toContain("[&amp;&gt;option]:text-popover-foreground");
     });
 });
 

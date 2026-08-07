@@ -65,6 +65,30 @@ describe('bind directive (two-way)', () => {
     expect(component.color).toBe('blue');
   });
 
+  it('re-applies a bound select value after dynamic options are committed', async () => {
+    const container = document.createElement('div');
+    const component = { color: 'blue' };
+    const options = html`<option value="red">Red</option><option value="blue">Blue</option>`;
+    const tpl = () => html`<select .value=${bind(component, 'color')}>${options}</select>`;
+
+    render(tpl(), container);
+    await Promise.resolve();
+
+    expect(container.querySelector('select')!.value).toBe('blue');
+  });
+
+  it('re-applies a spread-bound select value after dynamic options are committed', async () => {
+    const container = document.createElement('div');
+    const component = { color: 'blue' };
+    const options = html`<option value="red">Red</option><option value="blue">Blue</option>`;
+    const tpl = () => html`<select ...=${{ '.value': bind(component, 'color') }}>${options}</select>`;
+
+    render(tpl(), container);
+    await Promise.resolve();
+
+    expect(container.querySelector('select')!.value).toBe('blue');
+  });
+
   it('updates the DOM when the field changes (render direction)', () => {
     const container = document.createElement('div');
     const component = { email: 'one@example.com' };

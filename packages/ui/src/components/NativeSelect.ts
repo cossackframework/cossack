@@ -52,6 +52,7 @@ export class NativeSelect extends Cossack {
                         // fields. color-scheme still lets the browser theme the
                         // native option menu appropriately.
                         "appearance-none w-full rounded-md border bg-transparent text-foreground [color-scheme:light_dark]": true,
+                        "[&>option]:bg-popover [&>option]:text-popover-foreground": true,
                         "dark:[color-scheme:dark]": true,
                         "shadow-xs outline-none": true,
                         "transition-[color,box-shadow]": true,

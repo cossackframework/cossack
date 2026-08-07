@@ -1621,7 +1621,12 @@ class SpreadPart implements Part {
       }
     } else {
       const strValue = current == null ? '' : String(current);
-      if (!state || state.lastKind !== 'value' || String(state.lastValue) !== strValue) {
+      if (
+        !state ||
+        state.lastKind !== 'value' ||
+        String(state.lastValue) !== strValue ||
+        (this.element instanceof HTMLSelectElement && el.value !== strValue)
+      ) {
         el.value = strValue;
       }
     }
@@ -1654,6 +1659,20 @@ class SpreadPart implements Part {
         boundField: bind.fieldName,
       };
       this.bindStates.set(key, state);
+
+      // A component spread is committed before its projected children. For a
+      // <select>, assigning value before the matching <option> exists is
+      // ignored by the browser. Re-apply once the complete template has been
+      // committed, provided this exact binding is still active.
+      if (propName === 'value' && this.element instanceof HTMLSelectElement) {
+        queueMicrotask(() => {
+          const active = this.bindStates.get(key);
+          if (!active || active !== state) return;
+          const latest = resolveField(active.boundComponent, active.boundField);
+          const latestValue = latest == null ? '' : String(latest);
+          if (el.value !== latestValue) el.value = latestValue;
+        });
+      }
     } else {
       // Update the stored last-comitted value so the next render dirty-checks.
       state.lastKind = propName;
@@ -1944,7 +1963,11 @@ class AttributePart implements Part {
       }
     } else {
       const strValue = current == null ? '' : String(current);
-      if (this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue) {
+      if (
+        this.lastFormKind !== 'value' ||
+        String(this.lastFormValue) !== strValue ||
+        (this.element instanceof HTMLSelectElement && el.value !== strValue)
+      ) {
         el.value = strValue;
         // Store the normalized string we actually wrote (not `current`), so a
         // null/undefined field compares equal to '' on the next render instead
@@ -1987,6 +2010,19 @@ class AttributePart implements Part {
       this.boundComponent = component;
       this.boundFieldName = bind.fieldName;
       this.element.addEventListener(eventName, listener);
+
+      // Dynamic <option> children are committed after this attribute part.
+      // Browsers ignore a select value with no matching option, so retry after
+      // the rest of the template has been applied.
+      if (propName === 'value' && this.element instanceof HTMLSelectElement) {
+        const activeListener = listener;
+        queueMicrotask(() => {
+          if (this.bindListener !== activeListener) return;
+          const latest = resolveField(this.boundComponent, this.boundFieldName!);
+          const latestValue = latest == null ? '' : String(latest);
+          if (el.value !== latestValue) el.value = latestValue;
+        });
+      }
     }
 
     // `.value`/`.checked` are not real HTML attributes — strip the binding
