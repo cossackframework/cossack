@@ -167,6 +167,28 @@ Line 1
         expect(result).toContain('<div />');
     });
 
+    it('preserves sibling SVG elements whose final attribute precedes a self-closing slash', () => {
+        const input = `<svg xmlns="http://www.w3.org/2000/svg">
+            <circle cx="11.5" cy="11.5" r="9.5"stroke="currentColor" stroke-width="1.5"/>
+            <path d="M18.5 18.5L22 22"stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>`;
+        const result = minifyHtml(input);
+
+        expect(result).toContain('stroke-width="1.5"/>');
+        expect(result).toContain('stroke-linecap="round"/>');
+
+        document.body.innerHTML = result;
+        const svg = document.body.querySelector('svg')!;
+        const circle = svg.querySelector('circle')!;
+        const path = svg.querySelector('path')!;
+
+        expect(svg.children).toHaveLength(2);
+        expect(circle.children).toHaveLength(0);
+        expect(circle.getAttribute('stroke-width')).toBe('1.5');
+        expect(path.parentElement).toBe(svg);
+        expect(path.getAttribute('stroke-linecap')).toBe('round');
+    });
+
     it('trims leading and trailing whitespace', () => {
         const input = '   <div>hello</div>   ';
         const result = minifyHtml(input);

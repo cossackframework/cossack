@@ -23,7 +23,7 @@ const TYPE_JS_CSS = /\s+type\s*=\s*["']text\/(javascript|css)["']/gi;
 // separator. Besides matching the HTML grammar, this prevents malformed
 // third-party markup such as `r="6"stroke="currentColor"` from becoming the
 // substantially worse `r=6stroke=currentColor` during minification.
-const QUOTED_ATTR = /(\w[\w-]*)\s*=\s*["']([a-zA-Z0-9_.-]+)["'](?=\s|\/?>)/g;
+const QUOTED_ATTR = /(\w[\w-]*)\s*=\s*["']([a-zA-Z0-9_.-]+)["'](?=(\s|\/?>))/g;
 
 function preserveBlocks(html: string): { html: string; blocks: string[] } {
     const blocks: string[] = [];
@@ -64,7 +64,14 @@ export function minifyHtml(html: string): string {
     result = result.replace(/>\s+</g, '><');
 
     // Step 6: Remove optional quotes around simple attribute values
-    result = result.replace(QUOTED_ATTR, (_, name, value) => {
+    result = result.replace(QUOTED_ATTR, (match, name, value, separator) => {
+        // In a self-closing tag, `/` is not a delimiter for an unquoted HTML
+        // attribute value. Unquoting the final SVG attribute would turn e.g.
+        // `stroke-width="1.5"/>` into `stroke-width=1.5/>`; the tokenizer then
+        // reads the slash as part of the value and fails to self-close the SVG
+        // element. Keep that final value quoted so sibling SVG nodes retain
+        // their intended structure during the initial server render.
+        if (separator === '/>') return match;
         return `${name}=${value}`;
     });
 

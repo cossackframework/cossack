@@ -17,6 +17,9 @@ allowBuilds:
 
 overrides:
   '@electron/rebuild': ^4.2.0
+  'happy-dom@<20.8.9': 20.11.1
+  'tmp@<0.2.6': 0.2.7
+  'undici@>=7.0.0 <7.29.0': 7.29.0
 
 minimumReleaseAgeExclude:
   - electron@43.3.0

@@ -695,7 +695,7 @@ describe('composition', () => {
       expect(targetPackage.devDependencies.electron).toBeDefined();
       expect(targetPackage.devDependencies['@electron-forge/cli']).toBeDefined();
       expect(targetPackage.main).toBe('dist/desktop/index.js');
-      expect(targetPackage.engines.node).toBe('>=22 <26');
+      expect(targetPackage.engines.node).toBe('>=22');
       expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
       expect(targetPackage.scripts['build:desktop']).toContain('--mode desktop');
       expect(targetPackage.scripts['desktop:dev']).toBe('cossack-desktop');

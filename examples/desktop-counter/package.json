@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22 <26"
+    "node": ">=22"
   },
   "main": "dist/desktop/index.js",
   "scripts": {
@@ -25,10 +25,10 @@
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/ui": "workspace:*",
     "@cossackframework/node-adapter": "workspace:*",
-    "@hono/node-server": "^1.13.0",
-    "@tailwindcss/vite": "^4.1.0",
-    "hono": "^4.12.31",
-    "tailwindcss": "^4.1.0",
+    "@hono/node-server": "^2.0.5",
+    "@tailwindcss/vite": "^4.3.3",
+    "hono": "^4.12.34",
+    "tailwindcss": "^4.3.3",
     "vite": "^8.1.4",
     "ws": "^8.18.0"
   },

@@ -142,18 +142,18 @@
     "vfile-matter": "^5.0.1",
     "@cloudflare/vite-plugin": "^1.47.0",
     "@playwright/test": "^1.61.1",
-    "@tailwindcss/vite": "^4.1.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/mdast": "^4.0.4",
     "cossack": "workspace:*",
-    "hono": "^4.12.31",
+    "hono": "^4.12.34",
     "reflect-metadata": "^0.2.2",
-    "tailwindcss": "^4.1.0",
+    "tailwindcss": "^4.3.3",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
     "wrangler": "^4.114.0"
   },
   "peerDependencies": {
-    "hono": "^4.12.0",
+    "hono": "^4.12.34",
     "vite": "^8.1.0"
   },
   "engines": {

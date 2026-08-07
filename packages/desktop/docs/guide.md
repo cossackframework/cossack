@@ -67,9 +67,9 @@ for an unpacked app and `desktop:make` for the current host's `.deb`, `.msi`, or
 `.dmg`; installers are not cross-built. Signing and notarization are optional
 until credentials are supplied.
 
-Package with Node 22 or 24 LTS. Electron Packager's current ZIP extraction path
-is extremely slow under Node 26, so generated Desktop manifests temporarily
-declare `node: ">=22 <26"`.
+Node 22 or 24 LTS is recommended for packaging. Node 26 is supported, but
+Electron Packager's current ZIP extraction path is extremely slow there;
+generated Desktop manifests declare `node: ">=22"`.
 
 References: [security checklist](https://www.electronjs.org/docs/latest/tutorial/security),
 [protocol API](https://www.electronjs.org/docs/latest/api/protocol),
