@@ -129,8 +129,8 @@ function runOptimisticHandler(
  * (applied once the action completes); other keys are set directly. Internal
  * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
  * call requestUpdate — callers schedule a render as appropriate to their
- * transport. When requestState is provided for HTTP, fields changed locally
- * since that request began are skipped as stale.
+ * transport. When requestState is provided for a direct /crpc response (HTTP
+ * or SSE), fields changed locally since that request began are skipped as stale.
  */
 export function applyStateToComponent(
     component: any,
@@ -140,11 +140,11 @@ export function applyStateToComponent(
     for (const key in data) {
         if (key.startsWith('_cossack_')) continue;
         if (RESERVED_STATE_KEYS.has(key)) continue;
-        // HTTP responses contain the server's complete public state, including
-        // fields merely echoed from the request. If the local value no longer
-        // matches what this request sent, the client edited it while the call
-        // was in flight (or a newer response already won), so this field is
-        // stale and must not be applied.
+        // Direct /crpc responses contain the server's complete public state,
+        // including fields merely echoed from the request. If the local value
+        // no longer matches what this request sent, the client edited it while
+        // the call was in flight (or a newer response already won), so this
+        // field is stale and must not be applied.
         if (
             requestState &&
             Object.prototype.hasOwnProperty.call(requestState, key) &&
@@ -170,6 +170,8 @@ function transportValuesEqual(liveValue: unknown, sentValue: unknown): boolean {
     try {
         return JSON.stringify(liveValue) === JSON.stringify(sentValue);
     } catch {
+        // The request snapshot is JSON-safe, but the live field can become
+        // cyclic or contain a bigint while the request is in flight.
         return Object.is(liveValue, sentValue);
     }
 }
@@ -250,6 +252,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 // === File extraction (shared) ===
                 const files = new Map<string, File>();
                 const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
+                // Must be captured after the optimistic handler: the stale-response
+                // guard compares live state with this post-optimistic snapshot.
                 const requestState = snapshotTransportState(self.getPublicState());
 
                 // === Shared apply-state helper ===
@@ -597,6 +601,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 const files = new Map<string, File>();
 
                 const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
+                // Must be captured after the optimistic handler: the stale-response
+                // guard compares live state with this post-optimistic snapshot.
                 const requestState = snapshotTransportState(component.getPublicState());
 
                 if (files.size > 0) {

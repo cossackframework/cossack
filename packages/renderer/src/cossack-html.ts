@@ -1660,18 +1660,12 @@ class SpreadPart implements Part {
       };
       this.bindStates.set(key, state);
 
-      // A component spread is committed before its projected children. For a
-      // <select>, assigning value before the matching <option> exists is
-      // ignored by the browser. Re-apply once the complete template has been
-      // committed, provided this exact binding is still active.
-      if (propName === 'value' && this.element instanceof HTMLSelectElement) {
-        queueMicrotask(() => {
-          const active = this.bindStates.get(key);
-          if (!active || active !== state) return;
-          const latest = resolveField(active.boundComponent, active.boundField);
-          const latestValue = latest == null ? '' : String(latest);
-          if (el.value !== latestValue) el.value = latestValue;
-        });
+      if (propName === 'value') {
+        reapplySelectValueAfterChildren(
+          this.element,
+          () => this.bindStates.get(key) === state,
+          () => resolveField(state!.boundComponent, state!.boundField),
+        );
       }
     } else {
       // Update the stored last-comitted value so the next render dirty-checks.
@@ -2011,17 +2005,13 @@ class AttributePart implements Part {
       this.boundFieldName = bind.fieldName;
       this.element.addEventListener(eventName, listener);
 
-      // Dynamic <option> children are committed after this attribute part.
-      // Browsers ignore a select value with no matching option, so retry after
-      // the rest of the template has been applied.
-      if (propName === 'value' && this.element instanceof HTMLSelectElement) {
+      if (propName === 'value') {
         const activeListener = listener;
-        queueMicrotask(() => {
-          if (this.bindListener !== activeListener) return;
-          const latest = resolveField(this.boundComponent, this.boundFieldName!);
-          const latestValue = latest == null ? '' : String(latest);
-          if (el.value !== latestValue) el.value = latestValue;
-        });
+        reapplySelectValueAfterChildren(
+          this.element,
+          () => this.bindListener === activeListener,
+          () => resolveField(this.boundComponent, this.boundFieldName!),
+        );
       }
     }
 
@@ -2030,6 +2020,25 @@ class AttributePart implements Part {
     if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
   }
 }
+
+/**
+ * Dynamic <option> children are committed after select attribute/spread parts.
+ * Browsers ignore a value with no matching option, so retry after the complete
+ * template is applied, provided the original bind is still active.
+ */
+const reapplySelectValueAfterChildren = (
+  element: Element,
+  isActive: () => boolean,
+  readValue: () => unknown,
+): void => {
+  if (!(element instanceof HTMLSelectElement)) return;
+  queueMicrotask(() => {
+    if (!isActive()) return;
+    const current = readValue();
+    const value = current == null ? '' : String(current);
+    if (element.value !== value) element.value = value;
+  });
+};
 
 /**
  * Pick the DOM event that signals a user edit for a given element + property.
