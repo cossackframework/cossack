@@ -300,7 +300,6 @@ const EXAMPLE_PATHS = new Set([
   'src/pages/(public)/layout.ts',
 ]);
 const DESKTOP_PATHS = new Set([
-  '.npmrc',
   'src/desktop/index.ts',
   'forge.config.ts',
   'desktop-assets/icon.icns',
@@ -558,7 +557,7 @@ function packageJson(recipe, projectName) {
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
   if (recipe.resolvedFeatures.includes('desktop')) {
-    scripts['build:desktop'] = 'vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
+    scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
     scripts['desktop:dev'] = 'cossack-desktop';
     scripts['desktop:package'] = 'pnpm run build:desktop && electron-forge package';
     scripts['desktop:make'] = 'pnpm run build:desktop && electron-forge make';
@@ -590,12 +589,19 @@ function packageJson(recipe, projectName) {
 }
 
 function pnpmWorkspace(recipe) {
+  // Forge's packager and native makers use these transitive packages during
+  // installation. pnpm requires each build script to be approved explicitly.
+  const desktopBuilds = [
+    '@bitdisaster/exe-icon-extractor',
+    'electron',
+    'fs-xattr',
+    'macos-alias',
+  ];
   const builds = [
-    ...(recipe.resolvedFeatures.includes('desktop') ? ['@bitdisaster/exe-icon-extractor'] : []),
+    ...(recipe.resolvedFeatures.includes('desktop') ? desktopBuilds : []),
     'esbuild',
     'sharp',
     'workerd',
-    ...(recipe.resolvedFeatures.includes('desktop') ? ['electron'] : []),
   ];
   const overrides = recipe.resolvedFeatures.includes('desktop')
     ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n`
@@ -1710,10 +1716,6 @@ export async function renderRecipe(recipe, options = {}) {
     });
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
-    files.set('.npmrc', {
-      content: text('node-linker=hoisted\n'),
-      capability: 'desktop',
-    });
     files.set('src/desktop/index.ts', {
       content: text(desktopEntry(options.projectName ?? 'my-cossack-app')),
       capability: 'desktop',

@@ -171,9 +171,10 @@ describe('recipe resolution', () => {
       .toContain("'hono'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("exclude: ['@cossackframework/solar-icons']");
-    expect(files.get('vite.config.ts').content.toString()).toMatch(
-      /environments: \{[\s\S]*ssr: \{[\s\S]*resolve: \{[\s\S]*noExternal: \['@cossackframework\/ui', '@cossackframework\/solar-icons', 'hono'\]/,
-    );
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("resolve: mode === 'desktop'");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("'css-tree'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
     expect(files.get('vite.config.ts').content.toString())
@@ -696,10 +697,22 @@ describe('composition', () => {
       expect(targetPackage.main).toBe('dist/desktop/index.js');
       expect(targetPackage.engines.node).toBe('>=22 <26');
       expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
+      expect(targetPackage.scripts['build:desktop']).toContain('--mode desktop');
       expect(targetPackage.scripts['desktop:dev']).toBe('cossack-desktop');
       expect(targetPackage.scripts['desktop:package']).toContain('electron-forge package');
       expect(targetPackage.scripts['desktop:make']).toContain('electron-forge make');
       expect(targetPackage.scripts['desktop:build']).toBe('pnpm run desktop:make');
+      expect(targetFiles.has('.npmrc')).toBe(false);
+      const pnpmWorkspace = targetFiles.get('pnpm-workspace.yaml').content.toString();
+      expect(pnpmWorkspace).toContain('nodeLinker: hoisted');
+      expect(pnpmWorkspace).toContain("'@bitdisaster/exe-icon-extractor': true");
+      expect(pnpmWorkspace).toContain('electron: true');
+      expect(pnpmWorkspace).toContain('fs-xattr: true');
+      expect(pnpmWorkspace).toContain('macos-alias: true');
+      expect(targetFiles.get('vite.config.ts').content.toString())
+        .toContain("external: ['electron']");
+      expect(targetFiles.get('vite.config.ts').content.toString())
+        .toContain('noExternal: true');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain('createDesktopApp({');

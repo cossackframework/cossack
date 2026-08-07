@@ -489,15 +489,20 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   await protocol.handle(protocolScheme, async (request) => {
     debugDesktop(`handling ${request.method} ${request.url}`);
     let url: URL;
+    let scopeUrl: URL;
     try {
       url = new URL(request.url);
       if (!isDesktopAppUrl(url)) return new Response('Forbidden Desktop authority', { status: 403 });
       normalizePathname(url.pathname);
+      const referringUrl = request.headers.get('referer');
+      scopeUrl = new URL(referringUrl || request.url);
+      if (!isDesktopAppUrl(scopeUrl)) {
+        return new Response('Forbidden Desktop authority', { status: 403 });
+      }
     } catch {
       return new Response('Invalid Desktop URL', { status: 400 });
     }
-    const referringUrl = request.headers.get('referer');
-    const windowId = new URL(referringUrl || request.url).searchParams.get('__cossack_window');
+    const windowId = scopeUrl.searchParams.get('__cossack_window');
     const browserWindow = windowId ? BrowserWindow.fromId(Number(windowId)) ?? mainWindow : mainWindow;
     const scopedShell = browserWindow ? createDesktopShell({ window: browserWindow }) : undefined;
     const asset = await assetResponse(assetsRoot, request);

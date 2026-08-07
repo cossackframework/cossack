@@ -13,12 +13,17 @@ describe('Desktop counter example', () => {
     expect(pkg.dependencies['@cossackframework/node-adapter']).toBeDefined();
     expect(pkg.dependencies['@cossackframework/desktop']).toBeDefined();
     expect(pkg.dependencies['@cossackframework/deno-adapter']).toBeUndefined();
+    expect(pkg.scripts['build:desktop']).toContain('--mode desktop');
     expect(pkg.scripts['desktop:make']).toContain('electron-forge make');
     const forge = await text('forge.config.ts');
     expect(forge).toContain("appBundleId: 'dev.cossack.counter'");
     expect(forge).toContain('MakerDeb');
     expect(forge).toContain('MakerWix');
     expect(forge).toContain('MakerDMG');
+    const vite = await text('vite.config.ts');
+    expect(vite).toContain("mode === 'desktop'");
+    expect(vite).toContain("external: ['electron']");
+    expect(vite).toContain('noExternal: true');
   });
 
   it('shares menu actions, selects close behavior by OS, and persists atomically', async () => {

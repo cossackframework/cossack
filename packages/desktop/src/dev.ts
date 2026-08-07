@@ -97,6 +97,8 @@ const renderer = spawn(process.execPath, [viteBin, 'build', '--watch'], { cwd, s
 const main = spawn(process.execPath, [
   viteBin,
   'build',
+  '--mode',
+  'desktop',
   '--ssr',
   'src/desktop/index.ts',
   '--outDir',

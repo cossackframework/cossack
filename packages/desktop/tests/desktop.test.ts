@@ -275,6 +275,12 @@ describe('Electron Desktop runtime', () => {
   it('rejects foreign authorities and unsafe paths', async () => {
     expect((await electron.protocol.invoke(new Request('cossack://other/app.js'))).status).toBe(403);
     expect((await electron.protocol.invoke(new Request('cossack://app/%5Coutside'))).status).toBe(400);
+    expect((await electron.protocol.invoke(new Request('cossack://app/counter', {
+      headers: { referer: 'not a valid URL' },
+    }))).status).toBe(400);
+    expect((await electron.protocol.invoke(new Request('cossack://app/counter', {
+      headers: { referer: 'cossack://other/?__cossack_window=1' },
+    }))).status).toBe(403);
   });
 
   it('forces secure BrowserWindow defaults and denies untrusted navigation', () => {

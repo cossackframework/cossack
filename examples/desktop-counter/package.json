@@ -12,7 +12,7 @@
     "dev": "vite dev",
     "build": "vite build && vite build --ssr src/index.ts --outDir dist/server",
     "start": "node dist/server/index.js",
-    "build:desktop": "vite build && vite build --ssr src/desktop/index.ts --outDir dist/desktop --minify false",
+    "build:desktop": "vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false",
     "desktop:dev": "cossack-desktop",
     "desktop:package": "pnpm run build:desktop && electron-forge package",
     "desktop:make": "pnpm run build:desktop && electron-forge make",
