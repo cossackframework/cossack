@@ -177,7 +177,7 @@ const SQLITE_PRAGMAS: PragmaDefinition[] = [
 
 function isSqliteProvider(provider: StudioConnection['info']['provider']): boolean {
   return provider === 'sqlite' ||
-    provider === 'libsql' ||
+    provider === 'turso' ||
     provider === 'd1-local' ||
     provider === 'd1-remote';
 }
@@ -307,7 +307,7 @@ export class StudioDatabase {
 
   async getPragmas(): Promise<StudioPragma[]> {
     if (!isSqliteProvider(this.connection.info.provider)) {
-      throw new Error('Pragmas are available only for SQLite, libSQL, and D1 databases.');
+      throw new Error('Pragmas are available only for SQLite, Turso, and D1 databases.');
     }
     const pragmas: StudioPragma[] = [];
     let firstError: unknown;
@@ -342,7 +342,7 @@ export class StudioDatabase {
 
   async setPragma(name: string, value: string): Promise<StudioPragma[]> {
     if (!isSqliteProvider(this.connection.info.provider)) {
-      throw new Error('Pragmas are available only for SQLite, libSQL, and D1 databases.');
+      throw new Error('Pragmas are available only for SQLite, Turso, and D1 databases.');
     }
     const definition = SQLITE_PRAGMAS.find((candidate) => candidate.name === name);
     if (!definition) throw new Error(`PRAGMA "${name}" is not editable in Studio.`);

@@ -71,10 +71,20 @@ export interface SerializedComponentState {
     scopeKey?: string;
     /** Resolved compiler-generated server$ invocations. */
     serverResources?: Record<string, unknown>;
+    /** Runtime-specific, browser-safe metadata contributed by an adapter. */
+    runtime?: Record<string, unknown>;
 }
 
 export interface CossackOptions {
   Channels?: string;
+}
+
+export type CossackRuntimePlatform = 'web' | 'desktop';
+
+/** Runtime identity available to component server methods and hydrated clients. */
+export interface CossackRuntimeInfo extends Record<string, unknown> {
+  platform: CossackRuntimePlatform;
+  adapter?: string;
 }
 
 /**
@@ -92,6 +102,8 @@ export interface BootstrapOptions {
   user?: User;
   /** Environment bindings (server) or emulated env (client). */
   env?: any;
+  /** Runtime target and adapter metadata. Defaults to the web platform. */
+  runtime?: CossackRuntimeInfo;
   /** Current page route identifier. */
   page?: string;
   /** WebSocket provider name (server only). */

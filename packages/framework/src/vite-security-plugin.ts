@@ -173,11 +173,26 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // replaces that method with the existing RPC proxy stub.
       if (code.includes('server$')) code = transformServerResources(code, id);
 
-      if (!isClientEnvironment) return { code, map: null };
-
       // Check if this file contains a Cossack class or a @Service decorated class
       if (!code.includes('extends Cossack') && !code.includes('extends CossackElement') && !code.includes('@Service')) {
         return { code, map: null };
+      }
+
+      // Undecorated methods are server-only by default. When one is exposed in
+      // a render event slot (for example `@click=${this.increment}`), register
+      // it in both the server and client class metadata. The server registration
+      // makes the RPC allowlist accept it; the client registration lets
+      // bootstrap replace its stripped stub with the normal transport proxy.
+      if (!isClientEnvironment) {
+        return {
+          code: injectAutomaticServerMethodMetadata(
+            code,
+            id,
+            isClientSafeMethod,
+            BUILTIN_METHODS,
+          ),
+          map: null,
+        };
       }
 
       try {
@@ -906,6 +921,100 @@ function collectThisCalls(node: any): string[] {
   return names;
 }
 
+/** Helpers for recognizing bare method values in render event-handler slots. */
+function propertyName(node: any): string | null {
+  if (node?.type === 'Identifier' || node?.type === 'PrivateIdentifier') return node.name;
+  if (node?.type === 'Literal' && typeof node.value === 'string') return node.value;
+  return null;
+}
+
+function isHandlerProperty(node: any): boolean {
+  const name = propertyName(node);
+  return name !== null && (name.startsWith('@') || /^on[A-Z]/.test(name));
+}
+
+function isTemplateEventBinding(quasi: any): boolean {
+  const raw = quasi?.value?.raw;
+  return typeof raw === 'string' && /@[A-Za-z0-9_.:-]+\s*=\s*["']?$/.test(raw);
+}
+
+/** Collect method values used in event slots, excluding unrelated bare references. */
+function collectRenderHandlerReferences(node: any): string[] {
+  const names: string[] = [];
+  const visit = (n: any, parent?: any, handlerPosition = false) => {
+    if (!n || typeof n.type !== 'string') return;
+    if (
+      handlerPosition &&
+      n.type === 'MemberExpression' &&
+      n.object?.type === 'ThisExpression' &&
+      !n.computed &&
+      n.property?.type === 'Identifier'
+    ) {
+      const isDirectCall = parent?.type === 'CallExpression' && parent.callee === n;
+      if (!isDirectCall) names.push(n.property.name);
+    }
+
+    if (n.type === 'TaggedTemplateExpression' && n.quasi?.type === 'TemplateLiteral') {
+      visit(n.tag, n, false);
+      for (let index = 0; index < n.quasi.expressions.length; index++) {
+        visit(
+          n.quasi.expressions[index],
+          n.quasi,
+          isTemplateEventBinding(n.quasi.quasis[index]),
+        );
+      }
+      return;
+    }
+
+    if (n.type === 'Property') {
+      if (n.computed) visit(n.key, n, false);
+      visit(n.value, n, isHandlerProperty(n.key));
+      return;
+    }
+
+    for (const k of Object.keys(n)) {
+      const v = n[k];
+      if (Array.isArray(v)) {
+        for (const c of v) visit(c, n, handlerPosition);
+      } else if (v && typeof v.type === 'string') {
+        visit(v, n, handlerPosition);
+      }
+    }
+  };
+  visit(node);
+  return names;
+}
+
+/** Undecorated methods exposed as render event handlers become automatic RPC endpoints. */
+function computeAutomaticRpcSet(
+  cls: any,
+  methods: AstMethod[],
+  preserved: Set<string>,
+): Set<string> {
+  const byName = new Map(methods.map((method) => [method.name, method]));
+  const automatic = new Set<string>();
+
+  for (const member of cls?.body?.body ?? []) {
+    const name = memberKeyName(member.key);
+    if (name !== 'render' || !preserved.has(name)) continue;
+    const body = member.type === 'MethodDefinition'
+      ? member.value?.body
+      : member.type === 'PropertyDefinition'
+        ? member.value?.body ?? member.value
+        : undefined;
+    if (!body) continue;
+
+    for (const reference of collectRenderHandlerReferences(body)) {
+      const target = byName.get(reference);
+      if (target && !preserved.has(reference) && !target.hasServerDecorator) {
+        automatic.add(reference);
+      }
+    }
+  }
+
+  return automatic;
+}
+
 /**
  * Compute the preserved set: methods that must retain their full implementation
  * in the client bundle. Seeds with client-safe methods (by decorator or builtin
@@ -970,7 +1079,11 @@ function computePreservedSet(
       const body = bodyByName.get(name);
       if (!body) continue;
       for (const callee of collectThisCalls(body)) {
-        if (byName.has(callee)) preserved.add(callee);
+        const target = byName.get(callee);
+        // A client-safe method can call an explicit @Server method through its
+        // generated RPC proxy. Keeping that body would ship server-only code
+        // (and any native imports it uses) to the browser.
+        if (target && !target.hasServerDecorator) preserved.add(callee);
       }
     }
     if (preserved.size === before) break;
@@ -1074,18 +1187,21 @@ function createFieldStub(
 
 /**
  * Extract the names of server-only methods that will be stubbed, along with
- * whether each one carries an explicit `@Server` decorator. Only `@Server`
- * methods are eligible for RPC metadata injection — undecorated helpers that
- * get stripped must NOT be auto-registered as RPC endpoints.
+ * whether each one carries an explicit `@Server` decorator or is exposed as an
+ * automatic handler RPC. Unreachable undecorated helpers remain unregistered.
  */
 function extractServerOnlyMethodNames(
   methods: AstMethod[],
   preserved: Set<string>,
-): Array<{ name: string; hasServerDecorator: boolean }> {
-  const result: Array<{ name: string; hasServerDecorator: boolean }> = [];
+  automaticRpc: Set<string>,
+): Array<{ name: string; registerForRpc: boolean }> {
+  const result: Array<{ name: string; registerForRpc: boolean }> = [];
   for (const m of methods) {
     if (!preserved.has(m.name)) {
-      result.push({ name: m.name, hasServerDecorator: m.hasServerDecorator });
+      result.push({
+        name: m.name,
+        registerForRpc: m.hasServerDecorator || automaticRpc.has(m.name),
+      });
     }
   }
   return result;
@@ -1093,18 +1209,17 @@ function extractServerOnlyMethodNames(
 
 /**
  * Create metadata injection code that registers server-only methods for RPC
- * proxying. Only methods that carry an explicit `@Server` decorator are
- * registered — undecorated helpers that get stripped must never receive an RPC
- * proxy, so their stubs throw loudly instead of silently no-op'ing.
+ * proxying. Explicit `@Server` methods and compiler-discovered handler methods
+ * are registered. Other stripped helpers receive no proxy and throw loudly.
  *
  * Returns an empty string when no method qualifies, so no constructor is
  * injected. This is injected at the end of the class body.
  */
 function createMetadataInjection(
-  methods: Array<{ name: string; hasServerDecorator: boolean }>,
+  methods: Array<{ name: string; registerForRpc: boolean }>,
 ): string {
   const serverMethodNames = methods
-    .filter((m) => m.hasServerDecorator)
+    .filter((m) => m.registerForRpc)
     .map((m) => m.name);
   if (serverMethodNames.length === 0) return '';
 
@@ -1128,6 +1243,65 @@ function createMetadataInjection(
 /** The statement injected into a constructor to register server-only methods. */
 const REGISTER_SERVER_METHODS_CALL =
   '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
+
+function appendMetadataRegistration(
+  cls: any,
+  metadataInjection: string,
+): Array<{ start: number; end: number; replacement: string }> {
+  if (!metadataInjection) return [];
+  const closeBrace = cls.body.end - 1;
+  const ctor = findConstructor(cls);
+  if (ctor) {
+    const openBrace = ctor.value.body.start;
+    return [
+      { start: openBrace + 1, end: openBrace + 1, replacement: '\n' + REGISTER_SERVER_METHODS_CALL },
+      { start: closeBrace, end: closeBrace, replacement: metadataInjection },
+    ];
+  }
+
+  const superCall = cls.superClass != null ? '      super();\n' : '';
+  return [{
+    start: closeBrace,
+    end: closeBrace,
+    replacement: metadataInjection + `    constructor() {
+${superCall}${REGISTER_SERVER_METHODS_CALL}    }
+`,
+  }];
+}
+
+/**
+ * Add compiler-owned RPC metadata to the server build while retaining method
+ * bodies. This mirrors the client transform's handler discovery.
+ */
+export function injectAutomaticServerMethodMetadata(
+  code: string,
+  _id: string,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
+  builtinMethods: Set<string>,
+): string {
+  const program = parseProgram(code);
+  if (!program) return code;
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+
+  for (const cls of findClasses(program)) {
+    const isCossackSubclass = superclassName(cls) === 'Cossack' || superclassName(cls) === 'CossackElement';
+    const hasServiceDecorator = (cls.decorators ?? []).some((d: any) => /@Service\b/.test(sourceSlice(code, d)));
+    if (!isCossackSubclass && !hasServiceDecorator) continue;
+
+    const methods = collectAstMethods(cls, code);
+    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
+    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    if (automaticRpc.size === 0) continue;
+    const registrations = [...automaticRpc].map((name) => ({ name, registerForRpc: true }));
+    replacements.push(...appendMetadataRegistration(cls, createMetadataInjection(registrations)));
+  }
+
+  let result = code;
+  for (const replacement of [...replacements].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, replacement.start) + replacement.replacement + result.slice(replacement.end);
+  }
+  return result;
+}
 
 // ============================================================================
 // Main transform
@@ -1178,11 +1352,11 @@ export function transformCossackClass(
     if (!isCossackSubclass && !hasServiceDecorator) continue;
 
     const className = cls.id?.name ?? 'Anonymous';
-    const hasExtends = cls.superClass != null;
 
     const methods = collectAstMethods(cls, code);
     const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
-    const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved);
+    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved, automaticRpc);
 
     // 1. Stub the body of every non-preserved method, and the value of every
     //    non-preserved @Server function field.
@@ -1218,37 +1392,7 @@ export function transformCossackClass(
     //    duplication, and that is handled below.
     const metadataInjection = createMetadataInjection(serverOnlyMethods);
     if (metadataInjection) {
-      const closeBrace = cls.body.end - 1; // index of class's closing `}`
-      const ctor = findConstructor(cls);
-      if (ctor) {
-        // Existing constructor: inject the registration as its first statement.
-        const openBrace = ctor.value.body.start; // index of `{`
-        replacements.push({
-          start: openBrace + 1,
-          end: openBrace + 1,
-          replacement: '\n' + REGISTER_SERVER_METHODS_CALL,
-        });
-        // Still append the static registration method definition.
-        replacements.push({
-          start: closeBrace,
-          end: closeBrace,
-          replacement: metadataInjection,
-        });
-      } else {
-        // No constructor: append one (with super() if the class extends),
-        // together with the static method definition.
-        const superCall = hasExtends ? '      super();\n' : '';
-        const injected =
-          metadataInjection +
-          `    constructor() {
-${superCall}${REGISTER_SERVER_METHODS_CALL}    }
-`;
-        replacements.push({
-          start: closeBrace,
-          end: closeBrace,
-          replacement: injected,
-        });
-      }
+      replacements.push(...appendMetadataRegistration(cls, metadataInjection));
     }
   }
 

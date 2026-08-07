@@ -1,5 +1,5 @@
-export const ADAPTERS = ['cloudflare', 'node'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples'];
+export const ADAPTERS = ['cloudflare', 'node', 'deno'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -13,6 +13,7 @@ export const FEATURE_REGISTRY = {
   dashboard: { requires: ['auth'] },
   markdown: { requires: [] },
   examples: { requires: ['ui', 'markdown'] },
+  desktop: { requires: [] },
 };
 
 export const PRESET_REGISTRY = {
@@ -27,10 +28,10 @@ export const PRESET_REGISTRY = {
 
 export const DATABASE_PROVIDERS = {
   d1: { adapters: ['cloudflare'] },
-  sqlite: { adapters: ['node'] },
+  sqlite: { adapters: ['node', 'deno'] },
   turso: { adapters: ADAPTERS },
-  postgres: { adapters: ['node'] },
-  mysql: { adapters: ['node'] },
+  postgres: { adapters: ['node', 'deno'] },
+  mysql: { adapters: ['node', 'deno'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
 };
@@ -107,14 +108,13 @@ export function resolveRecipe(options = {}) {
   const resolvedFeatures = resolveFeatures(explicitFeatures);
 
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
+    (adapter === 'cloudflare' ? 'd1' : adapter === 'deno' ? 'turso' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }
   if (!DATABASE_PROVIDERS[database].adapters.includes(adapter)) {
     throw new Error(`Database provider "${database}" is not supported by the ${adapter} adapter`);
   }
-
   const oauth = parseList(options.oauth);
   assertKnown(oauth, OAUTH_PROVIDERS, 'OAuth provider');
   const authMethods = options.authMethods === undefined
@@ -146,6 +146,11 @@ export function resolveRecipe(options = {}) {
     explicitFeatures,
     resolvedFeatures,
     dashboardModules,
-    config: { database, authMethods, oauth, theme },
+    config: {
+      database,
+      authMethods,
+      oauth,
+      theme,
+    },
   };
 }

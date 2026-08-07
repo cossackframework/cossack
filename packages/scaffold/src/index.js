@@ -64,6 +64,7 @@ const PNPM_MANAGED_BUILDS = new Set([
 const ADAPTER_PATHS = new Set([
   '.env.example',
   '.dev.vars.example',
+  'deno.json',
   'package.json',
   'scripts/dev.js',
   'orm.config.ts',
@@ -96,8 +97,8 @@ const TRANSFERRED_ENV_NAMES = new Set([
   'SMTP_USER',
   'SMTP_PASS',
   'OAUTH_SECRET',
-  'TURSO_URL',
-  'TURSO_TOKEN',
+  'TURSO_DATABASE_URL',
+  'TURSO_AUTH_TOKEN',
   ...OAUTH_PROVIDERS.flatMap((provider) => {
     const prefix = provider.toUpperCase();
     return [`${prefix}_CLIENT_ID`, `${prefix}_CLIENT_SECRET`];
@@ -298,6 +299,25 @@ const EXAMPLE_PATHS = new Set([
   'src/pages/(public)/index.ts',
   'src/pages/(public)/layout.ts',
 ]);
+const DESKTOP_PATHS = new Set([
+  'src/desktop/index.ts',
+  'forge.config.ts',
+  'desktop-assets/icon.icns',
+  'desktop-assets/icon.ico',
+  'desktop-assets/linux.desktop.ejs',
+  'desktop-assets/icon-16.png',
+  'desktop-assets/icon-32.png',
+  'desktop-assets/icon-64.png',
+  'desktop-assets/icon-128.png',
+  'desktop-assets/icon-256.png',
+  'desktop-assets/icon-512.png',
+  'desktop-assets/tray-linux-22.png',
+  'desktop-assets/tray-linux-44.png',
+  'desktop-assets/tray-macosTemplate.png',
+  'desktop-assets/tray-macosTemplate@2x.png',
+  'desktop-assets/tray-windows-16.png',
+  'desktop-assets/tray-windows-32.png',
+]);
 
 function capabilityFor(rel, recipe) {
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
@@ -314,6 +334,7 @@ function capabilityFor(rel, recipe) {
     if (paths.includes(rel)) return recipe.dashboardModules.includes(module) ? `dashboard:${module}` : null;
   }
   if (EXAMPLE_PATHS.has(rel)) return recipe.resolvedFeatures.includes('examples') ? 'examples' : null;
+  if (DESKTOP_PATHS.has(rel)) return recipe.resolvedFeatures.includes('desktop') ? 'desktop' : null;
   return null;
 }
 
@@ -433,7 +454,9 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/database'] = `^${templateVersion}`;
     dependencies['reflect-metadata'] = '^0.2.2';
     if (recipe.config.database === 'turso') {
-      dependencies['@libsql/client'] = dependencyVersion('@libsql/client');
+      dependencies['@tursodatabase/serverless'] = dependencyVersion('@tursodatabase/serverless');
+    } else if (recipe.adapter === 'deno' && recipe.config.database === 'sqlite') {
+      dependencies['@tursodatabase/database'] = dependencyVersion('@tursodatabase/database');
     } else if (
       recipe.config.database === 'postgres' ||
       recipe.config.database === 'hyperdrive-postgres'
@@ -451,6 +474,11 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
     dependencies.ws = dependencyVersion('ws');
+  } else if (recipe.adapter === 'deno') {
+    dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
+  }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    dependencies['@cossackframework/desktop'] = `^${templateVersion}`;
   }
   const devDependencies = {
     '@types/node': dependencyVersion('@types/node'),
@@ -461,6 +489,19 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
+  if (recipe.adapter === 'deno') {
+    devDependencies['@types/deno'] = '^2.3.0';
+  }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    devDependencies.electron = dependencyVersion('electron');
+    for (const name of [
+      '@electron-forge/cli',
+      '@electron-forge/maker-deb',
+      '@electron-forge/maker-dmg',
+      '@electron-forge/maker-wix',
+      '@electron-forge/shared-types',
+    ]) devDependencies[name] = dependencyVersion(name);
+  }
   if (recipe.resolvedFeatures.includes('studio')) {
     devDependencies['@cossackframework/studio'] = `^${templateVersion}`;
   }
@@ -486,7 +527,7 @@ function packageJson(recipe, projectName) {
     devDependencies['@cloudflare/vite-plugin'] =
       dependencyVersion('@cloudflare/vite-plugin');
     devDependencies.wrangler = dependencyVersion('wrangler');
-  } else {
+  } else if (recipe.adapter === 'node') {
     devDependencies['@types/ws'] = dependencyVersion('@types/ws');
     if (
       recipe.resolvedFeatures.includes('database') &&
@@ -502,16 +543,32 @@ function packageJson(recipe, projectName) {
         build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
         start: 'node --env-file-if-exists=.env dist/server/index.js',
       }
-    : {
+    : recipe.adapter === 'deno'
+      ? {
+          dev: 'vite dev',
+          build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
+          start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
+          deploy: 'deno task build && deno deploy',
+        }
+      : {
         dev: 'vite dev',
         build: 'vite build',
         'build:ssg': 'vite build && cossack ssg',
         deploy: 'vite build && cossack ssg && wrangler deploy',
       };
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
+    scripts['desktop:dev'] = 'cossack-desktop';
+    scripts['desktop:package'] = 'pnpm run build:desktop && electron-forge package';
+    scripts['desktop:make'] = 'pnpm run build:desktop && electron-forge make';
+    scripts['desktop:build'] = 'pnpm run desktop:make';
+  }
   if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
-      : 'cossack migration up';
+      : recipe.adapter === 'deno'
+        ? 'deno run -A npm:cossack migration up'
+        : 'cossack migration up';
     scripts['schema:check'] = 'cossack schema check';
   }
   if (recipe.resolvedFeatures.includes('studio')) {
@@ -519,38 +576,94 @@ function packageJson(recipe, projectName) {
   }
   return JSON.stringify({
     name: projectName,
+    version: '0.1.0',
     type: 'module',
+    ...(recipe.resolvedFeatures.includes('desktop') ? { engines: { node: '>=22 <26' } } : {}),
     description: 'The Borderless TypeScript Framework',
     cossack: { runtime: recipe.adapter },
     scripts,
     dependencies,
     devDependencies,
+    ...(recipe.resolvedFeatures.includes('desktop') ? { main: 'dist/desktop/index.js' } : {}),
   }, null, 2) + '\n';
 }
 
 function pnpmWorkspace(recipe) {
+  // Forge's packager and native makers use these transitive packages during
+  // installation. pnpm requires each build script to be approved explicitly.
+  const desktopBuilds = [
+    '@bitdisaster/exe-icon-extractor',
+    'electron',
+    'fs-xattr',
+    'macos-alias',
+  ];
   const builds = [
+    ...(recipe.resolvedFeatures.includes('desktop') ? desktopBuilds : []),
     'esbuild',
     'sharp',
     'workerd',
   ];
-  return `allowBuilds:\n${builds.map((name) => `  ${name}: true`).join('\n')}\n`;
+  const overrides = recipe.resolvedFeatures.includes('desktop')
+    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n`
+    : '\n';
+  return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
 
 function ormFactory(recipe) {
   const provider = recipe.config.database;
+  if (recipe.adapter === 'deno') {
+    const adapterImport = provider === 'sqlite'
+      ? 'denoSQLite'
+      : provider === 'turso'
+        ? 'turso'
+        : provider;
+    const adapterExpression = provider === 'sqlite'
+      ? "denoSQLite({ filename: env.DB_PATH ?? './database.sqlite' })"
+      : provider === 'turso'
+        ? `turso({
+      url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
+      authToken: env.TURSO_AUTH_TOKEN,
+    })`
+        : provider === 'postgres'
+          ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
+          : "mysql(required(env.DATABASE_URL, 'DATABASE_URL'))";
+    return `import { createORM, type ORM } from '@cossackframework/database';
+import { ${adapterImport} } from '@cossackframework/database/deno';
+import { models } from '../models';
+
+export type ORMEnvironment = Record<string, string | undefined>;
+
+function required(value: string | undefined, name: string): string {
+  if (!value) throw new Error(\`\${name} is required\`);
+  return value;
+}
+
+export function createToolingAdapter(env: ORMEnvironment = Deno.env.toObject()) {
+  return ${adapterExpression};
+}
+
+export function createRequestORM(env: ORMEnvironment) {
+  return createToolingAdapter(env).then((adapter) => createORM({ adapter, entities: models }));
+}
+
+let singleton: Promise<ORM> | undefined;
+export function getORM(env: ORMEnvironment = Deno.env.toObject()): Promise<ORM> {
+  return singleton ??= createRequestORM(env);
+}
+`;
+  }
   if (recipe.adapter === 'node') {
     const adapterImport = provider === 'sqlite'
       ? 'nodeSQLite'
       : provider === 'turso'
-        ? 'libsql'
+        ? 'turso'
         : provider;
     const adapterExpression = provider === 'sqlite'
       ? "nodeSQLite({ filename: env.DB_PATH ?? './database.sqlite' })"
       : provider === 'turso'
-        ? `libsql({
-      url: required(env.TURSO_URL, 'TURSO_URL'),
-      authToken: env.TURSO_TOKEN,
+        ? `turso({
+      url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
+      authToken: env.TURSO_AUTH_TOKEN,
     })`
         : provider === 'postgres'
           ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
@@ -582,16 +695,16 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
   const runtimeImport = provider === 'd1'
     ? 'd1'
     : provider === 'turso'
-      ? 'libsql'
+      ? 'turso'
       : provider === 'hyperdrive-postgres'
         ? 'hyperdrivePostgres'
         : 'hyperdriveMySQL';
   const adapterExpression = provider === 'd1'
     ? 'd1(env.DB)'
     : provider === 'turso'
-      ? `libsql({
-      url: required(env.TURSO_URL, 'TURSO_URL'),
-      authToken: env.TURSO_TOKEN,
+      ? `turso({
+      url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
+      authToken: env.TURSO_AUTH_TOKEN,
     })`
       : provider === 'hyperdrive-postgres'
         ? 'hyperdrivePostgres(env.HYPERDRIVE)'
@@ -599,7 +712,7 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
   const envShape = provider === 'd1'
     ? 'DB: D1Database;'
     : provider === 'turso'
-      ? 'TURSO_URL?: string;\n  TURSO_TOKEN?: string;'
+      ? 'TURSO_DATABASE_URL?: string;\n  TURSO_AUTH_TOKEN?: string;'
       : 'HYPERDRIVE: Hyperdrive;';
   return `import { createORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
@@ -650,7 +763,7 @@ export async function createToolingAdapter(): Promise<Adapter> {
 }
 
 function ormConfiguration(recipe) {
-  const toolingImport = recipe.adapter === 'node'
+  const toolingImport = recipe.adapter === 'node' || recipe.adapter === 'deno'
     ? "import { createToolingAdapter } from './src/orm/factory';"
     : "import { createToolingAdapter } from './src/orm/tooling';";
   return `import { defineConfig } from '@cossackframework/database';
@@ -673,7 +786,10 @@ function ormMiddlewareModule(recipe) {
   const runtime = recipe.adapter === 'node'
     ? `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
-    : `export const ormRequestMiddleware = ormMiddleware((context) =>
+    : recipe.adapter === 'deno'
+      ? `export const ormRequestMiddleware = ormMiddleware((context) =>
+  createRequestORM(context.env as ORMEnvironment));`
+      : `export const ormRequestMiddleware = ormMiddleware((context) =>
   createRequestORM(context.env as ORMEnvironment));`;
   const factoryImport = recipe.adapter === 'node'
     ? "import { getORM } from '../orm/factory';"
@@ -776,6 +892,181 @@ export const env: Record<string, unknown> = {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   serve({ fetch: (request) => app.fetch(request, env), port: Number(process.env.PORT) || 3000 });
 }
+`;
+}
+
+function denoEntry(providers = []) {
+  const oauthImport = providers.length
+    ? "import { oauth, handleOAuthUser } from './auth';\n"
+    : '';
+  const routes = oauthRouteBlock(providers, 'frameworkApp');
+  return `import { createApp } from '@cossackframework/framework/router';
+import { createDenoAdapter } from '@cossackframework/deno-adapter';
+import { App } from './App';
+import { template } from './root';
+${oauthImport}
+export const env: Record<string, unknown> = Deno.env.toObject();
+export const runtime = createDenoAdapter({ env });
+export const frameworkApp = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
+  runtimeAdapter: runtime,
+});
+${routes}
+export default {
+  fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
+    runtime.fetch(frameworkApp, request, requestEnv),
+};
+
+if (import.meta.main) {
+  runtime.serve(frameworkApp);
+}
+`;
+}
+
+function desktopIdentifier(projectName) {
+  const slug = path.basename(projectName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `dev.cossack.${slug || 'app'}`;
+}
+
+function denoConfiguration() {
+  const tasks = {
+    dev: 'pnpm run dev',
+    build: 'pnpm run build',
+    start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
+    deploy: 'deno task build && deno deploy',
+  };
+  return JSON.stringify({
+    nodeModulesDir: 'auto',
+    imports: {
+      hono: `npm:hono@${dependencyVersion('hono')}`,
+      vite: `npm:vite@${dependencyVersion('vite')}`,
+    },
+    tasks,
+  }, null, 2) + '\n';
+}
+
+function desktopEntry(projectName) {
+  return `import { app as electronApp, configureDesktopClose, createDesktopApp, electronRuntimeAdapter } from '@cossackframework/desktop';
+import { createApp } from '@cossackframework/framework/router';
+import { fileURLToPath } from 'node:url';
+import { App } from '../App';
+import { template } from '../root';
+
+export const env: Record<string, unknown> = { ...process.env };
+export const frameworkApp = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
+  runtimeAdapter: electronRuntimeAdapter,
+});
+
+async function main() {
+  const desktop = await createDesktopApp({
+    identifier: '${desktopIdentifier(projectName)}',
+    productName: '${projectName.replaceAll("'", "\\'")}',
+    assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
+    env,
+    fetch: (request, requestEnv) => frameworkApp.fetch(request, requestEnv),
+    window: {
+      title: '${projectName.replaceAll("'", "\\'")}',
+      icon: fileURLToPath(new URL('../../desktop-assets/icon-256.png', import.meta.url)),
+    },
+  });
+  configureDesktopClose({
+    window: desktop.mainWindow,
+    behavior: 'quit',
+    onQuit: () => desktop.quit(),
+  });
+}
+
+void main().catch((error) => {
+  console.error('Cossack Desktop failed to start.', error);
+  electronApp.exit(1);
+});
+`;
+}
+
+function forgeConfiguration(projectName) {
+  const identifier = desktopIdentifier(projectName);
+  const executableName = identifier.slice('dev.cossack.'.length);
+  const safeName = projectName.replaceAll("'", "\\'");
+  return `import path from 'node:path';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerDMG } from '@electron-forge/maker-dmg';
+import { MakerWix } from '@electron-forge/maker-wix';
+import type { ForgeConfig } from '@electron-forge/shared-types';
+
+const config: ForgeConfig = {
+  packagerConfig: {
+    asar: true,
+    prune: false,
+    ignore: [/^\\/node_modules(?:\\/|$)/, /^\\/src(?:\\/|$)/, /^\\/public(?:\\/|$)/],
+    name: '${safeName}',
+    executableName: '${executableName}',
+    appBundleId: '${identifier}',
+    appCategoryType: 'public.app-category.developer-tools',
+    icon: process.platform === 'darwin'
+      ? 'desktop-assets/icon.icns'
+      : process.platform === 'win32'
+        ? 'desktop-assets/icon.ico'
+        : 'desktop-assets/icon-512.png',
+    ...(process.env.APPLE_IDENTITY ? { osxSign: { identity: process.env.APPLE_IDENTITY } } : {}),
+    ...(process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID ? {
+      osxNotarize: {
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID,
+      },
+    } : {}),
+  },
+  makers: [
+    new MakerDeb({
+      options: {
+        name: '${executableName}',
+        productName: '${safeName}',
+        genericName: '${safeName}',
+        description: '${safeName} desktop application',
+        bin: '${executableName}',
+        maintainer: 'Cossack Framework <maintainers@cossack.dev>',
+        homepage: 'https://cossack.dev',
+        desktopTemplate: path.resolve('desktop-assets/linux.desktop.ejs'),
+        icon: 'desktop-assets/icon-512.png',
+        categories: ['Utility'],
+        section: 'utils',
+      },
+    }),
+    new MakerWix({
+      name: '${safeName}',
+      manufacturer: 'Cossack Framework',
+      appUserModelId: '${identifier}',
+      icon: 'desktop-assets/icon.ico',
+      exe: '${executableName}.exe',
+    }),
+    new MakerDMG({
+      name: '${safeName}',
+      format: 'ULFO',
+    }),
+  ],
+};
+
+export default config;
+`;
+}
+
+function linuxDesktopTemplate(projectName) {
+  return `[Desktop Entry]
+Name=<%= productName %>
+Comment=<%= description %>
+GenericName=<%= genericName %>
+Exec=<%= name %> --ozone-platform=x11 %U
+Icon=<%= name %>
+Type=Application
+StartupNotify=true
+StartupWMClass=${desktopIdentifier(projectName)}
+Categories=<%= categories.join(';') %>;
 `;
 }
 
@@ -1123,28 +1414,29 @@ function mergeEnvironmentContent(existing, values) {
 }
 
 function nodeEnvironmentValues(recipe, projectName, example = false) {
+  const port = recipe.adapter === 'deno' ? '8000' : '3000';
   const values = [
     ['APP_NAME', projectName],
     ['APP_ENV', 'development'],
     ['APP_DEBUG', 'true'],
-    ['APP_URL', 'http://localhost:3000'],
+    ['APP_URL', `http://localhost:${port}`],
     ['APP_LOCALE', 'en'],
     ['APP_FALLBACK_LOCALE', 'en'],
     ['APP_SECRET', example
       ? 'replace-with-a-random-32-byte-secret'
       : (recipe.config.appSecret ?? generateAuthSecret())],
-    ['PORT', '3000'],
+    ['PORT', port],
     ['CACHE_DRIVER', 'memory'],
     ['CORS_ENABLED', 'true'],
-    ['CORS_ORIGINS', 'http://localhost:3000'],
+    ['CORS_ORIGINS', `http://localhost:${port}`],
   ];
   if (recipe.resolvedFeatures.includes('database')) {
     values.push(['DB_CONNECTION', recipe.config.database]);
     if (recipe.config.database === 'sqlite') {
       values.push(['DB_PATH', './database.sqlite']);
     } else if (recipe.config.database === 'turso') {
-      values.push(['TURSO_URL', example ? 'libsql://your-database.turso.io' : '']);
-      values.push(['TURSO_TOKEN', example ? 'your-turso-token' : '']);
+      values.push(['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : '']);
+      values.push(['TURSO_AUTH_TOKEN', example ? 'your-turso-token' : '']);
     } else {
       values.push(['DATABASE_URL', example
         ? `${recipe.config.database}://user:password@localhost:5432/database`
@@ -1181,8 +1473,8 @@ function cloudflareEnvironmentValues(recipe, example = false) {
   const values = [];
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'turso') {
     values.push(
-      ['TURSO_URL', example ? 'libsql://your-database.turso.io' : ''],
-      ['TURSO_TOKEN', example ? 'your-turso-token' : ''],
+      ['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : ''],
+      ['TURSO_AUTH_TOKEN', example ? 'your-turso-token' : ''],
     );
   }
   if (recipe.resolvedFeatures.includes('auth') &&
@@ -1279,13 +1571,19 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods,
       ));
     }
-    if (recipe.adapter === 'node' && ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
+    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') &&
+        ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
       content = text(nodeEntry(
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
       ));
     }
-    if (recipe.adapter === 'node' && rel === 'vite.config.ts') {
+    if (recipe.adapter === 'deno' && rel === 'src/index.ts') {
+      content = text(denoEntry(
+        recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
+      ));
+    }
+    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
     }
     files.set(rel, { content, capability });
@@ -1304,9 +1602,14 @@ export async function renderRecipe(recipe, options = {}) {
       ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')),
       compilerOptions: {
         ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')).compilerOptions,
-        types: recipe.adapter === 'node'
-          ? ['vite/client', 'node']
-          : ['./worker-configuration.d.ts', 'node'],
+        types: [
+          ...(recipe.adapter === 'node'
+            ? ['vite/client', 'node']
+            : recipe.adapter === 'deno'
+              ? ['vite/client', 'node']
+              : ['./worker-configuration.d.ts', 'node']),
+          ...(recipe.adapter === 'deno' ? ['@types/deno'] : []),
+        ],
       },
     }, null, 2) + '\n'),
     capability: 'base',
@@ -1316,7 +1619,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\n.env\n.dev.vars\n'),
+    content: text('node_modules/\ndist/\nout/\n.env\n.dev.vars\n'),
     capability: 'base',
   });
 
@@ -1406,6 +1709,26 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
+  if (recipe.adapter === 'deno') {
+    files.set('deno.json', {
+      content: text(denoConfiguration()),
+      capability: 'base',
+    });
+  }
+  if (recipe.resolvedFeatures.includes('desktop')) {
+    files.set('src/desktop/index.ts', {
+      content: text(desktopEntry(options.projectName ?? 'my-cossack-app')),
+      capability: 'desktop',
+    });
+    files.set('forge.config.ts', {
+      content: text(forgeConfiguration(options.projectName ?? 'my-cossack-app')),
+      capability: 'desktop',
+    });
+    files.set('desktop-assets/linux.desktop.ejs', {
+      content: text(linuxDesktopTemplate(options.projectName ?? 'my-cossack-app')),
+      capability: 'desktop',
+    });
+  }
   if (recipe.adapter === 'cloudflare' &&
       recipe.resolvedFeatures.includes('auth') &&
       recipe.config.authMethods.includes('oauth')) {
@@ -1421,7 +1744,7 @@ export async function renderRecipe(recipe, options = {}) {
       );
     files.set('src/index.ts', { ...entry, content: text(source) });
   }
-  if (recipe.adapter === 'node') {
+  if (recipe.adapter === 'node' || recipe.adapter === 'deno') {
     const projectName = options.projectName ?? 'my-cossack-app';
     const values = nodeEnvironmentValues(recipe, projectName);
     files.set('.env', {
@@ -1489,6 +1812,7 @@ export async function detectProjectRuntime(projectDir, manifest = undefined) {
   const packageRuntime = pkg?.cossack?.runtime;
   if (ADAPTERS.includes(packageRuntime)) return packageRuntime;
   const dependencies = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
+  if (dependencies['@cossackframework/deno-adapter']) return 'deno';
   if (dependencies['@cossackframework/node-adapter']) return 'node';
   if (dependencies['@cloudflare/vite-plugin'] || dependencies.wrangler) return 'cloudflare';
   if (await access(path.join(projectDir, 'wrangler.jsonc'))) return 'cloudflare';
@@ -1861,7 +2185,11 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
   const questions = [
     !options.adapter && {
       type: 'select', name: 'adapter', message: 'Runtime adapter',
-      choices: [{ title: 'Cloudflare Workers', value: 'cloudflare' }, { title: 'Node.js', value: 'node' }],
+      choices: [
+        { title: 'Cloudflare Workers', value: 'cloudflare' },
+        { title: 'Node.js', value: 'node' },
+        { title: 'Deno', value: 'deno' },
+      ],
     },
     !options.preset && {
       type: 'select', name: 'preset', message: 'Project preset', initial: 3,
@@ -2035,7 +2363,6 @@ async function inferRecipe(projectDir, manifest) {
 
 function runtimeFromDatabase(database) {
   if (database === 'd1') return 'cloudflare';
-  if (database === 'sqlite') return 'node';
   return undefined;
 }
 
@@ -2072,7 +2399,7 @@ function adapterEnvironmentDefaults(recipe) {
   if (recipe.resolvedFeatures.includes('database')) {
     values.push(['DB_CONNECTION', recipe.config.database]);
     if (recipe.config.database === 'turso') {
-      values.push(['TURSO_URL', ''], ['TURSO_TOKEN', '']);
+      values.push(['TURSO_DATABASE_URL', ''], ['TURSO_AUTH_TOKEN', '']);
     }
   }
   if (recipe.resolvedFeatures.includes('auth') &&
@@ -2245,7 +2572,7 @@ export async function switchAdapter(projectDir, target, options = {}) {
   }
 
   const databaseInstalled = current.resolvedFeatures.includes('database');
-  const targetDefault = target === 'cloudflare' ? 'd1' : 'sqlite';
+  const targetDefault = target === 'cloudflare' ? 'd1' : target === 'deno' ? 'turso' : 'sqlite';
   const currentCompatible = DATABASE_PROVIDERS[current.config.database]
     ?.adapters.includes(target);
   const mustSelectDatabase = databaseInstalled &&
@@ -2274,8 +2601,8 @@ export async function switchAdapter(projectDir, target, options = {}) {
       selectedDatabase = selection.value;
     }
 
-    const targetEnvironmentRel = target === 'node' ? '.env' : '.dev.vars';
-    const sourceEnvironmentRel = current.adapter === 'node' ? '.env' : '.dev.vars';
+    const targetEnvironmentRel = target === 'cloudflare' ? '.dev.vars' : '.env';
+    const sourceEnvironmentRel = current.adapter === 'cloudflare' ? '.dev.vars' : '.env';
     const [targetEnvironment, sourceEnvironment] = await Promise.all([
       readLocalEnvironment(root, targetEnvironmentRel),
       readLocalEnvironment(root, sourceEnvironmentRel),
@@ -2425,7 +2752,7 @@ async function promptAddOptions(
       runtimeFromDatabase(options.database ?? (databaseNeeded ? database : undefined));
     if (!runtime) {
       throw new Error(
-        'Could not determine the project runtime. Pass --runtime=cloudflare or --runtime=node.',
+        `Could not determine the project runtime. Pass --runtime=${ADAPTERS.join(' or --runtime=')}.`,
       );
     }
     const authMethods = options.authMethods ??
@@ -2452,6 +2779,7 @@ async function promptAddOptions(
       choices: [
         { title: 'Cloudflare Workers', value: 'cloudflare' },
         { title: 'Node.js', value: 'node' },
+        { title: 'Deno', value: 'deno' },
       ],
       when: (answers) => {
         const database = options.database ?? answers.database;
@@ -2506,7 +2834,7 @@ async function promptAddOptions(
   const runtime = knownRuntime ?? runtimeFromDatabase(database) ?? answers.runtime;
   if (!runtime) {
     throw new Error(
-      'Could not determine the project runtime. Pass --runtime=cloudflare or --runtime=node.',
+      `Could not determine the project runtime. Pass --runtime=${ADAPTERS.join(' or --runtime=')}.`,
     );
   }
   if (!parseList(answers.authMethods).includes('oauth')) answers.oauth = [];

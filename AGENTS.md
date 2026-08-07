@@ -35,7 +35,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 
 ## 4. Development Workflow
 
-1.  **Build Dependencies**: Build `core`, `renderer`, `node-adapter`, `database`, and `auth` first.
+1.  **Build Dependencies**: Build packages first `pnpm build`.
 2.  **Run Application**: Use `pnpm run dev`.
 
 ## Security: Code Stripping

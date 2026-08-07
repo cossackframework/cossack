@@ -12,8 +12,9 @@ pnpm add @cossackframework/database reflect-metadata
 ```
 
 Install only the optional driver used by the application (`pg`, `mysql2`,
-`@libsql/client`, or `better-sqlite3`). Node 22's built-in `node:sqlite`, Bun SQL,
-and Cloudflare D1 need no third-party database driver.
+`@tursodatabase/database` for embedded/Desktop, `@tursodatabase/serverless`
+for remote Turso, or `better-sqlite3`). Node 22's built-in `node:sqlite`, Bun
+SQL, and Cloudflare D1 need no third-party database driver.
 
 Use TypeScript legacy decorators:
 
@@ -116,7 +117,7 @@ builds object/bulk insert tuples. `sql.unsafe()` is the only API that injects
 literal SQL.
 
 `new SQL({ adapter })` creates a standalone Bun-compatible tagged client. In Node,
-`new SQL("postgres://…")`, `new SQL("mysql://…")`, `new SQL("libsql://…")`, and
+`new SQL("postgres://…")`, `new SQL("mysql://…")`, `new SQL("https://….turso.io")`, and
 SQLite paths select an adapter lazily. Workers intentionally require a binding or
 explicit adapter rather than environment URL guessing.
 
@@ -141,7 +142,8 @@ are never replayed across an in-memory object graph.
 
 | Runtime entry | Adapters |
 | --- | --- |
-| `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `libsql` |
+| `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso` |
+| `@cossackframework/database/deno` | `deno`, `denoSQLite`, `postgres`, `mysql`, `turso` |
 | `@cossackframework/database/bun` | `bun` over the documented Bun SQL core API |
 | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL` |
 | `@cossackframework/database/deno` | `deno` with an injected remote or SQLite driver |

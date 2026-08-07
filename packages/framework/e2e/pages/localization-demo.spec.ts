@@ -57,6 +57,7 @@ test.describe('Localization Demo', () => {
     await page.click('button:has-text("Español")');
     await page.waitForFunction(() => document.documentElement.lang === 'es');
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
+    await expect(page.locator('p.mb-4')).toContainText('Current locale: es');
 
     const body = await page.locator('body').textContent();
     expect(body).toContain('Bienvenido a la Localización');

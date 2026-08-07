@@ -1,12 +1,13 @@
 // src/router.ts
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, type Middleware } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
 import {
   createInstance,
   createLayoutServiceScope,
   createRootServiceScope,
   getServiceState,
+  isOriginAllowed,
   isRpcCallableAction,
   sanitizeClientState,
   sanitizeServiceState,
@@ -56,6 +57,8 @@ import { createRequestContextMiddleware } from './middlewares/request-context.js
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
+import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
+import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -322,6 +325,8 @@ export interface CreateAppOptions {
   i18n?: {
     autoDetectBrowser?: boolean;
   };
+  /** Optional process runtime integration (for example the Deno adapter). */
+  runtimeAdapter?: CossackRuntimeAdapter;
 }
 
 @Page({ transport: 'http' })
@@ -337,6 +342,14 @@ export function createApp(options: CreateAppOptions = {}) {
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
 
+  const resolveRuntimeInfo = async (): Promise<CossackRuntimeInfo> => ({
+    platform: 'web',
+    ...(options.runtimeAdapter ? {
+      ...(await options.runtimeAdapter.getClientMetadata?.()),
+      adapter: options.runtimeAdapter.name,
+    } : {}),
+  });
+
   // Shared context passed to transport handlers
   const routerContext: RouterContext = {
     routeIdMap,
@@ -345,6 +358,7 @@ export function createApp(options: CreateAppOptions = {}) {
     pages,
     layouts,
     allowedOrigins: options.allowedOrigins,
+    runtimeInfo: resolveRuntimeInfo,
   };
 
   // Request-context middleware — scopes the Hono `Context` into
@@ -396,6 +410,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
       const inlineCss = await getInlineCss(c.env);
+      const runtimeInfo = await resolveRuntimeInfo();
       const requestServiceScope = createRootServiceScope();
 
       try {
@@ -415,7 +430,8 @@ export function createApp(options: CreateAppOptions = {}) {
         if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
           doIdName = scopeKey;
         }
-        if (pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
+        assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
+        if (!options.runtimeAdapter && pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
           try {
             const doBinding = c.env.COSSACK_OBJECT;
             const id = doBinding.idFromName(doIdName);
@@ -452,7 +468,7 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         // Bootstrap App
-        await appInstance.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+        await appInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
@@ -466,7 +482,7 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           layoutServiceScope.bindRequest({ context: c, user, env: c.env });
           const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-          await lInst.bootstrap({ context: c, user, env: c.env, page: c.req.path });
+          await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
           layoutInstances.push(lInst);
           layoutStates[lPath] = lInst.getInitialState();
           activeServiceScope = layoutServiceScope;
@@ -487,6 +503,7 @@ export function createApp(options: CreateAppOptions = {}) {
           context: c,
           user,
           env: c.env,
+          runtime: runtimeInfo,
           page: c.req.path,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
@@ -534,7 +551,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // For durable-object transport, add the DO ID to providerTargets
         // Also add routePath to metadata for client WebSocket connections
-        if (pageOptions?.transport === 'durable-object') {
+        if (pageOptions?.transport === 'durable-object' && options.runtimeAdapter) {
+          pageInitialState.providerTargets = {
+            ...(pageInitialState.providerTargets || {}),
+            page: scopeKey,
+          };
+          if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
+        } else if (pageOptions?.transport === 'durable-object') {
           const doBinding = c.env.COSSACK_OBJECT;
           // Use scoped ID (from scope function) or URL-based ID (default)
           const doId = doBinding.idFromName(doIdName);
@@ -568,6 +591,7 @@ export function createApp(options: CreateAppOptions = {}) {
           // fallback if different) so `__()` works on the client immediately.
           // Other locales are dynamic-imported on demand by `setLocale()`.
           __cossackLang: buildLocaleHydrationData(),
+          runtime: runtimeInfo,
         };
 
         c.header('Content-Type', 'text/html');
@@ -609,7 +633,59 @@ export function createApp(options: CreateAppOptions = {}) {
   };
 
   // Transport routes
-  app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+  if (options.runtimeAdapter?.handleWebSocketUpgrade) {
+    app.get('/ws/:provider/:id', async (c) => {
+      if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
+        return c.text('Origin not allowed', 403);
+      }
+      const { provider, id: target } = c.req.param();
+      const routePath = c.req.query('routePath') || c.req.query('componentPath');
+      if (!routePath) return c.text('routePath or componentPath query parameter is required', 400);
+      const componentPath = routePathToFilePathMap.get(routePath) || routePath;
+      const componentModule = pages[componentPath] || layouts[componentPath];
+      if (!componentModule) return c.text('Component not found', 404);
+      const ComponentClass = Object.values(componentModule as object)[0] as new () => Cossack;
+      const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+      try {
+        assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
+      } catch (error) {
+        return c.text(error instanceof Error ? error.message : String(error), 400);
+      }
+      // Default scopes are recomputed from the authenticated user. Custom
+      // scope functions receive the same query values emitted during SSR.
+      let routeParams: Record<string, string>;
+      try {
+        routeParams = decodeRuntimeRouteParams(c.req.query('params'));
+      } catch {
+        return c.text('Invalid WebSocket route params', 400);
+      }
+      const expectedTarget = await resolveSseScopeKey(
+        withRuntimeRouteParams(c, routeParams),
+        pageOptions,
+      );
+      if (target !== expectedTarget) return c.text('Invalid WebSocket scope', 403);
+
+      const pathname = c.req.query('pathname') || '/';
+      const user = c.get('user');
+      const runtimeInfo = await resolveRuntimeInfo();
+      return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
+        target,
+        provider,
+        componentId: componentPath,
+        pathname,
+        user,
+        env: c.env as unknown as Record<string, unknown>,
+        createComponent: async () => {
+          const instance = createInstance(ComponentClass) as Cossack;
+          await instance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
+          instance._render();
+          return instance;
+        },
+      });
+    });
+  } else {
+    app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
+  }
   app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
   app.post('/upload', handleUpload(routerContext));
 
@@ -618,6 +694,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const isStreamRequest = !!body._cossack_stream;
     const user = c.get('user');
+    const runtimeInfo = await resolveRuntimeInfo();
 
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
@@ -690,7 +767,7 @@ export function createApp(options: CreateAppOptions = {}) {
     let componentInstance: any;
     if (componentPath === '/src/App') {
       componentInstance = createInstance(options.AppComponent ?? RouterFallbackApp);
-      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
       componentInstance._render();
     } else {
       const module = pages[componentPath] || layouts[componentPath];
@@ -698,7 +775,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const PageComponent = Object.values(module as object)[0] as new () => Cossack;
       if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
       componentInstance = createInstance(PageComponent) as any;
-      await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
 
       // Rebuild component tree
       componentInstance._render();

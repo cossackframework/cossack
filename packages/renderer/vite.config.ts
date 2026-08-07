@@ -1,5 +1,8 @@
 import { resolve } from 'path';
+import path from 'path';
 import { defineConfig } from 'vite';
+
+const sourceRoot = resolve(__dirname, 'src');
 
 export default defineConfig({
   build: {
@@ -24,7 +27,10 @@ export default defineConfig({
         // application builds can then tree-shake unused renderer exports
         // instead of receiving one opaque pre-bundled module.
         preserveModules: true,
-        preserveModulesRoot: resolve(__dirname, 'src'),
+        preserveModulesRoot: sourceRoot,
+        banner: (chunk) => chunk.facadeModuleId?.startsWith(sourceRoot)
+          ? `// @ts-self-types="./${path.posix.basename(chunk.fileName, '.js')}.d.ts"`
+          : '',
       },
     },
   },

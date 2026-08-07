@@ -427,8 +427,8 @@ describe('Studio dialect detection', () => {
     const custom = { driver: { dialect: 'sqlite' } };
     expect(await detectStudioProvider(
       custom as any,
-      { TURSO_URL: 'libsql://example.turso.io' } as NodeJS.ProcessEnv,
-    )).toBe('libsql');
+      { TURSO_DATABASE_URL: 'https://example.turso.io' } as NodeJS.ProcessEnv,
+    )).toBe('turso');
     expect(await detectStudioProvider(
       custom as any,
       { DB_CONNECTION: 'd1' } as NodeJS.ProcessEnv,

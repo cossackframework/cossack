@@ -23,11 +23,24 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      - name: Setup Deno 2.9
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.x
+
       - name: Install dependencies
         run: pnpm install
 
       - name: Build workspace libraries
         run: pnpm run build
+
+      - name: Check Deno web adapter
+        run: |
+          deno check packages/deno-adapter/src/index.ts
+          deno test -A packages/deno-adapter/tests/deno-smoke.test.ts
+
+      - name: Build Desktop counter web target
+        run: pnpm --filter @cossackframework/example-desktop-counter build
 
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local

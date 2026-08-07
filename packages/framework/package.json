@@ -54,6 +54,10 @@
       "types": "./dist/esm/router.d.ts",
       "import": "./dist/esm/router.js"
     },
+    "./runtime-adapter": {
+      "types": "./dist/esm/runtime-adapter.d.ts",
+      "import": "./dist/esm/runtime-adapter.js"
+    },
     "./root": {
       "types": "./dist/esm/root.d.ts",
       "import": "./dist/esm/root.js"

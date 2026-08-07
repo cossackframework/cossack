@@ -27,7 +27,14 @@
   "scaffold": {
     "dependencyVersions": {
       "@cloudflare/vite-plugin": "^1.48.0",
-      "@libsql/client": "^0.15.15",
+      "@electron-forge/cli": "^7.11.2",
+      "@electron-forge/maker-deb": "^7.11.2",
+      "@electron-forge/maker-dmg": "^7.11.2",
+      "@electron-forge/maker-wix": "^7.11.2",
+      "@electron-forge/shared-types": "^7.11.2",
+      "@electron/rebuild": "^4.2.0",
+      "@tursodatabase/database": "^0.7.2",
+      "@tursodatabase/serverless": "^1.4.0",
       "@cossackframework/solar-icons": "^0.7.1",
       "@cossackframework/studio": "^0.8.1",
       "@hono/node-server": "^1.13.0",
@@ -37,6 +44,7 @@
       "@types/pg": "^8.15.5",
       "@types/ws": "^8.18.0",
       "hono": "^4.12.31",
+      "electron": "^43.3.0",
       "mysql2": "^3.14.3",
       "pg": "^8.16.3",
       "prettier": "^3.4.0",

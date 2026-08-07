@@ -106,11 +106,18 @@ export abstract class CossackDurableObject {
             return new Response('Headers X-Component-Path and X-Provider-Name are required', { status: 400 });
         }
 
-        const params: Record<string, string> = {};
-        url.searchParams.forEach((value, key) => {
-            params[key] = value;
-        });
-        const page = params.pathname;
+        let params: Record<string, string>;
+        try {
+            const parsed: unknown = JSON.parse(url.searchParams.get('params') || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+                Object.values(parsed).some((value) => typeof value !== 'string')) {
+                throw new TypeError('params must be a string record');
+            }
+            params = parsed as Record<string, string>;
+        } catch {
+            return new Response('Invalid WebSocket route params', { status: 400 });
+        }
+        const page = url.searchParams.get('pathname');
 
         if (!page) {
             return new Response('pathname query parameter is required for WebSocket connection', { status: 400 });

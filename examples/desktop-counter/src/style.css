@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "@cossackframework/ui/theme/base.css";
+@import "@cossackframework/ui/theme/theme.css";
+@source "../../../packages/ui/dist";

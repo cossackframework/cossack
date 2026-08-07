@@ -8,6 +8,7 @@ Refer to our [Installation Guide](https://cossack.dev/docs/installation) for det
 ## Exports
 
 - `CossackNodeAdapter` — handles WebSocket upgrades and component bootstrapping on a Node `http.Server`.
+- `nodeRuntimeAdapter` — pass to `createApp()` so SSR emits Node process-local WebSocket targets.
 - `serveStatic` — Node `fs`-based Hono middleware for serving static assets.
 - `NodeWebSocketRuntime` — the WebSocket runtime used by the adapter.
 - `createNodeEmailSender` — Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
@@ -30,11 +31,19 @@ Build the sender from SMTP env vars and inject it into `env`, then pass `env` bo
 ```ts
 import { serve } from '@hono/node-server';
 import { createApp } from '@cossackframework/framework/router';
-import { CossackNodeAdapter, createNodeEmailSender } from '@cossackframework/node-adapter';
+import {
+  CossackNodeAdapter,
+  createNodeEmailSender,
+  nodeRuntimeAdapter,
+} from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 
-const app = createApp({ AppComponent: App, htmlTemplate: template });
+const app = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
+  runtimeAdapter: nodeRuntimeAdapter,
+});
 
 const env = {
   EMAIL: createNodeEmailSender({
@@ -55,6 +64,8 @@ const server = serve(
 // WebSocket: pass the same env so `@Server` methods over WS see `this.env.EMAIL`.
 new CossackNodeAdapter({
   server,
+  // Keys match the routePath metadata emitted by Cossack, for example
+  // new Map([['/account/:id', AccountPage]]).
   componentRegistry,
   env,
 });

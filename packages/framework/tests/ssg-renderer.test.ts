@@ -81,7 +81,7 @@ describe('ssg-renderer', () => {
       // When a build manifest IS present (e.g. after `vite build`), the
       // production asset path is used instead. Accept either form.
       expect(html).toContain('<script type="module"');
-      expect(html).toMatch(/src=["']?(\/src\/client\/entry-client\.ts|\/assets\/entry-client\.[\w.]+\.js)["']?/);
+      expect(html).toMatch(/src=["']?(\/src\/client\/entry-client\.ts|\/assets\/entry-client\.[\w.-]+\.js)["']?/);
     });
 
     it('provides a real request to App lifecycle methods during SSG', async () => {

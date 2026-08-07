@@ -11,7 +11,7 @@ import {
   createORM,
   type Relation,
 } from '@cossackframework/database';
-import { libsql } from '@cossackframework/database/node';
+import { nodeSQLite } from '@cossackframework/database/node';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createLocalConnection,
@@ -54,10 +54,10 @@ class StudioPerson extends BaseEntity {
 }
 
 beforeEach(async () => {
-  const orm = createORM({ adapter: await libsql({ url: ':memory:' }), entities: [] });
+  const orm = createORM({ adapter: await nodeSQLite({ filename: ':memory:' }), entities: [] });
   connection = createLocalConnection({
     orm,
-    info: { provider: 'libsql', label: 'fixture' },
+    info: { provider: 'sqlite', label: 'fixture' },
   });
   studio = new StudioDatabase(connection, { applicationName: 'Fixture application' });
   await connection.execute(`
@@ -165,7 +165,7 @@ describe('StudioDatabase', () => {
 
   it('overlays ORM logical types and relation metadata on SQLite storage types', async () => {
     const orm = createORM({
-      adapter: await libsql({ url: ':memory:' }),
+      adapter: await nodeSQLite({ filename: ':memory:' }),
       entities: [StudioDepartment, StudioPerson],
     });
     const logicalConnection = createLocalConnection({

@@ -49,11 +49,12 @@ export function connectWebSocket(component: any): void {
         const params = new URLSearchParams({
             routePath,
             pathname: pathname || '',
-            ...(initialState?.metadata?.params || {}),
+            params: JSON.stringify(initialState?.metadata?.params || {}),
         }).toString();
 
         const wsUrl = `/ws/${providerName}/${target}?${params}`;
-        const fullWsUrl = `ws://${window.location.host}${wsUrl}`;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
         const ws = new WebSocket(fullWsUrl);
         component.websockets.set(providerName, ws);
 

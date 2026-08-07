@@ -10,7 +10,7 @@ import {
   PrimaryColumn,
   createORM,
 } from '@cossackframework/database';
-import { libsql } from '@cossackframework/database/node';
+import { nodeSQLite } from '@cossackframework/database/node';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { runStudio } from '../dist/index.js';
@@ -54,7 +54,7 @@ async function replaceEditorValue(page: Page, testId: string, value: string) {
 
 test.beforeAll(async () => {
   const orm = createORM({
-    adapter: await libsql({ url: ':memory:' }),
+    adapter: await nodeSQLite({ filename: ':memory:' }),
     entities: [Department, Person],
   });
   const connection = createLocalConnection({

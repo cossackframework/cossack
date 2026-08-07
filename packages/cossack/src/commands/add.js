@@ -99,12 +99,12 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return `cossack add <ui|database|studio|auth|dashboard|markdown|examples> [component]
+  return `cossack add <ui|database|studio|auth|dashboard|markdown|examples|desktop> [component]
 
 Options:
   component                         Eject a UI component for customization
   --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
-  --runtime <cloudflare|node>
+  --runtime <cloudflare|node|deno>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>
   --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>

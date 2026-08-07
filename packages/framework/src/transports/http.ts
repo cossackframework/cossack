@@ -52,7 +52,13 @@ export function handleUpload(ctx: RouterContext) {
         if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
 
         const componentInstance = createInstance(PageComponent) as any;
-        await componentInstance.bootstrap({ context: c, user, env: c.env, skipInit: true });
+        await componentInstance.bootstrap({
+            context: c,
+            user,
+            env: c.env,
+            runtime: await ctx.runtimeInfo?.(),
+            skipInit: true,
+        });
 
         // Rebuild component tree to find target
         componentInstance._render();

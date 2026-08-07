@@ -123,7 +123,7 @@ Commands:
   delete <type> <name>    (d)  Delete a generated file/folder.
   add <feature>                Add a feature (ui, database, studio, auth, dashboard, markdown, examples).
   remove <feature>             Remove a feature and its dependents.
-  adapter <node|cloudflare>    Switch the active runtime adapter.
+  adapter <node|cloudflare|deno> Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,

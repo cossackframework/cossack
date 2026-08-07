@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   transformCossackClass,
+  injectAutomaticServerMethodMetadata,
   isClientSafeMethod,
   stripSsgGenerateStaticParams,
   isServerOnlyModule,
@@ -771,6 +772,108 @@ export class TestPage extends Cossack {
 
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).not.toContain('__registerServerOnlyMethods()');
+    });
+
+    it('registers undecorated methods exposed as render handlers for automatic RPC', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      this.count += 1;
+    }
+
+    private unreachableHelper() {
+      return 'server-only helper';
+    }
+
+    render() {
+      return html\`<button @click=\${this.increment}>+</button>\`;
+    }
+}`;
+
+      const result = transformCossackClass(code, 'counter.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("__cossack_proxies?.get('increment')");
+      expect(result).not.toContain('["unreachableHelper"]');
+    });
+
+    it('registers undecorated methods used as component handler properties', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      this.count += 1;
+    }
+
+    render() {
+      return component(Button, { '@click': this.increment });
+    }
+}`;
+
+      const result = transformCossackClass(code, 'counter.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("__cossack_proxies?.get('increment')");
+    });
+
+    it('injects the same automatic RPC allowlist into the server build without stripping bodies', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    increment() {
+      localStorage.setItem('count', '1');
+    }
+
+    private unreachableHelper() {
+      return 'not remotely callable';
+    }
+
+    render() {
+      return html\`<button @click=\${this.increment}>+</button>\`;
+    }
+}`;
+
+      const result = injectAutomaticServerMethodMetadata(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+      );
+      expect(result).toContain('["increment"]');
+      expect(result).toContain("localStorage.setItem('count', '1')");
+      expect(result).toContain("return 'not remotely callable'");
+      expect(result).not.toContain('["unreachableHelper"]');
+    });
+
+    it('does not authorize unrelated bare method references as RPC endpoints', () => {
+      const code = `
+@Page({ transport: 'http' })
+export class CounterPage extends Cossack {
+    sensitiveHelper() {
+      return 'server-only';
+    }
+
+    render() {
+      const reference = this.sensitiveHelper;
+      return html\`<p>safe</p>\`;
+    }
+}`;
+
+      const clientResult = transformCossackClass(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+        true,
+      );
+      const serverResult = injectAutomaticServerMethodMetadata(
+        code,
+        'counter.ts',
+        isClientSafeMethod,
+        BUILTIN_METHODS,
+      );
+
+      expect(clientResult).not.toContain('["sensitiveHelper"]');
+      expect(serverResult).not.toContain('["sensitiveHelper"]');
     });
   });
 
@@ -1909,6 +2012,31 @@ export class Page extends Cossack {
     // helper() was reached from the preserved field, so it survives.
     expect(result).toContain('FIELD_HELPER_SECRET');
     expect(result).not.toContain("__cossack_proxies?.get('helper')");
+  });
+
+  it('does not preserve an explicit @Server method called by a @Client method', () => {
+    const code = `
+@Page()
+export class Page extends Cossack {
+  @Client()
+  openMenu(event) {
+    event.preventDefault();
+    this.showNativeMenu(event.clientX, event.clientY);
+  }
+
+  @Server()
+  async showNativeMenu(x, y) {
+    const { Menu } = await import('@cossackframework/desktop');
+    Menu.buildFromTemplate([]).popup({ window: this.env.COSSACK_DESKTOP.window, x, y });
+  }
+
+  render() { return html\`<main @contextmenu=\"\${this.openMenu}\"></main>\`; }
+}`;
+    const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
+
+    expect(result).toContain("__cossack_proxies?.get('showNativeMenu')");
+    expect(result).not.toContain('@cossackframework/desktop');
+    expect(result).not.toContain('Menu.buildFromTemplate');
   });
 
   it('warns and skips stripping when the source cannot be parsed', () => {

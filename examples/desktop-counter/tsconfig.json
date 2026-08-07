@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "vite.config.ts", "forge.config.ts"]
+}

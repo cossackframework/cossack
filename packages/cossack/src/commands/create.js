@@ -18,8 +18,8 @@ export async function createCommand(args, ctx) {
   }
 
   const adapter = flagString(ctx.flags.adapter);
-  if (adapter && adapter !== 'cloudflare' && adapter !== 'node') {
-    console.error(`Invalid --adapter "${adapter}". Use cloudflare or node.`);
+  if (adapter && adapter !== 'cloudflare' && adapter !== 'node' && adapter !== 'deno') {
+    console.error(`Invalid --adapter "${adapter}". Use cloudflare, node, or deno.`);
     return 1;
   }
   const requestedPackageManager = flagString(ctx.flags['package-manager']);
@@ -84,10 +84,10 @@ export function createHelp() {
 Scaffold a new Cossack project.
 
 Options:
-  --adapter <cloudflare|node>
+  --adapter <cloudflare|node|deno>
   --package-manager <manager>   npm|pnpm|yarn|bun|deno
   --preset <minimal|database|auth|full-stack>
-  --features <ui,database,studio,auth,dashboard,markdown,examples>
+  --features <ui,database,studio,auth,dashboard,markdown,examples,desktop>
   --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
   --auth-methods <credentials,oauth>
   --oauth <github,google,gitlab,facebook,microsoft>

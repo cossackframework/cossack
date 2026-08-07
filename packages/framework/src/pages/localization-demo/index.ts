@@ -1,4 +1,4 @@
-import { Cossack, Page, State, ClientState, Client, HeadContext, HeadValue, getLocale } from '@cossackframework/core';
+import { Cossack, Page, State, ClientState, Client, HeadContext, HeadValue, OnWindow, getLocale } from '@cossackframework/core';
 import { component, html, TemplateResult } from '@cossackframework/renderer';
 import { Badge, Button, ButtonGroup, Typography } from '@cossackframework/ui';
 
@@ -26,17 +26,12 @@ export class LocalizationDemo extends Cossack {
 
     onMount() {
         this.activeLocaleLabel = getLocale();
-        window.addEventListener('localechange', this.handleLocaleChange);
     }
 
-    onCleanup() {
-        window.removeEventListener('localechange', this.handleLocaleChange);
+    @OnWindow('localechange')
+    private handleLocaleChange(event: CustomEvent<{ locale?: string }>) {
+        if (event.detail?.locale) this.activeLocaleLabel = event.detail.locale;
     }
-
-    private handleLocaleChange = (e: Event) => {
-        const detail = (e as CustomEvent).detail;
-        if (detail?.locale) this.activeLocaleLabel = detail.locale;
-    };
 
     @Client()
     async switchLocale(locale: string) {

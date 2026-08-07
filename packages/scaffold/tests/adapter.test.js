@@ -5,9 +5,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   _setPromptTestOverrides,
+  addFeature,
   createApp,
   PromptAbortedError,
   readManifest,
+  removeFeatureFromProject,
   switchAdapter,
 } from '../src/index.js';
 
@@ -61,6 +63,60 @@ afterEach(async () => {
 });
 
 describe('adapter switching', () => {
+  it('keeps the independent Electron Desktop target while switching web adapters', async () => {
+    const project = await create('deno');
+    const added = await addFeature(project.projectDir, 'desktop', {
+      interactive: false,
+    });
+    expect(added.status).toBe('added');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(project.projectDir, 'forge.config.ts'))).resolves.toBeUndefined();
+    const switched = await switchAdapter(project.projectDir, 'node', { interactive: false });
+    expect(switched.status).toBe('changed');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(project.projectDir, 'deno.json'))).rejects.toThrow();
+    expect(JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'))
+      .dependencies['@cossackframework/desktop']).toBeDefined();
+
+    const removed = await removeFeatureFromProject(project.projectDir, 'desktop', {
+      interactive: false,
+    });
+    expect(removed.status).toBe('removed');
+    await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
+    await expect(fs.access(path.join(project.projectDir, 'forge.config.ts'))).rejects.toThrow();
+    expect((await switchAdapter(project.projectDir, 'deno', { interactive: false })).status)
+      .toBe('changed');
+  });
+
+  it('generates stable Desktop identifiers for direct creation, later addition, and unusual names', async () => {
+    const direct = await create('deno', 'minimal', { features: 'desktop' });
+    expect(await fs.readFile(path.join(direct.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.app'");
+
+    const root = await temporaryDirectory();
+    const unusual = await createApp('My SUPER__App!!!', {
+      cwd: root,
+      adapter: 'cloudflare',
+      preset: 'minimal',
+      features: 'desktop',
+      interactive: false,
+    });
+    expect(await fs.readFile(path.join(unusual.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.my-super-app'");
+    expect(await fs.readFile(path.join(unusual.projectDir, 'desktop-assets/linux.desktop.ejs'), 'utf8'))
+      .toContain('StartupWMClass=dev.cossack.my-super-app');
+
+    const fallback = await createApp('___', {
+      cwd: root,
+      adapter: 'node',
+      preset: 'minimal',
+      interactive: false,
+    });
+    await addFeature(fallback.projectDir, 'desktop', { interactive: false });
+    expect(await fs.readFile(path.join(fallback.projectDir, 'forge.config.ts'), 'utf8'))
+      .toContain("appBundleId: 'dev.cossack.app'");
+  });
+
   it.each(['minimal', 'database', 'auth', 'full-stack'])(
     'matches direct Node creation for the %s recipe',
     async (preset) => {
@@ -164,7 +220,7 @@ describe('adapter switching', () => {
     await fs.writeFile(
       path.join(project.projectDir, '.dev.vars'),
       'APP_URL=https://source.example\nGITHUB_CLIENT_ID=source-id\n' +
-      'TURSO_URL=libsql://source\nSOURCE_ONLY=keep-at-source\n',
+      'TURSO_DATABASE_URL=https://source.turso.io\nTURSO_AUTH_TOKEN=source-token\nSOURCE_ONLY=keep-at-source\n',
     );
     await fs.writeFile(
       path.join(project.projectDir, '.env'),
@@ -178,7 +234,8 @@ describe('adapter switching', () => {
     const source = await fs.readFile(path.join(project.projectDir, '.dev.vars'), 'utf8');
     expect(target).toContain('APP_URL=https://target.example');
     expect(target).toContain('GITHUB_CLIENT_ID=source-id');
-    expect(target).toContain('TURSO_URL=libsql://source');
+    expect(target).toContain('TURSO_DATABASE_URL=https://source.turso.io');
+    expect(target).toContain('TURSO_AUTH_TOKEN=source-token');
     expect(target).toContain('DB_CONNECTION=turso');
     expect(target).toContain('CUSTOM_TARGET=value');
     expect(target).not.toContain('SOURCE_ONLY=');
@@ -264,9 +321,9 @@ describe('adapter switching', () => {
 
   it('rejects invalid targets and projects without schema-v3 manifests', async () => {
     const project = await create('node');
-    await expect(switchAdapter(project.projectDir, 'deno', {
+    await expect(switchAdapter(project.projectDir, 'bun', {
       interactive: false,
-    })).rejects.toThrow('Supported values: cloudflare, node');
+    })).rejects.toThrow('Supported values: cloudflare, node, deno');
     const root = await temporaryDirectory();
     await fs.writeFile(path.join(root, 'package.json'), '{}\n');
     await expect(switchAdapter(root, 'node', {

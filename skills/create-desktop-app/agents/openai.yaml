@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Desktop App"
+  short_description: "Create Electron Desktop apps with Cossack"
+  default_prompt: "Use $create-desktop-app to add an Electron Desktop target to my Cossack application."

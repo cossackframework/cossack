@@ -1,8 +1,8 @@
-export type Adapter = 'cloudflare' | 'node';
+export type Adapter = 'cloudflare' | 'node' | 'deno';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop';
 export type AuthMethod = 'credentials' | 'oauth';
-export type DatabaseProvider = 'd1' | 'sqlite' | 'turso';
+export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';
 export type UITheme = 'default' | 'neutral' | 'zinc' | 'stone' | 'gray' | 'slate' | 'blue' | 'green' | 'red';
 export type DashboardModule = 'users' | 'sessions' | 'settings' | 'roles';

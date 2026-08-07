@@ -8,7 +8,7 @@ import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@c
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Local D1 updates its WAL/SHM files for authenticated reads and writes.
   // Those runtime files are not source code and must never trigger Vite HMR.
   server: {
@@ -81,13 +81,26 @@ export default defineConfig({
       },
     },
     ssr: {
-      resolve: {
-        // UI imports Solar Icons through deep TypeScript-source exports.
-        // Bundle the parent UI graph and those icons into Node SSR output
-        // instead of leaving imports that Node refuses to type-strip from
-        // node_modules in production.
-        noExternal: ['@cossackframework/ui', '@cossackframework/solar-icons'],
-      },
+      resolve: mode === 'desktop'
+        ? {
+            // Forge omits node_modules from packaged applications. Bundle the
+            // complete main-process graph while preserving Electron's native
+            // runtime module and Node built-ins as external imports.
+            external: ['electron'],
+            noExternal: true,
+          }
+        : {
+            // UI imports Solar Icons through deep TypeScript-source exports.
+            // Bundle the parent UI graph and those icons into Node SSR output
+            // instead of leaving imports that Node refuses to type-strip from
+            // node_modules in production.
+            noExternal: [
+              '@cossackframework/ui',
+              '@cossackframework/solar-icons',
+              'hono',
+              'css-tree',
+            ],
+          },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency
       // graphs one module at a time on every cold start.
@@ -103,4 +116,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

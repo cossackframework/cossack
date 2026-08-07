@@ -353,7 +353,7 @@ function rowLocators(
     });
   } else if (
     providerName === 'sqlite' ||
-    providerName === 'libsql' ||
+    providerName === 'turso' ||
     providerName === 'd1-local' ||
     providerName === 'd1-remote'
   ) {

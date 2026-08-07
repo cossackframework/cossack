@@ -4,10 +4,12 @@ import { createContext } from '@cossackframework/renderer';
 import { parseFormData } from './forms';
 import { flash, flashInput } from './flash';
 import { StoreRuleMap, validateObject, type ObjectValidationResult } from './validation';
+import type { CossackRuntimeInfo } from './component-types';
 
 export const EnvContext = createContext<any>(undefined);
 export const UserContext = createContext<any>(undefined);
 export const RequestContext = createContext<Context | undefined>(undefined);
+export const RuntimeContext = createContext<CossackRuntimeInfo>({ platform: 'web' });
 
 export type HydratedContext = {
     req: {

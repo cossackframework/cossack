@@ -103,6 +103,10 @@ describe('recipe resolution', () => {
     ['node', 'database'],
     ['node', 'auth'],
     ['node', 'full-stack'],
+    ['deno', 'minimal'],
+    ['deno', 'database'],
+    ['deno', 'auth'],
+    ['deno', 'full-stack'],
   ])('renders the %s/%s combination', async (adapter, preset) => {
     const recipe = resolveRecipe({ adapter, preset });
     const files = await renderRecipe(recipe);
@@ -154,8 +158,9 @@ describe('recipe resolution', () => {
       .not.toContain('reflect-metadata');
     expect(Boolean(pkg.dependencies['@cossackframework/auth']))
       .toBe(recipe.resolvedFeatures.includes('auth'));
-    expect(files.has('.env')).toBe(adapter === 'node');
-    expect(files.has('.env.example')).toBe(adapter === 'node');
+    expect(files.has('.env')).toBe(adapter !== 'cloudflare');
+    expect(files.has('.env.example')).toBe(adapter !== 'cloudflare');
+    expect(files.has('deno.json')).toBe(adapter === 'deno');
     expect(files.get('vite.config.ts').content.toString())
       .toContain('minify: true');
     expect(files.get('vite.config.ts').content.toString())
@@ -166,9 +171,10 @@ describe('recipe resolution', () => {
       .toContain("'hono'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("exclude: ['@cossackframework/solar-icons']");
-    expect(files.get('vite.config.ts').content.toString()).toMatch(
-      /environments: \{[\s\S]*ssr: \{[\s\S]*resolve: \{[\s\S]*noExternal: \['@cossackframework\/ui', '@cossackframework\/solar-icons'\]/,
-    );
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("resolve: mode === 'desktop'");
+    expect(files.get('vite.config.ts').content.toString())
+      .toContain("'css-tree'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
     expect(files.get('vite.config.ts').content.toString())
@@ -642,14 +648,18 @@ describe('composition', () => {
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
   });
 
-  it('renders isolated recipes for all eight ORM provider targets', async () => {
+  it('renders isolated recipes for every runtime/provider target', async () => {
     const targets = [
       ['node', 'sqlite', 'nodeSQLite', undefined, undefined],
-      ['node', 'turso', 'libsql', '@libsql/client', undefined],
+      ['node', 'turso', 'turso', '@tursodatabase/serverless', undefined],
       ['node', 'postgres', 'postgres', 'pg', undefined],
       ['node', 'mysql', 'mysql', 'mysql2', undefined],
+      ['deno', 'sqlite', 'denoSQLite', '@tursodatabase/database', undefined],
+      ['deno', 'turso', 'turso', '@tursodatabase/serverless', undefined],
+      ['deno', 'postgres', 'postgres', 'pg', undefined],
+      ['deno', 'mysql', 'mysql', 'mysql2', undefined],
       ['cloudflare', 'd1', 'd1', undefined, 'nodejs_als'],
-      ['cloudflare', 'turso', 'libsql', '@libsql/client', 'nodejs_als'],
+      ['cloudflare', 'turso', 'turso', '@tursodatabase/serverless', 'nodejs_als'],
       ['cloudflare', 'hyperdrive-postgres', 'hyperdrivePostgres', 'pg', 'nodejs_compat'],
       ['cloudflare', 'hyperdrive-mysql', 'hyperdriveMySQL', 'mysql2', 'nodejs_compat'],
     ];
@@ -663,7 +673,7 @@ describe('composition', () => {
       const pkg = JSON.parse(files.get('package.json').content.toString());
       const runtime = files.get('src/orm/factory.ts').content.toString();
       expect(runtime).toContain(factory);
-      for (const candidate of ['@libsql/client', 'pg', 'mysql2']) {
+      for (const candidate of ['@tursodatabase/database', '@tursodatabase/serverless', 'pg', 'mysql2']) {
         expect(Boolean(pkg.dependencies[candidate])).toBe(candidate === driver);
       }
       if (adapter === 'cloudflare') {
@@ -674,6 +684,72 @@ describe('composition', () => {
         expect(files.has('wrangler.jsonc')).toBe(false);
       }
     }
+  });
+
+  it('adds an Electron Desktop target beside every web adapter', async () => {
+    for (const adapter of ['cloudflare', 'node', 'deno']) {
+      const target = resolveRecipe({ adapter, preset: 'minimal', features: 'desktop' });
+      const targetFiles = await renderRecipe(target, { projectName: `${adapter}-desktop` });
+      const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
+      expect(targetPackage.dependencies['@cossackframework/desktop']).toBeDefined();
+      expect(targetPackage.devDependencies.electron).toBeDefined();
+      expect(targetPackage.devDependencies['@electron-forge/cli']).toBeDefined();
+      expect(targetPackage.main).toBe('dist/desktop/index.js');
+      expect(targetPackage.engines.node).toBe('>=22 <26');
+      expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
+      expect(targetPackage.scripts['build:desktop']).toContain('--mode desktop');
+      expect(targetPackage.scripts['desktop:dev']).toBe('cossack-desktop');
+      expect(targetPackage.scripts['desktop:package']).toContain('electron-forge package');
+      expect(targetPackage.scripts['desktop:make']).toContain('electron-forge make');
+      expect(targetPackage.scripts['desktop:build']).toBe('pnpm run desktop:make');
+      expect(targetFiles.has('.npmrc')).toBe(false);
+      const pnpmWorkspace = targetFiles.get('pnpm-workspace.yaml').content.toString();
+      expect(pnpmWorkspace).toContain('nodeLinker: hoisted');
+      expect(pnpmWorkspace).toContain("'@bitdisaster/exe-icon-extractor': true");
+      expect(pnpmWorkspace).toContain('electron: true');
+      expect(pnpmWorkspace).toContain('fs-xattr: true');
+      expect(pnpmWorkspace).toContain('macos-alias: true');
+      expect(targetFiles.get('vite.config.ts').content.toString())
+        .toContain("external: ['electron']");
+      expect(targetFiles.get('vite.config.ts').content.toString())
+        .toContain('noExternal: true');
+      expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain('createDesktopApp({');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .not.toContain('export const desktop = await');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain('void main().catch');
+      expect(targetFiles.get('src/desktop/index.ts').content.toString())
+        .toContain("behavior: 'quit'");
+      expect(targetFiles.get('forge.config.ts').content.toString())
+        .toContain(`appBundleId: 'dev.cossack.${adapter}-desktop'`);
+      expect(targetFiles.get('desktop-assets/linux.desktop.ejs').content.toString())
+        .toContain('Exec=<%= name %> --ozone-platform=x11 %U');
+      for (const icon of ['icon.icns', 'icon.ico', 'icon-512.png', 'tray-macosTemplate@2x.png']) {
+        expect(targetFiles.has(`desktop-assets/${icon}`)).toBe(true);
+      }
+      const trayPng = Buffer.from(targetFiles.get('desktop-assets/tray-linux-22.png').content);
+      expect(trayPng.readUInt8(24)).toBe(8);
+      expect(trayPng.readUInt8(25)).toBe(6);
+      if (adapter !== 'deno') expect(targetFiles.has('deno.json')).toBe(false);
+    }
+
+    const recipe = resolveRecipe({ adapter: 'deno', preset: 'database', features: 'desktop' });
+    const files = await renderRecipe(recipe, { projectName: 'desktop-app' });
+    const pkg = JSON.parse(files.get('package.json').content.toString());
+    expect(recipe.config.database).toBe('turso');
+    expect(pkg.dependencies['@tursodatabase/serverless']).toBeDefined();
+    expect(pkg.dependencies['@tursodatabase/database']).toBeUndefined();
+    expect(pkg.scripts['desktop:dev']).toBe('cossack-desktop');
+    expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
+    const deno = JSON.parse(files.get('deno.json').content.toString());
+    expect(deno.tasks.build).toBe('pnpm run build');
+    expect(deno.imports.hono).toMatch(/^npm:hono@/);
+    expect(deno.imports.vite).toMatch(/^npm:vite@/);
+    expect(deno.desktop).toBeUndefined();
+    expect(files.has('src/desktop/index.ts')).toBe(true);
+    expect(files.get('src/orm/factory.ts').content.toString()).toContain('TURSO_DATABASE_URL');
   });
 
   it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {
@@ -749,7 +825,7 @@ describe('composition', () => {
     }));
     expect(await detectProjectRuntime(root)).toBeUndefined();
     await expect(addFeature(root, 'ui', { interactive: false }))
-      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node');
+      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node or --runtime=deno');
   });
 
   it('adds only newly requested dashboard modules on a later run', async () => {

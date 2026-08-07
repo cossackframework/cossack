@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "moduleResolution": "Bundler",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"]
+}

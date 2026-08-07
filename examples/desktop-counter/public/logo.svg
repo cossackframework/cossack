@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="cossack-gradient" gradientUnits="userSpaceOnUse" x1="14.1658" y1="17.5595" x2="3.8772" y2="1.6034">
+      <stop offset="0" stop-color="#FBCC40"/>
+      <stop offset="1" stop-color="#FF7E01"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#cossack-gradient)" d="M16,0v16h-2.8l-3-6.9V16H0C0,7.2,7.2,0,16,0z"/>
+</svg>

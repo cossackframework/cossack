@@ -7,7 +7,8 @@ const forbidden = [
   "node:sqlite",
   "node:async_hooks",
   "better-sqlite3",
-  "@libsql/client",
+  "@tursodatabase/database",
+  "@tursodatabase/serverless",
   "mysql2",
   "\"pg\"",
   "'pg'",
@@ -35,14 +36,14 @@ for (const value of [
   "node:sqlite",
   "node:async_hooks",
   "better-sqlite3",
-  "@libsql/client/node",
+  "@tursodatabase/database",
 ]) {
   if (cloudflare.includes(value)) {
     throw new Error(`Cloudflare entry contains forbidden runtime dependency ${value}.`);
   }
 }
-if (!cloudflare.includes("@libsql/client/web")) {
-  throw new Error("Cloudflare libSQL adapter must import @libsql/client/web.");
+if (!cloudflare.includes("@tursodatabase/serverless")) {
+  throw new Error("Cloudflare Turso adapter must import @tursodatabase/serverless.");
 }
 
 console.log(

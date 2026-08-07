@@ -65,6 +65,8 @@ class TestComponent extends Cossack<{}> {
   @Shared()
   async formatCountAsync(prefix: string) { return `${prefix}:${this.count}`; }
 
+  runtimePlatform() { return this.runtime.platform; }
+
   render(): TemplateResult {
     const strings = [`Count: ${this.count}, Message: ${this.message}`];
     return {
@@ -91,6 +93,7 @@ describe('Cossack Core: Client-Side', () => {
       routePath: '/test',
       channels: ['global', 'private'],
       providerTargets: { page: 'durable-object-id-123' },
+      runtime: { adapter: 'deno', platform: 'desktop' },
   };
 
   beforeEach(() => {
@@ -125,6 +128,11 @@ describe('Cossack Core: Client-Side', () => {
       expect(component.message).toBe('from server');
   });
 
+  it('hydrates runtime identity for shared rendering decisions', async () => {
+      await component.bootstrap();
+      expect(component.runtimePlatform()).toBe('desktop');
+  });
+
   it('should setup context with params from initial state', async () => {
       await component.bootstrap();
       expect((component as any).c.req.param('name')).toBe('cossack');
@@ -136,7 +144,7 @@ describe('Cossack Core: Client-Side', () => {
       expect(global.WebSocket).toHaveBeenCalledTimes(1);
       // Expected URL based on new logic: /ws/{provider}/{target}?routePath=...&pathname=...&params...
       // pathname and routePath come from mockInitialState
-      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&name=cossack');
+      expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&params=%7B%22name%22%3A%22cossack%22%7D');
   });
 
   it('should proxy server methods to send WebSocket messages', async () => {

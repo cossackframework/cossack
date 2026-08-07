@@ -40,7 +40,8 @@
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@libsql/client": "^0.14.0",
+    "@tursodatabase/database": "^0.7.2",
+    "@tursodatabase/serverless": "^1.4.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^22.19.0",

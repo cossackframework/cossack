@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "moduleResolution": "Bundler",
+    "types": ["node", "vite/client", "../core/worker-configuration.d.ts"],
+    "experimentalDecorators": true
+  },
+  "include": ["src"]
+}

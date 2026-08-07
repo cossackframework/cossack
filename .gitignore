@@ -9,6 +9,7 @@ packages/*/pnpm-lock.yaml
 # Build artifacts
 **/dist
 **/build
+**/out
 
 # TypeScript incremental build cache
 **/*.tsbuildinfo
@@ -43,6 +44,7 @@ test-results
 .claude
 reasonix.toml
 .reasonix
+.zcode
 # Planning documents (local scratch)
 plan-*.md
 reviews.md

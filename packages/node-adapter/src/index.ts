@@ -1,11 +1,13 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { NodeWebSocketRuntime } from './runtime';
-import type { Cossack } from '@cossackframework/core';
+import type { Cossack, PageOptions } from '@cossackframework/core';
 import { isOriginAllowed, createInstance } from '@cossackframework/core';
 import { URL } from 'url';
 
 export * from './runtime';
+/** Pass to `createApp({ runtimeAdapter })` so SSR emits process-runtime targets. */
+export const nodeRuntimeAdapter = { name: 'node' } as const;
 export { serveStatic, type StaticServeOptions } from './static-serve';
 export {
     createNodeEmailSender,
@@ -43,17 +45,44 @@ export interface CossackNodeAdapterOptions {
      * `this.env.EMAIL.send(...)` call works on both runtimes.
      */
     env?: Record<string, unknown>;
+    /** Maximum number of process-local component instances. Defaults to 512. */
+    maxInstances?: number;
+    /** Evict disconnected instances after this idle period. Defaults to 15 minutes. */
+    idleTimeoutMs?: number;
+}
+
+interface NodeRuntimeEntry {
+    runtime: NodeWebSocketRuntime;
+    lastActive: number;
+}
+
+function decodeRouteParams(encoded: string | null): Record<string, string> {
+    if (encoded === null) return {};
+    const parsed: unknown = JSON.parse(encoded);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new TypeError('WebSocket route params must be a JSON object');
+    }
+    const routeParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value !== 'string') {
+            throw new TypeError('WebSocket route params must contain strings');
+        }
+        routeParams[key] = value;
+    }
+    return routeParams;
 }
 
 export class CossackNodeAdapter {
     private wss: WebSocketServer;
     // Map of target ID -> Runtime instance
-    private instances: Map<string, NodeWebSocketRuntime> = new Map();
+    private instances: Map<string, NodeRuntimeEntry> = new Map();
     private componentRegistry: Map<string, new () => Cossack>;
     private allowedOrigins?: string[];
     private authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
     private defaultUser: unknown;
     private env?: Record<string, unknown>;
+    private maxInstances: number;
+    private idleTimeoutMs: number;
 
     constructor(options: CossackNodeAdapterOptions) {
         this.wss = new WebSocketServer({ noServer: true });
@@ -62,6 +91,8 @@ export class CossackNodeAdapter {
         this.authenticate = options.authenticate;
         this.defaultUser = options.defaultUser ?? { id: 'anonymous' };
         this.env = options.env;
+        this.maxInstances = options.maxInstances ?? 512;
+        this.idleTimeoutMs = options.idleTimeoutMs ?? 15 * 60_000;
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -88,65 +119,33 @@ export class CossackNodeAdapter {
             const provider = pathParts.pop(); // second to last is provider
             
             const params = url.searchParams;
-            const componentId = params.get('componentId');
+            // Current clients send the public route path. Keep componentId as
+            // a legacy fallback for applications built before route metadata.
+            const componentId = params.get('routePath') ||
+                params.get('componentPath') || params.get('componentId');
             
             if (!target || !componentId) {
-                ws.close(1008, 'Missing target or componentId');
+                ws.close(1008, 'Missing target or routePath');
                 return;
             }
 
-            let runtime = this.instances.get(target);
-
-            if (!runtime) {
-                const ComponentClass = this.componentRegistry.get(componentId);
-                if (!ComponentClass) {
-                    ws.close(1008, 'Component not found');
-                    return;
-                }
-
-                // Use the DI container so @Service-injected dependencies are
-                // resolved (new ComponentClass() bypassed the container).
-                const componentInstance = createInstance(ComponentClass) as Cossack;
-                const pathname = params.get('pathname') || '/';
-
-                const context = {
-                    req: {
-                        path: pathname,
-                        param: (key?: string) => {
-                            if (key) return params.get(key);
-                            const p: Record<string, string> = {};
-                            params.forEach((v, k) => { p[k] = v; });
-                            return p;
-                        },
-                        query: (key?: string) => {
-                            if (key) return params.get(key);
-                            const q: Record<string, string> = {};
-                            params.forEach((v, k) => { q[k] = v; });
-                            return q;
-                        }
-                    }
-                } as any;
-                
-                // We need to bootstrap the component.
-                // Thread the configured `env` (bindings such as EMAIL polyfills)
-                // so `this.env` works identically to Cloudflare's runtime.
-                await componentInstance.bootstrap({
-                    context,
-                    env: this.env,
-                    page: pathname,
-                    providerName: provider
-                });
-                
-                // init() and get() are now automatically called during bootstrap
-
-                runtime = new NodeWebSocketRuntime(componentInstance);
-                this.instances.set(target, runtime);
+            let routeParams: Record<string, string>;
+            try {
+                routeParams = decodeRouteParams(params.get('params'));
+            } catch {
+                ws.close(1008, 'Invalid route params');
+                return;
             }
 
-            // Resolve the connecting user via the authenticate hook (cookies,
-            // JWT, etc.) so per-user state/authorization works. Without a hook,
-            // connections run as the configured defaultUser (anonymous) — never
-            // a forged identity.
+            const ComponentClass = this.componentRegistry.get(componentId);
+            if (!ComponentClass) {
+                ws.close(1008, 'Component not found');
+                return;
+            }
+
+            // Resolve the connecting user before accepting its scope target.
+            // This prevents a client from joining another user's instance by
+            // guessing its target key.
             let user: unknown;
             try {
                 user = this.authenticate ? await this.authenticate(request) : this.defaultUser;
@@ -156,11 +155,97 @@ export class CossackNodeAdapter {
                 return;
             }
 
+            const pathname = params.get('pathname') || '/';
+            const context = {
+                get: (key: string) => key === 'user' ? user : undefined,
+                req: {
+                    path: pathname,
+                    param: (key?: string) => {
+                        if (key) return routeParams[key];
+                        return { ...routeParams };
+                    },
+                    query: (key?: string) => {
+                        if (key) return params.get(key);
+                        const q: Record<string, string> = {};
+                        params.forEach((v, k) => { q[k] = v; });
+                        return q;
+                    }
+                }
+            } as any;
+
+            const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+            let expectedTarget: string;
+            try {
+                expectedTarget = pageOptions?.scope
+                    ? await pageOptions.scope(context)
+                    : `user:${(user as { id?: unknown } | undefined)?.id || 'anonymous'}`;
+            } catch (error) {
+                console.error('[Cossack] Failed to resolve Node WebSocket scope:', error);
+                ws.close(1008, 'Invalid WebSocket scope');
+                return;
+            }
+            if (target !== expectedTarget) {
+                ws.close(1008, 'Invalid WebSocket scope');
+                return;
+            }
+
+            const instanceKey = `${componentId}:${provider ?? 'page'}:${target}`;
+            this.pruneInstances(true);
+            let entry = this.instances.get(instanceKey);
+            let runtime = entry?.runtime;
+            if (!runtime) {
+                if (this.instances.size >= this.maxInstances) {
+                    ws.close(1013, 'Runtime instance limit reached');
+                    return;
+                }
+
+                // Use the DI container so @Service-injected dependencies are
+                // resolved (new ComponentClass() bypassed the container).
+                const componentInstance = createInstance(ComponentClass) as Cossack;
+                
+                // We need to bootstrap the component.
+                // Thread the configured `env` (bindings such as EMAIL polyfills)
+                // so `this.env` works identically to Cloudflare's runtime.
+                await componentInstance.bootstrap({
+                    context,
+                    user: user as any,
+                    env: this.env,
+                    runtime: { platform: 'web', adapter: 'node' },
+                    page: pathname,
+                    providerName: provider
+                });
+                
+                // init() and get() are now automatically called during bootstrap
+
+                runtime = new NodeWebSocketRuntime(componentInstance);
+                entry = { runtime, lastActive: Date.now() };
+                this.instances.set(instanceKey, entry);
+            }
+            entry!.lastActive = Date.now();
+
             runtime.addClient(ws, user);
             
             // Send initial state to the connecting client
             const initialState = (runtime as any).component.getInitialState();
             ws.send(JSON.stringify({ type: 'state-update', state: initialState }));
         });
+    }
+
+    private pruneInstances(reserveSlot = false): void {
+        const now = Date.now();
+        for (const [key, entry] of this.instances) {
+            if (entry.runtime.clientCount === 0 && now - entry.lastActive >= this.idleTimeoutMs) {
+                this.instances.delete(key);
+            }
+        }
+        const targetSize = Math.max(0, this.maxInstances - (reserveSlot ? 1 : 0));
+        if (this.instances.size <= targetSize) return;
+        const idle = [...this.instances.entries()]
+            .filter(([, entry]) => entry.runtime.clientCount === 0)
+            .sort((a, b) => a[1].lastActive - b[1].lastActive);
+        for (const [key] of idle) {
+            if (this.instances.size <= targetSize) break;
+            this.instances.delete(key);
+        }
     }
 }
