@@ -88,6 +88,41 @@ describe('HTTP component RPC targeting', () => {
         expect(invalidate).not.toHaveBeenCalled();
     });
 
+    it('does not let an older HTTP response overwrite newer client state', async () => {
+        const resolveResponses: Array<(response: unknown) => void> = [];
+        vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => {
+            resolveResponses.push(resolve);
+        })));
+
+        const component = makeComponent() as any;
+        component.searchInput = 'sout';
+        component.getPublicState = () => ({ searchInput: component.searchInput });
+        component.setProperty = vi.fn((key: string, value: unknown) => {
+            component[key] = value;
+        });
+        proxyHttpMethods(component, [{ name: 'search' }]);
+
+        const older = component.__cossack_proxies.get('search')?.();
+        component.searchInput = 'south pine';
+        const newer = component.__cossack_proxies.get('search')?.();
+
+        resolveResponses[1]({
+            ok: true,
+            json: async () => ({ searchInput: 'south pine' }),
+        });
+        await newer;
+
+        resolveResponses[0]({
+            ok: true,
+            json: async () => ({ searchInput: 'sout' }),
+        });
+        await older;
+
+        expect(component.searchInput).toBe('south pine');
+        expect(component.setProperty).toHaveBeenCalledWith('searchInput', 'south pine');
+        expect(component.setProperty).not.toHaveBeenCalledWith('searchInput', 'sout');
+    });
+
     it('invalidates a successful SSE RPC before processing its redirect', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: true,

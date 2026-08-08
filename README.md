@@ -25,7 +25,7 @@ Think of it like Laravel + Next.js + Phoenix LiveView, but TypeScript native and
 
 ## Status
 
-Cossack is in **alpha stage**. Breaking changes are expected. We are actively working on it and welcome contributions.
+Cossack is in **alpha stage**. Breaking changes are expected. Do not use in production yet.
 
 ## Quick Start
 

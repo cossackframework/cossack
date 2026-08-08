@@ -129,17 +129,50 @@ function runOptimisticHandler(
  * (applied once the action completes); other keys are set directly. Internal
  * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
  * call requestUpdate — callers schedule a render as appropriate to their
- * transport.
+ * transport. When requestState is provided for a direct /crpc response (HTTP
+ * or SSE), fields changed locally since that request began are skipped as stale.
  */
-export function applyStateToComponent(component: any, data: Record<string, any>): void {
+export function applyStateToComponent(
+    component: any,
+    data: Record<string, any>,
+    requestState?: Record<string, any>,
+): void {
     for (const key in data) {
         if (key.startsWith('_cossack_')) continue;
         if (RESERVED_STATE_KEYS.has(key)) continue;
+        // Direct /crpc responses contain the server's complete public state,
+        // including fields merely echoed from the request. If the local value
+        // no longer matches what this request sent, the client edited it while
+        // the call was in flight (or a newer response already won), so this
+        // field is stale and must not be applied.
+        if (
+            requestState &&
+            Object.prototype.hasOwnProperty.call(requestState, key) &&
+            !transportValuesEqual(component[key], requestState[key])
+        ) {
+            continue;
+        }
         if (component._isOptimisticLocked(key)) {
             component._optimisticPendingState[key] = data[key];
         } else {
             component.setProperty(key, data[key]);
         }
+    }
+}
+
+/** Clone state exactly as JSON transport will represent it. */
+function snapshotTransportState(state: Record<string, any>): Record<string, any> {
+    return JSON.parse(JSON.stringify(state));
+}
+
+/** Compare a live value with its JSON-transport snapshot. */
+function transportValuesEqual(liveValue: unknown, sentValue: unknown): boolean {
+    try {
+        return JSON.stringify(liveValue) === JSON.stringify(sentValue);
+    } catch {
+        // The request snapshot is JSON-safe, but the live field can become
+        // cyclic or contain a bigint while the request is in flight.
+        return Object.is(liveValue, sentValue);
     }
 }
 
@@ -219,10 +252,13 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 // === File extraction (shared) ===
                 const files = new Map<string, File>();
                 const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
+                // Must be captured after the optimistic handler: the stale-response
+                // guard compares live state with this post-optimistic snapshot.
+                const requestState = snapshotTransportState(self.getPublicState());
 
-                 // === Shared apply-state helper ===
-                 const applyState = (data: Record<string, any>) => {
-                    applyStateToComponent(self, data);
+                // === Shared apply-state helper ===
+                const applyState = (data: Record<string, any>) => {
+                    applyStateToComponent(self, data, requestState);
                     self.requestUpdate();
                 };
 
@@ -236,7 +272,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             formData.append('componentRouteId', componentRouteId);
                             if (self._id) formData.append('target', self._id);
                             formData.append('action', name);
-                            formData.append('state', JSON.stringify(self.getPublicState()));
+                            formData.append('state', JSON.stringify(requestState));
                             formData.append('payload', JSON.stringify(processedArgs));
                             files.forEach((file, id) => { formData.append(id, file); });
 
@@ -288,7 +324,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 componentRouteId,
                                 target: self._id,
                                 action: name,
-                                state: self.getPublicState(),
+                                state: requestState,
                                 payload: processedArgs,
                                 _cossack_stream: true,
                                 scopeKey,
@@ -351,7 +387,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             componentRouteId,
                             target: self._id,
                             action: name,
-                            state: self.getPublicState(),
+                            state: requestState,
                             payload: processedArgs,
                             _cossack_stream: true,
                             scopeKey,
@@ -565,13 +601,16 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 const files = new Map<string, File>();
 
                 const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
+                // Must be captured after the optimistic handler: the stale-response
+                // guard compares live state with this post-optimistic snapshot.
+                const requestState = snapshotTransportState(component.getPublicState());
 
                 if (files.size > 0) {
                     const formData = new FormData();
                     formData.append('componentRouteId', componentRouteId);
                     if (component._id) formData.append('target', component._id);
                     formData.append('action', name);
-                    formData.append('state', JSON.stringify(component.getPublicState()));
+                    formData.append('state', JSON.stringify(requestState));
                     formData.append('payload', JSON.stringify(processedArgs));
 
                     files.forEach((file, id) => {
@@ -612,7 +651,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                         delete data._cossack_return;
                                     }
 
-                                    applyStateToComponent(component, data);
+                                    applyStateToComponent(component, data, requestState);
                                     resolve(returnValue);
                                 } catch (e) {
                                     reject(e);
@@ -636,7 +675,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             componentRouteId,
                             target: component._id,
                             action: name,
-                            state: component.getPublicState(),
+                            state: requestState,
                             payload: processedArgs,
                             scopeKey,
                         }),
@@ -665,7 +704,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         delete data._cossack_return;
                     }
 
-                    applyStateToComponent(component, data);
+                    applyStateToComponent(component, data, requestState);
                     return returnValue;
                 }
             } catch (error) {

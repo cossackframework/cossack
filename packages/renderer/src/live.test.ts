@@ -43,6 +43,21 @@ describe('live directive (client-side)', () => {
     expect(input.value).toBe('b');
   });
 
+  it('plain select .value preserves a manual selection on an unrelated re-render', () => {
+    const container = document.createElement('div');
+    const tpl = (value: string, label: string) => html`<label>${label}<select .value=${value}>
+      <option value="a">A</option>
+      <option value="b">B</option>
+    </select></label>`;
+
+    render(tpl('a', 'first'), container);
+    const select = container.querySelector('select')!;
+    select.value = 'b';
+
+    render(tpl('a', 'updated'), container);
+    expect(select.value).toBe('b');
+  });
+
   it('live(.value) forces the DOM back to the bound value, overwriting a user edit', () => {
     const container = document.createElement('div');
     const tpl = (v: string) => html`<input .value=${live(v)} />`;

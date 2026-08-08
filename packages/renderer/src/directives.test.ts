@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi } from 'vitest';
 import { html, renderToString, render } from './cossack-html';
 import { repeat, classMap, styleMap, key, preventDefault, when, choose, map, join, range } from './directives';
 
@@ -16,6 +16,33 @@ describe('Directives', () => {
       )}
     </ul>`;
     expect(renderToString(template).trim()).toBe('<ul>\n      <li>A</li><li>B</li>\n    </ul>');
+  });
+
+  it('repeat preserves readonly array element types in both overloads', () => {
+    interface OutreachRecord {
+      id: number;
+      dwelling: 'house' | 'apartment';
+    }
+    const dwellingLabels: Record<OutreachRecord['dwelling'], string> = {
+      house: 'House',
+      apartment: 'Apartment',
+    };
+    const records: readonly OutreachRecord[] = [
+      { id: 1, dwelling: 'house' },
+    ];
+
+    repeat(
+      records,
+      (record) => {
+        expectTypeOf(record).toEqualTypeOf<OutreachRecord>();
+        return record.id;
+      },
+      (record) => dwellingLabels[record.dwelling],
+    );
+    repeat(records, (record) => {
+      expectTypeOf(record).toEqualTypeOf<OutreachRecord>();
+      return dwellingLabels[record.dwelling];
+    });
   });
 
   it('classMap generates class string', () => {

@@ -4,11 +4,11 @@ export class LiveResult {
   constructor(public readonly value: unknown) {}
 }
 
-export class RepeatResult {
+export class RepeatResult<T = unknown> {
   constructor(
-    public readonly items: unknown[],
-    public readonly keyFn: (item: any, index: number) => unknown,
-    public readonly templateFn: (item: any, index: number) => unknown,
+    public readonly items: readonly T[],
+    public readonly keyFn: (item: T, index: number) => unknown,
+    public readonly templateFn: (item: T, index: number) => unknown,
   ) {}
 }
 
@@ -69,17 +69,26 @@ export const live = (value: unknown) => new LiveResult(value);
  * Repeats a template for each item in an array, using a key to maintain state.
  * Usage: repeat(items, (item) => item.id, (item) => html`...`)
  */
-export const repeat = (
-  items: unknown[],
-  keyFnOrTemplate: (item: any, index: number) => unknown,
-  template?: (item: any, index: number) => unknown,
-) => {
+export function repeat<T>(
+  items: readonly T[],
+  template: (item: T, index: number) => unknown,
+): RepeatResult<T>;
+export function repeat<T>(
+  items: readonly T[],
+  keyFn: (item: T, index: number) => unknown,
+  template: (item: T, index: number) => unknown,
+): RepeatResult<T>;
+export function repeat<T>(
+  items: readonly T[],
+  keyFnOrTemplate: (item: T, index: number) => unknown,
+  template?: (item: T, index: number) => unknown,
+): RepeatResult<T> {
   if (template === undefined) {
     // Overload: repeat(items, template) -> key is index
-    return new RepeatResult(items, (_i: any, index: number) => index, keyFnOrTemplate as any);
+    return new RepeatResult(items, (_item: T, index: number) => index, keyFnOrTemplate);
   }
   return new RepeatResult(items, keyFnOrTemplate, template);
-};
+}
 
 /**
  * Generates a class string from an object.

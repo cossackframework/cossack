@@ -1621,7 +1621,12 @@ class SpreadPart implements Part {
       }
     } else {
       const strValue = current == null ? '' : String(current);
-      if (!state || state.lastKind !== 'value' || String(state.lastValue) !== strValue) {
+      if (
+        !state ||
+        state.lastKind !== 'value' ||
+        String(state.lastValue) !== strValue ||
+        (this.element instanceof HTMLSelectElement && el.value !== strValue)
+      ) {
         el.value = strValue;
       }
     }
@@ -1654,6 +1659,14 @@ class SpreadPart implements Part {
         boundField: bind.fieldName,
       };
       this.bindStates.set(key, state);
+
+      if (propName === 'value') {
+        reapplySelectValueAfterChildren(
+          this.element,
+          () => this.bindStates.get(key) === state,
+          () => resolveField(state!.boundComponent, state!.boundField),
+        );
+      }
     } else {
       // Update the stored last-comitted value so the next render dirty-checks.
       state.lastKind = propName;
@@ -1944,7 +1957,11 @@ class AttributePart implements Part {
       }
     } else {
       const strValue = current == null ? '' : String(current);
-      if (this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue) {
+      if (
+        this.lastFormKind !== 'value' ||
+        String(this.lastFormValue) !== strValue ||
+        (this.element instanceof HTMLSelectElement && el.value !== strValue)
+      ) {
         el.value = strValue;
         // Store the normalized string we actually wrote (not `current`), so a
         // null/undefined field compares equal to '' on the next render instead
@@ -1987,6 +2004,15 @@ class AttributePart implements Part {
       this.boundComponent = component;
       this.boundFieldName = bind.fieldName;
       this.element.addEventListener(eventName, listener);
+
+      if (propName === 'value') {
+        const activeListener = listener;
+        reapplySelectValueAfterChildren(
+          this.element,
+          () => this.bindListener === activeListener,
+          () => resolveField(this.boundComponent, this.boundFieldName!),
+        );
+      }
     }
 
     // `.value`/`.checked` are not real HTML attributes — strip the binding
@@ -1994,6 +2020,25 @@ class AttributePart implements Part {
     if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
   }
 }
+
+/**
+ * Dynamic <option> children are committed after select attribute/spread parts.
+ * Browsers ignore a value with no matching option, so retry after the complete
+ * template is applied, provided the original bind is still active.
+ */
+const reapplySelectValueAfterChildren = (
+  element: Element,
+  isActive: () => boolean,
+  readValue: () => unknown,
+): void => {
+  if (!(element instanceof HTMLSelectElement)) return;
+  queueMicrotask(() => {
+    if (!isActive()) return;
+    const current = readValue();
+    const value = current == null ? '' : String(current);
+    if (element.value !== value) element.value = value;
+  });
+};
 
 /**
  * Pick the DOM event that signals a user edit for a given element + property.

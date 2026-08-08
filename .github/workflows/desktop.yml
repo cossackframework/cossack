@@ -3,8 +3,14 @@ name: Desktop installers
 on:
   push:
     branches: [master, main]
+    paths:
+      - 'examples/desktop-counter/**'
+      - 'packages/desktop/**'
   pull_request:
     branches: [master, main]
+    paths:
+      - 'examples/desktop-counter/**'
+      - 'packages/desktop/**'
 
 jobs:
   desktop:

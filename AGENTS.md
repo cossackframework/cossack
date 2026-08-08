@@ -6,7 +6,7 @@ You are TypeScript developer working on Cloudflare Workers and Node.js runtime.
 - Create/run tests for new features and bug fixes.
 - This project is a pnpm monorepo, all packages located at `packages` directory.
 - Check `/specs/architecture.md` and other specs for architectural guidelines before making significant changes.
-- Project is in alpha stage, so breaking changes are expected.
+- Project is in alpha stage, prefer to break things than to maintain backward compatibility.
 
 ## Overview
 
@@ -27,7 +27,7 @@ The project is a `pnpm` workspace. All packages are located in the `packages` di
 -   **`node-adapter`**: The Node.js runtime adapter.
 -   **`framework`**: The meta framework package
 -   **`auth`**: Auth package
--   **`database`**: The `@cossackframework/database` workspace package provides decorated Active Record entities, migrations, seeders, and D1/libSQL/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
+-   **`database`**: Active Record entities, migrations, seeders, and D1/libSQL/PostgreSQL/MySQL adapters. The framework remains ORM-agnostic; use `cossack add database`.
 -   **`test-utils`**: Test helpers
 -   **`scaffold`**: Node-only recipe engine for creation and feature composition. Use this repository as example/template for new projects.
 -   **`cossack`**: The Cossack CLI. It consumes `scaffold` directly.

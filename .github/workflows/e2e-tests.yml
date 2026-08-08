@@ -13,6 +13,40 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect optional test changes
+        id: changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          desktop=false
+          generated_app=false
+          studio=false
+
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
+            # Be conservative when GitHub does not provide a usable base commit.
+            desktop=true
+            generated_app=true
+            studio=true
+          else
+            git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              examples/desktop-counter \
+              packages/desktop || desktop=true
+            git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              packages/scaffold \
+              packages/cossack \
+              scripts/test-local-scaffold.mjs || generated_app=true
+            git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              packages/studio || studio=true
+          fi
+
+          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "generated_app=$generated_app" >> "$GITHUB_OUTPUT"
+          echo "studio=$studio" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -40,18 +74,24 @@ jobs:
           deno test -A packages/deno-adapter/tests/deno-smoke.test.ts
 
       - name: Build Desktop counter web target
+        if: steps.changes.outputs.desktop == 'true'
         run: pnpm --filter @cossackframework/example-desktop-counter build
 
       - name: Test generated app with local package tarballs
+        if: steps.changes.outputs.generated_app == 'true'
         run: pnpm run test:scaffold:local
 
       - name: Install Playwright browsers
         run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
-      - name: Run E2E tests
-        run: |
-          pnpm --filter @cossackframework/framework run test:e2e
-          pnpm --filter @cossackframework/studio exec playwright test
+      - name: Run Framework E2E tests
+        run: pnpm --filter @cossackframework/framework run test:e2e
+        env:
+          CI: true
+
+      - name: Run Studio E2E tests
+        if: steps.changes.outputs.studio == 'true'
+        run: pnpm --filter @cossackframework/studio exec playwright test
         env:
           CI: true
 
