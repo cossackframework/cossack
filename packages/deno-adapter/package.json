@@ -1,16 +1,25 @@
 {
   "name": "@cossackframework/deno-adapter",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "description": "Deno and Deno Deploy runtime adapter for Cossack",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "files": ["dist", "docs", "README.md"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "docs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vite build && tsc -p tsconfig.declarations.json",
     "test": "vitest --run"

@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/scaffold",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "description": "Recipe-driven scaffolding engine for Cossack applications",
   "license": "MIT",
@@ -36,7 +36,7 @@
       "@tursodatabase/database": "^0.7.2",
       "@tursodatabase/serverless": "^1.4.0",
       "@cossackframework/solar-icons": "^0.7.1",
-      "@cossackframework/studio": "^0.8.1",
+      "@cossackframework/studio": "^0.8.2",
       "@hono/node-server": "^2.0.5",
       "@tailwindcss/vite": "^4.3.3",
       "@types/node": "^22.0.0",

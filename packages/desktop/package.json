@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/desktop",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "description": "Secure Electron desktop runtime for Cossack applications",
   "license": "MIT",
@@ -20,8 +20,14 @@
   "bin": {
     "cossack-desktop": "./dist/dev.js"
   },
-  "files": ["dist", "docs", "README.md"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "docs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.declarations.json && chmod +x dist/dev.js",
     "test": "vitest --run"
