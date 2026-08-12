@@ -1,13 +1,17 @@
 import {
   Cossack,
+  applyNavigationScroll,
+  createNavigationHistoryState,
   createInstance,
   createLayoutServiceScope,
   createRootServiceScope,
   enableClientNavigation,
   LifecyclePhase,
+  saveCurrentScrollPosition,
   supportsViewTransitions,
   supportsViewTransitionTypes,
   type NavigateOptions,
+  type NavigationScrollBehavior,
 } from '@cossackframework/core';
 import {
     setSupportedLocales,
@@ -62,6 +66,15 @@ export interface CreateClientAppOptions {
    * Default: false.
    */
   progressBar?: boolean;
+  /** SPA navigation behavior. */
+  navigation?: {
+    /**
+     * Default scroll policy. `auto` scrolls new pages to a fragment or the
+     * top and restores saved positions for browser back/forward traversal.
+     * Default: auto.
+     */
+    scroll?: NavigationScrollBehavior;
+  };
 }
 
 /**
@@ -233,7 +246,13 @@ async function fetchPage(url: string) {
   return promise;
 }
 
-export async function createClientApp({ container, AppComponent, viewTransitions: viewTransitionsEnabled = false, progressBar: progressBarEnabled = false }: CreateClientAppOptions) {
+export async function createClientApp({
+  container,
+  AppComponent,
+  viewTransitions: viewTransitionsEnabled = false,
+  progressBar: progressBarEnabled = false,
+  navigation: { scroll: defaultScrollBehavior = 'auto' } = {},
+}: CreateClientAppOptions) {
   const containerEl =
     typeof container === 'string'
       ? document.querySelector(container)
@@ -243,6 +262,20 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     console.error('Could not find root container');
     return;
   }
+
+  // The framework commits same-document navigations asynchronously, so own
+  // restoration rather than allowing the browser to restore before the
+  // destination DOM exists. Seed the initial entry for a later traversal.
+  window.history.scrollRestoration = 'manual';
+  saveCurrentScrollPosition();
+  let scrollSaveFrame: number | undefined;
+  window.addEventListener('scroll', () => {
+    if (scrollSaveFrame !== undefined) return;
+    scrollSaveFrame = window.requestAnimationFrame(() => {
+      scrollSaveFrame = undefined;
+      saveCurrentScrollPosition();
+    });
+  }, { passive: true });
 
   // The SSR route is already available without a fetch. Seed it so navigating
   // away and back honours the documented zero-network revisit behaviour.
@@ -559,13 +592,19 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   }));
 
   const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<boolean> => {
+    const navigationType = options?.navigationType ?? 'push';
+    if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
+      // popstate has already activated the destination entry. Do not let a
+      // queued scroll save from the outgoing page overwrite that entry.
+      window.cancelAnimationFrame(scrollSaveFrame);
+      scrollSaveFrame = undefined;
+    }
+
     if (!force && currentPage && !isDisplayingLoadingState) {
         const prevented = await currentPage._checkPreventNavigation();
         if (prevented) {
             currentPage._pendingNavigation = async () => {
-                if (await navigate(url, true, options)) {
-                    window.history.pushState({}, '', url);
-                }
+                await navigate(url, true, options);
             };
             // Force re-render to show prevention UI if any
             await currentPage.requestUpdate();
@@ -574,9 +613,19 @@ export async function createClientApp({ container, AppComponent, viewTransitions
     }
 
     try {
+      if (navigationType === 'push') {
+        saveCurrentScrollPosition();
+      }
+
       document.dispatchEvent(new CustomEvent('cossack:before-navigate', {
         bubbles: true,
-        detail: { fromPathname: window.location.pathname, toPathname: url, types: options?.types }
+        detail: {
+          fromPathname: window.location.pathname,
+          toPathname: url,
+          navigationType,
+          types: options?.types,
+          scroll: options?.scroll ?? defaultScrollBehavior,
+        }
       }));
 
       setProgress(30);
@@ -624,6 +673,15 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       const commit = async () => {
         window.__INITIAL_STATE__ = state;
         await loadComponent(state);
+        if (navigationType === 'push') {
+          window.history.pushState(createNavigationHistoryState(), '', url);
+        }
+        applyNavigationScroll(
+          url,
+          options?.scroll ?? defaultScrollBehavior,
+          navigationType,
+        );
+        saveCurrentScrollPosition();
         notifyNavigationComplete(state.pathname);
       };
 
@@ -651,7 +709,12 @@ export async function createClientApp({ container, AppComponent, viewTransitions
       (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
         bubbles: true,
-        detail: { pathname: state.pathname, navigationType: 'spa', types: options?.types }
+        detail: {
+          pathname: state.pathname,
+          navigationType,
+          types: options?.types,
+          scroll: options?.scroll ?? defaultScrollBehavior,
+        }
       }));
       return true;
     } catch (error) {
@@ -674,10 +737,7 @@ export async function createClientApp({ container, AppComponent, viewTransitions
   };
 
   Cossack._onNavigate = async (url, options) => {
-      const accepted = await navigate(url, false, options);
-      if (accepted) {
-          window.history.pushState({}, '', url);
-      }
+      await navigate(url, false, options);
   };
 
   enableClientNavigation(

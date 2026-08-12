@@ -2,14 +2,14 @@ import { resolve } from 'path';
 import path from 'path';
 import { defineConfig } from 'vite';
 
-const sourceRoot = resolve(__dirname, 'src');
+const sourceRoot = resolve(import.meta.dirname, 'src');
 
 export default defineConfig({
   build: {
     lib: {
       entry: {
-        index: resolve(__dirname, 'src/index.ts'),
-        server: resolve(__dirname, 'src/server.ts'),
+        index: resolve(import.meta.dirname, 'src/index.ts'),
+        server: resolve(import.meta.dirname, 'src/server.ts'),
       },
       formats: ['es'],
     },

@@ -2004,7 +2004,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public static SSR_HYDRATABLE = true;
 
     public redirect(url: string, status?: RedirectStatusCode): Response | void;
-    public redirect(url: string, options: { status?: RedirectStatusCode; types?: string[] }): Response | void;
+    public redirect(url: string, options: {
+        status?: RedirectStatusCode;
+        types?: string[];
+        scroll?: NavigateOptions['scroll'];
+    }): Response | void;
     // Redirect is intentionally universal: server actions return an HTTP
     // redirect, while client handlers delegate to the SPA router. Marking it
     // @Server caused client bootstrap to replace this implementation with an
@@ -2012,16 +2016,26 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @Shared()
     public redirect(
         url: string,
-        statusOrOptions: RedirectStatusCode | { status?: RedirectStatusCode; types?: string[] } = 302,
+        statusOrOptions: RedirectStatusCode | {
+            status?: RedirectStatusCode;
+            types?: string[];
+            scroll?: NavigateOptions['scroll'];
+        } = 302,
     ): Response | void {
         if (!this.isServer) {
             const opts = typeof statusOrOptions === 'object' ? statusOrOptions : {};
-            const types = opts.types;
             if (Cossack._onNavigate) {
                 // _onNavigate (the SPA entry) performs the navigation AND the
                 // history.pushState on success. Pushing state here too would
                 // create two history entries per redirect (Back needed twice).
-                Cossack._onNavigate(url, types ? { types } : undefined);
+                const options: NavigateOptions = {
+                    types: opts.types,
+                    scroll: opts.scroll,
+                };
+                Cossack._onNavigate(
+                    url,
+                    options.types || options.scroll ? options : undefined,
+                );
             } else {
                 window.location.href = url;
             }

@@ -55,7 +55,12 @@ describe('View Transitions: security plugin', () => {
 });
 
 describe('View Transitions: data-transition-types click interception', () => {
-  let onNavigateCalls: { url: string; options?: { types?: string[] } }[];
+  type TestNavigateOptions = {
+    types?: string[];
+    scroll?: 'auto' | 'top' | 'preserve';
+    navigationType?: 'push' | 'traverse';
+  };
+  let onNavigateCalls: { url: string; options?: TestNavigateOptions }[];
   let cleanupNavigation: (() => void) | undefined;
 
   beforeEach(() => {
@@ -72,7 +77,7 @@ describe('View Transitions: data-transition-types click interception', () => {
   it('reads data-transition-types from clicked <a> and forwards as { types }', async () => {
     const { enableClientNavigation } = await import('@cossackframework/core');
 
-    const onNavigate = vi.fn(async (url: string, options?: { types?: string[] }) => {
+    const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
     });
@@ -99,7 +104,7 @@ describe('View Transitions: data-transition-types click interception', () => {
   it('passes undefined options when no data-transition-types attribute', async () => {
     const { enableClientNavigation } = await import('@cossackframework/core');
 
-    const onNavigate = vi.fn(async (url: string, options?: { types?: string[] }) => {
+    const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
     });
@@ -122,7 +127,7 @@ describe('View Transitions: data-transition-types click interception', () => {
   it('passes undefined options when data-transition-types is empty', async () => {
     const { enableClientNavigation } = await import('@cossackframework/core');
 
-    const onNavigate = vi.fn(async (url: string, options?: { types?: string[] }) => {
+    const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
     });
@@ -140,6 +145,50 @@ describe('View Transitions: data-transition-types click interception', () => {
 
     expect(onNavigate).toHaveBeenCalledTimes(1);
     expect(onNavigateCalls[0].options).toBeUndefined();
+  });
+
+  it('reads data-scroll from clicked <a> and combines it with transition types', async () => {
+    const { enableClientNavigation } = await import('@cossackframework/core');
+
+    const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
+      onNavigateCalls.push({ url, options });
+      return true;
+    });
+
+    cleanupNavigation = enableClientNavigation(onNavigate);
+
+    const link = document.createElement('a');
+    link.href = '/gallery';
+    link.dataset.transitionTypes = 'nav-forward';
+    link.dataset.scroll = 'preserve';
+    document.body.appendChild(link);
+
+    link.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onNavigateCalls[0]).toEqual({
+      url: '/gallery',
+      options: { types: ['nav-forward'], scroll: 'preserve' },
+    });
+  });
+
+  it('marks popstate navigation as history traversal', async () => {
+    const { enableClientNavigation } = await import('@cossackframework/core');
+
+    const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
+      onNavigateCalls.push({ url, options });
+      return true;
+    });
+
+    cleanupNavigation = enableClientNavigation(onNavigate);
+    window.history.replaceState({}, '', '/previous?tab=one#details');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onNavigateCalls[0]).toEqual({
+      url: '/previous?tab=one#details',
+      options: { navigationType: 'traverse' },
+    });
   });
 
   it('does not navigate a link already handled by a component', async () => {

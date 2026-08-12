@@ -269,4 +269,16 @@ describe('Cossack.prototype.redirect with options on client', () => {
 
     Cossack._onNavigate = originalOnNavigate;
   });
+
+  it('passes options.scroll to Cossack._onNavigate', () => {
+    const onNavigateMock = vi.fn().mockResolvedValue(undefined);
+    const originalOnNavigate = Cossack._onNavigate;
+    Cossack._onNavigate = onNavigateMock;
+
+    component.redirect('/preserved-page', { scroll: 'preserve' });
+
+    expect(onNavigateMock).toHaveBeenCalledWith('/preserved-page', { scroll: 'preserve' });
+
+    Cossack._onNavigate = originalOnNavigate;
+  });
 });

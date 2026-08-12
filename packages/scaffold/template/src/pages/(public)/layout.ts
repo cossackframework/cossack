@@ -1,4 +1,4 @@
-import { Cossack, Page, State, Client, HeadContext, HeadValue, server$ } from '@cossackframework/core';
+import { Cossack, Page, State, Client, HeadContext, HeadValue, OnDocument, server$ } from '@cossackframework/core';
 import { NavigationMenu, Sheet, Icon } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
@@ -104,6 +104,11 @@ export default class PublicLayout extends Cossack {
 
     @Client()
     closeMobileNav() { this.mobileNavOpen = false; }
+
+    @OnDocument('cossack:before-navigate')
+    closeMobileNavBeforeNavigate() { this.mobileNavOpen = false; }
+
+    onNavigateComplete() { this.mobileNavOpen = false; }
 
     render(): TemplateResult {
         const iconBtn = 'inline-flex items-center justify-center [&_svg]:size-4';
