@@ -47,7 +47,15 @@ export class Modal extends Cossack {
     dialogRef: RefObject<HTMLDialogElement> = createRef<HTMLDialogElement>();
 
     render() {
-        const { closeOnBackdrop = true, closeOnEscape = true, size } = this.props;
+        const {
+            open: _open,
+            closeOnBackdrop = true,
+            closeOnEscape = true,
+            size,
+            onClose,
+            "@close": eventClose,
+            ...rest
+        } = this.props;
         const panelClass = size || "max-w-lg";
 
         const panelClasses = classMap({
@@ -60,9 +68,10 @@ export class Modal extends Cossack {
             <dialog
                 ref=${this.dialogRef}
                 class="cs-modal m-auto p-0 bg-transparent max-w-none max-h-none overflow-hidden"
+                ...=${rest}
                 @close=${() => {
-                    const onClose = this.props.onClose ?? this.props["@close"];
-                    if (typeof onClose === "function") onClose();
+                    const closeHandler = onClose ?? eventClose;
+                    if (typeof closeHandler === "function") closeHandler();
                 }}
                 @cancel=${(e: Event) => {
                     if (!closeOnEscape) e.preventDefault();

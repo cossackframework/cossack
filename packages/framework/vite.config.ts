@@ -5,10 +5,10 @@ import { spawn } from 'child_process';
 import url from 'url';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin';
-import { cossackSecurityPlugin } from './src/vite-security-plugin';
-import { cossackSsg } from './src/vite-ssg-plugin';
-import { processMarkdown } from './src/markdown-processor';
+import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin.ts';
+import { cossackSecurityPlugin } from './src/vite-security-plugin.ts';
+import { cossackSsg } from './src/vite-ssg-plugin.ts';
+import { processMarkdown } from './src/markdown-processor.ts';
 
 function cossackDevTools(): Plugin {
   return {
@@ -100,8 +100,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '~': path.resolve(__dirname, './dist/client'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '~': path.resolve(import.meta.dirname, './dist/client'),
     },
   },
   environments: {

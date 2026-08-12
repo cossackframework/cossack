@@ -110,6 +110,24 @@ describe('framework publication contract', () => {
   });
 });
 
+describe('framework development config contract', () => {
+  const configSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'vite.config.ts'),
+    'utf8',
+  );
+
+  it('is compatible with Vite native config loading', () => {
+    expect(configSource).not.toContain('__dirname');
+
+    const extensionlessImports = Array.from(
+      configSource.matchAll(/\bfrom\s+['"](\.\.?\/[^'"]+)['"]/g),
+      ([, specifier]) => specifier,
+    ).filter((specifier) => !/\.[a-z\d]+$/i.test(specifier));
+
+    expect(extensionlessImports).toEqual([]);
+  });
+});
+
 // Regression test for bug.md / bug-2.md: Node's native ESM resolver does not
 // append file extensions. Every relative import/export in emitted JS must use
 // an explicit, existing target. The Vite contract below separately ensures the

@@ -17,8 +17,8 @@ export interface BadgeProps {
 const VARIANTS: Record<NonNullable<BadgeProps["variant"]>, string> = {
     default: "bg-primary text-primary-foreground border-transparent",
     secondary: "bg-secondary text-secondary-foreground border-transparent",
-    success: "bg-success/10 text-success border-transparent",
-    warning: "bg-warning/10 text-warning border-transparent",
+    success: "bg-success/10 text-success-text border-transparent",
+    warning: "bg-warning/10 text-warning-text border-transparent",
     destructive: "bg-destructive/10 text-destructive border-transparent",
     outline: "border-input text-foreground",
 };

@@ -1,7 +1,20 @@
 import { html } from "@cossackframework/renderer";
 import { unsafeHTML } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
-import { normalizeStyle, type IconStyle, type IconEntry } from "@cossackframework/solar-icons/types";
+import type { IconStyle, IconEntry } from "@cossackframework/solar-icons/types";
+
+/** Normalize a Solar style name without importing Solar's runtime types entry. */
+export function normalizeStyle(style: string): IconStyle {
+    const normalized = String(style).toLowerCase();
+    if (normalized === "bold" || normalized === "solid" || normalized === "b") return "bold";
+    if (normalized === "duotone" || normalized === "d") return "duotone";
+    if (normalized === "broken" || normalized === "brk") return "broken";
+    if (normalized === "outline" || normalized === "o") return "outline";
+    if (normalized === "line-duotone" || normalized === "ld" || normalized === "lineduotone") {
+        return "line-duotone";
+    }
+    return "line";
+}
 
 export interface IconProps {
     entry: IconEntry;

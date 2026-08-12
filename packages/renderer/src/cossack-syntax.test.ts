@@ -54,6 +54,31 @@ describe('Cossack Syntax Extensions', () => {
         expect(btn.hasAttribute('disabled')).toBe(false);
     });
 
+    it('updates ARIA booleans as explicit strings on the client', () => {
+        const container = document.createElement('div');
+        const template = (selected: boolean) =>
+            html`<button aria-selected=${selected}></button>`;
+        render(template(true), container);
+        const button = container.querySelector('button')!;
+        expect(button.getAttribute('aria-selected')).toBe('true');
+        render(template(false), container);
+        expect(button.getAttribute('aria-selected')).toBe('false');
+    });
+
+    it('removes nullish spread attributes on update', () => {
+        const container = document.createElement('div');
+        const template = (title: string | null | undefined) =>
+            html`<div ...=${{ title }}></div>`;
+        render(template('Present'), container);
+        const element = container.querySelector('div')!;
+        expect(element.getAttribute('title')).toBe('Present');
+        render(template(null), container);
+        expect(element.hasAttribute('title')).toBe(false);
+        render(template('Again'), container);
+        render(template(undefined), container);
+        expect(element.hasAttribute('title')).toBe(false);
+    });
+
     it('binds events using @ syntax (Client)', () => {
         const container = document.createElement('div');
         const spy = vi.fn();

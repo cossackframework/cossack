@@ -72,14 +72,18 @@ export const isTemplateResult = (value: unknown): value is TemplateResult => {
   return typeof value === 'object' && value !== null && (value as any)._cossack_template_result === true;
 };
 
+const UNSAFE_HTML_BRAND = Symbol.for('@cossackframework/renderer/unsafe-html');
+
 export class UnsafeHTMLResult {
+  readonly [UNSAFE_HTML_BRAND] = true;
   constructor(public readonly value: string) {}
 }
 
 export const unsafeHTML = (value: string) => new UnsafeHTMLResult(value);
 
 export const isUnsafeHTML = (value: unknown): value is UnsafeHTMLResult => {
-  return value instanceof UnsafeHTMLResult;
+  return typeof value === 'object' && value !== null &&
+    (value as Record<PropertyKey, unknown>)[UNSAFE_HTML_BRAND] === true;
 };
 
 // --- SSR Implementation ---
@@ -195,9 +199,16 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
 // spread path (renderSpread) and the SSR direct property-binding path so the
 // two stay in sync.
 const BOOLEAN_ATTRS = new Set([
-  'checked', 'disabled', 'readonly', 'required', 'hidden', 'selected',
-  'multiple', 'autofocus', 'open',
+  'allowfullscreen', 'async', 'autofocus', 'autoplay', 'checked', 'controls',
+  'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'inert', 'ismap',
+  'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open',
+  'playsinline', 'readonly', 'required', 'reversed', 'selected',
 ]);
+
+const serializeBooleanAttribute = (name: string, value: boolean): string | null => {
+  if (BOOLEAN_ATTRS.has(name.toLowerCase())) return value ? '' : null;
+  return String(value);
+};
 
 /**
  * Mutable accumulator that `renderSpread` writes into. Normal spread
@@ -278,7 +289,9 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
         ctx.result += ` ${name}="${escapeHtml(String(val.value))}"`;
       }
     } else if (typeof val === 'boolean') {
-      if (val) ctx.result += ` ${name}`;
+      const serialized = serializeBooleanAttribute(name, val);
+      if (serialized === '') ctx.result += ` ${name}`;
+      else if (serialized !== null) ctx.result += ` ${name}="${serialized}"`;
     } else if (typeof val === 'function') {
       // Ignore
     } else if (val !== null && val !== undefined) {
@@ -349,7 +362,7 @@ const classifyPositions = (strings: readonly string[]): boolean[] => {
     for (let j = 0; j < str.length; j++) {
       if (insideAttrQuote) {
         if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (str[j] === '"' || str[j] === "'") {
+      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
         if (j > 0 && str[j - 1] === '=') {
           insideAttrQuote = str[j];
         }
@@ -540,7 +553,7 @@ class SSRScanner {
           this.stringIdx++;
           continue;
         }
-        if (attrMatch) {
+        if (attrMatch && !this.isNodePositions[this.stringIdx]) {
           const fullMatch = attrMatch[0];
           const name = attrMatch[1];
 
@@ -612,6 +625,13 @@ class SSRScanner {
               this.result = this.result.trimEnd();
               this.result += ` ${name}="${escapeHtml(String(val.value))}"`;
             }
+          } else if (val === null || val === undefined || val === nothing) {
+            this.result = this.result.trimEnd();
+          } else if (typeof val === 'boolean') {
+            this.result = this.result.trimEnd();
+            const serialized = serializeBooleanAttribute(name, val);
+            if (serialized === '') this.result += ` ${name}`;
+            else if (serialized !== null) this.result += ` ${name}="${serialized}"`;
           } else {
             // Default attribute binding: `name=${val}` or `name="${val}"`.
             // If the template opened a quote (`name="${val}"`), the value goes
@@ -1570,15 +1590,18 @@ class SpreadPart implements Part {
         } else {
           this.element.setAttribute(key, String(val.value));
         }
+      } else if (val === null || val === undefined) {
+        this.element.removeAttribute(key);
       } else if (typeof val === 'boolean') {
-        if (val) this.element.setAttribute(key, '');
-        else this.element.removeAttribute(key);
+        const serialized = serializeBooleanAttribute(key, val);
+        if (serialized === null) this.element.removeAttribute(key);
+        else this.element.setAttribute(key, serialized);
       } else if ((key === 'class' || key === 'className') && typeof val === 'string') {
         // Merge caller-supplied classes with the element's existing classes
         // (including the component's own) instead of overwriting. Track which
         // tokens we added so a later update removes only those.
         this.applySpreadClass(val);
-      } else if (val !== null && val !== undefined) {
+      } else {
         this.element.setAttribute(key, String(val));
       }
     }
@@ -1906,9 +1929,12 @@ class AttributePart implements Part {
       } else {
         this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
       }
+    } else if (value === null || value === undefined) {
+      this.element.removeAttribute(this.name);
     } else if (typeof value === 'boolean') {
-      if (value) this.element.setAttribute(this.name, '');
-      else this.element.removeAttribute(this.name);
+      const serialized = serializeBooleanAttribute(this.name, value);
+      if (serialized === null) this.element.removeAttribute(this.name);
+      else this.element.setAttribute(this.name, serialized);
     } else {
       this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
     }
@@ -2089,7 +2115,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
     for (let j = 0; j < str.length; j++) {
       if (insideAttrQuote) {
         if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (str[j] === '"' || str[j] === "'") {
+      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
         if (j > 0 && str[j - 1] === '=') {
           insideAttrQuote = str[j];
         }
@@ -2327,6 +2353,7 @@ const reconcileNodeLists = (
   bpNodes: NodeListOf<ChildNode> | Node[],
   exNodes: Node[],
   map: Map<Node, Node>,
+  path = 'root',
 ) => {
   let ei = 0;
   for (let bi = 0; bi < bpNodes.length; bi++) {
@@ -2335,7 +2362,7 @@ const reconcileNodeLists = (
     // Skip existing filler to stay aligned with the next meaningful node.
     while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
     const exNode = exNodes[ei];
-    if (!exNode) throw new HydrateMismatch(`existing shorter than blueprint (expected ${describeNode(bpNode)})`);
+    if (!exNode) throw new HydrateMismatch(`existing shorter than blueprint at ${path} (expected ${describeNode(bpNode)})`);
     // Elements must match by tag; text/comment nodes by type. Without the
     // tag check a <p> in the DOM would silently absorb a <div> template's
     // parts, producing a corrupted tree.
@@ -2348,7 +2375,12 @@ const reconcileNodeLists = (
         throw new HydrateMismatch(`tag mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
       }
       map.set(bpNode, exNode);
-      reconcileNodeLists(bpNode.childNodes, Array.from(exNode.childNodes), map);
+      reconcileNodeLists(
+        bpNode.childNodes,
+        Array.from(exNode.childNodes),
+        map,
+        `${path}/${bpNode.nodeName.toLowerCase()}[${bi}]`,
+      );
     } else {
       if (bpNode.nodeType !== exNode.nodeType) {
         throw new HydrateMismatch(`type mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);

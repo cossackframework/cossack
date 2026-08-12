@@ -119,6 +119,20 @@ describe('recipe resolution', () => {
     expect(pnpmWorkspace).toContain('sharp: true');
     expect(files.has('src/App.ts')).toBe(true);
     expect(files.has('wrangler.jsonc')).toBe(adapter === 'cloudflare');
+    expect(files.has('worker-configuration.d.ts')).toBe(false);
+    expect(files.has('vitest.config.ts')).toBe(true);
+    expect(files.has('scripts/dev.js')).toBe(adapter === 'node');
+    expect(pkg.devDependencies.typescript).toBe(dependencyVersions.typescript);
+    if (adapter === 'cloudflare') {
+      expect(pkg.scripts['build:ssg']).toBe('vite build');
+      expect(pkg.scripts['cf-typegen']).toBe(
+        'wrangler types --env-interface CloudflareBindings',
+      );
+      expect(pkg.scripts.deploy).toBe('vite build && wrangler deploy');
+      const tsconfig = JSON.parse(files.get('tsconfig.json').content.toString());
+      expect(tsconfig.compilerOptions.types).not.toContain('./worker-configuration.d.ts');
+      expect(tsconfig.include).toContain('worker-configuration.d.ts');
+    }
     expect(files.has('src/orm/factory.ts')).toBe(recipe.resolvedFeatures.includes('database'));
     expect(files.has('orm.config.ts')).toBe(recipe.resolvedFeatures.includes('database'));
     expect(files.has('src/auth.ts')).toBe(recipe.resolvedFeatures.includes('auth'));
@@ -165,12 +179,19 @@ describe('recipe resolution', () => {
       .toContain('minify: true');
     expect(files.get('vite.config.ts').content.toString())
       .toContain("dedupe: [");
-    expect(files.get('vite.config.ts').content.toString())
-      .toContain("'@cossackframework/solar-icons'");
+    expect(files.get('vite.config.ts').content.toString().includes(
+      "'@cossackframework/solar-icons'",
+    )).toBe(recipe.resolvedFeatures.includes('ui'));
     expect(files.get('vite.config.ts').content.toString())
       .toContain("'hono'");
     expect(files.get('vite.config.ts').content.toString())
-      .toContain("exclude: ['@cossackframework/solar-icons']");
+      .not.toContain("exclude: ['@cossackframework/solar-icons']");
+    expect(files.get('vite.config.ts').content.toString().includes(
+      "'@cossackframework/auth'",
+    )).toBe(recipe.resolvedFeatures.includes('auth'));
+    expect(files.get('vite.config.ts').content.toString().includes(
+      "'@cossackframework/database'",
+    )).toBe(recipe.resolvedFeatures.includes('database'));
     expect(files.get('vite.config.ts').content.toString())
       .toContain("resolve: mode === 'desktop'");
     expect(files.get('vite.config.ts').content.toString())

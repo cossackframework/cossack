@@ -104,6 +104,8 @@ export class Tabs extends Cossack {
                                     "px-3 py-2 rounded-sm w-full text-left": isVertical,
                                     "text-foreground": current === item.value,
                                     "text-muted-foreground hover:text-foreground": current !== item.value,
+                                    "border-b-2 border-primary": variant === "underline" && current === item.value,
+                                    "border-b-2 border-transparent": variant === "underline" && current !== item.value,
                                 })}
                                 @click=${() => { this.selectTab(item.value); }}
                             >
@@ -119,24 +121,23 @@ export class Tabs extends Cossack {
                     ></span>
                 </div>
                 ${items.map(
-                    (item) =>
-                        current === item.value
-                            ? html`
-                                  <div
-                                      role="tabpanel"
-                                      id=${`panel-${item.value}`}
-                                      aria-labelledby=${`tab-${item.value}`}
-                                      class=${classMap({
-                                          "cs-tabs__panel focus:outline-none": true,
-                                          "mt-4": !isVertical,
-                                          "flex-1": isVertical,
-                                      })}
-                                      tabindex="0"
-                                  >
-                                      ${item.content ?? this.children}
-                                  </div>
-                              `
-                            : null,
+                    (item) => html`
+                        <div
+                            role="tabpanel"
+                            id=${`panel-${item.value}`}
+                            aria-labelledby=${`tab-${item.value}`}
+                            class=${classMap({
+                                "cs-tabs__panel focus:outline-none": true,
+                                "mt-4": !isVertical,
+                                "flex-1": isVertical,
+                            })}
+                            tabindex=${current === item.value ? 0 : -1}
+                            aria-hidden=${current !== item.value}
+                            hidden=${current !== item.value}
+                        >
+                            ${item.content ?? this.children}
+                        </div>
+                    `,
                 )}
             </div>
         `;

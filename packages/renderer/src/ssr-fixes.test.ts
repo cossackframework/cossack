@@ -56,4 +56,45 @@ describe('SSR Fixes & Regressions', () => {
         const template2 = html`<input .value="${live("")}" />`;
         expect(renderToString(template2)).toBe('<input value="" />');
     });
+
+    it('serializes ARIA booleans as explicit true/false strings', () => {
+        expect(renderToString(html`<button aria-pressed=${true}></button>`))
+            .toBe('<button aria-pressed="true"></button>');
+        expect(renderToString(html`<button aria-pressed=${false}></button>`))
+            .toBe('<button aria-pressed="false"></button>');
+    });
+
+    it('uses presence semantics only for native boolean attributes', () => {
+        expect(renderToString(html`<button disabled=${true}></button>`))
+            .toBe('<button disabled></button>');
+        expect(renderToString(html`<button disabled=${false}></button>`))
+            .toBe('<button></button>');
+        expect(renderToString(html`<div data-active=${false}></div>`))
+            .toBe('<div data-active="false"></div>');
+        expect(renderToString(html`<div title=${undefined}></div>`))
+            .toBe('<div></div>');
+    });
+
+    it('applies the same boolean rules to spread attributes', () => {
+        const output = renderToString(html`<input ...=${{
+            disabled: false,
+            'aria-checked': false,
+            'data-ready': true,
+        }}>`);
+        expect(output).toBe('<input aria-checked="false" data-ready="true">');
+    });
+
+    it('recognizes unsafe HTML created by another renderer module instance', () => {
+        const foreignUnsafeHtml = {
+            value: '<svg data-foreign="true"></svg>',
+            [Symbol.for('@cossackframework/renderer/unsafe-html')]: true,
+        };
+        expect(renderToString(html`<span>${foreignUnsafeHtml}</span>`))
+            .toBe('<span><svg data-foreign="true"></svg></span>');
+    });
+
+    it('keeps attribute-like text interpolations as hydratable node parts', () => {
+        expect(renderToString(html`<code>style="${'line'}"</code>`, { hydrate: true }))
+            .toBe('<code>style="<!--CRP_0-->line<!--/CRP-->"</code>');
+    });
 });

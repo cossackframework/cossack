@@ -10,9 +10,9 @@ describe('Markdown processor', () => {
       { environment: { name: 'client' } },
       '\0virtual:cossack-pages',
     );
-    expect(virtual).toContain("'/src/pages/**/*.ts'");
-    expect(virtual).not.toContain("'/src/pages/**/*.md'");
-    expect(virtual).not.toContain("'/src/pages/**/*.mdx'");
+    expect(virtual).toContain('"/src/pages/**/*.ts"');
+    expect(virtual).not.toContain('"/src/pages/**/*.md"');
+    expect(virtual).not.toContain('"/src/pages/**/*.mdx"');
 
     const warn = vi.fn();
     const buildStart = plugin.buildStart as Function;
@@ -28,8 +28,8 @@ describe('Markdown processor', () => {
       { environment: { name: 'ssr' } },
       '\0virtual:cossack-pages',
     );
-    expect(source).toContain("'/src/pages/**/*.md'");
-    expect(source).toContain("'/src/pages/**/*.mdx'");
+    expect(source).toContain('"/src/pages/**/*.md"');
+    expect(source).toContain('"/src/pages/**/*.mdx"');
     expect(source).toContain('{ eager: true }');
   });
 
@@ -73,12 +73,32 @@ Post body.
       '/src/pages/blog/a-post.md',
     );
 
-    expect(result.code).toContain('const markdownAuthor = "Ada Lovelace"');
-    expect(result.code).toContain('const markdownDate = "2026-07-26"');
-    expect(result.code).toContain('class="mdx-byline');
-    expect(result.code).toContain('<time datetime=${markdownDate}>');
-    expect(result.code.indexOf('const markdownLead = "<h1'))
-      .toBeLessThan(result.code.indexOf('const byline ='));
+    expect(result.code).toContain('const markdownContent =');
+    expect(result.code).toContain('class=\\"mdx-byline');
+    expect(result.code).toContain('<time datetime=\\"2026-07-26\\">2026-07-26</time>');
+    expect(result.code).toContain('By Ada Lovelace');
+    expect(result.code.match(/unsafeHTML\(/g)).toHaveLength(1);
+  });
+
+  it('keeps a processor-owned wrapper intact when inserting a byline', async () => {
+    const plugin = cossackPages({
+      markdownProcessor: async () => ({
+        html: '<article><h1>Title</h1><p>Body</p></article>',
+        frontmatter: { author: 'Ada & Grace', date: '2026-08-10' },
+      }),
+    });
+    const result = await (plugin.transform as Function).call(
+      { environment: { mode: 'build', name: 'ssr' } },
+      '# ignored',
+      '/src/pages/blog/wrapped.md',
+    );
+
+    expect(result.code).toContain(
+      '<article><h1>Title</h1><p class=\\"mdx-byline',
+    );
+    expect(result.code).toContain('By Ada &amp; Grace');
+    expect(result.code).toContain('</p><p>Body</p></article>');
+    expect(result.code.match(/unsafeHTML\(/g)).toHaveLength(1);
   });
 
   it('generates a table of contents whose links match heading ids', async () => {
