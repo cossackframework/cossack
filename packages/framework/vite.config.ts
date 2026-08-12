@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 import path from 'path';
 import http from 'http';
@@ -70,6 +71,12 @@ function cossackDevTools(): Plugin {
 }
 
 export default defineConfig({
+  test: {
+    // Playwright owns e2e/**/*.spec.ts. Keeping Vitest on the unit-test tree
+    // prevents Playwright suites from being imported outside its runner.
+    include: ['tests/**/*.test.ts'],
+    environment: 'node',
+  },
   plugins: [
     tailwindcss(),
     // Cloudflare plugin is incompatible with Vitest 4's resolve.external defaults.

@@ -1,20 +1,19 @@
 import { test, expect } from '../fixtures';
 
-test.describe('Components Demo Page', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/components-demo');
-    await page.waitForSelector('h1:has-text("Components Demo")');
-    // Wait for client hydration to complete before interacting. The h1 above
-    // is present from SSR immediately, so it doesn't guarantee @Client handlers
-    // are wired — clicking before hydration completes silently no-ops. Under
-    // parallel workers the demo page (heavy, many components) hydrates slower,
-    // so gate on the framework's ready signal.
-    await page.waitForFunction(
-      () => (window as any).__cossackReady === true,
-      undefined,
-      { timeout: 15000 },
-    );
-  });
+test.beforeEach(async ({ page }) => {
+  await page.goto('/components-demo');
+  await page.waitForSelector('h1:has-text("Components Demo")');
+  // Wait for client hydration to complete before interacting. The h1 above
+  // is present from SSR immediately, so it doesn't guarantee @Client handlers
+  // are wired — clicking before hydration completes silently no-ops. Under
+  // parallel workers the demo page (heavy, many components) hydrates slower,
+  // so gate on the framework's ready signal.
+  await page.waitForFunction(
+    () => (window as any).__cossackReady === true,
+    undefined,
+    { timeout: 15000 },
+  );
+});
 
   test('renders all button variants', async ({ page }) => {
     const body = await page.locator('body').textContent();
@@ -233,10 +232,14 @@ test.describe('Components Demo Page', () => {
 
     // Checkbox (native input type=checkbox) + Switch (role=switch)
     await expect(page.locator('.cs-checkbox input[type="checkbox"]')).toBeChecked();
-    // Multiple Switch instances exist on the page (demo + drawer); assert at least one is visible.
-    const switches = page.locator('label.cs-switch[role="switch"]');
+    // Switch semantics belong on the native checkbox, not its label. The
+    // checkbox is visually hidden, so assert it is attached and its styled
+    // label is visible.
+    const switches = page.locator('label.cs-switch input.cs-switch__input[role="switch"]');
     expect(await switches.count()).toBeGreaterThanOrEqual(1);
-    await expect(switches.first()).toBeVisible();
+    await expect(switches.first()).toBeAttached();
+    await expect(switches.first()).toHaveAttribute('type', 'checkbox');
+    await expect(page.locator('label.cs-switch').first()).toBeVisible();
 
     // Spinner uses animate-spin (rendered as an inline SVG)
     await expect(page.locator('svg.cs-spinner.animate-spin').first()).toBeVisible();
@@ -573,4 +576,3 @@ test.describe('Components Demo Page', () => {
     // Tag count increased by 1.
     expect(await tags.count()).toBeGreaterThanOrEqual(3);
   });
-});
