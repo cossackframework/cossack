@@ -9,6 +9,121 @@ export interface NavigateOptions {
      * Authors target these in CSS via `::view-transition-group(.<type>)`.
      */
     types?: string[];
+    /**
+     * Control scrolling after this navigation. `auto` follows browser-like
+     * semantics: new entries go to a fragment or the top, while history
+     * traversal restores the destination entry's saved position.
+     */
+    scroll?: NavigationScrollBehavior;
+    /** @internal Identifies browser back/forward traversal. */
+    navigationType?: NavigationType;
+}
+
+export type NavigationScrollBehavior = 'auto' | 'top' | 'preserve';
+export type NavigationType = 'push' | 'traverse';
+
+export interface ScrollPosition {
+    x: number;
+    y: number;
+}
+
+const COSSACK_NAVIGATION_STATE = '__cossackNavigation';
+
+type NavigationHistoryState = Record<string, unknown> & {
+    [COSSACK_NAVIGATION_STATE]?: {
+        scroll?: ScrollPosition;
+    };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function historyStateWithScroll(state: unknown, scroll: ScrollPosition): NavigationHistoryState {
+    const base: NavigationHistoryState = isRecord(state) ? { ...state } : {};
+    const existing = isRecord(base[COSSACK_NAVIGATION_STATE])
+        ? base[COSSACK_NAVIGATION_STATE]
+        : {};
+    base[COSSACK_NAVIGATION_STATE] = { ...existing, scroll };
+    return base;
+}
+
+/** Save the current viewport position on the active session-history entry. */
+export function saveCurrentScrollPosition(): void {
+    if (typeof window === 'undefined') return;
+    window.history.replaceState(
+        historyStateWithScroll(window.history.state, { x: window.scrollX, y: window.scrollY }),
+        '',
+        window.location.href,
+    );
+}
+
+/** Create state for a newly pushed history entry at the current viewport. */
+export function createNavigationHistoryState(): NavigationHistoryState {
+    if (typeof window === 'undefined') return {};
+    return historyStateWithScroll({}, { x: window.scrollX, y: window.scrollY });
+}
+
+/** Read a scroll position previously stored by Cossack from history state. */
+export function getSavedScrollPosition(state: unknown): ScrollPosition | undefined {
+    if (!isRecord(state)) return undefined;
+    const navigationState = state[COSSACK_NAVIGATION_STATE];
+    if (!isRecord(navigationState) || !isRecord(navigationState.scroll)) return undefined;
+    const { x, y } = navigationState.scroll;
+    return typeof x === 'number' && typeof y === 'number' ? { x, y } : undefined;
+}
+
+function scrollToPosition(position: ScrollPosition): void {
+    window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' });
+}
+
+function scrollToUrlTarget(url: string): void {
+    const { hash } = new URL(url, window.location.href);
+    if (hash) {
+        let fragment = hash.slice(1);
+        try {
+            fragment = decodeURIComponent(fragment);
+        } catch {
+            // Keep the encoded fragment when it is not valid URI data.
+        }
+
+        const target = document.getElementById(fragment)
+            ?? document.getElementsByName(fragment)[0];
+        if (target) {
+            target.scrollIntoView({ block: 'start', behavior: 'instant' });
+            return;
+        }
+    }
+
+    scrollToPosition({ x: 0, y: 0 });
+}
+
+/**
+ * Apply the configured scroll policy after the destination DOM is committed.
+ * Call this from inside a View Transition update callback so its new snapshot
+ * contains the destination at the final viewport position.
+ */
+export function applyNavigationScroll(
+    url: string,
+    behavior: NavigationScrollBehavior,
+    navigationType: NavigationType,
+): void {
+    if (typeof window === 'undefined' || behavior === 'preserve') return;
+
+    if (behavior === 'auto' && navigationType === 'traverse') {
+        const saved = getSavedScrollPosition(window.history.state);
+        if (saved) {
+            scrollToPosition(saved);
+            return;
+        }
+    }
+
+    if (behavior === 'top') {
+        scrollToPosition({ x: 0, y: 0 });
+        return;
+    }
+
+    scrollToUrlTarget(url);
 }
 
 /**
@@ -68,6 +183,13 @@ export function enableClientNavigation(
         return types.length ? types : undefined;
     };
 
+    const readScrollBehavior = (target: HTMLAnchorElement): NavigationScrollBehavior | undefined => {
+        const value = target.dataset.scroll;
+        return value === 'auto' || value === 'top' || value === 'preserve'
+            ? value
+            : undefined;
+    };
+
     // Intercept clicks on links
     const handleClick = async (e: MouseEvent) => {
         // A component may own this link (for example Sidebar.onNavigate).
@@ -92,13 +214,13 @@ export function enableClientNavigation(
 
         const options: NavigateOptions | undefined = (() => {
             const types = readTransitionTypes(target);
-            return types ? { types } : undefined;
+            const scroll = readScrollBehavior(target);
+            return types || scroll ? { types, scroll } : undefined;
         })();
 
-        const accepted = await onNavigate(href, options);
-        if (accepted) {
-            window.history.pushState({}, '', href);
-        }
+        await onNavigate(href, options);
+        // The navigation implementation owns pushState so it can create the
+        // destination entry before applying its scroll position.
     };
     document.addEventListener('click', handleClick);
 
@@ -119,11 +241,14 @@ export function enableClientNavigation(
     document.addEventListener('mouseover', handleMouseOver);
 
     // Handle back/forward buttons.
-    // Browser-initiated back/forward navigations carry no transition types —
-    // matching Next.js's behavior. Authors who need "back" semantics can
-    // detect them via `navigationType: 'spa'` in the `cossack:ready` event.
+    // Browser-initiated back/forward navigations carry no transition types.
+    // Mark them as traversal so the app can restore the destination entry's
+    // saved scroll position after its DOM has been committed.
     const handlePopState = async () => {
-        await onNavigate(window.location.pathname + window.location.search);
+        await onNavigate(
+            window.location.pathname + window.location.search + window.location.hash,
+            { navigationType: 'traverse' },
+        );
     };
     window.addEventListener('popstate', handlePopState);
 

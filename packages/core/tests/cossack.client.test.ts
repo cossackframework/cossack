@@ -271,4 +271,17 @@ describe('redirect() does not double-push history state', () => {
     // redirect() itself must not push state.
     expect(pushSpy).not.toHaveBeenCalled();
   });
+
+  it('forwards a per-navigation scroll override', () => {
+    const component = new RedirectComponent();
+    const navSpy = vi.fn();
+    const prev = Cossack._onNavigate;
+    Cossack._onNavigate = navSpy;
+    try {
+      component.redirect('/same-context', { scroll: 'preserve' });
+    } finally {
+      Cossack._onNavigate = prev;
+    }
+    expect(navSpy).toHaveBeenCalledWith('/same-context', { scroll: 'preserve' });
+  });
 });

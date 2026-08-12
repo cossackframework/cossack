@@ -77,6 +77,26 @@ test.describe('View Transitions', () => {
     expect(calls).toBeGreaterThanOrEqual(1);
   });
 
+  test('new page navigation scrolls to top and browser back restores position', async ({ page }) => {
+    await page.evaluate(() => {
+      document.body.style.minHeight = '3000px';
+      window.scrollTo(0, 800);
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(800);
+
+    // Dispatch directly so Playwright does not scroll the card into view before
+    // clicking; the outgoing history entry should retain the position above.
+    await page.locator('a[data-transition-types="nav-forward"]').first().evaluate((element) => {
+      (element as HTMLAnchorElement).click();
+    });
+    await expect(page.locator('a[data-transition-types="nav-back"]')).toBeVisible({ timeout: 5000 });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+    await page.goBack();
+    await expect(page.locator('a[data-transition-types="nav-forward"]')).toHaveCount(4, { timeout: 5000 });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(800);
+  });
+
   test('tab switch uses this.startViewTransition (same-route)', async ({ page }) => {
     // Spy on startViewTransition before clicking tab
     await page.evaluate(() => {

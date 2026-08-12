@@ -1,6 +1,6 @@
 ---
 title: "View Transitions"
-description: "Browser View Transitions API support for smooth animated transitions between pages and states with opt-in configuration."
+description: "Browser View Transitions API support for animated page and state changes, including navigation scroll behavior."
 ---
 
 # View Transitions
@@ -12,17 +12,29 @@ Cossack supports the browser [View Transitions API](https://developer.mozilla.or
 Pass `viewTransitions: true` to `createClientApp` in your `entry-client.ts`:
 
 ```typescript
-createClientApp({ container: '#root', viewTransitions: true });
+import { createClientApp } from '@cossackframework/framework/client/app';
+import { App } from '../App';
+
+createClientApp({
+    container: '#root',
+    AppComponent: App,
+    viewTransitions: true,
+});
 ```
 
-When enabled and the browser supports the API (`document.startViewTransition`), SPA navigations automatically wrap their DOM commit phase in a view transition. On unsupported browsers (e.g., Firefox at the time of writing), navigation still works — just without animation.
+When enabled and the browser supports the API (`document.startViewTransition`), SPA navigations automatically wrap their DOM commit phase in a view transition. On unsupported browsers, navigation still works without animation.
 
 ## Navigation Progress Bar
 
 Enable a slim progress bar at the top of the page that fills during SPA navigations — the same UX pattern popularized by NProgress and Next.js:
 
 ```typescript
-createClientApp({ container: '#root', viewTransitions: true, progressBar: true });
+createClientApp({
+    container: '#root',
+    AppComponent: App,
+    viewTransitions: true,
+    progressBar: true,
+});
 ```
 
 The bar appears at 30% when a navigation starts and completes to 100% when the new page is ready. No additional configuration or CSS is needed — the framework injects everything automatically. Both `viewTransitions` and `progressBar` are independent options; use either or both.
@@ -32,9 +44,51 @@ The bar appears at 30% when a navigation starts and completes to 100% when the n
 When a user clicks a link and navigates between pages:
 
 1. The framework fetches the new page data (network request happens normally).
-2. The old page is destroyed and the new page is instantiated.
-3. **This DOM commit step is wrapped inside `document.startViewTransition()`**, so the browser snapshots the old and new states and crossfades between them.
-4. The loading.ts swap (if any) happens *before* the transition snapshots — so the transition animates from your loading skeleton to the real content.
+2. The browser snapshots the current state through `document.startViewTransition()`.
+3. Inside the transition update callback, Cossack destroys the old page, instantiates the new page, commits its DOM, and applies its scroll position.
+4. The browser snapshots the committed destination and animates between the two states.
+
+The loading.ts swap (if any) happens before the view transition starts, so the transition animates from your loading skeleton to the real content.
+
+## Navigation Scroll Behavior
+
+Scroll behavior belongs to SPA navigation and works the same way whether View Transitions are enabled or disabled. The default policy is `auto`:
+
+| Navigation | `auto` behavior |
+|---|---|
+| New link or client redirect | Scroll to the URL fragment, or to the top when there is no matching fragment |
+| Browser back/forward | Restore the position saved for that history entry |
+
+You can set the app-wide policy in `entry-client.ts`:
+
+```typescript
+createClientApp({
+    container: '#root',
+    AppComponent: App,
+    viewTransitions: true,
+    navigation: { scroll: 'auto' },
+});
+```
+
+Available policies are:
+
+- `auto` — browser-like fragment, top, and history-restoration behavior. This is the default.
+- `top` — always scroll to the top, including during back/forward traversal.
+- `preserve` — leave the current viewport position unchanged.
+
+Override the policy for an individual link with `data-scroll`:
+
+```html
+<a href="/articles?page=2" data-scroll="preserve">Next page</a>
+```
+
+Programmatic navigation accepts the same override:
+
+```typescript
+this.redirect('/articles?page=2', { scroll: 'preserve' });
+```
+
+When View Transitions are enabled, Cossack applies the destination scroll position inside the transition update callback. The new snapshot therefore represents the destination at its final scroll position.
 
 ## Per-Link Transition Types
 
@@ -75,16 +129,22 @@ You can pass multiple types by separating them with whitespace:
 <a href="/dashboard" data-transition-types="nav-forward expand">Dashboard</a>
 ```
 
-## Programmatic Navigation with Types
+## Programmatic Navigation Options
 
-When calling `this.redirect()` on the client, you can pass transition types via an options object:
+When calling `this.redirect()` on the client, you can combine transition types and scroll behavior in one options object:
 
 ```typescript
 // Redirect with a custom transition type
 this.redirect('/dashboard', { types: ['nav-forward'] });
 
-// Redirect with both status and types
-this.redirect('/login', { status: 302, types: ['fade'] });
+// Preserve scroll while using a custom transition
+this.redirect('/dashboard?tab=activity', {
+    types: ['tab-forward'],
+    scroll: 'preserve',
+});
+
+// Server redirects can still include an HTTP status
+this.redirect('/login', { status: 302, types: ['fade'], scroll: 'top' });
 ```
 
 The original `redirect(url, status)` signature still works unchanged.
@@ -185,7 +245,34 @@ This makes the feature accessible by default. Users who want partial motion can 
 
 ## Browser Back/Forward
 
-Browser-initiated back/forward navigation (the browser's back button, `history.back()`) does **not** carry transition types. This matches the behavior of other frameworks — there's no reliable cross-browser signal for "back" navigation. If you need to detect navigation direction, use the `cossack:ready` event's `navigationType` field.
+Browser-initiated back/forward navigation does not carry transition types, but Cossack marks it as history traversal and restores its saved scroll position under the default `auto` policy.
+
+The `cossack:ready` event exposes the navigation kind through `event.detail.navigationType`:
+
+- `initial` — initial hydration.
+- `push` — a link or programmatic client navigation.
+- `traverse` — browser back/forward navigation.
+
+## Closing Transient UI During Navigation
+
+Persistent layouts keep their client state between pages. Close transient UI such as a mobile navigation sheet when navigation begins, with navigation completion as a fallback:
+
+```typescript
+import { ClientState, OnDocument } from '@cossackframework/core';
+
+@ClientState() mobileNavigationOpen = false;
+
+@OnDocument('cossack:before-navigate')
+closeMobileNavigationBeforeNavigate() {
+    this.mobileNavigationOpen = false;
+}
+
+onNavigateComplete() {
+    this.mobileNavigationOpen = false;
+}
+```
+
+Using the built-in event decorator and lifecycle hook keeps the listeners scoped to the component and ensures an open sheet is not carried into the destination page.
 
 ## Graceful Fallback
 
