@@ -10,7 +10,8 @@ export interface SwitchProps {
 
 /**
  * Cossack UI Switch — a native `<input type="checkbox">` restyled as a toggle,
- * wrapped in a `<label role="switch">` for ARIA semantics. Pure CSS; the native
+ * wrapped in a `<label>` for accessible naming. The switch role stays on the
+ * native checkbox, avoiding nested interactive semantics. Pure CSS; the native
  * checkbox is visually hidden and drives a styled track/thumb.
  *
  *   ${component(Switch, { checked: this.on, '@change': handler })}
@@ -29,9 +30,11 @@ export class Switch extends Cossack {
         });
 
         return html`
-            <label class=${wrapperClasses} role="switch" aria-checked=${checked}>
+            <label class=${wrapperClasses}>
                 <input
                     type="checkbox"
+                    role="switch"
+                    aria-checked=${checked}
                     class="cs-switch__input peer sr-only"
                     ?checked=${checked}
                     ...=${rest}

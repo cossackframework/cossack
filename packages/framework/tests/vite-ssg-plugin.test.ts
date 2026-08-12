@@ -106,8 +106,13 @@ describe('getOutputFilePath (vite-ssg-plugin)', () => {
 // ---------------------------------------------------------------------------
 
 describe('CossackSsgOptions', () => {
-  it('accepts enabled, baseUrl, and outDir', () => {
-    const opts: CossackSsgOptions = { enabled: true, baseUrl: 'https://x.com', outDir: 'dist/out' };
+  it('accepts enabled, baseUrl, outDir, and application plugins', () => {
+    const opts: CossackSsgOptions = {
+      enabled: true,
+      baseUrl: 'https://x.com',
+      outDir: 'dist/out',
+      plugins: [{ name: 'virtual-content' }],
+    };
     const plugin = cossackSsg(opts);
     expect(plugin.name).toBe('cossack-ssg');
   });

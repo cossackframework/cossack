@@ -39,7 +39,7 @@
 // `./vite-security-plugin` factories (already config-time deps) are imported
 // statically. Everything heavy is reached at runtime through `runnerImport`.
 
-import type { Plugin, InlineConfig } from 'vite';
+import type { Plugin, PluginOption, InlineConfig } from 'vite';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -54,6 +54,13 @@ export interface CossackSsgOptions {
   baseUrl?: string;
   /** Output directory. Defaults to `<root>/dist/client`. */
   outDir?: string;
+  /**
+   * Application-owned Vite plugins needed while the SSG runner imports page
+   * source (for example, plugins that provide application virtual modules).
+   * Pass fresh plugin instances rather than reusing the parent build's stateful
+   * instances.
+   */
+  plugins?: PluginOption[];
 }
 
 /**
@@ -127,7 +134,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
 
       // --- Run the orchestrator through Vite (runnerImport loads ssg-entry,
       // which resolves virtual:cossack-* and the SSR renderer via Vite). ---
-      const entry = await loadEntry(projectRoot, buildMode);
+      const entry = await loadEntry(projectRoot, buildMode, options.plugins ?? []);
       const result = await entry.runSsg({ manifest, outDir, baseUrl });
 
       // --- Drain rendered HTML and write files (the entry defers writes here). ---
@@ -207,7 +214,11 @@ interface SsgEntryModule {
  * resolves `SSG_ENTRY_ID` to the real file path, so Vite transforms it (TS,
  * `import.meta.glob` in the virtual modules it imports, etc.).
  */
-async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryModule> {
+async function loadEntry(
+  projectRoot: string,
+  mode: string,
+  applicationPlugins: PluginOption[],
+): Promise<SsgEntryModule> {
   const { runnerImport } = await import('vite');
   const path = await import('node:path');
   // Resolve the entry source relative to this compiled module so it works in
@@ -241,22 +252,8 @@ async function loadEntry(projectRoot: string, mode: string): Promise<SsgEntryMod
         '~': path.resolve(projectRoot, 'dist/client'),
       },
     },
-    environments: {
-      inline: {
-        resolve: {
-          // `runnerImport()` externalizes dependencies to Node by default.
-          // UI's published JavaScript still has runtime imports from Solar
-          // Icons, whose package exports point at TypeScript source. Transform
-          // both packages inside the runner so Node never tries to strip a
-          // `.ts` file from node_modules (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING).
-          noExternal: [
-            '@cossackframework/ui',
-            '@cossackframework/solar-icons',
-          ],
-        },
-      },
-    },
     plugins: [
+      ...applicationPlugins,
       // The same cossack plugins the project's vite.config.ts registers, so
       // virtual:cossack-pages/-config/-lang and the .mdx transform resolve.
       cossackPages({ markdownProcessor: getConfiguredMarkdownProcessor() }),

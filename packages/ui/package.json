@@ -53,12 +53,12 @@
   },
   "peerDependencies": {
     "@cossackframework/core": "^0.8.2",
-    "@cossackframework/solar-icons": "^0.7.1",
+    "@cossackframework/solar-icons": "0.7.1",
     "@cossackframework/renderer": "^0.8.2"
   },
   "devDependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/solar-icons": "^0.7.1",
+    "@cossackframework/solar-icons": "0.7.1",
     "@cossackframework/renderer": "workspace:*",
     "@types/node": "^22.19.0",
     "typescript": "^7.0.2",

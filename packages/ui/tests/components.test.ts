@@ -157,6 +157,7 @@ describe("Badge", () => {
         const out = renderComp(Badge, { variant: "success" }, "Active");
         expect(out).toContain("<span");
         expect(out).toContain("cs-badge--success");
+        expect(out).toContain("text-success-text");
         expect(out).toContain("Active");
         expect(out).toContain("</span>");
     });
@@ -182,6 +183,7 @@ describe("Alert", () => {
         const out = renderComp(Alert, { variant: "warning" }, "Heads up");
         expect(out).toContain('role="alert"');
         expect(out).toContain("cs-alert--warning");
+        expect(out).toContain("text-warning-text");
         expect(out).toContain("Heads up");
         expect(out).toContain("</div>");
     });
@@ -209,6 +211,15 @@ describe("Modal", () => {
         expect(out).toContain("cs-modal");
         // The panel slot renders the body content.
         expect(out).toContain("cs-modal__panel");
+    });
+
+    it("passes accessibility and data attributes through to the dialog", () => {
+        const out = renderComp(Modal, {
+            "aria-label": "Release notes",
+            "data-testid": "release-modal",
+        });
+        expect(out).toContain('aria-label="Release notes"');
+        expect(out).toContain('data-testid="release-modal"');
     });
 });
 
@@ -271,18 +282,18 @@ describe("Checkbox", () => {
 });
 
 describe("Switch", () => {
-    it("renders a role=switch label with a hidden native checkbox", () => {
+    it("puts switch semantics on the hidden native checkbox", () => {
         const out = renderComp(Switch, { checked: true });
-        expect(out).toContain('role="switch"');
+        expect(out).toMatch(/<label[^>]*>\s*<input[^>]*role="switch"/);
+        expect(out).not.toMatch(/<label[^>]*role="switch"/);
         expect(out).toContain('type="checkbox"');
         expect(out).toContain("cs-switch");
         expect(out).toContain("sr-only");
     });
 
     it("reflects aria-checked from the checked prop", () => {
-        const out = renderComp(Switch, { checked: true });
-        // The renderer emits boolean-ish attribute values unquoted.
-        expect(out).toContain("aria-checked");
+        expect(renderComp(Switch, { checked: true })).toContain('aria-checked="true"');
+        expect(renderComp(Switch, { checked: false })).toContain('aria-checked="false"');
     });
 });
 
@@ -389,7 +400,7 @@ describe("Progress", () => {
 });
 
 describe("Tabs", () => {
-    it("renders a tablist with triggers and only the active panel", () => {
+    it("renders every controlled panel and hides only inactive panels", () => {
         const out = renderComp(Tabs, {
             value: "a",
             items: [
@@ -401,8 +412,10 @@ describe("Tabs", () => {
         expect(out).toContain('role="tab"');
         expect(out).toContain("Tab A");
         expect(out).toContain("Content A");
-        // Inactive panel should not be rendered.
-        expect(out).not.toContain("Content B");
+        expect(out).toContain("Content B");
+        expect(out.match(/role="tabpanel"/g)).toHaveLength(2);
+        expect(out).toContain('aria-hidden="true"');
+        expect(out).toContain('aria-hidden="false"');
     });
 
     it("marks the active tab with aria-selected", () => {
@@ -414,7 +427,20 @@ describe("Tabs", () => {
             ],
         });
         expect(out).toContain("aria-selected");
-        expect(out).toContain("true");
+        expect(out).toContain('aria-selected="true"');
+        expect(out).toContain('aria-selected="false"');
+    });
+
+    it("gives the selected underline trigger an SSR-visible active border", () => {
+        const out = renderComp(Tabs, {
+            variant: "underline",
+            items: [
+                { value: "a", label: "A" },
+                { value: "b", label: "B" },
+            ],
+        });
+        expect(out).toContain("border-b-2 border-primary");
+        expect(out).toContain("border-b-2 border-transparent");
     });
 });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "@cossackframework/renderer";
-import { Icon } from "../src/icons/Icon";
-import { normalizeStyle, type IconEntry } from "@cossackframework/solar-icons/types";
+import { Icon, normalizeStyle } from "../src/icons/Icon";
+import type { IconEntry } from "@cossackframework/solar-icons/types";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
 function renderEntry(entry: IconEntry | undefined, props: Record<string, any> = {}): string {

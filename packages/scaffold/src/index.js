@@ -212,8 +212,8 @@ const BASE_PATHS = new Set([
   'src/vite-env.d.ts',
   'vite.config.dev.ts',
   'vite.config.ts',
-  'worker-configuration.d.ts',
   'wrangler.jsonc',
+  'vitest.config.ts',
 ]);
 const UI_PATHS = new Set([
   'src/App.ts',
@@ -486,6 +486,7 @@ function packageJson(recipe, projectName) {
     prettier: dependencyVersion('prettier'),
     tailwindcss: dependencyVersion('tailwindcss'),
     tsx: dependencyVersion('tsx'),
+    typescript: dependencyVersion('typescript'),
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
@@ -553,8 +554,9 @@ function packageJson(recipe, projectName) {
       : {
         dev: 'vite dev',
         build: 'vite build',
-        'build:ssg': 'vite build && cossack ssg',
-        deploy: 'vite build && cossack ssg && wrangler deploy',
+        'build:ssg': 'vite build',
+        'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
+        deploy: 'vite build && wrangler deploy',
       };
   if (recipe.resolvedFeatures.includes('desktop')) {
     scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
@@ -1573,6 +1575,7 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if ((recipe.adapter === 'node' || recipe.adapter === 'deno') &&
         ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
+    if (recipe.adapter !== 'node' && rel === 'scripts/dev.js') continue;
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
       content = text(nodeEntry(
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
@@ -1585,6 +1588,30 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if ((recipe.adapter === 'node' || recipe.adapter === 'deno') && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
+    }
+    if (rel === 'vite.config.ts') {
+      let viteConfig = content.toString('utf8');
+      if (!recipe.resolvedFeatures.includes('ui')) {
+        viteConfig = viteConfig.replace(
+          /^\s*exclude: \['@cossackframework\/solar-icons'\],\n/gm,
+          '',
+        );
+      }
+      const optionalPackages = [
+        ['ui', '@cossackframework/ui'],
+        ['ui', '@cossackframework/solar-icons'],
+        ['auth', '@cossackframework/auth'],
+        ['database', '@cossackframework/database'],
+      ];
+      for (const [feature, packageName] of optionalPackages) {
+        if (!recipe.resolvedFeatures.includes(feature)) {
+          viteConfig = viteConfig.replace(
+            new RegExp(`^\\s*['\"]${packageName.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}['\"],?\\n`, 'gm'),
+            '',
+          );
+        }
+      }
+      content = text(viteConfig);
     }
     files.set(rel, { content, capability });
   }
@@ -1607,10 +1634,14 @@ export async function renderRecipe(recipe, options = {}) {
             ? ['vite/client', 'node']
             : recipe.adapter === 'deno'
               ? ['vite/client', 'node']
-              : ['./worker-configuration.d.ts', 'node']),
+              : ['vite/client', 'node']),
           ...(recipe.adapter === 'deno' ? ['@types/deno'] : []),
         ],
       },
+      include: [
+        'src/**/*.ts',
+        ...(recipe.adapter === 'cloudflare' ? ['worker-configuration.d.ts'] : []),
+      ],
     }, null, 2) + '\n'),
     capability: 'base',
   });

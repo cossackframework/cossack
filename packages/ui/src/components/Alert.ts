@@ -22,8 +22,8 @@ export interface AlertProps {
 
 const VARIANTS: Record<NonNullable<AlertProps["variant"]>, string> = {
     default: "bg-card text-card-foreground border",
-    success: "bg-success/10 text-success",
-    warning: "bg-warning/10 text-warning",
+    success: "bg-success/10 text-success-text",
+    warning: "bg-warning/10 text-warning-text",
     destructive: "bg-destructive/10 text-destructive",
 };
 

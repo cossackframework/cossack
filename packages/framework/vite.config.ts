@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 import path from 'path';
 import http from 'http';
@@ -5,10 +6,10 @@ import { spawn } from 'child_process';
 import url from 'url';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
-import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin';
-import { cossackSecurityPlugin } from './src/vite-security-plugin';
-import { cossackSsg } from './src/vite-ssg-plugin';
-import { processMarkdown } from './src/markdown-processor';
+import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from './src/vite-plugin.ts';
+import { cossackSecurityPlugin } from './src/vite-security-plugin.ts';
+import { cossackSsg } from './src/vite-ssg-plugin.ts';
+import { processMarkdown } from './src/markdown-processor.ts';
 
 function cossackDevTools(): Plugin {
   return {
@@ -70,6 +71,12 @@ function cossackDevTools(): Plugin {
 }
 
 export default defineConfig({
+  test: {
+    // Playwright owns e2e/**/*.spec.ts. Keeping Vitest on the unit-test tree
+    // prevents Playwright suites from being imported outside its runner.
+    include: ['tests/**/*.test.ts'],
+    environment: 'node',
+  },
   plugins: [
     tailwindcss(),
     // Cloudflare plugin is incompatible with Vitest 4's resolve.external defaults.
@@ -100,8 +107,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '~': path.resolve(__dirname, './dist/client'),
+      '@': path.resolve(import.meta.dirname, './src'),
+      '~': path.resolve(import.meta.dirname, './dist/client'),
     },
   },
   environments: {

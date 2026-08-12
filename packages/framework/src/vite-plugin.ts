@@ -12,6 +12,41 @@ const resolvedVirtualModuleId = '\0' + virtualModuleId;
 const langVirtualModuleId = 'virtual:cossack-lang';
 const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
 
+const PAGE_GLOB_EXCLUDES = [
+  '!/src/pages/**/layout.ts',
+  '!/src/pages/**/loading.ts',
+  '!/src/pages/**/*.d.ts',
+  '!/src/pages/**/*.test.*',
+  '!/src/pages/**/*.spec.*',
+  '!/src/pages/**/__tests__/**',
+  '!/src/pages/**/__fixtures__/**',
+  '!/src/pages/**/fixtures/**',
+];
+
+const TEST_DIRECTORIES = new Set(['__tests__', '__fixtures__', 'fixtures']);
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function injectMarkdownByline(html: string, author: string, date: string): string {
+  if (!author && !date) return html;
+  const authorMarkup = author ? `<span>By ${escapeHtmlText(author)}</span>` : '';
+  const separator = author && date ? '<span aria-hidden="true">·</span>' : '';
+  const dateMarkup = date
+    ? `<time datetime="${escapeHtmlText(date)}">${escapeHtmlText(date)}</time>`
+    : '';
+  const byline = `<p class="mdx-byline mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">${authorMarkup}${separator}${dateMarkup}</p>`;
+  const headingEnd = html.indexOf('</h1>');
+  const insertionIndex = headingEnd >= 0 ? headingEnd + '</h1>'.length : 0;
+  return html.slice(0, insertionIndex) + byline + html.slice(insertionIndex);
+}
+
 /**
  * Public path the SSR runtime uses to fetch the Vite manifest via the
  * Cloudflare ASSETS binding. The Cloudflare Vite plugin generates a
@@ -92,9 +127,11 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         // Client environment: lazy loading (code splitting for performance)
         const isSsrEnvironment = this.environment?.name !== 'client';
 
-        const pagePatterns = markdownEnabled
-          ? "['/src/pages/**/*.ts', '/src/pages/**/*.mdx', '/src/pages/**/*.md', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']"
-          : "['/src/pages/**/*.ts', '!/src/pages/**/layout.ts', '!/src/pages/**/loading.ts']";
+        const pagePatterns = JSON.stringify([
+          '/src/pages/**/*.ts',
+          ...(markdownEnabled ? ['/src/pages/**/*.mdx', '/src/pages/**/*.md'] : []),
+          ...PAGE_GLOB_EXCLUDES,
+        ]);
 
         return `
           const pages = import.meta.glob(${pagePatterns}${isSsrEnvironment ? ', { eager: true }' : ''});
@@ -140,25 +177,16 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           return;
         }
         const { html: htmlContent, frontmatter } = await options.markdownProcessor(code, id);
-        const headingEnd = htmlContent.indexOf('</h1>');
-        const contentLead = headingEnd >= 0
-          ? htmlContent.slice(0, headingEnd + '</h1>'.length)
-          : '';
-        const contentBody = headingEnd >= 0
-          ? htmlContent.slice(headingEnd + '</h1>'.length)
-          : htmlContent;
         const author = typeof frontmatter.author === 'string' ? frontmatter.author : '';
         const date = typeof frontmatter.date === 'string' ? frontmatter.date : '';
+        const renderedMarkdown = injectMarkdownByline(htmlContent, author, date);
 
         return {
           code: `
             import { Cossack } from '@cossackframework/core';
             import { html, unsafeHTML } from '@cossackframework/renderer';
 
-            const markdownLead = ${JSON.stringify(contentLead)};
-            const markdownBody = ${JSON.stringify(contentBody)};
-            const markdownAuthor = ${JSON.stringify(author)};
-            const markdownDate = ${JSON.stringify(date)};
+            const markdownContent = ${JSON.stringify(renderedMarkdown)};
 
             class MdxPage extends Cossack {
               head() {
@@ -170,17 +198,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               }
 
               render() {
-                const byline = markdownAuthor || markdownDate
-                  ? html\`<p class="mdx-byline mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
-                      \${markdownAuthor ? html\`<span>By \${markdownAuthor}</span>\` : ''}
-                      \${markdownAuthor && markdownDate ? html\`<span aria-hidden="true">·</span>\` : ''}
-                      \${markdownDate ? html\`<time datetime=\${markdownDate}>\${markdownDate}</time>\` : ''}
-                    </p>\`
-                  : '';
                 return html\`<div class="mdx-content">
-                  \${unsafeHTML(markdownLead)}
-                  \${byline}
-                  \${unsafeHTML(markdownBody)}
+                  \${unsafeHTML(markdownContent)}
                 </div>\`;
               }
             }
@@ -246,7 +265,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
  * layouts = `layout.ts`). Keys use the `/src/pages/<rel>` format with forward
  * slashes, exactly like Vite's glob keys.
  */
-function scanPagesDir(
+export function scanPagesDir(
   pagesDir: string,
   includeMarkdown: boolean,
 ): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
@@ -259,8 +278,12 @@ function scanPagesDir(
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
+        if (TEST_DIRECTORIES.has(entry.name)) continue;
         walk(fullPath);
       } else if (entry.isFile()) {
+        if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith('.d.ts')) {
+          continue;
+        }
         const rel = relative(pagesDir, fullPath).split(sep).join('/');
         const key = `/src/pages/${rel}`;
         if (entry.name === 'layout.ts') {

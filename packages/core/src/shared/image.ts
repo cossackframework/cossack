@@ -1,4 +1,4 @@
-import { html } from '@cossackframework/renderer';
+import { html, ifDefined } from '@cossackframework/renderer';
 
 export interface ImageProps {
     src: string;
@@ -47,6 +47,8 @@ export function Image(props: ImageProps) {
     return html`<img 
         src="${finalSrc}" 
         alt="${props.alt || ''}" 
+        width=${ifDefined(props.width)}
+        height=${ifDefined(props.height)}
         class="${props.class || ''}" 
         loading="${props.loading || 'lazy'}" 
     />`;

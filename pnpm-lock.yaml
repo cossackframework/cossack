@@ -469,7 +469,7 @@ importers:
         specifier: workspace:*
         version: link:../renderer
       '@cossackframework/solar-icons':
-        specifier: ^0.7.1
+        specifier: 0.7.1
         version: 0.7.1
       '@types/node':
         specifier: ^22.19.0

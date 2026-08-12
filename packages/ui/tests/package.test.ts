@@ -47,4 +47,17 @@ describe('published package contract', () => {
   it('builds before publishing', () => {
     expect(packageJson.scripts.prepublishOnly).toBe('pnpm run build');
   });
+
+  it('ships distinct accessible text tokens for tinted semantic surfaces', () => {
+    const theme = readFileSync(resolve(__dirname, '..', 'src/theme/theme.css'), 'utf8');
+    const neutral = readFileSync(
+      resolve(__dirname, '..', 'src/theme/themes/neutral.css'),
+      'utf8',
+    );
+    expect(theme).toContain('--success-text:');
+    expect(theme).toContain('--warning-text:');
+    expect(theme).toContain('--color-success-text: var(--success-text)');
+    expect(theme).toContain('--color-warning-text: var(--warning-text)');
+    expect(neutral).toContain('--muted-foreground: oklch(0.5 0 0)');
+  });
 });

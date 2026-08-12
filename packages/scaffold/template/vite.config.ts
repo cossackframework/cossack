@@ -16,12 +16,6 @@ export default defineConfig(({ mode }) => ({
       ignored: ['**/.wrangler/**'],
     },
   },
-  // Solar Icons ships as native ESM. Let Vite serve its deep imports directly
-  // so discovering icons from lazy-loaded pages cannot invalidate the client
-  // dependency bundle and force a post-load refresh.
-  optimizeDeps: {
-    exclude: ['@cossackframework/solar-icons'],
-  },
   plugins: [
     tailwindcss(),
     // @cossack:cloudflare-start
@@ -90,16 +84,7 @@ export default defineConfig(({ mode }) => ({
             noExternal: true,
           }
         : {
-            // UI imports Solar Icons through deep TypeScript-source exports.
-            // Bundle the parent UI graph and those icons into Node SSR output
-            // instead of leaving imports that Node refuses to type-strip from
-            // node_modules in production.
-            noExternal: [
-              '@cossackframework/ui',
-              '@cossackframework/solar-icons',
-              'hono',
-              'css-tree',
-            ],
+            noExternal: ['hono', 'css-tree'],
           },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency
@@ -112,7 +97,6 @@ export default defineConfig(({ mode }) => ({
           '@cossackframework/framework/cache',
           'hono/cookie',
         ],
-        exclude: ['@cossackframework/solar-icons'],
       },
     },
   },
