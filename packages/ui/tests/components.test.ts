@@ -599,6 +599,17 @@ describe("Sheet", () => {
         expect(out).toContain("width:500px");
     });
 
+    it("fills the viewport when fullScreen is enabled", () => {
+        const horizontal = renderComp(Sheet, { side: "left", fullScreen: true });
+        expect(horizontal).toContain("width:100vw;max-width:100vw");
+        expect(horizontal).not.toContain("max-width:90vw");
+        expect(horizontal).not.toContain("fullScreen");
+
+        const vertical = renderComp(Sheet, { side: "top", fullScreen: true });
+        expect(vertical).toContain("height:100vh;max-height:100vh");
+        expect(vertical).not.toContain("max-height:85vh");
+    });
+
     it("forwards accessible dialog attributes", () => {
         const out = renderComp(Sheet, { "aria-label": "Demo navigation" });
         expect(out).toContain('aria-label="Demo navigation"');

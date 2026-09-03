@@ -196,6 +196,10 @@ describe('recipe resolution', () => {
       .toContain("resolve: mode === 'desktop'");
     expect(files.get('vite.config.ts').content.toString())
       .toContain("'css-tree'");
+    if (recipe.resolvedFeatures.includes('ui')) {
+      expect(files.get('vite.config.ts').content.toString())
+        .toMatch(/noExternal:\s*\[[\s\S]*'@cossackframework\/ui'[\s\S]*'@cossackframework\/solar-icons'/);
+    }
     expect(files.get('vite.config.ts').content.toString())
       .toContain("ignored: ['**/.wrangler/**']");
     expect(files.get('vite.config.ts').content.toString())

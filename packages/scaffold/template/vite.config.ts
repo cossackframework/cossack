@@ -84,7 +84,15 @@ export default defineConfig(({ mode }) => ({
             noExternal: true,
           }
         : {
-            noExternal: ['hono', 'css-tree'],
+            // Solar Icons 0.7.2 publishes TypeScript runtime entry points.
+            // Transform UI and its icon dependency in Vite's SSR graph rather
+            // than passing raw TypeScript to Node's native module loader.
+            noExternal: [
+              'hono',
+              'css-tree',
+              '@cossackframework/ui',
+              '@cossackframework/solar-icons',
+            ],
           },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency

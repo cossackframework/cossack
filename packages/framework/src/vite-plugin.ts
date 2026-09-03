@@ -105,10 +105,28 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     // published JS directly and cannot resolve the `virtual:cossack-*` scheme.
     // Keep it in Vite's module graph so both virtual modules and package-local
     // ESM imports are transformed consistently for external applications.
+    // UI and Solar Icons must also stay in the SSR graph: Solar Icons 0.7.2
+    // exposes some runtime entry points as TypeScript, which recent Node
+    // versions refuse to strip when Vite externalizes the transitive import.
     config() {
       return {
         ssr: {
-          noExternal: ['@cossackframework/framework'],
+          noExternal: [
+            '@cossackframework/framework',
+            '@cossackframework/ui',
+            '@cossackframework/solar-icons',
+          ],
+        },
+        environments: {
+          ssr: {
+            resolve: {
+              noExternal: [
+                '@cossackframework/framework',
+                '@cossackframework/ui',
+                '@cossackframework/solar-icons',
+              ],
+            },
+          },
         },
       };
     },
