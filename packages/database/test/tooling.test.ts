@@ -9,6 +9,21 @@ import {
 } from "../src/tooling/index.js";
 
 describe("ORM tooling API", () => {
+  it("reports the failing migration, SQL, and underlying Postgres diagnostics", async () => {
+    const stderr: string[] = [];
+    expect(await runORMCommand(["migration", "up"], {
+      configPath: resolve("test/fixtures/migration-error.config.ts"),
+      stderr: (message) => stderr.push(message),
+    })).toBe(1);
+    const output = stderr.join("\n");
+    expect(output).toContain("Migration 0000_enable_postgis failed");
+    expect(output).toContain("SQL: CREATE EXTENSION postgis");
+    expect(output).toContain('extension "postgis" is not available');
+    expect(output).toContain("Code: 0A000");
+    expect(output).toContain('Detail: Could not open extension control file "postgis.control".');
+    expect(output).toContain("Hint: The extension must first be installed");
+  });
+
   it("loads config and creates an ORM", async () => {
     const config = await loadORMConfig(resolve("test/fixtures/tooling.config.ts"));
     const orm = await createORMFromConfig(config);

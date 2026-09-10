@@ -2,7 +2,7 @@
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mergeConfig } from 'vite';
+import { createServer, mergeConfig, type Plugin } from 'vite';
 import { cossackPages } from '../src/vite-plugin.js';
 
 const require = createRequire(import.meta.url);
@@ -220,7 +220,24 @@ describe('external application SSR contract', () => {
     expect(typeof configHook).toBe('function');
     const config = (configHook as Function)({}, { command: 'serve', mode: 'development' });
     expect(config).toMatchObject({
-      ssr: { noExternal: ['@cossackframework/framework'] },
+      ssr: {
+        noExternal: [
+          '@cossackframework/framework',
+          '@cossackframework/ui',
+          '@cossackframework/solar-icons',
+        ],
+      },
+      environments: {
+        ssr: {
+          resolve: {
+            noExternal: [
+              '@cossackframework/framework',
+              '@cossackframework/ui',
+              '@cossackframework/solar-icons',
+            ],
+          },
+        },
+      },
     });
   });
 
@@ -234,6 +251,36 @@ describe('external application SSR contract', () => {
     expect(merged.ssr?.noExternal).toEqual([
       'user-package',
       '@cossackframework/framework',
+      '@cossackframework/ui',
+      '@cossackframework/solar-icons',
     ]);
   });
+
+  it('loads UI and Solar Icons through Node vite.ssrLoadModule()', async () => {
+    const entryId = '\0cossack-node-ui-ssr-entry';
+    const entryPlugin: Plugin = {
+      name: 'cossack-node-ui-ssr-entry',
+      resolveId(id) {
+        if (id === 'virtual:cossack-node-ui-ssr-entry') return entryId;
+      },
+      load(id) {
+        if (id === entryId) {
+          return "export { Sheet } from '@cossackframework/ui';";
+        }
+      },
+    };
+    const server = await createServer({
+      configFile: false,
+      appType: 'custom',
+      server: { middlewareMode: true },
+      plugins: [cossackPages(), entryPlugin],
+    });
+
+    try {
+      const loaded = await server.ssrLoadModule('virtual:cossack-node-ui-ssr-entry');
+      expect(loaded.Sheet).toBeTypeOf('function');
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
 });

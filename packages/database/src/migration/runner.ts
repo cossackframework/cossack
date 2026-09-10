@@ -105,8 +105,7 @@ export class MigrationRunner {
               "insert",
             );
           };
-          if (this.orm.driver.capabilities.transactions) await this.orm.transaction(consolidate);
-          else await consolidate();
+          await this.runMigration(status.migration.name, consolidate);
           names.push(status.migration.name);
           continue;
         }
@@ -121,8 +120,7 @@ export class MigrationRunner {
         `;
         await this.executeAtomic(schema, bookkeeping, "insert");
       };
-      if (this.orm.driver.capabilities.transactions) await this.orm.transaction(apply);
-      else await apply();
+      await this.runMigration(status.migration.name, apply);
       names.push(status.migration.name);
     }
     return names;
@@ -145,8 +143,7 @@ export class MigrationRunner {
           "delete",
         );
       };
-      if (this.orm.driver.capabilities.transactions) await this.orm.transaction(revert);
-      else await revert();
+      await this.runMigration(status.migration.name, revert);
       names.push(status.migration.name);
     }
     return names;
@@ -170,6 +167,15 @@ export class MigrationRunner {
         (${this.orm.sql.id("name")}, ${this.orm.sql.id("checksum")}, ${this.orm.sql.id("batch")}, ${this.orm.sql.id("applied_at")})
       VALUES (${name}, ${schemaHash}, ${0}, ${new Date().toISOString()})
     `, "insert");
+  }
+
+  private async runMigration(name: string, action: () => Promise<void>): Promise<void> {
+    try {
+      if (this.orm.driver.capabilities.transactions) await this.orm.transaction(action);
+      else await action();
+    } catch (cause) {
+      throw new MigrationError(`Migration ${name} failed`, cause);
+    }
   }
 
   private sorted(): readonly Migration[] {

@@ -14,6 +14,8 @@ export interface SheetProps {
     side?: "left" | "right" | "top" | "bottom";
     /** Panel width for left/right (CSS value). Default "400px". */
     size?: string;
+    /** Fill the viewport along the sheet's sliding axis. Default false. */
+    fullScreen?: boolean;
     /** Close when the backdrop is clicked. Default true. */
     closeOnBackdrop?: boolean;
     /** Callback fired when the sheet closes. */
@@ -62,16 +64,21 @@ export class Sheet extends Cossack {
             open: _open,
             side = "right",
             size,
+            fullScreen = false,
             closeOnBackdrop = true,
             onClose: _onClose,
             ...rest
         } = this.props;
 
         const dims = SIDE_DIMENSIONS[side];
-        const dimValue = size || dims.val;
+        const dimValue = fullScreen
+            ? (dims.dim === "width" ? "100vw" : "100vh")
+            : (size || dims.val);
         const position = SIDE_POSITION[side];
         const dimStyle =
-            dims.dim === "width" ? `width:${dimValue};max-width:90vw;` : `height:${dimValue};max-height:85vh;`;
+            dims.dim === "width"
+                ? `width:${dimValue};max-width:${fullScreen ? "100vw" : "90vw"};`
+                : `height:${dimValue};max-height:${fullScreen ? "100vh" : "85vh"};`;
 
         // Transform + transition are managed by base.css (.cs-sheet__panel +
         // side variant). Inline style only carries position + dimensions.
