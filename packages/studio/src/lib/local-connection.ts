@@ -1,5 +1,6 @@
 import type { ORM, OrmSchema } from '@cossackframework/database';
 import { OperationQueue } from './queue.js';
+import { splitSqlParameters } from './sql.js';
 import type {
   StudioConnection,
   StudioConnectionInfo,
@@ -29,8 +30,13 @@ export class LocalStudioConnection implements StudioConnection {
   execute(text: string, parameters: readonly unknown[] = []): Promise<StudioQueryResult> {
     return this.queue.run(() => this.orm.run(async () => {
       const started = performance.now();
+      const nativeText = this.orm.driver.dialect === 'postgres' && parameters.length > 0
+        ? splitSqlParameters(text, parameters.length)
+          .map((fragment, index) => index === 0 ? fragment : `$${index}${fragment}`)
+          .join('')
+        : text;
       const result = await this.orm.driver.execute(
-        { text, parameters: parameters as import('@cossackframework/database').CompiledQuery['parameters'] },
+        { text: nativeText, parameters: parameters as import('@cossackframework/database').CompiledQuery['parameters'] },
         'raw',
       );
       return {

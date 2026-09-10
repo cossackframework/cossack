@@ -13,6 +13,7 @@ import {
 } from "../schema/diff.js";
 import type { OrmSchema } from "../schema/types.js";
 import { generateMigration, generateModels } from "./generate.js";
+import { formatError } from "./format-error.js";
 
 interface Arguments {
   readonly command?: string;
@@ -124,7 +125,7 @@ export async function runORMCommand(
     }
     return 0;
   } catch (cause) {
-    error(cause instanceof Error ? cause.message : String(cause));
+    error(formatError(cause));
     return 1;
   }
 }
