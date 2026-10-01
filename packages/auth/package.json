@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/auth",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "description": "Authentication utilities for the Cossack Framework",
   "license": "MIT",

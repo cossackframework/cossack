@@ -18,5 +18,6 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "version": "0.8.3"
 }
