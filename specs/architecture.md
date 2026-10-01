@@ -62,7 +62,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 4. It reads `window.__INITIAL_STATE__` to instantly populate its `@State` properties.
 5. **Client-Only State**: It also initializes any properties decorated with `@ClientState`. These properties are NOT synchronized with the server and are excluded from the initial state script.
 6. It also reads the list of server method names and **replaces them** with proxy functions.
-7. Crucially, it reads the **Server Runtime Targets** (e.g., Durable Object IDs or logical references) for each **State Provider** and establishes a WebSocket connection for each one.
+7. It sets up the configured transport. Pages default to HTTP RPC. SSE pages subscribe to their event stream, while WebSocket/Durable Object pages connect to their state provider runtime.
 8. **Instant Navigation (Soft Navigation)**: When a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click. instead of a full reload, it:
     * **Pre-fetching**: The framework automatically begins fetching the next page data when the user hovers over a link, effectively hiding network latency.
     * **Caching**: All visited and pre-fetched pages are stored in a memory cache. If a URL is in the cache, the transition happens instantaneously without a network request.
@@ -72,11 +72,11 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 ### 3. Server Runtime Interaction & State Synchronization
 
 1. When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
-2. **Function Binding**: All event handlers must use **Arrow Functions** (e.g., `toggle = () => { ... }`) to make sure that the correct `this` context is preserved when called by the browser's event system.
+2. **Function Binding**: Component methods are automatically bound during bootstrap. Use regular methods for event handlers and mark browser handlers with `@Client()` (or another appropriate client-safe decorator). Arrow-function class fields are unnecessary.
 3. **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
-3. The proxy function sends a JSON message over the appropriate provider's WebSocket (e.g., `{ "type": "action", "action": "incrementFeed", "payload": [] }`).
-4. The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
-5. From here, one of two state synchronization patterns occurs:
+4. The proxy function sends the action through the configured transport: HTTP RPC for HTTP/SSE pages, or a message over the provider's WebSocket.
+5. The **Server Runtime** (e.g., `AppDurableObject` or `NodeWebSocketRuntime`) receives the message and calls the real method on its internal component instance.
+6. From here, one of two state synchronization patterns occurs:
 
  **a) Automatic State Push (Default):**
     - The server method modifies a `@State` property (e.g., `this.feedCount++`).
@@ -107,7 +107,7 @@ The framework includes a **security plugin** (`vite-security-plugin.ts`) that au
 
 ### How It Works
 
-During the client build, the `cossackSecurityPlugin` analyzes component class methods using AST-style brace depth tracking and:
+During the client build, the `cossackSecurityPlugin` analyzes component class methods and:
 
 1. **Keeps** methods decorated with `@Client`, `@Optimistic`, `@Computed`, `@Shared`, `@OnEvent`
 2. **Keeps** built-in lifecycle methods: `render`, `head`, `onMount`, `onCleanup`, `escapeHtml`, `loadingTemplate`, `toString`, `valueOf`
@@ -216,15 +216,19 @@ The framework uses vitest for unit tests and Playwright for end-to-end tests.
 
 ### Unit Tests
 
-Run core package tests:
+Build the workspace dependencies, then run every package with a unit suite:
+
 ```sh
-cd packages/core && pnpm vitest --run
+pnpm build
+pnpm typecheck
+pnpm test:unit
 ```
 
-Run framework package unit tests:
-```sh
-cd packages/framework && pnpm vitest --run tests/
-```
+The root command runs Vitest once (no watch mode), including UI, auth, Node
+adapter, and framework tests. `test-utils` currently has no suite and is
+excluded. Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
+focused run. Similar direct-binding and spread-binding renderer tests cover
+different execution paths and should both be retained.
 
 ### End-to-End Tests
 

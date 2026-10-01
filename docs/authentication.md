@@ -166,11 +166,16 @@ export default class LoginPage extends Cossack {
 
 If you prefer a raw endpoint (e.g. for an API consumer), use `auth.createLoginHandler(...)` and mount it in `src/index.ts`:
 
+
+The handler uses the provider's `createSession` when omitted. Pass a per-handler
+`createSession` to override it. If neither is configured, the handler returns
+a configuration error (HTTP 500).
+
 ```typescript
 // src/auth.ts
 export const loginHandler = auth.createLoginHandler({
     validateCredentials: async ({ email, password }, c) => { /* ... */ },
-    createSession: auth.createSession!, // reuse the provider's creator
+    // Uses the provider's createSession by default.
 });
 
 // src/index.ts

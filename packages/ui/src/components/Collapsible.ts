@@ -1,5 +1,7 @@
-import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component, ClientState, Client } from "@cossackframework/core";
+import { html } from "@cossackframework/renderer";
+import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
+
+import { DisclosureController, disclosureStyle } from "../internal/disclosure";
 
 export interface CollapsibleProps {
     /** Default open state for uncontrolled usage. */
@@ -18,7 +20,7 @@ export interface CollapsibleProps {
  *
  * Similar to Accordion but without the summary/trigger — the parent controls
  * what triggers the toggle (usually a Button). Uses the same @ClientState +
- * measured max-height technique for smooth animation.
+ * height animation as Accordion, with unclipped content while open.
  *
  *   ${component(Collapsible, { trigger: component(Button, {}, 'Toggle') },
  *       html\`<p>Hidden content</p>\`)}
@@ -29,31 +31,32 @@ export class Collapsible extends Cossack {
 
     @ClientState() private internalOpen = false;
     @ClientState() private userInteracted = false;
-    @ClientState() private contentHeight = 0;
+    contentRef = createRef<HTMLDivElement>();
+    wrapperRef = createRef<HTMLDivElement>();
+    private disclosure = new DisclosureController(this, () => ({
+        open: this.isOpen,
+        wrapper: this.wrapperRef.value,
+        content: this.contentRef.value,
+    }));
+
+    private get isOpen(): boolean {
+        return this.props.open !== undefined ? !!this.props.open
+            : this.userInteracted ? this.internalOpen : !!this.props.defaultOpen;
+    }
 
     render() {
         const { trigger } = this.props;
 
-        let open: boolean;
-        if (this.props.open !== undefined) {
-            open = !!this.props.open;
-        } else if (this.userInteracted) {
-            open = this.internalOpen;
-        } else {
-            open = !!this.props.defaultOpen;
-            this.internalOpen = open;
-        }
-
-        const targetHeight = this.contentHeight > 0 ? this.contentHeight : 200;
-        const contentStyle = `max-height: ${open ? targetHeight + "px" : "0"}; transition: max-height 300ms cubic-bezier(0.16,1,0.3,1);`;
+        const open = this.isOpen;
 
         return html`
             <div class="cs-collapsible w-full">
                 <div class="cs-collapsible__trigger" @click=${(e: Event) => { e.stopPropagation(); this.toggle(); }}>
                     ${trigger}
                 </div>
-                <div class="cs-collapsible__content-wrapper overflow-hidden" style=${contentStyle}>
-                    <div class="cs-collapsible__content-wrapper-inner">
+                <div class="cs-collapsible__content-wrapper" ref=${this.wrapperRef}
+                    style=${disclosureStyle(open)} ?inert=${!open} aria-hidden=${open ? "false" : "true"}>
+                    <div class="cs-collapsible__content-wrapper-inner" ref=${this.contentRef} style="display: flow-root;">
                         ${this.children}
                     </div>
                 </div>
@@ -63,9 +66,7 @@ export class Collapsible extends Cossack {
 
     @Client()
     toggle() {
-        const currentOpen = this.props.open !== undefined
-            ? !!this.props.open
-            : this.userInteracted ? this.internalOpen : !!this.props.defaultOpen;
+        const currentOpen = this.isOpen;
 
         if (this.props.open !== undefined) {
             this.props.onToggle?.(!currentOpen);
@@ -76,11 +77,11 @@ export class Collapsible extends Cossack {
         this.props.onToggle?.(this.internalOpen);
     }
 
-    @Client()
     onMount() {
-        requestAnimationFrame(() => {
-            const wrapper = (this as any).container?.querySelector(".cs-collapsible__content-wrapper-inner");
-            if (wrapper) this.contentHeight = wrapper.scrollHeight;
-        });
+        this.disclosure.hostUpdated();
+    }
+
+    onCleanup() {
+        this.disclosure.hostDisconnected();
     }
 }

@@ -66,8 +66,11 @@ Both approaches provide the same two helpers:
 
 ### What `cossackScripts()` includes
 
-- Head tags defined by your page and layout components via `head()`
-- CSS stylesheet link (or inline CSS with deferred load in production)
+- Head tags defined by your page and layout components via `head()`. Attribute
+  values are HTML-escaped; `undefined` and false boolean attributes are omitted.
+  Pass ordinary strings without pre-escaping them.
+- CSS stylesheet link (or inline CSS with deferred load in production). A
+  production entry without a CSS asset emits no stylesheet link.
 - `window.__INITIAL_STATE__` script for client-side hydration
 - Module preload links for route-specific chunks
 - The client entry `<script type="module">` tag

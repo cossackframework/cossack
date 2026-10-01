@@ -31,6 +31,11 @@ describe('crypto — signValue / verifyValue', () => {
     expect(decoded).toEqual(payload);
   });
 
+  it('round-trips Unicode keys and values without corrupting flash input', async () => {
+    const payload = { '名前': 'Nguyễn — สวัสดี 👋', nested: ['café', '東京'] };
+    expect(await verifyValue(await signValue(payload, SECRET), SECRET)).toEqual(payload);
+  });
+
   it('round-trips a string payload', async () => {
     const token = await signValue('simple', SECRET);
     expect(await verifyValue<string>(token, SECRET)).toBe('simple');
@@ -68,12 +73,14 @@ describe('crypto — signValue / verifyValue', () => {
     expect(await verifyValue('.signature', SECRET)).toBeNull();
   });
 
-  it('returns null for non-JSON payloads (even if signature matched)', async () => {
-    // Craft a token whose payload decodes to invalid JSON. We sign a valid
-    // payload first to get the right format, then the test just confirms the
-    // parser rejects garbage — but since signValue always produces valid JSON,
-    // we instead verify the constant-time path doesn't throw on weird input.
-    expect(await verifyValue('====.====', SECRET)).toBeNull();
+  it('rejects correctly signed invalid JSON and invalid UTF-8', async () => {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    for (const bytes of [new TextEncoder().encode('not json'), new Uint8Array([34, 0xff, 34])]) {
+      const encoded = base64url(bytes);
+      const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(encoded));
+      expect(await verifyValue(`${encoded}.${base64url(signature)}`, SECRET)).toBeNull();
+    }
   });
 });
 

@@ -2,9 +2,9 @@ import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export interface ProgressProps {
-    /** Current value (0 to max). */
+    /** Current value, clamped to 0..max. Non-finite values fall back to 0. */
     value?: number;
-    /** Maximum value. Default 100. */
+    /** Positive, finite maximum value. Invalid values fall back to 100. */
     max?: number;
     /** Size token: sm | md | lg. Controls height. */
     size?: "sm" | "md" | "lg";
@@ -34,7 +34,9 @@ export class Progress extends Cossack {
 
     render() {
         const { value = 0, max = 100, size = "md", ...rest } = this.props;
-        const pct = Math.min(100, Math.max(0, (value / max) * 100));
+        const maximum = Number.isFinite(max) && max > 0 ? max : 100;
+        const current = Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : 0;
+        const pct = (current / maximum) * 100;
 
         const classes = classMap({
             "cs-progress": true,
@@ -46,9 +48,9 @@ export class Progress extends Cossack {
             <div
                 class=${classes}
                 role="progressbar"
-                aria-valuenow=${value}
+                aria-valuenow=${current}
                 aria-valuemin="0"
-                aria-valuemax=${max}
+                aria-valuemax=${maximum}
                 ...=${rest}
             >
                 <div

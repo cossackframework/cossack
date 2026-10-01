@@ -25,6 +25,17 @@ Boolean attributes are removed if `false/null/undefined`.
 html`<button ?disabled="${isDisabled}">Click</button>`;
 ```
 
+### Table rows
+
+Wrap dynamic table rows in an explicit `<tbody>`:
+
+```typescript
+html`<table><tbody>${rows.map(row => html`<tr><td>${row.name}</td></tr>`)}</tbody></table>`;
+```
+
+Browsers insert a missing `<tbody>` while parsing HTML. That can move hydration
+markers and force the client to rebuild the server-rendered table.
+
 ### Event Binding
 
 Bind event listeners using Lit's `@` syntax.

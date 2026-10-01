@@ -91,7 +91,10 @@ export async function verifyCookieValue(token: string, secret: string): Promise<
     if (!constantTimeEqual(sig, expected)) return null;
 
     try {
-        const json = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+        const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+        const json = new TextDecoder('utf-8', { fatal: true }).decode(
+            Uint8Array.from(binary, char => char.charCodeAt(0)),
+        );
         const parsed = JSON.parse(json) as OAuthStatePayload;
         if (typeof parsed.state !== 'string' || typeof parsed.codeVerifier !== 'string') return null;
         return parsed;

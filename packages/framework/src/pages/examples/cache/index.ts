@@ -112,10 +112,12 @@ export default class CacheExample extends Cossack {
                         `)}
 
                         <table class="border-collapse mb-4">
-                            ${this.row('Written to cache at', this.storedAt)}
-                            ${this.row('Read from cache at', this.cachedAt)}
-                            ${this.row('Actual current time at read', this.readAt)}
-                            ${this.row('Artificial delay', `${this.elapsedMs}ms`)}
+                            <tbody>
+                                ${this.row('Written to cache at', this.storedAt)}
+                                ${this.row('Read from cache at', this.cachedAt)}
+                                ${this.row('Actual current time at read', this.readAt)}
+                                ${this.row('Artificial delay', `${this.elapsedMs}ms`)}
+                            </tbody>
                         </table>
 
                         <p class="text-sm text-gray-500">

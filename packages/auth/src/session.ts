@@ -18,9 +18,9 @@ export type LoginHandlerOptions<User> = {
     validateCredentials: (credentials: any, c: Context) => Promise<User | null>;
     /**
      * Per-call session creator. Overrides any `createSession` configured on
-     * the {@link AuthProvider} for this login handler.
+     * the {@link AuthProvider} for this login handler. Omit to use the provider.
      */
-    createSession: SessionCreator<User>;
+    createSession?: SessionCreator<User>;
 };
 
 export type AuthKit<User> = {

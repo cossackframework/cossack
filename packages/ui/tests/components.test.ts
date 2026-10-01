@@ -65,7 +65,6 @@ describe("Button", () => {
         const out = renderComp(Button, {}, "Save");
         expect(out).toContain("cs-button");
         expect(out).toContain("cs-button--default");
-        expect(out).toContain("cs-button--default");
         expect(out).toContain("Save");
         expect(out).toContain("</button>");
     });
@@ -202,17 +201,6 @@ describe("Modal", () => {
         expect(out).toContain("Body");
     });
 
-    it("binds inline close/cancel/click handlers on the dialog", () => {
-        // Event handlers (@close/@cancel/@click) are functions and don't emit
-        // as attributes in SSR — they're wired client-side. We assert the
-        // dialog element + its cs-modal hook are present (the wiring target).
-        const out = renderComp(Modal, {});
-        expect(out).toContain("<dialog");
-        expect(out).toContain("cs-modal");
-        // The panel slot renders the body content.
-        expect(out).toContain("cs-modal__panel");
-    });
-
     it("passes accessibility and data attributes through to the dialog", () => {
         const out = renderComp(Modal, {
             "aria-label": "Release notes",
@@ -237,15 +225,16 @@ describe("AccordionItem", () => {
         expect(out).toContain("cs-accordion__content-wrapper");
     });
 
-    it("reflects the open state via max-height style and aria-expanded", () => {
+    it("renders unclamped open content and inert closed content", () => {
         const open = renderComp(AccordionItem, { open: true, summary: "X" });
         const closed = renderComp(AccordionItem, { open: false, summary: "X" });
-        // Open: max-height is a positive value (200px fallback before measurement)
-        expect(open).toContain("max-height: 200px");
-        // Closed: max-height is 0
-        expect(closed).toContain("max-height: 0");
-        // aria-expanded reflects state
-        expect(open).toContain("aria-expanded");
+        expect(open).toContain("height: auto; overflow: visible");
+        expect(open).toContain('aria-expanded="true"');
+        expect(open).not.toContain("inert");
+        expect(closed).toContain("height: 0; overflow: hidden");
+        expect(closed).toContain('aria-expanded="false"');
+        expect(closed).toContain('aria-hidden="true"');
+        expect(closed).toContain("inert");
     });
 
     it("renders a chevron svg that rotates when open", () => {
@@ -396,6 +385,21 @@ describe("Progress", () => {
         expect(out).toContain("aria-valuemax");
         expect(out).toContain("cs-progress");
         expect(out).toContain("width:60%");
+    });
+
+    it.each([
+        { value: -5, max: 100, current: 0, maximum: 100, percent: 0 },
+        { value: 120, max: 80, current: 80, maximum: 80, percent: 100 },
+        { value: 0, max: 0, current: 0, maximum: 100, percent: 0 },
+        { value: 50, max: -1, current: 50, maximum: 100, percent: 50 },
+        { value: 50, max: Infinity, current: 50, maximum: 100, percent: 50 },
+        { value: NaN, max: NaN, current: 0, maximum: 100, percent: 0 },
+        { value: Infinity, max: 100, current: 0, maximum: 100, percent: 0 },
+    ])("keeps visual and accessible ranges consistent for $value / $max", ({ value, max, current, maximum, percent }) => {
+        const out = renderComp(Progress, { value, max });
+        expect(out).toContain(`aria-valuenow="${current}"`);
+        expect(out).toContain(`aria-valuemax="${maximum}"`);
+        expect(out).toContain(`width:${percent}%`);
     });
 });
 
@@ -633,12 +637,12 @@ describe("Collapsible", () => {
         expect(out).toContain("cs-collapsible");
         expect(out).toContain("Toggle");
         expect(out).toContain("Hidden text");
-        expect(out).toContain("max-height: 0");
+        expect(out).toContain("height: 0; overflow: hidden");
     });
 
     it("shows content when defaultOpen is true", () => {
         const out = renderComp(Collapsible, { trigger: "T", defaultOpen: true }, "X");
-        expect(out).toContain("max-height: 200px");
+        expect(out).toContain("height: auto; overflow: visible");
     });
 });
 

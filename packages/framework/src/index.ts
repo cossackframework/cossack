@@ -3,13 +3,14 @@
 // src/index.ts
 import { createApp } from './router.js';
 import { AppDurableObject } from './DurableObject.js';
+import { App } from './App.js';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
 import './i18n-globals.js';
 // Side-effect: registers `config`, `env`, `binding` as globals.
 import './config-globals.js';
 
 // Create the Hono app. The vite plugin will handle injecting the pages.
-const app = createApp();
+const app = createApp({ AppComponent: App });
 
 // Export the Durable Object and the app fetch handler for the Cloudflare runtime
 export { AppDurableObject };

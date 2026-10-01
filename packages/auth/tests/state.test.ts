@@ -72,6 +72,11 @@ describe('signCookieValue / verifyCookieValue', () => {
         expect(decoded).toEqual(payload);
     });
 
+    it('round-trips UTF-8 payloads', async () => {
+        const payload = { state: 'café 👋', codeVerifier: '東京' };
+        expect(await verifyCookieValue(await signCookieValue(payload, secret), secret)).toEqual(payload);
+    });
+
     it('rejects a tampered payload', async () => {
         const token = await signCookieValue(payload, secret);
         // Flip a character in the encoded payload portion (before the dot).
@@ -101,19 +106,8 @@ describe('signCookieValue / verifyCookieValue', () => {
         expect(await verifyCookieValue('only-one-part', secret)).toBeNull();
     });
 
-    it('rejects payloads with wrong shape', async () => {
-        // Manually craft a validly-signed token with bad JSON shape.
-        const badPayload = { state: 'abc' }; // missing codeVerifier
-        const json = JSON.stringify(badPayload);
-        const encoded = base64url(new TextEncoder().encode(json));
-        // Compute the HMAC by reusing signCookieValue on a known-good payload
-        // then swapping the encoded portion — easier: just sign directly.
+    it.each([null, [], { state: 'abc' }, { state: 1, codeVerifier: 'xyz' }])('rejects signed payloads with wrong shape: %j', async (badPayload) => {
         const token = await signCookieValue(badPayload as never, secret);
-        // Replace its payload portion with our bad one but keep its signature
-        // invalid (signing the bad payload properly):
-        const [_oldEncoded, sig] = token.split('.');
-        const tampered = `${encoded}.${sig}`;
-        // Signature won't match -> null.
-        expect(await verifyCookieValue(tampered, secret)).toBeNull();
+        expect(await verifyCookieValue(token, secret)).toBeNull();
     });
 });

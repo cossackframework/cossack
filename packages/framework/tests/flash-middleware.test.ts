@@ -13,14 +13,14 @@ const SECRET = 'flash-test-secret-16-chars-min';
  * exercise the two-phase cookie lifecycle. Env (with the secret) is passed via
  * app.fetch's second argument so the middleware's `c.env.APP_SECRET` resolves.
  */
-function makeApp() {
+function makeApp(name = 'Alice') {
     const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
     app.use('*', createFlashMiddleware());
 
     // POST handler: accumulates flash data, then redirects.
     app.post('/submit', async (c) => {
         flash('success', 'Saved successfully!');
-        flashInput({ name: 'Alice' });
+        flashInput({ name });
         return c.redirect('/form');
     });
 
@@ -129,6 +129,15 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         const getRes2 = await dispatch(app, '/form');
         const body2 = (await getRes2.json()) as any;
         expect(body2).toEqual({ success: null, oldName: null, allFlashed: [] });
+    });
+
+    it('preserves Unicode form input across the signed-cookie redirect', async () => {
+        const name = 'Nguyễn — สวัสดี 東京 👋';
+        const app = makeApp(name);
+        const post = await dispatch(app, '/submit', { method: 'POST' });
+        const cookie = getSetCookie(post, 'cossack_flash');
+        const get = await dispatch(app, '/form', { cookie: `cossack_flash=${cookie}` });
+        expect((await get.json() as { oldName: string }).oldName).toBe(name);
     });
 
     it('does not set a flash cookie when the handler flashes nothing', async () => {

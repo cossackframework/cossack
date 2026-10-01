@@ -199,7 +199,7 @@ render() {
 | `{ input: false }`   | ❌                     | ✅                         |
 | `{ errors: false }`  | ✅                     | ❌                         |
 
-Errors are only flashed when there actually are any : a valid form never flashes an empty `errors` object, so truthy checks like `${this.errors ? ...}` will not render an error banner on success. The submitted input is always flashed when input-flashing is on (single-use, harmlessly dropped if not read). Flashing is a no-op when no flash store is wired (e.g. on the client), so opting out is as simple as `{ flash: false }`.
+Errors are only flashed when there actually are any : a valid form never flashes an empty `errors` object, so truthy checks like `${this.errors ? ...}` will not render an error banner on success. The submitted input is always flashed when input-flashing is on (single-use, harmlessly dropped if not read). Signed flash cookies preserve UTF-8 text, including accented names, non-Latin scripts, and emoji. Flashing is a no-op when no flash store is wired (e.g. on the client), so opting out is as simple as `{ flash: false }`.
 
 ## Put it All Together
 

@@ -199,13 +199,8 @@ describe('createAuth — reusable createSession', () => {
                 return { headers };
             },
         });
-        // Note: createLoginHandler still requires a createSession in its opts
-        // (it's typed as required to preserve the existing API), but at runtime
-        // we simulate the provider fallback by omitting it via a cast.
         const loginHandler = kit.createLoginHandler({
             validateCredentials: async () => user,
-            // intentionally omit createSession to exercise the fallback path
-            createSession: undefined as unknown as () => Promise<{ headers: Headers }>,
         });
         const app = buildApp(kit, loginHandler);
         const res = await app.request('/api/login', {
@@ -225,10 +220,9 @@ describe('createAuth — reusable createSession', () => {
             resolveUserById: async () => null,
             // no createSession on the provider
         });
-        // And omit it on the login handler too (cast to exercise the runtime guard).
+        // Omitting both creators exercises the runtime guard.
         const loginHandler = kit.createLoginHandler({
             validateCredentials: async () => user,
-            createSession: undefined as unknown as () => Promise<{ headers: Headers }>,
         });
         const app = buildApp(kit, loginHandler);
         const res = await app.request('/api/login', {

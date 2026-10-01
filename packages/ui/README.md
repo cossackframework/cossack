@@ -103,7 +103,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Popover** | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
 | **DropdownMenu** | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
 | **Sheet** | `<dialog>` | Slide-in panel (drawer) from any edge |
-| **Accordion** | `<details>` | Zero-JS collapsible sections |
+| **Accordion** | `<button>` + `<div>` | Animated collapsible sections |
 | **Tabs** | conditional render | Accessible tabbed interface with ARIA tablist |
 | **Toaster** + `toast` | reactive store | Global toast notification system |
 
@@ -265,11 +265,31 @@ to `line`:
 | `outline`     | Outline             |
 | `line-duotone`| LineDuotone         |
 
+## Accordion and Collapsible
+
+Both components accept `open` for parent-controlled state, or `defaultOpen`
+for local state, and call `onToggle(open)` when the trigger is used.
+`Accordion` uses a button summary; `Collapsible` accepts custom trigger content.
+
+Open content has automatic height and visible overflow, including during SSR.
+Async rows, validation messages, and absolutely positioned dropdowns can grow
+or extend beyond the panel. Height is measured on each toggle and clipped only
+while animating or closed. Closed panels are inert and hidden from assistive
+technology. Reduced-motion preferences disable the height animation.
+
+## Progress values
+
+`Progress` clamps its value to `0..max` for both the visible bar and its ARIA
+attributes. A non-finite value becomes `0`. A zero, negative, or non-finite
+maximum falls back to `100`.
+
 ## Ejecting components
 
 `cossack add ui <component>` copies a single component into your project at
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
-yours : re-run with `--force` to overwrite.
+yours : re-run with `--force` to overwrite. Shared private animation helpers
+are included in ejected Accordion and Collapsible source; Toaster is ejected
+from the package's Toast module.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
 

@@ -43,10 +43,11 @@ const renderTag = (tag: HeadTag) => {
     const attributes = { ...tag.attributes, 'data-cossack': '' };
     const attrs = Object.entries(attributes)
         .map(([key, value]) => {
+            if (value === undefined) return '';
             if (typeof value === 'boolean') {
                 return value ? key : '';
             }
-            return `${key}="${String(value)}"`;
+            return `${key}="${escapeHtml(String(value))}"`;
         })
         .filter(Boolean)
         .join(' ');
@@ -65,19 +66,15 @@ export const renderRoot = (props: RenderRootProps) => {
     // because renderRoot is also invoked from the SSG build script (tsx),
     // where those Vite-defined globals are undefined. The manifest is the
     // authoritative signal: dev mode never has one, production always does.
-    const hasManifest = !!(props.manifest && props.manifest['src/client/entry-client.ts']);
-    const isDev = !hasManifest;
+    const entry = props.manifest?.['src/client/entry-client.ts'];
+    const isDev = !entry;
     const clientScript = isDev
         ? '/src/client/entry-client.ts'
-        : hasManifest
-            ? `/${props.manifest['src/client/entry-client.ts'].file}`
-            : '/src/client/entry-client.ts';
+        : `/${entry.file}`;
 
     const css = isDev
         ? '/src/style.css'
-        : hasManifest
-            ? `/${props.manifest['src/client/entry-client.ts'].css[0]}`
-            : '/src/style.css';
+        : entry.css?.[0] ? `/${entry.css[0]}` : undefined;
 
     const initialStateScript = props.initialState
         ? `<script>window.__INITIAL_STATE__ = ${serializeInitialState(props.initialState)}</script>`
@@ -90,7 +87,7 @@ export const renderRoot = (props: RenderRootProps) => {
     // with optional inline CSS for faster initial paint.
     let cssHtml = '';
     if (isDev) {
-        cssHtml = `<link rel="stylesheet" href="${escapeHtml(css)}">`;
+        cssHtml = `<link rel="stylesheet" href="${escapeHtml(css!)}">`;
     } else if (css) {
         cssHtml = props.inlineCss
             ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`

@@ -39,6 +39,7 @@
     "dist",
     "src/blocks",
     "src/components",
+    "src/internal",
     "src/theme"
   ],
   "publishConfig": {

@@ -41,7 +41,10 @@ export function decodeJwtPayload(jwt: string): Record<string, unknown> {
     try {
         const parts = jwt.split('.');
         if (parts.length < 2) return {};
-        const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+        const binary = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+        const json = new TextDecoder('utf-8', { fatal: true }).decode(
+            Uint8Array.from(binary, char => char.charCodeAt(0)),
+        );
         return JSON.parse(json) as Record<string, unknown>;
     } catch {
         return {};

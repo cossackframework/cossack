@@ -52,12 +52,11 @@ export const auth = createAuth<User>({
 
     // Optional: configure createSession once and reuse it everywhere
     // (login handler, OAuth callbacks, etc.).
-    createSession: async (user) => {
+    createSession: async (user, c) => {
         const token = crypto.randomUUID();
         await db.sessions.create({ data: { token, userId: user.id, expiresAt: tomorrow() } });
-        const headers = new Headers();
-        setCookie(headers, 'session_token', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
-        return { headers };
+        setCookie(c, 'session_token', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
+        return { headers: new Headers() }; // cookie is already set on the context
     },
 });
 
@@ -75,7 +74,11 @@ const app = createApp({ authMiddleware });
 export default app;
 ```
 
-See [`docs/authentication.md`](../docs/authentication.md) for the full
+A login handler may omit `createSession` to use the provider's creator, or pass
+one to override it. OAuth cookie payloads and identity-token claims preserve
+UTF-8 text, including non-Latin display names and emoji.
+
+See [`docs/authentication.md`](../../docs/authentication.md) for the full
 credentials/cookie example.
 
 ---

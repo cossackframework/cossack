@@ -9,11 +9,30 @@ description: "Run TypeScript type checking and Playwright end-to-end tests with 
 
 ### Type Checks
 
-Run TypeScript type checking after code changes:
+For this monorepo, build package dependencies first, then check every TypeScript
+package explicitly. Root `tsc --noEmit` alone does not traverse project references:
 
 ```bash
-pnpm tsc --noEmit
+pnpm build
+pnpm typecheck
 ```
+
+### Unit Tests
+
+```bash
+pnpm test:unit
+```
+
+This runs every package with a unit suite once, including core, renderer,
+auth, UI, adapters, database, Studio, scaffold, CLI, and framework. The
+`test-utils` package has no tests yet and is excluded. For watch mode or a
+focused test, use `pnpm --filter <package-name> exec vitest <test-file>`.
+
+The framework's SSG output checks require `pnpm --filter
+@cossackframework/framework build:ssg` first. Without those artifacts, the six
+output checks are skipped. CI runs the SSG browser and artifact checks in a
+separate step. SSG browser tests use the separate
+`pnpm --filter @cossackframework/framework test:e2e:ssg` command.
 
 ### E2E Tests
 
@@ -64,7 +83,7 @@ test.describe('My Feature', () => {
 
 ### Best Practices
 
-1. **Wait for page loads**: Use `await page.waitForLoadState('networkidle')` before assertions
+1. **Wait for readiness**: Use retrying locator assertions for visible state. Before interacting with SSR markup, wait for the framework readiness signal (`window.__cossackReady`). Avoid fixed sleeps and network-idle waits on streaming pages.
 2. **Handle multiple elements**: Use`.first()` when multiple elements match a selector
 3. **Timeouts**: Add explicit timeouts for navigation and async operations
 4. **Strict mode**: Playwright enforces strict mode by locator methods return multiple elements

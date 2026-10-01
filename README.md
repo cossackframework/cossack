@@ -121,8 +121,11 @@ pnpm run dev
 ### Running Tests
 
 ```sh
-## Unit tests
+## Unit tests for all packages with suites (single run)
 pnpm run test:unit
+
+## Type checks for every TypeScript package
+pnpm run typecheck
 
 ## E2E tests
 pnpm run test:e2e

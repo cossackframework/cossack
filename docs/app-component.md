@@ -45,6 +45,22 @@ export class App extends Cossack {
 }
 ```
 
+## Register the same App on server and client
+
+Pass your App class to both entry points:
+
+```typescript
+// src/index.ts (server)
+const app = createApp({ AppComponent: App });
+
+// src/client/entry-client.ts (browser)
+createClientApp({ container: '#root', AppComponent: App });
+```
+
+If the server uses the fallback App while the client uses a custom App, their
+HTML structures differ. Hydration then rebuilds the shell instead of preserving
+the server-rendered nodes, and the App's server-side head tags are missing.
+
 ## Lifecycle
 
 1. **Server-Side Rendering (SSR)**:

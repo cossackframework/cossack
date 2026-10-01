@@ -198,27 +198,67 @@ test.beforeEach(async ({ page }) => {
     const items = page.locator('.cs-accordion');
     expect(await items.count()).toBeGreaterThanOrEqual(3);
 
-    // First item starts open (defaultOpen: true).
-    const firstAria = await items.nth(0).locator('button').getAttribute('aria-expanded');
-    expect(firstAria).toBeTruthy();
+    await expect(items.nth(0).locator('button')).toHaveAttribute('aria-expanded', 'true');
+    const item = items.nth(1);
+    const trigger = item.locator('button');
+    const wrapper = item.locator('.cs-accordion__content-wrapper');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(wrapper).toHaveCSS('overflow', 'visible');
+    await expect(wrapper).not.toHaveAttribute('inert');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(wrapper).toHaveCSS('height', '0px');
+    await expect(wrapper).toHaveAttribute('inert');
+  });
 
-    // A closed item opens when its trigger button is clicked.
-    const closed = items.nth(1);
-    const closedAria = await closed.locator('button').getAttribute('aria-expanded');
-    expect(String(closedAria)).toMatch(/false|0|^$/);
-    await closed.locator('button').click();
-    const openAria = await closed.locator('button').getAttribute('aria-expanded');
-    expect(String(openAria)).toMatch(/true|1/);
+  for (const kind of ['accordion', 'collapsible']) {
+    test(`${kind} supports dynamic content, escaping overlays, and closed focus isolation`, async ({ page }) => {
+      const item = page.locator(`.cs-${kind}`).first();
+      const wrapper = item.locator(`.cs-${kind}__content-wrapper`);
+      const content = wrapper.locator(':scope > div');
+      const trigger = item.locator(kind === 'accordion' ? '.cs-accordion__summary' : '.cs-collapsible__trigger');
+      if (await wrapper.getAttribute('aria-hidden') === 'true') await trigger.click();
+      await expect(wrapper).toHaveCSS('overflow', 'visible');
 
-    // The content wrapper's inline max-height should be non-zero when open.
-    const wrapperStyle = await closed.locator('.cs-accordion__content-wrapper').getAttribute('style');
-    expect(wrapperStyle).toContain('max-height:');
-    expect(wrapperStyle).not.toContain('max-height: 0');
+      // Simulate asynchronous content and an absolutely positioned autocomplete.
+      await content.evaluate((element) => {
+        const box = document.createElement('div');
+        box.style.cssText = 'height: 640px; position: relative';
+        const button = document.createElement('button');
+        button.textContent = 'Dynamic overlay';
+        button.dataset.testid = 'dynamic-overlay';
+        button.style.cssText = 'position: absolute; top: 100%; left: 0; height: 80px; width: 150px; z-index: 9999; background: red';
+        box.append(button);
+        element.append(box);
+      });
+      expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
+      const overlay = item.getByTestId('dynamic-overlay');
+      await overlay.scrollIntoViewIfNeeded();
+      expect(await overlay.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return document.elementFromPoint(rect.left + 10, rect.top + 10) === element;
+      })).toBe(true);
+      await overlay.focus();
+      await expect(overlay).toBeFocused();
+      await trigger.click();
+      await expect(wrapper).toHaveCSS('height', '0px');
+      await overlay.evaluate((element) => element.focus());
+      await expect(overlay).not.toBeFocused();
+      await trigger.click();
+      await expect(wrapper).toHaveCSS('overflow', 'visible');
+      expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
+    });
+  }
 
-    // Clicking again closes it.
-    await closed.locator('button').click();
-    const closedAgainAria = await closed.locator('button').getAttribute('aria-expanded');
-    expect(String(closedAgainAria)).toMatch(/false|0|^$/);
+  test('accordion settles immediately when reduced motion is requested', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const item = page.locator('.cs-accordion').nth(1);
+    await item.locator('button').click();
+    const wrapper = item.locator('.cs-accordion__content-wrapper');
+    await expect(wrapper).toHaveCSS('overflow', 'visible');
+    expect(await wrapper.evaluate((element) => element.getAnimations().length)).toBe(0);
   });
 
   test('extended form primitives render their native elements', async ({ page }) => {

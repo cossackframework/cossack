@@ -74,3 +74,22 @@ test.describe('Demo navigation shell', () => {
     await expect(page.getByRole('dialog', { name: 'Demo navigation' })).not.toBeVisible();
   });
 });
+
+for (const route of ['/', '/config-demo']) {
+  test(`hydrates the server-rendered App shell at ${route} without replacing it`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const observer = new MutationObserver(() => {
+        const shell = document.getElementById('app-wrapper');
+        if (shell) {
+          (window as any).__ssrAppShell = shell;
+          observer.disconnect();
+        }
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    });
+    const response = await page.goto(route);
+    expect(await response!.text()).toContain('id="app-wrapper"');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    expect(await page.evaluate(() => (window as any).__ssrAppShell === document.getElementById('app-wrapper'))).toBe(true);
+  });
+}

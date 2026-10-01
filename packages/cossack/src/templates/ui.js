@@ -29,8 +29,15 @@ function ejectFromPackage(className) {
         '@cossackframework/ui/theme/base.css',
       );
       const pkgDir = path.resolve(path.dirname(themePath), '../..');
-      const srcPath = path.join(pkgDir, 'src', 'components', `${className}.ts`);
+      const sourceName = className === 'Toaster' ? 'Toast' : className;
+      const srcPath = path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
       return fs.readFileSync(srcPath, 'utf8')
+        // Ejected files must remain standalone. Include private animation
+        // support rather than leaving an import into the package's source tree.
+        .replace(
+          /^import .* from ["']\.\.\/internal\/disclosure["'];$/m,
+          () => fs.readFileSync(path.join(pkgDir, 'src/internal/disclosure.ts'), 'utf8'),
+        )
         .replace(
           /from ["']\.\.\/icons\/Icon["']/g,
           'from "@cossackframework/ui"',

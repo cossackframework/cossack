@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { DisclosureController, disclosureStyle } from "../internal/disclosure";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
@@ -31,10 +32,8 @@ export interface AccordionItemProps {
  * hides content via the browser's own mechanism when closed, which CSS
  * transitions can't override. The div+button+state approach gives full control.
  *
- * The height animation uses JS to measure the exact content height via
- * `scrollHeight`, then animates `max-height` between `0` and that exact value.
- * This avoids the "fixed 500px overshoot" problem where a 40px-tall content
- * appears to open instantly (because it reaches 40px in ~8% of the animation).
+ * Height is measured for each toggle. Open content rests at auto height with
+ * visible overflow, so async content and pop-out overlays are not clipped.
  *
  * Uncontrolled:
  *   ${component(AccordionItem, { summary: 'Section 1' }, html\`<p>Content</p>\`)}
@@ -51,23 +50,24 @@ export class AccordionItem extends Cossack {
 
     @ClientState() private internalOpen: boolean = false;
     @ClientState() private userInteracted: boolean = false;
-    /** Measured content height in px (set on mount / when content changes). */
-    @ClientState() private contentHeight: number = 0;
 
     contentRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
+    wrapperRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
+    private disclosure = new DisclosureController(this, () => ({
+        open: this.isOpen,
+        wrapper: this.wrapperRef.value,
+        content: this.contentRef.value,
+    }));
+
+    private get isOpen(): boolean {
+        return this.props.open !== undefined ? !!this.props.open
+            : this.userInteracted ? this.internalOpen : !!this.props.defaultOpen;
+    }
+
     render() {
         const { summary } = this.props;
-
-        let open: boolean;
-        if (this.props.open !== undefined) {
-            open = !!this.props.open;
-        } else if (this.userInteracted) {
-            open = this.internalOpen;
-        } else {
-            open = !!this.props.defaultOpen;
-            this.internalOpen = open;
-        }
+        const open = this.isOpen;
 
         const containerClasses = classMap({
             "cs-accordion": true,
@@ -82,11 +82,6 @@ export class AccordionItem extends Cossack {
             "focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:rounded-md": true,
         });
 
-        // Use the measured height for a precise animation. Fall back to 200px
-        // before measurement completes (first render).
-        const targetHeight = this.contentHeight > 0 ? this.contentHeight : 200;
-        const contentWrapperStyle = `max-height: ${open ? targetHeight + "px" : "0"}; transition: max-height 300ms cubic-bezier(0.16, 1, 0.3, 1);`;
-
         return html`
             <div class=${containerClasses}>
                 <button
@@ -95,7 +90,7 @@ export class AccordionItem extends Cossack {
                     aria-expanded=${open ? "true" : "false"}
                     @click=${() => this.toggle()}
                 >
-                    <span>${summary ?? this.props["summary"]}</span>
+                    <span>${summary}</span>
                     <span
                         class="cs-accordion__chevron text-muted-foreground shrink-0 transition-transform duration-200"
                         style=${`transform: rotate(${open ? 180 : 0}deg);`}
@@ -104,8 +99,11 @@ export class AccordionItem extends Cossack {
                     </span>
                 </button>
                 <div
-                    class="cs-accordion__content-wrapper overflow-hidden"
-                    style=${contentWrapperStyle}
+                    class="cs-accordion__content-wrapper"
+                    ref=${this.wrapperRef}
+                    style=${disclosureStyle(open)}
+                    ?inert=${!open}
+                    aria-hidden=${open ? "false" : "true"}
                 >
                     <div ref=${this.contentRef} class="cs-accordion__content px-4 py-3">
                         ${this.children}
@@ -117,11 +115,7 @@ export class AccordionItem extends Cossack {
 
     @Client()
     toggle() {
-        const currentOpen = this.props.open !== undefined
-            ? !!this.props.open
-            : this.userInteracted
-                ? this.internalOpen
-                : !!this.props.defaultOpen;
+        const currentOpen = this.isOpen;
 
         if (this.props.open !== undefined) {
             this.props.onToggle?.(!currentOpen);
@@ -132,16 +126,12 @@ export class AccordionItem extends Cossack {
         this.props.onToggle?.(this.internalOpen);
     }
 
-    /** Measure the content height after mount so the animation is precise. */
-    @Client()
     onMount() {
-        // Use rAF to wait for layout.
-        requestAnimationFrame(() => {
-            const el = this.contentRef.value;
-            if (el) {
-                this.contentHeight = el.scrollHeight;
-            }
-        });
+        this.disclosure.hostUpdated();
+    }
+
+    onCleanup() {
+        this.disclosure.hostDisconnected();
     }
 }
 
