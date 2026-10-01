@@ -10,6 +10,8 @@ jobs:
   publish:
     if: github.event_name == 'release' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+    # Must exactly match the environment in each npm trusted publisher.
+    environment: Publish to npm
     permissions:
       contents: read
       id-token: write
