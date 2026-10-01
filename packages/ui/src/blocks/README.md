@@ -2,7 +2,7 @@
 
 Blocks are ready-to-use, composable UI patterns for common application sections.
 Each block is a self-contained set of components wired together to solve a
-real-world need — think of them as the "next level up" from individual UI
+real-world need : think of them as the "next level up" from individual UI
 components.
 
 ## Difference from Components
@@ -49,7 +49,7 @@ render() {
 
 ## Creating a New Block
 
-1. Create `src/blocks/<Name>/index.ts` — the block's entry component.
+1. Create `src/blocks/<Name>/index.ts` : the block's entry component.
 2. Compose UI components + app-specific logic.
 3. Export it from `src/blocks/index.ts`.
 4. Document it in this README.

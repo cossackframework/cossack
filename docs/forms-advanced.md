@@ -1,17 +1,17 @@
 ---
 title: "Advanced Forms Handling"
-description: "Learn how to create and handle advanced forms in Cossack, including nested fields, arrays, and complex validation rules."
+description: "Build forms with nested fields, arrays, and validation rules in Cossack."
 ---
 
 # Advanced Forms Handling
 
-Traditional forms are great for simple use cases, but what if your forms has a lot of interactions, ajax requests, client-side validation, etc. Cossack provides a way to simplify them.
+Use `@Store()` when a form has many fields, nested values, arrays, or client-side interactions. It groups the form values in one state object.
 
 ## Defining Complex Fields
 
-If you define each field in a separate state, your code will be messy and hard to maintain. Instead, you can define a single state object that contains all the form fields. This called `@Store()` in Cossack.
+Instead of defining a separate state for each field, define one state object with all form fields. In Cossack, `@Store()` creates this object.
 
-Here is the basic example of a complex form with many fields, some nested, and some arrays:
+This example defines a form with nested fields and an array:
 
 ```typescript
 interface SubmitFormState {
@@ -31,7 +31,7 @@ interface SubmitFormState {
 }
 ```
 
-Now in your page component, you can define a `@Store()` state for the form:
+Define a `@Store()` state for the form in your page component:
 
 ```typescript
 export class StoreValidationDemo extends Cossack {
@@ -52,7 +52,7 @@ export class StoreValidationDemo extends Cossack {
 
 ## Validation
 
-Our [Validation](./validation.md) support both `@Store()` and `@State()` fields. Just decorate your store with `@Validate()` and provide a validation schema. Your store now becomes:
+The [Validation](./validation.md) feature supports `@Store()` and `@State()` fields. Add `@Validate()` and a validation schema to the store:
 
 ```typescript
 @Store()

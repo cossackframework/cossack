@@ -37,7 +37,7 @@ profile = server$(
 );
 ```
 
-The initial value should have the shape your render method can safely consume. Falsy results such as `false`, `0`, an empty string, and `null` are preserved as resolved values.
+Set the initial value to a shape that the render method can use. Cossack keeps falsy results such as `false`, `0`, an empty string, and `null` as resolved values.
 
 ## Inline resources
 
@@ -49,7 +49,7 @@ render() {
 }
 ```
 
-Inline calls may omit `initial`. Their type is `T | undefined`, and they render empty while a client-side miss is pending. Inline identity is based on the module, component class, and call order in `render()`; avoid conditionally changing the order of calls.
+Inline calls can omit `initial`. Their type is `T | undefined`, and they render empty while a client-side request is pending. Cossack identifies an inline call by its module, component class, and call order in `render()`. Keep the call order fixed.
 
 ## Reactive dependencies
 
@@ -68,7 +68,7 @@ user = server$(
 );
 ```
 
-The `deps` callback remains in the client bundle; the loader does not. When dependencies change, Cossack retains the last successful value while the new invocation is pending and schedules an update when it resolves. Concurrent reads of the same invocation share one in-flight request.
+The `deps` callback remains in the client bundle. The loader does not. When dependencies change, Cossack keeps the last successful value while the new call runs. It schedules an update when the call resolves. Concurrent reads of the same call share one request.
 
 Dependency arguments and returned values must be transport-safe: use primitives, arrays, and plain objects without circular references. Unsupported values produce a named `ServerResourceSerializationError` during development.
 

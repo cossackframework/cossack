@@ -5,13 +5,13 @@ description: "Enforce server-side request limits with @RateLimit and the RateLim
 
 # Rate Limiting
 
-`RateLimit` enforces **server-side** request limits — real abuse protection that a malicious client cannot bypass (unlike client-side [`@Debounce` / `@Throttle`](/docs/tasks.md#rate-limiting-method-calls-debounce-and-throttle), which are UX-only). When a caller exceeds the limit, the framework responds `429 Too Many Requests` with a `Retry-After` header, **before** your handler or server method runs.
+`RateLimit` enforces **server-side** request limits : real abuse protection that a malicious client cannot bypass (unlike client-side [`@Debounce` / `@Throttle`](/docs/tasks.md#rate-limiting-method-calls-debounce-and-throttle), which are UX-only). When a caller exceeds the limit, the framework responds `429 Too Many Requests` with a `Retry-After` header, **before** your handler or server method runs.
 
 It works in three places:
 
-- **Functional API routes** — via the `RateLimit()` handler wrapper.
-- **Class-based API routes** (`get` / `post` / …) — via the `@RateLimit()` decorator.
-- **`@Server` component methods** (HTTP/SSE transport) — via the `@RateLimit()` decorator, enforced at the `/crpc` and `/upload` dispatch boundaries.
+- **Functional API routes** : via the `RateLimit()` handler wrapper.
+- **Class-based API routes** (`get` / `post` / …) : via the `@RateLimit()` decorator.
+- **`@Server` component methods** (HTTP/SSE transport) : via the `@RateLimit()` decorator, enforced at the `/crpc` and `/upload` dispatch boundaries.
 
 ## Options
 
@@ -24,7 +24,7 @@ It works in three places:
 
 ## Functional API routes (handler wrapper)
 
-TypeScript decorators cannot legally be applied to a `const` export, so functional routes use the wrapper form. Two styles — with options, or with sensible defaults (`60`/min):
+TypeScript decorators cannot legally be applied to a `const` export, so functional routes use the wrapper form. Two styles : with options, or with sensible defaults (`60`/min):
 
 ```typescript
 import { RateLimit } from '@cossackframework/core';
@@ -81,13 +81,13 @@ The default store is **in-memory and per-process**, so it is exact for a single 
 
 | Store | Consistency | Best for |
 | --- | --- | --- |
-| `DurableObjectRateLimitStore` | **Strong** (exact) | Strict/accurate limits on Cloudflare — the recommended option. |
-| `RedisRateLimitStore` (Upstash) | **Strong** (exact) | Cross-runtime Redis; works on Workers + Node. |
+| `DurableObjectRateLimitStore` | **Strong** (exact) | Strict/accurate limits on Cloudflare : the recommended option. |
+| `RedisRateLimitStore` (Upstash) | **Strong** (exact) | Cross-runtime Redis. Works on Workers and Node.js. |
 | `KvRateLimitStore` | **Approximate** | Cheap, global, "good enough" abuse protection. |
 
 ### Zero-code configuration (recommended)
 
-You don't need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework picks the store automatically on first use. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
+You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework picks the store automatically on first use. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
 
 | `rateLimit` value | What you also need |
 | --- | --- |
@@ -114,15 +114,15 @@ You don't need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.js
 >
 > export { AppDurableObject, RateLimitDurableObject };
 > ```
-> (Keep `AppDurableObject`'s existing import from the framework — only `RateLimitDurableObject` comes from core.) `"redis"` and `"kv"` modes need **no code changes at all** — bindings/vars only.
+> (Keep `AppDurableObject`'s existing import from the framework : only `RateLimitDurableObject` comes from core.) `"redis"` and `"kv"` modes need **no code changes at all** : bindings/vars only.
 
 A manual `setRateLimitStore(...)` call, if present, always takes precedence over this var.
 
 ## Manual configuration
 
-### Durable Object (strongly consistent — recommended)
+### Durable Object (strongly consistent : recommended)
 
-Each key is routed to its own Durable Object (`idFromName(key)`), so every bucket is its own single-threaded consistency point — limits are exact across instances and regions. This is Cloudflare's recommended pattern for precise rate limiting.
+Each key is routed to its own Durable Object (`idFromName(key)`), so every bucket is its own single-threaded consistency point : limits are exact across instances and regions. This is Cloudflare's recommended pattern for precise rate limiting.
 
 Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
 
@@ -152,7 +152,7 @@ export default {
 
 ### Redis / Upstash (strongly consistent, cross-runtime)
 
-`RedisRateLimitStore` talks to **Upstash Redis over REST** — the only Redis shape that runs on both Cloudflare Workers (no TCP sockets) and Node.js, with **zero extra dependencies**. Counting uses a single atomic `EVAL` (`INCR` + conditional `EXPIRE`), so it is exact under concurrency.
+`RedisRateLimitStore` talks to **Upstash Redis over REST** : the only Redis shape that runs on both Cloudflare Workers (no TCP sockets) and Node.js, with **zero extra dependencies**. Counting uses a single atomic `EVAL` (`INCR` + conditional `EXPIRE`), so it is exact under concurrency.
 
 Configure the credentials as env vars (in `wrangler.jsonc` `vars`, or your host's env):
 
@@ -179,7 +179,7 @@ export default {
 
 ### Cloudflare KV (approximate)
 
-`KvRateLimitStore` is the cheapest global option. Expired buckets are auto-expired via KV's TTL, so there's no unbounded growth.
+`KvRateLimitStore` is the cheapest global option. Expired buckets are auto-expired via KV's TTL, so there is no unbounded growth.
 
 ```ts
 import { setRateLimitStore, KvRateLimitStore } from '@cossackframework/core';
@@ -192,7 +192,7 @@ export default {
 };
 ```
 
-> **KV is approximate, not exact.** KV is *eventually consistent* and has no atomic increment, so a concurrent burst from one caller can briefly under-count (two reads land before either write). The limit may be exceeded by a small margin under load. If correctness matters, prefer the Durable Object or Redis store above.
+> **KV is approximate, not exact.** KV is *eventually consistent* and has no atomic increment. Two reads can happen before either write during a concurrent burst, which can cause a temporary under-count. The limit can be exceeded by a small amount under load. For exact limits, use the Durable Object or Redis store above.
 
 ### Custom store
 

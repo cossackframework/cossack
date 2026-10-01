@@ -1,17 +1,16 @@
 ---
 title: "Link"
-description: "Cossack uses standard HTML anchor tags with automatic prefetching and optimization, no custom Link component required."
+description: "Use HTML anchor tags for navigation. Cossack handles prefetching and navigation."
 ---
 
 # Link
 
-Unlike Next.js or similar traditional frameworks. In Cossack, there is no need any kind of `<Link>` component. We prefers browser behavior so just use the `<a>` tag normally. We did all prefetching, optimizing automatically for you out of the box.
+Cossack does not need a custom `<Link>` component. Use the standard HTML `<a>` tag. Cossack handles prefetching and navigation.
 
-The reason why this documentation exists because to help other framework's developers find the equivalent approach.
+This page explains the equivalent approach for developers who use other frameworks.
 
-## How our prefetching and optimizing works?
+## How prefetching and navigation work
 
-- People hover/click on the `<a>` tag.
-- Cossack only load the small piece of related page script, states and inject to current page.
-- Cossack replaces the current URL in the history stack.
-- People got the page load instantly!
+- A user points to or clicks an `<a>` tag.
+- Cossack fetches the page data and the required page script.
+- Cossack updates the page and browser history.

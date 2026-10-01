@@ -1,6 +1,6 @@
 ---
 title: "Deployment"
-description: "Deploy Cossack applications to Cloudflare Workers using Wrangler with support for D1, KV, R2, and Durable Objects."
+description: "Deploy Cossack applications to Cloudflare Workers with Wrangler."
 ---
 
 # Deployment
@@ -33,7 +33,7 @@ Your project includes a `wrangler.jsonc` with the required bindings:
 }
 ```
 
-If using pages with `transport: 'sse'`, no Durable Object binding is required — SSE runs on plain Workers.
+If using pages with `transport: 'sse'`, no Durable Object binding is required : SSE runs on plain Workers.
 
 ### Deploy
 
@@ -110,7 +110,7 @@ pnpm build
 node dist/server.js
 ```
 
-State is memory-only in Node.js mode — use an external database for persistence.
+State is memory-only in Node.js mode : use an external database for persistence.
 
 ---
 

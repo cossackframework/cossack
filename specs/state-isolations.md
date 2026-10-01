@@ -1,6 +1,6 @@
 # State Isolations
 
-When using reusable components within Pages, each component's state is independently managed and synchronized with the server. This enables powerful patterns where components maintain their own server-side state without lifting everything to the Page.
+When using reusable components within Pages, each component's state is independently managed and synchronized with the server. This enables patterns where components maintain their own server-side state without lifting everything to the Page.
 
 ## State Structure
 

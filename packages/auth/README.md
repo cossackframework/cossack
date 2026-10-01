@@ -1,26 +1,26 @@
 # Cossack Framework Auth Package
 
-Authentication, authorization, and OAuth utilities for the Cossack Framework.
-Built on [Hono](https://hono.dev) and web-standard APIs (native `fetch`, Web
-Crypto), so it runs identically on Cloudflare Workers and Node.js.
+This package provides authentication, authorization, and OAuth tools for
+Cossack. It uses [Hono](https://hono.dev) and web APIs such as `fetch` and Web
+Crypto. It runs on Cloudflare Workers and Node.js.
 
 ## Installation
 
-Refer to our [Installation Guide](https://cossack.dev/docs/installation) for
-detailed instructions on how to set up the Cossack Framework and its packages.
+See the [Installation Guide](https://cossack.dev/docs/installation) to set up
+Cossack and its packages.
 
-## What's included
+## What is included
 
-- **Session authentication** — `createAuth()` middleware that populates
-  `c.get('user')`, plus a `createLoginHandler()` factory for credentials-based
-  login.
-- **OAuth 2.0** — `createOAuth()` with first-party providers for **GitHub,
-  Google, GitLab, Facebook, and Microsoft**, plus a `defineOAuthProvider()`
-  helper for any custom provider. Implements the full Authorization Code flow
-  with PKCE (S256) and signed-cookie CSRF state by default.
-- **Authorization** — `createAuthorizer()` returns role/permission middleware
-  factories (`requireUser`, `requireRole`, `requirePermission`, plus AND/OR
-  variants) driven by your own callbacks.
+- **Session authentication** : `createAuth()` middleware that populates
+ `c.get('user')`, plus a `createLoginHandler()` factory for credentials-based
+ login.
+- **OAuth 2.0** : `createOAuth()` with first-party providers for **GitHub,
+ Google, GitLab, Facebook, and Microsoft**, plus a `defineOAuthProvider()`
+ helper for any custom provider. Implements the full Authorization Code flow
+ with PKCE (S256) and signed-cookie CSRF state by default.
+- **Authorization** : `createAuthorizer()` returns role/permission middleware
+ factories (`requireUser`, `requireRole`, `requirePermission`, plus AND/OR
+ variants) driven by your own callbacks.
 
 The package is intentionally unopinionated: it never assumes an ORM, a session
 store, or a user shape. You supply the user type as a generic and a handful of
@@ -80,7 +80,7 @@ credentials/cookie example.
 
 ---
 
-## OAuth (Login with GitHub, Google, ...)
+## OAuth (Login with GitHub, Google,...)
 
 The OAuth layer implements the standard **Authorization Code flow with PKCE
 (S256)**. CSRF protection is built-in: a signed HttpOnly cookie carries the
@@ -219,10 +219,10 @@ export const oauth = createOAuth({
 
 - **PKCE (S256)** is on by default for every provider (RFC 9700 recommendation).
 - **State** is a 128-bit random nonce, stored in an HttpOnly `SameSite=Lax`
-  cookie signed with HMAC-SHA256, compared in **constant time**, and
-  **single-use** (deleted on callback read).
+ cookie signed with HMAC-SHA256, compared in **constant time**, and
+ **single-use** (deleted on callback read).
 - The `redirect_uri` sent on the authorize request is reused unchanged on the
-  token-exchange request (exact string match).
+ token-exchange request (exact string match).
 
 ### Stateless mode
 
@@ -230,7 +230,7 @@ For cookie-less API clients, pass `stateless: true` to `createOAuth()`. In
 this mode **PKCE is disabled too** (the verifier cannot be recovered without a
 cookie store), and **you become responsible for CSRF protection** of the
 callback (e.g. by passing `state` through a signed query param you verify
-yourself). Use only when cookies aren't an option — the default stateful mode
+yourself). Use only when cookies are not an option : the default stateful mode
 is strictly more secure.
 
 See [`docs/oauth.md`](../docs/oauth.md) for the complete guide.
@@ -242,7 +242,7 @@ See [`docs/oauth.md`](../docs/oauth.md) for the complete guide.
 `createAuthorizer()` returns middleware factories that read `c.get('user')`
 (populated by `createAuth().middleware`) and consult your callbacks. The
 framework has no knowledge of how roles/permissions are stored on the user
-object — you answer yes/no, the package handles the HTTP response.
+object : you answer yes/no, the package handles the HTTP response.
 
 ```ts
 // src/auth.ts (continue)
@@ -291,7 +291,7 @@ for the inline-sync and `init()`/`@State` patterns.
 Default failure responses are `401 JSON` (unauthenticated) and `403 JSON`
 (forbidden); override both via `onUnauthorized`.
 
-Works identically for session login and OAuth login — both populate
+Works identically for session login and OAuth login : both populate
 `c.get('user')`.
 
 See [`docs/authorization.md`](../docs/authorization.md) for more.

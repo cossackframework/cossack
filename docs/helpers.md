@@ -25,8 +25,8 @@ render() {
 
 A convenience method to check if a specific path is currently active. This is primarily used for styling navigation links.
 
-*   **`path`**: The path to check against.
-*   **`exact`**: If `true` (default), it performs an exact match (`===`). If `false`, it checks if the current path starts with the given string.
+* **`path`**: The path to check against.
+* **`exact`**: If `true` (default), it performs an exact match (`===`). If `false`, it checks if the current path starts with the given string.
 
 #### Example: Styling Active Links
 
@@ -47,15 +47,15 @@ render() {
 
 Used in conjunction with the `@PreventNavigation` decorator to resolve a blocked navigation attempt.
 
-*   `this.confirmNavigation(true)`: Proceed with the navigation.
-*   `this.confirmNavigation(false)`: Stay on the current page and clear the pending navigation state.
+* `this.confirmNavigation(true)`: Proceed with the navigation.
+* `this.confirmNavigation(false)`: Stay on the current page and clear the pending navigation state.
 
 See the [Prevent Navigation](./prevent-navigation.md) documentation for more details.
 
 
-###  `this.back()`
+### `this.back()`
 
-Redirects the user back to the previous page in their browser history. This is a convenient way to handle form submissions or other actions that should return the user to where they came from.
+Redirects the user to the previous page in browser history. Use it after a form submission or another action that returns the user to the previous page.
 
 ```typescript
 post() {

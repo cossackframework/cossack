@@ -1,6 +1,6 @@
 ---
 title: 'Index'
-description: 'Complete documentation index covering all Cossack framework concepts, getting started guides, and advanced features.'
+description: 'Documentation for getting started with Cossack and learning its features.'
 ---
 
 # Index

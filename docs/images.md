@@ -1,15 +1,15 @@
 ---
 title: "Image Optimization"
-description: "Built-in Image helper for rendering responsive, optimized images that can leverage Cloudflare Image Resizing when deployed."
+description: "Render responsive images with the Image helper and Cloudflare Image Resizing."
 ---
 
 # Image Optimization
 
-Cossack provides a built-in `Image` helper to easily render responsive, optimized images. When deployed to Cloudflare, it can automatically leverage **Cloudflare Image Resizing** to serve images at the perfect size and format for your user's device.
+Use the `Image` helper to render responsive images. On Cloudflare, the helper can use Cloudflare Image Resizing to serve an image at a requested size and format.
 
 ## Usage
 
-Import the `Image` helper from `@cossackframework/core` and use it in your templates.
+Import `Image` from `@cossackframework/core` and call it in a template.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -37,14 +37,14 @@ export class Hero extends Cossack {
 
 ## Props
 
-The `Image` helper accepts the following properties:
+The `Image` helper accepts these properties:
 
 | Prop | Type | Description |
 | :--- | :--- | :--- |
 | `src` | `string` | The source URL of the image (relative or absolute). |
 | `width` | `number` | The desired width in pixels. |
 | `height` | `number` | The desired height in pixels. |
-| `fit` | `'cover' \| 'contain' \| ...` | How the image should be resized to fit the dimensions. |
+| `fit` | `'cover' \| 'contain' \| ...` | The method used to resize the image to the requested dimensions. |
 | `quality` | `number` | The quality of the image (1-100). |
 | `format` | `'webp' \| 'avif' \| 'json'` | The output format. |
 | `alt` | `string` | The alt text for accessibility. |
@@ -53,35 +53,35 @@ The `Image` helper accepts the following properties:
 
 ## Configuration
 
-The optimization behavior depends on your environment configuration.
+Image behavior depends on your environment configuration.
 
 ### 1. Development (Local)
 
-In development mode (`import.meta.env.DEV`), the `Image` helper renders a standard `<img>` tag pointing to the original `src`. Optimization can also be done at build time using the [`cossack image optimize` command](#build-time-optimization).
+In development mode (`import.meta.env.DEV`), the helper renders an `<img>` tag that points to the original `src`. You can also optimize images at build time with [`cossack image optimize`](#build-time-optimization).
 
 ### 2. Production (Cloudflare)
 
-To enable Cloudflare Image Resizing in production, set the following environment variable in your `wrangler.jsonc` or build environment:
+To use Cloudflare Image Resizing in production, set this environment variable in `wrangler.jsonc` or in your build environment:
 
 ```bash
 VITE_COSSACK_IMAGE_PROVIDER=cloudflare
 ```
 
 When this is set, the helper transforms your URL:
-*   **Input:** `/assets/banner.jpg` (with `width: 800`)
-*   **Output:** `/cdn-cgi/image/width=800/assets/banner.jpg`
+* **Input:** `/assets/banner.jpg` (with `width: 800`)
+* **Output:** `/cdn-cgi/image/width=800/assets/banner.jpg`
 
 ### 3. Production (Node.js / Other)
 
-If `VITE_COSSACK_IMAGE_PROVIDER` is not set or set to `none`, the helper acts as a pass-through, rendering the original `src`. This ensures your application works correctly on any platform, even without an image optimization service.
+If `VITE_COSSACK_IMAGE_PROVIDER` is not set or is set to `none`, the helper renders the original `src`.
 
 ## Build Time Optimization
 
-For hosts without a built-in image CDN (e.g. Node.js), or when you want committed, pre-generated variants, use the CLI to optimize images at build time.
+For hosts without an image CDN, such as Node.js, or to commit pre-generated image variants, optimize images at build time with the CLI.
 
 ### `cossack image optimize`
 
-The command scans `src/` for `Image({ ... })` helper calls, resolves each local `src` to a file under `public/`, and writes resized, re-encoded variants beside the original. It requires **ImageMagick** to be installed.
+The command scans `src/` for `Image({ ... })` calls. It finds each local `src` file under `public/` and writes resized versions beside the original. Install **ImageMagick** to use this command.
 
 ```bash
 cossack image optimize
@@ -89,7 +89,7 @@ cossack image optimize --format avif --quality 85
 cossack image optimize --dry-run      # preview without writing
 ```
 
-For each `Image({ src, width })` call referencing a local asset, a variant is generated. `width` is required (the variant is sized by width); `height` is optional and, when present, produces a `<name>-<w>x<h>.<format>` filename:
+For each `Image({ src, width })` call that references a local asset, the command generates a variant. Set `width` to size the variant. If you set `height`, the filename includes both dimensions:
 
 ```
 public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })          ->  public/img/hero-800.webp
@@ -100,7 +100,7 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 | :--- | :--- |
 | `--format <webp\|avif>` | Output format (default: `webp`). |
 | `--quality <0-100>` | Output quality (default: `80`). |
-| `--dry-run` | List the variants that would be generated without writing. |
+| `--dry-run` | List the image variants without writing them. |
 
 **Installing ImageMagick**
 
@@ -115,6 +115,6 @@ choco install imagemagick
 
 If the binary is missing, the command prints these instructions and exits with a non-zero code.
 
-> **Cloudflare deployments:** prefer runtime resizing via `/cdn-cgi/image/...` (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) — it generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter or when you want the files committed to your repository.
+> **Cloudflare deployments:** prefer runtime resizing via `/cdn-cgi/image/...` (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) : it generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter or when you want the files committed to your repository.
 
 See the [Cossack CLI reference](/docs/cossack-cli.md#image-optimization) for the full `image optimize` options.

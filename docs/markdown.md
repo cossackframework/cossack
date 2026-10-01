@@ -1,15 +1,15 @@
 ---
 title: "Markdown Pages"
-description: "Support for .md and .mdx files as first-class page components with automatic transformation and frontmatter metadata support."
+description: "Create pages from.md and.mdx files with frontmatter metadata."
 ---
 
 # Markdown Pages
 
-Cossack supports `.md` and `.mdx` files as first-class page components. Any markdown file in your `src/pages` directory will be automatically transformed into a Cossack component. Following the same conventions as TypeScript page components, you can use frontmatter for metadata and the markdown content will be rendered as the component's output.
+Use `.md` and `.mdx` files as page components. Cossack turns files in `src/pages` into components. Add frontmatter to set metadata. Cossack renders the Markdown content as the page output.
 
 ### Metadata via Frontmatter
 
-MDX components use frontmatter to define their metadata, which is automatically fed into the framework's `head()` merging system.
+Use frontmatter to set metadata for an MDX component. Cossack adds these values to the `head()` merge.
 
 ```markdown
 ---
@@ -23,8 +23,8 @@ image: "/assets/og-image.png"
 Cossack is fast!
 ```
 
-The fields `title`, `description`, and `image` are automatically mapped to the corresponding properties in the component's `head()` method, allowing them to be correctly merged with layouts and the global app shell.
+The framework maps `title`, `description`, and `image` to the matching properties in `head()`. It merges them with values from layouts and the global app.
 
 ### Layout Support
 
-MDX components fully support the nested layout system. If an MDX file is placed in a folder with a `layout.ts`, it will be wrapped by that layout just like a standard TypeScript component.
+MDX components support nested layouts. If an MDX file is in a folder with `layout.ts`, that layout wraps the page, as it does for a TypeScript component.

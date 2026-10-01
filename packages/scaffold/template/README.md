@@ -1,6 +1,6 @@
 # Cossack Framework
 
-Welcome to the Cossack Framework! To get started, visit our [documentation](https://cossack.dev/docs).
+This project uses Cossack. Read the [documentation](https://cossack.dev/docs) to get started.
 
 ## Development
 

@@ -1,22 +1,22 @@
 ---
 title: "File Storage & Uploads"
-description: "Flexible file upload strategies including direct-to-cloud uploads for R2/S3 and magic RPC uploads for server proxy handling."
+description: "Upload files directly to R2 or S3, or send them to a server method."
 ---
 
 # File Storage & Uploads
 
-Cossack Framework provides powerful and flexible ways to handle file uploads, catering to both serverless environments (like Cloudflare Workers) and traditional Node.js servers.
+Cossack supports file uploads on Cloudflare Workers and Node.js.
 
-We support two primary strategies for uploading files:
+You can upload files in two ways:
 
-1.  **Direct-to-Cloud (Recommended for R2/S3):** The most efficient method for serverless. The client uploads directly to the storage bucket using a presigned URL, bypassing server bandwidth and CPU limits.
-2.  **Magic RPC Upload (Server Proxy):** The simplest method for development or processing. You pass a `File` object to a server method, and the framework automatically handles the multipart transfer.
+1. **Direct-to-Cloud (Recommended for R2/S3):** The client uploads to a storage bucket with a presigned URL. This avoids sending the file through your server.
+2. **RPC Upload (Server Proxy):** Pass a `File` object to a server method. The framework sends it as multipart data.
 
 ---
 
 ## Strategy 1: Direct-to-Cloud (R2 / S3)
 
-This strategy is ideal for Cloudflare Workers and large file uploads. It involves generating a temporary, authorized URL on the server (Presigned URL) that the client uses to upload the file directly.
+Use this method for large files or Cloudflare Workers. The server creates a temporary, authorized URL called a presigned URL. The client uses it to upload the file directly.
 
 ### Prerequisites
 
@@ -89,7 +89,7 @@ export class R2UploadPage extends Cossack {
 
 ### Configuration (CORS)
 
-For direct browser uploads to work, you must configure **CORS** on your R2 bucket to allow `PUT` requests from your domain.
+To allow direct browser uploads, configure **CORS** on your R2 bucket to accept `PUT` requests from your domain.
 
 ```json
 [
@@ -107,12 +107,12 @@ For direct browser uploads to work, you must configure **CORS** on your R2 bucke
 
 ## Strategy 2: Magic RPC Upload (Server Proxy)
 
-This strategy allows you to pass a `File` object directly to a server method. The framework automatically handles the serialization, multipart upload, and reconstruction of the `File` object on the server.
+This method lets you pass a `File` object to a server method. The framework sends the file as multipart data and rebuilds the `File` object on the server.
 
-**Best Use Cases:**
--   Node.js environments (saving to disk via `fs`).
--   Small file uploads in Workers (where memory/body limits allow).
--   Processing file content immediately (e.g., parsing a CSV, resizing an image).
+Use this method for:
+- Node.js environments (saving to disk via `fs`).
+- Small file uploads in Workers (where memory/body limits allow).
+- Processing file content immediately (e.g., parsing a CSV, resizing an image).
 
 ### Example
 
@@ -152,17 +152,17 @@ export class SimpleUploadPage extends Cossack {
 ```
 
 ### How it Works
-1.  The client detects that `saveFile` is being called with a `File` argument.
-2.  It intercepts the call and switches from JSON RPC to `multipart/form-data`.
-3.  It uploads the file to the framework's internal `/upload` endpoint.
-4.  The server reconstructs the arguments and calls your `saveFile` method with the actual `File` object.
-5.  **Progress Tracking:** The framework automatically updates a property named `${methodName}Progress` (e.g., `saveFileProgress`) if it exists on your component.
+1. The client detects a `File` argument in the call to `saveFile`.
+2. It sends the request as `multipart/form-data` instead of JSON RPC.
+3. It uploads the file to the framework's internal `/upload` endpoint.
+4. The server rebuilds the arguments and calls `saveFile` with the `File` object.
+5. The framework updates a `${methodName}Progress` property, such as `saveFileProgress`, if the component defines one.
 
 ---
 
 ## Environment Configuration
 
-Ensure your `wrangler.jsonc` (for Cloudflare) or `.env` (for Node) has the necessary credentials if using R2/S3.
+If you use R2 or S3, add the required credentials to `wrangler.jsonc` for Cloudflare or `.env` for Node.js.
 
 ```jsonc
 // wrangler.jsonc

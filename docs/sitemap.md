@@ -48,13 +48,13 @@ The sitemap is automatically generated during SSG build and includes:
 
 The base URL is resolved in the following order (first match wins):
 
-1. **`APP_URL` shell env** — explicit override, useful for CI:
+1. **`APP_URL` shell env** : explicit override, useful for CI:
    ```bash
    APP_URL=https://my-site.com pnpm run build:ssg
    ```
 2. **`vars.APP_URL` in `wrangler.jsonc`** (or `APP_URL` in the `[vars]`
-   table of `wrangler.toml`). This is the recommended approach — the value
-   is also available to your Worker at runtime via `config('app.url')`:
+ table of `wrangler.toml`). This is the recommended approach : the value
+ is also available to your Worker at runtime via `config('app.url')`:
    ```jsonc
    {
      "vars": {
@@ -63,7 +63,7 @@ The base URL is resolved in the following order (first match wins):
    }
    ```
 3. **`APP_URL` in `.env`**.
-4. **`https://example.com`** — final default.
+4. **`https://example.com`** : final default.
 
 Because the SSG build script reads these sources directly, no extra CLI flags
 are required.
@@ -175,4 +175,4 @@ After generating your sitemap, submit it to search engines:
 1. **Keep it Updated**: Rebuild your SSG pages when content changes
 2. **Use Correct Priority**: Set higher priority for important pages
 3. **Set Appropriate Changefreq**: Match the update frequency of your content
-4. **Validate**: Use XML sitemap validators to ensure proper format
+4. **Validate**: Use XML sitemap validators to make sure that proper format

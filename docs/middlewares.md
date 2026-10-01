@@ -1,22 +1,22 @@
 ---
 title: "Middleware"
-description: "Integration with Hono's middleware system for executing server-side logic before page rendering or action handling."
+description: "Run Hono middleware before a page renders or handles an action."
 ---
 
 # Middleware
 
-Cossack integrates directly with Hono's middleware system. Middleware functions are executed on the server before a page is rendered or a server action is handled.
+Cossack uses Hono's middleware system. Middleware functions run on the server before a page renders or handles a server action.
 
 There are two kinds of middleware in Cossack:
 
-- **[Global request middleware](#global-request-middleware)** — runs on *every* request and sets up ORM, session, auth, or feature-flag context.
-- **[Route-level middleware](#colocated-middleware)** — runs for specific pages/layouts via `@Page({ middlewares })`. Used for per-route concerns like auth guards ("redirect to /login").
+- **[Global request middleware](#global-request-middleware)** : runs on *every* request and sets up ORM, session, auth, or feature-flag context.
+- **[Route-level middleware](#colocated-middleware)** : runs for specific pages/layouts via `@Page({ middlewares })`. Used for per-route concerns like auth guards ("redirect to /login").
 
 ## Global request middleware
 
 For middleware that must run on every request and set up context the rest of the app reads (`c.get('orm')`, `c.get('session')`, `c.get('user')`), use the **`src/bootstrap/middlewares.ts` registry**.
 
-This is a Laravel-style "kernel" list: middleware *definitions* live in `src/middlewares/*.ts`, and `src/bootstrap/middlewares.ts` only holds the ordered references — so adding or removing a feature is a clean one-line edit (no surgery on your `createApp()` call).
+Middleware definitions live in `src/middlewares/*.ts`. The ordered list in `src/bootstrap/middlewares.ts` names the middleware to run. Edit this list to add or remove middleware.
 
 ```ts
 // src/bootstrap/middlewares.ts
@@ -46,7 +46,7 @@ export const loggingMiddleware = defineServerMiddleware(async (c, next) => {
 Feature commands maintain this order automatically. The locale middleware is
 Framework-built-in and does not need an entry.
 
-> If `src/bootstrap/middlewares.ts` is absent, no global middlewares run — existing apps are unaffected.
+> If `src/bootstrap/middlewares.ts` is absent, no global middlewares run : existing apps are unaffected.
 
 ## Colocated Middleware
 
@@ -99,7 +99,7 @@ export default class Dashboard extends Cossack {
 
 ## `defineServerMiddleware()`
 
-Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a semantic wrapper that documents this intent — it makes it clear that the middleware is server-only:
+Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a semantic wrapper that documents this intent : it makes it clear that the middleware is server-only:
 
 ```typescript
 import { defineServerMiddleware } from '@cossackframework/core';
@@ -111,7 +111,7 @@ export const myMiddleware = defineServerMiddleware(async (c, next) => {
 });
 ```
 
-Without the helper, you would need to manually guard with `isServer`:
+Without the helper, add an `isServer` guard:
 
 ```typescript
 import { isServer } from '@cossackframework/core';

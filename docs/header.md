@@ -1,15 +1,15 @@
 ---
 title: 'Metadata Management (Head)'
-description: 'Control document head tags like title, meta, script, and link dynamically with automatic inheritance from layouts using the head method.'
+description: 'Set document head tags in components and inherit them from layouts with the head method.'
 ---
 
 # Metadata Management (Head)
 
-Cossack provides a simple yet powerful API for managing the document's `<head>` section directly from your components. This allows you to control tags like `<title>`, `<meta>`, `<script>`, and `<link>` dynamically with automatic inheritance from layouts.
+Use the `head()` method in a component to set tags in the document's `<head>` section. Cossack merges these tags with values from parent layouts.
 
 ## Basic Usage
 
-To manage head tags, override the optional `head()` method in your component. This method receives a `HeadContext` and should return a `HeadValue` object.
+To set head tags, add the optional `head()` method to your component. It receives a `HeadContext` and returns a `HeadValue` object.
 
 The framework automatically merges metadata from the **inside out**:
 `Page` -> `Layouts` -> `Global App`.
@@ -29,14 +29,13 @@ public head(context: HeadContext): HeadValue {
 
 ### Automatic Merging Logic
 
-Cossack merges metadata from the **inside out**: `Page` → `Layouts` → `Global App`.
+Cossack merges metadata from the page, then its layouts, then the global app.
 
 - `title`, `description`, `image`: the child value wins unless a parent
-  overrides it (`parentValue ?? childValue`).
-- `meta`, `links`, `scripts`, `tags`: **accumulate** — the child's tags are kept
-  and the parent's tags are appended. This means a root `App` can contribute
-  global tags (e.g. font `<link>`s) without discarding page-specific tags such
-  as a canonical link.
+ provides a value (`parentValue ?? childValue`).
+- `meta`, `links`, `scripts`, `tags`: Cossack keeps the child's tags and adds
+ the parent's tags. A root `App` can add global tags, such as font links,
+ without removing page tags such as a canonical link.
 
 #### Example: Root Branding + global fonts in `App.ts`
 
@@ -55,14 +54,14 @@ public head(context: HeadContext): HeadValue {
 }
 ```
 
-The same `head()` is applied in both SSR and SSG (the `cossack ssg` CLI uses
-your `App` automatically — see [Static Site Generation](./static-site-generation.md)).
+The framework applies `head()` during SSR and SSG. The `cossack ssg` CLI uses
+your `App` automatically. See [Static Site Generation](./static-site-generation.md).
 
 ## API Reference
 
 ### `HeadContext`
 
-Contains the accumulated metadata from nested components:
+`HeadContext` contains the metadata that nested components have added:
 
 - `title`: The current accumulated title string.
 - `meta`: Array of accumulated meta tags.
@@ -72,7 +71,7 @@ Contains the accumulated metadata from nested components:
 
 ### `HeadValue`
 
-The object you return from `head()`:
+Return a `HeadValue` object from `head()`:
 
 - `title`: (Optional) Set a new title.
 - `meta`: (Optional) Override or add meta tags.
@@ -82,4 +81,4 @@ The object you return from `head()`:
 
 ## Client-Side Synchronization
 
-Cossack handles metadata updates automatically during **Soft Navigation**. When you navigate between pages or update a component's `@State`, the framework re-runs the entire merge stack and updates the DOM (including `document.title`) instantaneously.
+Cossack updates metadata during soft navigation. When you move to another page or change a component's `@State`, the framework merges the metadata again and updates the DOM, including `document.title`.

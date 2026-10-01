@@ -5,8 +5,8 @@ description: 'Decorated Active Record models for Cloudflare Workers and Node.js.
 
 # ORM
 
-Cossack applications use `@cossackframework/database`. The Framework package remains
-ORM-agnostic; generated applications install and compose the ORM explicitly.
+Cossack applications use `@cossackframework/database`. The Framework package
+does not depend on an ORM. Generated applications install and compose the ORM.
 
 ```sh
 cossack add database
@@ -30,7 +30,7 @@ src/
 The model barrel imports `reflect-metadata` once and exports deterministic
 entity registration. Node recipes create one caller-owned ORM singleton.
 Deno and Workers recipes create an ORM per request from Turso, D1, or
-Hyperdrive bindings; `ormMiddleware` closes factory-created instances after
+Hyperdrive bindings. `ormMiddleware` closes factory-created instances after
 downstream work completes.
 
 ## Models
@@ -56,7 +56,7 @@ export class User extends BaseEntity {
 }
 ```
 
-Properties may be camel-case while `name` preserves an existing snake-case
+Properties can use camel case while `name` preserves an existing snake-case
 physical column.
 
 ## Runtime middleware

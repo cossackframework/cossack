@@ -1,25 +1,25 @@
 <br>
 <p align="center">
-  <a target="_blank" href="https://cossack.dev">
-    <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%">
-  </a>
+ <a target="_blank" href="https://cossack.dev">
+ <img src="https://raw.githubusercontent.com/cossackframework/cossack/master/docs/images/logo.svg" width="400" height="auto" alt="Cossack framework logo" style="max-width: 100%">
+ </a>
 </p>
 
 <br>
 
 <p align="center">
-    <a href="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml">
-        <img src="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg">
-    </a>
+ <a href="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml">
+ <img src="https://github.com/cossackframework/cossack/actions/workflows/e2e-tests.yml/badge.svg">
+ </a>
 </p>
 
 <br>
 
 <h1 align="center">The Borderless TypeScript Framework</h1>
 
-A full-stack TypeScript framework for building real-time, edge first web applications.
+A full-stack TypeScript framework for real-time web applications on edge and Node.js runtimes.
 
-Write client and server logic in the same class seamlessly, like no border exists, deploy to Cloudflare Workers or any Node compatible runtime in seconds.
+Write client and server logic in the same class. Deploy to Cloudflare Workers or a compatible Node.js runtime.
 
 Think of it like Laravel + Next.js + Phoenix LiveView, but TypeScript native and edge deployment ready.
 
@@ -36,16 +36,15 @@ pnpm install
 pnpm dev
 ```
 
-The CLI will prompt you to choose a runtime adapter:
-- **Cloudflare Workers** (default) — edge deployment with Durable Objects for stateful WebSocket connections
-- **Node.js** — traditional server deployment via `@hono/node-server`
+The CLI asks you to choose a runtime adapter:
+- **Cloudflare Workers** (default): Deploy to Cloudflare and use Durable Objects for stateful WebSocket connections.
+- **Node.js**: Run a server with `@hono/node-server`.
 
 ## Why Cossack?
 
-Cossack is the most advanced TypeScript framework for building modern web applications on any platform.
+Cossack lets client code call server methods through the same component model.
 
-No more `fetch()`, no more query libraries, no more client-server boilerplate, even no more client-server components.
-Your server methods are directly callable from the client, and vice-versa.
+You do not need to write `fetch()` calls for these method calls. Client code can call server methods, and server code can call client methods.
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -72,22 +71,21 @@ export default class Counter extends Cossack {
 
 ## Key Features
 
-Cossack has a rich set of features that every modern web application needs, plus maximum Developer Experience (DX) and performance optimizations out of the box. 
+Cossack includes these framework features:
 
-- **Borderless**: Secured client-server, server-client direct method calls
-- **File based routing**: with nested layouts
-- **Server-side rendering (SSR)**: for first load performance and SEO
-- **Soft navigation**: with pre-fetching on hover, View Transitions API support
-- **Real-time support**: out of the box with SSE, WebSockets or Cloudflare Durable Objects
-- **Optimistic UI**: for instant client feedback
-- **Loading UI and error handling**: baked in
-- **Built-in validation**: with decorators
-- **Automatic code security**: server-only code is stripped from client bundles
-- **Smart re-rendering**: only re-render the parts of the page that changed
-- **Markdown pages**: that support layouts and frontmatter
-- **Static site generation (SSG)**: for pre-rendering pages at build time
-- **Runtime adapters**: for Cloudflare Workers, Node.js, or any other serverless platform
-- **Authentication**: built-in with session management
+- File-based routing and nested layouts.
+- Server-side rendering (SSR).
+- Soft navigation with link prefetching and View Transitions API support.
+- Real-time updates with SSE, WebSockets, or Cloudflare Durable Objects.
+- Optimistic UI updates.
+- Loading UI and error handling.
+- Validation with decorators.
+- Removal of server-only code from client bundles.
+- Updates to only the changed parts of a page.
+- Markdown pages with layouts and frontmatter.
+- Static site generation (SSG).
+- Runtime adapters for Cloudflare Workers and Node.js.
+- Authentication with session management.
 - **R2 or S3 file storage integration**
 - **Enterprise ready**: using Middleware, Service classes, and Dependency Injection (DI) for complex applications
 - **Dev tools**: Ctrl+Click to jump to component definition, hot reload, and more
@@ -101,7 +99,7 @@ Cossack has a rich set of features that every modern web application needs, plus
 
 ### Real-time support
 
-Traditional frameworks rely on a single transport mode, usually HTTP. So in order to build real-time applications, you usually have to write WebSocket client and server code yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
+Traditional frameworks rely on a single transport mode, usually HTTP. So to build real-time applications, you usually have to write WebSocket client and server code yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
 
 ## Learning Cossack
 

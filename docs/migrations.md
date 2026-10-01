@@ -66,5 +66,5 @@ run `cossack schema check`, resolve drift, then run
 untouched.
 
 D1 migrations use native batches for grouped statements. D1 batches are
-transactional and roll back on failure; interactive `BEGIN`/`COMMIT` is not
+transactional and roll back on failure. Interactive `BEGIN`/`COMMIT` is not
 emulated.

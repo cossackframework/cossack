@@ -5,7 +5,7 @@ description: "Form validation using the @Validate decorator that runs on both cl
 
 # Form Validation
 
-The `@Validate` decorator provides form validation that runs on both client and server. It integrates seamlessly with `@State`, `@ClientState`, `@Store`, and `@ClientStore` decorators.
+The `@Validate` decorator provides form validation that runs on both client and server. It integrates with `@State`, `@ClientState`, `@Store`, and `@ClientStore` decorators.
 
 ## Usage
 
@@ -58,7 +58,7 @@ export class LoginForm extends Cossack {
 
 ## Coercion
 
-Form submissions arrive as strings — `FormData` values are always strings, so a field you think of as a number comes through as `"25"`. The `coerce` rule transforms the value before the other checks run, and (for `getFormData` / `validateObject`) writes the transformed value back into the returned `data`, so the runtime type matches your declared form type.
+Form submissions arrive as strings : `FormData` values are always strings, so a field you think of as a number comes through as `"25"`. The `coerce` rule transforms the value before the other checks run, and (for `getFormData` / `validateObject`) writes the transformed value back into the returned `data`, so the runtime type matches your declared form type.
 
 | Mode | Result | Failure |
 | :--- | :--- | :--- |
@@ -86,10 +86,10 @@ if (valid) {
 
 **Two important behaviors:**
 
-- **Coercion runs after the `required` check.** Empty values (`null`, `undefined`, `''`) are never coerced — `""` stays `""`, it does not become `0` or `false`. This keeps `required` meaningful.
-- **A coercion that cannot succeed is a validation failure.** `Number("abc")` produces `NaN`, and `new Date("xyz")` produces an Invalid Date — both fail validation (and the original value is retained in `data`).
+- **Coercion runs after the `required` check.** Empty values (`null`, `undefined`, `''`) are never coerced : `""` stays `""`, it does not become `0` or `false`. This keeps `required` meaningful.
+- **A coercion that cannot succeed is a validation failure.** `Number("abc")` produces `NaN`, and `new Date("xyz")` produces an Invalid Date : both fail validation (and the original value is retained in `data`).
 
-> **Note on `@Validate` stores:** the coerced value is used for the validation checks (so `min`/`max`/`custom` run against the typed value), but it is **not** written back to your store — store fields keep whatever value you assigned them. Coercion's write-back only happens in the `getFormData` / `validateObject` pipeline.
+> **Note on `@Validate` stores:** the coerced value is used for the validation checks (so `min`/`max`/`custom` run against the typed value), but it is **not** written back to your store : store fields keep whatever value you assigned them. Coercion's write-back only happens in the `getFormData` / `validateObject` pipeline.
 
 ## Validation Config
 
@@ -188,11 +188,11 @@ Note: The `customAsync` function receives a `component` parameter that gives you
 
 ## Validating Stores
 
-When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **nested rule tree** that mirrors the store shape — each field of the store takes a rule, and object fields nest a sub-tree. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `emial` fail to compile.
+When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **nested rule tree** that mirrors the store shape : each field of the store takes a rule, and object fields nest a sub-tree. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `emial` fail to compile.
 
 ### Type-safe rules with `storeRules<T>()` (recommended)
 
-Pass `storeRules<T>(...)` as the `rules`. The tree mirrors `T`: primitive fields (and arrays, `Date`, `RegExp`, etc.) take a `ValidationRule` directly, while object fields nest a sub-tree. The keys you write are **relative** to the store and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional — omit it for an untyped map.
+Pass `storeRules<T>(...)` as the `rules`. The tree mirrors `T`: primitive fields (and arrays, `Date`, `RegExp`, etc.) take a `ValidationRule` directly, while object fields nest a sub-tree. The keys you write are **relative** to the store and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional : omit it for an untyped map.
 
 ```typescript
 import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
@@ -249,10 +249,10 @@ this.getError('form.address.zip');   // => 'Invalid ZIP' | undefined
 ```
 
 ### How errors are stored
-The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed dot-path**. There is no nesting in `errors` itself — `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered leaf (including nested ones) and `clearErrors()` clears them all in one call.
+The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed dot-path**. There is no nesting in `errors` itself : `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered leaf (including nested ones) and `clearErrors()` clears them all in one call.
 
 ### Mixing stores and individual states
-You can freely mix `@Store` with `@State`/`@ClientState` on the same component. A `@Validate` on a store property produces dot-path rules; a `@Validate` on a `@State` property produces a single-rule entry keyed by the property name. Both coexist in the same `errors` object.
+Use `@Store` with `@State` or `@ClientState` on the same component. A `@Validate` decorator on a store property creates dot-path rules. On a `@State` property, it creates one rule keyed by the property name. Both rules appear in the same `errors` object.
 
 ## Complete Example
 

@@ -31,11 +31,11 @@ export class Counter extends Cossack {
 }
 ```
 
-That's it! When you change the state value, for example, `this.count++`, it automagically synchronize between servers and clients. The UI also reactive without complex hooks.
+When you change a state value, such as with `this.count++`, Cossack syncs it between the server and client. The UI updates without extra hooks.
 
 ## `@State` / `@Store` Options
 
-Both `@State()` and `@Store()` accept an options object. The commonly used options are `flash` and `old`, which auto-bind flashed values and old form input during bootstrap — handy for the POST → redirect → GET form flow.
+Both `@State()` and `@Store()` accept an options object. The `flash` and `old` options bind flashed values and old form input during bootstrap. Use them for the POST → redirect → GET form flow.
 
 ```ts
 @State({ flash: true }) success: string | undefined;          // binds flashed('success')
@@ -46,16 +46,16 @@ Both `@State()` and `@Store()` accept an options object. The commonly used optio
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `flash` | `boolean \| string` | — | Auto-bind from a flashed value (`flashed()`). `true` uses the property name as the key; a string is an explicit key. |
-| `old` | `boolean \| string` | — | Auto-bind from old input (`old()`). `true` uses the property name; a string is an explicit key (supports dot-paths like `'address.street'`). |
+| `flash` | `boolean \| string` | | Auto-bind from a flashed value (`flashed()`). `true` uses the property name as the key. A string sets the key. |
+| `old` | `boolean \| string` | | Auto-bind from old input (`old()`). `true` uses the property name. A string sets the key and supports dot paths such as `'address.street'`. |
 | `channel` | `string` | `'global'` | A logical grouping tag (realtime transport). See [WebSockets](/docs/websockets.md). |
 | `provider` | `string` | `'page'` | Which `StateProvider` (Durable Object) a `@Server` action is dispatched over. See [Providers](/docs/providers.md). |
 
 **`flash` / `old` rules:**
 
-- The flashed/old value **wins over the class-field initializer** — mirroring the manual `old('name') ?? ''`. When nothing was flashed, the initializer is kept.
+- The flashed or old value **wins over the class-field initializer**. This matches `old('name') ?? ''`. If no value was flashed, Cossack keeps the initializer.
 - **Server-only.** On the client `flashed()`/`old()` return `undefined`, so the initializer is kept and the SSR-bound value arrives via normal state hydration.
-- `flash` and `old` are **mutually exclusive** — a property binds from one source (`flash` takes precedence if both are set).
+- `flash` and `old` cannot be used together. If you set both, the property uses `flash`.
 - No `init()` is needed for repopulation. Keep `init()` only when you need to *compute or transform* a value.
 
 This removes the repetitive `init()` boilerplate. Instead of:
@@ -73,14 +73,14 @@ just declare the bindings inline. See [Session & Flash → Auto-binding](/docs/s
 
 ## Client-Only States (`@ClientState`)
 
-Not all state needs to be synchronized with the server. Cosmetic UI state—like whether a dropdown is open, which tab is active, or the current value of an unsubmitted input—shouldn't require a network round-trip. 
+Not all state needs server synchronization. For example, a dropdown's open state, the selected tab, and an unsubmitted input value are client-only. These values do not need a network request.
 
 For these cases, use the `@ClientState` decorator.
 
 **How it works:**
-1.  You decorate a property with `@ClientState`.
-2.  When you change this property on the client, it **automatically** triggers a re-render.
-3.  The property is **ignored** during Server-Side Rendering (initial state) and is **never** sent over the WebSocket.
+1. You decorate a property with `@ClientState`.
+2. When you change this property on the client, it **automatically** triggers a re-render.
+3. The property is **ignored** during Server-Side Rendering (initial state) and is **never** sent over the WebSocket.
 
 ### Example: A Toggle Switch
 
@@ -116,9 +116,9 @@ export class ToggleDemo extends Cossack {
 For complex forms and grouped UI state, defining many individual `@State` fields becomes repetitive. The `@Store` and `@ClientStore` decorators let you group multiple related fields in **one object** while keeping full reactivity at **any depth**.
 
 ### How it works
-1. Decorate an object property with `@Store()` (isomorphic, synchronized with the server — like `@State`) or `@ClientStore()` (client-only, never serialized — like `@ClientState`).
+1. Decorate an object property with `@Store()` (isomorphic, synchronized with the server : like `@State`) or `@ClientStore()` (client-only, never serialized : like `@ClientState`).
 2. The framework wraps the value in a **recursive reactive Proxy**. Mutating any nested field or array element triggers a re-render (and a server broadcast on `@Store` when mutated server-side).
-3. The store is serialized as a whole; nested objects/arrays are preserved across the SSR → client hydration round-trip and over broadcasts.
+3. The store is serialized as a whole. Nested objects and arrays stay intact during client hydration and broadcasts.
 
 ### Deep nested mutation
 Reactivity works for **objects** and **arrays** at any depth, including array methods:
@@ -182,7 +182,7 @@ export class ComplexForm extends Cossack {
 `@ClientStore` mirrors `@ClientState`: nested mutations re-render the client UI, but the store is **never** serialized or sent over the wire. Use it for ephemeral grouped state (multi-step form drafts, transient filters, panel state).
 
 ### Validating store fields
-Stores compose with `@Validate` and the **type-safe `storeRules<T>()` helper**. Keys are written relative to the store and compile-time checked against the store type — typos fail to compile. See [Form Validation → Validating Stores](/docs/validation.md#validating-stores) for details.
+Stores work with `@Validate` and the **type-safe `storeRules<T>()` helper**. Write keys relative to the store. TypeScript checks them against the store type and reports typos. See [Form Validation → Validating Stores](/docs/validation.md#validating-stores).
 
 ```typescript
 import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
@@ -216,13 +216,13 @@ export class StoreFormDemo extends Cossack {
 }
 ```
 
-`storeRules<T>()` is optional — omit `<T>` for an untyped nested map (no compile-time path checking).
+`storeRules<T>()` is optional. Omit `<T>` to use a nested map without compile-time path checks.
 
-> Note: `@Store` / `@ClientStore` fully interoperate with `@State` / `@ClientState` and `@Computed` — mix and match whichever best fits each piece of state.
+> `@Store` and `@ClientStore` work with `@State`, `@ClientState`, and `@Computed`. Choose the decorator for each state value.
 
 ### Advanced: Why stores?
 
-In React (and immutable-state models generally), you must never mutate state directly — every update produces a **new reference at each level** of the tree. For a deeply nested form this gets verbose and error-prone: you re-derive the whole update path by hand, or reach for `immer`/reducers to do it for you.
+In React (and immutable-state models generally), you must never mutate state directly : every update produces a **new reference at each level** of the tree. For a deeply nested form this gets verbose and error-prone: you re-derive the whole update path by hand, or reach for `immer`/reducers to do it for you.
 
 Cossack stores use a recursive reactive Proxy, so **you mutate the object directly** and the framework observes the change at any depth. The code reads exactly like the data shape.
 
@@ -245,20 +245,20 @@ The win compounds with depth: a 3-level immutable spread (`...prev.a.b.c`) is ge
 
 | Aspect | React (`useState` / `useReducer`) | Cossack `@Store` |
 | :--- | :--- | :--- |
-| **Update style** | Immutable — spread/cloning required at each level | Direct mutation (`store.field = x`) |
-| **Deep nested update** | Re-derive full path or use `immer`/reducer | `store.address.zip = x` — reactive at any depth |
-| **Array mutation** | Forbidden (`push`/`splice` mutate); must `map`/`filter`/spread | `store.tags.push(x)`, `splice`, `pop` — all reactive |
-| **Change detection** | Reference inequality (`prev !== next`) | Trigger-based (Proxy `set` trap) — same model as `@State` |
-| **Equality after nested mutation** | New top-level reference (`prev !== next`) | Same proxy reference (`prev === next`) — by design |
-| **Reassignment** | Required (only way to update) | Optional — `this.store = {...}` also works |
+| **Update style** | Create a new value with spread or cloning at each level. | Change the value directly with `store.field = x`. |
+| **Deep nested update** | Rebuild the path or use `immer` or a reducer. | `store.address.zip = x` updates the state at any depth. |
+| **Array mutation** | Do not use `push` or `splice`. Use `map`, `filter`, or spread. | `store.tags.push(x)`, `splice`, and `pop` update the state. |
+| **Change detection** | Compare references with `prev !== next`. | A Proxy `set` trap detects the change, as with `@State`. |
+| **Equality after nested mutation** | A nested update creates a new top-level reference. | The proxy reference stays the same. |
+| **Reassignment** | Reassign the value to trigger an update. | Reassignment such as `this.store = {...}` also works. |
 | **Snapshot / undo** | Trivial (keep the old reference) | Roll your own (`structuredClone`), no built-in history |
-| **Cyclic structures** | Works (references are plain) | `JSON.stringify` throws — same as a cyclic plain object |
+| **Cyclic structures** | Supported because references stay plain. | `JSON.stringify` throws on a cyclic object. |
 | **Server sync** | Manual (`fetch`, optimistic UI, the whole RPC layer) | Automatic broadcast on `@Store` server-side mutations |
-| **Boilerplate** | Reducer/action creators, or `immer`, or prop-drilling | None — declare `@Store()`, mutate |
+| **Boilerplate** | Add reducers, action creators, `immer`, or props. | Declare `@Store()` and change its value. |
 
-**When immutability-style snapshots matter:** if you need undo/redo, time-travel debugging, or shallow-compare memoization, React's immutable references give you those for free. Cossack stores trade that for direct-mutation ergonomics. You can still snapshot (`structuredClone(this.form)`) when you need to — it's just not the default.
+**When immutable snapshots matter:** React-style immutable references support undo/redo, time-travel debugging, and shallow-compare memoization. Cossack stores use direct mutations by default. Create a snapshot with `structuredClone(this.form)` when you need one.
 
-**Both idioms available:** you're never locked in. Whole-store reassignment (`this.form = {...}`) is reactive too, so you can mix mutation and replacement as the situation demands.
+**Both idioms available:** you are never locked in. Whole-store reassignment (`this.form = {...}`) is reactive too, so you can mix mutation and replacement as the situation demands.
 
 
 ## Computed State (`@Computed`)
@@ -269,7 +269,7 @@ For values that can be derived from existing state, use the `@Computed` decorato
 1. You define a getter method that calculates a value based on other properties.
 2. You decorate it with `@Computed`.
 3. The value is automatically re-calculated whenever the underlying state changes (because the template re-renders).
-4. Computed properties are **not** serialized or sent over the network; they are always calculated locally.
+4. Computed properties are **not** serialized or sent over the network. Cossack calculates them locally.
 
 ### Example: Derived Calculation
 
@@ -300,4 +300,4 @@ export class Counter extends Cossack {
 
 Refer to [Websockets](/docs/websockets.md) documentation about how to make realtime application with websockets.
 
-By default, Durable Object transport is **stateless** — state is ephemeral and not persisted to DO storage. Add `stateful: true` to `@Page()` if state needs to persist across connections and DO evictions.
+By default, Durable Object transport is **stateless**. It does not persist state to DO storage. Add `stateful: true` to `@Page()` to persist state across connections and DO evictions.

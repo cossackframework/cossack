@@ -1,11 +1,11 @@
 ---
 title: "VSCode Snippets"
-description: "VSCode snippets for common scaffolding tasks including pages, layouts, components, services, middleware, and auth guards."
+description: "Use VS Code snippets to create pages, layouts, components, services, middleware, and auth guards."
 ---
 
 # VSCode Snippets
 
-Cossack ships with VSCode snippets to speed up common scaffolding tasks. They are scoped to TypeScript files and activate via prefix triggers.
+Cossack includes VS Code snippets for common tasks. The snippets work in TypeScript files and use prefix triggers.
 
 Snippets are included automatically when you scaffold a new app with
 `cossack create`. For existing projects, copy
@@ -13,7 +13,7 @@ Snippets are included automatically when you scaffold a new app with
 
 ## Scaffolding Snippets
 
-These generate complete file structures.
+These snippets create files and code structures.
 
 | Prefix | Description |
 |--------|-------------|
@@ -62,7 +62,7 @@ These insert individual decorators or methods into an existing class.
 
 Type the prefix in a `.ts` file and press `Tab` or `Enter` to expand. Use `Tab` to jump between placeholders.
 
-Example — type `cpage` and expand:
+Example : type `cpage` and expand:
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';

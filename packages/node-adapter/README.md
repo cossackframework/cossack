@@ -1,17 +1,20 @@
 # Cossack Framework Node Adapter
 
-This package provides a Node.js adapter for the Cossack Framework, allowing you to run your Cossack applications in a Node.js environment. It includes utilities for handling HTTP requests and responses, WebSocket upgrades, static file serving, and runtime polyfills that keep application code identical across Cloudflare Workers and Node.js.
+This package runs Cossack applications on Node.js. It handles HTTP requests,
+WebSocket upgrades, and static files. It also provides runtime polyfills so
+application code can work on Cloudflare Workers and Node.js.
 
 ## Installation
-Refer to our [Installation Guide](https://cossack.dev/docs/installation) for detailed instructions on how to set up the Cossack Framework and its packages.
+See the [Installation Guide](https://cossack.dev/docs/installation) to set up
+Cossack and its packages.
 
 ## Exports
 
-- `CossackNodeAdapter` — handles WebSocket upgrades and component bootstrapping on a Node `http.Server`.
-- `nodeRuntimeAdapter` — pass to `createApp()` so SSR emits Node process-local WebSocket targets.
-- `serveStatic` — Node `fs`-based Hono middleware for serving static assets.
-- `NodeWebSocketRuntime` — the WebSocket runtime used by the adapter.
-- `createNodeEmailSender` — Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
+- `CossackNodeAdapter` : handles WebSocket upgrades and component bootstrapping on a Node `http.Server`.
+- `nodeRuntimeAdapter` : pass to `createApp()` so SSR emits Node process-local WebSocket targets.
+- `serveStatic` : Node `fs`-based Hono middleware for serving static assets.
+- `NodeWebSocketRuntime` : the WebSocket runtime used by the adapter.
+- `createNodeEmailSender` : Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
 
 ## Unified `env.EMAIL` (Cloudflare email binding polyfill)
 
@@ -74,13 +77,13 @@ new CossackNodeAdapter({
 ### Environment variables
 Configure via `.dev.vars` (Cloudflare dev) or your shell/`.env` (Node):
 
-| Variable       | Description                                  | Default            |
+| Variable | Description | Default |
 | -------------- | -------------------------------------------- | ------------------ |
-| `SMTP_HOST`    | SMTP server host (e.g. `smtp.gmail.com`)     | —                  |
-| `SMTP_PORT`    | SMTP server port                             | `587`              |
-| `SMTP_SECURE`  | Use TLS (`"true"` for port 465)              | `port === 465`     |
-| `SMTP_USER`    | SMTP username                                | —                  |
-| `SMTP_PASS`    | SMTP password                                | —                  |
-| `MAIL_FROM`    | Default `from` address when omitted          | `no-reply@example.com` |
+| `SMTP_HOST` | SMTP server host (e.g. `smtp.gmail.com`) | : |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_SECURE` | Use TLS (`"true"` for port 465) | `port === 465` |
+| `SMTP_USER` | SMTP username | : |
+| `SMTP_PASS` | SMTP password | : |
+| `MAIL_FROM` | Default `from` address when omitted | `no-reply@example.com` |
 
 Now `await this.env.EMAIL.send(...)` works identically in `@Server` methods on both Cloudflare Workers and Node.js.

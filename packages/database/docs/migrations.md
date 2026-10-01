@@ -183,7 +183,7 @@ cossack-orm schema pull
 - `schema diff` describes physical/model differences.
 - `schema check` fails when drift exists.
 - `schema pull` generates decorated models with explicit physical names and
-  logical types.
+ logical types.
 
 Unlike model-first migration generation, schema commands inspect the live
 database. Destructive differences also require `--allow-destructive` for

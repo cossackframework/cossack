@@ -7,6 +7,6 @@ author: Cossack Team
 
 # Hello, world!
 
-Welcome to your new Cossack application. This page is written in Markdown and automatically becomes the `/blog/hello-world` route.
+This page uses Markdown and creates the `/blog/hello-world` route.
 
-Add another post by creating a Markdown file beside this one, then add it to the small post manifest in `blog/index.ts`.
+To add a post, create a Markdown file beside this one. Then add it to the post manifest in `blog/index.ts`.

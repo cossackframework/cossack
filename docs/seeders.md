@@ -44,5 +44,5 @@ cossack seed run --only roles
 ```
 
 `transaction: 'auto'` uses an interactive transaction when the provider
-supports it. D1 seeders should use idempotent statements or explicit native
+supports it. Use idempotent statements or explicit native
 batches instead of requesting an interactive transaction.

@@ -7,7 +7,7 @@ description: "Build backend endpoints directly in your project using functional 
 
 Cossack makes it easy to build backend endpoints directly within your project. You can choose between two styles: **Functional API Routes** for simplicity, or **Class-based API Routes** for shared state and advanced logic.
 
-All API routes should be placed in the `src/pages/api/` directory.
+Place all API routes in the `src/pages/api/` directory.
 
 ## Cross-origin requests (CORS)
 
@@ -71,7 +71,7 @@ If you prefer an object-oriented approach, you can extend the `Cossack` base cla
 
 A class **without** a `render()` method is treated as a pure API route: every HTTP
 method it defines returns JSON (no HTML rendering). Use `get()` to handle `GET`
-requests — it matches the HTTP method directly and is server-only, so no
+requests : it matches the HTTP method directly and is server-only, so no
 `@Server()` decorator is required. `init()` is kept as a server-side alias.
 
 ```typescript
@@ -99,7 +99,7 @@ submit handler.
 
 ### Server-only lifecycle methods
 
-`get()` and `init()` are server-only — their bodies are stripped from client
+`get()` and `init()` are server-only : their bodies are stripped from client
 bundles. For client-side initialization that runs after hydration, override
 `clientInit()` instead.
 
@@ -120,9 +120,9 @@ export const GET = RateLimit({ window: 10_000, max: 3 }, (c) => {
 
 Cossack follows a standard file-based routing convention for API routes:
 
-*   `src/pages/api/hello.ts` → `/api/hello`
-*   `src/pages/api/users/index.ts` → `/api/users`
-*   `src/pages/api/users/[id].ts` → `/api/users/:id`
+* `src/pages/api/hello.ts` → `/api/hello`
+* `src/pages/api/users/index.ts` → `/api/users`
+* `src/pages/api/users/[id].ts` → `/api/users/:id`
 
 ## Type Safety
 

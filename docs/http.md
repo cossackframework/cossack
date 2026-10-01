@@ -5,11 +5,11 @@ description: "Build interactive UIs and JSON APIs using the default HTTP transpo
 
 # HTTP Transport
 
-Cossack's default transport is a powerful, stateless HTTP layer that allows you to build both traditional server-side applications and modern, AJAX-driven interactive UIs using the exact same component model. This is ideal for three primary use cases:
+Cossack's default transport uses stateless HTTP requests for server-rendered pages and interactive UIs. It supports three use cases:
 
-1.  **Interactive Components**: Creating dynamic UIs that update without a full page reload (e.g., counters, filters, searches).
-2.  **Pure JSON APIs**: Creating RESTful endpoints for other applications.
-3.  **Classic Forms**: Handling simple, stateless UI actions like form submissions that render HTML.
+1. **Interactive Components**: Creating dynamic UIs that update without a full page reload (e.g., counters, filters, searches).
+2. **Pure JSON APIs**: Creating RESTful endpoints for other applications.
+3. **Classic Forms**: Handling simple, stateless UI actions like form submissions that render HTML.
 
 ## 1. Interactive Components (Default)
 
@@ -44,7 +44,7 @@ export default class extends Cossack {
     }
 }
 ```
-When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to seamlessly update the DOM.
+When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to update the DOM.
 
 ## 2. Pure JSON APIs
 
@@ -78,11 +78,11 @@ Navigating to `/api/greeting` will return a `200 OK` JSON response:
 
 ## 3. Classic Form Handling
 
-This powerful pattern allows you to handle traditional HTML form submissions.
+This pattern allows you to handle traditional HTML form submissions.
 
 The router intelligently handles this:
--   A `GET` request will render the HTML template.
--   `POST`, `PUT`, etc., requests will be handled as form submissions or actions.
+- A `GET` request will render the HTML template.
+- `POST`, `PUT`, etc., requests will be handled as form submissions or actions.
 
 ### Example: A Contact Form
 
@@ -145,9 +145,9 @@ By default, all components use the `http` transport. You only need to specify th
 
 Routes are mapped directly from the file system. The router is flexible, supporting both named files and `index.ts` files.
 
--   `src/pages/api/users/index.ts` -> `/api/users`
--   `src/pages/api/tasks/index.ts` -> `/api/tasks`
--   `src/pages/api/tasks/[id]/index.ts` -> `/api/tasks/:id`
+- `src/pages/api/users/index.ts` -> `/api/users`
+- `src/pages/api/tasks/index.ts` -> `/api/tasks`
+- `src/pages/api/tasks/[id]/index.ts` -> `/api/tasks/:id`
 
 ### 3. HTTP Method Mapping
 
@@ -157,7 +157,7 @@ For API routes and forms, the framework automatically maps your class method nam
 
 ### Accessing the Request Context (`this.c`)
 
-Inside any API or form handler method, you have access to `this.c`, a powerful, unified context object. It provides the full API of the Hono `Context` on the server.
+Inside an API or form handler, read the request through `this.c`. It provides the full Hono `Context` API on the server.
 
 ```typescript
 async get() {
@@ -201,11 +201,11 @@ For complex forms with nested fields, name your inputs using bracket notation:
 The browser sends these as a flat `FormData` with literal keys like
 `"address[street]"`. Cossack offers two ways to turn that into a nested object.
 
-#### `getFormData<T>()` — typed, optionally validated (recommended)
+#### `getFormData<T>()` : typed, optionally validated (recommended)
 
 The convenient server-side helper on `this.c`. Pass a type parameter for the
 shape and (optionally) `rules` built with `storeRules<T>()` for built-in
-validation — the same vocabulary used by `@Store`/`@Validate` components.
+validation : the same vocabulary used by `@Store`/`@Validate` components.
 
 ```typescript
 import { storeRules } from '@cossackframework/core';
@@ -239,18 +239,18 @@ async post() {
 - **No `rules`** → returns `Promise<T>` (parsed data, type-asserted).
 - **With `rules`** → returns `{ data: T; errors: Partial<Record<...>>; valid: boolean }`.
 - **Non-throwing.** You decide how to handle a failure (400 JSON, re-render with
-  errors, etc.). The same `storeRules<T>()` syntax works in `@Store` components
-  too — learn one validation vocabulary, use it everywhere.
+ errors, etc.). The same `storeRules<T>()` syntax works in `@Store` components
+ too : learn one validation vocabulary, use it everywhere.
 
-**Cast, not coercion.** `<T>` is a compile-time assertion about the shape; it
+**Cast, not coercion.** `<T>` is a compile-time assertion about the shape. It
 does not convert values. `FormData` values are strings/`File`, so a field typed
 `number` stays a string at runtime (`"30"`). Built-in validators like `min`/`max`
 do validate numerically, but for a true `number` you still cast/transform at the
-edge. Use `rules` for runtime validation; the `<T>` alone is just a type hint.
+edge. Use `rules` for runtime validation. `<T>` alone only sets a type hint.
 
-#### `parseFormData()` — the lower-level utility
+#### `parseFormData()` : the lower-level utility
 
-If you're in a functional `pages/api/*` route (no `this.c`) or want full control:
+If you use a functional `pages/api/*` route without `this.c`, or need full control:
 
 ```typescript
 import { parseFormData } from '@cossackframework/core';
@@ -283,7 +283,7 @@ this.serverHandle(data);
 
 #### Why a separate API (not overriding `formData()`)
 
-`this.c.req.formData()` stays flat — the standard Hono surface, untouched and
+`this.c.req.formData()` stays flat : the standard Hono surface, untouched and
 backward compatible. The convenience is additive: `getFormData<T>()` is the
 opt-in for nested + typed + validated data. Cossack intentionally does NOT
 auto-nest every form body (matching Hono, Fastify, and Express 5), because
@@ -323,12 +323,12 @@ Pass `{ novalidate: false }` if you want native validation restored:
 ## Flash Data
 
 Flash data carries values across exactly one redirect (POST → GET), then is
-consumed — the classic Laravel `back()->with('success', 'Saved!')` pattern.
+consumed : the classic Laravel `back()->with('success', 'Saved!')` pattern.
 Use it for success messages, validation errors, or repopulating form fields
 after a failed submission.
 
 When you pass `rules` to `getFormData()`, the submitted input and any
-validation errors are **auto-flashed** — so the common form flow needs no
+validation errors are **auto-flashed** : so the common form flow needs no
 manual `flashInput()` / `flash('errors')`. Use `flash()` directly only for
 your own messages (e.g. a success banner).
 
@@ -369,7 +369,7 @@ option on `getFormData()`, and the persistent DB-backed `session()`.
 |---|---|
 | `flash(key, value)` / `flash({...})` | Write a flash value (or several) for the next request. |
 | `flashed(key)` / `flashedAll()` / `hasFlashed(key)` | Read previously-flashed values during this request. |
-| `flashInput(formData)` | Stash submitted form input for repopulation (namespaced — won't collide with message-style flash keys of the same name). |
+| `flashInput(formData)` | Store submitted form input for repopulation. The namespace prevents conflicts with message-style flash keys of the same name. |
 | `old(key)` | Read a stashed input field for repopulating the form. |
 | `this.back(fallback)` | Redirect to the request's `Referer` (falls back to `fallback`). |
 
@@ -392,23 +392,23 @@ in your wrangler env:
 }
 ```
 
-Apps that never use `flash()` need no secret — the middleware throws only when
+Apps that never use `flash()` need no secret : the middleware throws only when
 flash is actually exercised.
 
 ### Limitations
 
 - **~4KB cookie limit.** Fine for messages + small form input. For larger
-  payloads, use a database-backed session (`session()`) instead.
+ payloads, use a database-backed session (`session()`) instead.
 - **Read-once.** Flash is consumed on the first GET that reads it. Refreshing
-  the page clears it. (`flash().keep()` / `reflash()` aren't implemented yet.)
+ the page clears it. (`flash().keep()` / `reflash()` are not implemented yet.)
 - **Traditional `method="post"` flows only.** The CRPC `/crpc` path returns
-  JSON (no redirect), so flash isn't applicable there — and `@Server` reactive
-  forms already show success inline via `@State`.
+JSON (no redirect), so flash is not applicable there. `@Server` reactive
+ forms already show success inline via `@State`.
 
 ## Cookies
 
 The `cookie()` helper reads and writes cookies on the active request without an
-explicit `Context` argument — the same context-free ergonomics as ORM scopes,
+explicit `Context` argument : the same context-free ergonomics as ORM scopes,
 `__()`,
 and `flash()`. It delegates to Hono's `hono/cookie` under the hood.
 
@@ -434,15 +434,15 @@ async post() {
 | `cookie().set(name, value, options?)` | Set a cookie on the response. |
 | `cookie().delete(name, options?)` | Expire a cookie. |
 
-`cookie()` works anywhere inside a request — handlers, services, and
-middlewares. It's available out of the box (the request-context middleware
+`cookie()` works anywhere inside a request : handlers, services, and
+middlewares. It is available by default (the request-context middleware
 scopes the Hono `Context` into AsyncLocalStorage for every request, first in
 the stack).
 
 ## Sessions (database-backed)
 
-For data that outlives a single redirect — shopping carts, wizard state,
-per-user preferences — use `session()`. Unlike flash (cookie-backed, ~4KB,
+For data that outlives a single redirect : shopping carts, wizard state,
+per-user preferences : use `session()`. Unlike flash (cookie-backed, ~4KB,
 read-once), sessions are **database-backed** (D1/Turso via the `sessions`
 table), long-lived, and keyed off a session ID cookie.
 
@@ -477,7 +477,7 @@ export const middlewares = [sessionMiddleware];
 ```
 
 The migration shipped by `cossack add database` creates the `sessions` table
-(`id`, nullable `user_id`, JSON `data`, `expires_at`) — no extra schema work.
+(`id`, nullable `user_id`, JSON `data`, `expires_at`) : no extra schema work.
 
 ### Anonymous vs. authenticated sessions
 
@@ -505,7 +505,7 @@ export const sessionMiddleware = createSessionMiddleware({
 | `await session().unset(key)` | Remove a key. |
 | `await session().destroy()` | Delete the session row (e.g. on logout). |
 
-### Flash vs. session — when to use which
+### Flash vs. session : when to use which
 
 | | Flash | Session |
 |---|---|---|
@@ -518,7 +518,7 @@ export const sessionMiddleware = createSessionMiddleware({
 
 ### Automatic JSON Responses
 
-If a method in a **pure JSON API** (a component without a `render()`) doesn't explicitly return a value, the framework automatically calls the component's `getPublicState()` method, which serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
+If a method in a **pure JSON API** (a component without a `render()`) does not explicitly return a value, the framework automatically calls the component's `getPublicState()` method, which serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
 
 ### Custom Responses
 

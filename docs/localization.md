@@ -19,7 +19,7 @@ This creates `src/lang/en.json` and **automatically wires** everything else:
 
 - `{{ cossackLang }}` is injected into `<html lang="...">` in your `src/root.ts` (if you have one).
 - `APP_LOCALE` is added to the `vars` block in `wrangler.jsonc`.
-- The locale middleware, `__()` global, and `<html lang>` attribute are already wired by the framework — no manual imports or middleware registration needed.
+- The locale middleware, `__()` global, and `<html lang>` attribute are already wired by the framework : no manual imports or middleware registration needed.
 
 ```json
 {
@@ -38,7 +38,7 @@ render() {
 }
 ```
 
-That's it — the framework auto-detects `src/lang/*.json`, hydrates the active locale on the client, and keeps `<html lang>` in sync.
+The framework detects `src/lang/*.json`, loads the active locale on the client, and updates `<html lang>`.
 
 ## Configuration
 
@@ -80,7 +80,7 @@ import { setLocale } from '@cossackframework/core';
 await setLocale('es');
 ```
 
-`setLocale` is **client-only** — on the server, locale is resolved per-request (see [How it works](#how-it-works)). Calling it from server code throws.
+`setLocale` is **client-only** : on the server, locale is resolved per-request (see [How it works](#how-it-works)). Calling it from server code throws.
 
 ## Runtime locale switching
 
@@ -158,7 +158,7 @@ For apps with many strings, inventing short keys for everything is cumbersome. U
 __('I love programming.')  // "Me encanta programar." (es), "I love programming." (en fallback)
 ```
 
-If a key doesn't exist in the active locale, `__()` falls back to the default locale, then to the key itself — so using the English text as the key means missing translations gracefully degrade to English.
+If a key does not exist in the active locale, `__()` uses the default locale. If the key is also missing there, the helper returns the key. Use English text as the key to show English when a translation is missing.
 
 ## Placeholders
 
@@ -208,7 +208,7 @@ Separate plural forms with `|`:
 }
 ```
 
-Pass `count` as a parameter — the correct form is selected automatically:
+Pass `count` as a parameter : the correct form is selected automatically:
 
 ```ts
 __('apples', { count: 1 })  // "You have 1 apple"
@@ -253,7 +253,7 @@ This is the same pattern Next.js uses for `headers()` / `cookies()` and Nuxt use
 
 ### Client-side: code splitting
 
-Each locale's JSON catalog is a separate chunk. Only the **active** and **default** catalogs ship in the initial bundle (via `window.__INITIAL_STATE__.__cossackLang`); the rest are dynamic-imported on demand when `setLocale()` is called. This keeps the initial payload small regardless of how many locales your app supports.
+Each locale's JSON catalog is a separate chunk. The initial bundle includes only the **active** and **default** catalogs through `window.__INITIAL_STATE__.__cossackLang`. Cossack loads other catalogs when `setLocale()` runs.
 
 For predicted non-default locales (e.g., when the `cossack_locale` cookie is set), the framework injects a `<link rel="modulepreload">` hint so the chunk is already cached when the user switches.
 
@@ -278,7 +278,7 @@ export const template = `
 | Function / constant | Description |
 |---|---|
 | `__(key, params?)` | Translate `key` for the current locale, with optional placeholder/pluralization params. Falls back to the default locale, then the key itself. |
-| `setLocale(locale)` | Switch the active locale (client-side; async). Persists to a cookie. Accepts `'AUTO:BROWSER'`. |
+| `setLocale(locale)` | Switch the active locale in the browser. The method is async and saves the locale in a cookie. It accepts `'AUTO:BROWSER'`. |
 | `getLocale()` | Returns the current locale code. |
 | `isLocale(locale)` | Returns `true` if `locale` is a supported locale. |
 | `registerLocale(locale, messages)` | Registers a catalog programmatically (used internally for hydration). |

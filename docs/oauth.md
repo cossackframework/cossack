@@ -3,7 +3,7 @@ title: "OAuth"
 description: "Add OAuth 2.0 login (GitHub, Google, GitLab, Facebook, Microsoft, or custom) to your Cossack application."
 ---
 
-# OAuth (Login with GitHub, Google, ...)
+# OAuth (Login with GitHub, Google,...)
 
 The `@cossackframework/auth` package ships a full **OAuth 2.0 Authorization
 Code flow with PKCE (S256)** implementation. It works on both Cloudflare
@@ -46,12 +46,12 @@ Browser                   Cossack app              OAuth provider
 ## Security defaults
 
 - **PKCE S256** is on for every provider (RFC 9700 recommendation, even for
-  confidential clients). A fresh `code_verifier` is generated per redirect.
+ confidential clients). A fresh `code_verifier` is generated per redirect.
 - **CSRF `state`**: 128-bit random nonce, stored in an HttpOnly
-  `SameSite=Lax` cookie signed with HMAC-SHA256, compared in **constant time**,
-  and **single-use** (deleted on callback read).
+ `SameSite=Lax` cookie signed with HMAC-SHA256, compared in **constant time**,
+ and **single-use** (deleted on callback read).
 - **Exact `redirect_uri` match**: the same value is sent on the authorize and
-  token-exchange requests.
+ token-exchange requests.
 
 ## 1. Register an OAuth app with your provider
 
@@ -136,7 +136,7 @@ export default app;
 ## The `onUser` callback
 
 This is where you decide what to do with the authenticated OAuth user. The
-package itself never touches your database. A robust pattern:
+package itself never touches your database. A pattern:
 
 ```ts
 async onUser(oauthUser, tokens, c) {
@@ -288,11 +288,11 @@ For cookie-less API clients, pass `stateless: true`. In this mode the package
 will **not** set or verify a state cookie, and **PKCE is disabled** as well
 (since the `code_verifier` cannot be recovered without a cookie store).
 
-**You are then responsible for CSRF protection** of the callback — for example,
+**You are then responsible for CSRF protection** of the callback : for example,
 by including a signed `state` value in the authorize URL that you verify
 yourself on callback. Without PKCE you also lose the defense against
 authorization-code injection, so stateless mode is riskier than the default and
-should only be used when you cannot use cookies.
+Use it only when you cannot use cookies.
 
 ```ts
 createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* ... */ } });
@@ -305,4 +305,4 @@ The full redirect→callback round-trip (state cookie, PKCE, token exchange,
 userinfo, `onUser`) is covered in `packages/auth/tests/handler.test.ts`.
 
 For end-to-end testing against a real provider, set the credentials via env
-and gate the test behind `process.env.E2E_OAUTH === '1'` so it's opt-in.
+and gate the test behind `process.env.E2E_OAUTH === '1'` so it is opt-in.

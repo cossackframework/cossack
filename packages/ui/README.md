@@ -1,6 +1,6 @@
 # @cossackframework/ui
 
-UI component library for the Cossack Framework — token-driven, themeable
+UI component library for the Cossack Framework : token-driven, themeable
 components built on native HTML elements and the browser's top-layer API.
 Styles are written as Tailwind v4 utility classes that reference CSS-token-driven
 variables, so the whole library retints by overriding a handful of `@theme` values.
@@ -58,7 +58,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | **Input** | `<input>` | Token-driven text input with variant/size |
 | **Textarea** | `<textarea>` | Multiline text input |
 | **Select** | `<select>` | Native select with chevron overlay |
-| **NativeSelect** | `<select>` | Styled native select (no JS, no popover — mobile-friendly) |
+| **NativeSelect** | `<select>` | Styled native select (no JS, no popover : mobile-friendly) |
 | **InputGroup** | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
 | **Checkbox** | `<input type="checkbox">` | Checkbox with label wrapper |
 | **Switch** | `<input type="checkbox">` | Toggle switch (role="switch") |
@@ -112,14 +112,14 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|
 | **Icon** | Renders a Solar icon from a direct `entry` (tree-shakeable). Pass an icon entry imported from `@cossackframework/solar-icons/<name>`. 6 styles: line, bold, duotone, broken, outline, line-duotone. |
 
-> **Only `Icon` is provided.** There is no name-based lookup component —
+> **Only `Icon` is provided.** There is no name-based lookup component :
 > importing icons by name pulls the full ~1,200-icon registry (~9 MB of SVG
 > paths) into the bundle. Always import the specific icon you need and pass its
 > entry to `<Icon>`.
 
 ## Usage
 
-Components are Cossack components — consume them with the `component()` helper,
+Components are Cossack components : consume them with the `component()` helper,
 not JSX:
 
 ```ts
@@ -138,15 +138,15 @@ html`
 
 The theme is a two-layer shadcn-style system in `src/theme/theme.css`:
 
-1. **Raw values** — `:root { … }` (light) and `.dark { … }` (dark) define OKLCH
-   color values for every semantic token (`--primary`, `--background`, `--card`,
-   `--popover`, `--accent`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, …).
-   The default palette is shadcn's **neutral** (black primary on light, near-white
-   on dark).
-2. **Tailwind mapping** — `@theme inline { … }` maps each raw variable into a
-   Tailwind utility (`--color-primary: var(--primary)` → `bg-primary`,
-   `text-primary`, `border-primary`, `ring-primary`, …) plus a radius scale
-   derived from a single `--radius` knob.
+1. **Raw values** : `:root { … }` (light) and `.dark { … }` (dark) define OKLCH
+ color values for every semantic token (`--primary`, `--background`, `--card`,
+ `--popover`, `--accent`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, …).
+ The default palette is shadcn's **neutral** (black primary on light, near-white
+ on dark).
+2. **Tailwind mapping** : `@theme inline { … }` maps each raw variable into a
+ Tailwind utility (`--color-primary: var(--primary)` → `bg-primary`,
+ `text-primary`, `border-primary`, `ring-primary`, …) plus a radius scale
+ derived from a single `--radius` knob.
 
 ### Dark mode
 
@@ -211,19 +211,19 @@ The token set extends shadcn's with `success` / `success-foreground` and
 
 Icons are split across two packages:
 
-- **`@cossackframework/solar-icons`** — the icon **dataset**. A zero-dependency,
-  framework-agnostic package shipping 1,246 Solar icons across six styles as
-  tree-shakeable data entries. Install it to get the icon data:
+- **`@cossackframework/solar-icons`** : the icon **dataset**. A zero-dependency,
+ framework-agnostic package shipping 1,246 Solar icons across six styles as
+ tree-shakeable data entries. Install it to get the icon data:
 
   ```sh
   pnpm add @cossackframework/solar-icons
   ```
 
-- **`@cossackframework/ui`** — provides the **`Icon`** component that renders
-  the data. It lives in `ui` (not in the data package) so it shares your app's
-  single renderer/core module instance.
+- **`@cossackframework/ui`** : provides the **`Icon`** component that renders
+ the data. It lives in `ui` (not in the data package) so it shares your app's
+ single renderer/core module instance.
 
-### Usage — fixed icon (tree-shakeable)
+### Usage : fixed icon (tree-shakeable)
 
 Import the icon entry directly from the data package and pass it to `Icon`:
 
@@ -269,7 +269,7 @@ to `line`:
 
 `cossack add ui <component>` copies a single component into your project at
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
-yours — re-run with `--force` to overwrite.
+yours : re-run with `--force` to overwrite.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
 

@@ -1,6 +1,6 @@
 # Cossack Desktop guide
 
-Add the Electron side target to a Cloudflare, Node, or Deno web application:
+Add an Electron target to a Cloudflare, Node.js, or Deno web application:
 
 ```sh
 cossack add desktop

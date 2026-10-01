@@ -5,11 +5,11 @@ description: "Direct DOM element references using the @Ref decorator for managin
 
 # References (`@Ref`)
 
-Cossack provides a way to directly reference DOM elements within your components using the `@Ref` decorator, similar to React's `useRef` hook. This is useful for managing focus, text selection, or integrating with third-party DOM libraries.
+Use the `@Ref` decorator to reference a DOM element from a component. A DOM element is an item in the browser's document tree. Refs help you manage focus and text selection or connect a DOM library.
 
 ## Basic Usage
 
-To use a ref, decorate a property with `@Ref()`, `declare` keyword, and type it as `RefObject<HTMLElement>`. Then, bind it to an element in your template using the `ref` attribute.
+To use a ref, declare a property with the `@Ref()` decorator and type it as `RefObject<HTMLElement>`. Then set the `ref` attribute on an element in your template.
 
 ```typescript
 import { Cossack, Page, Ref, html, type RefObject } from '@cossackframework/core';
@@ -36,13 +36,13 @@ export default class RefExample extends Cossack {
 
 ## How it Works
 
-1.  **Declaration**: The `@Ref()` decorator initializes the property with a stable object `{ value: undefined }`.
-2.  **Binding**: When the template is rendered, the `ref` attribute directive detects the `RefObject` and assigns the DOM element to its `.value` property.
-3.  **Access**: You can access the underlying DOM element in `onMount()` or any subsequent method. Note that `this.inputRef.value` will be `undefined` during the initial server-side render.
+1. **Declaration**: The `@Ref()` decorator initializes the property with an object: `{ value: undefined }`.
+2. **Binding**: When Cossack renders the template, the `ref` attribute assigns the DOM element to `.value`.
+3. **Access**: Read the DOM element in `onMount()` or a later method. `this.inputRef.value` is `undefined` during server-side rendering.
 
 ## Functional Refs
 
-You can also pass a function to the `ref` attribute if you need more control or don't want to use the decorator.
+You can also pass a function to the `ref` attribute instead of using the decorator.
 
 ```typescript
 render() {

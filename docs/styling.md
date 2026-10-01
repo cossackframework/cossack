@@ -1,15 +1,15 @@
 ---
 title: "Styling"
-description: "Styling in Cossack is powered by Tailwind CSS 4.x, providing a utility-first approach to design. This guide covers how to use Tailwind classes, conditional styling, dynamic values, component styling, built-in animations, and custom CSS options."
+description: "Use Tailwind CSS 4.x classes and custom CSS in Cossack applications."
 ---
 
 # Styling
 
-Cossack ships with Tailwind CSS 4.x as the default styling solution. It is pre-configured and ready to use — no additional setup required.
+Cossack uses Tailwind CSS 4.x by default. The scaffolded project includes its configuration.
 
 ## How It Works
 
-Tailwind is integrated via the `@tailwindcss/vite` plugin in `vite.config.ts`. The CSS entry point is `src/style.css`:
+The `@tailwindcss/vite` plugin loads Tailwind from `vite.config.ts`. The CSS entry point is `src/style.css`:
 
 ```css
 @import "tailwindcss";
@@ -163,4 +163,4 @@ Tailwind CSS is included as a dev dependency in the framework package:
 }
 ```
 
-No PostCSS config or `tailwind.config.js` file is needed — Tailwind CSS 4.x detects utility classes automatically.
+No PostCSS config or `tailwind.config.js` file is needed : Tailwind CSS 4.x detects utility classes automatically.

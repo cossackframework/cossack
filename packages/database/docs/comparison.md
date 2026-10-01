@@ -8,7 +8,7 @@ description: Compare Cossack ORM with Drizzle ORM, TypeORM, Kysely, and Prisma a
 Cossack ORM is not intended to be a universal replacement for every TypeScript
 database library. It is a focused choice for applications that want decorated
 Active Record models, explicit relation loading, safe SQL, and runtime-specific
-adapters—especially Cossack applications.
+adapters:especially Cossack applications.
 
 This page compares architecture and currently implemented features, not
 benchmarks. “Yes” means the feature is part of the project's supported API; it
@@ -54,16 +54,16 @@ transactions or savepoints.
 Choose Cossack ORM when most of these are true:
 
 - Entity classes should own persistence methods such as `find()`, `save()`, and
-  `remove()`.
+ `remove()`.
 - Decorators are an acceptable source of schema metadata.
 - Request-scoped Active Record calls should automatically participate in the
-  current transaction.
+ current transaction.
 - Relations should be requested explicitly and loaded in batches rather than
-  hidden behind lazy properties.
+ hidden behind lazy properties.
 - The same model layer must run through isolated Node, Bun, Cloudflare, or Deno
-  adapters.
+ adapters.
 - Cossack Studio or other framework tooling needs serializable logical schema
-  metadata, including virtual relations.
+ metadata, including virtual relations.
 
 Do not choose it merely because it has a familiar API. The alternatives below
 are stronger in several important areas.
@@ -162,26 +162,26 @@ and [Prisma Migrate guide](https://www.prisma.io/docs/orm/prisma-migrate/getting
 The most important differences are not syntax:
 
 - Cossack ORM is new. It does not yet have the production history, community
-  integrations, or troubleshooting corpus of these alternatives.
+ integrations, or troubleshooting corpus of these alternatives.
 - Its first-party database surface is intentionally smaller. SQL Server,
-  CockroachDB-specific behavior, Oracle, MongoDB, and many specialized drivers
-  are outside v1.
+ CockroachDB-specific behavior, Oracle, MongoDB, and many specialized drivers
+ are outside v1.
 - Query types are strong for model properties and common operations, but
-  complex raw joins, aliases, and computed projections can require explicit
-  typing. Kysely and Drizzle are stronger for this work.
+ complex raw joins, aliases, and computed projections can require explicit
+ typing. Kysely and Drizzle are stronger for this work.
 - Relation loading is explicit and batched, not lazy and not guaranteed to use
-  one statement. TypeORM and Prisma support more relation behaviors; Drizzle
-  can produce a single relational statement.
+ one statement. TypeORM and Prisma support more relation behaviors; Drizzle
+ can produce a single relational statement.
 - Generated migrations require review. Ordinary model-diff migrations include
-  generated `down()` operations where the schema operation is reversible;
-  squashed baselines are deliberately non-reversible. There is no automatic
-  startup synchronization.
+ generated `down()` operations where the schema operation is reversible;
+ squashed baselines are deliberately non-reversible. There is no automatic
+ startup synchronization.
 - Automated integration coverage in this repository is currently strongest for
-  Node SQLite. The runtime adapters and public contracts exist, but PostgreSQL,
-  MySQL, Bun, Deno, and Hyperdrive do not yet have the same public integration
-  evidence as mature competitors.
+ Node SQLite. The runtime adapters and public contracts exist, but PostgreSQL,
+ MySQL, Bun, Deno, and Hyperdrive do not yet have the same public integration
+ evidence as mature competitors.
 - Cossack provides schema metadata for Studio integration, not a standalone
-  database GUI in this package.
+ database GUI in this package.
 
 These are acceptable tradeoffs only when Cossack's focused model is useful to
 the application. If an alternative already fits the preferred architecture,

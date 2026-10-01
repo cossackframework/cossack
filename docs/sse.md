@@ -5,9 +5,9 @@ description: "Lightweight real-time transport using SSE for server-to-client sta
 
 # Server-Sent Events (SSE) Transport
 
-SSE is a lightweight transport that provides real-time server-to-client state sync on **plain Cloudflare Workers** — no Durable Object or WebSocket required. The client sends actions via HTTP POST (`/crpc`), and the server pushes state updates to all connected clients via a long-lived SSE connection.
+SSE sends real-time state updates from the server to connected clients on **plain Cloudflare Workers**. It does not require a Durable Object or WebSocket. The client sends actions with HTTP POST (`/crpc`). The server sends state updates through a long-lived SSE connection.
 
-This is ideal for pages that need real-time updates (live counters, chat, streaming text) but don't require full bidirectional communication or persistent state.
+This is ideal for pages that need real-time updates (live counters, chat, streaming text) but do not require full bidirectional communication or persistent state.
 
 ## Usage
 
@@ -49,11 +49,11 @@ export class LiveCounter extends Cossack {
 
 ## Scope
 
-By default, SSE state is scoped **per-user**. Each authenticated user gets their own isolated state — user A's actions and state never leak to user B. Unauthenticated users share a single `anonymous` scope.
+By default, SSE state is scoped **per-user**. Each authenticated user has separate state. Unauthenticated users share one `anonymous` scope.
 
 The `scope` option controls which users share the same state. It receives the Hono `Context` (with access to the user, route params, query params, env bindings) and returns a scope key string.
 
-> **Note:** `scope` is a shared `@Page` option that also applies to the `durable-object` transport, where it controls **which Durable Object instance** a page connects to (default: per-URL). The two transports differ only in their defaults. See [WebSockets — Scope](./websockets.md#scope--controlling-which-durable-object-instance-a-page-connects-to).
+> **Note:** `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per URL. See [WebSockets: Scope](./websockets.md#scope-controlling-which-durable-object-instance-a-page-connects-to).
 
 ### Default: Per-User
 
@@ -91,15 +91,15 @@ All users with the same `teamId` share the same SSE state. When any team member 
 })
 ```
 
-Every user on this page shares the same state — identical to the pre-scope behavior.
+Every user on this page shares the same state. This matches the behavior before scope support.
 
 ### How scope works
 
-The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the `/sse` endpoint and `/crpc` handler. This ensures all three contexts use the same scope — even when scope depends on query params that aren't present in `/sse` or `/crpc` requests.
+The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the `/sse` endpoint and `/crpc` handler. This makes sure that all three contexts use the same scope : even when scope depends on query params that are not present in `/sse` or `/crpc` requests.
 
-1. **SSR** — evaluates `scope(c)`, registers the SSE store entry with the scoped key, includes `scopeKey` in the initial state sent to the client
-2. **`/sse` endpoint** — receives `scopeKey` as a query param from the client, looks up the store entry
-3. **`/crpc`** — receives `scopeKey` in the request body, syncs state to the correct scoped entry
+1. **SSR** : evaluates `scope(c)`, registers the SSE store entry with the scoped key, includes `scopeKey` in the initial state sent to the client
+2. **`/sse` endpoint** : receives `scopeKey` as a query param from the client, looks up the store entry
+3. **`/crpc`** : receives `scopeKey` in the request body, syncs state to the correct scoped entry
 
 ---
 
@@ -197,7 +197,7 @@ All browser tabs open on the same URL share the **same SSE state store entry**. 
 2. The version counter is bumped.
 3. **Every** connected SSE client (all tabs) receives the state update and re-renders.
 
-The first tab to load the page creates the SSE store entry during SSR. Subsequent tabs reuse it — they do not create new component instances or overwrite existing state.
+The first tab to load the page creates the SSE store entry during SSR. Subsequent tabs reuse it : they do not create new component instances or overwrite existing state.
 
 ---
 
