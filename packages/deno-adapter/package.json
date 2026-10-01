@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Deno and Deno Deploy runtime adapter for Cossack",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cossackframework/cossack",
+    "directory": "packages/deno-adapter"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
