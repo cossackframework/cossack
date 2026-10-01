@@ -20,6 +20,7 @@ describe('published package contract', () => {
       import: './dist/blocks/index.js',
     });
     expect(packageJson.files).toContain('dist');
+    expect(packageJson.files).toContain('src/internal');
   });
 
   it('keeps blocks opt-in and emits their declarations', () => {

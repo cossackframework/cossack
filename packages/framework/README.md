@@ -1,5 +1,8 @@
 # Cossack Framework
 
-This is the meta framework package of the Cossack Framework, a modern, stateful, real-time web framework built on Cloudflare Workers, Durable Objects, and Hono.
+This package provides the Cossack framework application layer. It uses
+Cloudflare Workers, Durable Objects, and Hono.
 
-It's recommended to use this package via [Cossack CLI](https://cossack.dev/docs/cossack-cli) for a seamless development experience, but it can also be used standalone in any project that needs a lightweight framework for building serverless applications on Cloudflare Workers or traditional server environments.
+Use this package through the [Cossack CLI](https://cossack.dev/docs/cossack-cli),
+or use it on its own in an application that runs on Cloudflare Workers or a
+server environment.

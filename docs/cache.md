@@ -1,11 +1,11 @@
 ---
 title: "Cache"
-description: "Server-side caching with a Laravel-inspired API. Configure stores in config/cache.ts — in-memory, KV, Durable Object, or database backends — and read/write with cache.get(), cache.remember(), and cache.store()."
+description: "Configure cache stores in config/cache.ts and use cache.get(), cache.remember(), and cache.store()."
 ---
 
 # Cache
 
-Cossack's `cache` is a **server-side** cache with a Laravel-inspired API and a config-driven store system. Declare your stores in `config/cache.ts`, then read/write expensive results — API responses, database queries, computed data — cheaply until they expire.
+The `cache` API stores data on the server. Define cache stores in `config/cache.ts`. Use the API to store results such as API responses and database queries until they expire.
 
 ```typescript
 import { cache } from '@cossackframework/framework/cache';
@@ -27,7 +27,7 @@ TTLs are in **seconds** throughout.
 
 ## Configuration
 
-Cache is configured in `src/config/cache.ts` — a factory evaluated per request (so it can read environment bindings). Declare a `default` store plus a `stores` map:
+Cache is configured in `src/config/cache.ts` : a factory evaluated per request (so it can read environment bindings). Declare a `default` store plus a `stores` map:
 
 ```typescript
 // src/config/cache.ts
@@ -56,11 +56,11 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
 });
 ```
 
-`cache.get()` uses `default`; `cache.store('kv')` uses a named store. Read any value with `config('cache.default')`.
+`cache.get()` uses `default`. `cache.store('kv')` uses a named store. Read any value with `config('cache.default')`.
 
-## Which backend should I use?
+## Choose a cache backend
 
-For most apps, **KV is the recommended default**. It's the natural fit for the most common cache pattern — read-through caching of expensive results:
+For most apps, **KV is the recommended default**. It is the natural fit for the most common cache pattern : read-through caching of expensive results:
 
 ```ts
 const products = await cache.remember('products:featured', 600, () =>
@@ -70,11 +70,11 @@ const products = await cache.remember('products:featured', 600, () =>
 
 Why KV fits `remember()` so well:
 
-- **Eventual consistency is harmless.** `remember()` is idempotent — if two instances both miss and both recompute, the result is the same. Staleness is already bounded by your TTL.
-- **Native TTL = auto garbage collection.** KV's `expirationTtl` reaps expired keys for you — no unbounded growth, no `purgeExpired()` chore.
-- **It offloads the database.** A KV hit never touches D1/Turso; an ORM-backed cache hit still does.
+- **Eventual consistency is harmless.** `remember()` is idempotent : if two instances both miss and both recompute, the result is the same. Staleness is already bounded by your TTL.
+- **Native TTL = auto garbage collection.** KV's `expirationTtl` reaps expired keys for you : no unbounded growth, no `purgeExpired()` chore.
+- **It offloads the database.** A KV hit never touches D1 or Turso. An ORM-backed cache hit still uses the database.
 - **Globally fast reads.** KV is served from the edge region nearest the reader.
-- **Simplest persistent option.** One binding + a line in `config/cache.ts` — no entry-point code, no DO class export, no migration.
+- **Simplest persistent option.** One binding + a line in `config/cache.ts` : no entry-point code, no DO class export, no migration.
 
 ### Reach for the others when…
 
@@ -97,7 +97,7 @@ Why KV fits `remember()` so well:
 
 ### In-memory (default)
 
-Works with zero configuration. Per-process — a single Node.js instance or one Workers isolate. Not shared across instances or regions.
+Works with zero configuration. Per-process : a single Node.js instance or one Workers isolate. Not shared across instances or regions.
 
 ```typescript
 export default ({ env }) => ({
@@ -108,7 +108,7 @@ export default ({ env }) => ({
 
 ### Cloudflare KV (recommended for most apps)
 
-The cheapest global option, and the natural fit for read-through caching. Expired keys are garbage-collected via KV's TTL, so there's no unbounded growth.
+The cheapest global option, and the natural fit for read-through caching. Expired keys are garbage-collected via KV's TTL, so there is no unbounded growth.
 
 ```jsonc
 // wrangler.jsonc
@@ -124,9 +124,9 @@ export default ({ env }) => ({
 });
 ```
 
-> **KV is approximate.** KV is *eventually consistent*: writes take up to ~60s to propagate globally, and there is no atomic read-modify-write. A value written on one instance may not be visible to a read on another instance immediately. This is fine for most cache use cases (a stale or missing entry is simply recomputed); if you need strict consistency, use the Durable Object store.
+> **KV is approximate.** KV is *eventually consistent*: writes take up to ~60s to propagate globally, and there is no atomic read-modify-write. A read on one instance can return an old value after another instance writes a new value. For strict consistency, use the Durable Object store. A stale or missing cache entry is safe when your code can compute the value again.
 >
-> KV enforces a minimum TTL of 60 seconds; sub-minute TTLs are clamped up. `cache.flush()` throws on the KV store (KV has no bulk-delete-by-prefix).
+> KV enforces a minimum TTL of 60 seconds. It increases shorter TTLs to 60 seconds. `cache.flush()` throws on the KV store because KV cannot delete keys by prefix.
 
 ### Durable Object (strongly consistent)
 
@@ -195,7 +195,7 @@ Remove that registration if you do not use database-backed caching. The store re
 | --- | --- |
 | `cache.get<T>(key)` | Read a value from the default store. Returns `undefined` if missing or expired. |
 | `cache.set<T>(key, value, ttlSeconds?)` | Write a value. TTL defaults to 3600s (1 hour). |
-| `cache.has(key)` | `true` if the key exists and hasn't expired. |
+| `cache.has(key)` | `true` if the key exists and has not expired. |
 | `cache.delete(key)` / `cache.forget(key)` | Remove a key (Laravel naming). |
 | `cache.flush()` | Remove every key. |
 | `cache.remember<T>(key, ttlSeconds, fn)` | Return the cached value on a hit, otherwise call `fn`, store its result with the TTL, and return it. |

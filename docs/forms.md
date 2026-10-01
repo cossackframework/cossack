@@ -1,15 +1,15 @@
 ---
 title: "Forms Handling"
-description: "Learn how to create and handle standard forms in Cossack, including validation, submission, and error handling."
+description: "Create forms, handle submissions, and show validation errors in Cossack."
 ---
 
 # Forms Handling
 
-Cossack lets you create and handle forms submissions easily as you would in a traditional web application. Your knowledge of the old days of PHP and HTML still applies here for a good reason.
+You can use standard HTML forms in a Cossack page. Cossack can handle form submissions and validation on the server.
 
 ## Defining a Form
 
-Just like you would in the old days, you can define a form in your page component using the `<form>` HTML element. 
+Add a `<form>` element to your page component:
 
 ```typescript
 render() {
@@ -23,11 +23,11 @@ render() {
 }
 ```
 
-That's it! You have defined a form with two input fields and a submit button. The `method="post"` attribute indicates that the form will be submitted using the POST method. Feel free to use GET method as well.
+This form has two fields and a submit button. The `method="post"` attribute sends the form with the POST method. You can also use GET.
 
 ## The `Form` component
 
-Cossack UI ships an optional `Form` component — a thin `<form>` wrapper that removes the `preventDefault` + `novalidate` boilerplate when you submit via a `@Server()` method (the RPC pattern). It does **not** manage field values or run validation; pair it with `bind()`/`@State`/`@Store` for data and `@Validate`/`hasError`/`getError` for validation, exactly as with a bare `<form>`.
+The optional Cossack UI `Form` component wraps an HTML `<form>`. It prevents the default submit and adds `novalidate` when you pass a `@Server()` method. It does not store field values or validate them. Use `bind()`, `@State`, or `@Store` for values. Use `@Validate`, `hasError`, or `getError` for validation.
 
 ```typescript
 import { Cossack, Page, Server, State, Store } from '@cossackframework/core';
@@ -61,7 +61,7 @@ export default class ContactForm extends Cossack {
 }
 ```
 
-> **`bind()` works with `component()` props.** Pass the directive as a `.value` (or `.checked`) prop: `component(Input, { '.value': bind(this, 'name') })`. It also supports nested state via dot-paths — `bind(this, 'address.street')` reads/writes the nested field, triggering `@Store` reactivity. The equivalent direct form `<input .value="${bind(this, 'name')}" />` works too.
+> **`bind()` works with `component()` props.** Pass the directive as a `.value` (or `.checked`) prop: `component(Input, { '.value': bind(this, 'name') })`. It also supports nested state via dot-paths : `bind(this, 'address.street')` reads/writes the nested field, triggering `@Store` reactivity. The equivalent direct form `<input .value="${bind(this, 'name')}" />` works too.
 
 | Prop | Description |
 |---|---|
@@ -84,7 +84,7 @@ component(Form, { method: 'post' }, html`<input name="email" /> ...`)
 
 ## Handling Form Submission
 
-As defined in the [API Routes](/docs/api-routes.md) section, you can handle form submissions by defining handlers for the HTTP methods in your page component. For example, to handle a POST request when the form is submitted, you can define a `post()` method in your page component.
+To handle a form submission, define a method for its HTTP method in the page component. For a POST request, define a `post()` method. See [API Routes](/docs/api-routes.md).
 
 ```typescript
 post() {
@@ -142,9 +142,9 @@ See [Session & Flash](/docs/session.md) for the full flash/old-input API and how
 
 ## Server-Side Validation
 
-You can validate form data server-side using `this.c.getFormData()` with `storeRules<T>()`. When the form is invalid, the submitted input **and** the validation errors are flashed to the next request automatically — you no longer have to call `flashInput()` or `flash('errors', ...)` yourself. Just redirect back.
+You can validate form data server-side using `this.c.getFormData()` with `storeRules<T>()`. When the form is invalid, the submitted input **and** the validation errors are flashed to the next request automatically : you no longer have to call `flashInput()` or `flash('errors', ...)` yourself. Just redirect back.
 
-> **Tip:** `FormData` values are always strings. Add a `coerce` rule to produce typed `data` — e.g. `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
+> **Tip:** `FormData` values are always strings. Add a `coerce` rule to produce typed `data` : e.g. `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
 
 ```typescript
 post() {
@@ -170,7 +170,7 @@ post() {
 }
 ```
 
-Now you can display the validation errors in your form. Because the flashed `errors` object mirrors your form type, both direct access (`this.errors?.name`) and the `hasError()` / `getError()` helpers work — including for nested fields via dot-paths:
+Now you can display the validation errors in your form. Because the flashed `errors` object mirrors your form type, both direct access (`this.errors?.name`) and the `hasError()` / `getError()` helpers work : including for nested fields via dot-paths:
 
 ```typescript
 render() {
@@ -199,7 +199,7 @@ render() {
 | `{ input: false }`   | ❌                     | ✅                         |
 | `{ errors: false }`  | ✅                     | ❌                         |
 
-Errors are only flashed when there actually are any — a valid form never flashes an empty `errors` object, so truthy checks like `${this.errors ? ...}` won't render an error banner on success. The submitted input is always flashed when input-flashing is on (single-use, harmlessly dropped if not read). Flashing is a no-op when no flash store is wired (e.g. on the client), so opting out is as simple as `{ flash: false }`.
+Errors are only flashed when there actually are any : a valid form never flashes an empty `errors` object, so truthy checks like `${this.errors ? ...}` will not render an error banner on success. The submitted input is always flashed when input-flashing is on (single-use, harmlessly dropped if not read). Signed flash cookies preserve UTF-8 text, including accented names, non-Latin scripts, and emoji. Flashing is a no-op when no flash store is wired (e.g. on the client), so opting out is as simple as `{ flash: false }`.
 
 ## Put it All Together
 
@@ -286,13 +286,13 @@ export default class ContactForm extends Cossack {
 }
 ```
 
-> **Need to transform a value?** The `flash` / `old` options cover the common case (bind a value as-is). Keep an `init()` method when you need to *compute or merge* values — e.g. combining several flashed fields or defaulting from config. The manual `flashed()` / `old()` helpers still work alongside the options. See [Session & Flash → Auto-binding](/docs/session.md#auto-binding-flash--old-input-into-state).
+> **Need to transform a value?** The `flash` / `old` options cover the common case (bind a value as-is). Keep an `init()` method when you need to *compute or merge* values : e.g. combining several flashed fields or defaulting from config. The manual `flashed()` / `old()` helpers still work alongside the options. See [Session & Flash → Auto-binding](/docs/session.md#auto-binding-flash--old-input-into-state).
 
 ## Complex Form
 
-The above example is quite simple, but for a real life application, you might want to have a more complex form with nested fields, arrays, and more advanced validation rules. Cossack supports square bracket notation like PHP for nested fields and arrays, so you can easily handle complex forms.
+For a form with nested fields or arrays, use square bracket notation as in PHP. Cossack supports this notation for form fields and validation.
 
-`hasError()` and `getError()` accept dot-paths, so nested fields like `address.city` work the same way as top-level fields — no manual optional-chaining into the `errors` object required.
+`hasError()` and `getError()` accept dot-paths, so nested fields like `address.city` work the same way as top-level fields : no manual optional-chaining into the `errors` object required.
 
 ```typescript
 // Example of a complex form with nested fields and arrays

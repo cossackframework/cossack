@@ -67,7 +67,7 @@ html`
   AspectRatio, Empty.
 - **Chat:** Bubble, Message, MessageScroller, Marker, Attachment.
 - **Overlay & Interactive:** Modal (`<dialog>` + `@Task`), Popover,
-  DropdownMenu, Sheet (`<dialog>`), Accordion (`<details>`, zero-JS), Tabs,
+  DropdownMenu, Sheet (`<dialog>`), Accordion (button + animated panel; automatic height and visible overflow when open), Tabs,
   AlertDialog, HoverCard, Collapsible, NavigationMenu, Menubar, Command,
   Combobox, MultiSelect, Carousel, Resizable, ScrollArea, Breadcrumb,
   Pagination, ButtonGroup, Toaster + `toast` (reactive store).

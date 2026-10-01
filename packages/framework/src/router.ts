@@ -1,3 +1,4 @@
+import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
@@ -19,21 +20,14 @@ import { isClientVisibleError } from '@cossackframework/core';
  * RPC allowlist that also accepts @Server methods on injected @Service
  * dependencies. Service methods are forwarded onto the component instance at
  * runtime but their cossack:server-methods metadata lives on the service class
- * (reachable via the component's constructor paramtypes), so the base
+ * (verified against the installed forwarding function), so the base
  * isRpcCallableAction (which walks the component's own prototype chain) would
  * reject them.
  */
-function isRpcCallableActionOrService(constructor: unknown, action: unknown): boolean {
-  if (isRpcCallableAction(constructor, action)) return true;
-  if (typeof action !== 'string' || typeof constructor !== 'function') return false;
-  const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', constructor) || [];
-  for (const t of paramTypes) {
-    if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
-      const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
-      if (Object.prototype.hasOwnProperty.call(serverMethods, action)) return true;
-    }
-  }
-  return false;
+function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
+  if (isRpcCallableAction(instance.constructor, action)) return true;
+  const serviceClass = getForwardedServerMethodClass(instance, action);
+  return serviceClass !== undefined && isRpcCallableAction(serviceClass, action);
 }
 import { createApiHandler } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
@@ -51,6 +45,7 @@ import {
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
 import { handleUpload } from './transports/http.js';
+import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
@@ -311,9 +306,9 @@ export interface CreateAppOptions {
   AppComponent?: new (...args: any[]) => any;
   htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
   /**
-   * Allowed Origin values for WebSocket / SSE upgrade requests. Defaults to
+   * Allowed Origin values for HTTP RPC, uploads, WebSockets and SSE. Defaults to
    * same-origin (the request's own origin). Set this for multi-origin
-   * deployments. Missing Origin headers are always rejected.
+   * deployments. RPC/uploads/WebSockets require Origin. Same-origin SSE may omit it.
    */
   allowedOrigins?: string[];
   /**
@@ -359,6 +354,18 @@ export function createApp(options: CreateAppOptions = {}) {
     layouts,
     allowedOrigins: options.allowedOrigins,
     runtimeInfo: resolveRuntimeInfo,
+    getMiddlewares: (componentPath) => {
+      const paths = new Set([...getLayoutStack(componentPath), componentPath]);
+      return [...paths].flatMap((path) => {
+        const module = pages[path] || layouts[path];
+        const component = path === '/src/App'
+          ? options.AppComponent ?? RouterFallbackApp
+          : module && Object.values(module)[0];
+        return typeof component === 'function'
+          ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? []
+          : [];
+      });
+    },
   };
 
   // Request-context middleware — scopes the Hono `Context` into
@@ -633,6 +640,10 @@ export function createApp(options: CreateAppOptions = {}) {
   };
 
   // Transport routes
+  app.use('/crpc', protectTransport(routerContext));
+  app.use('/upload', protectTransport(routerContext));
+  app.use('/sse/:componentRouteId', protectTransport(routerContext));
+  app.use('/ws/:provider/:id', protectTransport(routerContext));
   if (options.runtimeAdapter?.handleWebSocketUpgrade) {
     app.get('/ws/:provider/:id', async (c) => {
       if (!isOriginAllowed(c.req.header('origin'), c.req.url, options.allowedOrigins)) {
@@ -790,6 +801,20 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
+    // Validate the scope before invoking an action or updating a shared stream.
+    const targetPageOptions = Reflect.getMetadata('page:options', componentInstance.constructor) as PageOptions | undefined;
+    let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
+    if (targetPageOptions?.transport === 'sse') {
+      let params: Record<string, string>;
+      try {
+        params = decodeRuntimeRouteParams(body.pageParams === undefined ? undefined : JSON.stringify(body.pageParams));
+      } catch {
+        return c.json({ error: 'Invalid route params' }, 400);
+      }
+      effectiveScopeKey = await resolveSseScopeKey(withRuntimeRouteParams(c, params), targetPageOptions);
+      if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
+    }
+
     // Apply the received state to the target component. First restrict to the
     // component's own @State keys (sanitizeClientState) to block overwrites of
     // internal/security-sensitive props. Then also apply keys in the instance's
@@ -814,25 +839,15 @@ export function createApp(options: CreateAppOptions = {}) {
     // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
     // Includes @Server methods on injected @Service dependencies (forwarded
     // onto the component instance but registered on the service class).
-    if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
+    if (!isRpcCallableActionOrService(targetInstance, action)) {
       return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
     }
 
     // Rate-limit gate: enforce any @RateLimit declared on the action.
     // If this is a forwarded @Service method, the metadata lives on the service class.
-    let rateLimitConstructor: unknown = targetInstance.constructor;
-    if (!isRpcCallableAction(rateLimitConstructor, action)) {
-      const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', targetInstance.constructor) || [];
-      for (const t of paramTypes) {
-        if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
-          const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
-          if (Object.prototype.hasOwnProperty.call(serverMethods, action)) {
-            rateLimitConstructor = t;
-            break;
-          }
-        }
-      }
-    }
+    const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
+      ? targetInstance.constructor
+      : getForwardedServerMethodClass(targetInstance, action);
 
     const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `crpc:${componentRouteId}`);
     if (rateLimited) return rateLimited;
@@ -868,16 +883,6 @@ export function createApp(options: CreateAppOptions = {}) {
     // Get the state of the component that was actually modified
     const responseData = targetInstance.getPublicState();
 
-    // Handle SSE streaming detection and state sync.
-    // For a CUSTOM scope() (e.g. chat room) the developer's scope function is
-    // the authorization model and depends on page-request data not present on
-    // this POST — so use the client-supplied scopeKey (echoed from SSR).
-    // For the DEFAULT per-user scope, re-derive server-side from the
-    // authenticated user so a crafted request can't target another user's entry.
-    const targetPageOptions = Reflect.getMetadata('page:options', targetInstance.constructor) as PageOptions | undefined;
-    const effectiveScopeKey = typeof targetPageOptions?.scope === 'function'
-      ? clientScopeKey
-      : await resolveSseScopeKey(c, targetPageOptions);
     const sseResult = handleSseCrpc(componentRouteId, effectiveScopeKey, actionResult, responseData, targetInstance);
     if (sseResult.handled) {
       return c.json(sseResult.response);

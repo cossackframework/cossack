@@ -5,27 +5,27 @@ description: "The auth package provides a minimal, flexible interface for handli
 
 # Authentication
 
-The `@cossackframework/auth` package provides a minimal, flexible, and unopinionated interface for handling authentication in your Cossack application. It is designed to work seamlessly with Hono and allows you to implement any authentication strategy (Session/Cookie, JWT, OAuth, etc.) while providing a standardized way to protect your routes and components.
+The `@cossackframework/auth` package provides a minimal, flexible, and unopinionated interface for handling authentication in your Cossack application. It is designed to work with Hono and allows you to implement any authentication strategy (Session/Cookie, JWT, OAuth, etc.) while providing a standardized way to protect your routes and components.
 
 ## Core Concepts
 
 The library allows you to create an **Auth Kit** by providing an **Auth Provider**.
 
-*   **Auth Provider**: A set of functions that define *how* to extract a session, validate it, and fetch the user.
-*   **Auth Kit**: The object returned by `createAuth`, exposing:
-    *   `middleware`: Hono middleware that runs on every request to populate `c.get('user')`.
-    *   `createLoginHandler(options)`: builds a credentials-based login route handler (optional — see the `@Server` pattern below).
-    *   `createSession`: the reusable session creator (if configured on the provider), reusable by any auth path (login handler, OAuth callback, `@Server` methods).
+* **Auth Provider**: A set of functions that define *how* to extract a session, validate it, and fetch the user.
+* **Auth Kit**: The object returned by `createAuth`, exposing:
+    * `middleware`: Hono middleware that runs on every request to populate `c.get('user')`.
+    * `createLoginHandler(options)`: builds a credentials-based login route handler (optional : see the `@Server` pattern below).
+    * `createSession`: the reusable session creator (if configured on the provider), reusable by any auth path (login handler, OAuth callback, `@Server` methods).
 
-> **Note:** `createAuth()` returns a kit *object*; `createLoginHandler` and `createSession` are accessed as `auth.createLoginHandler(...)` / `auth.createSession(...)`, not as standalone imports.
+> **Note:** `createAuth()` returns a kit *object*. Access `createLoginHandler` and `createSession` as `auth.createLoginHandler(...)` and `auth.createSession(...)`.
 
-> **Don't want to wire this by hand?** Run `cossack add auth` to generate a complete, working session-auth setup (PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets) in your project.
+> **Do not want to wire this by hand?** Run `cossack add auth` to generate a complete, working session-auth setup (PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets) in your project.
 
 ## Example: Email/Password with Cookie Sessions
 
 This example demonstrates a standard authentication flow:
-1.  **Login**: User sends email/password. System verifies them, creates a session in the DB, and sets an HTTP-only cookie.
-2.  **Request**: User makes a request. System reads the cookie, verifies the session in the DB, and attaches the User object to the context.
+1. **Login**: User sends email/password. System verifies them, creates a session in the DB, and sets an HTTP-only cookie.
+2. **Request**: User makes a request. System reads the cookie, verifies the session in the DB, and attaches the User object to the context.
 
 ### 1. Define Your Types
 
@@ -106,7 +106,7 @@ export const auth = createAuth<User>({
 
 ### 3. Register the Session Middleware
 
-`createApp()` auto-loads global middleware from `src/bootstrap/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request — you do **not** pass it to `createApp`:
+`createApp()` auto-loads global middleware from `src/bootstrap/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request : you do **not** pass it to `createApp`:
 
 ```typescript
 // src/bootstrap/middlewares.ts
@@ -166,11 +166,16 @@ export default class LoginPage extends Cossack {
 
 If you prefer a raw endpoint (e.g. for an API consumer), use `auth.createLoginHandler(...)` and mount it in `src/index.ts`:
 
+
+The handler uses the provider's `createSession` when omitted. Pass a per-handler
+`createSession` to override it. If neither is configured, the handler returns
+a configuration error (HTTP 500).
+
 ```typescript
 // src/auth.ts
 export const loginHandler = auth.createLoginHandler({
     validateCredentials: async ({ email, password }, c) => { /* ... */ },
-    createSession: auth.createSession!, // reuse the provider's creator
+    // Uses the provider's createSession by default.
 });
 
 // src/index.ts
@@ -203,3 +208,14 @@ export class Dashboard extends Cossack {
     }
 }
 ```
+
+## Generated token boundaries
+
+The auth recipe stores login sessions and password-reset tokens in one table.
+It accepts only rows with `meta.type === 'auth'` for login, and only
+`meta.type === 'password_reset'` for password reset. A reset consumes the token
+once and revokes the user's existing sessions.
+
+Applications generated before this security update must port these checks from
+`packages/scaffold/template/src/auth.ts`. Updating the framework dependency alone
+does not change an application's generated auth module.

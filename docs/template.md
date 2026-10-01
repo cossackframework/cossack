@@ -1,15 +1,15 @@
 ---
 title: 'Cossack Template'
-description: 'Powerful template syntax for building dynamic UIs inspired by Lit using tagged template literals via the html function.'
+description: 'Build dynamic user interfaces with the html template function.'
 ---
 
 # Cossack Template
 
-Cossack provides a powerful template syntax for building dynamic UIs inspired by Lit. This guide covers the basics of using templates in your components.
+Use Cossack templates to build dynamic user interfaces. The syntax draws on Lit.
 
 ## Template Syntax
 
-Cossack uses tagged template literals via `html`.
+The `html` function creates a tagged template literal.
 
 ### Basic Expressions
 
@@ -24,6 +24,17 @@ Boolean attributes are removed if `false/null/undefined`.
 ```typescript
 html`<button ?disabled="${isDisabled}">Click</button>`;
 ```
+
+### Table rows
+
+Wrap dynamic table rows in an explicit `<tbody>`:
+
+```typescript
+html`<table><tbody>${rows.map(row => html`<tr><td>${row.name}</td></tr>`)}</tbody></table>`;
+```
+
+Browsers insert a missing `<tbody>` while parsing HTML. That can move hydration
+markers and force the client to rebuild the server-rendered table.
 
 ### Event Binding
 
@@ -44,7 +55,7 @@ html`<input type="text" .value="${this.inputValue}" @input="${this.handleInput}"
 
 ### Spread Attributes
 
-You can spread an object into attributes using the `...` syntax.
+Use `...` to spread an object into attributes.
 
 ```typescript
 const props = { id: 'btn', class: 'primary', 'data-type': 'action' };
@@ -53,7 +64,7 @@ html`<button ...=${props}>Click</button>`;
 
 ### Unsafe HTML
 
-To render raw HTML strings (careful!):
+To render an HTML string, use `unsafeHTML`:
 
 ```typescript
 import { unsafeHTML } from '@cossackframework/renderer';
@@ -132,7 +143,7 @@ deciding whether to write a property. This is the Lit-faithful `live` directive.
 By default, a plain property binding like `.value="${this.email}"` does a dirty
 check against the last value the renderer committed: if the bound value is
 unchanged, the write is skipped (so a user's in-progress edit is not clobbered).
-`live()` switches the comparison to the actual DOM value — meaning the property
+`live()` switches the comparison to the actual DOM value : meaning the property
 **is** written whenever the DOM differs from the bound value, even if the bound
 value itself has not changed. Use it when you need to force the DOM back to the
 bound value (e.g. a "Reset" button that reverts a field the user edited).
@@ -194,7 +205,7 @@ import { key, html } from '@cossackframework/renderer';
 html`<div>${key(currentIndex, html`<div class="animate-fade-in">${child}</div>`)}</div>`;
 ```
 
-In SSR, `key` is transparent (it just renders its template — there is no
+In SSR, `key` is transparent (it just renders its template : there is no
 previous DOM to dispose).
 
 ### `preventDefault`
@@ -202,8 +213,8 @@ previous DOM to dispose).
 Wraps an event handler so the event's default is prevented before the handler
 runs.
 
-Browser-native (HTML5 constraint) validation is **also** disabled by default —
-the bound `<form>` gets `novalidate` — because Cossack encourages custom
+Browser-native (HTML5 constraint) validation is **also** disabled by default :
+the bound `<form>` gets `novalidate` : because Cossack encourages custom
 `@Validate` validation. Pass `{ novalidate: false }` to restore native
 validation (the `preventDefault` itself stays unconditional).
 
@@ -217,7 +228,7 @@ html`<form @submit="${preventDefault(this.onSave, { novalidate: false })}"></for
 
 ### `when`
 
-Render one of two templates based on a condition — the template equivalent of a
+Render one of two templates based on a condition : the template equivalent of a
 ternary, but the two branches are functions that are only invoked when their
 case is selected (so the untaken branch never evaluates). The chosen case
 function receives the condition as its argument.
@@ -233,7 +244,7 @@ If the false case is omitted, nothing is rendered when the condition is falsy.
 ### `choose`
 
 Select a template by matching a value against an ordered list of cases, like a
-`switch` statement. The first case whose lookup `===` the value wins; otherwise
+`switch` statement. The first case whose lookup `===` the value wins. Otherwise
 the optional default case is used.
 
 ```typescript
@@ -246,19 +257,19 @@ html`${choose(status, [
 ```
 
 Each case function receives the matched value and its case index. `choose` is
-handy when you have more than two branches tied to a single value — it reads
+handy when you have more than two branches tied to a single value : it reads
 more clearly than a chain of `when`/ternaries.
 
 ### `ifDefined`
 
-Only omit an attribute when the value is `undefined`; render every other value
+Omit an attribute only when its value is `undefined`. Render every other value
 (including `null`, `false`, `0`, `''`) as a normal attribute. This is the
 Lit-faithful `ifDefined` directive.
 
 By default a plain Cossack attribute binding like `href="${url}"` omits the
 attribute for `null`/`undefined`/`false`. `ifDefined` narrows that to
 `undefined`-only omission, and renders `false`/`null` as the literal strings
-`"false"`/`"null"` — useful for data attributes where you want the literal
+`"false"`/`"null"` : useful for data attributes where you want the literal
 value rather than an omission.
 
 ```typescript
@@ -275,11 +286,11 @@ props (e.g. `component(Link, { href: ifDefined(url) })`).
 
 Defer re-evaluating a template until its dependencies change. `guard` caches
 the value produced by its factory and reuses it on subsequent renders as long
-as the `deps` are shallow-equal to the previous render; the factory only runs
+as the `deps` are shallow-equal to the previous render. The factory runs
 again when a dependency changes.
 
-This is an optimization for expensive rendering — large lists, heavy
-computations — so the costly part isn't recomputed on every render, only when
+This is an optimization for expensive rendering : large lists, heavy
+computations : so the costly part is not recomputed on every render, only when
 the inputs it actually depends on change.
 
 ```typescript
@@ -292,9 +303,9 @@ html`<ul>${guard(items, () => html`...expensive list...`)}</ul>`;
 html`${guard([query, page], () => renderResults(query, page))}`;
 ```
 
-The dependency comparison is shallow: for a single value it uses `===`; for an
+The dependency comparison is shallow. For a single value, it uses `===`. For an
 array each element is compared with `===` and the lengths must match. Note that
-memoization is per-template-site — the cache lives on the rendered Part, so
+memoization is per-template-site : the cache lives on the rendered Part, so
 reuse the same `html\`...\`` site across renders for it to take effect (this is
 how all Cossack/Lit directives work).
 
@@ -304,7 +315,7 @@ Keep previously-rendered template subtrees alive instead of destroying them
 when the rendered value switches to a different template. When you toggle
 between two (or more) templates behind `cache`, switching back to one that was
 rendered before reattaches its existing DOM and part tree rather than rebuilding
-it — so component state, scroll position, focus, and DOM identity are preserved
+it : so component state, scroll position, focus, and DOM identity are preserved
 across the swap.
 
 Without `cache`, a conditional like `cond ? html\`<A/>\` : html\`<B/>\`` rebuilds
@@ -340,7 +351,7 @@ instead.
 
 ### `join`
 
-Join renderable values with a separator interleaved between each pair — the list
+Join renderable values with a separator interleaved between each pair : the list
 equivalent of `Array.prototype.join`, but with values rather than strings, so
 the separator can itself be a template (e.g. a divider element).
 
@@ -354,7 +365,7 @@ html`${join(names, (n) => n, ', ')}`;
 html`<ul>${join(items, (i) => html`<li>${i}</li>`, () => html`<li class="sep">•</li>`)}</ul>`;
 ```
 
-The joiner is either a static value or a `(index) => value` function; the index
+The joiner is a static value or a `(index) => value` function. The index
 is the position of the item before the separator.
 
 ### `range`

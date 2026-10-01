@@ -5,7 +5,7 @@ description: "The @Page decorator marks a class as a Cossack component and confi
 
 # Pages
 
-The `@Page` decorator is used to mark a class as a Cossack component and configure its behavior, routing, and transport.
+Use the `@Page` decorator to mark a class as a Cossack page and set its behavior, route, and transport.
 
 ## Usage
 
@@ -22,7 +22,7 @@ export default class MyPage extends Cossack {
 ```
 
 ## Options
-The `@Page` decorator accepts an optional configuration object with the following properties:
+The `@Page` decorator accepts an optional object with these properties:
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
@@ -36,7 +36,7 @@ The `@Page` decorator accepts an optional configuration object with the followin
 
 ## Scope
 
-The `scope` option controls which state backend (SSE store entry or Durable Object instance) a request connects to. It receives the Hono `Context` (with access to the user, route params, query params, and env bindings) and returns a scope key string.
+The `scope` option selects the state backend that handles a request. It receives the Hono `Context`, which includes the user, route parameters, query parameters, and environment bindings. It returns a scope key.
 
 ### Default Behavior
 
@@ -76,30 +76,30 @@ Every user on this page shares the same state.
 
 ### How scope works
 
-The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This ensures all three contexts use the same scope — even when scope depends on query params that aren't present in SSE or `/crpc` requests.
+The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This makes sure that all three contexts use the same scope : even when scope depends on query params that are not present in SSE or `/crpc` requests.
 
 ## Layouts and Nested Pages
 
-Refer to the [Layouts documentation](./layouts.md) for how to create and use layouts in Cossack.
+See [Layouts](./layouts.md) to create and use layouts in Cossack.
 
 ## Markdown Pages
 
-Cossack also supports creating pages using Markdown with embedded components. This allows you to write content in Markdown while still leveraging the power of Cossack's component system.
+Cossack can also create pages from Markdown files that include components.
 
-Refer to the [Markdown Pages documentation](./mdx.md) for how to create pages using Markdown with embedded components.
+See [Markdown Pages](./mdx.md) to create these pages.
 
 ## Middlewares
 
-Cossack integrates directly with Hono's middleware system. Refer to the [Middlewares documentation](./middlewares.md) for how to apply middlewares to pages and layouts, as well as how to define server-only middleware.
+Cossack uses Hono's middleware system. See [Middlewares](./middlewares.md) to apply middleware to pages and layouts or define server-only middleware.
 
 
 ## Transport Modes
 
 ### `http` (Default)
-Stateless request/response mode. Good for traditional forms, APIs, or pages that don't need real-time synchronization. Server actions are called via HTTP POST.
+This mode sends one request and returns one response. Use it for forms, APIs, or pages that do not need real-time updates. Server actions use HTTP POST.
 
 ### `durable-object`
-Uses Cloudflare Durable Objects as a WebSocket hub. By default, the DO is **stateless** — it acts as a real-time message broker without persisting state to DO storage. State is ephemeral and resets when the DO is evicted. Add `stateful: true` to persist state across connections and DO evictions.
+This mode uses a Cloudflare Durable Object as a WebSocket hub. By default, the Durable Object does not store state. State can reset when Cloudflare evicts the object. Set `stateful: true` to store state across connections and evictions.
 
 ```typescript
 // Stateless (default) — state is ephemeral, ideal for DB-backed apps
@@ -113,7 +113,7 @@ Uses Cloudflare Durable Objects as a WebSocket hub. By default, the DO is **stat
 Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.
 
 ### `sse`
-Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. Works on plain Workers — no DO binding required. Multi-tab sync is supported via SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
+Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. Works on plain Workers : no DO binding required. Multi-tab sync is supported via SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
 
 ```typescript
 @Page({ transport: 'sse' })

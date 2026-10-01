@@ -59,7 +59,7 @@ const page = await User.query()
 ## Parameterized SQL
 
 Use the scoped `sql` tag for joins or database-specific operations. Values are
-always parameters; identifiers must be explicit.
+always parameters. Name identifiers explicitly.
 
 ```ts
 import { sql } from '@cossackframework/database';
@@ -88,8 +88,8 @@ await sql.transaction(async () => {
 ```
 
 D1 does not emulate interactive transactions. Use D1’s native `batch()` for
-multi-statement atomic work; the batch is transactional and rolls back when a
+multi-statement atomic work. The batch is transactional and rolls back when a
 statement fails. Prefer a single idempotent statement when possible.
 
 Calling a model or the global `sql` tag outside an ORM scope throws a clear
-scope error. Standalone jobs should use `orm.run(() => ...)`.
+scope error. Run standalone jobs inside `orm.run(() => ...)`.

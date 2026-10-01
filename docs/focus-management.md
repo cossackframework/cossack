@@ -6,7 +6,7 @@ description: "Utilities for trapping and navigating keyboard focus in accessible
 # Focus Management
 
 Cossack provides DOM-level focus utilities for building accessible interactive
-components — dropdown menus, command palettes, dialogs, comboboxes — that need
+components : dropdown menus, command palettes, dialogs, comboboxes : that need
 to trap or cycle keyboard focus.
 
 These are framework-agnostic helpers exported from `@cossackframework/core`.
@@ -37,7 +37,7 @@ const buttons = getTabbable(menuElement);
 ## `focusFirst(root)` / `focusLast(root)`
 
 Move focus to the first or last tabbable element within `root`. If no tabbable
-children exist, focuses `root` itself (it should have `tabindex="-1"`).
+children exist, focuses `root` itself. Add `tabindex="-1"` to `root` in this case.
 
 ```typescript
 // Focus the first menu item when a dropdown opens.
@@ -64,9 +64,9 @@ handleKeydown(e: KeyboardEvent) {
 ```
 
 **Options:**
-- `reverse: true` — focus the previous element instead of next.
-- `from: HTMLElement` — start from a specific element instead of the currently
-  focused one.
+- `reverse: true` : focus the previous element instead of next.
+- `from: HTMLElement` : start from a specific element instead of the currently
+ focused one.
 
 ## `focusTrap(root)`
 
@@ -96,9 +96,9 @@ class MyDialog extends Cossack {
 **How it works:**
 1. On activation, focuses the first tabbable element inside `root`.
 2. Intercepts Tab / Shift+Tab keydown events on `root`, wrapping focus between
-   the first and last tabbable elements.
+ the first and last tabbable elements.
 3. On release (call the returned function), removes the interceptor and
-   restores focus to whichever element had it before the trap was activated.
+ restores focus to whichever element had it before the trap was activated.
 
 ## Practical example: Dropdown Menu
 
@@ -136,9 +136,9 @@ export class DropdownMenu extends Cossack {
 ## Accessibility notes
 
 - The native `<dialog>` element (used by the UI package's `Modal` and `Sheet`)
-  handles focus trapping automatically — you don't need `focusTrap` for those.
-- `focusTrap` is for custom overlays that DON'T use `<dialog>` — e.g. a
-  `<div popover>` menu that needs to contain Tab.
+ handles focus trapping automatically. You do not need `focusTrap` for those.
+- `focusTrap` is for custom overlays that do not use `<dialog>`, such as a
+ `<div popover>` menu that needs to contain Tab.
 - Always restore focus on close (the `focusTrap` release function does this
-  automatically; if you use `focusFirst` manually, store `document.activeElement`
-  before opening and restore it on close).
+ automatically. If you use `focusFirst` manually, store `document.activeElement`
+ before opening and restore it on close).

@@ -10,7 +10,7 @@ Cossack provides a set of decorators and lifecycle hooks to handle component lif
 > **Note on client bundles:** `onMount`, `render`, and other lifecycle methods
 > are preserved in the client bundle, and so are any helpers they call via
 > `this.method(...)`. If a helper is called through a dynamic callback that the
-> static analysis can't see, mark it with `@Client()`. See
+> static analysis cannot see, mark it with `@Client()`. See
 > [Client Bundle & Method Stripping](./client-bundle.md).
 
 ## @Task
@@ -42,7 +42,7 @@ export default class MyComponent extends Cossack {
 
 The `@ServerTask` decorator is like `@Task`, but the method runs **only on the server**. Its body is stripped from the client bundle by the security plugin (like `@Server` methods), so there is no need for a manual `if (this.isServer) return;` guard.
 
-Use `@ServerTask` for logic that must run during server-side rendering or state broadcasts but should never execute in the browser — e.g. server-side data normalization, state seeding from environment variables, or logging analytics.
+Use `@ServerTask` for logic that runs during server-side rendering or state broadcasts and must not run in the browser. Examples include data normalization, state setup from environment variables, and analytics logging.
 
 ```typescript
 import { Cossack, ServerTask, State } from '@cossackframework/core';
@@ -63,7 +63,7 @@ export default class MyComponent extends Cossack {
 
 The `@ClientTask` decorator is like `@Task`, but the method runs **only on the client**. Its body is preserved in the client bundle (like `@Client` methods), and `runTasks()` skips it when executing on the server.
 
-Use `@ClientTask` for logic that touches the DOM or browser APIs and needs to re-run on every render — e.g. reconciling a `<dialog>` open state, positioning a popover, or updating a scroll indicator. This replaces the manual `if (this.isServer) return;` guard that was previously needed inside `@Task`.
+Use `@ClientTask` for logic that touches the DOM or browser APIs and needs to re-run on every render : e.g. reconciling a `<dialog>` open state, positioning a popover, or updating a scroll indicator. This replaces the manual `if (this.isServer) return;` guard that was previously needed inside `@Task`.
 
 ```typescript
 import { Cossack, ClientTask } from '@cossackframework/core';
@@ -90,7 +90,7 @@ export default class MyComponent extends Cossack {
 
 ## Tracking Dependencies: the `track` option
 
-By default, a task runs on **every** state change — any `@State`, `@Store`, `@ClientState`, or `@ClientStore` mutation re-triggers it. When a task only cares about a few specific fields, re-running it on every change wastes work (and can cause unwanted side effects like refetching data when an unrelated counter changes).
+By default, a task runs on **every** state change : any `@State`, `@Store`, `@ClientState`, or `@ClientStore` mutation re-triggers it. When a task only cares about a few specific fields, re-running it on every change wastes work (and can cause unwanted side effects like refetching data when an unrelated counter changes).
 
 All three task decorators accept a `track` option to restrict *which* state changes re-run them. It works like React's `useEffect` dependency array: the task runs once on mount, and again **only** when one of the tracked dependencies changes.
 
@@ -145,7 +145,7 @@ Matching is **segment-wise prefix in either direction**, so you get intuitive be
 | `'user'` | `'user.name'` | ✅ | Ancestor of the change (the whole `user` is tracked) |
 | `'form.email'` | `'form.email'` | ✅ | Exact match |
 | `'form.email'` | `'form'` | ✅ | The whole `form` was reassigned, so `email` changed too |
-| `'form.email'` | `'form.password'` | ❌ | Sibling field — not tracked |
+| `'form.email'` | `'form.password'` | ❌ | Sibling field : not tracked |
 | `'store'` | `'store.user.address.zip'` | ✅ | Tracking the whole store fires on any nested mutation |
 
 > **Tip:** Tracking the top-level store key (`track: ['form']`) fires on *any* nested mutation of that store. Tracking a deep path (`track: ['form.email']`) scopes the task to that specific field.
@@ -154,16 +154,16 @@ Matching is **segment-wise prefix in either direction**, so you get intuitive be
 
 - **Mount always runs.** A tracked task runs once during bootstrap (the initial mount run), regardless of `track`. This mirrors `useEffect`, which runs once on mount.
 - **Omitting `track` is legacy behavior.** A task with no `track` (or an empty array) runs on **every** state change, exactly as before.
-- **By name, not by value.** `track` takes property *names* (strings) or dot-paths — it cannot take runtime values like `track: [this.user]`, because decorators run at class-definition time, before any instance exists.
+- **By name, not by value.** `track` takes property *names* (strings) or dot-paths : it cannot take runtime values like `track: [this.user]`, because decorators run at class-definition time, before any instance exists.
 - Symbols are supported and match only against their own top-level key.
 
 ### Known limitations & workarounds
 
 #### Aliased objects in a `@Store` report the first-seen path
 
-When you track a nested store field with a dot-path, Cossack matches it against the **mutation path** — the dotted location of the field that changed (`form.address.zip`). For tree-shaped stores (the common case), this is always correct.
+When you track a nested store field with a dot-path, Cossack matches it against the **mutation path** : the dotted location of the field that changed (`form.address.zip`). For tree-shaped stores (the common case), this is always correct.
 
-The limitation arises when **the same object reference sits at two different paths** inside a store (aliasing). Because nested store objects are wrapped in reactive Proxies that are **cached by their raw target** (for identity stability and cycle-safety), an aliased object reuses the proxy created for the **first** path it was accessed through. Mutating it then reports that first path — not the one you used to reach it.
+The limitation arises when **the same object reference sits at two different paths** inside a store (aliasing). Because nested store objects are wrapped in reactive Proxies that are **cached by their raw target** (for identity stability and cycle-safety), an aliased object reuses the proxy created for the **first** path it was accessed through. Mutating it then reports that first path : not the one you used to reach it.
 
 **Example of the problem:**
 
@@ -184,9 +184,9 @@ this.form.secondary.name = 'Bob';
 watchSecondary() { /* ❌ NEVER fires — reported path is form.primary.name */ }
 ```
 
-**When it matters:** almost never. Most stores are tree-shaped — each object has exactly one parent — so every field has a unique, stable path. The issue only appears if you deliberately alias the same object reference into two slots of a store.
+**When it matters:** almost never. Most stores are tree-shaped : each object has exactly one parent : so every field has a unique, stable path. The issue only appears if you deliberately alias the same object reference into two slots of a store.
 
-**Workaround — don't alias; use separate objects:**
+**Workaround: use separate objects. Do not create aliases:**
 
 ```typescript
 @Store()
@@ -203,12 +203,12 @@ With distinct objects, each gets its own proxy with the correct `basePath`, so m
 
 ## Automatic Cleanup (React `useEffect` style)
 
-A task may **return a cleanup function**. The cleanup runs automatically:
+A task can **return a cleanup function**. The framework runs the cleanup:
 
 1. **Before the next re-run** of that task (so stale timers, listeners, and subscriptions from the previous run are torn down first).
 2. **Once when the component is destroyed** (`onCleanup()` / `destroy()`).
 
-This follows the React `useEffect` cleanup contract — no manual teardown bookkeeping needed.
+This follows the React `useEffect` cleanup contract : no manual teardown bookkeeping needed.
 
 ```typescript
 import { Cossack, Task, State } from '@cossackframework/core';
@@ -228,7 +228,7 @@ export default class LiveTicker extends Cossack {
 }
 ```
 
-This works for `@Task`, `@ServerTask`, and `@ClientTask`. Async tasks may return a cleanup function by returning it from the resolved promise. Errors thrown inside a cleanup function are logged and swallowed, so one failing cleanup can't prevent sibling cleanups from running.
+This works for `@Task`, `@ServerTask`, and `@ClientTask`. An async task can return a cleanup function from its resolved promise. The framework logs and ignores cleanup errors so one failure does not stop other cleanups.
 
 ## @VisibleTask
 
@@ -246,7 +246,7 @@ When using a `selector`, `@VisibleTask` automatically observes **new elements** 
 
 ### Usage
 
-Use `@VisibleTask` for expensive operations that should be deferred until the user actually sees the content, such as fetching data, starting animations, or initializing heavy third-party libraries.
+Use `@VisibleTask` to defer expensive work until the user sees the content. Examples include fetching data, starting animations, and loading large third-party libraries.
 
 ```typescript
 import { Cossack, VisibleTask, State } from '@cossackframework/core';
@@ -294,7 +294,7 @@ export default class MyComponent extends Cossack {
 
 ### `onNavigateComplete(pathname)`
 
-Runs after every SPA navigation completes. **Only called on the App component** — page/layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
+Runs after every SPA navigation completes. **Only called on the App component** : page/layout components do not receive this callback. Use it for global concerns like analytics, scroll restoration, or refreshing observers.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -310,7 +310,7 @@ export class App extends Cossack {
 
 ### `onCleanup()`
 
-Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework — you do not need to clean those up here.
+Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework : you do not need to clean those up here.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -400,7 +400,7 @@ export default class MyComponent extends Cossack {
 }
 ```
 
-For `document` and `window` events, prefer the `@OnDocument` and `@OnWindow` decorators below — they handle cleanup automatically.
+For `document` and `window` events, prefer the `@OnDocument` and `@OnWindow` decorators below : they handle cleanup automatically.
 
 ### Event Decorators
 
@@ -477,14 +477,14 @@ export default class MyComponent extends Cossack {
 
 ## Rate-Limiting Method Calls: `@Debounce` and `@Throttle`
 
-The `{ throttle, debounce }` options above only apply to event listeners attached via `@OnDocument` / `@OnWindow`. To rate-limit **any** method call — for example, a search function invoked from a template handler or called directly — use the `@Debounce(ms)` and `@Throttle(ms)` method decorators.
+The `{ throttle, debounce }` options above only apply to event listeners attached via `@OnDocument` / `@OnWindow`. To rate-limit **any** method call : for example, a search function invoked from a template handler or called directly : use the `@Debounce(ms)` and `@Throttle(ms)` method decorators.
 
-Both are **client-only** modifiers. On the server the method runs immediately, so they're safe to leave on a method that also runs server-side. They compose with any classification decorator:
+Both are **client-only** modifiers. On the server the method runs immediately, so they are safe to leave on a method that also runs server-side. They compose with any classification decorator:
 
 - `@Client`, `@Shared`, `@On` keep the real body and rate-limit it.
-- `@Server` rate-limits the **RPC proxy call** on the client — perfect for search-as-you-type that hits the server, so you don't flood it with one request per keystroke.
+- `@Server` rate-limits the **RPC proxy call** on the client : perfect for search-as-you-type that hits the server, so you do not flood it with one request per keystroke.
 
-The wrapped method returns `void` because execution is deferred/coalesced — the original return value is lost. Each component instance gets its own independent timer.
+The wrapped method returns `void` because execution is deferred/coalesced : the original return value is lost. Each component instance gets its own independent timer.
 
 ```typescript
 import { Cossack, Page, ClientState, Client, Server, Debounce, Throttle } from '@cossackframework/core';
@@ -525,20 +525,20 @@ export default class SearchPage extends Cossack {
 }
 ```
 
-> **`@Debounce` / `@Throttle` are client-only.** They never wrap anything on the server — a server method runs immediately on every call. On a `@Server` method the decorator wraps the **client-side RPC proxy**, so it only coalesces *that user's* outgoing requests (per browser, independent per user). That is good UX (fewer round-trips while typing), but it is **not** server-side rate limiting — a malicious client can skip the proxy and flood the endpoint. For enforcement that actually blocks abuse, use [`@RateLimit`](/docs/rate-limiting.md).
+> **`@Debounce` / `@Throttle` are client-only.** They never wrap anything on the server : a server method runs immediately on every call. On a `@Server` method the decorator wraps the **client-side RPC proxy**, so it only coalesces *that user's* outgoing requests (per browser, independent per user). That is good UX (fewer round-trips while typing), but it is **not** server-side rate limiting : a malicious client can skip the proxy and flood the endpoint. For enforcement that actually blocks abuse, use [`@RateLimit`](/docs/rate-limiting.md).
 
 | Decorator | Edge | Behavior |
 | --- | --- | --- |
-| `@Debounce(ms)` | trailing | Resets a timer on every call; fires **once** after `ms` of inactivity, with the latest arguments. |
+| `@Debounce(ms)` | trailing | Resets a timer on every call. It fires **once** after `ms` of inactivity, with the latest arguments. |
 | `@Throttle(ms)` | leading | Fires **immediately** on the first call, then ignores further calls for `ms`. |
 
 > **Note:** Using `@Debounce` / `@Throttle` *without* a classification decorator (`@Client` / `@Server` / `@Shared` / `@On`) leaves the method server-only by default (secure by default), and the framework emits a development warning on the client. Pair them with one of those decorators.
 
-> **These are client-side, UX-only.** They run in the browser, so a malicious client can bypass them. For real abuse protection — rate limiting enforced on the **server** with `429 Too Many Requests` — use [`@RateLimit`](/docs/rate-limiting.md), which works on `@Server` methods, class-based API routes, and functional API routes.
+> **These are client-side, UX-only.** They run in the browser, so a malicious client can bypass them. For real abuse protection : rate limiting enforced on the **server** with `429 Too Many Requests` : use [`@RateLimit`](/docs/rate-limiting.md), which works on `@Server` methods, class-based API routes, and functional API routes.
 
 ## Example: All Together
 
-Here is a comprehensive example combining these features:
+Here is a example combining these features:
 
 ```typescript
 import { Cossack, Page, State, ClientState, Task, ServerTask, ClientTask, VisibleTask, On, OnWindow } from '@cossackframework/core';
@@ -605,7 +605,7 @@ export default class FeatureDemo extends Cossack {
 
 ## Best Practices: Choosing the Right Tool
 
-With `@Task`, `@VisibleTask`, `@On`, and the `onMount()` / `onNavigateComplete()` / `onCleanup()` lifecycle hooks all available, it's not always obvious which one fits a given situation. This section gives concrete guidance.
+With `@Task`, `@VisibleTask`, `@On`, and the `onMount()` / `onNavigateComplete()` / `onCleanup()` lifecycle hooks all available, it is not always obvious which one fits a given situation. This section gives concrete guidance.
 
 ### Quick Reference
 
@@ -631,7 +631,7 @@ The most common source of confusion. The rule of thumb:
 - **`@Task`** runs on **both server and client**, and re-runs on **every state update**. Use it for derived state, logging, or side effects that must stay in sync with component state across SSR and hydration.
 - **`onMount()`** runs **once, client-only**. Use it for one-time setup: starting timers, initializing client-only libraries, reading `window`/`document`.
 
-If your logic touches `window`, `document`, or the DOM directly, it almost certainly belongs in `onMount()` (or `@On('mount')`), not `@Task` — otherwise it will crash during SSR where those globals don't exist.
+If your logic touches `window`, `document`, or the DOM directly, it almost certainly belongs in `onMount()` (or `@On('mount')`), not `@Task` : otherwise it will crash during SSR where those globals do not exist.
 
 ```typescript
 // Wrong — crashes on the server because `window` is undefined
@@ -663,16 +663,16 @@ This distinction trips up many newcomers:
 - **`onMount()`** fires on **every** component (App, layouts, pages) when it first renders on the client. Page components are destroyed and re-created on each SPA navigation, so a Page's `onMount()` effectively fires on every navigation **to** that page.
 - **`onNavigateComplete(pathname)`** fires **only on the App component**, after the new page has loaded. Use it for **global** concerns: analytics, scroll restoration, closing flyout menus, progress indicators.
 
-Use `@On('mount')` on a page for "this page just became active" logic. Use `@On('navigate-complete')` on the App for "a navigation just finished, regardless of which page" logic. Do **not** put `@On('navigate-complete')` on a Page component — it will never fire there.
+Use `@On('mount')` on a page for "this page just became active" logic. Use `@On('navigate-complete')` on the App for "a navigation just finished, regardless of which page" logic. Do **not** put `@On('navigate-complete')` on a Page component : it will never fire there.
 
 ### Template `@click` vs `@On('click')`
 
-- Prefer **template syntax** (`<button @click=${...}>`) for element-level events. It is co-located with the element, explicit, and doesn't depend on the component having a `container`.
+- Prefer **template syntax** (`<button @click=${...}>`) for element-level events. It is co-located with the element, explicit, and does not depend on the component having a `container`.
 - Use **`@On('click')`** when you want a handler bound to the component's root element as a whole, or when you want the method auto-bound, independently testable, and reusable.
 
 ### Common Pitfalls
 
-- **Don't** access `window` / `document` / the DOM inside `@Task` — it runs during SSR where those globals are undefined. Use `@ClientTask` (if the logic must re-run on every render) or `onMount()` / `@On('mount')` (if it's one-time setup) instead. `@ClientTask` replaces the manual `if (this.isServer) return;` guard.
-- **Don't** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
-- **Don't** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` — they handle cleanup automatically.
-- **Don't** reach for `@VisibleTask` when `@Task` would do. `@VisibleTask` defers work until the element is scrolled into view; if the work is cheap or needed immediately, `@Task` (or `onMount()`) is simpler.
+- **Do not** access `window` / `document` / the DOM inside `@Task` : it runs during SSR where those globals are undefined. Use `@ClientTask` (if the logic must re-run on every render) or `onMount()` / `@On('mount')` (if it is one-time setup) instead. `@ClientTask` replaces the manual `if (this.isServer) return;` guard.
+- **Do not** use `@On('navigate-complete')` on a Page or Layout component. It only fires on the App. For page-specific "I just loaded" logic, use `@On('mount')`.
+- **Do not** call `addEventListener` manually for `document` or `window` events without a matching `removeEventListener` in `onCleanup()`. Use `@OnDocument` / `@OnWindow` : they handle cleanup automatically.
+- Use `@Task` or `onMount()` for cheap work or work that must run immediately. Use `@VisibleTask` to wait until an element enters the viewport.

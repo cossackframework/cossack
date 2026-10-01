@@ -7,7 +7,7 @@ description: "Protect routes and components with role and permission checks, dri
 
 The `@cossackframework/auth` package provides an **unopinionated** authorization
 layer on top of authentication. It has no built-in RBAC engine and no knowledge
-of how your roles/permissions are stored — you supply callbacks that answer
+of how your roles/permissions are stored : you supply callbacks that answer
 yes/no, and the package produces Hono middleware that gates access.
 
 It works identically for session login and OAuth login, since both populate
@@ -34,7 +34,7 @@ export const guard = createAuthorizer<User>({
 | `hasPermission(user, permission, resource?, c)` | Whether `user` holds `permission`, optionally against a domain object. Async allowed. |
 | `onUnauthorized(c, reason)` | Produce the failure response. `reason` is `'unauthenticated'` (no user on context) or `'forbidden'` (user present but lacks role/permission). Defaults: `401 JSON` / `403 JSON`. |
 
-Both `hasRole` and `hasPermission` are optional — but the corresponding
+Both `hasRole` and `hasPermission` are optional : but the corresponding
 middleware factories will deny access (`403`) when called without the callback
 configured. This makes the failure mode obvious during development.
 
@@ -42,7 +42,7 @@ configured. This makes the failure mode obvious during development.
 
 | Factory | Behavior |
 | --- | --- |
-| `guard.requireUser` | Allow any authenticated user; deny otherwise. |
+| `guard.requireUser` | Allow any authenticated user. Deny all other users. |
 | `guard.requireRole(...roles)` | Allow if the user holds **any** of the given roles (OR semantics). |
 | `guard.requireAllRoles(...roles)` | Allow only if the user holds **every** role (AND semantics). |
 | `guard.requirePermission(perm, resource?)` | Allow only if the user holds the permission, optionally against a `resource` object. |
@@ -52,6 +52,16 @@ All factories are Hono `MiddlewareHandler`s, so they work wherever Hono
 middleware works.
 
 ## Protecting pages
+
+Page and enclosing layout guards run for page requests, HTTP RPC, file uploads,
+SSE subscriptions, and WebSocket upgrades. Service RPC runs the owning layout's
+guards. Global authentication middleware runs first.
+
+Transport guards receive the transport request (`/crpc`, `/upload`, `/sse`, or
+`/ws`). For resource permissions, validate the requested resource inside the
+server method. Public state, method arguments, query values, and scope names
+are client input. A connection guard does not recheck permissions on each
+WebSocket message.
 
 Pass guards to `@Page({ middlewares })`:
 
@@ -75,7 +85,7 @@ export class EditorDashboard extends Cossack {}
 
 ## Conditional UI in `render()`
 
-The `require*` factories are **route-level** middleware — they deny access with
+The `require*` factories are **route-level** middleware : they deny access with
 an HTTP response. For conditional UI (show/hide a button, toggle a menu item),
 use the boolean helpers on the same kit:
 
@@ -87,7 +97,7 @@ use the boolean helpers on the same kit:
 | `guard.hasRoleAsync(c, ...roles)` | `Promise<boolean>` | `hasRole` is async. |
 
 All four read the user from `c.get('user')` and return `false` (never throw)
-when there is no user — unauthenticated visitors simply don't see the gated UI.
+when there is no user : unauthenticated visitors simply do not see the gated UI.
 
 ### Pattern 1: inline sync check (in-memory permissions)
 
@@ -114,7 +124,7 @@ export class PostList extends Cossack {
 ```
 
 If `hasPermission` returns a Promise, `guard.can()` **throws a clear error**
-rather than silently returning `false` — use Pattern 2 instead.
+rather than silently returning `false` : use Pattern 2 instead.
 
 ### Pattern 2: async check via `init()` + `@State` (DB-backed permissions)
 
@@ -157,7 +167,7 @@ repeated permission queries on every re-render.
 ### Pattern 3: a reusable `<Guard>` wrapper (userland)
 
 For deeply nested conditional UI, a small wrapper component keeps templates
-readable. The auth package can't ship a renderer component (it doesn't depend
+readable. The auth package cannot ship a renderer component (it does not depend
 on `@cossackframework/core`), but you can define one in your app:
 
 ```ts
@@ -222,7 +232,7 @@ const guard = createAuthorizer<User>({
 
 ## Default failure responses
 
-If you don't provide `onUnauthorized`, failures return:
+If you do not provide `onUnauthorized`, failures return:
 
 - `401 { "error": "Authentication required" }` when no user is on the context.
 - `403 { "error": "Forbidden" }` when the user is present but lacks the role/permission.
@@ -236,7 +246,7 @@ onUnauthorized: (c, reason) =>
 
 ## Async checks
 
-Both `hasRole` and `hasPermission` may be async (e.g. they query a database or
+Both `hasRole` and `hasPermission` can be async. For example, they can query a database or
 an external authorization service). The middleware `await`s the result.
 
 ```ts
@@ -250,22 +260,20 @@ const guard = createAuthorizer<User>({
 
 ## How it composes with authentication
 
-`createAuthorizer()` does **not** perform authentication — it only reads
+`createAuthorizer()` does **not** perform authentication : it only reads
 `c.get('user')`. Mount an authentication middleware upstream (such as
 `createAuth().middleware`) so that `user` is populated before the guard runs:
 
 ```ts
-import { Hono } from 'hono';
-import { createApp } from '@cossackframework/framework';
-import { auth, guard } from './auth';
+// src/bootstrap/middlewares.ts
+import { auth } from '../auth';
 
-const app = createApp({ authMiddleware: auth.middleware });
-// authMiddleware runs on '*' before page middleware → guards see c.get('user').
+export default [auth.middleware];
 ```
 
 ## What this is not
 
 - Not a full RBAC/ABAC engine (no policies, no Casbin-style rules). For complex
-  authorization logic, encode it in your `hasPermission` callback.
+ authorization logic, encode it in your `hasPermission` callback.
 - Not tied to any ORM. The `User` type is your own.
 - Not a session store. Sessions are handled by `createAuth` or OAuth callbacks.

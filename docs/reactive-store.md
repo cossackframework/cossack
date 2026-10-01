@@ -1,19 +1,18 @@
 ---
 title: "Reactive Store"
-description: "A lightweight signal/subscriber pattern for cross-component state that triggers re-renders when changed — for global state like toast queues, theme, or command palette open/close."
+description: "Share reactive state across components with createStore."
 ---
 
 # Reactive Store
 
-Cossack's `provide`/`consume` context API does a **one-time read** — it doesn't
-notify consumers when the value changes. For global state that needs to trigger
-re-renders across unrelated components (toast queues, theme switching, command
-palette open/close), use `createStore`.
+A component that reads a value with Cossack's `provide` and `consume` context
+API does not receive updates when the value changes. Use `createStore` when
+unrelated components need to share changing state, such as a toast queue, theme,
+or command palette state.
 
-A reactive store is a tiny signal/subscriber primitive: a value + a list of
-listeners. When the value changes, all listeners fire. Components subscribe in
-`onMount()` (or via `connectStore`) and update a `@ClientState` field to trigger
-re-render.
+A reactive store contains a value and a list of listeners. When the value
+changes, the store calls each listener. Components subscribe in `onMount()` or
+with `connectStore`. They can update a `@ClientState` field to trigger a render.
 
 ## Import
 
@@ -35,7 +34,7 @@ export const themeStore = createStore(savedTheme ?? 'light');
 ```
 
 Shared components can statically import the module using its `.client`
-basename. Client builds load the original module; SSR substitutes lazy
+basename. Client builds load the original module. SSR substitutes lazy
 placeholders, so merely importing it on the server is safe:
 
 ```typescript
@@ -50,7 +49,7 @@ Do not read, call, construct, or access properties on client-only exports in an
 SSR path. This includes `render()`, `init()`, server-side field initializers,
 and module top-level code. Use them from `onMount()`, `clientInit()`, or an
 `@Client()` method instead. Client-only modules must use explicit runtime
-exports; runtime `export *` is rejected because the SSR placeholder interface
+exports. The framework rejects runtime `export *` because it cannot determine the SSR placeholder interface
 cannot be determined from the local file.
 
 ## `createStore<T>(initial)`
@@ -122,7 +121,7 @@ export class Toaster extends Cossack {
 
 ## Global imperative API pattern
 
-A common use case is a global imperative API like `toast.success("Saved!")` —
+A common use case is a global imperative API like `toast.success("Saved!")` :
 callable from anywhere (server methods, event handlers, services). The pattern:
 
 1. Create a module-level store.
@@ -174,9 +173,9 @@ async saveSettings() {
 | Pattern | Use case |
 |---|---|
 | `@State` / `@ClientState` | Component-local reactive state |
-| `provide` / `consume` | Static values injected from ancestor (env, user, request context) — one-time read |
-| `createStore` | Global mutable state shared across unrelated components — re-renders on change |
+| `provide` / `consume` | Static values injected from ancestor (env, user, request context) : one-time read |
+| `createStore` | Global mutable state shared across unrelated components : re-renders on change |
 | `@Service({ scope })` | Dependency-injected business logic shared across components |
 
-Use `createStore` sparingly — it's for genuinely global cross-tree state.
+Use `createStore` for global state that components across the tree share.
 For parent→child data flow, props and `provide`/`consume` are usually enough.

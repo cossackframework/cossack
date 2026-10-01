@@ -1,6 +1,7 @@
 # Cossack CLI
 
-The official CLI for the [Cossack Framework](https://cossack.dev) — scaffolding, codegen, management, and upgrades for Cossack projects.
+The official CLI for the [Cossack Framework](https://cossack.dev). Use it to
+create and manage Cossack projects, generate code, and upgrade dependencies.
 
 ## Installation
 
@@ -13,7 +14,7 @@ pnpm cossack create my-app
 cd my-app
 ```
 
-It's available through the generated project's `cossack` dependency, usually
+It is available through the generated project's `cossack` dependency, usually
 via scripts such as `pnpm dev`, `pnpm build`, and `pnpm start`.
 
 ### Globally (optional)
@@ -138,5 +139,5 @@ cossack add dashboard --features=users,sessions
 
 ## Documentation
 
-- **Full CLI reference** — [`docs/cossack-cli.md`](../../docs/cossack-cli.md) in the framework repository.
-- **Framework docs** — [https://cossack.dev/docs](https://cossack.dev/docs).
+- **Full CLI reference** : [`docs/cossack-cli.md`](../../docs/cossack-cli.md) in the framework repository.
+- **Framework docs** : [https://cossack.dev/docs](https://cossack.dev/docs).

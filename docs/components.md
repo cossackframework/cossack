@@ -1,11 +1,11 @@
 ---
 title: "Components"
-description: "Reusable components in Cossack are built using the same Cossack base class as pages and support state management via decorators."
+description: "Build reusable Cossack components with the same base class and state decorators as pages."
 ---
 
 # Components
 
-In Cossack, reusable components are built using the same `Cossack` base class as pages, but they are used differently within the template. This guide explains how to create, use, and manage state in reusable components.
+Reusable components extend the same `Cossack` base class as pages. Add them to a template with the component helper. This guide explains how to create them and manage their state.
 
 > **Method stripping:** methods on `Cossack` subclasses that are not needed in
 > the browser are automatically stripped from the client bundle. See
@@ -15,9 +15,9 @@ In Cossack, reusable components are built using the same `Cossack` base class as
 
 ## Creating a Component
 
-To create a component, extend the `Cossack` class. Inputs are passed from a parent component through `this.props`; use `@State` for server-synchronized state and `@ClientState` for reactive client-only state.
+To create a component, extend the `Cossack` class. A parent passes inputs through `this.props`. Use `@State` for server-synchronized state. Use `@ClientState` for reactive client-only state.
 
-> **Inputs vs. state:** Anything a parent passes in (data, callbacks) is an input and lives on `this.props`. Anything the component owns and mutates itself (and that should trigger a re-render) is state and uses `@ClientState` or `@State`. Declare the shape of your inputs with an interface and a `declare props` override so `this.props` is typed.
+> **Inputs vs. state:** A parent passes inputs, such as data and callbacks, through `this.props`. A component stores values that it owns and changes in `@ClientState` or `@State`. Declare an interface and a `declare props` override to give `this.props` a type.
 
 ### Basic Example: Button
 

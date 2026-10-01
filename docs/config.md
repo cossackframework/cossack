@@ -1,13 +1,13 @@
 ---
 title: 'Configuration'
-description: 'Manage app settings with a Laravel-style config folder, per-request config() and env() helpers, and factory-based config files that stay server-only.'
+description: 'Read request-scoped values with config() and env() from server-only config files.'
 ---
 
 # Configuration
 
-Cossack ships with a Laravel-inspired configuration system: a `config/` folder of plain TypeScript files, a `config()` helper for dotted-path lookups, and an `env()` helper for reading request-scoped environment bindings. All values resolve per-request via AsyncLocalStorage, so a single Worker isolate safely serves many concurrent users with different bindings.
+Cossack reads configuration from TypeScript files in `src/config/`. Use `config()` to read a value by its dotted path. Use `env()` to read a request-scoped environment binding. AsyncLocalStorage keeps each request's values separate when one Worker isolate handles many users.
 
-Config files are **server-only** — they are never bundled into the client. On the client or outside a request, `config()` and `env()` return their defaults.
+Config files are **server-only** : they are never bundled into the client. On the client or outside a request, `config()` and `env()` return their defaults.
 
 ## Quick start
 
@@ -46,11 +46,11 @@ const secret = env('APP_SECRET');              // the raw binding value
 const region = env('AWS_REGION', 'us-east-1'); // 'us-east-1' (with fallback)
 ```
 
-That's it — the framework auto-detects `src/config/*.ts`, evaluates each file per request, and scopes the resulting tree into AsyncLocalStorage so `config()` / `env()` resolve the right values everywhere.
+The framework finds `src/config/*.ts` and evaluates each file for every request. It stores the resulting values in AsyncLocalStorage so `config()` and `env()` read values for the current request.
 
 ## How config files work
 
-Each file in `src/config/` default-exports a **factory function** — not a plain object. The factory receives `{ env }` and returns a config object:
+Each file in `src/config/` default-exports a **factory function**. The function receives `{ env }` and returns a configuration object:
 
 ```ts
 export default ({ env }) => ({
@@ -60,7 +60,7 @@ export default ({ env }) => ({
 
 ### Why factory functions?
 
-On Cloudflare Workers, environment bindings (`c.env`) are only available **inside the request handler**, not at module-load time. If config files exported plain objects, the `env()` calls inside them would run once at startup — before any bindings exist — and return defaults for every request.
+On Cloudflare Workers, environment bindings (`c.env`) are available only **inside the request handler**. They are not available when the module loads. A plain object calls `env()` before bindings exist and returns defaults for every request.
 
 Factory functions solve this: the framework calls each factory **per request**, passing an `env` function bound to that request's bindings. This means `env('APP_SECRET')` reads the actual secret for the current request, every time.
 
@@ -92,7 +92,7 @@ config('database.connections.turso.url', 'fallback'); // nested path
 
 ### Nested values
 
-`config()` walks dotted paths through the config tree. The first segment is always the file name; subsequent segments descend into the returned object:
+`config()` walks dotted paths through the config tree. The first segment is the file name. Later segments select values in the returned object:
 
 ```ts
 config('app.name')                    // src/config/app.ts → { name }
@@ -117,7 +117,7 @@ Define bindings in `wrangler.jsonc`:
 }
 ```
 
-Secrets (values you don't want in source control) should use `wrangler secret put` instead of `vars`:
+Store secrets outside source control. Use `wrangler secret put` instead of `vars`:
 
 ```sh
 npx wrangler secret put APP_SECRET
@@ -136,7 +136,7 @@ cross-origin origins.
 | `CORS_ENABLED` | `true` | Enable built-in CORS on `/api` and `/api/*` |
 | `CORS_ORIGINS` | empty | Comma-separated origin allowlist |
 | `CORS_METHODS` | `GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS` | Allowed preflight methods |
-| `CORS_HEADERS` | empty | Allowed headers; empty reflects requested headers |
+| `CORS_HEADERS` | empty | Allowed headers. An empty value reflects requested headers. |
 | `CORS_EXPOSE_HEADERS` | empty | Response headers exposed to browser code |
 | `CORS_CREDENTIALS` | `false` | Permit credentialed browser requests |
 | `CORS_MAX_AGE` | `86400` | Browser preflight cache duration in seconds |
@@ -148,7 +148,7 @@ and `*.example.com` (HTTP or HTTPS). Subdomain patterns exclude the apex.
 Malformed entries never match. `CORS_CREDENTIALS=true` with global `*` is
 rejected because credentialed CORS requires an explicit origin.
 
-For Node, put values in `.env`; for local Wrangler development, use `.dev.vars`:
+For Node.js, put values in `.env`. For local Wrangler development, use `.dev.vars`:
 
 ```dotenv
 CORS_ENABLED=true
@@ -183,7 +183,7 @@ does not replace authentication, authorization, CSRF protection, or rate limits.
 
 ## Accessing config in components
 
-`config()` and `env()` work anywhere server-side: in `@Server` methods, `init()`, middleware, and `head()`. They are **server-only** — on the client they return defaults.
+`config()` and `env()` work anywhere server-side: in `@Server` methods, `init()`, middleware, and `head()`. They are **server-only** : on the client they return defaults.
 
 To surface config values in a component's render, read them server-side and store in `@State`:
 
@@ -261,7 +261,7 @@ For example, the locale middleware resolves the default locale from `config('app
 
 ## Type safety
 
-`config()` can infer return types and auto-complete valid dotted paths when you register your config file's shape. This is **optional** — without it, `config()` works but returns `unknown`.
+`config()` can infer return types and auto-complete valid dotted paths when you register your config file's shape. This is **optional** : without it, `config()` works but returns `unknown`.
 
 ### Registering types
 
@@ -326,7 +326,7 @@ config('database.connections.mysql.port'); // number (inferred + auto-completed)
 
 ### Without registration
 
-If you don't augment `CossackConfigRegistry`, `config()` still works — it returns `unknown` for every key. You can provide a generic explicitly:
+If you do not augment `CossackConfigRegistry`, `config()` still works. It returns `unknown` for every key. You can provide a generic explicitly:
 
 ```ts
 const name = config<string>('app.name'); // explicit type
@@ -334,12 +334,12 @@ const name = config<string>('app.name'); // explicit type
 
 ## Client-side security
 
-Config files are **never bundled into the client** — they call `env()` to read secrets and bindings, so shipping them would leak sensitive data. Two layers enforce this:
+Config files are **never bundled into the client**. They call `env()` to read secrets and bindings, so including them in the client bundle exposes sensitive data. Two layers enforce this:
 
 1. The `virtual:cossack-config` Vite plugin stubs to `{}` on the client environment.
 2. The security plugin intercepts any direct import of `src/config/*.ts` on the client and replaces it with an empty module.
 
-This means accidentally importing a config file from a component (e.g. `import { dbConfig } from '../config/database'`) is safe — it resolves to `{}` on the client rather than leaking the file's contents.
+This means accidentally importing a config file from a component (e.g. `import { dbConfig } from '../config/database'`) is safe : it resolves to `{}` on the client rather than leaking the file's contents.
 
 ## How it works
 
@@ -356,7 +356,7 @@ This mirrors the ALS pattern used by `__()` (locale), application ORM scopes,
 
 ### SSG
 
-During static generation (`cossack ssg`), there are no live request bindings. The SSG build resolves the site URL from `wrangler.jsonc` / `.env` / shell env (see [Sitemap](./sitemap.md#base-url)) and injects it as `APP_URL` into the config env. Other bindings default to empty — config factories use their fallback values.
+During static generation (`cossack ssg`), there are no live request bindings. The SSG build resolves the site URL from `wrangler.jsonc` / `.env` / shell env (see [Sitemap](./sitemap.md#base-url)) and injects it as `APP_URL` into the config env. Other bindings default to empty : config factories use their fallback values.
 
 ## API reference
 

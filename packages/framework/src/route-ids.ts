@@ -170,10 +170,12 @@ export interface RouterContext {
   routePathToFilePathMap: Map<string, string>;
   pages: Record<string, any>;
   layouts: Record<string, any>;
-  /** Allowed Origin values for WS/SSE upgrades. Defaults to same-origin. */
+  /** Allowed Origin values for transport requests. Defaults to same-origin. */
   allowedOrigins?: string[];
   /** Resolve framework-owned runtime identity for reconstructed components. */
   runtimeInfo?: () => Promise<import('@cossackframework/core').CossackRuntimeInfo>;
+  /** Page and enclosing layout guards, also enforced on transport endpoints. */
+  getMiddlewares?: (componentPath: string) => import('hono').MiddlewareHandler[];
 }
 
 /**

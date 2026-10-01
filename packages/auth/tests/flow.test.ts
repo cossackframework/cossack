@@ -366,6 +366,15 @@ describe('provider definitions', () => {
             expect(extras.prompt).toBe('consent');
         });
 
+        it('preserves Unicode names in id_token claims', async () => {
+            const def = createGoogleProvider();
+            const name = 'Nguyễn — 東京 👋';
+            const bytes = new TextEncoder().encode(JSON.stringify({ sub: '123', name }));
+            const payload = btoa(String.fromCharCode(...bytes));
+            const user = await def.normalizeUser({}, { accessToken: 'at', idToken: `hdr.${payload}.sig` });
+            expect(user.name).toBe(name);
+        });
+
         it('prefers id_token claims when normalizing', async () => {
             const def = createGoogleProvider();
             // JWT payload {"sub":"sub-123","email":"claims@e.io","name":"Claims","picture":"pic"}

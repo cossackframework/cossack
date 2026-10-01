@@ -5,7 +5,7 @@ description: "Browser View Transitions API support for animated page and state c
 
 # View Transitions
 
-Cossack supports the browser [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) for smooth, animated transitions between pages and between states within the same page. This feature is **opt-in** — it has zero impact on existing apps unless you enable it.
+Cossack supports the browser [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) for smooth, animated transitions between pages and between states within the same page. This feature is **opt-in** : it has zero impact on existing apps unless you enable it.
 
 ## Enabling View Transitions
 
@@ -26,7 +26,7 @@ When enabled and the browser supports the API (`document.startViewTransition`), 
 
 ## Navigation Progress Bar
 
-Enable a slim progress bar at the top of the page that fills during SPA navigations — the same UX pattern popularized by NProgress and Next.js:
+Enable a slim progress bar at the top of the page that fills during SPA navigations : the same UX pattern popularized by NProgress and Next.js:
 
 ```typescript
 createClientApp({
@@ -37,7 +37,7 @@ createClientApp({
 });
 ```
 
-The bar appears at 30% when a navigation starts and completes to 100% when the new page is ready. No additional configuration or CSS is needed — the framework injects everything automatically. Both `viewTransitions` and `progressBar` are independent options; use either or both.
+The bar appears at 30% when navigation starts. It reaches 100% when the new page is ready. The framework adds the required CSS. `viewTransitions` and `progressBar` are independent options. Use either or both.
 
 ## How It Works
 
@@ -72,9 +72,9 @@ createClientApp({
 
 Available policies are:
 
-- `auto` — browser-like fragment, top, and history-restoration behavior. This is the default.
-- `top` — always scroll to the top, including during back/forward traversal.
-- `preserve` — leave the current viewport position unchanged.
+- `auto` : browser-like fragment, top, and history-restoration behavior. This is the default.
+- `top` : always scroll to the top, including during back/forward traversal.
+- `preserve` : leave the current viewport position unchanged.
 
 Override the policy for an individual link with `data-scroll`:
 
@@ -121,7 +121,7 @@ Then target these types in your CSS:
 @keyframes slide-in-right { from { transform: translateX(100%); } }
 ```
 
-> **Important:** Put view-transition CSS in a **global stylesheet** (e.g., `src/style.css`), not in component-scoped `<style>` tags. During SPA navigation, the old page component is destroyed before the transition animation plays — its `<style>` tags are removed from the DOM at that point. The `::view-transition-old/new` pseudo-elements exist at the document root during animation playback and need the CSS to persist.
+> **Important:** Put view-transition CSS in a **global stylesheet** (e.g., `src/style.css`), not in component-scoped `<style>` tags. During SPA navigation, the old page component is destroyed before the transition animation plays : its `<style>` tags are removed from the DOM at that point. The `::view-transition-old/new` pseudo-elements exist at the document root during animation playback and need the CSS to persist.
 
 You can pass multiple types by separating them with whitespace:
 
@@ -207,11 +207,11 @@ this.startViewTransition(() => { this.expanded = !this.expanded; }, ['expand']);
 
 ### Server-Side Behavior
 
-`this.startViewTransition()` is safe to call on the server — it simply runs the callback directly with no transition. This means you can use it in shared methods without environment checks.
+`this.startViewTransition()` is safe to call on the server : it simply runs the callback directly with no transition. This means you can use it in shared methods without environment checks.
 
 ## Named Elements (Morph)
 
-For elements that should morph or persist across transitions (e.g., a card image that expands into a detail header), add `view-transition-name` in CSS. The browser automatically snapshots and animates any element with this property.
+To morph or preserve an element across transitions, add `view-transition-name` in CSS. For example, use it on a card image that expands into a detail header. The browser snapshots and animates elements with this property.
 
 **List page:**
 ```css
@@ -249,9 +249,9 @@ Browser-initiated back/forward navigation does not carry transition types, but C
 
 The `cossack:ready` event exposes the navigation kind through `event.detail.navigationType`:
 
-- `initial` — initial hydration.
-- `push` — a link or programmatic client navigation.
-- `traverse` — browser back/forward navigation.
+- `initial` : initial hydration.
+- `push` : a link or programmatic client navigation.
+- `traverse` : browser back/forward navigation.
 
 ## Closing Transient UI During Navigation
 
@@ -272,8 +272,8 @@ onNavigateComplete() {
 }
 ```
 
-Using the built-in event decorator and lifecycle hook keeps the listeners scoped to the component and ensures an open sheet is not carried into the destination page.
+Using the built-in event decorator and lifecycle hook keeps the listeners scoped to the component and makes sure that an open sheet is not carried into the destination page.
 
 ## Graceful Fallback
 
-If the browser does not support the View Transitions API, everything still works — navigation and state changes happen normally, just without animation. No errors are thrown, and no degraded behavior occurs.
+If the browser does not support the View Transitions API, everything still works : navigation and state changes happen normally, just without animation. No errors are thrown, and no degraded behavior occurs.

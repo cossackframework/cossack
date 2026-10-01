@@ -1,28 +1,28 @@
 # Cache
 
-This document specifies the architecture of Cossack's server-side cache: the config-driven store system, the built-in drivers, the per-request resolution model, and the `cache` facade.
+This document describes the server-side cache. It covers store configuration, built-in drivers, per-request store selection, and the `cache` API.
 
 ## Design Principles
 
-1. **Config-driven.** Stores are declared in `src/config/cache.ts` (a Laravel-style config file: `default` + a `stores` map), evaluated per request by the existing config system. The `cache` facade reads `config('cache.default')` and `config('cache.stores')` to resolve stores.
-2. **Lives in the framework.** The cache system is owned by `@cossackframework/framework` (exported from `@cossackframework/framework/cache`), not core, because it needs direct access to the config system (which is framework-owned). The framework already depends on core.
+1. **Configuration.** Declare stores in `src/config/cache.ts` with a `default` value and a `stores` map. The config system evaluates this file for each request. The `cache` API reads `config('cache.default')` and `config('cache.stores')` to select stores.
+2. **Framework package.** `@cossackframework/framework` owns the cache system and exports it from `@cossackframework/framework/cache`. The cache needs the config system, which also belongs to the framework. The framework already depends on core.
 3. **Server-only.** Cache data lives on the server. The facade resolves stores from the per-request config scope (set up by the config middleware). On the client there is no request scope.
-4. **Per-request resolution, per-isolate instances.** The *choice* of default store is resolved per-request from the config ALS (correct isolation — no first-request-wins bug). Store *instances* are memoized per-isolate keyed by driver+binding (bindings are stable per deployment, so reuse is safe and efficient).
-5. **Pluggable drivers.** Built-in drivers: `memory` (default), `kv`, `durable-object`. The `database` driver from `@cossackframework/database/cossack` is registered in `src/middlewares/orm.ts` via `extendCacheDriver()`; Framework stays ORM-independent.
-6. **Multiple stores.** A config file can declare many stores (e.g. `memory` + `kv` + `database`). `cache.get()` uses the default; `cache.store('kv')` targets a named one.
+4. **Per-request store selection.** The cache selects the default store for each request from the config AsyncLocalStorage (ALS) scope. This prevents one request from setting the default for later requests. Store instances are cached per isolate by driver and binding. Bindings stay stable during a deployment, so the cache can reuse each instance.
+5. **Drivers.** Built-in drivers are `memory` (default), `kv`, and `durable-object`. `src/middlewares/orm.ts` registers the `database` driver from `@cossackframework/database/cossack` with `extendCacheDriver()`. The framework does not depend on the ORM.
+6. **Multiple stores.** A config file can declare several stores, such as `memory`, `kv`, and `database`. `cache.get()` uses the default store. `cache.store('kv')` selects a named store.
 
 ## Package Responsibilities
 
 | Package | Role |
 |---------|------|
 | `@cossackframework/framework` | Owns the cache system: `CacheStore` interface, built-in stores (`InMemoryCacheStore`, `KvCacheStore`, `DurableObjectCacheStore` + `CacheDurableObject`), the `CacheManager` (per-isolate instance cache + per-request config resolution), the `cache` facade, and `extendCacheDriver()`. Also owns `config/cache.ts` (the framework's own cache config). All exported from `@cossackframework/framework/cache`. |
-| `@cossackframework/core` | Provides `getRequestContext()` — the injection point the cache uses to resolve Worker bindings (`env.CACHE`, `env.CACHE_DO`) from the active request. No cache code lives in core. |
+| `@cossackframework/core` | Provides `getRequestContext()` : the injection point the cache uses to resolve Worker bindings (`env.CACHE`, `env.CACHE_DO`) from the active request. No cache code lives in core. |
 | `@cossackframework/database/cossack` | Owns `createDatabaseCacheStore()`, which lazily resolves the scoped ORM and structurally implements Framework's cache contract. The template registers it with `extendCacheDriver('database', () => createDatabaseCacheStore())`. |
-| `cossack` CLI | No longer owns a cache-specific command — the `cache_items` migration ships as a default (`0006_create_cache_table.ts`). |
+| `cossack` CLI | No longer owns a cache-specific command : the `cache_items` migration ships as a default (`0006_create_cache_table.ts`). |
 
 ## TTL Units
 
-All TTLs are in **seconds** throughout the cache API (Laravel-compatible). KV's native `expirationTtl` is also seconds. The Durable Object and database stores convert seconds to epoch-millis internally.
+All cache TTL values are in **seconds**. KV's `expirationTtl` also uses seconds. The Durable Object and database stores convert seconds to epoch milliseconds.
 
 ## The Store Interface
 
@@ -39,7 +39,7 @@ interface CacheStore {
 }
 ```
 
-`set(key, undefined)` is equivalent to `delete(key)`. Values are JSON-serialized by the persistent stores; the in-memory store JSON-round-trips values too (no caller mutation leaks).
+`set(key, undefined)` works like `delete(key)`. Persistent stores serialize values as JSON. The in-memory store also serializes and parses values as JSON, so callers cannot change stored values through a shared object reference.
 
 ## The Config File
 
@@ -58,21 +58,21 @@ export default ({ env }): CacheConfig => ({
 
 Each store spec has a `driver` name and, for KV/DO, a `binding` naming the Worker binding. Bindings are named as **strings** (the config system's `env()` only returns strings); the cache manager resolves the actual binding object via `getRequestContext().env[bindingName]` when building the store instance.
 
-The factory runs per request with access to `c.env` — so the binding-timing problem dissolves (by the time the config is evaluated, bindings exist).
+The factory runs per request with access to `c.env` : so the binding-timing problem dissolves (by the time the config is evaluated, bindings exist).
 
 ## Drivers
 
 ### In-memory (`memory`, default)
 
-`InMemoryCacheStore` — a `Map` with lazy TTL pruning once over `maxEntries` (default 10 000). Per-process. Not shared across instances/regions. Works with zero configuration.
+`InMemoryCacheStore` : a `Map` with lazy TTL pruning once over `maxEntries` (default 10 000). Per-process. Not shared across instances/regions. Works with zero configuration.
 
 ### KV (`kv`)
 
-`KvCacheStore` — Cloudflare KV. Values stored as JSON; expiry via KV's native `expirationTtl` (auto-GC). Uses a structural `CacheKvNamespace` type. Eventually consistent. `flush()` is unsupported (KV has no bulk-delete-by-prefix) and throws a helpful error. KV enforces a minimum TTL of 60s.
+`KvCacheStore` : Cloudflare KV. Values stored as JSON; expiry via KV's native `expirationTtl` (auto-GC). Uses a structural `CacheKvNamespace` type. Eventually consistent. `flush()` is unsupported (KV has no bulk-delete-by-prefix) and throws a helpful error. KV enforces a minimum TTL of 60s.
 
 ### Durable Object (`durable-object`)
 
-`DurableObjectCacheStore` + `CacheDurableObject` — strongly consistent. One DO instance holds the entire cache (`idFromName('default')`). Uses DO transactional storage (`state.storage`) so entries persist across eviction. The DO class must be exported from the Worker entry (Cloudflare requirement).
+`DurableObjectCacheStore` + `CacheDurableObject` : strongly consistent. One DO instance holds the entire cache (`idFromName('default')`). Uses DO transactional storage (`state.storage`) so entries persist across eviction. The DO class must be exported from the Worker entry (Cloudflare requirement).
 
 ### Database (`database`)
 
@@ -104,7 +104,7 @@ import { cache } from '@cossackframework/framework/cache';
 
 The cache reads the config tree via `config('cache')` (imported from `./config`), which reads from the framework's per-request config ALS. This is why the cache lives in the framework: the config system is framework-owned, and core cannot import it (strict `framework → core` dependency direction).
 
-For binding *objects* (KV/DO namespaces), the cache uses `getRequestContext().env` — the core injection point the framework wires once at startup via `setRequestContextGetter`. This is the same indirection `cookie()` and `session()` use.
+For binding *objects* (KV/DO namespaces), the cache uses `getRequestContext().env` : the core injection point the framework wires once at startup via `setRequestContextGetter`. This is the same indirection `cookie()` and `session()` use.
 
 ## Test Conventions
 

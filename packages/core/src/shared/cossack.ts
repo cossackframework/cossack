@@ -255,6 +255,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     
     private _c!: Context;
     private _user?: User;
+    private _actionIdentity?: { user: User | undefined; context?: Context };
     private _env!: Env;
     private _runtimeInfo?: CossackRuntimeInfo;
 
@@ -262,13 +263,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // The context is wrapped by `createCossackContext`, whose proxy adds
         // `getFormData` at runtime. Cast through to the augmented type so
         // `this.c.getFormData` type-checks for developers.
-        return (this._c || this.consume(RequestContext)) as Context & CossackContext;
+        return (this._actionIdentity?.context || this._c || this.consume(RequestContext)) as Context & CossackContext;
     }
     protected set c(val: Context) {
         this._c = val;
     }
 
-    protected get user(): User | undefined { return this._user || this.consume(UserContext); }
+    protected get user(): User | undefined {
+        return this._actionIdentity ? this._actionIdentity.user : this._user || this.consume(UserContext);
+    }
     protected set user(val: User | undefined) { this._user = val; }
 
     protected get env(): Env { return this._env || this.consume(EnvContext) as Env; }
@@ -1015,13 +1018,28 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const actionMethod = this.getMethod(action);
         if (!actionMethod) return;
         this._cossack_ws_context = clientContext;
+        const context = this.c;
+        this._actionIdentity = {
+            user,
+            context: context && new Proxy(context, {
+                get(target, property) {
+                    if (property === 'get') return (key: string) => key === 'user' ? user : target.get(key);
+                    const value = Reflect.get(target, property, target);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                },
+            }),
+        };
         try {
-            await (actionMethod as any)(...(payload || []), user);
+            // Arguments are entirely client-controlled. Identity belongs in
+            // the action context, never an appended positional argument that
+            // a longer client payload could displace.
+            await (actionMethod as any)(...(payload || []));
         } catch (e) {
             // Error boundary: log and continue so the runtime doesn't receive an
             // unhandled rejection and so `loading[action]` is always released.
             console.error(`[Cossack] Error executing action '${action}':`, e);
         } finally {
+            this._actionIdentity = undefined;
             this._cossack_ws_context = undefined;
             const ws = clientContext as { readyState?: number; send: (d: string) => void };
             // Use the numeric literal (1 === WebSocket.OPEN) rather than the

@@ -68,7 +68,7 @@ export class DashboardService extends CossackService<Env> {
 ```
 
 Use `@Server()` for database access, external APIs, secrets, and other
-server-only work. Use `@Shared()` for safe logic that should execute locally in
+server-only work. Use `@Shared()` for logic that can run locally in
 both runtimes.
 
 ### 2. Declare Ownership on a Layout
@@ -136,15 +136,15 @@ how many descendants inject it. All consumers rerender when one of the
 service's `@State` fields or nested `@Store` values changes.
 
 - Each SSR request gets a fresh root scope, so requests cannot share service
-  state or user data.
+ state or user data.
 - Each service RPC request reconstructs the applicable layout hierarchy in a
-  fresh request scope.
+ fresh request scope.
 - In the browser, a reused layout keeps its scope across navigation between
-  pages in the same subtree.
+ pages in the same subtree.
 - Leaving the subtree disposes the scope. Returning later creates a new service
-  instance with fresh or newly hydrated state.
+ instance with fresh or newly hydrated state.
 
-Services may define an optional cleanup hook:
+Services can define an optional cleanup hook:
 
 ```typescript
 @Service()
@@ -158,7 +158,7 @@ export class SearchService {
 ```
 
 `onDispose()` runs once when the owning scope is destroyed. Cleanup that must
-finish before navigation continues should be synchronous: Promise-returning
+finish before navigation continues must be synchronous: Promise-returning
 hooks are started and rejection-logged, but are not awaited.
 
 ## Nested Layouts and Shadowing
@@ -207,7 +207,7 @@ components:
 | Decorator | Service behavior |
 | :--- | :--- |
 | `@State()` | A reactive public field synchronized during hydration and service RPC. |
-| `@Store()` | A reactive object or array; nested mutations also notify every consumer. |
+| `@Store()` | A reactive object or array. Nested mutations also notify every consumer. |
 | `@Server()` | An allowlisted server action, proxied automatically in the browser. |
 | `@Shared()` | A method whose implementation runs locally on both client and server. |
 | `@Client()` | A client-only method whose server implementation is stubbed. |
@@ -215,13 +215,13 @@ components:
 
 The framework serializes a service's state once under its owning layout, in a
 separate `services` section. It does not copy service fields or methods onto
-consumer components, so a component and service may safely use the same member
+consumer components, so a component and service can safely use the same member
 names.
 
 Only declared `@State` and `@Store` fields are restored. Unknown client-supplied
 keys and prototype-pollution keys are ignored. Values use the same JSON-safe
-serialization contract as component state; cyclic structures and non-JSON
-values should not be stored in synchronized service state.
+serialization contract as component state. Do not store cyclic structures or
+non-JSON values in synchronized service state.
 
 During client navigation, state from a still-active layout is kept rather than
 overwritten by a newly fetched SSR snapshot. A newly entered layout hydrates
@@ -245,7 +245,7 @@ strips server-only method bodies from client bundles.
 
 ## Service Dependencies
 
-Services may use constructor injection for other services:
+Services can use constructor injection for other services:
 
 ```typescript
 @Service()
@@ -271,7 +271,7 @@ export class BillingService {
 export class BillingLayout extends Cossack {}
 ```
 
-Declare dependencies in the same layout or an ancestor when they should share
+Declare dependencies in the same layout or an ancestor when they must share
 that subtree's scope. Circular dependency graphs are rejected.
 
 ## Constructor Injection Compatibility
@@ -293,7 +293,7 @@ honors `@Service({ scope: 'singleton' | 'transient' })`.
 
 The `scope` option controls only that legacy fallback. A class explicitly listed
 in `services` always has one instance owned by that layout scope. Prefer explicit
-layout ownership for shared reactive state or request-aware work; legacy global
+layout ownership for shared reactive state or request-aware work. The legacy global
 singletons must never retain request- or user-specific mutable data.
 
 ## `services` Is Not `providers`

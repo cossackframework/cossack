@@ -1,27 +1,27 @@
-# Service Providers — Decision Record (Not Adopted)
+# Service Providers : Decision Record (Not Adopted)
 
-Status: **Accepted — do not adopt for now.** Revisit if a trigger in [When to revisit](#when-to-revisit) occurs.
+Status: **Accepted. Do not add this feature now.** Revisit this decision if a trigger in [When to revisit](#when-to-revisit) occurs.
 
-This records the decision to **not** introduce Laravel-style Service Providers to Cossack, and explains how the framework's existing primitives cover the same responsibilities. Intended for contributors and LLM-assisted development so the rationale isn't lost.
+This document records why Cossack does not use Laravel-style Service Providers. It explains how existing Cossack features handle the same work. Use it when you work on the framework.
 
 ---
 
 ## What a Service Provider is
 
-In Laravel, a Service Provider is the central bootstrap unit. Each provider class has two lifecycle hooks:
+In Laravel, a Service Provider is a central startup unit. Each provider class has two lifecycle hooks:
 
-- `register()` — bind things into the DI container (`bind`, `singleton`, `extend`).
-- `boot()` — run startup logic once all providers are registered: publish routes, register middleware/commands, attach event listeners, load config, register validators/serializers, warm caches.
+- `register()` : bind things into the DI container (`bind`, `singleton`, `extend`).
+- `boot()` : run startup logic once all providers are registered: publish routes, register middleware/commands, attach event listeners, load config, register validators/serializers, warm caches.
 
-Their defining strength is **third-party package self-registration**: `composer require foo/bar` auto-wires the package (routes, middleware, commands, migrations, container bindings) with zero manual editing.
+Their main purpose is **third-party package registration**. The command `composer require foo/bar` connects the package's routes, middleware, commands, migrations, and container bindings without manual edits.
 
-So a Service Provider bundles four jobs: **DI registration + middleware/route registration + one-time boot logic + package-integration contract.**
+A Service Provider handles four jobs: **dependency injection (DI), middleware and route registration, one-time startup logic, and package integration.**
 
 ---
 
 ## Decision
 
-**Do not add a Service Provider layer.** The responsibilities are already covered by Cossack's existing primitives, and those primitives fit the edge/Vite runtime model better than a runtime provider registry.
+**Do not add a Service Provider layer.** Cossack features already handle these jobs. They also fit the edge and Vite runtime model.
 
 ---
 
@@ -29,7 +29,7 @@ So a Service Provider bundles four jobs: **DI registration + middleware/route re
 
 | Laravel SP job | Cossack equivalent | Where |
 |---|---|---|
-| DI container bindings | `@Service()` decorator + `DIContainer` (singleton cache, ctor injection) | `packages/core/src/shared/container.ts` — see [service.md](./service.md) |
+| DI container bindings | `@Service()` decorator + `DIContainer` (singleton cache, ctor injection) | `packages/core/src/shared/container.ts` : see [service.md](./service.md) |
 | Register global request middleware | `src/bootstrap/middlewares.ts` registry, auto-loaded via `virtual:cossack-middlewares` | `packages/framework/src/vite-plugin.ts`, `router.ts` |
 | Register routes | File-based `src/pages/` (auto-discovered via `import.meta.glob`) | `packages/framework/src/vite-plugin.ts` (`cossackPages`) |
 | One-time boot/lifecycle logic | Vite plugins (build-time) + request middleware + `src/index.ts` module top-level (once per isolate) | `vite.config.ts`, `src/index.ts` |
@@ -43,7 +43,7 @@ So a Service Provider bundles four jobs: **DI registration + middleware/route re
 
 ### 1. Edge runtime vs. process boot
 
-Laravel scans installed packages and boots their providers on every process start. Cloudflare Workers cold-start constantly and there is **no cheap "scan + boot" phase** — scanning packages at request time would devastate cold-start latency. The Cossack-native equivalent of Laravel's runtime scan is **Vite's static `import.meta.glob` + file conventions, resolved at build time**. That is already how pages, lang catalogs, and the middleware registry are discovered.
+Laravel scans installed packages and boots their providers on every process start. Cloudflare Workers cold-start constantly and there is **no cheap "scan + boot" phase** : scanning packages at request time would devastate cold-start latency. The Cossack-native equivalent of Laravel's runtime scan is **Vite's static `import.meta.glob` + file conventions, resolved at build time**. That is already how pages, lang catalogs, and the middleware registry are discovered.
 
 ### 2. Parallel-mechanism risk
 
@@ -53,7 +53,7 @@ A provider layer would overlap with three existing registration systems:
 - `src/bootstrap/middlewares.ts` (request middleware)
 - Vite plugins (build-time discovery/generation)
 
-Adding a fourth — a `register()`/`boot()` registry — increases conceptual surface area with marginal payoff and forces a "which mechanism do I use?" decision on every integration. The existing three have clear, non-overlapping roles.
+Adding a fourth : a `register()`/`boot()` registry : increases conceptual surface area with marginal payoff and forces a "which mechanism do I use?" decision on every integration. The existing three have clear, non-overlapping roles.
 
 ### 3. No third-party package ecosystem
 
@@ -65,7 +65,7 @@ SPs earn their keep when installable packages self-register. Cossack has no inst
 
 There is no dedicated home for **"run once per worker isolate, not per-request, not at build"** logic other than `src/index.ts` module top-level. Examples: warming a cache, registering a custom validator/serializer, hooking a framework default.
 
-This is actually the **idiomatic Workers pattern** — top-level module code runs once per isolate and is cached across requests in the same isolate. It is not a deficiency that needs abstracting away. If it ever becomes cluttered, see the escape hatch below.
+This is actually the **idiomatic Workers pattern** : top-level module code runs once per isolate and is cached across requests in the same isolate. It is not a deficiency that needs abstracting away. If it ever becomes cluttered, see the escape hatch below.
 
 ### Escape hatch (if needed later)
 
@@ -100,6 +100,6 @@ Until then, a Service Provider system would add abstraction without solving a co
 
 ## Related
 
-- [service.md](./service.md) — the DI / `@Service()` system that replaces `register()` bindings.
-- [middleware.md](./middleware.md) — global request middleware registry (`src/bootstrap/middlewares.ts`) + route-level `@Page({ middlewares })`.
-- [architecture.md](./architecture.md) — package separation and request lifecycle.
+- [service.md](./service.md) : the DI / `@Service()` system that replaces `register()` bindings.
+- [middleware.md](./middleware.md) : global request middleware registry (`src/bootstrap/middlewares.ts`) + route-level `@Page({ middlewares })`.
+- [architecture.md](./architecture.md) : package separation and request lifecycle.

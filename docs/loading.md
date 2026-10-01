@@ -5,7 +5,7 @@ description: "Built-in support for handling asynchronous operations with spinner
 
 # Loading UI
 
-Cossack provides built-in support for handling asynchronous operations, allowing you to easily show spinners or skeleton screens while data is being fetched or actions are processing.
+Cossack can show a spinner or skeleton while it fetches data or processes an action.
 
 ## File-based Loading Convention (`loading.ts`)
 
@@ -87,13 +87,13 @@ render() {
 
 ## How it Works
 
-1.  **File Convention**: The Vite plugin discovers `loading.ts` files and registers them. During navigation, the client router swaps the current page with the nearest matching loading component before starting the network request.
-2.  **Automatic Tracking**: The `Cossack` base class wraps `init()`, `get()`, and `clientInit()` calls. It increments `this.loading.init` before the call and decrements it after.
-3.  **SSR Behavior**: During Server-Side Rendering, Cossack waits for `init()` to complete before sending the final HTML. Therefore, the loading state is typically only visible during client-side interactions.
+1. **File Convention**: The Vite plugin discovers `loading.ts` files and registers them. During navigation, the client router swaps the current page with the nearest matching loading component before starting the network request.
+2. **Automatic Tracking**: The `Cossack` base class wraps `init()`, `get()`, and `clientInit()` calls. It increments `this.loading.init` before the call and decrements it after.
+3. **SSR Behavior**: During Server-Side Rendering, Cossack waits for `init()` to complete before sending the final HTML. Therefore, the loading state is typically only visible during client-side interactions.
 
 ## Client-Only Initialization (`clientInit`)
 
-For pages that should show a loading skeleton on the initial page load (instead of waiting for server-side `init()`), define a `clientInit()` method alongside `loadingTemplate()`:
+To show a loading skeleton on the first page load instead of waiting for server-side `init()`, define `clientInit()` and `loadingTemplate()`:
 
 ```typescript
 import { Cossack, Page, State, html } from '@cossackframework/core';

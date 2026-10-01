@@ -20,12 +20,12 @@ During the client build, the Cossack Vite security plugin walks every class that
 `extends Cossack`, `extends CossackElement`, or is decorated with `@Service`,
 and for each top-level method it asks:
 
-> Is this method client-safe — either explicitly decorated as such, or a
+> Is this method client-safe : either explicitly decorated as such, or a
 > built-in lifecycle method, or reachable (directly or transitively) from a
 > client-safe method on the same class?
 
 If the answer is **no**, the method body is replaced with a stub. The original
-source — including any literals, imports, and logic — is removed from the bundle.
+source : including any literals, imports, and logic : is removed from the bundle.
 
 ### Built-in allowlist
 
@@ -45,7 +45,7 @@ client:
 | `getError`, `hasError`, `validateProperty`, `validateAll`, `clearErrors` | Validation API |
 | `toString`, `valueOf` | Object defaults |
 
-`init()` and `get()` are **not** in the allowlist — they are server-only by
+`init()` and `get()` are **not** in the allowlist : they are server-only by
 default because they typically fetch data.
 
 ### Client-safe decorators
@@ -53,15 +53,15 @@ default because they typically fetch data.
 Any method decorated with one of these is preserved in the client bundle with
 its full implementation:
 
-- `@Client()` — client-only method (stubbed on the server); also the escape hatch for helpers the transitive scan can't detect
-- `@Optimistic(action)` — optimistic UI handler
-- `@Computed()` — memoized getter
-- `@Shared()` — runs locally on both client and server and is never proxied
-- `@On(event)` / `@OnDocument(event)` / `@OnWindow(event)` / `@OnEvent(event)` — event listeners
-- `@Task()` — runs on mount and every state update
-- `@VisibleTask()` — runs when an element enters the viewport
-- `@PreventNavigation()` — navigation guard
-- `@Validate(...)` — property validation (also marks the property)
+- `@Client()`: a client-only method. The server uses a stub. Use this decorator for helpers the transitive scan cannot detect.
+- `@Optimistic(action)` : optimistic UI handler
+- `@Computed()` : memoized getter
+- `@Shared()` : runs locally on both client and server and is never proxied
+- `@On(event)` / `@OnDocument(event)` / `@OnWindow(event)` / `@OnEvent(event)` : event listeners
+- `@Task()` : runs on mount and every state update
+- `@VisibleTask()` : runs when an element enters the viewport
+- `@PreventNavigation()` : navigation guard
+- `@Validate(...)` : property validation (also marks the property)
 
 ### Transitive preservation (helpers called from client-safe methods)
 
@@ -94,13 +94,13 @@ export default class RevealList extends Cossack {
 
 The transitive scan only follows `this.methodName(...)` calls. Calls through
 dynamic proxies, `Function.prototype.call` with an arbitrary receiver, or
-methods passed as callbacks to external code are **not** detected — mark the
+methods passed as callbacks to external code are **not** detected : mark the
 helper with `@Client()` in those cases (see below).
 
 ## `@Client()` as the escape hatch
 
-When a helper is called from a client-safe hook but the call can't be detected
-statically (e.g. it's passed as a callback to a third-party library), decorate
+When a helper is called from a client-safe hook but the call cannot be detected
+statically (e.g. it is passed as a callback to a third-party library), decorate
 it with `@Client()`. This preserves the full implementation in the client
 bundle and replaces the body with a no-op on the server.
 
@@ -127,10 +127,10 @@ If client code calls a method that was stripped, the stub checks for an RPC
 proxy:
 
 - **`@Server` methods** receive a proxy at bootstrap, so the stub transparently
-  forwards the call over WebSocket/HTTP/SSE. This is the normal server-method
-  calling experience.
+ forwards the call over WebSocket/HTTP/SSE. This is the normal server-method
+ calling experience.
 - **Undecorated helpers that were stripped** have **no** proxy (they are not
-  registered as RPC methods), so the stub throws a descriptive error:
+ registered as RPC methods), so the stub throws a descriptive error:
 
   ```
   [Cossack] App.helper was stripped from the client bundle because it has no
@@ -148,14 +148,14 @@ a silently broken RPC call.
 If you hit the "stripped from the client bundle" error, pick one:
 
 1. **Add a client-safe decorator** (`@Client`, `@Shared`, `@Computed`, etc.)
-   to the helper. `@Client` is the right choice for pure client-side plumbing.
-2. **Ensure reachability** — make sure the helper is called (directly or
-   transitively, up to 3 levels) from a client-safe method such as `onMount`,
-   `render`, or a `@Client` method, using `this.helper(...)`.
+ to the helper. `@Client` is the right choice for pure client-side plumbing.
+2. **Keep the helper reachable** : call the helper (directly or
+ transitively, up to 3 levels) from a client-safe method such as `onMount`,
+ `render`, or a `@Client` method, using `this.helper(...)`.
 3. **Inline** the helper's logic into the calling method if it is only used in
-   one place.
+ one place.
 
-Do **not** work around this by adding `@Server` to the helper — that turns it
+Do **not** work around this by adding `@Server` to the helper : that turns it
 into an RPC method, which is rarely what you want for a pure client-side helper
 and will execute the body on the server instead of the client.
 
@@ -179,7 +179,7 @@ export class UserProfile extends Cossack { /* ... */ }
 ```
 
 `generateStaticParams` is only ever invoked at **SSG build time** (see
-`getStaticParams` in `ssg-renderer.ts`) — never on the client — so its body
+`getStaticParams` in `ssg-renderer.ts`) : never on the client : so its body
 is pure leak risk in the client bundle. The security plugin replaces each
 occurrence with `async () => []`, preserving the declared type and acting as
 a defensive no-op. The `enabled` flag and any other `@Page` options are
@@ -187,3 +187,24 @@ preserved.
 
 Matches inside string literals, comments, and template literals (e.g. a
 `<pre>` code sample that quotes the function) are not touched.
+
+## Build failures and class discovery
+
+The plugin removes unused server-only imports after stripping method bodies.
+If client code still uses a server-only import, the build fails. The named
+`createAuthorizer` import from `@cossackframework/auth` is allowed: page
+decorators and conditional UI use its role and permission helpers in both
+environments. Keep authentication and session operations in server methods.
+
+Class discovery supports imported base-class aliases, namespace imports, local
+inheritance, and `@Page`, `@Component`, or `@Service` classes. Classes with explicit
+`@Server` members also receive the security transform. Formatting and Vite query
+suffixes do not disable the transform.
+
+If the parser cannot analyze a client module, the build fails. It does not emit
+the unchanged source. `@Server` accessors and dynamic computed names are rejected.
+Use a method or function field with a static name for server code.
+
+Keep secrets out of constructors, ordinary field initializers, accessors, and
+client-safe methods. Those parts still run in the browser. For a subclass of an
+imported custom base, use a component decorator or explicit `@Server` methods.

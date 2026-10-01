@@ -1,15 +1,15 @@
 ---
 title: "Cossack CLI"
-description: "The cossack command-line interface — scaffolding, code generation, lifecycle, features, and upgrades for Cossack projects."
+description: "Create and manage Cossack projects with the cossack command-line interface."
 ---
 
 # Cossack CLI
 
-The `cossack` command-line interface is the primary tool for working with Cossack projects. It scaffolds new applications, generates pages and components, runs the dev/build/start lifecycle, applies database migrations, adds features like authentication and database support, optimizes images, and keeps framework dependencies up to date.
+Use the `cossack` command-line interface to create and manage projects. It creates applications, generates pages and components, runs development and build commands, applies database migrations, adds features, optimizes images, and updates framework dependencies.
 
 ## Installation
 
-The CLI is distributed as an npm package. You can call it via `npx` directly:
+The CLI is an npm package. Run it with `npx`:
 
 ```bash
 npx cossack <command> [args] [options]
@@ -44,7 +44,7 @@ These work across every command:
 | Option | Description |
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
-| `--dry-run` | Show what would happen without writing anything. |
+| `--dry-run` | Show planned changes without writing them. |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
 
@@ -95,12 +95,12 @@ cossack adapter node --database=sqlite --yes
 | `--force` | Replace or delete conflicting runtime/provider-specific files. Unrelated application edits remain protected. |
 
 Turso works with either runtime and is preserved unless another provider is
-selected. D1 must change to SQLite or Turso when targeting Node; SQLite must
+selected. D1 must change to SQLite or Turso when targeting Node. SQLite must
 change to D1 or Turso when targeting Cloudflare. If database support is not
 installed, the target runtime default is recorded silently.
 
 Recognized application, OAuth, and Turso values are transferred between `.env`
-and `.dev.vars`; existing target-file values win, and the source file is never
+and `.dev.vars`. Existing target-file values win, and the source file is never
 deleted. Local environment files remain gitignored and are not added to the
 scaffold manifest.
 
@@ -189,7 +189,7 @@ cossack g migration create_posts
 cossack g seeder posts
 ```
 
-> **Layouts are colocated.** The framework's router discovers layouts via `src/pages/**/layout.ts`. Always generate layouts under `src/pages/...`; a separate `src/layouts/` directory is not scanned.
+> **Layouts are colocated.** The framework's router discovers layouts in `src/pages/**/layout.ts`. Generate layouts under `src/pages/...`. The router does not scan `src/layouts/`.
 
 ### `cossack delete` (alias: `d`)
 
@@ -335,7 +335,7 @@ cossack image optimize --format avif --quality 85
 cossack image optimize --dry-run
 ```
 
-For each `Image({ src, width })` call whose `src` points to a local asset under `public/`, the command writes a resized, re-encoded variant beside the original. `width` is required; `height` is optional and, when present, is included in the filename:
+For each `Image({ src, width })` call with a local asset under `public/`, the command writes a resized variant beside the original. Set `width`. Set `height` to include it in the filename:
 
 ```
 public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })               ->  public/img/hero-800.webp
@@ -348,7 +348,7 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 | --- | --- |
 | `--format <webp\|avif>` | Output format (default: `webp`). |
 | `--quality <0-100>` | Output quality (default: `80`). |
-| `--dry-run` | List the variants that would be generated without writing. |
+| `--dry-run` | List the image variants without writing them. |
 
 **Installing ImageMagick**
 
@@ -363,7 +363,7 @@ sudo apt-get install imagemagick
 choco install imagemagick
 ```
 
-On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferred — see [Images](/docs/images.md).
+On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferred : see [Images](/docs/images.md).
 
 ---
 
@@ -387,7 +387,7 @@ Print the installed CLI version.
 
 ### `cossack upgrade [dir]`
 
-Upgrade Cossack dependencies in the current project and report template drift. **Non-destructive by default:** it updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes — source files are never overwritten unless you opt in.
+Upgrade Cossack dependencies in the current project and report template drift. **Non-destructive by default:** it updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes : source files are never overwritten unless you opt in.
 
 ```bash
 cossack upgrade                       # bump deps + print drift report
@@ -403,8 +403,8 @@ cossack upgrade --force-file <path>   # surgically overwrite one file, even if e
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
 | `--apply-template` | Update scaffolded files you have **not** modified. Modified files are always skipped. |
 | `--force` | Apply safe updates and restore deleted scaffold files. Locally modified files remain protected. |
-| `--force-file <path>` | Force-update one specific file even if you modified it. May be repeated. |
-| `--dry-run` | Show what would happen without writing. |
+| `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
+| `--dry-run` | Show planned changes without writing them. |
 
 Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
 

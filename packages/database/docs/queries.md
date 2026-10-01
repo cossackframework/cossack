@@ -9,7 +9,7 @@ Cossack ORM offers two complementary query APIs:
 
 - Active Record methods for common reads and writes.
 - A fluent query builder for projections, compound predicates, joins,
-  aggregates, grouping, and mutation `RETURNING` clauses.
+ aggregates, grouping, and mutation `RETURNING` clauses.
 
 Static methods require an active scope:
 

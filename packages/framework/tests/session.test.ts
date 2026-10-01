@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { __resetRequestContextForTests } from '@cossackframework/core';
 import { createRequestContextMiddleware } from '../src/middlewares/request-context';
@@ -20,6 +20,10 @@ class MemorySessionStore implements SessionStore {
     const id = `session-${++this.sequence}`;
     this.rows.set(id, { data: {}, expiresAt: Date.now() + ttlMs });
     return id;
+  }
+
+  async has(id: string) {
+    return (this.rows.get(id)?.expiresAt ?? 0) > Date.now();
   }
 
   async load(id: string) {
@@ -79,7 +83,7 @@ function cookieValue(response: Response, name: string): string | undefined {
 }
 
 describe('generic session middleware', () => {
-  afterEach(() => __resetRequestContextForTests());
+  afterAll(() => __resetRequestContextForTests());
 
   it('preserves anonymous bags, auth bridging, bindUser, and destruction', async () => {
     const store = new MemorySessionStore();
@@ -124,16 +128,38 @@ describe('generic session middleware', () => {
     expect(await bridged.json()).toEqual({ id: authId, cart: 'auth-cart' });
     expect(cookieValue(bridged, 'cossack_sid')).toBeUndefined();
 
-    await app.request('/bind', {
+    const bound = await app.request('/bind', {
       method: 'POST',
       headers: { cookie: `cossack_sid=${id}` },
     });
-    expect(store.rows.get(id!)?.userId).toBe('user-1');
-    await app.request('/session', {
-      method: 'DELETE',
-      headers: { cookie: `cossack_sid=${id}` },
-    });
+    const rotatedId = cookieValue(bound, 'cossack_sid');
+    expect(rotatedId).not.toBe(id);
     expect(store.rows.has(id!)).toBe(false);
+    expect(store.rows.get(rotatedId!)?.userId).toBe('user-1');
+    expect(store.rows.get(rotatedId!)?.data.cart).toEqual({ items: [1, 2] });
+    const deleted = await app.request('/session', {
+      method: 'DELETE',
+      headers: { cookie: `cossack_sid=${rotatedId}` },
+    });
+    expect(store.rows.has(rotatedId!)).toBe(false);
+    expect(cookieValue(deleted, 'cossack_sid')).toBe('');
+  });
+
+  it('replaces unknown and expired cookie IDs before writes', async () => {
+    const store = new MemorySessionStore();
+    const expired = await store.create(-1000);
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store }));
+    app.post('/', async (c) => { await session().set('key', 'value'); return c.text(session().id()); });
+    for (const id of ['attacker-chosen', expired]) {
+      const response = await app.request('/', { method: 'POST', headers: { cookie: `cossack_sid=${id}` } });
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toBe(id);
+      expect(cookieValue(response, 'cossack_sid')).toBeTruthy();
+    }
+    expect(store.rows.has('attacker-chosen')).toBe(false);
+    expect(store.rows.get(expired)?.data).toEqual({});
   });
 
   it('throws a clear error without a configured store or request session', async () => {

@@ -1,15 +1,15 @@
 ---
 title: "Routing in Cossack"
-description: "File-based routing system that automatically creates routes based on the structure of the src/pages directory."
+description: "Create routes from the files and folders in src/pages."
 ---
 
 # Routing in Cossack
 
-Cossack uses a simple and intuitive file-based routing system. You don't need to configure a central routing file; instead, the framework automatically creates routes based on the structure of your `src/pages` directory.
+Cossack creates routes from the files and folders in `src/pages`. You do not need a central routing file.
 
 ## How it Works
 
-The framework scans for `.ts`, `.md`, and `.mdx` files within the `src/pages` directory and its subdirectories. The path to that file directly maps to a URL route.
+The framework scans `src/pages` and its subdirectories for `.ts`, `.md`, and `.mdx` files. Each file path maps to a URL route.
 
 ### Basic Routing
 
@@ -17,7 +17,7 @@ A page can be defined in two ways:
 - **Directory-based**: `src/pages/about/index.ts` → `/about`
 - **Flat file**: `src/pages/about.ts` → `/about`
 
-Both produce the same route. Flat files are more concise for simple pages.
+Both paths create the same route. Use a flat file for a simple page.
 
 **Example File Structure:**
 
@@ -38,17 +38,17 @@ src/
 
 ### Dynamic Routes
 
-To create a dynamic route that captures a segment of the URL, use square brackets `[]` in your directory name. The value of this segment will be available as a parameter in your page component.
+To create a dynamic route, put a URL segment in square brackets `[]` in a directory name. The page component can read that segment as a parameter.
 
 For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`.
 
 ### Route Groups
 
-You can organize your routes into logical groups without affecting the URL structure by wrapping the folder name in parenthesis. This is useful for sharing layouts (see below).
+To group routes without changing their URLs, put the folder name in parentheses. Use route groups to share layouts.
 
 **Example:**
-*   `src/pages/(auth)/login/index.ts` -> `/login`
-*   `src/pages/(auth)/register/index.ts` -> `/register`
+* `src/pages/(auth)/login/index.ts` -> `/login`
+* `src/pages/(auth)/register/index.ts` -> `/register`
 
 ### Nested Layouts
 
@@ -99,13 +99,13 @@ export default class MyLayout extends Cossack {
 
 ### Global App Component
 
-For logic that must exist outside of the routing system (like global CSS, theme providers, or a top-level progress bar), Cossack uses `src/App.ts`. This component wraps the entire application and is never destroyed during client-side navigation.
+Use `src/App.ts` for logic outside the routing system, such as global CSS, theme providers, or a top-level progress bar. This component wraps the application and remains mounted during client-side navigation.
 
 ### Client-Side Navigation
 
-Cossack enables "soft navigation" by default. This means that when a user clicks a link (e.g., `<a href="/about">`), the framework intercepts the click, fetches the new page via AJAX, and swaps the content without a full browser refresh. This provides a fast, Single-Page Application (SPA) feel while maintaining the simplicity of server-side rendering.
+Cossack enables soft navigation by default. When a user clicks a link such as `<a href="/about">`, the framework fetches the page and replaces the content without a full browser refresh. The server still renders each page.
 
 **Optimizations:**
-*   **Smart Pre-fetching**: Data is fetched when you hover over a link.
-*   **Caching**: Visited pages are stored in memory for instant back/forward navigation.
-*   **Persistent Layouts**: If you navigate between pages that share a layout (e.g., `/login` to `/register`), the shared `AuthLayout` instance is **preserved**, maintaining its state and scroll position.
+* **Prefetching**: Cossack fetches page data when a user points to a link.
+* **Caching**: Cossack stores visited pages in memory for back and forward navigation.
+* **Persistent Layouts**: If you navigate between pages that share a layout (e.g., `/login` to `/register`), the shared `AuthLayout` instance is **preserved**, maintaining its state and scroll position.

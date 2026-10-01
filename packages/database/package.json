@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/database",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Serverless-first Active Record ORM for Cossack",
   "type": "module",
   "license": "MIT",
@@ -88,7 +88,7 @@
     "@tursodatabase/database": "^0.7.2",
     "@tursodatabase/serverless": "^1.4.0",
     "better-sqlite3": ">=11",
-    "hono": "^4.12.34",
+    "hono": "^4.13.7",
     "mysql2": ">=3.11",
     "pg": ">=8.13",
     "reflect-metadata": ">=0.2"
@@ -115,9 +115,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
-    "hono": "^4.12.34",
+    "hono": "^4.13.7",
     "reflect-metadata": "^0.2.2",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

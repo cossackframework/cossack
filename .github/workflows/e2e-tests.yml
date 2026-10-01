@@ -68,6 +68,12 @@ jobs:
       - name: Build workspace libraries
         run: pnpm run build
 
+      - name: Check package types
+        run: pnpm run typecheck
+
+      - name: Run all unit tests
+        run: pnpm run test:unit
+
       - name: Check Deno web adapter
         run: |
           deno check packages/deno-adapter/src/index.ts
@@ -86,6 +92,13 @@ jobs:
 
       - name: Run Framework E2E tests
         run: pnpm --filter @cossackframework/framework run test:e2e
+        env:
+          CI: true
+
+      - name: Run Framework SSG tests
+        run: |
+          pnpm --filter @cossackframework/framework run test:e2e:ssg
+          pnpm --filter @cossackframework/framework exec vitest run tests/ssg-build.test.ts
         env:
           CI: true
 

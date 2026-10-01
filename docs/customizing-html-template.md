@@ -1,11 +1,11 @@
 ---
 title: "Customizing the HTML Template"
-description: "Customize the generated HTML document structure by passing an htmlTemplate option to support RTL, add body attributes, or include scripts."
+description: "Set the HTML document structure with the htmlTemplate option."
 ---
 
 # Customizing the HTML Template
 
-By default, Cossack generates a standard HTML document for server-side rendered pages. You can customize this document structure — for example, to support RTL languages, add custom `<body>` attributes, or include third-party scripts — by passing an `htmlTemplate` option to `createApp()`.
+Cossack generates a standard HTML document for server-rendered pages. Pass an `htmlTemplate` option to `createApp()` to set the document structure, support right-to-left languages, add `<body>` attributes, or include scripts.
 
 ## Usage
 
@@ -62,12 +62,15 @@ Both approaches provide the same two helpers:
 | Helper | Description |
 | --- | --- |
 | `cossackScripts()` | Returns all `<head>` content: head tags from `head()`, CSS links/styles, initial state script, module preload links, and the client entry script tag. |
-| `cossackBody()` | Returns `<div id="root">${body}</div>` — the page content wrapped in the `#root` container required for hydration. |
+| `cossackBody()` | Returns `<div id="root">${body}</div>` : the page content wrapped in the `#root` container required for hydration. |
 
 ### What `cossackScripts()` includes
 
-- Head tags defined by your page and layout components via `head()`
-- CSS stylesheet link (or inline CSS with deferred load in production)
+- Head tags defined by your page and layout components via `head()`. Attribute
+  values are HTML-escaped; `undefined` and false boolean attributes are omitted.
+  Pass ordinary strings without pre-escaping them.
+- CSS stylesheet link (or inline CSS with deferred load in production). A
+  production entry without a CSS asset emits no stylesheet link.
 - `window.__INITIAL_STATE__` script for client-side hydration
 - Module preload links for route-specific chunks
 - The client entry `<script type="module">` tag

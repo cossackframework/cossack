@@ -1,6 +1,6 @@
 {
   "name": "cossack",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "description": "The Cossack Framework CLI — scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
   "license": "MIT",
@@ -30,7 +30,7 @@
     "tsx": "^4.23.0"
   },
   "devDependencies": {
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22"

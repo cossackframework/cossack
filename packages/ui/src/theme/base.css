@@ -439,15 +439,9 @@ a:active {
     }
 }
 
-/* --- Accordion: smooth height expand/collapse (div+button, not <details>) ---
- *
- * The accordion uses a div+button+@ClientState pattern instead of native
- * <details>/<summary>. This is intentional: <details> internally hides content
- * when closed at the browser level, which CSS transitions can't override.
- * The div approach gives full control over the max-height animation.
- *
- * The animation is driven by inline styles on the component (max-height
- * transition between 0 and 500px). Here we only add the chevron rotation.
+/* --- Accordion chevron ---
+ * Panel height uses the shared disclosure controller. Open panels rest at
+ * automatic height with visible overflow; only transitions clip content.
  */
 .cs-accordion__chevron {
     transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);

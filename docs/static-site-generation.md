@@ -75,7 +75,7 @@ standalone [`cossack`](https://www.npmjs.com/package/cossack) package (a
 dependency of projects created by `cossack create`). It reads the `cossack-routes.json`
 manifest emitted by the Cossack Vite plugin during `vite build`, and renders
 your pages using **your own `App` and html template** (the same values you pass
-to `createApp()` in `src/index.ts`) — so global `<head>` tags, branding, and
+to `createApp()` in `src/index.ts`) : so global `<head>` tags, branding, and
 your html shell are applied identically in SSR and SSG. There is no per-project
 build script to maintain.
 
@@ -177,7 +177,7 @@ export interface SsgOptions {
   - Client-side state (use `@ClientState` instead)
   - Pre-defined via `generateStaticParams`
 
-- **No Dynamic Data**: Pages that require real-time data (user-specific content, live prices, etc.) should not use SSG.
+- **No Dynamic Data**: Do not use SSG for pages that require real-time data, such as user-specific content or live prices.
 
 - **HTTP Transport Required**: SSG pages must use `transport: 'http'` in their `@Page` options.
 

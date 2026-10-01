@@ -1,17 +1,17 @@
 ---
 title: "Error Handling"
-description: "Built-in support for graceful error handling and custom 404 pages via file system conventions in the src/pages directory."
+description: "Handle errors and add custom 404 pages in the src/pages directory."
 ---
 
 # Error Handling
 
-Cossack provides built-in support for graceful error handling and custom 404 pages via the file system. By following specific naming conventions in your `src/pages` directory, you can provide a polished experience when things go wrong.
+Cossack can render custom 404 and error pages from files in `src/pages`. Use the file paths in this guide.
 
 ## 404 - Not Found
 
-To create a custom "Not Found" page, create a component at `src/pages/404/index.ts`. 
+To add a custom "Not Found" page, create a component at `src/pages/404/index.ts`.
 
-The framework's router will automatically render this page whenever a request doesn't match any existing file-based routes.
+The router renders this page when a request does not match a route.
 
 ```typescript
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
@@ -37,12 +37,12 @@ export default class NotFoundPage extends Cossack {
 
 ## Global Error Handler (500)
 
-If an error occurs during Server-Side Rendering (SSR) — for example, if a database query in your `init()` method fails — Cossack will attempt to render a component at `src/pages/error/index.ts`.
+If an error occurs during server-side rendering (SSR), Cossack tries to render `src/pages/error/index.ts`. For example, a database query in `init()` can fail.
 
-When an error is caught:
-1.  The framework identifies the `error` page component.
-2.  It renders the error page with a `500 Internal Server Error` status code.
-3.  The error details are logged to the server console.
+When Cossack catches an error, it:
+1. Finds the `error` page component.
+2. Renders the page with a `500 Internal Server Error` status code.
+3. Writes the error details to the server console.
 
 ```typescript
 import { Cossack, Page, HeadContext, HeadValue } from '@cossackframework/core';
@@ -68,13 +68,13 @@ export default class ErrorPage extends Cossack {
 
 ## Layout & Shell Integration
 
-Both the `404` and `error` pages are integrated into the standard component stack:
-*   **Global App**: They are always wrapped in the `src/App.ts` component, preserving your theme, global navigation, and persistent state.
-*   **Root Layout**: They will use the root `src/pages/layout.ts` if it exists.
-*   **Metadata**: They participate in the nested `head()` merging system, so they will automatically receive your root branding (e.g., `Cossack Framework - Page Not Found`).
+The `404` and `error` pages use the normal component stack:
+* **Global App**: `src/App.ts` wraps each page. It can provide the theme, navigation, and persistent state.
+* **Root Layout**: Each page uses `src/pages/layout.ts` if that file exists.
+* **Metadata**: Each page uses the nested `head()` merge. The root can add branding, such as `Cossack Framework - Page Not Found`.
 
 ## Default Fallbacks
 
-If these custom components are not present in your project:
-*   **404**: The framework returns a plain text `404 Not Found` response.
-*   **Error**: The framework returns a basic HTML response containing the error stack trace (useful for debugging during development).
+If your project does not include these components:
+* **404**: The framework returns a plain-text `404 Not Found` response.
+* **Error**: The framework returns basic HTML with the error stack trace. Use this response to debug during development.

@@ -83,6 +83,7 @@ describe("Cossack integration", () => {
 
         const sessions = createDatabaseSessionStore();
         const id = await sessions.create();
+        expect(await sessions.has(id)).toBe(true);
         expect(id).toMatch(/^[A-Za-z0-9_-]{43}$/);
         await sessions.set(id, "cart", { items: [1, 2] });
         expect(await sessions.get(id, "cart")).toEqual({ items: [1, 2] });
@@ -91,6 +92,13 @@ describe("Cossack integration", () => {
         expect(await sessions.get(id, "cart")).toBeUndefined();
         await sessions.destroy(id);
         expect(await sessions.getAll(id)).toEqual({});
+        expect(await sessions.has(id)).toBe(false);
+        const expired = await sessions.create(-1000);
+        for (const invalid of [id, expired, 'attacker-chosen']) {
+          await sessions.set(invalid, 'cart', 'must not resurrect');
+          expect(await sessions.has(invalid)).toBe(false);
+          expect(await sessions.getAll(invalid)).toEqual({});
+        }
       });
     } finally {
       await orm.close();

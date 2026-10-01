@@ -1,6 +1,6 @@
-# Middleware — Technical Specification
+# Middleware : Technical Specification
 
-This document describes the internal architecture and data flow of the middleware system. It is intended for LLM-assisted development and contributors who need to modify or extend the feature.
+This document describes how the middleware system works. Use it when you change or extend this feature.
 
 ---
 
@@ -48,14 +48,14 @@ This document describes the internal architecture and data flow of the middlewar
 | File | Responsibility |
 |------|---------------|
 | `packages/core/src/shared/decorators.ts` | `@Page()` decorator. Merges options and stores via `Reflect.defineMetadata('page:options', mergedOptions, target)`. |
-| `packages/core/src/shared/middleware.ts` | `defineServerMiddleware(handler)` — semantic passthrough wrapper. Returns handler directly. Exists for documentation intent. |
+| `packages/core/src/shared/middleware.ts` | `defineServerMiddleware(handler)` : semantic passthrough wrapper. Returns handler directly. Exists for documentation intent. |
 | `packages/framework/src/vite-plugin.ts` | `cossackPages()` plugin. Loads page/layout modules via `import.meta.glob`. SSR uses `{ eager: true }`. |
-| `packages/framework/src/router.ts` | `createApp()` — reads metadata, builds middleware stack, registers Hono routes. |
+| `packages/framework/src/router.ts` | `createApp()` : reads metadata, builds middleware stack, registers Hono routes. |
 | `packages/framework/src/vite-security-plugin.ts` | Strips server-only method bodies from client bundle. Does NOT process middleware-only files (no `extends Cossack` match). |
 
 ---
 
-## Phase 1: Decorator — Storing Middleware References
+## Phase 1: Decorator : Storing Middleware References
 
 ### `@Page(options)`
 
@@ -84,7 +84,7 @@ Page(options)
        // mergedOptions.middlewares = [loggingMiddleware]  ← function references
 ```
 
-**Key detail**: The `middlewares` array holds direct function references. These are not serialized — they are the actual `MiddlewareHandler` closures. Both the decorator and the router must run in the same JS environment (SSR) so that `Reflect.getMetadata` retrieves the same references.
+**Key detail**: The `middlewares` array holds direct function references. These are not serialized : they are the actual `MiddlewareHandler` closures. Both the decorator and the router must run in the same JS environment (SSR) so that `Reflect.getMetadata` retrieves the same references.
 
 ---
 
@@ -107,7 +107,7 @@ Client environment (name === 'client'):
   layouts  = import.meta.glob('pages/**/layout.ts', { eager: true })
 ```
 
-**Why layouts are always eager**: Layouts are small and shared. They're needed immediately on both server and client to wrap page content.
+**Why layouts are always eager**: Layouts are small and shared. They are needed immediately on both server and client to wrap page content.
 
 **Why pages are lazy on the client**: Only the active page's code is loaded in the browser, enabling code splitting.
 
@@ -117,7 +117,7 @@ Client environment (name === 'client'):
 
 ## Phase 3: Route Registration
 
-### `createApp()` — middleware collection
+### `createApp()` : middleware collection
 
 **File**: `packages/framework/src/router.ts` (lines 561–604)
 
@@ -160,7 +160,7 @@ for each path in pages:
              app[method](httpRoute, ...combinedMiddlewares, apiHandler)
 ```
 
-### `getLayoutStack()` — layout resolution
+### `getLayoutStack()` : layout resolution
 
 **File**: `packages/framework/src/router.ts` (lines 135–155)
 
@@ -189,14 +189,14 @@ export function defineServerMiddleware(handler: MiddlewareHandler): MiddlewareHa
 }
 ```
 
-This is a **passthrough function** — it returns the handler unchanged. It exists for:
+This is a **passthrough function** : it returns the handler unchanged. It exists for:
 
 1. **Semantic documentation**: Makes it explicit that a middleware is server-only.
 2. **API stability**: If a future version needs runtime behavior (e.g., stripping the handler from client bundles), the function is already in place.
 
 ### Why no `isServer` guard
 
-Middlewares are only ever invoked through Hono's route system in `router.ts`, which runs exclusively on the server. The client never calls these middleware functions through a Hono router — it only stores them in metadata as part of the `@Page` decorator.
+Middlewares are only ever invoked through Hono's route system in `router.ts`, which runs exclusively on the server. The client never calls these middleware functions through a Hono router : it only stores them in metadata as part of the `@Page` decorator.
 
 A previous implementation wrapped the handler in `if (isServer)`, but the Cloudflare Workers runtime (via `@cloudflare/vite-plugin`) provides a `window` global in its sandbox, causing `isServer` to evaluate to `false`. Since the guard is unnecessary (middlewares only run server-side via Hono), it was removed.
 
@@ -223,7 +223,7 @@ The security plugin transforms Cossack component source code in the **client** e
 
 ### Middleware files are NOT processed
 
-The plugin's `shouldProcessFile` guard skips files that don't contain class definitions extending `Cossack` or `CossackElement`:
+The plugin's `shouldProcessFile` guard skips files that do not contain class definitions extending `Cossack` or `CossackElement`:
 
 ```
 transform(code, id)
@@ -242,7 +242,7 @@ A file like `src/middlewares/logging.ts` has no class extending `Cossack`, so it
 
 ### Page files ARE processed (client bundle only)
 
-In the client bundle, a page component's server-only methods are stubbed. However, the `middlewares` array stored in `page:options` metadata is preserved — it's just an array of function references, not method bodies. The security plugin does not modify the decorator arguments.
+In the client bundle, a page component's server-only methods are stubbed. However, the `middlewares` array stored in `page:options` metadata is preserved : it is just an array of function references, not method bodies. The security plugin does not modify the decorator arguments.
 
 ---
 
@@ -358,8 +358,8 @@ Each middleware calls `await next()` to pass control to the next. If any middlew
 
 3. **Middleware runs on server only**: Despite the client bundle containing the middleware function references (in metadata), they are never invoked on the client because there is no Hono router on the client side.
 
-4. **No middleware on SPA navigations**: Client-side navigations (intercepted `<a>` clicks) fetch data via the SSR route, which does go through middleware. But the middleware runs on the server — the client never executes it locally.
+4. **No middleware on SPA navigations**: Client-side navigations (intercepted `<a>` clicks) fetch data via the SSR route, which does go through middleware. But the middleware runs on the server : the client never executes it locally.
 
 5. **Layout ordering is root-to-leaf**: There is no way to reverse the order or exclude parent middleware from a child page.
 
-6. **`defineServerMiddleware` is a passthrough**: It provides no runtime behavior beyond returning the handler. Its value is semantic — it documents that the middleware is intended for server-side execution only.
+6. **`defineServerMiddleware` is a passthrough**: It provides no runtime behavior beyond returning the handler. Its value is semantic : it documents that the middleware is intended for server-side execution only.

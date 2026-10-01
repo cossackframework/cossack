@@ -36,6 +36,16 @@ function makeContext(user: unknown, scopeKey: string | null): Context {
 }
 
 describe('handleSseEndpoint scope validation (cross-user eavesdropping guard)', () => {
+    it('re-evaluates custom scopes instead of trusting another tenant key', async () => {
+        class TenantPage {}
+        Reflect.defineMetadata('page:options', {
+            transport: 'sse', scope: (c: Context) => `tenant:${c.get('user').tenant}`,
+        }, TenantPage);
+        const handler = handleSseEndpoint(makeCtx({ pages: { '/src/pages/sse/index.ts': { default: TenantPage } } }));
+        const response = await handler(makeContext({ id: 'alice', tenant: 'a' }, 'tenant:b'));
+        expect(response.status).toBe(403);
+    });
+
     it('rejects a scopeKey belonging to another user with 403', async () => {
         const handler = handleSseEndpoint(makeCtx());
         // Authenticated as alice, but requesting bob's scope

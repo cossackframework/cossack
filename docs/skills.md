@@ -7,13 +7,13 @@ description: "Instruction packs that teach AI coding assistants how to work with
 
 Cossack Skills are instruction packs that teach AI coding assistants (Claude Code, Open Code, and any Agent Skills-compatible tool) how to work with the Cossack Framework. They provide step-by-step guidance for common tasks like creating pages, adding state, setting up auth, and more.
 
-## What's Included
+## What is Included
 
 | Skill | Type | Description |
 |-------|------|-------------|
 | `/setup-auth` | Task | Set up authentication with `@cossackframework/auth` (multi-file workflow) |
-| `/setup-websocket` | Task | Set up real-time features — pick SSE or Durable Object transport |
-| `/setup-ui` | Task | Set up the UI package (`@cossackframework/ui`) — theme, CSS imports, component usage, focus helpers, Toaster |
+| `/setup-websocket` | Task | Set up real-time features : pick SSE or Durable Object transport |
+| `/setup-ui` | Task | Set up the UI package (`@cossackframework/ui`) : theme, CSS imports, component usage, focus helpers, Toaster |
 | `/create-desktop-app` | Task | Add an Electron Desktop side target, secure native shell capabilities, icons, lifecycle, and Forge packaging without changing the web runtime |
 | `cossack-best-practices` | Background | Guardrails for `@Server()` RPC, ORM entities, validation, caching, UI, tasks, stores, auth, and error handling. |
 
@@ -33,7 +33,7 @@ The plugin repo ([cossackframework/skills](https://github.com/cossackframework/s
 
 ### Option 2: Skills-Directory Plugin
 
-Copy or symlink the `skills/` folder into `.claude/skills/` in your project. Claude Code auto-discovers any folder containing a `.claude-plugin/plugin.json` manifest and loads it as a plugin named `<name>@skills-dir` — no marketplace or install step needed.
+Copy or symlink the `skills/` folder into `.claude/skills/` in your project. Claude Code auto-discovers any folder containing a `.claude-plugin/plugin.json` manifest and loads it as a plugin named `<name>@skills-dir` : no marketplace or install step needed.
 
 **In a Cossack app project:**
 
@@ -81,7 +81,7 @@ cp -r skills/cossack-best-practices ~/.claude/skills/
 cp -r skills/setup-auth ~/.claude/skills/
 ```
 
-Individual skill folders (without a `.claude-plugin/plugin.json`) register as plain skills, not as a plugin. They still work but don't get the namespaced `cossack@skills-dir` identity.
+Individual skill folders (without a `.claude-plugin/plugin.json`) register as plain skills, not as a plugin. They still work but do not get the namespaced `cossack@skills-dir` identity.
 
 ## Usage
 
@@ -95,18 +95,18 @@ Use the slash command syntax in your AI tool:
 /setup-ui
 ```
 
-The skill will guide the AI through the correct patterns, asking questions as needed. For all other tasks (creating pages, layouts, components, adding state, middleware), the `cossack-best-practices` background skill provides the AI with everything it needs — just ask in plain language.
+The skill will guide the AI through the correct patterns, asking questions as needed. For all other tasks (creating pages, layouts, components, adding state, middleware), the `cossack-best-practices` background skill provides the AI with everything it needs : just ask in plain language.
 
 ### Auto-Loading Best Practices
 
-The `cossack-best-practices` skill activates automatically when you open or edit Cossack files. You don't need to invoke it. It provides the AI with a directive checklist of framework built-ins (decorators, validation, loading, images, refs, routing conventions) so it uses them instead of reinventing them.
+The `cossack-best-practices` skill activates automatically when you open or edit Cossack files. You do not need to invoke it. It provides the AI with a directive checklist of framework built-ins (decorators, validation, loading, images, refs, routing conventions) so it uses them instead of reinventing them.
 
-Example: Open `src/pages/about/index.ts` and ask "add an email field with validation" — the AI will reach for `@Validate()` rather than writing a custom validator.
+Example: Open `src/pages/about/index.ts` and ask "add an email field with validation" : the AI will reach for `@Validate()` rather than writing a custom validator.
 
 ## Compatible Tools
 
-- [Claude Code](https://claude.com/claude-code) — Anthropic's CLI tool
-- [Open Code](https://github.com/opencode-ai/opencode) — Open-source AI coding agent
+- [Claude Code](https://claude.com/claude-code) : Anthropic's CLI tool
+- [Open Code](https://github.com/opencode-ai/opencode) : Open-source AI coding agent
 - Any tool that supports Agent Skills (`.claude-plugin/plugin.json` + `SKILL.md` convention)
 
 ## Troubleshooting
@@ -120,13 +120,13 @@ Example: Open `src/pages/about/index.ts` and ask "add an email field with valida
 ### Plugin Not Loading
 
 1. Verify `.claude/skills/cossack/.claude-plugin/plugin.json` exists
-2. Run `claude plugin list` — the plugin should appear as `cossack@skills-dir`
-3. If it doesn't appear, run `/reload-plugins` inside Claude Code or restart the session
+2. Run `claude plugin list`. The plugin must appear as `cossack@skills-dir`.
+3. If it does not appear, run `/reload-plugins` inside Claude Code or restart the session
 4. Check that you launched Claude Code from the project root (project-scope plugins only scan `<cwd>/.claude/skills/`)
 
 ### Skills Out of Date
 
-If you symlinked the skills directory, pulling the latest changes is enough — skills auto-refresh. If you copied, re-copy from the monorepo:
+If you symlinked the skills directory, pulling the latest changes is enough : skills auto-refresh. If you copied, re-copy from the monorepo:
 
 ```bash
 rm -rf .claude/skills/cossack

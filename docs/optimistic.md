@@ -1,19 +1,18 @@
 ---
 title: "Optimistic UI Updates (Instant Feedback)"
-description: "Instant UI updates using the @Optimistic decorator that runs on the client before the server processes the request."
+description: "Update the UI on the client before the server processes a request with @Optimistic."
 ---
 
 # Optimistic UI Updates (Instant Feedback)
 
-For interactions where latency matters (like "liking" a post or incrementing a counter), you can use the `@Optimistic` decorator to update the UI *instantly* on the client, before the server has even processed the request.
+Use the `@Optimistic` decorator to update the UI before the server processes a request. For example, update a counter as soon as a user clicks a button.
 
-**How it works:**
-1.  You define a method that updates local state.
-2.  You decorate it with `@Optimistic('serverActionName')`.
-3.  When the client calls `this.serverActionName()`, the framework *immediately* runs the optimistic handler.
-4.  The request is sent to the server.
-5.  The framework automatically detects which `@State` properties the optimistic handler modifies and **buffers** incoming server state updates for those properties while the action is pending.
-6.  When the action completes, the buffered server state is applied — no UI flapping.
+When a client calls an action with an optimistic handler, Cossack:
+1. Runs the handler on the client.
+2. Sends the request to the server.
+3. Finds the `@State` properties that the handler changed.
+4. Holds server updates for those properties while the action runs.
+5. Applies the server updates when the action completes.
 
 **Example:**
 
@@ -39,7 +38,7 @@ class Counter extends Cossack {
 }
 ```
 
-The simple pattern above is automatically stable even under rapid clicks — no extra boilerplate needed. The framework detects that `count` is modified by the optimistic handler and buffers the server's `count` updates until the entire chain of pending actions completes.
+The example handles rapid clicks without extra code. Cossack detects that the handler changed `count` and holds server updates until all pending actions finish.
 
 ## How Auto-Stable Works
 
@@ -53,7 +52,7 @@ This means rapid clicks produce a smooth progression: `0 → 1 → 2 → 3 → 4
 
 ## Advanced: Separate Optimistic State
 
-In some cases you may want full manual control over the optimistic display — for example, showing a different value while pending than what the server will return. In that case, use `@ClientState` for the display value and a `@Computed` property:
+To show a temporary value that differs from the expected server value, use `@ClientState` for the display value and a `@Computed` property:
 
 ```typescript
 @Page({ transport: 'durable-object' })

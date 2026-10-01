@@ -83,7 +83,10 @@ export async function verifyValue<T>(token: string, secret: string): Promise<T |
     if (!constantTimeEqual(sig, expected)) return null;
 
     try {
-        const json = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+        const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+        const json = new TextDecoder('utf-8', { fatal: true }).decode(
+            Uint8Array.from(binary, char => char.charCodeAt(0)),
+        );
         return JSON.parse(json) as T;
     } catch {
         return null;

@@ -10,9 +10,9 @@ In Cossack, `src/App.ts` is a special component that acts as the root wrapper fo
 ## Purpose
 
 Use the App component for:
-1.  **Global State**: Store data that needs to persist across all pages (e.g., user session, theme preference, shopping cart).
-2.  **Persistent UI**: Render elements that stay fixed while the page changes (e.g., a music player, global toast notifications, floating action buttons).
-3.  **Providers**: Wrap your application in context providers if you are using libraries that require them.
+1. **Global State**: Store data that needs to persist across all pages (e.g., user session, theme preference, shopping cart).
+2. **Persistent UI**: Render elements that stay fixed while the page changes (e.g., a music player, global toast notifications, floating action buttons).
+3. **Providers**: Wrap your application in context providers if you are using libraries that require them.
 
 ## Usage
 
@@ -45,27 +45,43 @@ export class App extends Cossack {
 }
 ```
 
+## Register the same App on server and client
+
+Pass your App class to both entry points:
+
+```typescript
+// src/index.ts (server)
+const app = createApp({ AppComponent: App });
+
+// src/client/entry-client.ts (browser)
+createClientApp({ container: '#root', AppComponent: App });
+```
+
+If the server uses the fallback App while the client uses a custom App, their
+HTML structures differ. Hydration then rebuilds the shell instead of preserving
+the server-rendered nodes, and the App's server-side head tags are missing.
+
 ## Lifecycle
 
-1.  **Server-Side Rendering (SSR)**:
-    *   The `App` component is instantiated and bootstrapped for every request.
-    *   It wraps the rendered HTML of the requested page.
-    *   Its initial state is serialized into `window.__INITIAL_STATE__._app_state`.
+1. **Server-Side Rendering (SSR)**:
+    * The `App` component is instantiated and bootstrapped for every request.
+    * It wraps the rendered HTML of the requested page.
+    * Its initial state is serialized into `window.__INITIAL_STATE__._app_state`.
 
-2.  **Client-Side Hydration**:
-    *   On the first load, the client creates a single instance of `App` and hydrates it with the server-sent state.
+2. **Client-Side Hydration**:
+    * On the first load, the client creates a single instance of `App` and hydrates it with the server-sent state.
 
-3.  **Navigation**:
-    *   When the user navigates to a new page (e.g., via a link), the `App` instance **remains active**.
-    *   Only the `children` (the page content) are swapped out.
-    *   This preserves any state stored in the `App` component (like the `theme` variable in the example above).
-    *   After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance.
+3. **Navigation**:
+    * When the user navigates to a new page (e.g., via a link), the `App` instance **remains active**.
+    * Only the `children` (the page content) are swapped out.
+    * This preserves any state stored in the `App` component (like the `theme` variable in the example above).
+    * After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance.
 
 ## Navigation Lifecycle Hooks
 
 ### `onNavigateComplete(pathname)`
 
-Called on the `App` component after every navigation completes — both the initial page load and subsequent SPA navigations. Override this method to react to route changes.
+Called on the `App` component after every navigation completes : both the initial page load and subsequent SPA navigations. Override this method to react to route changes.
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -94,8 +110,8 @@ export class App extends Cossack {
 
 The framework dispatches custom DOM events during the navigation lifecycle. You can listen for these in any client-side code:
 
-- **`cossack:ready`** — Fired after the initial page load and after each SPA navigation completes.
-- **`cossack:before-navigate`** — Fired before an SPA navigation begins.
+- **`cossack:ready`** : Fired after the initial page load and after each SPA navigation completes.
+- **`cossack:before-navigate`** : Fired before an SPA navigation begins.
 
 ```typescript
 // Listen for navigation completion
@@ -112,7 +128,7 @@ document.addEventListener('cossack:before-navigate', (e) => {
 
 ## Styling
 
-Since the App component wraps everything, it's the perfect place to apply global CSS classes or manage themes dynamically.
+Since the App component wraps everything, it is the perfect place to apply global CSS classes or manage themes dynamically.
 
 ```typescript
 if (!this.isServer) {

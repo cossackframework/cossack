@@ -5,18 +5,18 @@ description: "Cossack is designed to be runtime-agnostic, with core framework lo
 
 # Server Adapters
 
-Cossack is designed to be runtime-agnostic. The core framework logic is decoupled from the underlying server environment using the `CossackServerRuntime` interface.
+The `CossackServerRuntime` interface separates the framework core from the server environment.
 
-We currently support two official adapters:
+The framework supports two adapters:
 
 ## 1. Cloudflare Workers (Default)
 
-This is the primary and most feature-complete adapter, leveraging Cloudflare's unique capabilities.
+This is the default adapter. It uses Cloudflare Workers and Durable Objects.
 
--   **Runtime:** Cloudflare Workers
--   **Transport:** Cloudflare Durable Objects (WebSockets)
--   **State Persistence:** Automatic via Durable Object Storage.
--   **Scalability:** Durable Objects provide strong consistency and global uniqueness for component instances.
+- **Runtime:** Cloudflare Workers
+- **Transport:** Cloudflare Durable Objects (WebSockets)
+- **State Persistence:** Automatic via Durable Object Storage.
+- **Scalability:** Durable Objects provide strong consistency and global uniqueness for component instances.
 
 ### Usage
 
@@ -35,16 +35,16 @@ export default {
 
 ## 2. Node.js Adapter
 
-This adapter allows you to run Cossack applications on a standard Node.js server (e.g., in a container, on a VPS, or locally).
+Use this adapter to run a Cossack application on Node.js, such as in a container, on a VPS, or on your computer.
 
--   **Runtime:** Node.js (>= 20)
--   **Transport:** `ws` library (WebSockets)
--   **State Persistence:** **Memory Only**. State is lost when the server process restarts.
--   **Scalability:** Suitable for single-instance deployments or sticky-session clusters.
+- **Runtime:** Node.js (>= 20)
+- **Transport:** `ws` library (WebSockets)
+- **State Persistence:** **Memory Only**. State is lost when the server process restarts.
+- **Scalability:** Suitable for single-instance deployments or sticky-session clusters.
 
 ### Usage
 
-To use the Node.js adapter, your application entry point must initialize a Node.js HTTP server and attach the `CossackNodeAdapter`.
+To use the Node.js adapter, start a Node.js HTTP server and attach `CossackNodeAdapter` in your application entry point.
 
 ```typescript
 import { serve } from '@hono/node-server';
@@ -68,3 +68,16 @@ new CossackNodeAdapter({
 ```
 
 You can generate a project pre-configured with this adapter using the `cossack` CLI.
+
+## Static asset boundaries
+
+The Node and Desktop asset servers resolve symlinks before reading a file.
+They reject files outside the configured asset directory, including symlinked
+directory indexes. Keep the asset directory writable only by trusted build and
+deployment processes.
+
+If a trusted reverse proxy terminates HTTPS before a Node server, configure
+`createApp({ allowedOrigins: ['https://your-public-host'] })` for transport
+requests. The default compares Origin against the request URL seen by the
+framework. The proxy must control any forwarded headers used to reconstruct
+that URL.

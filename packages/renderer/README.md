@@ -1,12 +1,13 @@
 # Cossack Renderer Package
 
-Cossack Renderer is a Lit-compatible rendering engine designed for **Light DOM** and **SSR**. It provides a familiar API for building components but focuses on returning HTML strings directly for SSR and managing DOM updates without Shadow DOM isolation.
+Cossack Renderer is a Lit-compatible rendering engine for **Light DOM** and
+**SSR**. It returns HTML strings for SSR and updates the DOM without Shadow DOM
+isolation.
 
 ## Installation
 
-This package is included by projects created with `cossack create`, but can
-also be used standalone in any project that needs a lightweight rendering
-solution.
+Projects created with `cossack create` include this package. You can also use
+it on its own in another project.
 
 ```bash
 pnpm add @cossackframework/renderer

@@ -6,7 +6,7 @@ description: 'Reveal elements on scroll with a framework-provided helper that al
 # Scroll Reveal
 
 `setupScrollReveal()` (from `@cossackframework/framework/client`) adds a class
-to elements when they scroll into view — the classic "reveal on scroll" effect.
+to elements when they scroll into view : the classic "reveal on scroll" effect.
 
 Unlike a hand-rolled `IntersectionObserver` that only runs once, this helper
 **also watches the DOM for elements added later** (tab switches, filters,
@@ -20,7 +20,7 @@ Call it from your global `App` component's lifecycle hooks:
 > Import from `@cossackframework/framework/scroll-reveal` (the isolated entry).
 > The `@cossackframework/framework/client` barrel pulls in the client app graph
 > (which depends on Vite's virtual modules) and cannot be imported from code
-> loaded during `cossack ssg` — such as your `App`.
+> loaded during `cossack ssg` : such as your `App`.
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
@@ -79,5 +79,5 @@ setupScrollReveal({
 });
 ```
 
-The helper returns a cleanup function that disconnects both observers — call it
+The helper returns a cleanup function that disconnects both observers : call it
 in `onCleanup()`.

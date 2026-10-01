@@ -1,20 +1,14 @@
+import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/transports/http.ts
 import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 
 /** RPC allowlist including @Server methods on injected @Service deps (see router.ts). */
-function isRpcCallableActionOrService(constructor: unknown, action: unknown): boolean {
-    if (isRpcCallableAction(constructor, action)) return true;
-    if (typeof action !== 'string' || typeof constructor !== 'function') return false;
-    const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', constructor) || [];
-    for (const t of paramTypes) {
-        if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
-            const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
-            if (Object.prototype.hasOwnProperty.call(serverMethods, action)) return true;
-        }
-    }
-    return false;
+function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
+  if (isRpcCallableAction(instance.constructor, action)) return true;
+  const serviceClass = getForwardedServerMethodClass(instance, action);
+  return serviceClass !== undefined && isRpcCallableAction(serviceClass, action);
 }
 
 /** Upload handler — processes file uploads via multipart form data. */
@@ -89,25 +83,15 @@ export function handleUpload(ctx: RouterContext) {
 
         // Authorisation gate: only @Server-registered methods are RPC-callable
         // (including @Server methods on injected @Service dependencies).
-        if (!isRpcCallableActionOrService(targetInstance.constructor, action)) {
+        if (!isRpcCallableActionOrService(targetInstance, action)) {
             return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
         }
 
         // Rate-limit gate: enforce any @RateLimit declared on the action.
         // If this is a forwarded @Service method, the metadata lives on the service class.
-        let rateLimitConstructor: unknown = targetInstance.constructor;
-        if (!isRpcCallableAction(rateLimitConstructor, action)) {
-            const paramTypes: any[] = Reflect.getMetadata('design:paramtypes', targetInstance.constructor) || [];
-            for (const t of paramTypes) {
-                if (t && typeof t === 'function' && Reflect.getMetadata('cossack:service', t)) {
-                    const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', t) || {};
-                    if (Object.prototype.hasOwnProperty.call(serverMethods, action)) {
-                        rateLimitConstructor = t;
-                        break;
-                    }
-                }
-            }
-        }
+        const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
+            ? targetInstance.constructor
+            : getForwardedServerMethodClass(targetInstance, action);
 
         const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `upload:${componentRouteId}`);
         if (rateLimited) return rateLimited;

@@ -151,7 +151,9 @@ export function connectSSE(component: any): void {
         return;
     }
 
-    const params = new URLSearchParams({ scopeKey });
+    const params = new URLSearchParams(window.location.search);
+    params.set('scopeKey', scopeKey);
+    params.set('params', JSON.stringify(initialState?.metadata?.params || {}));
     const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
     component._sseConnection = es;
 

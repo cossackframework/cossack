@@ -1,115 +1,74 @@
-import { describe, it, expect, vi } from 'vitest';
-import { serializeInitialState } from '../src/root';
+import { describe, it, expect } from 'vitest';
+import { renderRoot, serializeInitialState } from '../src/root';
 
-// Mock import.meta.env before importing the module
-vi.mock('@cossackframework/renderer/server', () => ({
-    minifyHtml: (html: string) => html.replace(/\s{2,}/g, ' ').trim(),
-}));
+const props = {
+    body: '<p>Hello</p>',
+    initialState: { message: 'hello' },
+    manifest: {},
+    headTags: [{ tag: 'title', children: 'Test' }],
+    modulePreloads: ['/chunk.js'],
+};
 
-// We need to test the core logic of htmlTemplate handling.
-// Since renderRoot uses import.meta.env which is Vite-specific,
-// we extract and test the template composition logic directly.
-describe('renderRoot htmlTemplate', () => {
-    // Simulate the helper functions from renderRoot
-    const makeHelpers = (body: string = '<p>Hello</p>') => {
-        const headTagsHtml = '<title>Test</title>';
-        const cssHtml = '<link rel="stylesheet" href="/style.css">';
-        const initialStateScript = '<script>window.__INITIAL_STATE__ = {}</script>';
-        const modulePreloadHtml = '<link rel="modulepreload" href="/chunk.js">';
-        const clientScript = '/src/client/entry-client.ts';
-
-        const cossackScripts = () =>
-            `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n<script type="module" src="${clientScript}"></script>`;
-
-        const cossackBody = () => `<div id="root">${body}</div>`;
-
-        return { cossackScripts, cossackBody };
-    };
-
-    it('should render default template when htmlTemplate is not provided', () => {
-        const { cossackScripts, cossackBody } = makeHelpers();
-        const raw = `
-        <!DOCTYPE html>
-        <html lang="en">
-            <head>
-                <meta charset="utf-8">
-                ${cossackScripts()}
-            </head>
-            <body>
-                ${cossackBody()}
-            </body>
-        </html>
-    `;
-
-        expect(raw).toContain('<!DOCTYPE html>');
-        expect(raw).toContain('<html lang="en">');
-        expect(raw).toContain('<div id="root"><p>Hello</p></div>');
-        expect(raw).toContain('<script type="module" src="/src/client/entry-client.ts"></script>');
-        expect(raw).toContain('<title>Test</title>');
+describe('renderRoot', () => {
+    it('renders the real default template, state, styles and scripts', () => {
+        const out = renderRoot(props);
+        expect(out).toContain('<!DOCTYPE html>');
+        expect(out).toContain('<html lang="en">');
+        expect(out).toContain('<div id="root"><p>Hello</p></div>');
+        expect(out).toContain('<script type="module" src="/src/client/entry-client.ts"></script>');
+        expect(out).toContain('<title data-cossack="">Test</title>');
+        expect(out).toContain('<link rel="stylesheet" href="/src/style.css">');
+        expect(out).toContain('window.__INITIAL_STATE__ = {"message":"hello"}');
+        expect(out).toContain('<link rel="modulepreload" href="/chunk.js">');
     });
 
-    it('should render custom template from function', () => {
-        const { cossackScripts, cossackBody } = makeHelpers();
-        const htmlTemplate = ({ cossackScripts: scripts, cossackBody: body }: { cossackScripts: () => string; cossackBody: () => string }) => `
-            <!DOCTYPE html>
-            <html lang="ar" dir="rtl">
-                <head>
-                    <meta charset="utf-8">
-                    ${scripts()}
-                </head>
-                <body class="custom-class">
-                    ${body()}
-                </body>
-            </html>
-        `;
-
-        const raw = htmlTemplate({ cossackScripts, cossackBody });
-
-        expect(raw).toContain('<html lang="ar" dir="rtl">');
-        expect(raw).toContain('<body class="custom-class">');
-        expect(raw).toContain('<div id="root"><p>Hello</p></div>');
-        expect(raw).toContain('<script type="module" src="/src/client/entry-client.ts"></script>');
-        expect(raw).toContain('<title>Test</title>');
+    it('passes real helpers to a function template', () => {
+        const out = renderRoot({
+            ...props,
+            htmlTemplate: ({ cossackScripts, cossackBody }) =>
+                `<html lang="ar" dir="rtl"><head>${cossackScripts()}</head><body class="custom">${cossackBody()}</body></html>`,
+        });
+        expect(out).toContain('<html lang="ar" dir="rtl">');
+        expect(out).toContain('<body class="custom"><div id="root"><p>Hello</p></div>');
+        expect(out).toContain('window.__INITIAL_STATE__');
     });
 
-    it('should render custom template from string with placeholders', () => {
-        const { cossackScripts, cossackBody } = makeHelpers();
-        const htmlTemplate = `
-            <!DOCTYPE html>
-            <html lang="fr">
-                <head>
-                    <meta charset="utf-8">
-                    {{ cossackScripts }}
-                </head>
-                <body class="french-theme">
-                    {{ cossackBody }}
-                </body>
-            </html>
-        `;
-
-        const raw = htmlTemplate
-            .replace('{{ cossackScripts }}', cossackScripts())
-            .replace('{{ cossackBody }}', cossackBody());
-
-        expect(raw).toContain('<html lang="fr">');
-        expect(raw).toContain('<body class="french-theme">');
-        expect(raw).toContain('<div id="root"><p>Hello</p></div>');
-        expect(raw).toContain('<script type="module" src="/src/client/entry-client.ts"></script>');
+    it('replaces string template placeholders including the locale', () => {
+        const out = renderRoot({
+            ...props, lang: 'fr',
+            htmlTemplate: '<html lang="{{ cossackLang }}"><head>{{ cossackScripts }}</head><body>{{ cossackBody }}</body></html>',
+        });
+        expect(out).toContain('<html lang="fr">');
+        expect(out).toContain('<div id="root"><p>Hello</p></div>');
+        expect(out).toContain('type="module"');
+        expect(out).not.toContain('{{');
     });
 
-    it('cossackBody always includes #root container', () => {
-        const { cossackBody } = makeHelpers('my content');
-        expect(cossackBody()).toBe('<div id="root">my content</div>');
+    it('escapes metadata values so they cannot inject tags or attributes', () => {
+        const value = '\"><script>alert(1)</script><meta content="&';
+        const out = renderRoot({ ...props, headTags: [
+            { tag: 'meta', attributes: { name: 'description', content: value } },
+        ] });
+        expect(out).toContain('content="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;meta content=&quot;&amp;"');
+        expect(out).not.toContain('<script>alert(1)</script>');
     });
 
-    it('cossackScripts includes all required parts', () => {
-        const { cossackScripts } = makeHelpers();
-        const scripts = cossackScripts();
-        expect(scripts).toContain('<title>Test</title>');
-        expect(scripts).toContain('<link rel="stylesheet" href="/style.css">');
-        expect(scripts).toContain('window.__INITIAL_STATE__');
-        expect(scripts).toContain('modulepreload');
-        expect(scripts).toContain('<script type="module"');
+    it('omits undefined and false attributes while preserving true booleans', () => {
+        const out = renderRoot({ ...props, headTags: [
+            { tag: 'script', attributes: { src: '/extra.js', async: true, defer: false, nonce: undefined } },
+        ] });
+        expect(out).toContain('src="/extra.js" async data-cossack=""');
+        expect(out).not.toContain('nonce=');
+        expect(out).not.toContain('defer');
+    });
+
+    it.each([{ css: undefined }, { css: [] }])('supports a production manifest with CSS $css', ({ css }) => {
+        const out = renderRoot({ ...props, manifest: {
+            'src/client/entry-client.ts': { file: 'assets/app.js', css },
+        } });
+        expect(out).toContain('src="/assets/app.js"');
+        expect(out).not.toMatch(/rel=["']?stylesheet/);
+        expect(out).not.toContain('/undefined');
     });
 });
 

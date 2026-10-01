@@ -86,13 +86,11 @@ test.describe('SSG serving (preview server)', () => {
   });
 
   test('page loads in a browser without fatal errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
     await page.goto('/ssg-demo/');
-    // Give the client a moment to hydrate without asserting on DOM content
-    // (hydration may rebuild the tree from initial state).
-    await page.waitForLoadState('networkidle');
-    // This test exists to catch hard hydration failures (e.g. missing
-    // scripts, 404s for assets). If the page itself fails to load, the
-    // goto() above would throw.
-    expect(page).toHaveTitle(/SSG Demo/);
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await expect(page).toHaveTitle(/SSG Demo/);
+    expect(errors).toEqual([]);
   });
 });

@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
 
-test.describe.configure({ mode: 'serial' });
-
 test.describe('Blocks Pages', () => {
   test('blocks index renders category cards', async ({ page }) => {
     await page.goto('/blocks');
@@ -34,7 +32,7 @@ test.describe('Blocks Pages', () => {
     await expect(page.getByText('INV-001')).toBeVisible();
     // Tab 1: Sidebar Shell.
     await page.getByRole('button', { name: 'Sidebar Shell' }).click();
-    await expect(page.getByText('Overview').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible({ timeout: 15000 });
     // Tab 2: Analytics.
     await page.getByRole('button', { name: 'Analytics' }).click();
     await expect(page.getByText('Weekly Traffic')).toBeVisible({ timeout: 15000 });

@@ -1,6 +1,6 @@
 import { getRequestContext } from '@cossackframework/core';
 import type { Context, MiddlewareHandler } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
 const DEFAULT_COOKIE_NAME = 'cossack_sid';
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -14,6 +14,7 @@ const SESSION_STORE_CONTEXT_KEY = 'sessionStore';
  */
 export interface SessionStore {
   create(ttlMs?: number): Promise<string>;
+  has(sessionId: string): Promise<boolean>;
   load(sessionId: string): Promise<Record<string, unknown>>;
   get<T = unknown>(sessionId: string, key: string): Promise<T | undefined>;
   getAll(sessionId: string): Promise<Record<string, unknown>>;
@@ -52,18 +53,6 @@ export interface SessionMiddlewareOptions {
   httpOnly?: boolean;
 }
 
-function handle(store: SessionStore, sessionId: string, ttl: number): SessionHandle {
-  return {
-    id: () => sessionId,
-    get: <T = unknown>(key: string) => store.get<T>(sessionId, key),
-    getAll: () => store.getAll(sessionId),
-    set: (key: string, value: unknown) => store.set(sessionId, key, value, ttl),
-    unset: (key: string) => store.unset(sessionId, key),
-    bindUser: (userId: string) => store.bindUser(sessionId, userId),
-    destroy: () => store.destroy(sessionId),
-  };
-}
-
 async function resolveStore(
   context: Context,
   source: SessionMiddlewareOptions['store'],
@@ -97,16 +86,54 @@ export function createSessionMiddleware(
     }
     if (!sessionId) sessionId = getCookie(context, cookieName);
 
+    // Unknown/expired IDs must never become caller-chosen store keys.
+    if (sessionId && !await store.has(sessionId)) {
+      sessionId = undefined;
+      authProvidedId = false;
+    }
     let issuedAnonymousId = false;
     if (!sessionId) {
       sessionId = await store.create(ttl);
       issuedAnonymousId = true;
     }
 
-    context.set(SESSION_CONTEXT_KEY, handle(store, sessionId, ttl));
+    let destroyed = false;
+    const currentId = () => {
+      if (destroyed) throw new Error('[Cossack] Session has been destroyed.');
+      return sessionId!;
+    };
+    const current: SessionHandle = {
+      id: currentId,
+      get: <T = unknown>(key: string) => store.get<T>(currentId(), key),
+      getAll: () => store.getAll(currentId()),
+      set: (key, value) => store.set(currentId(), key, value, ttl),
+      unset: (key) => store.unset(currentId(), key),
+      async bindUser(userId) {
+        if (authProvidedId) throw new Error('[Cossack] Rotate auth-managed sessions through your auth provider.');
+        const previous = currentId();
+        const data = await store.getAll(previous);
+        const replacement = await store.create(ttl);
+        try {
+          for (const [key, value] of Object.entries(data)) await store.set(replacement, key, value, ttl);
+          await store.bindUser(replacement, userId);
+          await store.destroy(previous);
+        } catch (error) {
+          await store.destroy(replacement);
+          throw error;
+        }
+        sessionId = replacement;
+        issuedAnonymousId = true;
+      },
+      async destroy() {
+        await store.destroy(currentId());
+        destroyed = true;
+      },
+    };
+    context.set(SESSION_CONTEXT_KEY, current);
     await next();
 
-    if (issuedAnonymousId && !authProvidedId) {
+    if (destroyed && !authProvidedId) deleteCookie(context, cookieName, { path: '/' });
+    if (!destroyed && issuedAnonymousId && !authProvidedId) {
       setCookie(context, cookieName, sessionId, {
         httpOnly,
         secure: context.req.url.startsWith('https://'),

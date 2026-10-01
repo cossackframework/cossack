@@ -19,10 +19,10 @@ By the time the user actually clicks the link (typically 100ms-300ms later), the
 ### Client-Side Caching
 Cossack maintains a memory-based cache of all visited and pre-fetched pages.
 - **Instant Back/Forward**: Clicking the browser's back or forward buttons is instantaneous because the state is restored directly from the cache.
-- **Zero Network Re-visits**: Re-visiting a page you've already seen in the current session requires zero network requests.
+- **Zero Network Re-visits**: Re-visiting a page you have already seen in the current session requires zero network requests.
 
 ## 2. Navigation Progress Bar
-For slow network conditions or large data fetches where pre-fetching isn't enough, Cossack automatically displays a sleek, non-intrusive progress bar at the top of the viewport.
+For slow network conditions or large data fetches where pre-fetching is not enough, Cossack automatically displays a sleek, non-intrusive progress bar at the top of the viewport.
 
 This gives the user immediate visual feedback that their navigation is in progress, improving the perceived reliability of the application.
 
@@ -37,11 +37,11 @@ applyOptimisticIncrement() {
 }
 ```
 
-When the server eventually broadcasts the "true" state, Cossack seamlessly overwrites the optimistic state with the verified value from the server. See the [State Management Guide](./states.md) for more details.
+When the server eventually broadcasts the "true" state, Cossack overwrites the optimistic state with the verified value from the server. See the [State Management Guide](./states.md) for more details.
 
 ## 4. Image Optimization
 
-The built-in `Image` helper ensures your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./images.md) for more details.
+The built-in `Image` helper makes sure that your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./images.md) for more details.
 
 We also provide a `cossack image:optimize` CLI command to automatically optimize images in your `public` folder. This command scans for `Image({ ... })` helper calls in your project and optimizes local `src` assets.
 The optimized images will be saved next to the original image in either WebP or AVIF format (`--format webp|avif`).

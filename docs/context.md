@@ -1,24 +1,24 @@
 ---
 title: "Accessing Request Context"
-description: "Every page component has access to the underlying request context through the this.c property for route parameters and query strings."
+description: "Read route parameters and query strings from the request context in a page component."
 ---
 
 # Accessing Request Context
 
-In Cossack, every page component has access to the underlying request context, which provides information about the incoming HTTP request, such as route parameters, query strings, and headers. This is essential for building dynamic, data-driven pages.
+Each Cossack page can read the request context. It contains details about the HTTP request, such as route parameters, query strings, and headers.
 
 ## The `this.c` Property
 
-The request context is exposed through the `this.c` property on your component class. This property provides a consistent API whether your code is running on the server or on the client.
+Read the request context through `this.c` on a component. The property works on the server and the client.
 
--   **On the Server:** `this.c` is the full, powerful [Hono `Context`](https://hono.dev/api/context) object. You can access all of its methods and properties, including middleware variables, database connections, and more.
--   **On the Client:** `this.c` is a lightweight, "hydrated" object that specifically provides access to the request parameters, ensuring your component can behave consistently after the initial page load.
+- **On the Server:** `this.c` is the full [Hono `Context`](https://hono.dev/api/context) object. You can read its methods and properties, including middleware values.
+- **On the Client:** `this.c` contains request parameters from the initial page load. A client component can use these values after hydration.
 
 ---
 
 ### Accessing Route Parameters
 
-The most common use case is to get dynamic parameters from the URL. For a page defined by the file path `/pages/hello/[name]/index.ts`, you can access the `name` parameter as follows.
+To read a URL parameter, use `this.c.req.param()`. For a page at `/pages/hello/[name]/index.ts`, read the `name` parameter like this.
 
 **API:**
 ```typescript
@@ -47,7 +47,7 @@ export class Greeting extends Cossack {
 ```
 
 **Behavior:**
-1.  A user navigates to `/hello/Cossack`.
-2.  On the server, the `init()` method runs. `this.c.req.param('name')` returns `"Cossack"`, and the initial state of `greeting` is set.
-3.  The page is rendered and sent to the client.
-4.  On the client, the `Cossack` class is hydrated. `this.c` is reconstructed with the same parameter information, so if you were to access `this.c.req.param('name')` in a client-side method, it would also correctly return `"Cossack"`.
+1. A user opens `/hello/Cossack`.
+2. The server runs `init()`. `this.c.req.param('name')` returns `"Cossack"`, and the method sets the initial value of `greeting`.
+3. The server renders the page and sends it to the client.
+4. The client hydrates the `Cossack` class and restores the same parameter. A client method can also read `"Cossack"` from `this.c.req.param('name')`.

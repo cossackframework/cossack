@@ -1,6 +1,6 @@
 # Layout-Scoped Services / Dependency Injection
 
-This specification describes Cossack's DI model after layout-scoped ownership.
+This document describes dependency injection (DI) when layouts own services.
 
 ## Public API
 
@@ -22,13 +22,14 @@ class DashboardChild extends Cossack {
 }
 ```
 
-`PageOptions.services` is DI ownership. `PageOptions.providers` remains the
-transport-provider map for WebSocket/Durable Object state and has no DI role.
+`PageOptions.services` declares DI ownership. `PageOptions.providers` maps
+transport providers for WebSocket and Durable Object state. It does not declare
+DI ownership.
 
-`@Inject(ServiceClass)` is a lazy, read-only property injection. The property
-resolves when first read, after renderer-created components have acquired their
-rendering parent. A missing declaration throws an error that names the service
-and recommends adding it to a parent layout.
+`@Inject(ServiceClass)` injects a read-only property when code first reads it.
+This happens after the renderer gives the component a parent. If no layout
+declares the service, Cossack throws an error that names it and points to a
+parent layout.
 
 `CossackService` exposes these protected request facilities:
 
@@ -39,10 +40,10 @@ and recommends adding it to a parent layout.
 
 ## Scope hierarchy and lifetime
 
-`ServiceScope` forms a parent-linked tree. Each layout receives a child scope;
-its `services` entries are instantiated and owned there. Resolution searches
-from the active scope toward the root, so a nested declaration of the same
-class shadows an outer instance.
+`ServiceScope` forms a tree with parent and child scopes. Each layout gets a
+child scope and owns the services in its `services` list. Resolution searches
+from the active scope to the root. A nested declaration of the same class takes
+priority over an outer declaration.
 
 The framework creates:
 

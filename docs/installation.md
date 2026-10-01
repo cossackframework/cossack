@@ -1,38 +1,38 @@
 ---
 title: "Installation & Setup"
-description: "Get started with Cossack framework using the Cossack CLI tool with support for Node.js v22 and modern editors."
+description: "Create a Cossack project with the Cossack CLI."
 ---
 
 # Installation & Setup
 
-Cossack is a new kind of framework that is borderless, build for the edge and minimal syntax.
+Cossack is a framework for building applications that run on the edge or on Node.js.
 
 ## Prerequisites
 
-To get started with Cossack locally, you need:
+To use Cossack locally, install:
 
 - Node.js v22+
 - An editor (VS Code preferred)
 
 ## Creating a New Project
 
-The easiest way to start a new Cossack project is by using the `cossack` CLI tool.
+Use the `cossack` CLI tool to create a project.
 
 ### Usage
 
-Run the following command in your terminal:
+Run this command in a terminal:
 
 ```sh
 npx cossack create my-app
 ```
 
-Replace `my-app` with your desired project name.
+Replace `my-app` with your project name.
 
 ### Adapter Selection
 
-During the setup process, you will be prompted to choose a server adapter:
+During setup, choose a server adapter:
 
-1.  **Cloudflare Workers (Default):** Best for edge deployments, automatic state persistence, and scalability. Requires a Cloudflare account.
-2.  **Node.js:** Best for traditional server deployments (Docker, VPS) or local development without Cloudflare dependencies. Note that component state is memory-only in this mode.
+1. **Cloudflare Workers (Default):** Use this adapter to deploy to Cloudflare's edge network. It requires a Cloudflare account.
+2. **Node.js:** Use this adapter to run the app on a Node.js server or locally without Cloudflare. Component state stays in memory.
 
-The CLI will automatically configure your `package.json`, `tsconfig.json`, and entry points based on your selection.
+The CLI configures `package.json`, `tsconfig.json`, and the entry points for the adapter you choose.

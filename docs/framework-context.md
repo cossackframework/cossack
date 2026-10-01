@@ -1,11 +1,11 @@
 ---
 title: "Framework Context API"
-description: "Universal access to global resources including env bindings, authenticated user, and request context from any component without prop drilling."
+description: "Access environment bindings, the authenticated user, and request context from any component."
 ---
 
 # Framework Context API
 
-The Framework Context API provides universal access to global resources—`env` (environment bindings), `user` (authenticated user), and `c` (request context)—from **any component** without prop drilling. This works for both Pages and reusable Components.
+The Framework Context API gives every component access to `env` (environment bindings), `user` (the authenticated user), and `c` (the request context). You do not need to pass these values through component properties. Pages and reusable components can use them.
 
 > **Note:** This is different from [Request Context](./context.md) which specifically covers Hono's request object for route parameters and query strings.
 
@@ -23,17 +23,17 @@ The Framework Context API provides universal access to global resources—`env` 
 
 ## How It Works
 
-The framework automatically provides these contexts through a provider pattern. The root `App` component sets up the contexts, and any descendant component can consume them using simple property access.
+The root `App` component sets up these contexts. Descendant components can read them as properties.
 
-**On the Server:** These are the actual runtime values from the request.
+**On the Server:** These are the values from the current request.
 
-**On the Client:** The values are "hydrated" from the initial server render, ensuring consistency.
+**On the Client:** The framework restores these values from the initial server render.
 
 ---
 
 ## `this.env` - Environment Bindings
 
-Access your Cloudflare bindings directly from any component.
+Read Cloudflare bindings from any component.
 
 ```typescript
 import { Cossack, Component } from "@cossackframework/core";
@@ -64,7 +64,7 @@ export class DatabaseViewer extends Cossack {
 
 ### Available Bindings
 
-Your `Env` interface should be defined in your project's type declarations:
+Define the `Env` interface in your project's type declarations:
 
 ```typescript
 // src/env.d.ts
@@ -212,7 +212,7 @@ async serverMethod() {
 }
 ```
 
-**Client-side:** Limited access; `this.env` is `undefined`, `this.user` and `this.c` use hydrated values from the initial render.
+**Client-side:** `this.env` is `undefined`. `this.user` and `this.c` use values restored from the initial render.
 
 ```typescript
 @Client()
@@ -245,7 +245,7 @@ interface Env extends CloudflareBindings {}
 
 ### 2. No Prop Drilling
 
-Never pass `env`, `user`, or `c` as props—they're automatically available:
+Never pass `env`, `user`, or `c` as props. They are available on the component:
 
 ```typescript
 // ❌ DON'T do this

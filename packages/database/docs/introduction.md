@@ -67,7 +67,7 @@ try {
 
 `orm.run()` establishes the current ORM for static methods such as
 `User.find()`, `entity.save()`, and the global `sql` tag. Put one scope around a
-request, queue job, scheduled task, or command—not around each query.
+request, queue job, scheduled task, or command:not around each query.
 
 Framework middleware normally installs this scope automatically. For example,
 the Cossack/Hono middleware wraps the request once:

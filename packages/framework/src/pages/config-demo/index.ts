@@ -84,19 +84,23 @@ export default class ConfigDemo extends Cossack {
 
                 <h2 class="text-lg font-semibold mt-6 mb-2">config() — config tree</h2>
                 <table class="border-collapse">
-                    ${this.row("config('app.name')", this.appName)}
-                    ${this.row("config('app.env')", this.appEnv)}
-                    ${this.row("config('app.url')", this.appUrl)}
-                    ${this.row("config('app.debug')", this.appDebug)}
-                    ${this.row("config('app.timezone')", this.timezone)}
-                    ${this.row("config('app.locale')", this.locale)}
-                    ${this.row("config('app.fallback_locale')", this.fallbackLocale)}
+                    <tbody>
+                        ${this.row("config('app.name')", this.appName)}
+                        ${this.row("config('app.env')", this.appEnv)}
+                        ${this.row("config('app.url')", this.appUrl)}
+                        ${this.row("config('app.debug')", this.appDebug)}
+                        ${this.row("config('app.timezone')", this.timezone)}
+                        ${this.row("config('app.locale')", this.locale)}
+                        ${this.row("config('app.fallback_locale')", this.fallbackLocale)}
+                    </tbody>
                 </table>
 
                 <h2 class="text-lg font-semibold mt-6 mb-2">env() — raw bindings</h2>
                 <table class="border-collapse">
-                    ${this.row("env('APP_SECRET')", this.hasSecret ? '✓ set (min 16 chars)' : '✗ not set or too short')}
-                    ${this.row("env('SOME_BINDING', '(not set)')", this.rawBinding)}
+                    <tbody>
+                        ${this.row("env('APP_SECRET')", this.hasSecret ? '✓ set (min 16 chars)' : '✗ not set or too short')}
+                        ${this.row("env('SOME_BINDING', '(not set)')", this.rawBinding)}
+                    </tbody>
                 </table>
 
                 <p class="mt-6 text-sm text-gray-500">

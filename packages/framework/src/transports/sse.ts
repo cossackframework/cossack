@@ -2,6 +2,7 @@
 import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
+import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
 
 /** Active async generator being iterated by the SSE endpoint. */
 interface PendingGenerator {
@@ -129,30 +130,18 @@ export function handleSseEndpoint(ctx: RouterContext) {
         const PageComponent = Object.values(module as object)[0] as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
 
-        // SECURITY: for the DEFAULT per-user scope, re-derive the expected
-        // scope server-side from the authenticated user and reject any
-        // client-supplied value that does not match — otherwise a crafted
-        // request like `?scopeKey=user:<victim_id>` could subscribe to another
-        // user's SSE stream (cross-user eavesdropping).
-        //
-        // For a CUSTOM scope() (e.g. `room:${c.req.query('room')}`) the
-        // developer's scope function is the authorization model and depends on
-        // page-request data that isn't present on this SSE request — so we
-        // trust the SSR-computed scopeKey the client echoes back (the same one
-        // SSR registered the store entry under).
+        // Scope keys are identifiers, not credentials. Re-evaluate custom scopes
+        // with the live authenticated user too; never trust an echoed SSR key.
         const pageOptions = Reflect.getMetadata('page:options', PageComponent) as PageOptions | undefined;
-        let effectiveScopeKey: string;
-        if (typeof pageOptions?.scope === 'function') {
-            if (!requestedScopeKey) {
-                return new Response('scopeKey query parameter is required', { status: 400 });
-            }
-            effectiveScopeKey = requestedScopeKey;
-        } else {
-            const expectedScopeKey = await resolveSseScopeKey(c, pageOptions);
-            if (!requestedScopeKey || requestedScopeKey !== expectedScopeKey) {
-                return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
-            }
-            effectiveScopeKey = expectedScopeKey;
+        let params: Record<string, string>;
+        try {
+            params = decodeRuntimeRouteParams(c.req.query('params'));
+        } catch {
+            return new Response('Invalid route params', { status: 400 });
+        }
+        const effectiveScopeKey = await resolveSseScopeKey(withRuntimeRouteParams(c, params), pageOptions);
+        if (!requestedScopeKey || requestedScopeKey !== effectiveScopeKey) {
+            return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
         }
 
         // Look up or create SSE state store entry

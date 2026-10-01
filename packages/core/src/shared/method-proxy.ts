@@ -278,7 +278,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
                             return await new Promise<any>((resolve, reject) => {
                                 const xhr = new XMLHttpRequest();
-                                xhr.open('POST', '/upload', true);
+                                xhr.open('POST', `/upload${window.location.search}`, true);
                                 xhr.upload.onprogress = (e) => {
                                     if (e.lengthComputable) {
                                         const percentComplete = (e.loaded / e.total) * 100;
@@ -317,7 +317,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             });
                         }
 
-                        const response = await fetch('/crpc', {
+                        const response = await fetch(`/crpc${window.location.search}`,  {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -328,6 +328,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 payload: processedArgs,
                                 _cossack_stream: true,
                                 scopeKey,
+                                pageParams: initialState?.metadata?.params || {},
                             }),
                         });
 
@@ -380,7 +381,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 // === Path B: async iterator (for `for await...of proxy()`) ===
                 // Makes its own fetch so it can consume SSE yield events independently.
                 const createStreamIterator = () => {
-                    const fetchPromise = fetch('/crpc', {
+                    const fetchPromise = fetch(`/crpc${window.location.search}`,  {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -391,6 +392,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             payload: processedArgs,
                             _cossack_stream: true,
                             scopeKey,
+                                pageParams: initialState?.metadata?.params || {},
                         }),
                     });
 
@@ -619,7 +621,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
                     return await new Promise<any>((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
-                        xhr.open('POST', '/upload', true);
+                        xhr.open('POST', `/upload${window.location.search}`, true);
 
                         // Upload Progress
                         xhr.upload.onprogress = (e) => {
@@ -666,7 +668,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     });
 
                 } else {
-                    const response = await fetch('/crpc', {
+                    const response = await fetch(`/crpc${window.location.search}`,  {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -678,6 +680,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             state: requestState,
                             payload: processedArgs,
                             scopeKey,
+                                pageParams: initialState?.metadata?.params || {},
                         }),
                     });
 
