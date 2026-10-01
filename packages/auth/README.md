@@ -223,7 +223,7 @@ export const oauth = createOAuth({
 - **PKCE (S256)** is on by default for every provider (RFC 9700 recommendation).
 - **State** is a 128-bit random nonce, stored in an HttpOnly `SameSite=Lax`
  cookie signed with HMAC-SHA256, compared in **constant time**, and
- **single-use** (deleted on callback read).
+ deleted on callback read, with expiration enforced in the signed payload.
 - The `redirect_uri` sent on the authorize request is reused unchanged on the
  token-exchange request (exact string match).
 

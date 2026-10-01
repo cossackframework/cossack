@@ -70,8 +70,8 @@ async function hmac(message: string, secret: string): Promise<string> {
  * Serialize + sign a payload. Format: `base64url(payload).base64url(hmac)`.
  * Tampering with either segment fails verification.
  */
-export async function signCookieValue(payload: OAuthStatePayload, secret: string): Promise<string> {
-    const json = JSON.stringify(payload);
+export async function signCookieValue(payload: OAuthStatePayload, secret: string, maxAge = 600): Promise<string> {
+    const json = JSON.stringify({ ...payload, expiresAt: Date.now() + maxAge * 1000 });
     const encoded = base64url(new TextEncoder().encode(json));
     const sig = await hmac(encoded, secret);
     return `${encoded}.${sig}`;
@@ -95,9 +95,10 @@ export async function verifyCookieValue(token: string, secret: string): Promise<
         const json = new TextDecoder('utf-8', { fatal: true }).decode(
             Uint8Array.from(binary, char => char.charCodeAt(0)),
         );
-        const parsed = JSON.parse(json) as OAuthStatePayload;
+        const parsed = JSON.parse(json) as OAuthStatePayload & { expiresAt: number };
         if (typeof parsed.state !== 'string' || typeof parsed.codeVerifier !== 'string') return null;
-        return parsed;
+        if (!Number.isFinite(parsed.expiresAt) || parsed.expiresAt <= Date.now()) return null;
+        return { state: parsed.state, codeVerifier: parsed.codeVerifier };
     } catch {
         return null;
     }
@@ -125,7 +126,7 @@ export async function setStateCookie(
     options: StateCookieOptions,
     requestSecure: boolean,
 ): Promise<void> {
-    const value = await signCookieValue(payload, secret);
+    const value = await signCookieValue(payload, secret, options.maxAge ?? DEFAULT_MAX_AGE);
     const name = options.name ?? DEFAULT_COOKIE_NAME;
     setCookie(c, name, value, {
         httpOnly: true,
@@ -139,7 +140,7 @@ export async function setStateCookie(
 
 /**
  * Read, verify, and **consume** the state cookie. The cookie is always cleared
- * on read to enforce single-use semantics.
+ * on read. Expiry is also checked in the signed payload.
  */
 export async function consumeStateCookie(
     c: Context,
@@ -148,7 +149,7 @@ export async function consumeStateCookie(
 ): Promise<OAuthStatePayload | null> {
     const name = options.name ?? DEFAULT_COOKIE_NAME;
     const token = getCookie(c, name);
-    // Always delete, even on failure, to prevent replay. Pass the same domain
+    // Always delete, even on failure, to finish the browser round-trip. Pass the same domain
     // (if any) used at set time so the deletion actually matches the cookie.
     deleteCookie(c, name, { path: options.path ?? '/', domain: options.domain });
     if (!token) return null;

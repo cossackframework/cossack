@@ -49,7 +49,7 @@ Browser                   Cossack app              OAuth provider
  confidential clients). A fresh `code_verifier` is generated per redirect.
 - **CSRF `state`**: 128-bit random nonce, stored in an HttpOnly
  `SameSite=Lax` cookie signed with HMAC-SHA256, compared in **constant time**,
- and **single-use** (deleted on callback read).
+ and deleted on callback read. The signed payload also enforces expiration on the server.
 - **Exact `redirect_uri` match**: the same value is sent on the authorize and
  token-exchange requests.
 
@@ -150,13 +150,10 @@ async onUser(oauthUser, tokens, c) {
         // 2a. Existing link → reuse the linked user.
         userId = link.userId;
     } else if (oauthUser.email) {
-        // 2b. No link yet, but the provider gave us a verified email →
-        //     optionally link to an existing user with that email.
-        //     ⚠️ Only auto-link if the email is verified (provider-dependent);
-        //     otherwise create a new account or prompt for confirmation.
+        // A matching email alone does not prove account ownership.
         const existing = await db.users.findUnique({ where: { email: oauthUser.email } });
-        if (existing) userId = existing.id;
-        else userId = (await db.users.create({ data: { email: oauthUser.email, ... } })).id;
+        if (existing) throw new Error('Sign in before linking this provider.');
+        userId = (await db.users.create({ data: { email: oauthUser.email, ... } })).id;
     } else {
         // 2c. No link, no usable email → create a new user.
         userId = (await db.users.create({ data: { /* ... */ } })).id;
@@ -306,3 +303,11 @@ userinfo, `onUser`) is covered in `packages/auth/tests/handler.test.ts`.
 
 For end-to-end testing against a real provider, set the credentials via env
 and gate the test behind `process.env.E2E_OAUTH === '1'` so it is opt-in.
+
+The generated auth recipe links identities by provider and provider user ID.
+It does not link an existing account by email alone. Add an authenticated account
+linking flow if users need multiple login providers for the same account.
+
+Deleting an OAuth state cookie ends the normal browser round-trip. It does not
+provide a server-side replay ledger. Authorization codes remain subject to the
+provider's one-time exchange rules.

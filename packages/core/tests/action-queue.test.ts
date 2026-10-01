@@ -80,6 +80,29 @@ describe('executeAction serialization (WS context race fix)', () => {
         expect(component.seen).toEqual(['A', 'A', 'B', 'B']);
     });
 
+    it('uses each caller identity for this.user and context across awaits, including guests', async () => {
+        class IdentityComponent extends QueueComponent {
+            @Server()
+            async identity(...args: unknown[]) {
+                expect(args).toHaveLength(1);
+                this.seen.push([this.user?.id, this.c.get('user')?.id]);
+                await Promise.resolve();
+                this.seen.push([this.user?.id, this.c.get('user')?.id]);
+            }
+        }
+        const component = new IdentityComponent();
+        (component as any)._user = { id: 'initial-admin' };
+        (component as any)._c = { get: () => ({ id: 'initial-admin' }) };
+        await Promise.all([
+            component.executeAction('identity', [{ id: 'forged-admin' }], { id: 'member' }, makeClient('A')),
+            component.executeAction('identity', [{ id: 'forged-admin' }], undefined, makeClient('B')),
+        ]);
+        expect(component.seen).toEqual([
+            ['member', 'member'], ['member', 'member'], [undefined, undefined], [undefined, undefined],
+        ]);
+        expect((component as any).user.id).toBe('initial-admin');
+    });
+
     it('always sends action-complete and swallows action errors (error boundary)', async () => {
         @Page({})
         class ThrowingComponent extends Cossack<{}> {

@@ -127,7 +127,7 @@ let desktop: typeof import('../src/index');
 let assetsRoot: string;
 
 beforeAll(async () => {
-  Object.defineProperty(process.versions, 'electron', { value: '43.3.0', configurable: true });
+  Object.defineProperty(process.versions, 'electron', { value: '43.5.0', configurable: true });
   assetsRoot = await mkdtemp(path.join(tmpdir(), 'cossack-desktop-'));
   await writeFile(path.join(assetsRoot, 'app.js'), 'console.log("desktop")');
   desktop = await import('../src/index');
@@ -266,13 +266,17 @@ describe('Electron Desktop runtime', () => {
     const response = await electron.protocol.invoke(new Request('cossack://app/counter', {
       method: 'POST',
       body: '{}',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', origin: 'cossack://app' },
     }));
     expect(await response.json()).toEqual({ desktop: true, assets: true });
     expect(fetch.mock.calls[0]?.[0].url).toBe('https://app/counter');
+    expect(fetch.mock.calls[0]?.[0].headers.get('origin')).toBe('https://app');
   });
 
   it('rejects foreign authorities and unsafe paths', async () => {
+    expect((await electron.protocol.invoke(new Request('cossack://app/crpc', {
+      method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}',
+    }))).status).toBe(403);
     expect((await electron.protocol.invoke(new Request('cossack://other/app.js'))).status).toBe(403);
     expect((await electron.protocol.invoke(new Request('cossack://app/%5Coutside'))).status).toBe(400);
     expect((await electron.protocol.invoke(new Request('cossack://app/counter', {

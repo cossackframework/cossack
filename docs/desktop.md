@@ -28,3 +28,8 @@ Use `configureDesktopClose()` to choose `quit`, `hide-to-tray`, or
 `confirm-quit`. Linux tray activation depends on the desktop host, so
 `confirm-quit` is the default. Use `hide-to-tray` only after a
 tray exists and works on the target OS.
+
+Desktop requests reject foreign `Origin` headers. The adapter maps the trusted
+`cossack://app` origin to its internal HTTPS origin before framework RPC checks.
+The generated Desktop recipe now requires Electron 43.5.0 or newer in the 43.x
+series for the reviewed security fixes.

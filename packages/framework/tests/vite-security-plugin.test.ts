@@ -640,7 +640,7 @@ export class TestPage extends Cossack {
       return html\`
         <div>
           \${this.nestedCall()}
-          \${{() => 'inline arrow'}}
+          \${{handler: () => 'inline arrow'}}
         </div>
       \`;
     }
@@ -2039,25 +2039,35 @@ export class Page extends Cossack {
     expect(result).not.toContain('Menu.buildFromTemplate');
   });
 
-  it('warns and skips stripping when the source cannot be parsed', () => {
-    // Security plugin: a parse failure must NOT silently ship server-only code.
-    // It returns the source unchanged (fail-open is unavoidable — we can't strip
-    // what we can't parse) but emits a console.warn naming the file.
-    const original = console.warn;
-    const warnings: string[] = [];
-    console.warn = (msg: string) => warnings.push(String(msg));
-    try {
-      // Intentionally malformed TypeScript that Oxc rejects.
-      const code = `export class extends Cossack { @Server() x(`;
-      const result = transformCossackClass(code, 'broken.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-      // Source is returned unchanged.
-      expect(result).toBe(code);
-      // A warning naming the file was emitted.
-      expect(warnings.some((w) => w.includes('broken.ts') && w.includes('SKIPPED'))).toBe(true);
-    } finally {
-      console.warn = original;
-    }
+  it.each([
+    `class SecretPage extends Cossack { @Server() get secret() { return 'private'; } }`,
+    `class SecretPage extends Cossack { @Server() [Symbol.for('secret')]() { return 'private'; } }`,
+  ])('rejects unsupported server members instead of leaking them: %s', (code) => {
+    expect(() => transformCossackClass(code, 'secret.ts', isClientSafeMethod, BUILTIN_METHODS, true))
+      .toThrow('@Server requires');
   });
+
+  it('fails the client build when source cannot be parsed', () => {
+    const code = `export class extends Cossack { @Server() x(`;
+    expect(() => transformCossackClass(code, 'broken.ts', isClientSafeMethod, BUILTIN_METHODS, true))
+      .toThrow(/Could not parse broken.ts.*refusing/);
+  });
+
+  it.each([
+    `import { Cossack, Server as Remote } from '@cossackframework/core'; export class SecretPage extends Cossack { @Remote() secret = () => 'DO_NOT_SHIP'; }`,
+    `export class SecretPage extends ImportedBase { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+    `import { Cossack as Base } from '@cossackframework/core'; export class SecretPage extends Base { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+    `import * as Core from '@cossackframework/core'; export class SecretPage extends Core.Cossack { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+    `@Page() export class SecretPage extends ImportedBase { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+    `class Base extends Cossack {} export class SecretPage extends Base { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+    `export class SecretPage extends\n Cossack { @Server() secret() { return 'DO_NOT_SHIP'; } }`,
+  ])('strips secrets regardless of aliases and formatting: %s', (code) => {
+    const plugin = cossackSecurityPlugin();
+    const result = (plugin.transform as Function).call({ environment: { name: 'client' } }, code, '/src/page.ts?import');
+    expect(result.code).not.toContain('DO_NOT_SHIP');
+    expect(result.code).toContain('secret');
+  });
+
 });
 
 // ---------------------------------------------------------------------------

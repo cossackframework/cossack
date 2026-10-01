@@ -1269,7 +1269,8 @@ export async function handleOAuthUser(
     ? await User.findOne({ where: { id: account.userId } })
     : null;
   if (!user && oauthUser.email) {
-    user = await User.findOne({ where: { email: oauthUser.email } });
+    const existing = await User.findOne({ where: { email: oauthUser.email } });
+    if (existing) throw new ClientVisibleError('Sign in to your existing account before linking an OAuth provider.');
   }
   if (!user) {
     const id = uuidv7();

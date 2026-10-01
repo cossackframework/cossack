@@ -20,6 +20,9 @@ export function handleWebSocketProxy(ctx: RouterContext) {
 
         // Convert route path to file path if needed
         const componentPath = ctx.routePathToFilePathMap.get(componentPathQuery) || componentPathQuery;
+        if (!ctx.pages[componentPath] && !ctx.layouts[componentPath]) {
+            return new Response('Component not found', { status: 404 });
+        }
 
         const doBinding = c.env.COSSACK_OBJECT;
         const id = doBinding.idFromString(durableObjectId);
@@ -28,6 +31,9 @@ export function handleWebSocketProxy(ctx: RouterContext) {
 
         request.headers.set('X-Component-Path', componentPath);
         request.headers.set('X-Provider-Name', provider);
+        // These are internal authentication assertions, never client input.
+        request.headers.delete('X-User-ID');
+        request.headers.delete('X-User-Data');
         if (user) {
             request.headers.set('X-User-ID', user.id);
             request.headers.set('X-User-Data', JSON.stringify(user));

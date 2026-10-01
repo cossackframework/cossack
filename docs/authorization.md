@@ -53,6 +53,16 @@ middleware works.
 
 ## Protecting pages
 
+Page and enclosing layout guards run for page requests, HTTP RPC, file uploads,
+SSE subscriptions, and WebSocket upgrades. Service RPC runs the owning layout's
+guards. Global authentication middleware runs first.
+
+Transport guards receive the transport request (`/crpc`, `/upload`, `/sse`, or
+`/ws`). For resource permissions, validate the requested resource inside the
+server method. Public state, method arguments, query values, and scope names
+are client input. A connection guard does not recheck permissions on each
+WebSocket message.
+
 Pass guards to `@Page({ middlewares })`:
 
 ```ts
@@ -255,12 +265,10 @@ const guard = createAuthorizer<User>({
 `createAuth().middleware`) so that `user` is populated before the guard runs:
 
 ```ts
-import { Hono } from 'hono';
-import { createApp } from '@cossackframework/framework';
-import { auth, guard } from './auth';
+// src/bootstrap/middlewares.ts
+import { auth } from '../auth';
 
-const app = createApp({ authMiddleware: auth.middleware });
-// authMiddleware runs on '*' before page middleware → guards see c.get('user').
+export default [auth.middleware];
 ```
 
 ## What this is not

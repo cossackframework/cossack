@@ -14,6 +14,16 @@ type ServiceRuntime = {
 
 const serviceRuntimes = new WeakMap<object, ServiceRuntime>();
 
+const forwardedServerMethods = new WeakMap<object, Map<string, { constructor: Function; method: Function }>>();
+
+/** Return metadata only for an unchanged, framework-installed service forwarder. */
+export function getForwardedServerMethodClass(component: any, action: unknown): Function | undefined {
+    if (typeof action !== 'string') return undefined;
+    const registered = forwardedServerMethods.get(component)?.get(action);
+    return registered && component[action] === registered.method ? registered.constructor : undefined;
+}
+
+
 /**
  * Bootstrap a service instance: set up @State properties as simple
  * getters/setters on the service instance.
@@ -217,6 +227,9 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
                 }
                 return result;
             };
+            let registered = forwardedServerMethods.get(component);
+            if (!registered) forwardedServerMethods.set(component, registered = new Map());
+            registered.set(methodName, { constructor: serviceInstance.constructor, method: component[methodName] });
         }
     }
 }

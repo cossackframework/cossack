@@ -68,3 +68,16 @@ new CossackNodeAdapter({
 ```
 
 You can generate a project pre-configured with this adapter using the `cossack` CLI.
+
+## Static asset boundaries
+
+The Node and Desktop asset servers resolve symlinks before reading a file.
+They reject files outside the configured asset directory, including symlinked
+directory indexes. Keep the asset directory writable only by trusted build and
+deployment processes.
+
+If a trusted reverse proxy terminates HTTPS before a Node server, configure
+`createApp({ allowedOrigins: ['https://your-public-host'] })` for transport
+requests. The default compares Origin against the request URL seen by the
+framework. The proxy must control any forwarded headers used to reconstruct
+that URL.

@@ -124,10 +124,20 @@ export function serveStatic(options: StaticServeOptions) {
                 }
             }
 
+            // Lexical containment does not stop a symlink inside the public
+            // directory from exposing files outside it (including index.html).
+            const [realRoot, realFile] = await Promise.all([
+                fs.promises.realpath(resolvedRoot),
+                fs.promises.realpath(filePath),
+            ]);
+            const relative = path.relative(realRoot, realFile);
+            if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return next();
+            if (!stats.isFile()) return next();
+
             // Read (as a Buffer so binary assets aren't corrupted) and serve
             // with the correct Content-Type. Previously c.html() forced
             // text/html for every asset (CSS, JS, images, fonts).
-            const content = await fs.promises.readFile(filePath);
+            const content = c.req.method === 'HEAD' ? null : await fs.promises.readFile(realFile);
             const contentType = getContentType(filePath);
             const headers = new Headers({ 'Content-Type': contentType });
             const resolvedCacheControl = typeof cacheControl === 'function'
@@ -135,7 +145,7 @@ export function serveStatic(options: StaticServeOptions) {
                 : cacheControl;
             if (resolvedCacheControl) headers.set('Cache-Control', resolvedCacheControl);
 
-            return new Response(new Uint8Array(content), {
+            return new Response(content === null ? null : new Uint8Array(content), {
                 status: 200,
                 headers,
             });

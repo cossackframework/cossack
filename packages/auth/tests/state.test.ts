@@ -111,3 +111,9 @@ describe('signCookieValue / verifyCookieValue', () => {
         expect(await verifyCookieValue(token, secret)).toBeNull();
     });
 });
+
+// Cookie Max-Age is browser policy, not server-side expiration enforcement.
+it('rejects a correctly signed but expired OAuth state cookie', async () => {
+    const token = await signCookieValue({ state: 'nonce', codeVerifier: 'verifier' }, 'a-strong-secret-for-state', -1);
+    expect(await verifyCookieValue(token, 'a-strong-secret-for-state')).toBeNull();
+});

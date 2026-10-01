@@ -208,3 +208,14 @@ export class Dashboard extends Cossack {
     }
 }
 ```
+
+## Generated token boundaries
+
+The auth recipe stores login sessions and password-reset tokens in one table.
+It accepts only rows with `meta.type === 'auth'` for login, and only
+`meta.type === 'password_reset'` for password reset. A reset consumes the token
+once and revokes the user's existing sessions.
+
+Applications generated before this security update must port these checks from
+`packages/scaffold/template/src/auth.ts`. Updating the framework dependency alone
+does not change an application's generated auth module.

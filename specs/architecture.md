@@ -243,3 +243,18 @@ cd packages/framework && pnpm exec playwright test e2e/pages/nested-state.spec.t
 ```
 
 Note: Each nested component instance maintains its own isolated state on the server, enabling true component isolation in stateful applications.
+
+## Transport security boundaries
+
+Page and enclosing layout middleware also run before transport handlers create
+components. Layout-service RPC uses the owning layout guard stack. HTTP RPC and
+uploads require an allowed Origin header. SSE scopes are recomputed on the
+server for subscriptions and actions, including custom scopes.
+
+Durable Object proxy requests replace client-supplied identity headers with the
+trusted authentication context. WebSocket actions expose the caller's identity
+through `this.user` and `this.c.get('user')` for the duration of the serialized
+action. Applications still check resource permissions inside server actions.
+
+Client code stripping fails on parse errors. Base aliases, local inheritance,
+and component/service decorators participate in class discovery.

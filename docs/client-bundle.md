@@ -187,3 +187,18 @@ preserved.
 
 Matches inside string literals, comments, and template literals (e.g. a
 `<pre>` code sample that quotes the function) are not touched.
+
+## Build failures and class discovery
+
+Class discovery supports imported base-class aliases, namespace imports, local
+inheritance, and `@Page`, `@Component`, or `@Service` classes. Classes with explicit
+`@Server` members also receive the security transform. Formatting and Vite query
+suffixes do not disable the transform.
+
+If the parser cannot analyze a client module, the build fails. It does not emit
+the unchanged source. `@Server` accessors and dynamic computed names are rejected.
+Use a method or function field with a static name for server code.
+
+Keep secrets out of constructors, ordinary field initializers, accessors, and
+client-safe methods. Those parts still run in the browser. For a subclass of an
+imported custom base, use a component decorator or explicit `@Server` methods.

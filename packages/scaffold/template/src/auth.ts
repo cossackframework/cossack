@@ -187,7 +187,7 @@ export const auth = createAuth<PublicUser>({
       const row = await Session.findOne({
         where: { id: sessionId, expiresAt: MoreThan(new Date()) },
       });
-      return row?.userId ?? null;
+      return row && parseMeta(row.meta)?.type === 'auth' ? row.userId : null;
     } catch (error) {
       warnAboutSessionDatabase(error);
       return null;
@@ -285,9 +285,9 @@ async function consumePasswordResetToken(token: string): Promise<string | null> 
   const row = await Session.findOne({
     where: { id: token, expiresAt: MoreThan(new Date()) },
   });
-  if (!row) return null;
-  await Session.delete({ id: token });
-  return row.userId;
+  if (!row || parseMeta(row.meta)?.type !== 'password_reset') return null;
+  const deleted = await Session.delete({ id: token, expiresAt: MoreThan(new Date()) });
+  return deleted.meta.rowsAffected === 1 ? row.userId : null;
 }
 
 /**
@@ -312,6 +312,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   if (!userId) return false;
   const passwordHash = await hashPassword(newPassword);
   await User.update({ id: userId }, { passwordHash });
+  await Session.delete({ userId });
   return true;
 }
 

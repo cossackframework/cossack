@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import electron from 'electron';
 import type {
@@ -339,13 +339,16 @@ async function assetResponse(assetsRoot: string, request: Request): Promise<Resp
   if (!pathname) return undefined;
   const filePath = containedAssetPath(assetsRoot, pathname);
   try {
-    const info = await stat(filePath);
+    const [realRoot, realFile] = await Promise.all([realpath(assetsRoot), realpath(filePath)]);
+    const relative = path.relative(realRoot, realFile);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return undefined;
+    const info = await stat(realFile);
     if (!info.isFile()) return undefined;
     const headers = new Headers({
       'content-type': mimeTypes[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream',
       'content-length': String(info.size),
     });
-    return new Response(request.method === 'HEAD' ? null : await readFile(filePath), { headers });
+    return new Response(request.method === 'HEAD' ? null : await readFile(realFile), { headers });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
         (error as NodeJS.ErrnoException).code === 'ENOTDIR') return undefined;
@@ -357,7 +360,12 @@ function toFrameworkRequest(request: Request): Request {
   const desktopUrl = new URL(request.url);
   const url = new URL(`${desktopUrl.pathname}${desktopUrl.search}`, 'https://app');
   url.searchParams.delete('__cossack_window');
-  return new Request(url, request);
+  const mapped = new Request(url, request);
+  // The protocol handler validates the private authority before this rewrite.
+  if (request.headers.get('origin') === protocolOrigin) {
+    mapped.headers.set('origin', url.origin);
+  }
+  return mapped;
 }
 
 function isDesktopAppUrl(url: URL): boolean {
@@ -493,6 +501,8 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
     try {
       url = new URL(request.url);
       if (!isDesktopAppUrl(url)) return new Response('Forbidden Desktop authority', { status: 403 });
+      const origin = request.headers.get('origin');
+      if (origin && origin !== protocolOrigin) return new Response('Forbidden Desktop origin', { status: 403 });
       normalizePathname(url.pathname);
       const referringUrl = request.headers.get('referer');
       scopeUrl = new URL(referringUrl || request.url);

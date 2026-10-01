@@ -141,6 +141,7 @@ test.describe('DI Demo Page', () => {
       return { ownerRouteId: layout.componentRouteId, slot: '0' };
     });
     const forged = await request.post('/crpc', {
+      headers: { origin: new URL(page.url()).origin },
       data: {
         service: target,
         action: 'formatCount',
@@ -149,6 +150,7 @@ test.describe('DI Demo Page', () => {
       },
     });
     expect(forged.status()).toBe(403);
+    expect((await forged.json()).error).toContain('not a callable service method');
 
     await page.click('a:has-text("Open another page")');
     await page.click('button:has-text("Service redirect home")');

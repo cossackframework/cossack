@@ -76,7 +76,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     })) return false;
 
     // Only process TypeScript files in user code
-    return id.endsWith('.ts') || id.endsWith('.mts');
+    const cleanId = id.split(/[?#]/)[0];
+    return cleanId.endsWith('.ts') || cleanId.endsWith('.mts');
   }
 
   return {
@@ -156,7 +157,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         // load() would erase the component before the AST security pass.
         try {
           const source = readFileSync(cleanId, 'utf8');
-          if (/extends\s+(?:Cossack|CossackElement)\b/.test(source)) return;
+          const program = parseProgram(source);
+          if (program && frameworkClasses(program).size > 0) return;
         } catch { /* generate the conservative stub below */ }
         return generateServerOnlyStub(cleanId, moduleLabelFromId(cleanId));
       }
@@ -174,9 +176,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (code.includes('server$')) code = transformServerResources(code, id);
 
       // Check if this file contains a Cossack class or a @Service decorated class
-      if (!code.includes('extends Cossack') && !code.includes('extends CossackElement') && !code.includes('@Service')) {
-        return { code, map: null };
-      }
+      // Class discovery is AST-based: whitespace, aliases and decorated
+      // subclasses must not bypass the server/client boundary.
 
       // Undecorated methods are server-only by default. When one is exposed in
       // a render event slot (for example `@click=${this.increment}`), register
@@ -305,7 +306,7 @@ export function transformServerResources(code: string, id: string): string {
   const replacements: MacroReplacement[] = [];
   let hasGeneratedResources = false;
   for (const cls of findClasses(program)) {
-    if (superclassName(cls) !== 'Cossack' && superclassName(cls) !== 'CossackElement') continue;
+    if (!frameworkClasses(program).has(cls)) continue;
     const className = cls.id?.name ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
@@ -783,6 +784,47 @@ function* findClasses(program: any): Generator<any> {
   }
 }
 
+/** Resolve component aliases and local inheritance before selecting classes. */
+function frameworkClasses(program: any): Set<any> {
+  const bases = new Set(['Cossack', 'CossackElement']);
+  const decorators = new Set(['Page', 'Component', 'Service']);
+  const serverDecorators = new Set(['Server']);
+  const namespaces = new Set<string>();
+  for (const node of program.body ?? []) {
+    if (node.type !== 'ImportDeclaration' || !String(node.source?.value).startsWith('@cossackframework/')) continue;
+    for (const specifier of node.specifiers ?? []) {
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+      const imported = specifier.imported?.name;
+      if (bases.has(imported)) bases.add(specifier.local.name);
+      if (decorators.has(imported)) decorators.add(specifier.local.name);
+      if (serverDecorators.has(imported)) serverDecorators.add(specifier.local.name);
+    }
+  }
+  const matches = (node: any, names: Set<string>) =>
+    node?.type === 'Identifier' ? names.has(node.name) :
+    node?.type === 'MemberExpression' && !node.computed &&
+      namespaces.has(node.object?.name) && names.has(node.property?.name);
+  const selected = new Set<any>();
+  const classes = [...findClasses(program)];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const cls of classes) {
+      if (selected.has(cls)) continue;
+      const decorated = (cls.decorators ?? []).some((d: any) =>
+        matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
+      const serverMember = (cls.body?.body ?? []).some((member: any) =>
+        (member.decorators ?? []).some((d: any) => matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, serverDecorators)));
+      if (matches(cls.superClass, bases) || decorated || serverMember) {
+        selected.add(cls);
+        if (cls.id?.name) bases.add(cls.id.name);
+        changed = true;
+      }
+    }
+  }
+  return selected;
+}
+
 /** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
 function superclassName(cls: any): string | null {
   const sc = cls?.superClass;
@@ -838,9 +880,23 @@ interface AstMethod {
  * like `render()`, and the transitive-preservation pass only sees parenthesised
  * calls, so stripping them would break client rendering.
  */
-function collectAstMethods(cls: any, code: string): AstMethod[] {
+function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   const methods: AstMethod[] = [];
+  const aliases = new Map<string, string>();
+  for (const statement of program.body ?? []) {
+    if (statement.type !== 'ImportDeclaration' || !String(statement.source?.value).startsWith('@cossackframework/')) continue;
+    for (const specifier of statement.specifiers ?? []) {
+      if (specifier.imported?.name) aliases.set(specifier.local.name, specifier.imported.name);
+    }
+  }
+  const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) =>
+    sourceSlice(code, d).replace(/^@([\w$]+)/, (_match: string, name: string) => `@${aliases.get(name) ?? name}`));
   for (const member of cls?.body?.body ?? []) {
+    const decorators = decoratorSources(member);
+    const serverOnly = decorators.some((d) => /@(?:Server|__CossackServerResource)\b/.test(d));
+    if (serverOnly && ((member.computed && member.key?.type !== 'Literal') || member.kind === 'get' || member.kind === 'set')) {
+      throw new Error('[Cossack Security] @Server requires a method or function field with a static name.');
+    }
     if (member.type === 'MethodDefinition') {
       // Skip accessors (preserved by policy — see comment above).
       if (member.kind === 'get' || member.kind === 'set') continue;
@@ -853,7 +909,6 @@ function collectAstMethods(cls: any, code: string): AstMethod[] {
       const fn = member.value; // FunctionExpression / ArrowFunctionExpression
       const body = fn?.body;
       if (!body || body.type !== 'BlockStatement') continue;
-      const decorators = (member.decorators ?? []).map((d: any) => sourceSlice(code, d));
       methods.push({
         name,
         decorators,
@@ -873,7 +928,6 @@ function collectAstMethods(cls: any, code: string): AstMethod[] {
       const body = value.body;
       // Arrow concise-body has no block; treat the whole value as the span to
       // replace (fieldValueStart..value.end).
-      const decorators = (member.decorators ?? []).map((d: any) => sourceSlice(code, d));
       methods.push({
         name,
         decorators,
@@ -1284,11 +1338,9 @@ export function injectAutomaticServerMethodMetadata(
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
 
   for (const cls of findClasses(program)) {
-    const isCossackSubclass = superclassName(cls) === 'Cossack' || superclassName(cls) === 'CossackElement';
-    const hasServiceDecorator = (cls.decorators ?? []).some((d: any) => /@Service\b/.test(sourceSlice(code, d)));
-    if (!isCossackSubclass && !hasServiceDecorator) continue;
+    if (!frameworkClasses(program).has(cls)) continue;
 
-    const methods = collectAstMethods(cls, code);
+    const methods = collectAstMethods(cls, code, program);
     const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
     const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
     if (automaticRpc.size === 0) continue;
@@ -1329,16 +1381,7 @@ export function transformCossackClass(
 
   const program = parseProgram(code);
   if (!program) {
-    // Fail-open on parse errors (we can't strip what we can't parse), but warn
-    // loudly so a parse failure never silently ships server-only code in the
-    // client bundle. This is a security plugin — silent skip is the wrong default.
-    console.warn(
-      `[Cossack Security] Could not parse ${id} with Oxc; server-only code ` +
-        `stripping was SKIPPED for this file. If it contains @Server methods, ` +
-        `their bodies may leak into the client bundle. Check the syntax or ` +
-        `report a parser bug.`
-    );
-    return code;
+    throw new Error(`[Cossack Security] Could not parse ${id}; refusing to emit unstripped client code.`);
   }
 
   // Collect, per class, the splices to apply. We record replacements as
@@ -1347,13 +1390,11 @@ export function transformCossackClass(
   const replacements: Replacement[] = [];
 
   for (const cls of findClasses(program)) {
-    const isCossackSubclass = superclassName(cls) === 'Cossack' || superclassName(cls) === 'CossackElement';
-    const hasServiceDecorator = (cls.decorators ?? []).some((d: any) => /@Service\b/.test(sourceSlice(code, d)));
-    if (!isCossackSubclass && !hasServiceDecorator) continue;
+    if (!frameworkClasses(program).has(cls)) continue;
 
     const className = cls.id?.name ?? 'Anonymous';
 
-    const methods = collectAstMethods(cls, code);
+    const methods = collectAstMethods(cls, code, program);
     const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
     const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
     const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved, automaticRpc);

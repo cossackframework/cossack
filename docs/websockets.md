@@ -328,3 +328,19 @@ export class MyPageComponent extends Cossack {
 ```
 
 Now, `notificationCount` can be accessed and modified consistently from any page that registers and uses the `session` provider.
+
+## Authentication on shared connections
+
+The upgrade request runs the page and layout guards and requires an allowed
+Origin. The Durable Object proxy discards client-supplied identity headers.
+It forwards only the user from the authentication middleware.
+
+Each serialized action exposes its caller through `this.user` and
+`this.c.get('user')`, including an undefined user for a guest. Check resource
+permissions in each server method. Revoke or disconnect existing connections
+when your application changes permissions or ends a session.
+
+WebSocket actions no longer append the user as a positional argument. Use
+`this.user` or `this.c.get('user')` for trusted identity. Treat every method
+argument as client input. A longer payload can displace a positional user
+argument, so that pattern cannot provide authentication.

@@ -178,6 +178,7 @@ export function createDatabaseCacheStore(
 
 export interface DatabaseSessionStore {
   create(ttlMs?: number): Promise<string>;
+  has(sessionId: string): Promise<boolean>;
   load(sessionId: string): Promise<Record<string, unknown>>;
   get<T = unknown>(sessionId: string, key: string): Promise<T | undefined>;
   getAll(sessionId: string): Promise<Record<string, unknown>>;
@@ -219,6 +220,16 @@ export function createDatabaseSessionStore(
       `, "insert");
       return id;
     },
+    async has(sessionId: string): Promise<boolean> {
+      const scoped = getORM();
+      const result = await scoped.executeFragment(scoped.sql.fragment`
+        SELECT ${scoped.sql.id("id")} FROM ${scoped.sql.id(table)}
+        WHERE ${scoped.sql.id("id")} = ${sessionId}
+          AND ${scoped.sql.id("expires_at")} > ${new Date().toISOString()}
+        LIMIT 1
+      `, "select");
+      return result.rows.length > 0;
+    },
     async load(sessionId: string): Promise<Record<string, unknown>> {
       const scoped = getORM();
       const result = await scoped.executeFragment<Record<string, unknown>>(scoped.sql.fragment`
@@ -250,24 +261,14 @@ export function createDatabaseSessionStore(
       data[key] = value;
       const json = JSON.stringify(data);
       const expiresAt = expiryISO(ttlMs);
-      const fragment = scoped.driver.dialect === "mysql"
-        ? scoped.sql.fragment`
-          INSERT INTO ${scoped.sql.id(table)}
-            (${scoped.sql.id("id")}, ${scoped.sql.id("user_id")}, ${scoped.sql.id("data")}, ${scoped.sql.id("expires_at")})
-          VALUES (${sessionId}, ${null}, ${json}, ${expiresAt})
-          ON DUPLICATE KEY UPDATE
-            ${scoped.sql.id("data")} = VALUES(${scoped.sql.id("data")}),
-            ${scoped.sql.id("expires_at")} = VALUES(${scoped.sql.id("expires_at")})
-        `
-        : scoped.sql.fragment`
-          INSERT INTO ${scoped.sql.id(table)}
-            (${scoped.sql.id("id")}, ${scoped.sql.id("user_id")}, ${scoped.sql.id("data")}, ${scoped.sql.id("expires_at")})
-          VALUES (${sessionId}, ${null}, ${json}, ${expiresAt})
-          ON CONFLICT (${scoped.sql.id("id")}) DO UPDATE SET
-            ${scoped.sql.id("data")} = excluded.${scoped.sql.id("data")},
-            ${scoped.sql.id("expires_at")} = excluded.${scoped.sql.id("expires_at")}
-        `;
-      await scoped.executeFragment(fragment, "insert");
+      // Update only a live, server-issued row. Upserts would resurrect expired
+      // authenticated sessions and let request cookies choose new session IDs.
+      await scoped.executeFragment(scoped.sql.fragment`
+        UPDATE ${scoped.sql.id(table)}
+        SET ${scoped.sql.id("data")} = ${json}, ${scoped.sql.id("expires_at")} = ${expiresAt}
+        WHERE ${scoped.sql.id("id")} = ${sessionId}
+          AND ${scoped.sql.id("expires_at")} > ${new Date().toISOString()}
+      `, "update");
     },
     async unset(sessionId: string, key: string): Promise<void> {
       const scoped = getORM();

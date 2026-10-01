@@ -18,9 +18,15 @@ allowBuilds:
 overrides:
   '@electron/rebuild': ^4.2.0
   'happy-dom@<20.8.9': 20.11.1
-  'nanoid@<3.3.17': 3.3.17
+  'nanoid@<3.3.18': 3.3.18
   'tmp@<0.2.6': 0.2.7
-  'undici@>=7.0.0 <7.29.0': 7.29.0
+  'undici@>=7.0.0 <7.29.1': 7.29.1
+  'undici@>=6.0.0 <6.28.1': 6.28.1
+  '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
+  'fast-uri@>=3.0.0 <3.1.8': 3.1.8
+  'sharp@>=0.35.0 <0.35.4': 0.35.4
+  'brace-expansion@>=1.0.0 <1.1.21': 1.1.21
+  'brace-expansion@>=2.0.0 <2.1.7': 2.1.7
 
 minimumReleaseAgeExclude:
-  - electron@43.3.0
+  - electron@43.5.0

@@ -247,3 +247,18 @@ The SSE connection uses the following event types:
 - **Per-scope state**: The SSE store is keyed by `componentRouteId:scopeKey`. Default scope is per-user. Use `scope` to customize (per-team, per-room, shared, etc.).
 - **Cold starts**: If the SSE endpoint receives a connection before SSR has registered the store entry (e.g., direct navigation), it creates a component instance on demand with `skipInit: true`.
 - **Not for Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication, persistent state, or multi-user coordination beyond simple broadcast.
+
+## Scope access
+
+The server recomputes the scope for every subscription and SSE RPC request.
+This includes custom `scope(c)` functions. A browser-supplied scope key cannot
+authorize access to another user's stream. The client forwards page query values
+and route params so the same scope function can run again.
+
+Check membership inside custom scope functions that accept room or tenant IDs.
+These IDs remain client input. The default anonymous scope is shared by guests.
+Use a validated session-based scope for private guest data.
+
+HTTP RPC and upload requests require an allowed `Origin` header. The default is
+the request's own origin. Set `createApp({ allowedOrigins: [...] })` for explicit
+additional origins. Non-browser callers must send a matching header too.

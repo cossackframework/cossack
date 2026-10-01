@@ -56,6 +56,24 @@ describe('serveStatic', () => {
         expect(manifest.headers.get('content-type')).toBe('application/manifest+json');
     });
 
+    it('blocks symlink files, directories, and indexes that escape the public root', async () => {
+        const root = fixture();
+        const outside = fixture();
+        fs.writeFileSync(path.join(outside, 'secret.txt'), 'private credential');
+        fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'leak.txt'));
+        fs.symlinkSync(outside, path.join(root, 'escape'), 'dir');
+        fs.mkdirSync(path.join(root, 'index-leak'));
+        fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'index-leak', 'index.html'));
+        fs.symlinkSync(path.join(root, 'logo.svg'), path.join(root, 'safe.svg'));
+        const app = new Hono();
+        app.use('*', serveStatic({ root }));
+        for (const url of ['/leak.txt', '/escape/secret.txt', '/escape/', '/index-leak/']) {
+            expect((await app.request(url)).status).toBe(404);
+        }
+        expect((await app.request('/safe.svg')).status).toBe(200);
+        expect(await (await app.request('/logo.svg', { method: 'HEAD' })).text()).toBe('');
+    });
+
     it('does not replace the framework root route when directory indexes are disabled', async () => {
         const app = new Hono();
         app.use('*', serveStatic({ root: fixture(), index: false }));

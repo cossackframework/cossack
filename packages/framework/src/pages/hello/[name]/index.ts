@@ -46,15 +46,15 @@ export class Greeting extends Cossack {
     }
 
     @Server({ channel: 'feeds' })
-    private incrementFeed = async (user: any) => {
+    private incrementFeed = async () => {
         this.feedCount++;
-        console.log(`User ${user.id} incremented feeds to ${this.feedCount}`);
+        console.log(`User ${this.user?.id ?? 'anonymous'} incremented feeds to ${this.feedCount}`);
     };
 
     @Server({ channel: 'notifications' })
-    private incrementNotifications = async (user: any) => {
+    private incrementNotifications = async () => {
         this.notificationCount++;
-        console.log(`User ${user.id} incremented notifications to ${this.notificationCount}`);
+        console.log(`User ${this.user?.id ?? 'anonymous'} incremented notifications to ${this.notificationCount}`);
     };
 
     render() {

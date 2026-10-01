@@ -27,7 +27,7 @@
     "@cossackframework/node-adapter": "workspace:*",
     "@hono/node-server": "^2.0.5",
     "@tailwindcss/vite": "^4.3.3",
-    "hono": "^4.12.34",
+    "hono": "^4.13.7",
     "tailwindcss": "^4.3.3",
     "vite": "^8.1.4",
     "ws": "^8.18.0"
@@ -40,7 +40,7 @@
     "@electron-forge/shared-types": "^7.11.2",
     "@types/node": "^22.19.0",
     "@types/ws": "^8.18.0",
-    "electron": "^43.3.0",
+    "electron": "^43.5.0",
     "typescript": "^7.0.2"
   }
 }
