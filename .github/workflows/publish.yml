@@ -3,9 +3,12 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  # Retry publication from master without moving an existing release tag.
+  workflow_dispatch:
 
 jobs:
   publish:
+    if: github.event_name == 'release' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,7 +25,6 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -50,68 +52,47 @@ jobs:
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local
 
+      # pnpm 11 supports npm trusted publishing through GitHub OIDC.
+      # Configure publish.yml as a trusted publisher for each package on npm.
+      # Do not inject NPM_TOKEN: publishing must use the workflow identity.
       - name: Publish @cossackframework/renderer
         run: pnpm publish --filter @cossackframework/renderer --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/core
         run: pnpm publish --filter @cossackframework/core --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/node-adapter
         run: pnpm publish --filter @cossackframework/node-adapter --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/auth
         run: pnpm publish --filter @cossackframework/auth --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # framework depends on the UI workspace package, so publish UI first.
       - name: Publish @cossackframework/ui
         run: pnpm publish --filter @cossackframework/ui --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/framework
         run: pnpm publish --filter @cossackframework/framework --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/deno-adapter
         run: pnpm publish --filter @cossackframework/deno-adapter --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/desktop
         run: pnpm publish --filter @cossackframework/desktop --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/database
         run: pnpm publish --filter @cossackframework/database --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Studio ships a prebuilt Cossack app and depends on the database
       # workspace package, UI, and framework.
       - name: Publish @cossackframework/studio
         run: pnpm publish --filter @cossackframework/studio --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @cossackframework/scaffold
         run: pnpm publish --filter @cossackframework/scaffold --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # cossack must publish LAST: it depends on @cossackframework/framework and
       # @cossackframework/scaffold, both of which are published above. It is plain JS
       # (no build step) — ships bin/ and src/ directly.
       - name: Publish cossack
         run: pnpm publish --filter cossack --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
