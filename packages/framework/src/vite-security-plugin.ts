@@ -229,15 +229,28 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
   const program = parseProgram(code);
   if (!program) throw new Error(`[Cossack Security] Could not validate server-only imports in ${id}.`);
 
-  const candidates: Array<{ node: any; source: string; bindings: string[] }> = [];
+  const candidates: Array<{ node: any; source: string; bindings: string[]; replacement: string }> = [];
   for (const statement of program.body ?? []) {
     if (statement.type !== 'ImportDeclaration') continue;
     const source = String(statement.source?.value ?? '');
     if (!isServerOnlyImportSource(source)) continue;
+    // Page decorators evaluate guard.requireRole()/requirePermission() in both
+    // environments. This pure factory is client-safe; auth/session operations
+    // and namespace imports must still pass the server-only reference check.
+    const safeSpecifiers = (statement.specifiers ?? []).filter((specifier: any) =>
+      source === '@cossackframework/auth' &&
+      specifier.type === 'ImportSpecifier' &&
+      (specifier.imported?.name ?? specifier.imported?.value) === 'createAuthorizer',
+    );
     candidates.push({
       node: statement,
       source,
-      bindings: (statement.specifiers ?? []).map((specifier: any) => specifier.local?.name).filter(Boolean),
+      bindings: (statement.specifiers ?? [])
+        .filter((specifier: any) => !safeSpecifiers.includes(specifier))
+        .map((specifier: any) => specifier.local?.name).filter(Boolean),
+      replacement: safeSpecifiers.length
+        ? `import { ${safeSpecifiers.map((specifier: any) => code.slice(specifier.start, specifier.end)).join(', ')} } from ${JSON.stringify(source)};`
+        : '',
     });
   }
   if (!candidates.length) return code;
@@ -272,7 +285,7 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
 
   let result = code;
   for (const candidate of [...candidates].sort((a, b) => b.node.start - a.node.start)) {
-    result = result.slice(0, candidate.node.start) + result.slice(candidate.node.end);
+    result = result.slice(0, candidate.node.start) + candidate.replacement + result.slice(candidate.node.end);
   }
   return result;
 }

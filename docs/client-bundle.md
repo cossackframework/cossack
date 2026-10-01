@@ -190,6 +190,12 @@ Matches inside string literals, comments, and template literals (e.g. a
 
 ## Build failures and class discovery
 
+The plugin removes unused server-only imports after stripping method bodies.
+If client code still uses a server-only import, the build fails. The named
+`createAuthorizer` import from `@cossackframework/auth` is allowed: page
+decorators and conditional UI use its role and permission helpers in both
+environments. Keep authentication and session operations in server methods.
+
 Class discovery supports imported base-class aliases, namespace imports, local
 inheritance, and `@Page`, `@Component`, or `@Service` classes. Classes with explicit
 `@Server` members also receive the security transform. Formatting and Vite query

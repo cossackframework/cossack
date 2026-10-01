@@ -65,6 +65,25 @@ describe('ORM and session server-only imports', () => {
       export const leaked = sql;
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
+
+  it('preserves authorization factories used by page decorators while stripping auth operations', () => {
+    const source = `
+      import { createAuthorizer as authorize, createAuth } from '@cossackframework/auth';
+      export const guard = authorize({ hasRole: () => true });
+    `;
+    const plugin = cossackSecurityPlugin();
+    const result = (plugin.transform as Function).call({ environment: { name: 'client' } }, source, '/src/services/rbac.ts');
+    expect(result.code).toContain('createAuthorizer as authorize');
+    expect(result.code).toContain('guard = authorize(');
+    expect(result.code).not.toMatch(/\bcreateAuth\b/);
+  });
+
+  it.each([
+    `import { createAuthorizer, createAuth } from '@cossackframework/auth'; export const leaked = createAuth;`,
+    `import * as auth from '@cossackframework/auth'; export const leaked = auth.createAuth;`,
+  ])('still rejects auth operations referenced by client code', (source) => {
+    expect(() => stripClientServerOnlyImports(source, '/src/leak.ts')).toThrow(/server-only import/);
+  });
 });
 
 describe('client-only modules', () => {
