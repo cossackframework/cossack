@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; serialization failures now name the offending value path (`describeUnsupportedValue`, pre-dispatch rejection so silently-dropped functions become errors); still open: compiler-level client typing of yielded/final results.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; serialization failures name the offending value path (`describeUnsupportedValue`, pre-dispatch rejection so silently-dropped functions become errors); the client transform rewrites @Server signatures to `RpcCall<R, Y>` for precise yielded/final result typing; remaining: upload walker normalization audit (Maps/Sets at the HTTP upload boundary) and Response cookie/flash coordination with RT-11.
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
@@ -88,6 +88,16 @@ not replace the final monorepo and runtime release gates.
 
 
 <a id="codex-review-2026-10-02"></a>
+### GLM continuation: compiler typing of RPC results (2026-10-02)
+
+Review item 3 (typing): the vite-security-plugin client transform rewrites
+stripped `@Server` method signatures to the call contract —
+`AsyncGenerator<Y, R>` → `RpcCall<R, Y>`, one-arg generators and
+`AsyncIterableIterator<Y>` → `RpcCall<any, Y>`, `Promise<R>` →
+`RpcCall<R, never>` — with a type-only RpcCall import injected on first
+rewrite. Unrecognized/missing annotations keep declared types. Tests cover
+all mappings plus untouched cases; framework 550 and core 647 tests green.
+
 ### GLM continuation after review: command contract + AST inspection (2026-10-02)
 
 Completed review items 1 and 2:
