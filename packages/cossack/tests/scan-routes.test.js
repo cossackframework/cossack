@@ -244,6 +244,8 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     const page = (await buildEffectiveRouteModel(tmp)).pages[0];
     expect(page.inheritance).toEqual({ status: 'resolved', bases: ['Parent', 'Base'] });
     expect(page.inheritedDeclarations.map(d => d.className)).toEqual(['Parent', 'Base']);
+    expect(page.inheritedDeclarations[1].members).toContainEqual({ name: 'load', kind: 'method', static: false, private: false });
+    expect(page.members).toContainEqual({ name: 'render', kind: 'method', static: false, private: false });
     expect(page.inheritedDeclarations[1].methods[0]).toMatchObject({ name: 'load', rpc: 'explicit', source: { file: '/src/shared/base.ts' } });
   });
 

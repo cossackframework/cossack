@@ -263,6 +263,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
       serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
       clientMethods: methods.methods?.filter(entry => entry.kind === 'client') ?? [],
       strippedMethods: methods.methods?.filter(entry => entry.kind === 'stripped') ?? [],
+      members: methods.members ?? [],
       inheritance: methods.inheritance ?? { status: 'unresolved', bases: [] },
       inheritedDeclarations: methods.inheritedDeclarations ?? [],
       methodExtraction: { method: methods.method ?? 'unknown', reason: methods.reason ?? null },

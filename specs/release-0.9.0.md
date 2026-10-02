@@ -86,6 +86,29 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-member-facts-2026-10-02"></a>
+### Codex continuation: compiler member facts for dispatch (2026-10-02)
+
+**Author: Codex.** Added compiler member inventory to own and inherited route
+metadata. Members distinguish ordinary methods, fields, getters, setters,
+static members, private names, and unknown computed names. The inventory uses
+expanded compiler classes: a `server$` field becomes a getter rather than being
+misrepresented as an instance field. Imported base declarations retain their
+member inventory through source resolution.
+
+This is necessary input to effective dispatch resolution. A base instance field
+can shadow a child prototype method; choosing the nearest method name alone is
+incorrect. No effective runtime dispatch claim is made yet. GLM should use these
+facts to resolve field/prototype precedence, getter/setter behavior, overrides,
+and unknown computed members, with runtime fixtures verifying the results.
+Constructor or runtime mutation effects must remain explicitly outside any
+unproven static result.
+
+Verification: compiler suite **149 passed**, route suites **40 passed**,
+framework declaration generation, root TypeScript, and all **11 package type
+checks passed**. **11/58 tasks remain checked; CLI-04 remains open.** Binding-aware
+capabilities and the complete inspection acceptance fixture also remain open.
+
 <a id="codex-inspection-integration-2026-10-02"></a>
 ### Codex verification: inspection integration checkpoint (2026-10-02)
 

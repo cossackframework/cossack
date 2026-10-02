@@ -171,9 +171,10 @@ export async function extractMethodClassificationsFromAst(code, file = 'page.ts'
   return {
     method: 'compiler',
     inheritance: facts.inheritance,
+    members: facts.members,
     inheritedDeclarations: facts.inheritance.bases.flatMap(name => {
       const base = result.classes.find(cls => cls.name === name);
-      return base ? [{ className: name, methods: base.methods.map(fact => ({ ...fact, source: { ...fact.source, file } })) }] : [];
+      return base ? [{ className: name, members: base.members, methods: base.methods.map(fact => ({ ...fact, source: { ...fact.source, file } })) }] : [];
     }),
     methods: facts.methods.map(fact => ({
       ...fact,

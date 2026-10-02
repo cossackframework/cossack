@@ -65,7 +65,7 @@ export async function resolveImportedInheritance(code, compilerId, displayFile, 
     const cls = result.classes.find(c => c.name === local);
     if (!cls) return imported(source, file, local);
     const append = base => {
-      declarations.push({ className: base.name, methods: base.methods.map(m => ({ ...m, source: { ...m.source, file: display(file) } })) });
+      declarations.push({ className: base.name, members: base.members, methods: base.methods.map(m => ({ ...m, source: { ...m.source, file: display(file) } })) });
       names.push(base.name);
     };
     append(cls);

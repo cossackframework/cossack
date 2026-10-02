@@ -2299,6 +2299,28 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it('records fields, accessors, static and private members needed for dispatch resolution', () => {
+    const result = inspectCompilerMethods(`@Page() class Demo {
+      value = 1;
+      handler = () => 2;
+      get display() { return this.value; }
+      set display(value) { this.value = value; }
+      static factory() { return 3; }
+      #hidden() { return 4; }
+      [dynamic]() { return 5; }
+    }`, 'members.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].members).toEqual([
+      { name: 'value', kind: 'field', static: false, private: false },
+      { name: 'handler', kind: 'field', static: false, private: false },
+      { name: 'display', kind: 'get', static: false, private: false },
+      { name: 'display', kind: 'set', static: false, private: false },
+      { name: 'factory', kind: 'method', static: true, private: false },
+      { name: 'hidden', kind: 'method', static: false, private: true },
+      { name: null, kind: 'method', static: false, private: false },
+    ]);
+  });
+
   it('reports local inheritance declarations without flattening runtime dispatch', () => {
     const result = inspectCompilerMethods(`import { Cossack as Base } from '@cossackframework/core';
       class Parent extends Base { @Server() inherited() { return 1; } }
@@ -2324,6 +2346,7 @@ describe('compiler inspection facts', () => {
 }`;
     const result = inspectCompilerMethods(code, 'resource.ts');
     expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].members).toContainEqual({ name: 'data', kind: 'get', static: false, private: false });
     const methods = result.classes[0].methods;
     expect(methods.find(m => m.resource === 'data')).toMatchObject({
       clientBody: 'stripped', rpc: 'explicit', source: { file: 'resource.ts', line: 3, column: 25 },

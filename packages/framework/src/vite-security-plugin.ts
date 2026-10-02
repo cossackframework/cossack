@@ -1220,9 +1220,17 @@ export interface CompilerMethodFact {
   source: { file: string; line: number; column: number };
 }
 
+export interface CompilerMemberFact {
+  name: string | null;
+  kind: 'method' | 'field' | 'get' | 'set';
+  static: boolean;
+  private: boolean;
+}
+
 export interface CompilerClassFacts {
   name: string;
   inheritance: { status: 'resolved' | 'unresolved'; bases: string[] };
+  members: CompilerMemberFact[];
   /** Own declarations; inheritance lists declaring classes without guessing dispatch. */
   methods: CompilerMethodFact[];
 }
@@ -1290,6 +1298,14 @@ export function inspectCompilerMethods(code: string, id: string): {
       classes.push({
         name: className,
         inheritance: inheritanceFor(originalClass),
+        members: (cls.body?.body ?? [])
+          .filter((member: any) => ['MethodDefinition', 'PropertyDefinition'].includes(member.type) && member.kind !== 'constructor')
+          .map((member: any): CompilerMemberFact => ({
+            name: member.computed && member.key?.type !== 'Literal' ? null : memberKeyName(member.key),
+            kind: member.type === 'PropertyDefinition' ? 'field' : member.kind === 'get' ? 'get' : member.kind === 'set' ? 'set' : 'method',
+            static: Boolean(member.static),
+            private: member.key?.type === 'PrivateIdentifier',
+          })),
         methods: methods.map((method) => {
           const kept = preserved.has(method.name);
           const retainedField = Boolean(method.fieldKind && !method.hasServerDecorator);
