@@ -126,7 +126,7 @@ describe('Route inspection and explanation (CLI-04)', () => {
     expect(reasons).toContain('Session, Audit (/src/pages/dashboard/layout.ts)');
     // Method classification: @Server becomes an RPC proxy; @Client stays local.
     expect(reasons).toContain('Server methods (RPC proxies on the client): load');
-    expect(reasons).toContain('execute on the server');
+    expect(reasons).toContain('Explicit server decorator.');
     expect(reasons).toContain('Client/shared methods (no transport): onClick');
   });
 

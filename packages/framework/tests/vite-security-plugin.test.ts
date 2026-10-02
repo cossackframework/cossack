@@ -2308,11 +2308,11 @@ describe('compiler inspection facts', () => {
     `, 'inheritance.ts');
     expect(result.diagnostics).toEqual([]);
     const child = result.classes.find(c => c.name === 'Child');
-    expect(child.inheritance).toEqual({ status: 'resolved', bases: ['Parent'] });
-    expect(child.methods.map(m => m.name)).toEqual(['own']);
-    expect(result.classes.find(c => c.name === 'Parent').methods[0].rpc).toBe('explicit');
-    expect(result.classes.find(c => c.name === 'External').inheritance).toEqual({ status: 'unresolved', bases: ['ImportedBase'] });
-    expect(result.classes.find(c => c.name === 'Dynamic').inheritance.status).toBe('unresolved');
+    expect(child?.inheritance).toEqual({ status: 'resolved', bases: ['Parent'] });
+    expect(child?.methods.map(m => m.name)).toEqual(['own']);
+    expect(result.classes.find(c => c.name === 'Parent')?.methods[0]?.rpc).toBe('explicit');
+    expect(result.classes.find(c => c.name === 'External')?.inheritance).toEqual({ status: 'unresolved', bases: ['ImportedBase'] });
+    expect(result.classes.find(c => c.name === 'Dynamic')?.inheritance.status).toBe('unresolved');
   });
 
   it('maps expanded resource methods and following methods to authored bodies', () => {

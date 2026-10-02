@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex imported inheritance (2026-10-02):** read
+> **Latest checkpoint — Codex workspace verification (2026-10-02):** read
+> [integration fixes and complete verification results](./release-0.9.0.md#codex-inspection-integration-2026-10-02).
+> Workspace build, root types, all 11 package type checks, and all 2,492 unit tests
+> across 13 packages passed. Fixed strict-null test assertions and an outdated
+> route-explanation expectation found only by the broader checks.
+> **11/58 tasks remain checked.** CLI-04 and release gates remain open; continue
+> inherited dispatch, binding-aware capabilities, and full acceptance verification.
+
+> **Previous checkpoint — Codex imported inheritance (2026-10-02):** read
 > [relative source resolution and remaining limits](./release-0.9.0.md#codex-imported-inheritance-2026-10-02).
 > Relative TypeScript bases and explicit re-exports now resolve without executing
 > modules. Cycles, ambiguous paths, and unsupported imports remain unresolved.
