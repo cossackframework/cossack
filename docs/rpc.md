@@ -119,3 +119,30 @@ disconnect, cancellation, and invalid serialization. Do not retry mutations
 automatically after a timeout or disconnect: the server outcome may be unknown.
 Network failures report that uncertainty; the framework never retries the action.
 Cancelling response consumption does not roll back a completed mutation.
+
+Use the error's `code` for application decisions. Internal exception messages
+and stacks stay in server logs, including service RPC in development. Deliberate
+`ClientVisibleError` messages and validation field errors remain visible.
+Correlated server failures carry `requestId`. HTTP/SSE and service failures retain
+the response's request ID on invalid JSON, mid-stream deadlines, and network
+disconnects. Before response headers arrive, the server-generated HTTP request ID
+may be unavailable; local pre-dispatch failures and cancellation also need not
+have one. `status` describes an HTTP failure and is absent on WebSocket failures.
+
+The shared [transport conformance matrix](../packages/framework/tests/rpc-conformance-matrix.test.ts)
+runs the same assertions against HTTP and SSE component actions, explicit service
+actions, and the WebSocket runtime dispatcher. It exercises real server handlers
+with controlled transport faults; generated browser acceptance separately checks
+production builds and navigation.
+
+| Case | Shared expectation |
+| --- | --- |
+| Ordinary return / generator | Ordinary results have no yields; generators keep yields and final results separate. |
+| Repeated await / catch / finally | Completion is shared and never dispatches a second mutation. |
+| Unobserved call | The call drains and releases loading automatically. |
+| Validation / application error | The call rejects with stable codes and server request IDs; private exceptions stay private. |
+| Timeout / disconnect | The call rejects, releases loading, and never retries an uncertain mutation. |
+| Cancel / iterator return | Consumption ends and remote cleanup follows when application I/O yields control. |
+| Second iterator | It rejects without interfering with the first consumer or dispatching again. |
+| Unsupported payload / state / result | The diagnostic names the offending value path; invalid input does not dispatch. |
+| Ownership | HTTP request scopes close with the response; WebSocket component ownership lasts until runtime teardown. |

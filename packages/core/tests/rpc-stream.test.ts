@@ -207,9 +207,9 @@ describe('single-dispatch RPC calls', () => {
         expect(target.loading).toEqual({});
     });
     it('rejects invalid JSON responses and fetch failures with transport codes', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not JSON')));
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not JSON', { headers: { 'X-Cossack-Request-Id': 'invalid-json-request' } })));
         const target = component();
-        await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID' });
+        await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID', requestId: 'invalid-json-request' });
         expect(target.loading).toEqual({});
         vi.mocked(fetch).mockRejectedValueOnce(new TypeError('connection failed'));
         await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_NETWORK_FAILED',

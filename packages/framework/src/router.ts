@@ -829,8 +829,7 @@ export function createApp(options: CreateAppOptions = {}) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
           console.error('[/crpc service] internal error:', { requestId, error: e });
-          const isDev = (import.meta as any).env?.DEV;
-          return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+          return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         // Generator results stream through the same response-local protocol as
         // component calls; the stream owns request-scope cleanup until it ends.

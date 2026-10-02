@@ -360,8 +360,10 @@ export class ServiceScope {
                 }
                 void request.catch(() => {});
                 const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
+                    let requestId: string | undefined;
                     try {
                         const response = await request;
+                        requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
                         if (!response.ok) {
                             let body: any;
                             try { body = await response.json(); } catch { /* preserve HTTP status */ }
@@ -386,7 +388,7 @@ export class ServiceScope {
                             data = await response.json() as Record<string, unknown>;
                             if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a service response object.');
                         } catch (cause) {
-                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid service RPC response.', { cause });
+                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid service RPC response.', { cause, requestId });
                         }
                         if (typeof (data as any)._cossack_redirect === 'string') {
                             window.location.href = (data as any)._cossack_redirect;
@@ -397,12 +399,12 @@ export class ServiceScope {
                     } catch (cause) {
                         if (controller.signal.aborted) {
                             if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
-                                `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause });
-                            throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                                `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause, requestId });
+                            throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause, requestId });
                         }
                         if (cause instanceof RpcError) throw cause;
                         throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
-                            'Service RPC request failed. The server outcome is unknown and is never retried.', { cause });
+                            'Service RPC request failed. The server outcome is unknown and is never retried.', { cause, requestId });
                     } finally {
                         if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
                         scope.setLoading(action, -1);

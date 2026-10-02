@@ -12,7 +12,12 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex response timing checkpoint](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03)
+The latest [Codex shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
+records one matrix for HTTP/SSE components, WebSocket dispatch, and explicit
+service actions, with fixes to private errors, value paths, and known request IDs.
+RT-01 remains open for the supported-value/type audit and Workers/realtime
+response acceptance. The preceding
+[response timing checkpoint](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03)
 records native cookies/redirects, streaming header guards, flash preservation,
 and network uncertainty. RT-01 and RT-11 remain open. The preceding
 [authored RPC checkpoint](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
@@ -441,9 +446,10 @@ helper too. Fixed ordinary HTTP/SSE JSON calls yielding their final result once;
 they now match WebSocket/service completion and `RpcCall<Result, never>`.
 The change is recorded in the [draft migration guide](./migration-0.9.0.md).
 
-Remaining before RT-01 completion: audit/consolidate the transport conformance
-matrix across HTTP, SSE, WebSocket, and explicit service calls, including each
-error, deadline, disconnect, cancellation, duplicate consumer, and cleanup path.
+Remaining before RT-01 completion: finish the supported serialization value/type
+audit and remaining request/response protocol diagnostics. The shared conformance
+matrix now exercises HTTP, SSE, WebSocket, and explicit service calls for errors,
+deadlines, disconnect, cancellation, duplicate consumers, and cleanup.
 Extend native Response/cookie/flash acceptance with RT-11 across the full matrix.
 Typed client inference is now verified; do not restore it as an unfinished item.
 
@@ -459,8 +465,36 @@ both early and late writes. Session rotation/destruction reject before storage
 changes once headers finalize. WebSocket actions reject native HTTP responses;
 serialized trees reject nested Response/Request/Headers with precise paths.
 HTTP/SSE/service/upload network failures explicitly report uncertain completion
-and no automatic retry. The full conformance matrix and supported-value audit
-remain required; this checkpoint does not close RT-01.
+and no automatic retry. The supported-value audit and remaining runtime response
+acceptance are still required; this checkpoint does not close RT-01.
+
+Codex shared matrix checkpoint (2026-10-03):
+`packages/framework/tests/rpc-conformance-matrix.test.ts` runs 19 shared cases
+against four paths (76 tests). HTTP/SSE component and explicit service requests
+execute the real Hono router with published core proxies. The WebSocket pair
+runs the real in-memory runtime/action dispatcher and correlated frame router.
+Controlled disconnects affect transport consumption, not fabricated server
+results. Shared fixtures cover ordinary and generator values/state, repeated
+completion, unobserved draining, catch/finally, validation before mutation, visible
+and private errors, failures after yields, pre-header and mid-stream deadlines,
+cancellation and iterator return, duplicate iterators, unsupported arguments/
+state/results, uncertain disconnects, loading/pending-map cleanup, and request
+versus runtime ownership. Finite application I/O allows teardown to await remote
+completion without implying mutation rollback or arbitrary I/O interruption.
+
+Fixed service RPC exposing private exception stacks in development, WebSocket
+serialization errors losing `payload`/`state` path roots, and HTTP/SSE/service
+errors losing a known response request ID on invalid JSON, stream deadlines,
+or disconnect. HTTP IDs can remain unavailable before response headers arrive;
+local failures need not have server IDs, and HTTP status does not apply to WS.
+
+Next define and verify supported values, including Date/JSON representations,
+undefined/void, non-finite numbers, binary values, and model/custom serialization.
+Check client result/yield types against actual wire values rather than assuming
+the authored native type survives JSON. Extend the existing matrix and semantic
+fixtures; do not recreate another transport suite. Finish Workers/realtime cookie
+and header acceptance with RT-11. Physical upgrades, distributed coordination,
+and complete release runtime gates remain separate evidence requirements.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

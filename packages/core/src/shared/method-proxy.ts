@@ -445,9 +445,11 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             void request.catch(() => {});
             const apply = createStateApplier(component, requestState);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
+                let requestId: string | undefined;
                 try {
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
                     const response = await request;
+                    requestId = response.headers?.get('X-Cossack-Request-Id') ?? undefined;
                     if (!response.ok) {
                         let body: any;
                         try { body = await response.json(); } catch { /* preserve HTTP status */ }
@@ -472,7 +474,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             data = await response.json() as Record<string, unknown>;
                             if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a state object.');
                         } catch (cause) {
-                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid RPC response.', { cause });
+                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid RPC response.', { cause, requestId });
                         }
                         invalidateClientPageCache();
                         if (typeof data._cossack_redirect === 'string') {
@@ -487,12 +489,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 } catch (cause) {
                     if (controller.signal.aborted) {
                         if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
-                            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause });
-                        throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause, requestId });
+                        throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause, requestId });
                     }
                     if (cause instanceof RpcError) throw cause;
                     throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
-                        'RPC request failed. The server outcome is unknown and is never retried.', { cause });
+                        'RPC request failed. The server outcome is unknown and is never retried.', { cause, requestId });
                 } finally { cleanup(); }
             };
             return createRpcCall(operation(), () => {
@@ -562,7 +564,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 });
             } catch (cause) {
                 cleanup();
-                const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
+                const where = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(requestState, 'state');
                 return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
                     `Cannot serialize the realtime request for '${name}'` +
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);

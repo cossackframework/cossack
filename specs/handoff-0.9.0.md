@@ -2,7 +2,37 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RPC response timing (2026-10-03):** read
+> **Latest checkpoint — Codex shared RPC conformance matrix (2026-10-03):** read
+> [acceptance evidence](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
+> and [the detailed RT-01 plan](./release-0.9.0-plan.md#rt-01). **Author: Codex.**
+> One matrix runs 19 shared cases against HTTP, SSE, WebSocket, and explicit
+> scoped service calls (76 tests). HTTP paths execute the real router with
+> published core proxies; WebSocket executes the real in-memory runtime dispatcher.
+> It covers completion, yields/state, error redaction/validation, deadlines,
+> cancellation/iterator return, duplicate consumption, disconnect uncertainty,
+> serialization paths, loading/pending-map cleanup, and ownership. Controlled
+> transport faults do not replace application results. Fixed service RPC exposing
+> private exceptions in development, WebSocket paths losing payload/state roots,
+> and HTTP/SSE/service errors losing a known response ID on invalid JSON, deadlines,
+> or disconnect. Before HTTP headers arrive the server ID may be unavailable.
+>
+> Passed: focused matrix 76, full core 685 and framework 705, core build, framework
+> declarations, root TypeScript, all 11 package checks, and full CLI 559 across
+> 39 files (all 14 generated runtime cases). Own-file diff checks passed; exact
+> commands are in the linked checkpoint. Updated the RPC
+> guide and draft migration guide. No release/deployment performed.
+>
+> **14/58 tasks checked; RT-01 remains open.** Next audit supported wire values
+> against client types (Date/JSON, undefined/void, non-finite/binary values, custom/
+> model serialization). Extend this matrix and existing semantic fixtures.
+> Finish protocol diagnostics and Workers/realtime response timing with RT-11.
+> Physical upgrades/distributed coordination and Deno/Electron release gates need
+> separate evidence. RT-11 still needs secret exclusion, recipes, rotation, and
+> concurrency semantics. Continue every other unchecked task after these; keep
+> versions at 0.8.3 until REL-04. Build declarations before dependent tests without
+> simultaneous rebuilds. Preserve unrelated `reports.md` and `.zcodeignore` edits.
+
+> **Previous checkpoint — Codex RPC response timing (2026-10-03):** read
 > [review and acceptance](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03),
 > [RT-01](./release-0.9.0-plan.md#rt-01), and
 > [RT-11](./release-0.9.0-plan.md#rt-11). **Author: Codex.** Fixed native

@@ -66,3 +66,12 @@ are preserved alongside helper and flash cookies. Valid flash survives backgroun
 transport requests until the next page; RPC HTTP failures discard partial outgoing
 flash. Stream errors after headers finalize cannot retract previously sent cookies.
 See [RPC examples and timing](../docs/rpc.md).
+
+## Service RPC keeps internal exceptions private in development
+
+Service actions previously returned internal exception messages and stacks to
+clients when development mode was active. They now return `Internal Server Error`
+with `COSSACK_RPC_INTERNAL_ERROR` and the request ID, matching component and
+WebSocket calls. Inspect server logs for the original exception. Use
+`ClientVisibleError` for a deliberate message or action validation for field
+errors that callers should receive.

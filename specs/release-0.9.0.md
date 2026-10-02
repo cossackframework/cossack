@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference and ordinary completion are verified. Codex now fixes native cookies/redirects, early/late streaming header writes, and network uncertainty, with production Node browser acceptance. Remaining: consolidate the complete transport conformance matrix and audit supported serialization values and Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-response-timing-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, ordinary completion, native response timing, and one 76-case shared transport matrix are verified. Codex fixed private service errors, WebSocket value paths, and known request IDs lost on stream failures. Remaining: audit supported wire values/client types and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-conformance-matrix-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,57 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-conformance-matrix-2026-10-03"></a>
+### Codex continuation: shared RPC conformance matrix (2026-10-03)
+
+**Author: Codex.** Added one conformance suite with 19 identical cases against
+HTTP/SSE components, WebSocket dispatch, and explicit scoped services: 76 tests.
+Component/service proxies from built core execute the real Hono router; the
+loopback WebSocket pair executes the real in-memory runtime/action dispatcher.
+Fault injection affects the transport while application methods still run.
+
+Coverage: ordinary results with no yields, yielded/final values and state,
+repeated awaits, unobserved draining, catch/finally sharing, validation before
+mutation, visible/internal errors, failure after progress, deadlines before and
+after headers, cancellation, early iterator return, duplicate consumers, invalid
+payload/state/results, uncertain disconnects, loading and pending-call cleanup,
+and request versus runtime ownership. Finite delayed application I/O lets
+teardown wait for remote cleanup without treating cancellation as rollback.
+
+The common assertions found and fixed service RPC leaking internal stacks in
+development and WebSocket serialization errors losing their payload/state path
+prefix. Server logs retain the original exception with its request ID; callers
+receive the same redacted internal error as component/WebSocket paths. Also fixed
+HTTP/SSE/service errors losing the known response ID on invalid JSON, mid-stream
+timeout, or disconnect. HTTP IDs can be unknown before headers arrive; local
+failures need not have server IDs, and status is HTTP-specific.
+
+Focused matrix: 76 passed. Core build and framework declarations passed. Full
+core: 685 tests; framework: 705 tests; CLI: 559 tests across 39 files (all 14
+generated runtime cases). Root `pnpm tsc --noEmit` and all 11 package checks
+passed. Own-file diff whitespace checks passed; unrelated user files were excluded.
+Updated the RPC guide, migration draft, detailed plan, and Codex handoff.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 tasks remain checked. RT-01 stays open.** Its shared matrix acceptance
+slice is complete; do not replace it with another parallel suite. Next audit
+supported serialization values and corresponding client result/yield types,
+including Date/JSON, undefined/void, non-finite and binary values, and custom/model
+serialization. Finish protocol diagnostics and Workers/realtime response timing
+with RT-11. This suite does not prove physical upgrades or distributed coordination;
+production browser, workerd, and release runtime gates remain separate evidence.
+Every remaining release task stays in scope; versions remain 0.8.3 until REL-04.
 
 <a id="codex-rpc-response-timing-2026-10-03"></a>
 ### Codex review: RPC response cookies and header timing (2026-10-03)
