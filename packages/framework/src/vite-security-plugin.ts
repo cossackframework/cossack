@@ -6,6 +6,28 @@ export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
 }
 
+// Built-in methods that should always be kept in client bundles
+// Note: init() and get() are intentionally NOT included - they are server-only by default
+const BUILTIN_METHODS = new Set([
+  'render',
+  'head',
+  'onMount',
+  'onCleanup',
+  'escapeHtml',
+  'loadingTemplate',
+  'toString',
+  'valueOf',
+  'clientInit', // Client-side initialization method for fake loading
+  // Validation methods
+  'getError',
+  'hasError',
+  'validateProperty',
+  'validateAll',
+  'clearErrors',
+  'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
+  'startViewTransition', // View Transitions API wrapper (runs on client)
+]);
+
 /**
  * Vite plugin that strips server-only code from client bundles.
  *
@@ -30,28 +52,6 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const {
     devWarning = true,
   } = options;
-
-  // Built-in methods that should always be kept in client bundles
-  // Note: init() and get() are intentionally NOT included - they are server-only by default
-  const BUILTIN_METHODS = new Set([
-    'render',
-    'head',
-    'onMount',
-    'onCleanup',
-    'escapeHtml',
-    'loadingTemplate',
-    'toString',
-    'valueOf',
-    'clientInit', // Client-side initialization method for fake loading
-    // Validation methods
-    'getError',
-    'hasError',
-    'validateProperty',
-    'validateAll',
-    'clearErrors',
-    'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
-    'startViewTransition', // View Transitions API wrapper (runs on client)
-  ]);
 
   /**
    * Check if the file should be processed.
@@ -1176,6 +1176,89 @@ function computePreservedSet(
   return preserved;
 }
 
+/** Shared classification used by both build environments and inspection. */
+function analyzeClassMethods(
+  cls: any,
+  code: string,
+  program: any,
+  policy: typeof isClientSafeMethod,
+  builtins: Set<string>,
+) {
+  const methods = collectAstMethods(cls, code, program);
+  const preserved = computePreservedSet(cls, methods, policy, builtins);
+  const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+  return { methods, preserved, automaticRpc };
+}
+
+export interface CompilerMethodFact {
+  name: string;
+  clientBody: 'retained' | 'stripped';
+  rpc: 'explicit' | 'automatic' | null;
+  reason: string;
+  /** One-based location of the authored method body. */
+  source: { file: string; line: number; column: number };
+}
+
+export interface CompilerClassFacts {
+  name: string;
+  /** Own methods only; inherited declarations require project resolution. */
+  methods: CompilerMethodFact[];
+}
+
+/**
+ * Inspect authored declarations without importing or executing application code.
+ * This is file-level compiler metadata, not a resolved project/inheritance model.
+ * Macro input is rejected until generated spans can be mapped to authored code.
+ */
+export function inspectCompilerMethods(code: string, id: string): {
+  classes: CompilerClassFacts[];
+  diagnostics: Array<{ code: string; file: string; message: string }>;
+} {
+  const unknown = (message: string) => ({
+    classes: [],
+    diagnostics: [{ code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: id, message }],
+  });
+  const program = parseProgram(code);
+  if (!program) return unknown('Source could not be parsed.');
+  if (code.includes('server$')) return unknown('Server resource source mapping is not yet available.');
+  const classes: CompilerClassFacts[] = [];
+  try {
+    for (const cls of frameworkClasses(program)) {
+      const { methods, preserved, automaticRpc } = analyzeClassMethods(
+        cls, code, program, isClientSafeMethod, BUILTIN_METHODS,
+      );
+      classes.push({
+        name: cls.id?.name ?? 'Anonymous',
+        methods: methods.map((method) => {
+          const kept = preserved.has(method.name);
+          const retainedField = Boolean(method.fieldKind && !method.hasServerDecorator);
+          const prefix = code.slice(0, method.bodyStart);
+          return {
+            name: method.name,
+            clientBody: kept || retainedField ? 'retained' : 'stripped',
+            rpc: kept ? null : method.hasServerDecorator ? 'explicit' : automaticRpc.has(method.name) ? 'automatic' : null,
+            reason: kept
+              ? isClientSafeMethod(method.decorators, method.name, BUILTIN_METHODS)
+                ? 'Client decorator or built-in method.' : 'Reachable from a preserved client method.'
+              : retainedField ? 'Undecorated function fields retain their client implementation.'
+                : method.hasServerDecorator ? 'Explicit server decorator.'
+                  : automaticRpc.has(method.name) ? 'Template handler registered for automatic RPC.'
+                    : 'Unreachable method stripped without RPC registration.',
+            source: {
+              file: id,
+              line: prefix.split('\n').length,
+              column: prefix.length - prefix.lastIndexOf('\n'),
+            },
+          };
+        }),
+      });
+    }
+  } catch {
+    return unknown('Unsupported framework method declaration.');
+  }
+  return { classes, diagnostics: [] };
+}
+
 // ============================================================================
 // Stub generation
 // ============================================================================
@@ -1370,9 +1453,9 @@ export function injectAutomaticServerMethodMetadata(
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
 
-    const methods = collectAstMethods(cls, code, program);
-    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
-    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    const { methods, preserved, automaticRpc } = analyzeClassMethods(
+      cls, code, program, isClientSafeMethodFn, builtinMethods,
+    );
     if (automaticRpc.size === 0) continue;
     const registrations = [...automaticRpc].map((name) => ({ name, registerForRpc: true }));
     replacements.push(...appendMetadataRegistration(cls, createMetadataInjection(registrations)));
@@ -1507,9 +1590,9 @@ export function transformCossackClass(
 
     const className = cls.id?.name ?? 'Anonymous';
 
-    const methods = collectAstMethods(cls, code, program);
-    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
-    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    const { methods, preserved, automaticRpc } = analyzeClassMethods(
+      cls, code, program, isClientSafeMethodFn, builtinMethods,
+    );
     const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved, automaticRpc);
 
     // 1. Stub the body of every non-preserved method, and the value of every

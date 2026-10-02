@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   transformCossackClass,
+  inspectCompilerMethods,
   injectAutomaticServerMethodMetadata,
   isClientSafeMethod,
   stripSsgGenerateStaticParams,
@@ -2293,5 +2294,49 @@ describe('client result typing (RT-01)', () => {
     expect(result).toContain('custom(): CustomResult');
     expect(result).toContain('untyped()');
     expect(result).not.toContain('RpcCall<any');
+  });
+});
+
+
+describe('compiler inspection facts', () => {
+  it('matches client bodies and RPC registration without executing source', () => {
+    const code = `
+@Page()
+class Demo extends Cossack {
+  constructor() { throw new Error('must not run'); }
+  render() { this.helper(); return html\`<button @click=\"\${this.save}\">Save</button>\`; }
+  helper() { return 'CLIENT_HELPER'; }
+  save() { return 'AUTOMATIC_SERVER'; }
+  @Server() explicit() { return 'EXPLICIT_SERVER'; }
+  unused() { return 'UNREACHABLE_SERVER'; }
+  field = () => 'RETAINED_FIELD';
+}`;
+    const facts = inspectCompilerMethods(code, 'demo.ts');
+    expect(facts.diagnostics).toEqual([]);
+    const methods = Object.fromEntries(facts.classes[0].methods.map((m) => [m.name, m]));
+    expect(methods.helper).toMatchObject({ clientBody: 'retained', rpc: null });
+    expect(methods.save).toMatchObject({ clientBody: 'stripped', rpc: 'automatic' });
+    expect(methods.explicit).toMatchObject({ clientBody: 'stripped', rpc: 'explicit' });
+    expect(methods.unused).toMatchObject({ clientBody: 'stripped', rpc: null });
+    expect(methods.field).toMatchObject({ clientBody: 'retained', rpc: null });
+    expect(methods.helper.source).toEqual({ file: 'demo.ts', line: 6, column: 12 });
+    const transformed = transformCossackClass(code, 'demo.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(transformed).toContain('CLIENT_HELPER');
+    expect(transformed).toContain('RETAINED_FIELD');
+    for (const body of ['AUTOMATIC_SERVER', 'EXPLICIT_SERVER', 'UNREACHABLE_SERVER']) {
+      expect(transformed).not.toContain(body);
+    }
+  });
+
+  it.each([
+    'class Broken {',
+    '@Page() class Demo { @Server() get secret() { return 1; } }',
+    '@Page() class Demo { value = server$(() => 1); }',
+  ])('reports unknown input without partial facts or source excerpts', (source) => {
+    const result = inspectCompilerMethods(source, 'demo.ts');
+    expect(result.classes).toEqual([]);
+    expect(result.diagnostics).toEqual([expect.objectContaining({
+      code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: 'demo.ts',
+    })]);
   });
 });

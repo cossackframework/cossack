@@ -243,7 +243,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
         method = 'unknown';
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
-      methods = await extractMethodClassificationsFromAst(source) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
+      methods = await extractMethodClassificationsFromAst(source, page.filePath) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
     } catch { /* unreadable source keeps null options; the route still lists */
       method = 'unknown';
       reason = 'The page source could not be read.';
@@ -260,8 +260,9 @@ export async function buildEffectiveRouteModel(projectRoot) {
       middlewares: options.middlewares,
       services: options.services,
       serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
-      clientMethods: methods.methods?.filter(entry => entry.kind !== 'server') ?? [],
-      methodExtraction: { method: 'syntax', reason: methods.reason ?? null },
+      clientMethods: methods.methods?.filter(entry => entry.kind === 'client') ?? [],
+      strippedMethods: methods.methods?.filter(entry => entry.kind === 'stripped') ?? [],
+      methodExtraction: { method: methods.method ?? 'unknown', reason: methods.reason ?? null },
       extraction: { method, reason },
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine

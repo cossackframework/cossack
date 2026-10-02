@@ -207,6 +207,23 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     }
   });
 
+  it('uses compiler facts for helpers, automatic RPC, retained fields, and stripped methods', async () => {
+    mk('src/pages/compiler/index.ts', `
+      @Page() export default class P {
+        render() { this.helper(); return html\`<button @click=\"\${this.save}\">Save</button>\`; }
+        helper() { return 1; }
+        save() { return 2; }
+        unused() { return 3; }
+        field = () => 4;
+      }`);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.methodExtraction.method).toBe('compiler');
+    expect(page.serverMethods.map(m => m.name)).toEqual(['save']);
+    expect(page.clientMethods.map(m => m.name)).toEqual(['render', 'helper', 'field']);
+    expect(page.strippedMethods.map(m => m.name)).toEqual(['unused']);
+    expect(page.serverMethods[0]).toMatchObject({ rpc: 'automatic', source: { file: page.filePath } });
+  });
+
   it('inspects the exported page, quoted keys, and only that page’s methods', async () => {
     mk('src/pages/scoped/index.ts', `
       @Page({ transport: 'http' }) class Helper { @Server() hidden() {} }

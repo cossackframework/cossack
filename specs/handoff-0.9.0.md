@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex compiler review (2026-10-02):** read
+> **Latest checkpoint — Codex compiler facts (2026-10-02):** read
+> [the shared classifier and remaining project-model work](./release-0.9.0.md#codex-compiler-facts-2026-10-02).
+> Route inspection now uses compiler own-method facts, including automatic RPC,
+> retained helpers/fields, and stripped methods without RPC registration.
+> **11/58 tasks remain checked; CLI-04 remains open.** Continue inheritance,
+> macro source mapping, scaffold/capability metadata, and route checks.
+
+> **Previous checkpoint — Codex compiler review (2026-10-02):** read
 > [the preservation fix and CLI-04 continuation steps](./release-0.9.0.md#codex-compiler-preservation-2026-10-02).
 > Deep client helper chains now survive compilation; cycles terminate and explicit
 > server boundaries remain stripped. Security-plugin tests: 139 passed; root

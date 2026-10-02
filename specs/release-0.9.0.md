@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Remaining: inheritance/project resolution, macro source maps, scaffold recipes, and route checks.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,40 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-compiler-facts-2026-10-02"></a>
+### Codex continuation: compiler-backed own-method inspection (2026-10-02)
+
+**Author: Codex.** After `29475c9`, extracted the common class analysis used by
+client stripping and server automatic-RPC registration. The public
+`inspectCompilerMethods` export uses that analysis and the same built-in policy.
+It returns own-method body retention, RPC registration, classification reasons,
+and authored body locations without executing application code.
+
+Route inspection now consumes this export instead of independently interpreting
+method decorators. `serverMethods` contains RPC methods, `clientMethods` contains
+retained implementations, and `strippedMethods` identifies methods that have no
+RPC registration. Exported page selection still excludes unrelated classes.
+Parser failures, unsupported server declarations, unavailable compiler exports,
+and resource macros without source maps produce unknown results. These are
+file-level facts: inherited methods are explicitly outside the current result.
+
+**GLM continuation:** finish CLI-04's project-level model. Resolve inheritance,
+map macro-generated methods to authored locations, join scaffold recipes and
+runtime capabilities, add route checks, and prove the grouped-route/layout/service
+fixture in the detailed plan. Do not mark CLI-04 done from own-method parity.
+The earlier compiler-preservation note remains relevant, but its first three
+implementation steps now have this shared-analysis foundation.
+
+Validation:
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/vite-security-plugin.test.ts`: **143 passed**, including compiler/transform parity and unknown-input fixtures.
+- `pnpm --filter @cossackframework/framework exec tsc -p tsconfig.declarations.json`: passed; generated the published metadata export used by CLI tests.
+- `pnpm --filter cossack exec vitest run tests/scan-routes.test.js tests/cli-subprocess.test.js`: **57 passed**, including exported-page selection and actual compiler-backed route classification.
+- `pnpm tsc --noEmit`: passed after CLI integration.
+
+**11/58 tasks remain checked; CLI-04 remains open.** No release versions were
+changed. Full workspace/runtime release gates were not rerun for this slice.
 
 <a id="codex-compiler-preservation-2026-10-02"></a>
 ### Codex review: deep client helper preservation (2026-10-02)

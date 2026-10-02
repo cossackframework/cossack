@@ -138,58 +138,36 @@ export async function extractPageOptionsFromAst(code) {
   };
 }
 
-/**
- * Per-method RPC classification (CLI-04): list each decorated method with
- * the reason it becomes a server proxy, client method, or shared method on
- * this page. Purely syntactic — no module execution.
- */
-export async function extractMethodClassificationsFromAst(code) {
+/** Own-method classification from the same analysis used by the compiler. */
+export async function extractMethodClassificationsFromAst(code, file = 'page.ts') {
   const parseSync = await loadParseSync();
   if (!parseSync) return null;
   const program = parsedProgram(parseSync, code);
-  if (!program) {
-    return { methods: [], reason: 'The file could not be parsed as TypeScript.' };
-  }
-  const aliases = new Map();
-  for (const statement of program.body) {
-    if (statement.type !== 'ImportDeclaration') continue;
-    if (statement.source?.value !== '@cossackframework/core') continue;
-    for (const specifier of statement.specifiers ?? []) {
-      if (specifier.type === 'ImportSpecifier' && specifier.imported?.name) {
-        aliases.set(specifier.local.name, specifier.imported.name);
-      }
-    }
-  }
-  const methods = [];
+  if (!program) return { methods: [], reason: 'The file could not be parsed as TypeScript.' };
   const selected = pageClass(program, code);
   if (!selected) return { methods: [], reason: 'No @Page class found; method classification is unavailable.' };
-  for (const node of selected.cls.body.body) {
-    if (node.type !== 'MethodDefinition' && node.type !== 'PropertyDefinition') continue;
-    const decorators = node.decorators ?? [];
-    if (!decorators.length) continue;
-    const names = decorators
-      .map(decorator => {
-        const expression = decorator.expression?.type === 'CallExpression' ? decorator.expression.callee : decorator.expression;
-        return expression?.type === 'Identifier' ? (aliases.get(expression.name) ?? expression.name) : null;
-      })
-      .filter(Boolean);
-    const kind = names.includes('Shared') ? 'shared'
-      : names.some(n => ['Client', 'ClientTask', 'Optimistic', 'Computed', 'On', 'OnEvent', 'OnWindow', 'OnDocument', 'PreventNavigation', 'Validate', 'VisibleTask', 'Task'].includes(n)) ? 'client'
-      : names.includes('Server') ? 'server'
-      : null;
-    if (!kind) continue;
-    const key = node.key?.type === 'Identifier' ? node.key.name
-      : node.key?.type === 'Literal' ? String(node.key.value) : '(computed)';
-    methods.push({
-      name: key,
-      kind,
-      reason: kind === 'server'
-        ? '@Server() methods execute on the server; the client calls an RPC proxy.'
-        : kind === 'client'
-          ? 'A client-safe decorator preserves this method in the browser instead of installing a server proxy.'
-          : '@Shared() methods execute on both sides without transport.',
-      line: lineNumberAt(code, node.start),
-    });
+  let inspectCompilerMethods;
+  try {
+    ({ inspectCompilerMethods } = await import('@cossackframework/framework/vite-security-plugin'));
+  } catch {
+    return { methods: [], reason: 'Compiler inspection metadata is unavailable; build or update the framework package.' };
   }
-  return { methods, reason: 'Decorated methods only; automatic RPC and transitive preservation require compiler metadata.' };
+  if (typeof inspectCompilerMethods !== 'function') {
+    return { methods: [], reason: 'The framework package does not expose compiler inspection metadata.' };
+  }
+  const result = inspectCompilerMethods(code, file);
+  if (result.diagnostics.length) {
+    return { methods: [], reason: result.diagnostics.map(d => d.message).join(' ') };
+  }
+  const facts = result.classes.find(cls => cls.name === (selected.cls.id?.name ?? 'Anonymous'));
+  if (!facts) return { methods: [], reason: 'The compiler did not identify the selected page class.' };
+  return {
+    method: 'compiler',
+    methods: facts.methods.map(fact => ({
+      ...fact,
+      kind: fact.rpc ? 'server' : fact.clientBody === 'retained' ? 'client' : 'stripped',
+      line: fact.source.line,
+    })),
+    reason: 'Own methods classified by the compiler; inherited declarations require project resolution.',
+  };
 }
