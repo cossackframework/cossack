@@ -254,6 +254,14 @@ UI states, failure handling, and tests. Declare feature dependencies and runtime
 capabilities. Generate database-specific pieces only when that feature is selected.
 Use existing conflict detection when composing into an edited application.
 
+Codex checkpoint (2026-10-03): `cossack add resource` now generates a read-only
+HTTP resource page with explicit dependencies, pending/stale/error/empty states,
+and refresh/retry. It declares capabilities, adds no database dependency, and has
+composition preservation, generated-app type, SSR, code-stripping, and real RPC
+acceptance tests. Browser interaction/hydration state coverage remains to add.
+Next implement the validated mutation, protected route, and layout-scoped service
+recipes using the same registry/composition path and shared capability model.
+
 Start in `packages/scaffold/src/registry.js`, `index.js`, and
 `packages/cossack/src/commands/add.js` and `generate.js`.
 
@@ -933,63 +941,23 @@ Combine runtime capabilities with declared bindings. Distinguish unsupported,
 missing configuration, and available-with-an-adapter. Do not reject portable code
 just because a provider-specific optional module exists elsewhere in the project.
 
-Codex checkpoint (2026-10-03): `checkCapabilityRequirements` now returns
-source-bearing diagnostics from the shared model, and `cossackPages` accepts
-explicit `capabilities` declarations checked before bundle output. Real Vite
-fixtures cover unsupported/missing-binding failure and portable supported builds.
-Page transport requirements now derive automatically from the published
-`page-inspection` parser shared with the CLI when a build runtime is selected.
-Generated recipes now select the web adapter or Desktop mode automatically.
-Cloudflare builds resolve binding names through the installed Wrangler parser,
-using an explicit environment or CLOUDFLARE_ENV. Next verify actual generated
-application configurations and integrate selected feature requirements into
-recipe planning where applicable.
-The adapter audit found that Node/Deno do not dispatch schedules; their
-`scheduledHandlers` capability now reports `adapter-required` and selected
-requirements fail builds. Do not mark this capability available until a real
-scheduling integration is configured and verified. Generated minimal Node/Deno and Node+Desktop builds now run through actual
-recipe configuration. Node HTTP SSR executes from the built app; Desktop rejects
-SSE. Deno runtime and Electron launch are not covered by these build tests.
-Generated Node production entries now use `createNodeAdapter()` and attach its
-guarded upgrade path. Live generated-app tests cover SSR, initial snapshots,
-origin rejection, and scope rejection. Development entries now attach the exported runtime and dispose replaced scopes
-on source reload while retaining the Vite HMR connection. Real generated-app
-acceptance covers reload, rapid edits, HTTP, and graceful signal shutdown.
-Continue selected recipe requirements and remaining capability audits before
-completion.
-Build/CLI discovery now checks `stateful: true` as `durableState`, separate from
-WebSocket transport support. Cloudflare requires COSSACK_OBJECT; process runtimes
-reject durable state. Dynamic declarations remain unknown. Keep this distinction
-in selected recipe requirements and agent-facing capability output.
-Scaffold now emits target-specific selected requirements using the pure
-`recipeCapabilityRequirements()` API. SQLite and Desktop declare filesystem needs
-only when selected, with source provenance to the scaffold manifest. CLI checks
-consume web requirements through the shared model. Extend this projection as
-new recipes/providers need additional runtime capabilities; do not duplicate the
-framework's runtime profiles inside the recipe engine.
-D1 and Hyperdrive now declare native Cloudflare binding names through
-`cloudflareBindings`, checked for the selected environment and rejected by
-process runtimes. This catches shared native database code in Desktop targets;
-no automatic database migration or emulation is implied.
+Codex acceptance audit (2026-10-03):
 
+| Written requirement | Current evidence | Status |
+| --- | --- | --- |
+| Unsupported selections fail with feature/source before deployment | `framework/tests/build-capabilities.test.ts` and generated native-database/Desktop rejection fixtures | Verified |
+| Supported fixtures build through published exports | Generated Node/Deno and Node/Cloudflare Desktop configurations in `cossack/tests/generated-runtime-build.test.js` | Verified |
+| Desktop retains HTTP-only boundary | Desktop SSE rejection and generated mode-specific checks | Verified |
+| Workers-only imports stay out of other runtime graphs | Every emitted server/Desktop JavaScript chunk checked in generated build fixtures | Verified |
+| CLI-04 and CLI-05 consume the same model | CLI runtime/project inspection and scaffold requirement projection share the checker; the resource recipe declares HTTP | Partial: three CLI-05 recipes remain to implement and integrate |
 
-
-The guarded framework WebSocket factory now creates nested layout service scopes,
-uses original page params during bootstrap, and assigns scope-tree cleanup to the
-page without changing service-state ownership. Node now uses this hook, and both new process adapters await destruction during
-eviction/shutdown. Test concurrent
-creation for the same runtime key and real authenticated connections from a
-generated app. Factory tests alone do not prove transport lifecycle behavior.
-Deno now deduplicates pending scope creation, reserves capacity, and awaits idle
-entry disposal. Socket-event tests cover early close and retry after failure.
-Explicit `dispose()` and server shutdown/completion now drain pending creation,
-active actions, and retired entries before destroying components. These paths
-have adapter tests; validate with real Deno sockets when Deno is available.
-Actions must settle for cleanup to finish. Idle pruning currently occurs on
-activity rather than a timer. Continue Node guarded integration in parallel with
-this outstanding runtime acceptance.
-
-
+The model covers transport-specific bindings, durable state, scheduled integration
+requirements, filesystem access, and selected native database bindings. Node
+production/dev WebSockets use the guarded router factory and have live tests.
+Deno and Electron executable runtime coverage remains a broader release gate;
+absence of those executables is not itself a missing build-time RT-25 criterion.
+Finish the remaining CLI-05 recipe integration, then repeat this audit before
+checking RT-25 complete. Do not restore stale next steps already verified above.
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.

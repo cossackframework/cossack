@@ -14,7 +14,7 @@ below link directly to those explanations.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](#codex-handler-default-parity-2026-10-03).
-- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
+- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex (2026-10-03): resource recipe implemented with safe composition, generated type checks, SSR and RPC acceptance. Remaining: browser state coverage and the other three recipes.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
@@ -85,6 +85,36 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-resource-recipe-2026-10-03"></a>
+### Codex continuation: resource recipe and RT-25 audit (2026-10-03)
+
+**Author: Codex.** Audited RT-25 against its written criteria. Build diagnostics,
+published-export fixtures, Desktop's transport boundary, and Workers-free output
+are verified. The remaining explicit link is integration with all four CLI-05
+recipes; Deno/Electron execution belongs to broader runtime release verification.
+The detailed plan now records evidence per criterion rather than stale next steps.
+
+Added `cossack add resource` / `--features=resource`. It creates a database-free
+public catalog page using `server$`, explicit dependency tracking, lifecycle
+status, loading/stale/error/empty output, and refresh/retry. The registry declares
+HTTP capability; composition preserves edited pages and repeat application. CLI
+add help now derives feature names from the registry. Existing presets do not
+silently gain the new recipe.
+
+Generated-app acceptance checks TypeScript, client and server builds, SSR data,
+client stripping of loader data, filtered and empty RPC results, safe failures,
+and successful reads after failure. Running generated TypeScript found Hono's
+server union incompatible with the Node adapter's concrete Server parameter.
+`attach()` now accepts the exact event contract it uses, with no generated casts
+and no claim of HTTP/2 WebSocket support.
+
+Verification: 98 scaffold tests and the resource generated-app acceptance pass;
+Node adapter build and all 15 adapter tests pass. Combined CLI/generated-app
+acceptance passed 36 tests. Root `pnpm tsc --noEmit` and all 11 package checks via
+`pnpm typecheck` passed. Browser interactions/hydration are not yet covered
+by this recipe's fixture. **12/58 tasks remain checked:** CLI-05 and RT-25 stay open
+until the remaining recipe acceptance/integration requirements are fulfilled.
 
 <a id="codex-native-database-capabilities-2026-10-03"></a>
 ### Codex continuation: native database bindings (2026-10-03)

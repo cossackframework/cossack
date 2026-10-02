@@ -2,7 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex native database bindings (2026-10-03):** read
+> **Latest checkpoint — Codex resource recipe (2026-10-03):** read
+> [resource acceptance and capability audit](./release-0.9.0.md#codex-resource-recipe-2026-10-03).
+> **Author: Codex.** `cossack add resource` now creates a read-only HTTP resource
+> with loading/error/empty/retry UI and no database dependency. Generated types,
+> builds, SSR, stripping, and real RPC behavior are tested. Fixed Node attach's
+> server type contract, exposed by generated TypeScript checking. Passed: 98
+> scaffold tests, 36 CLI/acceptance tests, 15 adapter tests, and all types.
+> **12/58 tasks remain checked.** Next implement CLI-05 validated mutation,
+> protected route, and scoped service recipes, plus browser-state acceptance.
+> The RT-25 plan now maps its exact criteria to evidence: remaining integration
+> with those recipes is explicit; Deno/Electron execution is a broader release gate.
+
+> **Previous checkpoint — Codex native database bindings (2026-10-03):** read
 > [D1/Hyperdrive capability requirements](./release-0.9.0.md#codex-native-database-capabilities-2026-10-03).
 > **Author: Codex.** Selected D1/Hyperdrive recipes now declare native Cloudflare
 > bindings. Builds and CLI checks report missing DB/HYPERDRIVE configuration;

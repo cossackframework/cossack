@@ -1,5 +1,5 @@
 import { WebSocket, WebSocketServer } from 'ws';
-import type { Server, IncomingMessage } from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { Context } from 'hono';
 import { InMemoryWebSocketRuntime, type Cossack } from '@cossackframework/core';
@@ -11,6 +11,13 @@ export interface NodeWebSocketUpgrade {
   componentId: string;
   user?: unknown;
   createComponent(): Promise<Cossack>;
+}
+/** Host event contract for HTTP/1.1 WebSocket upgrade handling. */
+export interface NodeUpgradeServer {
+  on(event: 'upgrade', listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown;
+  once(event: 'close', listener: () => void): unknown;
+  off(event: 'upgrade', listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown;
+  off(event: 'close', listener: () => void): unknown;
 }
 export interface NodeAdapterOptions {
   maxInstances?: number;
@@ -167,7 +174,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
       request.upgrade = upgrade;
       return new Response(null, { status: 204, headers: { 'x-cossack-upgrade': request.token } });
     },
-    attach(server: Server, fetch: (request: Request) => Response | Promise<Response>) {
+    attach(server: NodeUpgradeServer, fetch: (request: Request) => Response | Promise<Response>) {
       if (stopped) throw new Error('Node runtime is disposed');
       const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
         if (!request.url?.startsWith('/ws/')) return;

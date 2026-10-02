@@ -1,6 +1,6 @@
 export type Adapter = 'cloudflare' | 'node' | 'deno';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource';
 export type AuthMethod = 'credentials' | 'oauth';
 export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';
@@ -166,6 +166,6 @@ export declare class PromptAbortedError extends Error {
 export interface RecipeCapabilityUse {
   feature: string;
   source: { file: string };
-  requires: { filesystem?: boolean; cloudflareBindings?: readonly string[] };
+  requires: { transports?: readonly ('http' | 'sse' | 'durable-object')[]; filesystem?: boolean; cloudflareBindings?: readonly string[] };
 }
 export declare function recipeCapabilityRequirements(recipe: ScaffoldRecipe, target?: 'web' | 'desktop'): RecipeCapabilityUse[];

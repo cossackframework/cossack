@@ -1303,3 +1303,22 @@ it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql
   }
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
 });
+it('composes a resource recipe predictably and preserves edited pages', async () => {
+  const root = await temporaryDirectory();
+  const { projectDir } = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
+  const added = await addFeature(projectDir, 'resource', { interactive: false });
+  expect(added.status).toBe('added');
+  const file = path.join(projectDir, 'src/pages/resource/index.ts');
+  const original = await fs.readFile(file, 'utf8');
+  expect(original).toContain("this.resourceStatus$('products')");
+  expect(original).toContain("this.refresh$('products')");
+  const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
+  expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+  await addFeature(projectDir, 'resource', { interactive: false });
+  expect(await fs.readFile(file, 'utf8')).toBe(original);
+  await fs.appendFile(file, '\n// application customization\n');
+  await addFeature(projectDir, 'resource', { interactive: false });
+  expect(await fs.readFile(file, 'utf8')).toBe(original + '\n// application customization\n');
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['resource'] })))
+    .toEqual([{ feature: 'resource', source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } }]);
+});

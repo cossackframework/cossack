@@ -104,3 +104,16 @@ those features acquire runtime dependencies.
 Generated Cloudflare projects disable the Workers Vite plugin in Desktop mode.
 The web build still uses that plugin; the Desktop build uses Electron's runtime
 boundary and evaluates its own selected capability requirements.
+
+## Read-only resource recipe
+
+Run `cossack add resource` to add `/resource` to an existing app, or select
+`--features=resource` during creation. The recipe uses `server$`, explicit category
+dependencies, and `resourceStatus$` for loading, stale data, errors, and empty
+results. Refresh and retry use `refresh$`; client handlers use `@Client`.
+
+The sample catalog is public and read-only. Replace its server loader with an
+application service or a database read when needed. Database support is not added
+implicitly. Keep authorization inside the server loader for private data.
+Composition records ownership, supports repeated application, and preserves edited
+pages. The recipe declares HTTP transport capability for every selected target.

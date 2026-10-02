@@ -200,3 +200,44 @@ it('builds a portable Cloudflare application Desktop target without the Workers 
   await assertPortableChunks(path.join(root, 'dist/desktop'));
   expect(await fs.readFile(path.join(root, 'dist/desktop/index.js'), 'utf8')).toContain('electron');
 }, 30000);
+it('builds the resource recipe and executes SSR, filtered reads, empty results, and failures through RPC', async () => {
+  const root = await project('node', ['resource']);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated resource types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const assetNames = await fs.readdir(path.join(root, 'dist/client/assets'));
+  let action;
+  for (const file of assetNames.filter(file => file.endsWith('.js'))) {
+    const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+    expect(code).not.toContain('Framework guide'); // Loader data stays server-only.
+    if (code.includes('Read-only resource')) action = code.match(/__cossack_server_resource_[a-z0-9]+/)?.[0];
+  }
+  expect(action).toBeTruthy();
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const routeId = manifest.filePathToId['/src/pages/resource/index.ts'];
+  const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+    const { app, env, runtime } = await import('./dist/server/index.js');
+    env.APP_URL = 'http://localhost';
+    try {
+      const rendered = await app.request('/resource', {}, env);
+      const html = await rendered.text();
+      if (rendered.status !== 200 || !html.includes('Framework guide') || !html.includes('Project notebook')) throw new Error('Resource SSR failed: ' + html);
+      const read = async category => {
+        const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost', 'content-type': 'application/json' },
+          body: JSON.stringify({ componentRouteId: ${JSON.stringify(routeId)}, action: ${JSON.stringify(action)}, payload: [category], state: { public: { category } } }) }, env);
+        return { status: response.status, body: await response.json() };
+      };
+      const filtered = await read('books');
+      if (filtered.status !== 200 || filtered.body._cossack_return?.length !== 1 || filtered.body._cossack_return[0].id !== 'guide') throw new Error('Filtered resource RPC failed: ' + JSON.stringify(filtered));
+      const empty = await read('other');
+      if (empty.status !== 200 || empty.body._cossack_return?.length !== 0) throw new Error('Empty resource failed');
+      const failed = await read('invalid');
+      if (failed.status !== 500 || failed.body.error !== 'Internal Server Error') throw new Error('Failure was not safely reported');
+      const retry = await read('tools');
+      if (retry.status !== 200 || retry.body._cossack_return?.[0].id !== 'notebook') throw new Error('Read after failure failed');
+      console.log('RESOURCE_RECIPE_OK');
+    } finally { await runtime.dispose(); }
+  `], { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
+  expect(result.stdout).toContain('RESOURCE_RECIPE_OK');
+}, 60000);

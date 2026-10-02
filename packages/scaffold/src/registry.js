@@ -1,5 +1,5 @@
 export const ADAPTERS = ['cloudflare', 'node', 'deno'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -14,6 +14,7 @@ export const FEATURE_REGISTRY = {
   markdown: { requires: [] },
   examples: { requires: ['ui', 'markdown'] },
   desktop: { requires: [] },
+  resource: { requires: [] },
 };
 
 export const PRESET_REGISTRY = {
@@ -162,6 +163,7 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   const add = (feature, requires) => requirements.push({
     feature, source: { file: '.cossack/scaffold.json' }, requires,
   });
+  if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite') {
     add('database/sqlite', { filesystem: true });
   }

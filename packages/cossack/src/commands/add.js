@@ -114,7 +114,7 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return commandSpecs.add.help(`cossack add <ui|database|studio|auth|dashboard|markdown|examples|desktop> [component]`);
+  return commandSpecs.add.help(`cossack add <${FEATURES.join('|')}> [component]`);
 }
 
 /* wrapper closed below */
