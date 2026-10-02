@@ -77,6 +77,13 @@ Destroy an anonymous row and expire its cookie with:
 await session().destroy();
 ```
 
+Call `bindUser()` or `destroy()` before returning a streamed response. Both
+need to change the response cookie. After response middleware finishes, they
+reject with `COSSACK_RESPONSE_HEADERS_COMMITTED` before changing the stored row.
+A lazy generator's body runs after this point, including code before its first
+yield. Session bag `set()` and `unset()` remain storage operations on the live
+row and do not issue a replacement cookie. See [RPC timing](./rpc.md).
+
 The database store preserves the shared physical row representation:
 `id`, `user_id`, `data`, `meta`, tracking fields, `created_at`, and
 `expires_at`.

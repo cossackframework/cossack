@@ -29,6 +29,8 @@ import { isServer } from './environment';
 export interface FlashStore {
     outgoing: Record<string, unknown>;
     incoming: Record<string, unknown>;
+    /** Framework checks response timing before a write changes this store. */
+    assertWritable?: () => void;
 }
 
 /** Reserved sub-key under which `flashInput` stores old form input. */
@@ -87,6 +89,7 @@ export function flash(keyOrValues: string | Record<string, unknown>, value?: unk
         // no-op rather than throw — flash is best-effort UI glue.
         return;
     }
+    store.assertWritable?.();
     if (typeof keyOrValues === 'string') {
         store.outgoing[keyOrValues] = value;
     } else {
@@ -107,6 +110,7 @@ export function flash(keyOrValues: string | Record<string, unknown>, value?: unk
 export function flashInput(data: Record<string, unknown>): void {
     const store = requestStore();
     if (!store) return;
+    store.assertWritable?.();
     store.outgoing[INPUT_NAMESPACE] = data;
 }
 

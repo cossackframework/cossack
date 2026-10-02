@@ -291,6 +291,15 @@ describe('realtime (WebSocket) RPC conformance', () => {
         expect(client.loading.ordinary).toBeUndefined();
     });
 
+    it('rejects native HTTP responses on WebSockets instead of silently returning an empty object', async () => {
+        vi.spyOn(server, 'ordinary').mockResolvedValue(new Response(null, { status: 302, headers: { Location: '/login' } }) as any);
+        await expect(Promise.resolve(client.ordinary(1))).rejects.toMatchObject({
+            code: 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED', message: expect.stringContaining('HTTP or SSE'),
+        });
+        expect(client.loading).toEqual({});
+        expect(sockets.clientSocket.sent.filter((data: string) => JSON.parse(data).type === 'action')).toHaveLength(1);
+    });
+
     it('rejects malformed correlated socket frames before applying state', async () => {
         sockets.clientSocket.send = vi.fn();
         const call = client.ordinary(1);
@@ -463,6 +472,18 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         await call.cancel();
         await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
     });
+
+    it('reports network uncertainty without retrying service mutations or leaking loading', async () => {
+        const fetchMock = vi.fn(async () => { throw new TypeError('connection lost'); });
+        vi.stubGlobal('fetch', fetchMock);
+        const consumer = { loading: {}, requestUpdate() {} };
+        subscribers.push(scope.subscribe(CounterService, consumer));
+        await expect(Promise.resolve((instance as any).increment())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_NETWORK_FAILED', message: expect.stringContaining('server outcome is unknown'),
+        });
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(consumer.loading).toEqual({});
+    });
 });
 
 describe('serialization diagnostics by value path (RT-01)', () => {
@@ -477,6 +498,12 @@ describe('serialization diagnostics by value path (RT-01)', () => {
         const shared = { value: 1 };
         expect(describeUnsupportedValue({ left: shared, right: shared })).toBeNull();
         expect(describeUnsupportedValue({ items: new Map([['a', 1]]) })).toBe('items (Map)');
+    });
+
+    it('names native HTTP objects that JSON would silently turn into empty objects', () => {
+        for (const [value, name] of [[new Response(), 'Response'], [new Request('https://example.test'), 'Request'], [new Headers(), 'Headers']] as const) {
+            expect(describeUnsupportedValue({ nested: value }, 'payload')).toBe(`payload.nested (${name})`);
+        }
     });
 
     it('HTTP proxy serialization failures name the offending argument path', async () => {

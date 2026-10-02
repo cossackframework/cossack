@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Cossack, CossackService, ClientVisibleError, forwardServiceMethods, getRequestContext, Inject, Page, readRpcStream, Server, Service, State } from '@cossackframework/core';
+import { Cossack, CossackService, ClientVisibleError, cookie, flash, flashed, flashInput, old, forwardServiceMethods, getRequestContext, Inject, Page, readRpcStream, Server, Service, State } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 import { config } from '../src/config';
@@ -98,12 +98,12 @@ const request = (action = 'stream', extra: Record<string, unknown> = {}, headers
     createApp().request('/crpc', {
         method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({ componentRouteId: id, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
-    }, { APP_URL: 'https://configured.test' } as any);
+    }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 const serviceRequest = (action: string, extra: Record<string, unknown> = {}) =>
     createApp().request('/crpc', {
         method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json' },
         body: JSON.stringify({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
-    }, { APP_URL: 'https://configured.test' } as any);
+    }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 async function collect(response: Response) {
     const frames = [];
     for await (const frame of readRpcStream(response)) frames.push(frame);
@@ -113,6 +113,77 @@ beforeEach(() => { Object.assign(effects, { constructed: 0, runs: 0, closed: 0, 
 afterEach(() => { middlewareStore.database = undefined; vi.restoreAllMocks(); });
 
 describe('router RPC streaming lifecycle', () => {
+    it.each(['component', 'service'])('permits %s cookie/flash writes before returning a lazy generator', async target => {
+        const custom = async () => {
+            cookie().set('early', 'kept', { path: '/' });
+            flash('success', 'Started');
+            return (async function* () { yield 'first'; return 'finished'; })();
+        };
+        const spy = target === 'component' ? vi.spyOn(StreamPage.prototype, 'promisedStream') : vi.spyOn(Counter.prototype, 'serviceStream');
+        spy.mockImplementation(custom as any);
+        const response = target === 'component' ? await request('promisedStream') : await serviceRequest('serviceStream');
+        expect(response.headers.getSetCookie().map(value => value.split('=')[0]).sort()).toEqual(['cossack_flash', 'early']);
+        expect(await collect(response)).toEqual([
+            expect.objectContaining({ type: 'yield', value: 'first' }),
+            expect.objectContaining({ type: 'done', value: 'finished' }),
+        ]);
+    });
+    it.each(['component', 'service'])('preserves %s native response/redirect cookies and flash through materialization', async target => {
+        for (const redirect of [false, true]) {
+            const custom = async () => {
+                cookie().set('context_cookie', 'kept', { path: '/', httpOnly: true });
+                flash('success', 'Saved');
+                flashInput({ title: 'Draft' });
+                const headers = new Headers({ 'Content-Type': 'text/plain', 'X-Custom': 'kept' });
+                headers.append('Set-Cookie', 'native_one=1; Expires=Wed, 01 Jan 2031 00:00:00 GMT; Path=/');
+                headers.append('Set-Cookie', 'native_two=2; Path=/');
+                if (redirect) headers.set('Location', '/stream');
+                return new Response(redirect ? null : 'native body', { status: redirect ? 303 : 202, headers });
+            };
+            const spy = target === 'component' ? vi.spyOn(StreamPage.prototype, 'regular') : vi.spyOn(Counter.prototype, 'serviceRegular');
+            spy.mockImplementation(custom as any);
+            const response = target === 'component' ? await request('regular') : await serviceRequest('serviceRegular');
+            expect(response.status).toBe(redirect ? 200 : 202);
+            expect(response.headers.get('Location')).toBeNull();
+            const cookies = response.headers.getSetCookie();
+            expect(cookies.map(value => value.split('=')[0]).sort()).toEqual(['context_cookie', 'cossack_flash', 'native_one', 'native_two'].sort());
+            expect(response.headers.get('X-Cossack-Request-Id')).toBeTruthy();
+            if (redirect) expect(await response.json()).toEqual({ _cossack_redirect: '/stream' });
+            else { expect(response.headers.get('X-Custom')).toBe('kept'); expect(await response.text()).toBe('native body'); }
+            const token = cookies.find(value => value.startsWith('cossack_flash='))!.split(';')[0];
+            // A failed background RPC preserves incoming flash and suppresses
+            // partial outgoing data. The next page still reads it exactly once.
+            vi.spyOn(StreamPage.prototype, 'regular').mockImplementation(async () => {
+                flash('unrelated', 'must not replace saved message');
+                throw new ClientVisibleError('Rejected');
+            });
+            const failure = await request('regular', {}, { cookie: token });
+            expect(failure.status).toBe(400);
+            expect(failure.headers.getSetCookie().some(value => value.startsWith('cossack_flash='))).toBe(false);
+            vi.spyOn(StreamPage.prototype, 'render').mockImplementation(() => html`${flashed('success')}:${old('title')}`);
+            const page = await createApp().request('/stream', { headers: { cookie: token } }, { APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
+            expect((await page.text()).replace(/<!--[\s\S]*?-->/g, '')).toContain('Saved:Draft');
+            expect(page.headers.getSetCookie().some(value => value.startsWith('cossack_flash=') && value.includes('Max-Age=0'))).toBe(true);
+            spy.mockRestore();
+            vi.restoreAllMocks();
+        }
+    });
+    it.each(['component', 'service'])('rejects late %s cookie/header/flash writes in correlated stream errors', async target => {
+        for (const write of [() => cookie().set('late', 'value'), () => cookie().delete('old'),
+            () => getRequestContext()!.header('X-Late', 'value'), () => flash('late', 'value'), () => flashInput({ title: 'late' })]) {
+            const stream = async function* () { yield 'first'; write(); return 'unreachable'; };
+            const spy = target === 'component' ? vi.spyOn(StreamPage.prototype, 'stream') : vi.spyOn(Counter.prototype, 'serviceStream');
+            spy.mockImplementation(stream as any);
+            const response = target === 'component' ? await request('stream') : await serviceRequest('serviceStream');
+            const frames = await collect(response);
+            expect(frames[0]).toMatchObject({ type: 'yield', value: 'first' });
+            expect(frames.at(-1)).toMatchObject({ type: 'error', code: 'COSSACK_RESPONSE_HEADERS_COMMITTED',
+                requestId: response.headers.get('X-Cossack-Request-Id'), message: expect.stringContaining('before returning a streamed response') });
+            expect(response.headers.get('X-Late')).toBeNull();
+            expect(response.headers.getSetCookie()).toEqual([]);
+            spy.mockRestore();
+        }
+    });
     it('rejects ordinary component and service values that JSON would silently drop', async () => {
         vi.spyOn(StreamPage.prototype, 'regular').mockResolvedValue({ nested: { cb: () => {} } } as any);
         vi.spyOn(Counter.prototype, 'serviceRegular').mockResolvedValue({ nested: { cb: () => {} } } as any);

@@ -162,6 +162,26 @@ describe('generic session middleware', () => {
     expect(store.rows.get(expired)?.data).toEqual({});
   });
 
+  it.each(['bindUser', 'destroy'] as const)('rejects late session %s before changing the persisted store', async action => {
+    const store = new MemorySessionStore();
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store }));
+    app.get('/', () => {
+      const handle = session();
+      return new Response(new ReadableStream({ async pull(controller) {
+        try { if (action === 'bindUser') await handle.bindUser('late-user'); else await handle.destroy(); }
+        catch (error: any) { controller.enqueue(new TextEncoder().encode(error.code)); }
+        controller.close();
+      } }, { highWaterMark: 0 }));
+    });
+    const response = await app.request('/');
+    const id = cookieValue(response, 'cossack_sid')!;
+    expect(await response.text()).toBe('COSSACK_RESPONSE_HEADERS_COMMITTED');
+    expect([...store.rows.keys()]).toEqual([id]);
+    expect(store.rows.get(id)?.userId).toBeUndefined();
+  });
+
   it('throws a clear error without a configured store or request session', async () => {
     expect(() => session()).toThrow(/No session in scope/);
     const app = new Hono();

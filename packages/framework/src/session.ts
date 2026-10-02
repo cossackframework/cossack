@@ -1,4 +1,4 @@
-import { getRequestContext } from '@cossackframework/core';
+import { assertResponseHeadersMutable, getRequestContext } from '@cossackframework/core';
 import type { Context, MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
@@ -109,6 +109,7 @@ export function createSessionMiddleware(
       set: (key, value) => store.set(currentId(), key, value, ttl),
       unset: (key) => store.unset(currentId(), key),
       async bindUser(userId) {
+        assertResponseHeadersMutable(context, 'rotate a session');
         if (authProvidedId) throw new Error('[Cossack] Rotate auth-managed sessions through your auth provider.');
         const previous = currentId();
         const data = await store.getAll(previous);
@@ -125,6 +126,7 @@ export function createSessionMiddleware(
         issuedAnonymousId = true;
       },
       async destroy() {
+        assertResponseHeadersMutable(context, 'destroy a session');
         await store.destroy(currentId());
         destroyed = true;
       },

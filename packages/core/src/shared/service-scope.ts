@@ -401,7 +401,8 @@ export class ServiceScope {
                             throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
                         }
                         if (cause instanceof RpcError) throw cause;
-                        throw new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Service RPC request failed.', { cause });
+                        throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
+                            'Service RPC request failed. The server outcome is unknown and is never retried.', { cause });
                     } finally {
                         if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
                         scope.setLoading(action, -1);

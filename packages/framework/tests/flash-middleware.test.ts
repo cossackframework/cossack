@@ -72,6 +72,26 @@ function getSetCookie(res: Response, name: string): string | undefined {
 }
 
 describe('flash middleware — two-phase cookie lifecycle', () => {
+    it.each(['/crpc', '/upload', '/sse', '/ws/page/example'])('preserves incoming flash on %s, including failed outgoing writes', async path => {
+        const app = makeApp();
+        app.all(path, c => {
+            if (c.req.query('fail')) { flash('success', 'partial'); return c.text('rejected', 400); }
+            return c.text('ok');
+        });
+        const post = await dispatch(app, '/submit', { method: 'POST' });
+        const token = `cossack_flash=${getSetCookie(post, 'cossack_flash')}`;
+        for (const suffix of ['', '?fail=1']) {
+            const response = await dispatch(app, path + suffix, { cookie: token });
+            expect(response.status).toBe(suffix ? 400 : 200);
+            expect(response.headers.getSetCookie()).toEqual([]);
+        }
+        const invalid = await dispatch(app, path, { cookie: 'cossack_flash=invalid.token' });
+        expect(getSetCookie(invalid, 'cossack_flash')).toBe('');
+        const page = await dispatch(app, '/form', { cookie: token });
+        expect(await page.json()).toMatchObject({ success: 'Saved successfully!', oldName: 'Alice' });
+        expect(getSetCookie(page, 'cossack_flash')).toBe('');
+    });
+
     it('POST accumulates flash and sets a signed cookie on the redirect response', async () => {
         const app = makeApp();
         const res = await dispatch(app, '/submit', { method: 'POST' });

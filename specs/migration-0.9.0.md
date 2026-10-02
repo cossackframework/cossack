@@ -42,3 +42,27 @@ The helper infers the authored generator's yield and terminal types; it returns
 the existing proxy operation by identity. It is not a wrapper for native server
 execution. See [the complete client contract](../docs/rpc.md) for cancellation,
 duplicate consumers, broad iterable annotations, and native Response types.
+
+## Streaming writes now reject after headers finalize
+
+Late cookie, flash, and `c.header` writes previously appeared to succeed even
+though the browser could not receive them. They now throw
+`COSSACK_RESPONSE_HEADERS_COMMITTED`. Session `bindUser()` and `destroy()` also
+reject before changing storage. Move these writes into an ordinary async server
+method before returning a generator. Generator bodies execute lazily after
+middleware finishes, including statements before the first yield. Session bag
+writes that do not change cookies retain their storage behavior.
+
+## Native responses require HTTP/SSE actions
+
+WebSocket actions returning native `Response` objects now fail with
+`COSSACK_RPC_HTTP_RESPONSE_REQUIRED`, instead of silently returning `{}`.
+Return serializable data or use an HTTP/SSE action for HTTP response behavior.
+Nested `Response`, `Request`, and `Headers` objects in serialized RPC values
+now produce a path-specific `COSSACK_RPC_SERIALIZATION_FAILED` error.
+
+Native HTTP/SSE RPC redirects become client navigation metadata. Response cookies
+are preserved alongside helper and flash cookies. Valid flash survives background
+transport requests until the next page; RPC HTTP failures discard partial outgoing
+flash. Stream errors after headers finalize cannot retract previously sent cookies.
+See [RPC examples and timing](../docs/rpc.md).

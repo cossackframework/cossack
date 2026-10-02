@@ -2,7 +2,43 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex authored client RPC types (2026-10-03):** read
+> **Latest checkpoint — Codex RPC response timing (2026-10-03):** read
+> [review and acceptance](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03),
+> [RT-01](./release-0.9.0-plan.md#rt-01), and
+> [RT-11](./release-0.9.0-plan.md#rt-11). **Author: Codex.** Fixed native
+> response cookies being overwritten, native redirects becoming HTML fetches,
+> and early cookies disappearing when returning lazy generators. HTTP/SSE
+> component/service RPC preserves native/helper/flash cookies together.
+> Response middleware now seals the structural header phase after outgoing
+> middleware; late cookie/header/flash writes reject explicitly. Late session
+> rotation/destruction reject before storage changes. Background transports
+> preserve valid incoming flash; HTTP errors discard partial outgoing flash.
+> WebSocket actions reject native Responses; nested HTTP objects get precise
+> serialization errors. Network errors explain uncertain completion and no retry.
+>
+> Regression coverage includes native router responses, four background endpoints,
+> session storage preservation, and a real production Node browser for page/service
+> redirects, HTTP-only cookies, old input, flash consumption/reload, and early/late
+> streaming cookies. Generated source type checks before builds. Core build,
+> framework declarations, full core 685 and framework 629 tests, root TypeScript,
+> all 11 package type checks, and full CLI 559 tests across 39 files (all 14 generated
+> cases) passed. Own-file diff checks passed. Exact commands are in the linked
+> checkpoint. No release/deployment performed.
+>
+> **14/58 tasks checked; RT-01 and RT-11 remain open.** Next consolidate the
+> conformance matrix across HTTP, SSE, WebSocket, and explicit services for values,
+> yields, errors, deadlines, disconnect, cancellation, duplicate consumption, and
+> cleanup. Audit supported serialization types and verify response timing through
+> Workers/realtime integration. Preserve backpressure: never prime generators to
+> enable header writes. Prepare headers in an ordinary async action before returning
+> a generator. Raw Response.headers mutation bypasses the guard; stream errors
+> cannot retract sent cookies. RT-11 still needs secrets excluded from old input,
+> complete recipes, and rotation/concurrency contracts. Then continue RT-02/RT-14
+> and every other unchecked task. Versions stay 0.8.3 until REL-04. Build declarations
+> before dependent tests, without concurrent rebuilds. Leave unrelated `reports.md`
+> and `.zcodeignore` edits untouched.
+
+> **Previous checkpoint — Codex authored client RPC types (2026-10-03):** read
 > [implementation and acceptance](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
 > and [the client guide](../docs/rpc.md). **Author: Codex.** Public
 > `rpc$(this.method(...))` exposes inferred `RpcCall<Result, Yield>` types in

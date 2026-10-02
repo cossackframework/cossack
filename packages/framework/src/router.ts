@@ -39,6 +39,26 @@ function assertSerializableRpcResult(value: unknown, state: unknown): void {
   if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
     `Cannot serialize RPC result: unsupported value at ${unsupported}.`);
 }
+
+/** Preserve action-owned cookies when Hono merges its existing Context response. */
+async function rpcRedirectResponse(c: Context, result: unknown): Promise<Response | undefined> {
+  const response = result instanceof Response ? result : undefined;
+  const existingCookies = new Set(c.res.headers.getSetCookie());
+  for (const value of response?.headers.getSetCookie() ?? []) {
+    if (!existingCookies.has(value)) {
+      c.header('Set-Cookie', value, { append: true });
+      existingCookies.add(value);
+    }
+  }
+  const location = response && response.status >= 300 && response.status < 400
+    ? response.headers.get('Location') ?? c.res.headers.get('Location')
+    : c.res.headers.get('Location');
+  if (!location) return undefined;
+  // Fetch must receive RPC metadata rather than follow the redirect into HTML.
+  await response?.body?.cancel();
+  c.header('Location', undefined);
+  return c.json({ _cossack_redirect: location });
+}
 import { createApiHandler } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
@@ -746,7 +766,10 @@ export function createApp(options: CreateAppOptions = {}) {
     const body = await c.req.json();
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const requestId = crypto.randomUUID();
-    c.header('X-Cossack-Request-Id', requestId);
+    // Materialize prepared middleware headers before an action can return an
+    // independently constructed stream Response. Hono merges an existing res,
+    // but otherwise drops prepared headers when assigning that raw Response.
+    c.res.headers.set('X-Cossack-Request-Id', requestId);
     const user = c.get('user');
     const runtimeInfo = await resolveRuntimeInfo();
 
@@ -825,8 +848,8 @@ export function createApp(options: CreateAppOptions = {}) {
           return response;
         }
 
-        const location = c.res.headers.get('Location');
-        if (location) return c.json({ _cossack_redirect: location });
+        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        if (redirectResponse) return redirectResponse;
         if (actionResult instanceof Response) {
           const finishResponseLifetime = retainResponseLifetime(c);
           responseOwnsCleanup = true;
@@ -1041,10 +1064,10 @@ export function createApp(options: CreateAppOptions = {}) {
           }
           return Promise.resolve();
         };
-        const location = c.res.headers.get('Location');
-        if (location) {
+        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        if (redirectResponse) {
           await publishScopeState();
-          return c.json({ _cossack_redirect: location });
+          return redirectResponse;
         }
         if (actionResult instanceof Response) {
           await publishScopeState();

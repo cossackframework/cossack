@@ -2,9 +2,9 @@
 //
 // Global flash-data middleware. Owns the two-phase cookie lifecycle:
 //
-//   1. INCOMING (start of every request): read + delete the `cossack_flash`
-//      cookie, verify its HMAC signature, and seed the per-request flash store's
-//      `incoming` bucket so `flashed()` / `old()` work during this request.
+//   1. INCOMING: verify the `cossack_flash` cookie and seed the per-request
+//      `incoming` bucket. Page requests consume it; background transports
+//      preserve valid data for the next page.
 //   2. OUTGOING (after the handler returns): if the handler wrote anything via
 //      `flash()` / `flashInput()` (the `outgoing` bucket is non-empty), sign
 //      it and set the `cossack_flash` cookie on the response. This is what
@@ -22,7 +22,7 @@
 
 import type { MiddlewareHandler } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { signValue, verifyValue } from '@cossackframework/core';
+import { assertResponseHeadersMutable, signValue, verifyValue } from '@cossackframework/core';
 import { ensureFlashAlsWired, runWithFlash } from '../flash-context.js';
 
 const COOKIE_NAME = 'cossack_flash';
@@ -54,13 +54,13 @@ export function createFlashMiddleware(
 
     return async (c, next) => {
         ensureFlashAlsWired();
+        const transport = c.req.path === '/crpc' || c.req.path === '/upload' ||
+            c.req.path === '/sse' || c.req.path.startsWith('/ws/');
 
-        // 1. INCOMING: read + consume the flash cookie (single-use semantics).
+        // 1. INCOMING: verify; consume only outside background transports.
         let incoming: Record<string, unknown> = {};
         const token = getCookie(c, COOKIE_NAME);
         if (token) {
-            // Always delete on read so a refresh/back doesn't replay the flash.
-            deleteCookie(c, COOKIE_NAME, { path: '/' });
             const secret = resolveSecret(c, secretEnvName);
             // If there's a cookie but no secret, we can't verify it — drop it
             // silently rather than crash the whole request. (A misconfigured
@@ -68,16 +68,23 @@ export function createFlashMiddleware(
             if (secret) {
                 incoming = (await verifyValue<Record<string, unknown>>(token, secret)) ?? {};
             }
+            // Background RPC/realtime requests must not consume a message meant
+            // for the next page. Invalid tokens still get removed immediately.
+            if (!transport || !Object.keys(incoming).length) deleteCookie(c, COOKIE_NAME, { path: '/' });
         }
 
         // 2. Run the whole request inside the flash scope. Writes via flash()
         //    accumulate in `outgoing`; reads via flashed() pull from `incoming`.
-        const store = { outgoing: {} as Record<string, unknown>, incoming };
+        const store = { outgoing: {} as Record<string, unknown>, incoming,
+            assertWritable: () => assertResponseHeadersMutable(c, 'write flash data') };
         await runWithFlash(store, () => next());
 
         // 3. OUTGOING: if the handler flashed anything, sign + set the cookie
         //    so it survives the redirect to the next request.
         const outgoingKeys = Object.keys(store.outgoing);
+        // An RPC validation/application failure must not replace unrelated
+        // incoming flash data with partially accumulated outgoing state.
+        if (transport && c.res.status >= 400) return;
         if (outgoingKeys.length > 0) {
             const secret = resolveSecret(c, secretEnvName);
             if (!secret) {

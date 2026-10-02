@@ -12,9 +12,12 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex authored RPC checkpoint](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
-records typed client inference and a transport result correction; RT-01 remains
-open. The preceding [recipe/capability checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03)
+The latest [Codex response timing checkpoint](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03)
+records native cookies/redirects, streaming header guards, flash preservation,
+and network uncertainty. RT-01 and RT-11 remain open. The preceding
+[authored RPC checkpoint](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
+records typed client inference and consistent ordinary completion. The earlier
+[recipe/capability checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03)
 records CLI-05 and RT-25 completion: 14/58 tasks are checked. The earlier
 [upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)
 records CLI-06 completion. The preceding machine
@@ -441,8 +444,23 @@ The change is recorded in the [draft migration guide](./migration-0.9.0.md).
 Remaining before RT-01 completion: audit/consolidate the transport conformance
 matrix across HTTP, SSE, WebSocket, and explicit service calls, including each
 error, deadline, disconnect, cancellation, duplicate consumer, and cleanup path.
-Finish native Response/cookie/flash handling with RT-11, including header timing.
+Extend native Response/cookie/flash acceptance with RT-11 across the full matrix.
 Typed client inference is now verified; do not restore it as an unfinished item.
+
+Codex response timing checkpoint (2026-10-03): native component/service HTTP/SSE
+responses retain their cookies alongside helper and flash cookies. Native
+redirects become navigation metadata. A real Node production browser follows
+both page and service redirects, retains HTTP-only cookies, and reads flash/old
+input once. The streaming header phase closes after outgoing middleware finishes;
+late cookie/header/flash writes reject explicitly. Early cookies are preserved
+when returning a lazy generator: materializing the Context response first prevents
+Hono from dropping prepared headers on a raw streaming response. Tests cover
+both early and late writes. Session rotation/destruction reject before storage
+changes once headers finalize. WebSocket actions reject native HTTP responses;
+serialized trees reject nested Response/Request/Headers with precise paths.
+HTTP/SSE/service/upload network failures explicitly report uncertain completion
+and no automatic retry. The full conformance matrix and supported-value audit
+remain required; this checkpoint does not close RT-01.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
@@ -679,6 +697,16 @@ with redirect, authentication change, logout, and session rotation. Specify whic
 values persist, which are consumed once, and which must never enter old input.
 Preserve cookie headers when RPC returns a redirect/result. Reject late cookie
 changes after streaming headers are committed with a useful diagnostic.
+
+Codex checkpoint (2026-10-03): verified native cookies/redirects, old-input and
+message consumption, and late session/header writes as described under RT-01.
+Middleware acceptance covers `/crpc`, `/upload`, `/sse`, and `/ws/`: valid incoming
+flash survives background requests, HTTP failures do not replace it with partial
+outgoing writes, and invalid tokens clear. A later stream failure cannot undo
+already-sent headers. These are response lifecycle fixes, not completion of all
+recipes. Next finish password/token exclusion from old input, generated failure/
+login/logout/rotation flows, and documented concurrent request semantics. Verify
+Workers/realtime integration for this behavior before claiming runtime parity.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.

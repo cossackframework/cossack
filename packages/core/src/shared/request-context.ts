@@ -16,6 +16,18 @@
 // component handle, so it needs AsyncLocalStorage.
 
 import type { Context } from 'hono';
+import { RpcError } from './rpc-stream';
+
+/** Structural header lifecycle shared with adapters, without framework imports. */
+export const RESPONSE_HEADER_STATE_KEY = 'cossack:response-header-state';
+export interface ResponseHeaderState { committed: boolean }
+
+/** A response's middleware has finished; later body pulls cannot change headers. */
+export function assertResponseHeadersMutable(context: Context, operation = 'change response headers'): void {
+    const state = context.get(RESPONSE_HEADER_STATE_KEY) as ResponseHeaderState | undefined;
+    if (state?.committed) throw new RpcError('COSSACK_RESPONSE_HEADERS_COMMITTED',
+        `Cannot ${operation} after response headers are finalized. Perform this operation before returning a streamed response.`);
+}
 
 /**
  * Injected by the framework: returns the active request's Hono `Context`, or

@@ -408,10 +408,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                     status: xhr.status, headers: { 'Content-Type': 'application/json' },
                                 }));
                             } catch (cause) {
-                                reject(new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Upload failed.', { cause }));
+                                reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
+                                    'Upload failed. The server outcome is unknown and is never retried.', { cause }));
                             }
                         };
-                        xhr.onerror = () => reject(new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Upload failed.'));
+                        xhr.onerror = () => reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
+                            'Upload failed. The server outcome is unknown and is never retried.'));
                         xhr.onabort = () => reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
                         xhr.send(formData);
                     });
@@ -489,7 +491,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
                     }
                     if (cause instanceof RpcError) throw cause;
-                    throw new RpcError('COSSACK_RPC_NETWORK_FAILED', 'RPC request failed.', { cause });
+                    throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
+                        'RPC request failed. The server outcome is unknown and is never retried.', { cause });
                 } finally { cleanup(); }
             };
             return createRpcCall(operation(), () => {

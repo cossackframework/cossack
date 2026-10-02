@@ -171,6 +171,9 @@ export function describeUnsupportedValue(
     if (type === 'bigint') return `${path || '(root)'} (bigint)`;
     if (type !== 'object') return null;
     if (options.handled?.(value as object)) return null; // transport handles it specially
+    if (value instanceof Response || value instanceof Request || value instanceof Headers) {
+        return `${path || '(root)'} (${value instanceof Response ? 'Response' : value instanceof Request ? 'Request' : 'Headers'})`;
+    }
     if (seen.has(value as object)) return `${path || '(root)'} (cyclic reference)`;
     if (value instanceof WeakMap || value instanceof WeakSet || value instanceof WeakRef) {
         return `${path || '(root)'} (weak collection)`;

@@ -78,11 +78,44 @@ describe completion. Prefer an inferred return or `AsyncGenerator<Yield, Result>
 when callers need a precise final result.
 
 A method returning a native `Response` has an `unknown` client result. The
-transport handles HTTP responses and redirects; it does not transfer a native
+HTTP/SSE transport handles responses and redirects; it does not transfer a native
 `Response` instance to the browser. Return a typed data value when a client
-handler needs a typed completion value.
+handler needs a typed completion value. WebSocket actions returning a native
+`Response` fail with `COSSACK_RPC_HTTP_RESPONSE_REQUIRED`. Nested `Response`,
+`Request`, and `Headers` instances in serialized arguments, state, or stream
+values fail with `COSSACK_RPC_SERIALIZATION_FAILED` and the offending value path.
+
+HTTP/SSE RPC redirects return metadata that the client proxy uses to navigate.
+Cookies from the action's native response, `cookie()`, and flash middleware are
+preserved together, including separate `Set-Cookie` values. Background transports
+preserve valid incoming flash for the next page. An RPC HTTP error status (400
+or higher) discards outgoing flash written before the failure. A later stream
+error cannot undo headers already sent.
+
+Write cookies, flash, and response headers before returning a stream. Async
+generator bodies execute lazily, after the response's middleware has finished;
+even a write before the first `yield` is too late. Use an ordinary async server
+method to prepare headers, then return a generator:
+
+```typescript
+@Server()
+async generate() {
+  cookie().set('job_started', '1', { httpOnly: true, path: '/' });
+  return (async function* () {
+    yield { step: 1 };
+    return { total: 1 };
+  })();
+}
+```
+
+Import `cookie` from `@cossackframework/core`. Late `cookie().set/delete`,
+`flash/flashInput`, and `this.c.header` writes reject with
+`COSSACK_RESPONSE_HEADERS_COMMITTED`. Session rotation and destruction also
+reject before modifying storage when headers are finalized. Existing session
+bag writes do not require a cookie change; see [sessions](./session.md).
 
 Failures reject with `RpcError`, including validation, authorization, timeout,
 disconnect, cancellation, and invalid serialization. Do not retry mutations
 automatically after a timeout or disconnect: the server outcome may be unknown.
+Network failures report that uncertainty; the framework never retries the action.
 Cancelling response consumption does not roll back a completed mutation.

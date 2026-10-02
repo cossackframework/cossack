@@ -212,7 +212,8 @@ describe('single-dispatch RPC calls', () => {
         await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID' });
         expect(target.loading).toEqual({});
         vi.mocked(fetch).mockRejectedValueOnce(new TypeError('connection failed'));
-        await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_NETWORK_FAILED' });
+        await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_NETWORK_FAILED',
+            message: expect.stringContaining('server outcome is unknown') });
         expect(target.loading).toEqual({});
     });
     it('automatically drains an unobserved event-handler call and logs failures', async () => {

@@ -299,3 +299,22 @@ The response releases components and services before retained middleware
 resources, and closes every registered resource even if another close fails.
 Database factories use this contract without importing the framework. Ordinary
 responses retain their existing middleware cleanup behavior.
+
+Response header timing is separate from response body ownership. The outer
+request-context middleware exposes core's structural `ResponseHeaderState`
+under `cossack:response-header-state`. It seals headers only after downstream
+middleware finishes, so flash and session middleware can still finalize cookies.
+It guards `c.header`; core cookie and flash helpers use the same structural
+contract without depending on framework. Session rotation/destruction check
+the guard before any storage changes. Retained stream pulls and cleanup cannot
+change headers through these helpers. Direct mutation of raw `Response.headers`
+does not participate in this guard.
+
+Generators remain lazy to preserve backpressure. Authors prepare cookies or
+flash in an ordinary async action before returning a generator. HTTP/SSE RPC
+materializes native redirects as client navigation metadata and preserves
+native, helper, and middleware cookies together. WebSocket results reject native
+HTTP responses explicitly; serialized value trees reject nested HTTP objects.
+Background transport requests preserve valid incoming flash; HTTP error statuses
+discard partial outgoing flash. Stream failures after headers finalize cannot
+roll back cookies or completed mutations.

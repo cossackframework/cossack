@@ -1142,6 +1142,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Inherited prototype actions may not have been auto-bound by the
             // most-derived constructor. Preserve the component receiver here.
             const result = await (actionMethod as any).apply(this, validatedPayload as any[]);
+            if (requestId !== undefined && result instanceof Response) {
+                throw new RpcError('COSSACK_RPC_HTTP_RESPONSE_REQUIRED',
+                    'Native HTTP responses require an HTTP or SSE action. WebSocket actions must return data.');
+            }
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
                 iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
                 cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };

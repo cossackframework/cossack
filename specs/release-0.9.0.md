@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Codex authored-client checkpoint adds inferred `rpc$(this.method(...))` types verified against published declarations without Vite, plus production HTTP/SSE generator and function-field/service browser coverage. Ordinary calls now consistently return only a final result. Remaining: audit/consolidate the complete transport conformance matrix and finish native Response/cookie/flash coordination with RT-11. See the [checkpoint](#codex-authored-rpc-types-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference and ordinary completion are verified. Codex now fixes native cookies/redirects, early/late streaming header writes, and network uncertainty, with production Node browser acceptance. Remaining: consolidate the complete transport conformance matrix and audit supported serialization values and Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-response-timing-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -31,7 +31,7 @@ below link directly to those explanations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation.
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
 - [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -85,6 +85,70 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-response-timing-2026-10-03"></a>
+### Codex review: RPC response cookies and header timing (2026-10-03)
+
+**Author: Codex.** Continued the RT-01/RT-11 acceptance audit and fixed these
+observable failures:
+
+- Native component/service response cookies were overwritten by Hono's existing
+  Context response. Merge their separate `Set-Cookie` values before materialization;
+  preserve cookies with `Expires` commas and avoid duplicate identical values.
+- Native redirects were followed by Fetch into HTML. Return RPC navigation
+  metadata while preserving native, helper, and outgoing flash cookies together.
+- Cookies written before returning a lazy generator could also disappear:
+  prepared Hono headers were dropped when assigning a raw streaming response.
+  Materialize the Context response at RPC entry so the response merge retains them.
+- Late cookie/header/flash writes appeared to succeed after headers finalized.
+  Core exposes a structural response header state; outer request middleware seals
+  it after downstream outgoing middleware finishes and guards `c.header`.
+  Cookie/flash helpers reject late writes with `COSSACK_RESPONSE_HEADERS_COMMITTED`.
+  Session rotation/destruction check the same guard before storage mutation.
+- Background RPC/realtime requests consumed flash meant for a destination page.
+  Preserve valid incoming flash for page consumption; clear invalid tokens and
+  discard partial outgoing flash on transport HTTP errors (status >= 400).
+- WebSocket actions silently serialized native Responses as `{}`. They now fail
+  with `COSSACK_RPC_HTTP_RESPONSE_REQUIRED`. Nested Response/Request/Headers
+  values produce path-specific serialization errors across the shared walker.
+- Component HTTP/SSE, service, and upload network errors now explain that server
+  completion is unknown and the framework never retries the operation.
+
+Native router tests cover component/service responses, redirects, multiple
+cookies, failed RPC preservation, old input, and early/late streamed writes.
+Middleware tests cover all four background endpoints. Session tests verify that
+late rotation/destruction leave the original stored row unchanged. Production
+Node browser acceptance uses published entries and real generated Vite builds:
+both page/service redirects retain HTTP-only cookies, the destination reads
+flash/old input once, reload has no flash, early streamed cookies arrive, and late
+streamed writes reject. Generated source passes TypeScript checking first.
+
+Verification: core build and framework declaration generation passed. Full core:
+685 tests; framework: 629 tests; CLI: 559 tests across 39 files, including all 14
+generated runtime cases. Root `pnpm tsc --noEmit` and `pnpm typecheck` passed for
+all 11 package configurations. Own-file diff whitespace checks passed; unrelated
+user edits were excluded. Documentation covers header timing and adds verified
+breaks to the draft migration guide.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 tasks remain checked. RT-01 and RT-11 remain open.** Next consolidate
+the complete transport conformance matrix and supported-value audit. Verify
+response timing through Workers/realtime paths; the new browser flow proves
+Node HTTP/SSE-backed RPC behavior, not complete runtime parity. RT-11 still needs
+password/token exclusion from old input, complete generated flows, and documented
+rotation/concurrency behavior. Streaming failures cannot retract sent headers;
+raw `Response.headers` mutation bypasses the helper guard. Do not prime generators
+to permit late headers or claim cancellation rolls back completed mutations.
+Continue every remaining release item; package versions stay 0.8.3 until REL-04.
 
 <a id="codex-authored-rpc-types-2026-10-03"></a>
 ### Codex continuation: authored client RPC types (2026-10-03)

@@ -240,6 +240,115 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
     }
   } finally { await browser?.close(); await server.close(); }
 }, 120000);
+it('preserves native RPC cookies and consumes flash after a real browser redirect', async () => {
+  const root = await project('node');
+  const write = async (relative, source) => {
+    await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await fs.writeFile(path.join(root, relative), source);
+  };
+  await write('src/services/cookie-result.ts', `
+    import { cookie, flash, flashInput, Server, Service, CossackService } from '@cossackframework/core';
+    export function cookieResult() {
+      cookie().set('context_cookie', 'from_action', { httpOnly: true, path: '/' });
+      flash('success', 'Saved'); flashInput({ title: 'Draft' });
+      const headers = new Headers({ Location: '/cookie-rpc/target' });
+      headers.append('Set-Cookie', 'native_one=1; HttpOnly; Path=/');
+      headers.append('Set-Cookie', 'native_two=2; HttpOnly; Path=/');
+      return new Response(null, { status: 303, headers });
+    }
+    @Service() export class CookieService extends CossackService {
+      @Server() complete() { return cookieResult(); }
+    }
+  `);
+  await write('src/pages/cookie-rpc/layout.ts', `
+    import { Cossack, Page } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { CookieService } from '../../services/cookie-result';
+    @Page({ transport: 'http', services: [CookieService] })
+    export default class CookieLayout extends Cossack { render() { return html\`\${this.children}\`; } }
+  `);
+  await write('src/pages/cookie-rpc/index.ts', `
+    import { Cossack, Page, Server, Client, ClientState, Inject, cookie, rpc$ } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { cookieResult, CookieService } from '../../services/cookie-result';
+    @Page({ transport: 'http' }) export default class CookiePage extends Cossack {
+      @Inject(CookieService) private service!: CookieService;
+      @ClientState() failure = '';
+      @ClientState() progress = '';
+      @Server() complete() { return cookieResult(); }
+      @Server() async *late() { yield 'first'; cookie().set('late_cookie', 'lost'); return 'unreachable'; }
+      @Server() async early() {
+        cookie().set('early_cookie', 'kept', { httpOnly: true, path: '/' });
+        return (async function* () { yield 'first'; return 'finished'; })();
+      }
+      @Client() async savePage() { await rpc$(this.complete()); }
+      @Client() async saveService() { await rpc$(this.service.complete()); }
+      @Client() async readLate() {
+        this.failure = ''; this.progress = '';
+        try { for await (const value of rpc$(this.late())) this.progress = value; }
+        catch (error) { this.failure = (error as { code?: string }).code ?? 'failed'; }
+      }
+      @Client() async readEarly() {
+        this.failure = ''; this.progress = '';
+        const call = rpc$(this.early());
+        for await (const value of call) this.progress = value;
+        this.progress = await call;
+      }
+      render() { return html\`<main><h1>Cookie RPC</h1>
+        <button @click=\${this.savePage}>Save page</button><button @click=\${this.saveService}>Save service</button>
+        <button @click=\${this.readLate}>Late cookie</button><button @click=\${this.readEarly}>Early cookie</button>
+        <p role="status">\${this.progress}</p><p role="alert">\${this.failure}</p></main>\`; }
+    }
+  `);
+  await write('src/pages/cookie-rpc/target/index.ts', `
+    import { Cossack, Page, State, flashed, old } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    @Page({ transport: 'http' }) export default class Target extends Cossack {
+      @State() notice = ''; @State() title = '';
+      async init() { this.notice = flashed<string>('success') ?? ''; this.title = old<string>('title') ?? ''; }
+      render() { return html\`<main><h1>Saved target</h1><p role="status">\${this.notice}:\${this.title}</p></main>\`; }
+    }
+  `);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated cookie RPC types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const server = await productionServer(root, { APP_SECRET: 'generated-cookie-rpc-test-secret' });
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    for (const label of ['Save page', 'Save service']) {
+      await page.goto(server.origin + '/cookie-rpc');
+      const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname === '/crpc');
+      await page.getByRole('button', { name: label, exact: true }).click();
+      const response = await responsePromise;
+      expect(response.status(), response.status() === 200 ? undefined : await response.text()).toBe(200);
+      const setCookies = (await response.headersArray()).filter(header => header.name.toLowerCase() === 'set-cookie');
+      expect(setCookies.map(header => header.value.split('=')[0]).sort()).toEqual(['context_cookie', 'cossack_flash', 'native_one', 'native_two'].sort());
+      await browserExpect(page).toHaveURL(server.origin + '/cookie-rpc/target');
+      await browserExpect(page.getByRole('status')).toHaveText('Saved:Draft');
+      const cookies = await context.cookies();
+      for (const name of ['context_cookie', 'native_one', 'native_two']) expect(cookies.find(cookie => cookie.name === name)).toMatchObject({ httpOnly: true });
+      expect(cookies.some(cookie => cookie.name === 'cossack_flash')).toBe(false);
+      await page.reload();
+      await browserExpect(page.getByRole('status')).toHaveText(':');
+    }
+    await page.goto(server.origin + '/cookie-rpc');
+    await page.getByRole('button', { name: 'Late cookie', exact: true }).click();
+    await browserExpect(page.getByRole('alert')).toHaveText('COSSACK_RESPONSE_HEADERS_COMMITTED');
+    await browserExpect(page.getByRole('status')).toHaveText('first');
+    expect((await context.cookies()).some(cookie => cookie.name === 'late_cookie')).toBe(false);
+    await page.getByRole('button', { name: 'Early cookie', exact: true }).click();
+    await browserExpect(page.getByRole('status')).toHaveText('finished');
+    await browserExpect(page.getByRole('alert')).toHaveText('');
+    expect((await context.cookies()).find(cookie => cookie.name === 'early_cookie')).toMatchObject({ value: 'kept', httpOnly: true });
+    expect(errors).toEqual([]);
+  } finally { await browser?.close(); await server.close(); }
+}, 120000);
 it('runs the scoped-service recipe across sibling navigation, nested injection, RPC, and disposal', async () => {
   const root = await project('node', ['scoped-service']);
   const serviceFile = path.join(root, 'src/services/scoped-counter.ts');
