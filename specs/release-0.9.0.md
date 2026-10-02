@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): shared `CommandSpec` (flags, aliases, positionals, `forwardsArgs` boundary for vite/wrangler forwarding) validates every converted command before effects with `COSSACK_OPTION_UNKNOWN`/`COSSACK_ARGUMENT_*` codes and supported alternatives; remaining: conflict/repeat rules beyond last-wins and per-subcommand flag sets (lang/image/generate subcommands share one set).
 - [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands (version, info, routes, build, dev, start, ssg, studio, adapter, lang, add, generate, remove, delete, upgrade, image); build/ssg capture child output under `--json`; thrown failures become coded diagnostics with exit 1; remaining: the database cluster's child-process JSON already conforms but is not yet on `runWithSpec`, and long-running commands still need their event-output contract.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` lists effective facts and explains behavior with reasons and source locations (`COSSACK_ROUTE_UNKNOWN` for misses) without executing components; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -27,7 +27,7 @@ below link directly to those explanations.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
 - [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work.
 - [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
-- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
+- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
@@ -49,7 +49,7 @@ below link directly to those explanations.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
-- [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite.
+- [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
 ## New services
 
@@ -328,6 +328,25 @@ not replace the final monorepo and runtime release gates.
   of stale tasks, typed client generator-result inference, preview/release
   tooling, and all other unchecked release requirements remain in scope.
   Versions remain 0.8.3 until the complete 0.9.0 checklist and release gates pass.
+
+### Group 2 continued: route metadata, inspection, test utilities (GLM, 2026-10-02)
+
+- RT-07 slice: `buildEffectiveRouteModel` in the CLI — route IDs computed in
+  the runtime's index space (`cmp_<base36>`), dynamic and catch-all
+  parameters in the framework's `:name{.+}` form (this fixed a real CLI bug:
+  `filePathToHttpRoute` derived `:...name` for catch-alls, diverging from the
+  router), layout ancestry, nearest 404/error boundaries, and source-level
+  @Page options (transport, ssg, middleware count via depth-aware array
+  parsing, decorator line numbers). Nothing executes during inspection.
+- CLI-04 slice: `cossack inspect routes [route]` — one command lists effective
+  facts with source locations and explains a route's behavior with reasons
+  (transport origin, ancestry, middleware count, SSG, params, boundaries).
+- RT-29 slice: `@cossackframework/test-utils/server` published entry with
+  `withRequestScope` and `controlledAsync`; ES-only named-entry lib build;
+  the package's own suite (5 tests) joined root `pnpm test:unit` (now 13
+  packages, 2,192 tests).
+- Gates: `pnpm tsc --noEmit`, `pnpm build`, and `pnpm test:unit` green; CLI
+  280 tests, framework 536 tests.
 
 ### Group 2 start: CLI spec, required bindings, capability model (GLM, 2026-10-02)
 
