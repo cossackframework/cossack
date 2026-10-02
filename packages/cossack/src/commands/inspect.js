@@ -87,6 +87,44 @@ async function inspectRoutes(args, ctx, command) {
   return 0;
 }
 
+/** Validate statically available route facts; never execute project modules. */
+async function checkRoutes(ctx) {
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const effective = await buildEffectiveRouteModel(root);
+    const diagnostics = [];
+    const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
+    for (const item of [...effective.pages, ...effective.layouts]) {
+      if (item.extraction.method !== 'ast') {
+        add('COSSACK_ROUTE_OPTIONS_UNKNOWN', 'Route options could not be resolved statically.', item.source);
+      }
+    }
+    for (const page of effective.pages) {
+      if (page.methodExtraction.method !== 'compiler') {
+        add('COSSACK_ROUTE_METHODS_UNKNOWN', 'Own-method compiler classification is unavailable.', page.source);
+      }
+      if (page.transport !== null && !['http', 'sse', 'websocket', 'durable-object'].includes(page.transport)) {
+        add('COSSACK_ROUTE_TRANSPORT_INVALID', 'Route transport must be http, sse, websocket, or durable-object.', page.source);
+      }
+    }
+    const ok = diagnostics.length === 0;
+    const data = {
+      scope: 'routes', routes: effective.pages, layouts: effective.layouts,
+      readiness: { staticMetadata: ok ? 'valid' : 'invalid', inheritance: 'not-checked', runtime: 'not-checked' },
+    };
+    if (ctx.flags.json === true) writeResult('check', { ok, data, diagnostics });
+    else {
+      for (const diagnostic of diagnostics) console.error(`${diagnostic.code}: ${diagnostic.message} (${diagnostic.source})`);
+      console.log(`Static route metadata: ${ok ? 'valid' : 'invalid'}. Inheritance and runtime behavior were not checked.`);
+    }
+    return ok ? 0 : 1;
+  } catch (error) {
+    const code = diagnosticCode(error, 'COSSACK_INSPECTION_FAILED');
+    return commandFailure(ctx, 'check', code,
+      ctx.flags.json === true ? diagnosticMessage(error, code) : error.message);
+  }
+}
+
 async function inspectCloudflare(args, ctx, command) {
   try {
     const root = await findProjectRoot(ctx.cwd);
@@ -124,6 +162,7 @@ export function inspectCommand(args, ctx) {
 export function checkCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.check, args, ctx, checkHelp)) return 0;
   if (!validateCommand(commandSpecs.check, args, ctx)) return 1;
+  if (args[0] === 'routes') return checkRoutes(ctx);
   return inspectCloudflare(args, ctx, 'check');
 }
 
@@ -140,9 +179,12 @@ explain its options, layout ancestry, methods, and source locations.`);
 }
 
 export function checkHelp() {
-  return commandSpecs.check.help(`cossack check cloudflare [--env <name>] [--json]
+  return commandSpecs.check.help(`cossack check <cloudflare|routes> [--json]
 
-Validate local Cloudflare deployment configuration without writing files.
+Validate local Cloudflare deployment configuration (--env <name>) or static
+route metadata without writing files. Route checks fail on unknown options,
+unavailable compiler method facts, or invalid transports. Inherited behavior
+and runtime execution are not yet checked.
 Returns a nonzero exit code for configuration errors. Build artifacts,
 remote resources, permissions, and secret availability are not checked.
 --json emits one versioned result with resource names and diagnostics.`);

@@ -209,7 +209,9 @@ Do not execute constructors or server methods merely to inspect a project.
 
 Codex review checkpoint (2026-10-02): compiler helper preservation now traverses
 all reachable calls instead of stopping at three hops. Own-method inspection now consumes the shared compiler classifier. Inheritance,
-macro source maps, scaffold integration, and route checks remain open. See the [implementation sequence and validation fixture](./release-0.9.0.md#codex-compiler-preservation-2026-10-02)
+macro source maps, and scaffold integration remain open. `check routes` now
+validates available static metadata with failing exits; checks over the complete
+project model remain open. See the [implementation sequence and validation fixture](./release-0.9.0.md#codex-compiler-preservation-2026-10-02)
 for the remaining work; this compiler correction does not complete CLI-04.
 
 Start in `packages/framework/src/vite-plugin.ts`, `vite-security-plugin.ts`,

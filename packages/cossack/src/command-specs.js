@@ -135,7 +135,7 @@ export const commandSpecs = {
       routes: { positionals: ['route'], flags: { verbose: bool('Include route details.') } },
     } }),
   check: new CommandSpec({ name: 'check', globals: readonly, positionals: ['scope'],
-    minPositionals: 1, subcommands: { cloudflare: { flags: { env } } } }),
+    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: {} } }),
   routes: new CommandSpec({ name: 'routes', globals: readonly, flags: { verbose: bool('Include route details.') } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),

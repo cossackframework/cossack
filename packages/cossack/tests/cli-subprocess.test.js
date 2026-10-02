@@ -328,6 +328,53 @@ describe('routes and inspection', () => {
     expect(explanation.data.reasons.join('\n')).toContain('Users (/src/pages/dashboard/layout.ts)');
   });
 
+  it('check routes validates metadata without executing page constructors', async () => {
+    for (const transport of ['http', 'sse', 'websocket', 'durable-object']) {
+      const dir = path.join(tmp, 'src/pages', transport);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'index.ts'), `@Page({ transport: '${transport}' }) export default class P {
+        constructor() { throw new Error('must not execute'); }
+        render() { return 'hello'; }
+      }`);
+    }
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(0);
+    expect(checked.stderr).toBe('');
+    expect(parseEnvelope(checked.stdout)).toMatchObject({
+      ok: true, command: 'check', diagnostics: [],
+      data: { scope: 'routes', readiness: { staticMetadata: 'valid', inheritance: 'not-checked', runtime: 'not-checked' } },
+    });
+  });
+
+  it('check routes fails on unresolved options and invalid transports while inspection succeeds', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages/dynamic'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/pages/dynamic/index.ts'), '@Page({ ...options }) export default class P {}');
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "@Page({ transport: 'invalid' }) export default class P {}");
+    await fs.writeFile(path.join(tmp, 'src/pages/layout.ts'), '@Page(config) export default class Layout {}');
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(1);
+    const result = parseEnvelope(checked.stdout);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.map(d => d.code)).toEqual(expect.arrayContaining([
+      'COSSACK_ROUTE_OPTIONS_UNKNOWN', 'COSSACK_ROUTE_TRANSPORT_INVALID',
+    ]));
+    expect(result.diagnostics.every(d => d.source.startsWith('/src/pages/'))).toBe(true);
+    const inspected = await runCli(['inspect', 'routes', '--json']);
+    expect(inspected.code).toBe(0);
+    expect(parseEnvelope(inspected.stdout).ok).toBe(true);
+  });
+
+  it('check routes rejects unsupported method metadata and scoped flags', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), '@Page() export default class P { data = server$(() => 1); }');
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(1);
+    expect(parseEnvelope(checked.stdout).diagnostics.map(d => d.code)).toContain('COSSACK_ROUTE_METHODS_UNKNOWN');
+    const invalid = await runCli(['check', 'routes', '--env', 'staging', '--json']);
+    expect(invalid.code).toBe(1);
+    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_OPTION_UNKNOWN');
+  });
+
   it('inspect routes <route> explains behavior with reasons', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages/team'), { recursive: true });
     await fs.writeFile(path.join(tmp, 'src/pages/team/index.ts'), "@Page({ transport: 'http', middlewares: [async (c, next) => { await next(); }] })\nexport default class Team {}");

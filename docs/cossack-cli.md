@@ -151,6 +151,30 @@ command writes `src/desktop/index.ts`, `forge.config.ts`, platform icons,
 Electron/Forge dependencies, and `desktop:dev`, `desktop:package`, and
 `desktop:make` scripts. Electron installers are built on their native host.
 
+### `cossack inspect routes` and `cossack check routes`
+
+```bash
+cossack inspect routes --json
+cossack inspect routes /team
+cossack check routes --json
+```
+
+Inspection lists route facts or explains a selected route. Method facts come
+from the compiler: retained client implementations, explicit or automatic RPC,
+and stripped methods without RPC registration are separate categories.
+
+Checks return a nonzero exit code when static options are unknown, compiler
+method facts are unavailable, or a transport is invalid. JSON diagnostics use
+`COSSACK_ROUTE_OPTIONS_UNKNOWN`, `COSSACK_ROUTE_METHODS_UNKNOWN`, or
+`COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Inspection can
+still succeed for those files so an agent can examine the available facts.
+
+These commands do not execute page constructors or server methods. Current
+checks cover static metadata only. Inheritance resolution and runtime behavior
+are reported as `not-checked`; success does not prove that the application runs.
+Resource macros without authored source mapping currently produce unknown
+method facts. `--env` applies to Cloudflare checks, not route checks.
+
 ### `cossack inspect cloudflare` and `cossack check cloudflare`
 
 ```sh

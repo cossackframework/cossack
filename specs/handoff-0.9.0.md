@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex compiler facts (2026-10-02):** read
+> **Latest checkpoint — Codex route checks (2026-10-02):** read
+> [static route checks and remaining acceptance](./release-0.9.0.md#codex-route-checks-2026-10-02).
+> `check routes` now fails for unknown metadata or invalid transports, with
+> source-bearing diagnostics. Inheritance and runtime remain explicitly unchecked.
+> **11/58 tasks remain checked; CLI-04 remains open.** Continue the project model,
+> macro source mapping, and scaffold/capability integration.
+
+> **Previous checkpoint — Codex compiler facts (2026-10-02):** read
 > [the shared classifier and remaining project-model work](./release-0.9.0.md#codex-compiler-facts-2026-10-02).
 > Route inspection now uses compiler own-method facts, including automatic RPC,
 > retained helpers/fields, and stripped methods without RPC registration.

@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Remaining: inheritance/project resolution, macro source maps, scaffold recipes, and route checks.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Remaining: inheritance/project resolution, macro source maps, scaffold recipes, and checks over the complete project model.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,31 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-route-checks-2026-10-02"></a>
+### Codex continuation: static route checks (2026-10-02)
+
+**Author: Codex.** Added `check routes` to shared command metadata and dispatch.
+The command consumes the same route/compiler model as inspection. Unknown page
+or layout options, unavailable method classification, and invalid transports
+produce stable source-bearing diagnostics and a failing exit code. All four
+core transports are accepted. Inspection remains available for failed inputs.
+Neither command executes application constructors or server methods.
+
+The JSON readiness fields state the scope explicitly: static metadata is
+validated; inheritance and runtime behavior are not checked. CLI-04 remains
+open for the complete project model, inherited declarations, macro source maps,
+and scaffold/capability integration. **11/58 tasks remain checked.**
+
+Verification:
+
+- `pnpm --filter cossack exec vitest run tests/cli-subprocess.test.js`: **34 passed**, including successful checks for all transports, non-executed constructors, failing dynamic/layout metadata, unsupported macros, and scoped flag rejection.
+- `pnpm --filter cossack exec vitest run tests/command-spec.test.js`: **17 passed**.
+- `pnpm tsc --noEmit`: passed.
+
+GLM should continue the unresolved project-model requirements rather than treating
+this command as full route correctness validation. The public CLI guide documents
+the same limits. Full release gates were not rerun for this CLI-only change.
 
 <a id="codex-compiler-facts-2026-10-02"></a>
 ### Codex continuation: compiler-backed own-method inspection (2026-10-02)
