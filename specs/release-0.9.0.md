@@ -45,7 +45,7 @@ below link directly to those explanations.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Remaining: scaffold recipe gating and build-time capability enforcement.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Remaining: recipe integration, automatic page requirements, selected-environment binding discovery, adapter-dependent capability audit, and generated-app acceptance.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -85,6 +85,35 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-capability-build-2026-10-03"></a>
+### Codex continuation: selected build capability requirements (2026-10-03)
+
+**Author: Codex.** Added `checkCapabilityRequirements` to the shared runtime
+model. Selected feature declarations carry requirements and file/line/column
+locations. The checker returns all unsupported or missing-binding diagnostics,
+with names only; false requirements are omitted. It is reusable by build and
+recipe consumers without importing application modules or Cloudflare APIs.
+
+`cossackPages({ capabilities })` checks those declarations in `buildStart` and
+fails before bundle output. Documentation shows explicit runtime, binding names,
+and selected feature requirements. Real Vite builds exercise Desktop SSE
+rejection, missing Cloudflare SSE bindings, supported HTTP builds on all four
+runtimes, and a supported Cloudflare SSE configuration. An unused module importing
+`cloudflare:workers` does not enter portable fixture bundles.
+
+This is enforcement of supplied requirements, not automatic discovery. RT-25
+remains open: connect scaffold registry selection and generated Vite configs to
+this API; derive page requirements from shared compiler metadata; resolve bindings
+from the selected environment; audit adapter-dependent capabilities; and verify
+complete generated application builds. Do not claim these small build fixtures
+prove application transport execution or all package graph boundaries.
+
+Verification: framework declaration build passed; capability/model suite
+**15 passed**, including real Vite builds through published package exports;
+complete framework suite **590 passed across 44 files**. Root TypeScript and
+all **11 package type checks passed**.
+**12/58 tasks remain checked.** The full release goal remains active.
 
 <a id="codex-module-inspection-2026-10-03"></a>
 ### Codex review: module validity and CLI-04 acceptance audit (2026-10-03)

@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex CLI-04 completion (2026-10-03):** read
+> **Latest checkpoint — Codex build capabilities (2026-10-03):** read
+> [selected requirement enforcement and next integration](./release-0.9.0.md#codex-capability-build-2026-10-03).
+> **Author: Codex.** `cossackPages({ capabilities })` rejects unsupported or
+> unconfigured selected features before bundle output, using the shared model
+> and source-bearing diagnostics. **12/58 tasks remain checked.** RT-25 still
+> needs recipe/generated-config integration, automatic page requirements,
+> selected-environment bindings, and adapter capability verification.
+
+> **Previous checkpoint — Codex CLI-04 completion (2026-10-03):** read
 > [module validity fixes and requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03).
 > **Author: Codex.** Missing/unresolved default exports now fail route checks;
 > unsupported inherited layout options and dynamic service references stay

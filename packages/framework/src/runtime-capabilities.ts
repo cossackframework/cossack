@@ -89,6 +89,45 @@ export interface CapabilityResult {
     missingBindings: string[];
 }
 
+/** A selected feature's requirements and the declaration that selected it. */
+export interface CapabilityUse {
+    feature: string;
+    source: { file: string; line?: number; column?: number };
+    requires: CapabilityRequirement;
+}
+
+export interface CapabilityDiagnostic {
+    code: 'COSSACK_CAPABILITY_UNSUPPORTED' | 'COSSACK_CAPABILITY_BINDING_MISSING';
+    feature: string;
+    source: CapabilityUse['source'];
+    capability: keyof CapabilityRequirement;
+    message: string;
+    missingBindings: string[];
+}
+
+/** Shared by build/recipe consumers; binding names alone are sufficient. */
+export function checkCapabilityRequirements(
+    runtime: RuntimeName,
+    uses: readonly CapabilityUse[],
+    bindingNames: readonly string[] = [],
+): CapabilityDiagnostic[] {
+    const env = Object.fromEntries(bindingNames.map(name => [name, true]));
+    return uses.flatMap(use => Object.entries(use.requires).flatMap(([key, requirement]) => {
+        if (requirement === false || requirement === undefined) return [];
+        const capability = key as keyof CapabilityRequirement;
+        const result = evaluateCapability(runtime, capability, env, requirement);
+        if (result.status === 'available') return [];
+        return [{
+            code: result.status === 'unsupported' ? 'COSSACK_CAPABILITY_UNSUPPORTED' as const : 'COSSACK_CAPABILITY_BINDING_MISSING' as const,
+            feature: use.feature,
+            source: use.source,
+            capability,
+            missingBindings: result.missingBindings,
+            message: `${use.feature} requires ${capability} on ${runtime}: ${formatCapabilityResult(result)}.`,
+        }];
+    }));
+}
+
 function profileFor(runtime: RuntimeName): RuntimeProfile | undefined {
     return runtime === 'unknown' ? undefined : PROFILES[runtime];
 }

@@ -926,6 +926,15 @@ Combine runtime capabilities with declared bindings. Distinguish unsupported,
 missing configuration, and available-with-an-adapter. Do not reject portable code
 just because a provider-specific optional module exists elsewhere in the project.
 
+Codex checkpoint (2026-10-03): `checkCapabilityRequirements` now returns
+source-bearing diagnostics from the shared model, and `cossackPages` accepts
+explicit `capabilities` declarations checked before bundle output. Real Vite
+fixtures cover unsupported/missing-binding failure and portable supported builds.
+Next connect recipe selection and generated config to this API, derive page
+requirements from shared metadata, and resolve selected-environment bindings.
+Audit adapter-dependent capabilities before using their current profile flags as
+proof of configured support. Full generated-app acceptance remains required.
+
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.
 

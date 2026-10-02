@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
+import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -66,6 +67,12 @@ export type MarkdownProcessor = (
 ) => MarkdownResult | Promise<MarkdownResult>;
 
 export interface CossackPagesOptions {
+  /** Selected build features. Bindings are names only, never secret values. */
+  capabilities?: {
+    runtime: Exclude<RuntimeName, 'unknown'>;
+    bindings?: readonly string[];
+    requirements: readonly CapabilityUse[];
+  };
   /**
    * Application-owned Markdown compiler. Install one with
    * `cossack add markdown`.
@@ -131,6 +138,17 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       };
     },
     buildStart() {
+      if (options.capabilities) {
+        const { runtime, requirements, bindings } = options.capabilities;
+        const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
+        const first = diagnostics[0];
+        if (first) this.error({
+          code: first.code,
+          message: diagnostics.map(diagnostic => `${diagnostic.source.file}${diagnostic.source.line ? `:${diagnostic.source.line}` : ''}: ${diagnostic.message}`).join('\n'),
+          id: first.source.file,
+          ...(first.source.line ? { loc: { file: first.source.file, line: first.source.line, column: first.source.column ?? 0 } } : {}),
+        });
+      }
       warnIfMarkdownIsUnconfigured((message) => this.warn(message));
     },
     resolveId(id) {
