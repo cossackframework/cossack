@@ -70,7 +70,7 @@ result while the operation still completes. Selecting another iterator, or
 selecting iteration after promise consumption began, throws
 `COSSACK_RPC_ALREADY_CONSUMED`. Repeated awaits share completion.
 
-Ordinary methods return `RpcCall<Awaited<Return>, never>` and yield no values.
+Ordinary methods return `RpcCall<RpcResult<Return>, never>` and yield no values.
 Generators infer yielded and final values separately. A generator with no
 explicit return has a `void` final result. A broad `AsyncIterable<Yield>` return
 annotation has an `unknown` final result because that annotation does not
@@ -114,13 +114,37 @@ not ordinary JSON. Service/WebSocket JSON calls reject binary values before
 dispatch. Ordinary multipart results use the same JSON snapshot and diagnostics.
 This contract does not imply multipart generator or nested-file parity.
 
-A method returning a native `Response` has an `unknown` client result. The
-HTTP/SSE transport handles responses and redirects; it does not transfer a native
-`Response` instance to the browser. Return a typed data value when a client
-handler needs a typed completion value. WebSocket actions returning a native
-`Response` fail with `COSSACK_RPC_HTTP_RESPONSE_REQUIRED`. Nested `Response`,
-`Request`, and `Headers` instances in serialized arguments, state, or stream
-values fail with `COSSACK_RPC_SERIALIZATION_FAILED` and the offending value path.
+An ordinary method returning a native `Response` has a `Response | undefined`
+client result. Successful HTTP/SSE component and service calls resolve to a local
+browser `Response` with the native status, status text, readable body and
+browser-visible headers. Text, JSON, binary and bodyless responses are supported.
+Their bodies never become component state or redirect metadata. The component
+upload path supports binary responses too. Cookie handling follows the browser's
+HTTP rules; `Set-Cookie` remains unavailable to client code.
+
+The proxy consumes the entire native body before completing the call. This keeps
+deadlines, cancellation and server resource cleanup active through consumption,
+including an unobserved call. It buffers at most 1 MiB and rejects larger bodies
+with `COSSACK_RPC_RESPONSE_TOO_LARGE`. Use an HTTP endpoint for larger downloads
+or continuous streams. The result is a local response, so `url` and `redirected`
+do not describe the original fetch. Repeated awaits return the same response;
+read its body once or call `clone()` before consuming it.
+
+```typescript
+const response = await rpc$(this.exportReport());
+if (response) {
+  const contents = await response.blob();
+  console.log(response.status, contents.size);
+}
+```
+
+Redirects navigate and complete with undefined. Non-success HTTP statuses reject
+with an `RpcError` containing the status and known request ID. Native responses
+do not carry a state envelope; use a typed data return to hydrate action state.
+WebSocket actions returning a native `Response` cancel its body and fail with
+`COSSACK_RPC_HTTP_RESPONSE_REQUIRED`. A native Response cannot be a generator
+yield or terminal value: these, and nested `Response`, `Request`, or `Headers`
+in serialized trees, fail with `COSSACK_RPC_SERIALIZATION_FAILED` and their path.
 
 HTTP/SSE RPC redirects return metadata that the client proxy uses to navigate.
 Cookies from the action's native response, `cookie()`, and flash middleware are

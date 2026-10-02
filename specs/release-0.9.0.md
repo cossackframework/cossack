@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire result/yield types, ordinary completion, native response timing, and one 134-test matrix (128 shared transport + six multipart cases) are verified. Codex fixed custom-hook evaluation, lossy serialization, private upload errors, and binary WebSocket argument dispatch. Remaining: native-response client bodies, multipart stream/file/ownership parity and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-json-values-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire result/yield types, ordinary completion, native response timing/body consumption, and one 178-test matrix (172 shared transport + six multipart cases) are verified. Native HTTP bodies resolve to a bounded local Response; real HTTP/SSE/upload browsers verify binary bodies and metadata. Remaining: multipart stream/file/ownership parity and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-native-response-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,91 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-native-response-2026-10-03"></a>
+### Codex review: native HTTP RPC response completion (2026-10-03)
+
+**Author: Codex.** Continued the RT-01 audit after `26ec624`. The router forwarded
+native Response bodies correctly, but public clients parsed them as state:
+JSON could hydrate unintended fields, while text/binary/bodyless responses
+failed JSON decoding. The authored client completion type was unknown.
+
+Successful ordinary native HTTP responses now resolve to a local browser
+Response. The reserved `X-Cossack-Rpc-Response: native` header distinguishes user
+bodies from state envelopes and generator frames before checking MIME types.
+Text, JSON (even objects with reserved metadata-looking keys), binary, raw NDJSON
+and bodyless 204 responses work. Status/status text and browser-visible headers
+are retained. Redirects keep navigating with undefined completion; HTTP error
+statuses still reject with their status and known request ID.
+
+Core drains the native body before call completion using a growing byte buffer
+capped at 1 MiB. This keeps deadlines, cancellation and server response-lifetime
+cleanup active through consumption; unobserved calls drain too. Oversized bodies
+reject with `COSSACK_RPC_RESPONSE_TOO_LARGE` and cancel the producer. Larger or
+continuous downloads belong to HTTP endpoints. Repeated awaits share the same
+local one-use body; clone before multiple reads. Fetch URL/redirect flags are
+not preserved. Native bodies never hydrate action state; typed data returns
+remain the state synchronization contract.
+
+`RpcResult<Response>` now resolves to `Response | undefined`; generator Response
+terminal values remain invalid and infer never. The existing semantic fixture
+checks ordinary, mixed, viewed-again and generator cases. WebSocket rejection
+now cancels a native body rather than leaving its producer open. Upload XHR uses
+arraybuffer and copies all browser-visible headers instead of decoding every
+response as JSON text. Its real Chromium binary round-trip preserves bytes,
+status, content type and a custom response header. This fixes the native upload
+body boundary, not upload request ownership or generator dispatch.
+
+The existing matrix adds 11 cases per transport: five native representations,
+unobserved draining, size errors, HTTP failure status, body disconnect, deadlines
+and cancellation/body closure. It now has **43 shared cases x four paths = 172**,
+plus six multipart cases: **178 tests**. Core reader tests cover exact byte limits,
+fragmented one-byte chunks, pre-abort and pending-read cancellation, network
+failure and reader release. Existing native-router tests retain request/ORM
+context and disposal evidence. Generated Node sources compile before production
+HTTP/SSE browsers consume page text and service binary responses, plus a separate
+binary upload page. Existing cookie/redirect browser acceptance still passes.
+
+Verified after the final code change: core build; framework declarations;
+focused matrix **178**; full core **718** tests/51 files; framework **807**/49;
+CLI **559**/39, including all **14** generated runtime cases; root TypeScript and
+all **11** package checks. Own-file whitespace checks passed. Updated RPC guide,
+architecture, migration draft, detailed plan and Codex handoff.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts tests/router-rpc-stream.test.ts
+pnpm --filter @cossackframework/core exec vitest run tests/rpc-native-response.test.ts tests/rpc-client-types.test.ts tests/method-proxy-route-id.test.ts
+pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 tasks checked; no new task closes. RT-01 remains open.** GLM should next
+address multipart parity in `packages/framework/src/transports/http.ts`. Source
+inspection shows a separate bootstrap/dispatch path with no full layout ownership
+chain or awaited component-disposal boundary, top-level-only file reconstruction,
+no shared `enforceActionInput` gate, and no generator response handling. Add real
+client/router tests that fail on these gaps, then share the existing action
+ownership/validation/response machinery with JSON RPC. Do not consume generators
+into an ordinary JSON result as a substitute for streamed parity. Preserve upload
+progress and decide explicitly how its client consumes generator replies.
+
+Verify nested files, malformed input/markers, forwarded and explicit services,
+validation before mutation, cancellation/disconnect, lazy generator completion,
+request/config/auth/ORM ownership, cleanup on all exits and native/helper/flash
+cookies/redirects. Ordinary multipart/native-body tests do not prove these.
+Finish remaining protocol diagnostics and Workers/realtime acceptance with RT-11,
+including native body consumption through built Workers artifacts. Its secret
+exclusion, recipes, rotation and concurrency criteria remain open. Every other
+unchecked release task and Deno/Electron release gate stays in scope. Keep
+versions 0.8.3 until REL-04; rebuild declarations sequentially before dependent
+tests. Preserve unrelated `reports.md` and `.zcodeignore` edits.
 
 <a id="codex-rpc-json-values-2026-10-03"></a>
 ### Codex review: JSON RPC values and client types (2026-10-03)

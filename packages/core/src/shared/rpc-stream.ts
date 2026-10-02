@@ -1,6 +1,9 @@
 /** Versioned, response-local RPC stream protocol. Each UTF-8 line is one frame. */
 export const RPC_STREAM_CONTENT_TYPE = 'application/x-cossack-rpc+ndjson';
 export const RPC_STREAM_MAX_FRAME_BYTES = 1024 * 1024;
+/** Identifies an action-owned HTTP response rather than an RPC state envelope. */
+export const RPC_NATIVE_RESPONSE_HEADER = 'X-Cossack-Rpc-Response';
+export const RPC_NATIVE_RESPONSE_MAX_BYTES = 1024 * 1024;
 
 export type RpcStreamFrame =
     | { v: 1; type: 'yield' | 'done'; requestId: string; state: Record<string, unknown>; value?: unknown; scopeState?: Record<string, unknown> }
@@ -110,14 +113,55 @@ export async function* readRpcStream(
     }
 }
 
+/**
+ * Finish the native body before completing a call, preserving deadlines and
+ * request cleanup even for unobserved calls. The returned local Response has
+ * a readable body; it is not the server's Response instance or a live stream.
+ */
+export async function readRpcNativeResponse(response: Response, signal?: AbortSignal): Promise<Response> {
+    const requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
+    if (signal?.aborted) {
+        await response.body?.cancel().catch(() => {});
+        throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+    }
+    if (!response.body) return new Response(null, response);
+    const reader = response.body.getReader();
+    let buffer = new Uint8Array(4096);
+    let size = 0;
+    const abort = () => { void reader.cancel(signal?.reason).catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+        while (true) {
+            if (signal?.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+            const next = await reader.read();
+            if (signal?.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+            if (next.done) break;
+            size += next.value.byteLength;
+            if (size > RPC_NATIVE_RESPONSE_MAX_BYTES) throw new RpcError('COSSACK_RPC_RESPONSE_TOO_LARGE',
+                'Native RPC response exceeds the byte limit. Use an HTTP endpoint for larger or continuous bodies.', { requestId });
+            if (size > buffer.length) {
+                const grown = new Uint8Array(Math.min(RPC_NATIVE_RESPONSE_MAX_BYTES, Math.max(size, buffer.length * 2)));
+                grown.set(buffer);
+                buffer = grown;
+            }
+            buffer.set(next.value, size - next.value.byteLength);
+        }
+        return new Response(buffer.slice(0, size), response);
+    } finally {
+        signal?.removeEventListener('abort', abort);
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+    }
+}
+
 export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<Result>, AsyncIterable<Yield> {
     catch<TResult = never>(onRejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null): Promise<Result | TResult>;
     finally(onFinally?: (() => void) | null): Promise<Result>;
     cancel(): Promise<void>;
 }
 
-// HTTP control-flow responses are handled by the transport, not transferred
-// as Response objects. Their client body/completion is not statically known.
+// Successful HTTP control-flow bodies resolve to a local buffered Response;
+// redirects resolve to undefined. Native Responses cannot be stream values.
 /** The JSON representation of a server value, without native prototypes. */
 export type RpcSerialized<T> = 0 extends (1 & T) ? any
     : T extends string | number | boolean | null | undefined | void ? T
@@ -143,15 +187,15 @@ type RpcSerializedOptionalHook<T> = 'toJSON' extends keyof T
             : Hook extends (...args: any[]) => infer Result ? RpcSerializedFields<T> | RpcSerialized<Result> : RpcSerializedFields<T>
         : RpcSerializedFields<T>
     : RpcSerializedFields<T>;
-type RpcClientValue<T> = T extends Response ? unknown : RpcSerialized<T>;
+type RpcClientValue<T> = T extends Response ? Response | undefined : RpcSerialized<T>;
 type RpcTerminal<T> = RpcClientValue<Awaited<T>>;
 
 /** Final client result inferred from an authored server method's return type. */
 export type RpcResult<T> = T extends RpcCall<infer Result, any> ? RpcTerminal<Result>
     : T extends PromiseLike<infer Value> ? RpcResult<Value>
-    : T extends AsyncIterable<unknown> & AsyncIterator<unknown, infer Result, any> ? RpcTerminal<Result>
+    : T extends AsyncIterable<unknown> & AsyncIterator<unknown, infer Result, any> ? RpcSerialized<Awaited<Result>>
     : T extends AsyncIterable<unknown> ? unknown
-    : T extends Response ? unknown
+    : T extends Response ? Response | undefined
     : RpcSerialized<T>;
 
 /** Client stream values; ordinary server methods have no yielded values. */

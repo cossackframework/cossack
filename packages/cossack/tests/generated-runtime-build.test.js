@@ -147,6 +147,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
   await write('src/services/rpc-report.ts', `
     import { Server, Service, CossackService } from '@cossackframework/core';
     @Service() export class ReportService extends CossackService {
+      @Server() native() { return new Response(new Uint8Array([0, 255, 128]), { headers: { 'Content-Type': 'application/octet-stream', 'X-Native': 'service' } }); }
       @Server() report = async function* (label: string) {
         const serverMarker = 'private-service-generator-marker';
         yield { label };
@@ -180,6 +181,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
         yield { amount };
         return { amount, marker };
       };
+      @Server() async native() { return new Response('native page', { status: 202, headers: { 'X-Native': 'page' } }); }
       @Server() async ordinary(amount: number) { return { amount }; }
       @Server() async *serialized() {
         yield { when: new Date('2026-10-03'), list: [undefined] };
@@ -206,6 +208,12 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
           const serialized = rpc$(this.serialized());
           for await (const value of serialized) values.push('wire:' + value.when.split('T')[0] + '/' + String(value.list[0]));
           const fifth = await serialized;
+          const nativePage = await rpc$(this.native());
+          if (!nativePage) throw new Error('Missing page response');
+          values.push('native:' + nativePage.status + '/' + nativePage.headers.get('X-Native') + '/' + await nativePage.text());
+          const nativeService = await rpc$(this.report.native());
+          if (!nativeService) throw new Error('Missing service response');
+          values.push('binary:' + [...new Uint8Array(await nativeService.arrayBuffer())].join('/'));
           this.output = values.join(',') + '|done:' + [first.total, second.amount, third.length, fourth.amount, fifth.count].join('/');
         } catch (error) { this.failure = error instanceof Error ? error.message : 'RPC failed'; }
         finally { this.pending = false; }
@@ -213,6 +221,24 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       render() { return html\`<main><h1>Typed ${transport} RPC</h1>
         <button @click=\${this.run} ?disabled=\${this.pending}>Run</button>
         <p role="status">\${this.output}</p><p role="alert">\${this.failure}</p></main>\`; }
+    }
+  `);
+  await write('src/pages/native-upload/index.ts', `
+    import { Cossack, Page, Server, Client, ClientState, rpc$ } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    @Page({ transport: 'http' }) export default class NativeUpload extends Cossack {
+      @ClientState() output = ''; @ClientState() failure = '';
+      @Server() async upload(file: File) {
+        return new Response(await file.arrayBuffer(), { status: 201, headers: { 'Content-Type': 'application/octet-stream', 'X-Native': file.name } });
+      }
+      @Client() async run() {
+        try {
+          const response = await rpc$(this.upload(new File([new Uint8Array([0, 255, 128])], 'binary.dat')));
+          if (!response) throw new Error('Missing upload response');
+          this.output = response.status + '/' + response.headers.get('Content-Type') + '/' + response.headers.get('X-Native') + '/' + [...new Uint8Array(await response.arrayBuffer())].join('/');
+        } catch (error) { this.failure = error instanceof Error ? error.message : 'Upload failed'; }
+      }
+      render() { return html\`<main><button @click=\${this.run}>Upload</button><p role="status">\${this.output}</p><p role="alert">\${this.failure}</p></main>\`; }
     }
   `);
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
@@ -238,13 +264,19 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       await page.goto(server.origin + '/rpc/' + transport);
       await browserExpect(page.getByRole('heading', { name: 'Typed ' + transport + ' RPC' })).toBeVisible();
       await page.getByRole('button', { name: 'Run', exact: true }).click();
-      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report,wire:2026-10-03/null|done:2/3/6/7/3');
+      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report,wire:2026-10-03/null,native:202/page/native page,binary:0/255/128|done:2/3/6/7/3');
       await browserExpect(page.getByRole('alert')).toHaveText('');
-      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized']);
+      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized', 'native', 'native']);
       expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
       expect(errors).toEqual([]);
       await page.close();
     }
+    const uploadPage = await browser.newPage();
+    await uploadPage.goto(server.origin + '/native-upload');
+    await uploadPage.getByRole('button', { name: 'Upload', exact: true }).click();
+    await browserExpect(uploadPage.getByRole('status')).toHaveText('201/application/octet-stream/binary.dat/0/255/128');
+    await browserExpect(uploadPage.getByRole('alert')).toHaveText('');
+    await uploadPage.close();
   } finally { await browser?.close(); await server.close(); }
 }, 120000);
 it('preserves native RPC cookies and consumes flash after a real browser redirect', async () => {

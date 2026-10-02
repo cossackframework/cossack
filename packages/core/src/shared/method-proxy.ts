@@ -4,7 +4,7 @@ import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
 import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
@@ -382,6 +382,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     request = new Promise<Response>((resolve, reject) => {
                         const xhr = upload = new XMLHttpRequest();
                         xhr.open('POST', `/upload${window.location.search}`, true);
+                        xhr.responseType = 'arraybuffer';
                         xhr.upload.onprogress = (event) => {
                             const property = `${name}Progress`;
                             if (event.lengthComputable && typeof component.getProperty(property) === 'number') {
@@ -391,9 +392,18 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         };
                         xhr.onload = () => {
                             try {
-                                resolve(new Response(xhr.responseText, {
-                                    status: xhr.status, headers: { 'Content-Type': 'application/json',
-                                        ...(xhr.getResponseHeader?.('X-Cossack-Request-Id') ? { 'X-Cossack-Request-Id': xhr.getResponseHeader('X-Cossack-Request-Id')! } : {}) },
+                                const headers = new Headers();
+                                for (const line of xhr.getAllResponseHeaders?.().split(/[\r\n]+/) ?? []) {
+                                    const separator = line.indexOf(':');
+                                    if (separator > 0) headers.append(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
+                                }
+                                for (const header of ['Content-Type', RPC_NATIVE_RESPONSE_HEADER, 'X-Cossack-Request-Id']) {
+                                    const value = xhr.getResponseHeader?.(header);
+                                    if (value && !headers.has(header)) headers.set(header, value);
+                                }
+                                if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+                                resolve(new Response(xhr.status === 204 || xhr.status === 205 || xhr.status === 304 ? null : xhr.response ?? xhr.responseText, {
+                                    status: xhr.status, statusText: xhr.statusText, headers,
                                 }));
                             } catch (cause) {
                                 reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
@@ -445,6 +455,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
                             { status: response.status, requestId: response.headers?.get('X-Cossack-Request-Id') ?? undefined,
                                 fieldErrors: body?.fieldErrors });
+                    }
+                    if (response.headers?.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
+                        const result = await readRpcNativeResponse(response, controller.signal);
+                        invalidateClientPageCache();
+                        succeed();
+                        return result;
                     }
                     if (response.headers?.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                         let invalidated = false;

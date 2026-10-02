@@ -114,14 +114,14 @@ class ClientPage extends BasePage {
     type NoReturnResult = Assert<Equal<Awaited<typeof noReturn>, void>>;
     type BroadIterableResult = Assert<Equal<Awaited<typeof unknownReturn>, unknown>>;
     const response = rpc$(this.redirectResult());
-    type ResponseResult = Assert<Equal<Awaited<typeof response>, unknown>>;
+    type ResponseResult = Assert<Equal<Awaited<typeof response>, Response | undefined>>;
     const responseStream = rpc$(this.responseStream());
-    type StreamResponseResult = Assert<Equal<Awaited<typeof responseStream>, unknown>>;
+    type StreamResponseResult = Assert<Equal<Awaited<typeof responseStream>, never>>;
     const existingResponseCall = rpc$(null! as RpcCall<Response, never>);
-    type ExistingResponseResult = Assert<Equal<Awaited<typeof existingResponseCall>, unknown>>;
+    type ExistingResponseResult = Assert<Equal<Awaited<typeof existingResponseCall>, Response | undefined>>;
     const mixedResponseCall = rpc$(null! as RpcCall<Response | { saved: boolean }, never>);
-    type MixedResponseResult = Assert<Equal<Awaited<typeof mixedResponseCall>, unknown>>;
-    // @ts-expect-error The client does not receive a native Response instance.
+    type MixedResponseResult = Assert<Equal<Awaited<typeof mixedResponseCall>, Response | undefined | { saved: boolean }>>;
+    // @ts-expect-error A redirect can complete without a Response.
     (await response).status;
     const viewedAgain: typeof typed = rpc$(typed);
     const recovered: Promise<{ total: number } | { error: string }> = call.catch(() => ({ error: 'failed' }));

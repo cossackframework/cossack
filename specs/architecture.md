@@ -335,3 +335,16 @@ used by authored `rpc$` inference, avoiding a second type vocabulary. Native
 server code keeps its authored types; client code receives data without native
 model prototypes. Parameter and hydrated component property annotations still
 need to describe their JSON representation; this does not add native revival.
+
+Ordinary native HTTP RPC responses use the reserved `X-Cossack-Rpc-Response:
+native` marker. Component/service clients check this before examining MIME types
+or JSON state, so user JSON and NDJSON bodies cannot become protocol metadata.
+Core consumes the native body with a bounded growing byte buffer before resolving
+`RpcCall<Response | undefined, never>` to a local response. The 1 MiB cap,
+deadline, cancellation and server response lifetime apply through consumption;
+unobserved calls also drain and release resources. Native response status/text,
+browser-visible headers and bytes are preserved. Redirects retain navigation
+metadata and undefined completion. Native bodies are not state envelopes and do
+not hydrate action state. Non-success statuses retain RPC error handling. Upload
+XHR uses arraybuffer and copies browser-visible headers. WebSocket rejection
+cancels a native response body; Response values in generators remain invalid.

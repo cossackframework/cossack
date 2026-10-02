@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { snapshotRpcFrame, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
+import { snapshotRpcFrame, RPC_NATIVE_RESPONSE_HEADER, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
 
 interface RpcStreamOptions {
     result: AsyncIterable<unknown>;
@@ -21,6 +21,11 @@ export async function retainRpcResponseBody(
     response: Response, signal: AbortSignal, dispose: () => Promise<void>,
 ): Promise<Response> {
     const inRequest = AsyncLocalStorage.snapshot();
+    // Always override application-supplied protocol metadata. Native JSON or
+    // NDJSON content types must not be mistaken for framework envelopes.
+    const headers = new Headers(response.headers);
+    headers.set(RPC_NATIVE_RESPONSE_HEADER, 'native');
+    response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     if (!response.body) { await inRequest(dispose); return response; }
     const reader = response.body.getReader();
     let closed = false;

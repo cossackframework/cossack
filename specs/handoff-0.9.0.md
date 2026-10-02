@@ -2,7 +2,44 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex JSON RPC values and types (2026-10-03):** read
+> **Latest checkpoint — Codex native RPC responses (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rpc-native-response-2026-10-03),
+> [RT-01](./release-0.9.0-plan.md#rt-01), [RPC guide](../docs/rpc.md), and
+> [migration](./migration-0.9.0.md). **Author: Codex.** Successful ordinary native
+> HTTP/SSE component/service actions now resolve to a local browser Response,
+> with status/status text, bytes and browser-visible headers. A reserved header
+> separates JSON/NDJSON bodies from framework state/protocol metadata. The body
+> drains before completion with a 1 MiB limit, deadlines, cancellation and request
+> cleanup, including unobserved calls. Native redirects navigate and return
+> undefined; failure statuses keep correlated RPC errors. Native bodies never
+> hydrate action state. `RpcResult<Response>` is now `Response | undefined`;
+> generator Response values remain invalid and infer never. Repeated awaits share
+> the one-use local body; clone before multiple reads. WebSocket rejection cancels
+> the native body. Upload XHR preserves binary bytes and browser-visible headers.
+>
+> Passed: core build, framework declarations, matrix **178** (172 shared transport
+> + six multipart cases), core **718**/51 files, framework **807**/49, CLI **559**/39
+> (all **14** generated runtime cases), root TypeScript and all **11** package checks.
+> Real Node production browsers verify HTTP/SSE page text, service binary bodies
+> and a binary upload's bytes/status/headers; existing redirect/cookie tests pass.
+> Own-file whitespace checks passed; exact commands are in the linked log.
+>
+> **14/58 tasks checked; RT-01 stays open.** Continue multipart parity next.
+> The upload handler still has a separate bootstrap/dispatch path, top-level-only
+> file reconstruction, no shared action-input validation, no full layout ownership
+> chain/awaited disposal boundary and no generator response handling. Write real
+> proxy/router regressions and share JSON RPC's validation/lifetime machinery.
+> Preserve upload progress; streaming a generator is required, not collecting
+> it into ordinary JSON. Cover nested files, bad input/markers, service scopes,
+> validation before mutation, cancellation, context/ORM/disposal and native/helper/
+> flash cookies/redirects. Ordinary/native upload tests prove only their slices.
+> Finish protocol diagnostics and built Workers/realtime acceptance with RT-11,
+> including native bodies. Secret exclusion, recipes, rotation and concurrency
+> remain open there. Continue all unchecked tasks and Deno/Electron release gates;
+> versions stay 0.8.3 until REL-04. Build declarations before dependent tests without
+> simultaneous regeneration. Preserve unrelated `reports.md` and `.zcodeignore`.
+
+> **Previous checkpoint — Codex JSON RPC values and types (2026-10-03):** read
 > [review and verification](./release-0.9.0.md#codex-rpc-json-values-2026-10-03),
 > [RT-01](./release-0.9.0-plan.md#rt-01), [RPC values](../docs/rpc.md), and
 > [migration notes](./migration-0.9.0.md). **Author: Codex.** Core now snapshots

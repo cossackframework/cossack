@@ -98,3 +98,22 @@ File/Blob arguments reject before dispatch; they are no longer silently removed.
 HTTP component file uploads retain their separate multipart path. Ordinary
 multipart result serialization and private-error redaction match JSON RPC.
 Root result JSON hooks receive the empty key consistently across transports.
+
+## Native HTTP RPC responses have an explicit client result
+
+Successful ordinary HTTP/SSE component and service actions returning `Response`
+now resolve to a local buffered browser `Response`, instead of parsing the body
+as framework state. Text, JSON, binary and 204 responses work. Component uploads
+preserve binary bodies and browser-visible headers. Use `response.text()`,
+`json()`, `blob()` or `arrayBuffer()` after checking for undefined: native redirects
+navigate and complete with undefined. `RpcResult` now infers `Response | undefined`.
+Non-success HTTP statuses still reject with status/request-ID diagnostics.
+
+Native bodies are consumed before the RPC completes, with a 1 MiB limit,
+`COSSACK_RPC_RESPONSE_TOO_LARGE`, cancellation, deadlines and request cleanup.
+The local response has no original fetch URL or redirect flag. Repeated awaits
+share the same one-use body; clone it before multiple reads. Native response
+bodies never hydrate component/service state. Prefer typed data returns for
+state synchronization or use an HTTP endpoint for large or continuous bodies.
+Generator Response values remain unsupported; their inferred terminal result
+is now never rather than unknown. WebSocket rejection cancels the native body.

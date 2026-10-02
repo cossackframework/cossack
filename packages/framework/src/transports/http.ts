@@ -1,7 +1,7 @@
 import { getModuleDefault } from '../module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError, snapshotRpcValue, RpcError } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError, snapshotRpcValue, RPC_NATIVE_RESPONSE_HEADER, RpcError } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 
@@ -119,7 +119,11 @@ export function handleUpload(ctx: RouterContext) {
 
         const location = c.res.headers.get('Location');
         if (location) return c.json({ _cossack_redirect: location });
-        if (actionResult instanceof Response) return actionResult;
+        if (actionResult instanceof Response) {
+            const headers = new Headers(actionResult.headers);
+            headers.set(RPC_NATIVE_RESPONSE_HEADER, 'native');
+            return new Response(actionResult.body, { status: actionResult.status, statusText: actionResult.statusText, headers });
+        }
 
         // Get the state of the component that was actually modified
         try {

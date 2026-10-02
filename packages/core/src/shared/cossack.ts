@@ -1143,6 +1143,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // most-derived constructor. Preserve the component receiver here.
             const result = await (actionMethod as any).apply(this, validatedPayload as any[]);
             if (requestId !== undefined && result instanceof Response) {
+                await result.body?.cancel().catch(() => {});
                 throw new RpcError('COSSACK_RPC_HTTP_RESPONSE_REQUIRED',
                     'Native HTTP responses require an HTTP or SSE action. WebSocket actions must return data.');
             }

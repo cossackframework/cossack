@@ -10,7 +10,7 @@ import {
     subscribeToService,
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, snapshotRpcValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
+import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
     context?: Context;
@@ -369,6 +369,9 @@ export class ServiceScope {
                                 typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
                                 { status: response.status, requestId: response.headers.get('X-Cossack-Request-Id') ?? undefined,
                                     fieldErrors: body?.fieldErrors });
+                        }
+                        if (response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
+                            return await readRpcNativeResponse(response, controller.signal);
                         }
                         if (response.headers.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                             for await (const frame of readRpcStream(response, controller.signal)) {

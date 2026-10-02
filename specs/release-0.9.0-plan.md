@@ -12,11 +12,13 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex JSON wire checkpoint](./release-0.9.0.md#codex-rpc-json-values-2026-10-03)
+The latest [Codex native-response checkpoint](./release-0.9.0.md#codex-rpc-native-response-2026-10-03)
+records bounded native HTTP body completion through public clients and generated
+HTTP/SSE/upload browser acceptance. The preceding [JSON wire checkpoint](./release-0.9.0.md#codex-rpc-json-values-2026-10-03)
 records a shared normalizer, JSON result/yield types, custom hook semantics,
 ordinary upload diagnostics, and generated HTTP/SSE browser acceptance. RT-01
-remains open for native-response body handling, multipart ownership/streaming,
-protocol diagnostics, and Workers/realtime response acceptance. The preceding
+remains open for multipart ownership/streaming, protocol diagnostics, and
+Workers/realtime response acceptance. The preceding
 [shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
 records one matrix for HTTP/SSE components, WebSocket dispatch, and explicit
 service actions, with fixes to private errors, value paths, and known request IDs.
@@ -450,7 +452,7 @@ helper too. Fixed ordinary HTTP/SSE JSON calls yielding their final result once;
 they now match WebSocket/service completion and `RpcCall<Result, never>`.
 The change is recorded in the [draft migration guide](./migration-0.9.0.md).
 
-Remaining before RT-01 completion: finish native-response and multipart
+Remaining before RT-01 completion: finish multipart and Workers/realtime
 acceptance, plus remaining request/response protocol diagnostics. The JSON wire
 value/type slice is verified in the checkpoint below. The shared conformance
 matrix now exercises HTTP, SSE, WebSocket, and explicit service calls for errors,
@@ -523,16 +525,51 @@ and private-error redaction in development. Production generated Node browsers
 execute Date/custom-hook/undefined-array generators over HTTP and SSE after
 source TypeScript checking.
 
-Next extend this matrix and existing runtime fixtures. Audit native Response
-body consumption: forwarding a native response at the router does not prove
-that the RPC client can consume an arbitrary body; it still expects JSON/state
-and can reject non-JSON bodies with `COSSACK_RPC_RESPONSE_INVALID`. Decide and
-document the supported client completion contract, then verify it through the
-public proxy. Audit multipart generators, nested files, scoped service ownership,
-cleanup, cookies/redirects, input boundaries and errors; six ordinary-upload
-cases do not establish full parity. Finish Workers/realtime cookie and header
-acceptance with RT-11. Physical upgrades, distributed coordination, and complete
-release runtime gates remain separate evidence requirements. RT-01 stays open.
+Codex native-response checkpoint (2026-10-03): ordinary successful native
+Response actions now resolve through HTTP/SSE component and explicit service
+clients to a local browser Response. The reserved native-response header
+separates user JSON/NDJSON from framework state and protocol metadata. Text,
+JSON, binary, status/status text, browser-visible headers and bodyless 204 work.
+Redirects still navigate and complete with undefined; HTTP error statuses reject
+with correlation. `RpcResult<Response>` now means `Response | undefined`;
+generator Response values remain unsupported and infer never. WebSocket
+rejection cancels the response body before returning its explicit error.
+
+Core drains the body before completion using a growing byte buffer capped at
+1 MiB. Unobserved calls drain too. Cancellation, deadlines and response-lifetime
+cleanup remain active through body consumption; oversized bodies fail with
+`COSSACK_RPC_RESPONSE_TOO_LARGE`. Use HTTP endpoints for larger downloads or
+continuous streams. Repeated awaits return the same local one-use body; clone
+before multiple reads. Native bodies never hydrate action state and the local
+response does not preserve fetch URL/redirect flags. Typed data returns remain
+the appropriate state synchronization contract. Upload XHR uses arraybuffer and
+copies browser-visible headers; real Chromium verifies bytes/status/headers.
+
+The shared matrix adds 11 cases per transport for five native representations,
+unobserved draining, size errors, HTTP status failures, body disconnects,
+deadlines and cancellation/body cleanup: 43 shared cases across four paths
+(172 tests), plus six ordinary multipart cases (178 total). Core reader tests
+cover exact byte limits, fragmented chunks, early and pending cancellation,
+network failure and reader release. Existing published type tests check the new
+result and unsupported generator terminal types. Generated Node apps compile
+before production HTTP/SSE browsers consume native text and service binary
+results; a separate real upload round-trip returns binary and native metadata.
+This proves Node/browser native body completion, not Workers response acceptance.
+
+Next extend this matrix and existing runtime fixtures. Audit multipart
+generators, nested files, scoped service ownership, cleanup, cookies/redirects,
+input boundaries and errors; ordinary-upload and native-body round-trips do not
+establish full multipart parity.
+Source inspection of framework `transports/http.ts` still finds separate
+bootstrap/dispatch, top-level file restoration, no shared action-input gate,
+no full layout ownership/awaited disposal boundary and no generator response
+handling. Start with failing public-client/router regressions. Reuse JSON RPC's
+action validation and request/response lifetime pipeline. Preserve upload
+progress and define how that client consumes streamed generator replies; do not
+collect a generator into ordinary JSON to claim parity. Finish Workers/realtime cookie and header
+acceptance with RT-11, including this new native-body contract. Physical
+upgrades, distributed coordination, and complete release runtime gates remain
+separate evidence requirements. RT-01 stays open.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

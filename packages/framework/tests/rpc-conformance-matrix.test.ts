@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     Cossack, CossackService, ClientVisibleError, createInstance, InMemoryWebSocketRuntime,
-    Page, rpc$, Server, Service, ServiceScope, State,
+    Page, rpc$, Server, Service, ServiceScope, State, RPC_NATIVE_RESPONSE_MAX_BYTES,
 } from '@cossackframework/core';
 // Wire browser-side transport boundaries from the same built core modules the
 // public entry uses. These internals are deliberately not new application APIs.
@@ -12,7 +12,7 @@ import { computeRouteIds } from '../src/route-ids';
 
 const { registry, effects } = vi.hoisted(() => ({
     registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
-    effects: { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0 },
+    effects: { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0 },
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
@@ -30,6 +30,29 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
     abstract class Actions extends Base {
         constructor(...args: any[]) { super(...args); }
         @State() count = 0;
+        @Server() native(index: number) {
+            effects.runs++; this.count++;
+            const headers = { 'X-Custom': 'kept', 'X-Cossack-Rpc-Response': 'wrong' };
+            if (index === 0) return Response.json({ _cossack_redirect: '/wrong', _cossack_return: 'data', count: 999 }, { status: 201, headers });
+            if (index === 1) return new Response('native text', { status: 202, headers });
+            if (index === 2) return new Response(new Uint8Array([0, 255, 128]), { headers: { ...headers, 'Content-Type': 'application/octet-stream' } });
+            if (index === 3) return new Response(null, { status: 204, headers });
+            if (index === 4) return new Response('opaque, not RPC frames', { headers: { ...headers, 'Content-Type': 'application/x-cossack-rpc+ndjson' } });
+            if (index === 7) return new Response(new ReadableStream<Uint8Array>({
+                start(controller) { controller.enqueue(new Uint8Array([1])); },
+                pull(controller) { controller.error(new TypeError('private producer failure')); },
+            }, { highWaterMark: 0 }));
+            if (index === 5) return new Response('x'.repeat(RPC_NATIVE_RESPONSE_MAX_BYTES + 1));
+            return new Response('deliberate failure', { status: 422, headers });
+        }
+        @Server({ timeout: 80 }) slowNative() {
+            effects.runs++;
+            let step = 0;
+            return new Response(new ReadableStream<Uint8Array>({
+                async pull(controller) { effects.nativePulls++; if (step++) { await pause(); controller.close(); } else controller.enqueue(new Uint8Array([1])); },
+                cancel() { effects.streamsClosed++; },
+            }, { highWaterMark: 0 }));
+        }
         @Server() async echo(value: unknown) { effects.runs++; return value; }
         @Server() async structured() { effects.runs++; return wireData(); }
         @Server() rootJson() { return { toJSON(key: string) { return { key }; } }; }
@@ -192,7 +215,7 @@ async function harness(transport: Transport) {
             await Promise.allSettled(serverJobs);
             // Draining/cancelling owns cleanup. A cancelled client's pre-header
             // request may finish remotely; cancel that unobserved response too.
-            for (const response of responses) if (!response.body?.locked) await response.body?.cancel();
+            for (const response of responses) if (!response.body?.locked) await response.body?.cancel().catch(() => {});
             if (server) await server.destroyAsync();
             off?.(); await scope?.disposeAsync();
         },
@@ -202,13 +225,76 @@ async function harness(transport: Transport) {
 describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC conformance', transport => {
     let wire: Awaited<ReturnType<typeof harness>>;
     beforeEach(async () => {
-        Object.assign(effects, { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0 });
+        Object.assign(effects, { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0 });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         wire = await harness(transport);
     });
     afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
     const settled = () => { expect(wire.client.loading).toEqual({}); expect(wire.pendingCalls()).toBe(0); };
 
+    it.each([0, 1, 2, 3, 4])('completes native response %s without confusing its body with state or protocol', async index => {
+        const call = rpc$(wire.target.native(index));
+        if (transport === 'websocket') {
+            await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED', requestId: expect.any(String) });
+        } else {
+            const response = await call as Response;
+            expect(response).toBeInstanceOf(Response); expect(response.bodyUsed).toBe(false);
+            expect(response.headers.get('X-Custom')).toBe('kept');
+            expect(response.headers.get('X-Cossack-Request-Id')).toBeTruthy();
+            expect(await call).toBe(response);
+            if (index === 0) { expect(response.status).toBe(201); expect(await response.json()).toEqual({ _cossack_redirect: '/wrong', _cossack_return: 'data', count: 999 }); }
+            if (index === 1) { expect(response.status).toBe(202); expect(await response.text()).toBe('native text'); }
+            if (index === 2) expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([0, 255, 128]);
+            if (index === 3) { expect(response.status).toBe(204); expect(response.body).toBeNull(); }
+            if (index === 4) expect(await response.text()).toBe('opaque, not RPC frames');
+            // Native bodies never hydrate state or trigger metadata navigation.
+            expect(wire.client.count).toBe(0);
+            expect(effects.disposed).toBeGreaterThan(0);
+        }
+        expect(effects.runs).toBe(1); expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('drains an unobserved native response and releases request ownership', async () => {
+        void wire.target.native(1);
+        await vi.waitFor(() => { expect(wire.client.loading.native).toBeUndefined(); expect(effects.runs).toBe(1); });
+        if (transport !== 'websocket') expect(effects.disposed).toBeGreaterThan(0);
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('rejects an oversized native body with correlation and cleanup', async () => {
+        await expect(rpc$(wire.target.native(5))).rejects.toMatchObject({
+            code: transport === 'websocket' ? 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED' : 'COSSACK_RPC_RESPONSE_TOO_LARGE', requestId: expect.any(String),
+        });
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('retains HTTP status and correlation on native response failures', async () => {
+        await expect(rpc$(wire.target.native(6))).rejects.toMatchObject(transport === 'websocket'
+            ? { code: 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED', requestId: expect.any(String) }
+            : { code: 'COSSACK_RPC_FAILED', status: 422, requestId: expect.any(String) });
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('reports a native body disconnect with request ID and no replay', async () => {
+        await expect(rpc$(wire.target.native(7))).rejects.toMatchObject({
+            code: transport === 'websocket' ? 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED' : 'COSSACK_RPC_NETWORK_FAILED', requestId: expect.any(String),
+        });
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('keeps its deadline while consuming a native body', async () => {
+        await expect(rpc$(wire.target.slowNative())).rejects.toMatchObject({
+            code: transport === 'websocket' ? 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED' : 'COSSACK_RPC_TIMEOUT', requestId: expect.any(String),
+        });
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('cancels native-body consumption without replay and closes the server body', async () => {
+        const call = rpc$(wire.target.slowNative());
+        if (transport === 'websocket') {
+            await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_HTTP_RESPONSE_REQUIRED' });
+        } else {
+            await vi.waitFor(() => expect(effects.nativePulls).toBe(2), { interval: 1 });
+            await call.cancel();
+            await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED', requestId: expect.any(String) });
+        }
+        await vi.waitFor(() => expect(effects.streamsClosed).toBe(1));
+        expect(wire.requests).toHaveLength(1); settled();
+    });
     it('returns normalized dates, model fields, custom JSON, and optional/array values', async () => {
         expect(await wire.target.structured()).toEqual(expectedWireData);
         expect(effects.jsonCalls).toBe(1); settled();
