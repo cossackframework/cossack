@@ -7,10 +7,11 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: path.resolve(__dirname, 'src/index.ts'),
+      entry: { index: path.resolve(__dirname, 'src/index.ts'), server: path.resolve(__dirname, 'src/server.ts') },
       name: '@cossackframework/test-utils',
       fileName: 'index',
-      formats: ['es', 'cjs'],
+      formats: ['es'],
+      fileName: () => '[name].mjs',
     },
     rolldownOptions: {
       external: [

@@ -1,7 +1,7 @@
 {
   "name": "@cossackframework/test-utils",
   "version": "0.8.3",
-  "main": "./dist/index.js",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "vite build && tsc -p tsconfig.declarations.json",
@@ -15,6 +15,20 @@
   },
   "devDependencies": {
     "vite": "^8.1.4",
-    "vitest": "^4.1.11"
-  }
+    "vitest": "^4.1.11",
+    "@types/node": "^22.20.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ]
 }
