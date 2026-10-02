@@ -86,6 +86,32 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-local-inheritance-2026-10-02"></a>
+### Codex continuation: local inheritance declarations (2026-10-02)
+
+**Author: Codex.** Compiler inspection now reports local base-class chains and
+whether the declarations resolve within the source file. Framework root aliases
+and namespaces are recognized; cycles, dynamic bases, and imported bases that
+need project resolution remain unresolved. CLI route facts include base methods
+grouped by declaring class with compiler classification and authored locations.
+Own methods remain separate. This deliberately does not claim an effective
+runtime dispatch table: instance fields, accessors, and overridden methods still
+need explicit resolution semantics and verification.
+
+Route explanations include the base declarations. `check routes` emits
+`COSSACK_ROUTE_INHERITANCE_UNKNOWN` for unresolved bases, without loading imports
+or executing application code. Local declaration resolution does not change the
+readiness statement that inherited runtime behavior remains unchecked.
+
+Verification: compiler suite **148 passed**; route suites **38 passed**;
+framework declaration generation and root TypeScript checks passed.
+CLI subprocess suite: **36 passed**, including unresolved imported-base checks.
+
+**11/58 tasks remain checked; CLI-04 remains open.** Next resolve imported bases
+using source modules and exports, account for overrides/fields/accessors without
+inventing dispatch facts, and integrate binding-aware capabilities. Then run the
+complete grouped-route/layout/service acceptance fixture from the plan.
+
 <a id="codex-scaffold-inspection-2026-10-02"></a>
 ### Codex continuation: shared scaffold recipe inspection (2026-10-02)
 

@@ -1222,7 +1222,8 @@ export interface CompilerMethodFact {
 
 export interface CompilerClassFacts {
   name: string;
-  /** Own methods only; inherited declarations require project resolution. */
+  inheritance: { status: 'resolved' | 'unresolved'; bases: string[] };
+  /** Own declarations; inheritance lists declaring classes without guessing dispatch. */
   methods: CompilerMethodFact[];
 }
 
@@ -1248,6 +1249,35 @@ export function inspectCompilerMethods(code: string, id: string): {
   const program = parseProgram(code);
   if (!program) return unknown('Expanded source could not be parsed.');
   const originalClasses = [...frameworkClasses(originalProgram)];
+  const roots = new Set(['Cossack', 'CossackElement']);
+  const namespaces = new Set<string>();
+  for (const statement of originalProgram.body ?? []) {
+    if (statement.type !== 'ImportDeclaration' || !String(statement.source?.value).startsWith('@cossackframework/')) continue;
+    for (const specifier of statement.specifiers ?? []) {
+      if (['Cossack', 'CossackElement'].includes(specifier.imported?.name)) roots.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+    }
+  }
+  const inheritanceFor = (cls: any): CompilerClassFacts['inheritance'] => {
+    const bases: string[] = [];
+    const seen = new Set<any>([cls]);
+    let current = cls;
+    while (current?.superClass) {
+      const base = current.superClass;
+      if (base.type === 'MemberExpression' && !base.computed && namespaces.has(base.object?.name) &&
+          ['Cossack', 'CossackElement'].includes(base.property?.name)) return { status: 'resolved', bases };
+      if (base.type !== 'Identifier') return { status: 'unresolved', bases };
+      const local = originalClasses.find(candidate => candidate.id?.name === base.name);
+      if (!local) {
+        return { status: roots.has(base.name) ? 'resolved' : 'unresolved', bases: roots.has(base.name) ? bases : [...bases, base.name] };
+      }
+      bases.push(base.name);
+      if (seen.has(local)) return { status: 'unresolved', bases };
+      seen.add(local);
+      current = local;
+    }
+    return { status: 'resolved', bases };
+  };
   const classes: CompilerClassFacts[] = [];
   try {
     for (const cls of frameworkClasses(program)) {
@@ -1259,6 +1289,7 @@ export function inspectCompilerMethods(code: string, id: string): {
       const originals = originalClass ? collectAstMethods(originalClass, authored, originalProgram) : [];
       classes.push({
         name: className,
+        inheritance: inheritanceFor(originalClass),
         methods: methods.map((method) => {
           const kept = preserved.has(method.name);
           const retainedField = Boolean(method.fieldKind && !method.hasServerDecorator);

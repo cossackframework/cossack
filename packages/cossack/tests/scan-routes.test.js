@@ -231,6 +231,19 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(page.ssg).toBe(false);
   });
 
+  it('includes local base declarations with their declaring class and source', async () => {
+    mk('src/pages/inherited/index.ts', `
+      class Parent extends Cossack { @Server() load() { return 1; } }
+      @Page() export default class P extends Parent { render() { return 2; } }
+    `);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.inheritance).toEqual({ status: 'resolved', bases: ['Parent'] });
+    expect(page.inheritedDeclarations[0]).toMatchObject({ className: 'Parent', methods: [
+      { name: 'load', rpc: 'explicit', source: { file: page.filePath, line: 2 } },
+    ] });
+    expect(page.serverMethods).toEqual([]);
+  });
+
   it('uses namespace decorators consistently for options and compiler methods', async () => {
     mk('src/pages/namespace/index.ts', `
       import * as Core from '@cossackframework/core';

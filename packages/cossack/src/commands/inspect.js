@@ -47,6 +47,10 @@ function explainRoute(effective, route) {
   if (page.clientMethods?.length) {
     reasons.push(`Client/shared methods (no transport): ${page.clientMethods.map(entry => entry.name).join(', ')}`);
   }
+  for (const base of page.inheritedDeclarations ?? []) {
+    reasons.push(`Base declarations from ${base.className}: ${base.methods.map(method => `${method.name} (${method.reason})`).join('; ')}`);
+  }
+  if (page.inheritance?.status === 'unresolved') reasons.push('Base declarations are unresolved; inherited behavior is unknown.');
   if (page.methodExtraction?.reason) reasons.push(`Method classification: ${page.methodExtraction.reason}`);
   if (page.notFoundBoundary) reasons.push(`Nearest 404 boundary: ${page.notFoundBoundary}`);
   if (page.errorBoundary) reasons.push(`Nearest error boundary: ${page.errorBoundary}`);
@@ -100,6 +104,9 @@ async function checkRoutes(ctx) {
       }
     }
     for (const page of effective.pages) {
+      if (page.inheritance.status === 'unresolved') {
+        add('COSSACK_ROUTE_INHERITANCE_UNKNOWN', 'Base declarations could not be resolved statically.', page.source);
+      }
       if (page.methodExtraction.method !== 'compiler') {
         add('COSSACK_ROUTE_METHODS_UNKNOWN', 'Own-method compiler classification is unavailable.', page.source);
       }

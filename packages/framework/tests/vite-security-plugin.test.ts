@@ -2299,6 +2299,22 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it('reports local inheritance declarations without flattening runtime dispatch', () => {
+    const result = inspectCompilerMethods(`import { Cossack as Base } from '@cossackframework/core';
+      class Parent extends Base { @Server() inherited() { return 1; } }
+      @Page() class Child extends Parent { @Client() own() { return 2; } }
+      @Page() class External extends ImportedBase { render() { return 3; } }
+      @Page() class Dynamic extends mixin(Parent) { render() { return 4; } }
+    `, 'inheritance.ts');
+    expect(result.diagnostics).toEqual([]);
+    const child = result.classes.find(c => c.name === 'Child');
+    expect(child.inheritance).toEqual({ status: 'resolved', bases: ['Parent'] });
+    expect(child.methods.map(m => m.name)).toEqual(['own']);
+    expect(result.classes.find(c => c.name === 'Parent').methods[0].rpc).toBe('explicit');
+    expect(result.classes.find(c => c.name === 'External').inheritance).toEqual({ status: 'unresolved', bases: ['ImportedBase'] });
+    expect(result.classes.find(c => c.name === 'Dynamic').inheritance.status).toBe('unresolved');
+  });
+
   it('maps expanded resource methods and following methods to authored bodies', () => {
     const code = `import { server$ as resource } from '@cossackframework/core';
 @Page() class Demo {

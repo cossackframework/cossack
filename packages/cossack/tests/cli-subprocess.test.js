@@ -384,6 +384,14 @@ describe('routes and inspection', () => {
     expect(checked.stdout).not.toContain('PRIVATE_LOADER');
   });
 
+  it('check routes diagnoses imported bases without executing imports', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "import Base from './missing.js'; @Page() export default class P extends Base { render() { return 1; } }");
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(1);
+    expect(parseEnvelope(checked.stdout).diagnostics.map(d => d.code)).toContain('COSSACK_ROUTE_INHERITANCE_UNKNOWN');
+  });
+
   it('check routes rejects unsupported method metadata and scoped flags', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
     await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "import { server$ } from '@cossackframework/core'; @Page() export default class P { data = server$(() => 1); }");

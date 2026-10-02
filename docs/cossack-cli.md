@@ -166,7 +166,8 @@ and stripped methods without RPC registration are separate categories.
 Checks return a nonzero exit code when static options are unknown, compiler
 method facts are unavailable, or a transport is invalid. JSON diagnostics use
 `COSSACK_ROUTE_OPTIONS_UNKNOWN`, `COSSACK_ROUTE_METHODS_UNKNOWN`, or
-`COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Inspection can
+`COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Unresolved base
+declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Inspection can
 still succeed for those files so an agent can examine the available facts.
 
 Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
@@ -175,6 +176,11 @@ compatibility. Missing manifests have status `unrecorded`; malformed or unsuppor
 manifests have status `invalid` and make checks fail with
 `COSSACK_SCAFFOLD_METADATA_INVALID`. Arbitrary manifest fields and secret values
 are excluded. Recorded recipes do not prove that generated files are unchanged.
+
+Local base declarations appear under `inheritedDeclarations`, grouped by declaring
+class with compiler facts and source locations. They are not flattened into own
+methods or presented as a resolved runtime dispatch table. Imported and dynamic
+bases remain unresolved until project resolution is implemented.
 
 These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior
