@@ -1,3 +1,4 @@
+import { getModuleDefault } from './module-default.js';
 // src/DurableObject.ts
 import { CossackDurableObject, Cossack } from '@cossackframework/core';
 
@@ -13,7 +14,7 @@ export class AppDurableObject extends CossackDurableObject {
         const eagerPages = import.meta.glob('./pages/**/index.ts', { eager: true });
         for (const path in eagerPages) {
             const module = eagerPages[path] as any;
-            const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+            const PageComponent = getModuleDefault(module as object) as new () => Cossack;
             if (PageComponent) {
                 // Use the file path (without './') as the key to match how the router works
                 // Transform './pages/optimistic-counter/index.ts' to '/src/pages/optimistic-counter/index.ts'

@@ -2,7 +2,16 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex recipe capability wiring (2026-10-03):** read
+> **Latest checkpoint — Codex handler/default parity (2026-10-03):** read
+> [CLI classification and runtime selection corrections](./release-0.9.0.md#codex-handler-default-parity-2026-10-03).
+> **Author: Codex.** CLI/build discovery recognize functional HTTP modules only
+> inside the router's API boundary. Runtime component paths select default exports
+> instead of whichever helper appears first. Runtime SSR/SSG/guard regressions
+> verify the fixes. **CLI-04 complete; 12/58 tasks checked.** Full CLI: 539 passed;
+> framework: 605 passed; all package types passed. Continue RT-25 generated-app/
+> side-target acceptance and selected feature requirements.
+
+> **Previous checkpoint — Codex recipe capability wiring (2026-10-03):** read
 > [generated config and binding discovery](./release-0.9.0.md#codex-recipe-capability-wiring-2026-10-03).
 > **Author: Codex.** Recipes now select runtime capability checks, including
 > Desktop mode. Cloudflare binding discovery uses the project's Wrangler parser

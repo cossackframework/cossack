@@ -1,3 +1,4 @@
+import { getModuleDefault } from './module-default.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Cossack, Page, PageOptions, createInstance, createRootServiceScope, createLayoutServiceScope } from '@cossackframework/core';
@@ -118,7 +119,7 @@ export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record
     // Skip 404 and error pages
     if (path.endsWith('/404/index.ts') || path.endsWith('/error/index.ts')) continue;
 
-    const mainExport = Object.values(module)[0];
+    const mainExport = getModuleDefault(module);
 
     // Check if it's a Cossack Component
     if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {

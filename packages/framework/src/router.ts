@@ -1,3 +1,4 @@
+import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -294,7 +295,7 @@ function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
     const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
 
     if (pages[searchPath]) {
-      return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
+      return { path: searchPath, component: getModuleDefault(pages[searchPath] as object) as new () => Cossack };
     }
   }
 
@@ -359,7 +360,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const module = pages[path] || layouts[path];
         const component = path === '/src/App'
           ? options.AppComponent ?? RouterFallbackApp
-          : module && Object.values(module)[0];
+          : module && getModuleDefault(module);
         return typeof component === 'function'
           ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? []
           : [];
@@ -485,7 +486,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const layoutStates: Record<string, any> = {};
         let activeServiceScope = requestServiceScope;
         for (const lPath of layoutPaths) {
-          const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+          const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
           const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
             ownerRouteId: routePathToIdMap.get(lPath),
             ownerRoutePath: lPath,
@@ -679,7 +680,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const componentPath = routePathToFilePathMap.get(routePath) || routePath;
       const componentModule = pages[componentPath] || layouts[componentPath];
       if (!componentModule) return c.text('Component not found', 404);
-      const ComponentClass = Object.values(componentModule as object)[0] as new () => Cossack;
+      const ComponentClass = getModuleDefault(componentModule as object) as new () => Cossack;
       const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
       try {
         assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
@@ -753,7 +754,7 @@ export function createApp(options: CreateAppOptions = {}) {
         for (const layoutPath of getLayoutStack(ownerPath)) {
           const layoutModule = layouts[layoutPath];
           if (!layoutModule) return c.json({ error: 'Service layout not found' }, 404);
-          const LayoutComponent = Object.values(layoutModule as object)[0] as new () => Cossack;
+          const LayoutComponent = getModuleDefault(layoutModule as object) as new () => Cossack;
           const nextScope = createLayoutServiceScope(activeScope, LayoutComponent, {
             ownerRouteId: routePathToIdMap.get(layoutPath),
             ownerRoutePath: layoutPath,
@@ -843,7 +844,7 @@ export function createApp(options: CreateAppOptions = {}) {
     } else {
       const module = pages[componentPath] || layouts[componentPath];
       if (!module) return c.json({ error: 'Component not found' }, 404);
-      ComponentClass = Object.values(module as object)[0] as new (...args: any[]) => Cossack;
+      ComponentClass = getModuleDefault(module as object) as new (...args: any[]) => Cossack;
       if (typeof ComponentClass !== 'function') return c.json({ error: 'Invalid component' }, 500);
     }
     // Resolve and authorize scope before constructors, rendering, or user actions.
@@ -913,7 +914,7 @@ export function createApp(options: CreateAppOptions = {}) {
       try {
         let activeScope = requestScope;
         for (const layoutPath of getLayoutStack(componentPath)) {
-          const LayoutClass = Object.values(layouts[layoutPath] as object)[0] as new () => Cossack;
+          const LayoutClass = getModuleDefault(layouts[layoutPath] as object) as new () => Cossack;
           activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
             ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
           });
@@ -1105,7 +1106,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
 
     const module = pages[path] as any;
-    const mainExport = Object.values(module)[0];
+    const mainExport = getModuleDefault(module);
 
     // 1. Check if it's a Cossack Component
     if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
@@ -1114,7 +1115,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const layoutPaths = getLayoutStack(path);
       const combinedMiddlewares: Middleware[] = [];
       for (const lPath of layoutPaths) {
-        const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+        const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
         const lOpts = Reflect.getMetadata('page:options', LComp);
         if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
       }

@@ -171,7 +171,14 @@ declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared membe
 precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
 still succeed for those files so an agent can examine the available facts.
 
-Each page and layout includes `moduleExport`: `resolved` means its default export
+Functional API modules under `src/pages/api/` are marked
+`routeStyle: "http-handlers"`. Recognized named method exports and local default
+functions use HTTP without requiring component decorators or a default component
+class. Component dispatch/classification fields are `not-applicable`, and layout
+service scopes are not applied to these functional routes. These facts describe
+source declarations; inspection does not execute handler factories.
+
+Component pages and layouts include `moduleExport`: `resolved` means its default export
 is a local class declaration, `missing` means no default export exists, and
 `unknown` means the export cannot be resolved without executing or importing it.
 Checks fail with `COSSACK_ROUTE_DEFAULT_EXPORT_MISSING` or

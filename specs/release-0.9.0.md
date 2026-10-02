@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Reopened during generated-app acceptance: named HTTP handler modules still need CLI check classification, and router selection via the first module export must be reconciled with inspection's default-export selection.
+- [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](#codex-handler-default-parity-2026-10-03).
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,39 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-handler-default-parity-2026-10-03"></a>
+### Codex review: functional handlers and default component selection (2026-10-03)
+
+**Author: Codex.** CLI inspection/checks now recognize functional HTTP modules
+under the same `/src/pages/api/` boundary as the router. Named method exports,
+default functions, and locally declared default function references are identified
+without execution. They expose `routeStyle: http-handlers`, HTTP transport, no
+layout scopes, and `not-applicable` component method/dispatch facts. Explanations
+do not attribute their transport to a nonexistent decorator. Identical source
+outside the functional API boundary does not bypass component checks.
+
+Build discovery uses that same classifier and boundary. The router, SSR layout
+selection, RPC transports, SSG discovery, client navigation/loading, and Durable
+Object component lookup now use a common default-export selector instead of the
+first enumerated module value. A named helper can no longer change the selected
+component. Component modules need default exports; named functional API methods
+remain supported independently.
+
+Runtime regressions insert a throwing named helper before the real default
+page/layout. Actual SSR, SSG discovery, and transport guard paths select the right
+component; functional HTTP requests still work. These close the two acceptance
+gaps found during generated-app verification. Unsupported/dynamic forms remain
+explicitly unknown rather than being executed to obtain metadata.
+
+Verification: complete CLI suite **539 passed across 38 files**, including
+generated staging deployment/Worker integration. Complete framework suite
+**605 passed across 46 files** after component selection changes; final targeted
+module/guard/build suites **26 passed** after functional default-handler support.
+Framework declaration build, root TypeScript, and all **11 package type checks
+passed**. **CLI-04 is complete again; 12/58 tasks are checked.**
+RT-25 still needs full generated application/side-target coverage and feature
+planning requirements. Browser and production release gates stay open.
 
 <a id="codex-recipe-capability-wiring-2026-10-03"></a>
 ### Codex continuation: recipe wiring and environment binding discovery (2026-10-03)

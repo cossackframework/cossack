@@ -229,12 +229,26 @@ export async function extractMethodClassificationsFromAst(code: string, file = '
   };
 }
 
-/** Named HTTP handler modules need HTTP, not component transport metadata. */
-export async function hasNamedHttpHandlers(code: string): Promise<boolean> {
+/** Statically identifiable functional APIs need HTTP, not component metadata. */
+export async function isHttpHandlerModule(code: string): Promise<boolean> {
   const parser = await loadParseSync();
   const program = parser && parsedProgram(parser, code);
-  if (!program || program.body.some((node: AstNode) => node.type === 'ExportDefaultDeclaration' ||
-    node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration')) return false;
+  if (!program) return false;
+  const defaultExport = program.body.find((node: AstNode) => node.type === 'ExportDefaultDeclaration');
+  if (defaultExport) {
+    let value = defaultExport.declaration;
+    if (value?.type === 'Identifier') {
+      const name = value.name;
+      value = program.body.flatMap((node: AstNode) => {
+        const declaration = node.declaration ?? node;
+        if (declaration.type === 'FunctionDeclaration' && declaration.id?.name === name) return [declaration];
+        return declaration.type === 'VariableDeclaration'
+          ? declaration.declarations.filter((entry: AstNode) => entry.id?.name === name).map((entry: AstNode) => entry.init) : [];
+      })[0];
+    }
+    return ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(value?.type);
+  }
+  if (program.body.some((node: AstNode) => node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration')) return false;
   const methods = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
   return program.body.some((node: AstNode) => {
     if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') return false;

@@ -12,14 +12,15 @@ function explainRoute(effective, route) {
   const page = effective.pages.find(candidate => candidate.route === route);
   if (!page) return null;
   const reasons = [];
-  reasons.push(`Default export: ${page.moduleExport.status}. ${page.moduleExport.reason}`);
+  if (page.routeStyle === 'http-handlers') reasons.push('Functional HTTP handlers use HTTP routing; component decorators, RPC method classification, and layout scopes do not apply.');
+  else reasons.push(`Default export: ${page.moduleExport.status}. ${page.moduleExport.reason}`);
   const capability = effective.runtime.transports.find(item => item.source === page.source);
   if (capability) {
     reasons.push(`Runtime ${effective.runtime.name}: ${capability.transport} transport is ${capability.status} (configured binding presence only).`);
     if (capability.missingBindings.length) reasons.push(`Missing transport bindings: ${capability.missingBindings.join(', ')}`);
   } else reasons.push('Runtime transport capability is unknown.');
 
-  reasons.push(page.extraction.method === 'unknown'
+  if (page.routeStyle !== 'http-handlers') reasons.push(page.extraction.method === 'unknown'
     ? `Transport and options are unknown: ${page.extraction.reason} (${page.source})`
     : `Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`
       + (page.transport ? '' : ' (no explicit transport; http is the default)'));
@@ -58,8 +59,8 @@ function explainRoute(effective, route) {
   for (const base of page.inheritedDeclarations ?? []) {
     reasons.push(`Base declarations from ${base.className}: ${base.methods.map(method => `${method.name} (${method.reason})`).join('; ')}`);
   }
-  if (page.inheritance?.status === 'unresolved') reasons.push('Base declarations are unresolved; inherited behavior is unknown.');
-  if (page.methodExtraction?.reason) reasons.push(`Method classification: ${page.methodExtraction.reason}`);
+  if (page.routeStyle !== 'http-handlers' && page.inheritance?.status === 'unresolved') reasons.push('Base declarations are unresolved; inherited behavior is unknown.');
+  if (page.routeStyle !== 'http-handlers' && page.methodExtraction?.reason) reasons.push(`Method classification: ${page.methodExtraction.reason}`);
   if (page.notFoundBoundary) reasons.push(`Nearest 404 boundary: ${page.notFoundBoundary}`);
   if (page.errorBoundary) reasons.push(`Nearest error boundary: ${page.errorBoundary}`);
   return { route: page.route, routeId: page.routeId, kind: page.kind, source: page.source, reasons };
@@ -107,6 +108,7 @@ async function checkRoutes(ctx) {
     const diagnostics = [...effective.scaffold.diagnostics, ...effective.runtime.diagnostics];
     const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
     for (const item of [...effective.pages, ...effective.layouts]) {
+      if (item.routeStyle === 'http-handlers') continue;
       if (item.moduleExport.status !== 'resolved') {
         add(item.moduleExport.status === 'missing' ? 'COSSACK_ROUTE_DEFAULT_EXPORT_MISSING' : 'COSSACK_ROUTE_DEFAULT_EXPORT_UNKNOWN',
           item.moduleExport.reason, item.source);
@@ -116,6 +118,7 @@ async function checkRoutes(ctx) {
       }
     }
     for (const page of effective.pages) {
+      if (page.routeStyle === 'http-handlers') continue;
       if (page.services.length) {
         add('COSSACK_PAGE_SERVICES_UNSUPPORTED', 'Pages do not create service scopes. Move services to an ancestor layout\'s @Page({ services: [...] }).', page.source);
       }

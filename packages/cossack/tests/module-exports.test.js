@@ -61,3 +61,29 @@ it.each(['registry[key]', 'loadRegistry().Counter', 'registry?.Counter'])(
     expect(await extractPageOptionsFromAst(`@Page({ services: [${service}] }) export default class P {}`))
       .toMatchObject({ method: 'unknown', reason: expect.stringContaining('services') });
   });
+
+it.each([
+  'export const POST = factory(); export async function GET(c) { throw new Error(\"must not execute\"); }',
+  'export default async function handler(c) { throw new Error(\"must not execute\"); }',
+  'const handler = c => c.json({ ok: true }); export default handler;',
+])('checks and explains functional HTTP APIs without imposing component requirements: %s', async source => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-http-api-'));
+  roots.push(root);
+  await fs.writeFile(path.join(root, 'package.json'), '{}');
+  await fs.mkdir(path.join(root, 'src/pages/api'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src/pages/layout.ts'), '@Page({ services: [Counter] }) export default class Layout {}');
+  await fs.writeFile(path.join(root, 'src/pages/api/items.ts'), source);
+  const ctx = { cwd: root, flags: { json: true } };
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await checkCommand(['routes'], ctx)).toBe(0);
+  const page = JSON.parse(output.mock.calls.at(-1)[0]).data.routes[0];
+  expect(page).toMatchObject({ routeStyle: 'http-handlers', transport: 'http', layouts: [],
+    methodExtraction: { method: 'not-applicable' }, declarationDispatch: { status: 'not-applicable' } });
+  expect(await inspectCommand(['routes', '/api/items'], ctx)).toBe(0);
+  const reasons = JSON.parse(output.mock.calls.at(-1)[0]).data.reasons.join(' ');
+  expect(reasons).toContain('Functional HTTP handlers use HTTP routing');
+  expect(reasons).not.toContain('No @Page');
+  expect(reasons).not.toContain('set by the @Page decorator');
+  await fs.writeFile(path.join(root, 'src/pages/not-api.ts'), source);
+  expect(await checkCommand(['routes'], ctx)).toBe(1);
+});

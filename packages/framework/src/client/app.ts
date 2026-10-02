@@ -1,3 +1,4 @@
+import { getModuleDefault } from '../module-default.js';
 import {
   Cossack,
   applyNavigationScroll,
@@ -483,7 +484,7 @@ export async function createClientApp({
           const layoutModule = typeof layoutEntry === 'function'
             ? await (layoutEntry as () => Promise<any>)()
             : layoutEntry;
-          const LComp = Object.values(layoutModule)[0] as new () => Cossack;
+          const LComp = getModuleDefault(layoutModule) as new () => Cossack;
           const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
             ownerRouteId: componentRouteId,
             ownerRoutePath: layoutFilePath,
@@ -526,7 +527,7 @@ export async function createClientApp({
         throw new Error(`Failed to load module for path: ${componentPath}`);
       }
 
-      const PageComponent = Object.values(module)[0] as new () => Cossack;
+      const PageComponent = getModuleDefault(module) as new () => Cossack;
 
       if (PageComponent) {
         if (currentPage) {
@@ -639,7 +640,7 @@ export async function createClientApp({
       const urlObj = new URL(url, window.location.href);
       const cleanPath = urlObj.pathname.replace(/\/$/, '') || '/index';
       const potentialLoadingPath = `/src/pages${cleanPath}/loading.ts`;
-      const LoadingCompClass = loadings[potentialLoadingPath] ? Object.values(loadings[potentialLoadingPath])[0] as new () => Cossack : null;
+      const LoadingCompClass = loadings[potentialLoadingPath] ? getModuleDefault(loadings[potentialLoadingPath]) as new () => Cossack : null;
 
       if (LoadingCompClass && !isDisplayingLoadingState) {
           isDisplayingLoadingState = true;

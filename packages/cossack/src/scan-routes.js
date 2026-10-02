@@ -5,7 +5,7 @@ import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
-import { extractPageOptionsFromAst, inspectDefaultClassExport } from './page-options-ast.js';
+import { extractPageOptionsFromAst, inspectDefaultClassExport, isHttpHandlerModule } from './page-options-ast.js';
 import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
 
 /**
@@ -232,9 +232,11 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let method = 'unknown';
     let reason = null;
     let methods = { methods: [] };
+    let routeStyle = 'component';
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
+      if (page.filePath.includes('/src/pages/api/') && await isHttpHandlerModule(source)) routeStyle = 'http-handlers';
       moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
@@ -253,11 +255,18 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       method = 'unknown';
       reason = 'The page source could not be read.';
     }
+    if (routeStyle === 'http-handlers') {
+      options = { transport: 'http', ssg: null, middlewares: 0, services: [], decoratorLine: null };
+      method = 'ast';
+      reason = 'Functional HTTP handler module; component metadata does not apply.';
+      methods = { methods: [], method: 'not-applicable', reason, inheritance: { status: 'not-applicable', bases: [] } };
+    }
     pages.push({
       ...page,
+      routeStyle,
       routeId: idFor(page.filePath),
       params: extractRouteParams(page.route),
-      layouts: layoutStackForPage(page.filePath, layoutKeys),
+      layouts: routeStyle === 'http-handlers' ? [] : layoutStackForPage(page.filePath, layoutKeys),
       errorBoundary: nearestSpecialPage(page.filePath, model.pages, 'error'),
       notFoundBoundary: nearestSpecialPage(page.filePath, model.pages, '404'),
       transport: options.transport,
@@ -267,7 +276,9 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
       clientMethods: methods.methods?.filter(entry => entry.kind === 'client') ?? [],
       strippedMethods: methods.methods?.filter(entry => entry.kind === 'stripped') ?? [],
-      declarationDispatch: resolveDeclarationDispatch(methods, page.filePath),
+      declarationDispatch: routeStyle === 'http-handlers'
+        ? { status: 'not-applicable', scope: 'Functional HTTP handlers do not use component dispatch.', members: [] }
+        : resolveDeclarationDispatch(methods, page.filePath),
       members: methods.members ?? [],
       inheritance: methods.inheritance ?? { status: 'unresolved', bases: [] },
       inheritedDeclarations: methods.inheritedDeclarations ?? [],

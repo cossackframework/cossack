@@ -1,3 +1,4 @@
+import { getModuleDefault } from '../module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/transports/http.ts
 import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError } from '@cossackframework/core';
@@ -42,7 +43,7 @@ export function handleUpload(ctx: RouterContext) {
         const user = c.get('user');
         const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
         if (!module) return c.json({ error: 'Component not found' }, 404);
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        const PageComponent = getModuleDefault(module as object) as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
 
         const componentInstance = createInstance(PageComponent) as any;

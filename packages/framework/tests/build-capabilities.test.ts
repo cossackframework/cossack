@@ -24,7 +24,7 @@ it('returns all selected feature failures with their source and no binding value
   expect(checkCapabilityRequirements('cloudflare', [{ feature: 'chat', source, requires: { transports: ['sse'] } }], ['COSSACK_SSE'])).toEqual([]);
 });
 
-async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] | null = [], requires: CapabilityRequirement = { transports: [transport] }, pageSource?: string, environment?: string) {
+async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] | null = [], requires: CapabilityRequirement = { transports: [transport] }, pageSource?: string, environment?: string, pagePath = 'src/pages/chat/index.ts') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-capability-build-'));
   roots.push(root);
   if (bindings === null) {
@@ -39,8 +39,8 @@ async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport:
   }
   await fs.writeFile(path.join(root, 'entry.js'), 'export const portable = true;');
   if (pageSource) {
-    await fs.mkdir(path.join(root, 'src/pages/chat'), { recursive: true });
-    await fs.writeFile(path.join(root, 'src/pages/chat/index.ts'), pageSource);
+    await fs.mkdir(path.dirname(path.join(root, pagePath)), { recursive: true });
+    await fs.writeFile(path.join(root, pagePath), pageSource);
   }
   // An unselected optional module must not change the portable build's result.
   await fs.writeFile(path.join(root, 'unused-cloudflare.js'), "import { DurableObject } from 'cloudflare:workers'; export class Optional extends DurableObject {}");
@@ -106,5 +106,5 @@ it('discovers bindings through the project Wrangler parser and honors environmen
 
 it('accepts discovered named HTTP handler modules without component decorators', async () => {
   await expect(buildFixture('desktop', 'http', [], {},
-    'export const POST = factory(); export async function GET(c) { return c.json({ ok: true }); }')).resolves.toBeDefined();
+    'export const POST = factory(); export async function GET(c) { return c.json({ ok: true }); }', undefined, 'src/pages/api/chat.ts')).resolves.toBeDefined();
 });

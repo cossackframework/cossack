@@ -1,3 +1,4 @@
+import { getModuleDefault } from '../module-default.js';
 // src/transports/sse.ts
 import { SseRuntime, Cossack, createInstance, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
@@ -259,7 +260,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
         if (!module) return new Response('Component not found', { status: 404 });
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        const PageComponent = getModuleDefault(module as object) as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
 
         // Scope keys are identifiers, not credentials. Re-evaluate custom scopes
@@ -402,7 +403,7 @@ async function handleCoordinatorSubscription(
             let active = rootScope;
             const path = ctx.routeIdMap.get(componentRouteId)!;
             for (const layout of resolveLayoutPaths(path, Object.keys(ctx.layouts))) {
-                const Layout = Object.values(ctx.layouts[layout] as object)[0] as new () => Cossack;
+                const Layout = getModuleDefault(ctx.layouts[layout] as object) as new () => Cossack;
                 active = createLayoutServiceScope(active, Layout, {
                     ownerRouteId: ctx.routePathToIdMap.get(layout), ownerRoutePath: layout, scopeKey,
                 });

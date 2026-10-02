@@ -219,10 +219,12 @@ layout options and dynamic service expressions stay unknown. Service names are
 source declarations, not inferred token identity across modules.
 
 The [requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03)
-records the prior completion evidence and limits. CLI-04 was reopened during
-generated-app capability acceptance: classify named HTTP handler modules in CLI
-checks and reconcile runtime first-export selection with inspected default exports.
-Browser/production
+records the completion evidence and limits. Follow-up generated-app acceptance
+exposed functional HTTP classification and runtime first-export selection gaps.
+Both are now fixed: CLI/build discovery share functional handler classification,
+and runtime component paths consistently select default exports. Actual SSR, SSG,
+transport guards, and generated Worker integration validate the corrections.
+CLI-04 is complete. Browser/production
 runtime gates, RT-07 typed URL/API generation, RT-24 config registry work, and
 RT-25 build/recipe capability enforcement remain under their own tasks.
 

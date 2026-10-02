@@ -4,7 +4,7 @@ import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
-import { extractPageOptionsFromAst, hasNamedHttpHandlers } from './page-inspection.js';
+import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
@@ -160,7 +160,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           let line: number | undefined;
           if (key.endsWith('.ts')) {
             const source = readFileSync(file, 'utf8');
-            if (await hasNamedHttpHandlers(source)) continue; // All supported runtimes provide HTTP handlers.
+            if (key.includes('/src/pages/api/') && await isHttpHandlerModule(source)) continue; // All supported runtimes provide HTTP handlers.
             const facts = await extractPageOptionsFromAst(source);
             if (facts?.method !== 'ast' || !facts.options) this.error({
               code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,

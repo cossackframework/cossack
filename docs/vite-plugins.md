@@ -49,7 +49,8 @@ The plugin scans routes under the Vite project's `src/pages`, extracts static
 `@Page` options, and adds their transport requirements. It does not execute
 constructors or import application modules. Unknown options fail with
 `COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN` rather than defaulting to HTTP.
-Named HTTP handler modules use HTTP without needing component decorators.
+Recognized functional HTTP handlers under `src/pages/api/` use HTTP without
+needing component decorators.
 Configured Markdown routes use the HTTP transport emitted by the Markdown
 transform. Layout, loading, declaration, and test files are excluded from page
 transport discovery using the same route scanner as the plugin.
