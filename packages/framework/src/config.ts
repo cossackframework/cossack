@@ -257,3 +257,66 @@ export function binding<T = unknown>(key: string): T | undefined {
     const value = store.env?.[key];
     return value === undefined || value === null ? undefined : (value as T);
 }
+
+/** Coded, actionable failure for a missing required binding or variable. */
+export class ConfigBindingError extends Error {
+    readonly code = 'COSSACK_BINDING_MISSING';
+    readonly bindingName: string;
+
+    constructor(bindingName: string, message: string) {
+        super(message);
+        this.name = 'ConfigBindingError';
+        this.bindingName = bindingName;
+    }
+}
+
+/**
+ * Names of the active environment's bindings — for diagnostics only. Binding
+ * objects and string values are never surfaced: a diagnostic that echoed a
+ * binding value could leak credentials into logs, hydration payloads, or
+ * catalogs. Secret-looking names (SECRET/TOKEN/PASSWORD/KEY...) are reported
+ * by name only, which is always safe.
+ */
+function availableBindingNames(): string[] {
+    const store = requestStore();
+    return store ? Object.keys(store.env ?? {}).sort() : [];
+}
+
+function describeAvailable(available: string[]): string {
+    return available.length ? `Available bindings: ${available.join(', ')}.` : 'No bindings are present in this environment.';
+}
+
+/**
+ * Read a required raw binding (D1, KV, R2, DO namespace, service binding...).
+ * Unlike {@link binding}, a missing binding is a coded, actionable failure —
+ * it names the binding, lists the available binding NAMES (never values), and
+ * points at the Wrangler configuration. Throwing at first use prevents an
+ * application from silently degrading to undefined behavior deep inside a
+ * request handler.
+ */
+export function requireBinding<T = unknown>(key: string): T {
+    const value = binding<T>(key);
+    if (value === undefined) {
+        throw new ConfigBindingError(key,
+            `[Cossack] Required binding "${key}" is not configured for this environment. ` +
+            `${describeAvailable(availableBindingNames())} ` +
+            'Add it to wrangler.jsonc (bindings are per-environment and are not inherited).');
+    }
+    return value;
+}
+
+/**
+ * Read a required string environment variable. A missing variable fails with
+ * a coded diagnostic naming the variable and the present names, mirroring
+ * {@link requireBinding} for scalar configuration.
+ */
+export function requireEnv(key: string): string {
+    const store = requestStore();
+    const value = store?.env?.[key];
+    if (value === undefined || value === null || String(value) === '') {
+        throw new ConfigBindingError(key,
+            `[Cossack] Required environment variable "${key}" is not set for this environment. ` +
+            `${describeAvailable(availableBindingNames())}`);
+    }
+    return String(value);
+}

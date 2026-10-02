@@ -1,6 +1,6 @@
 // tests/config.test.ts
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { config, env, runWithConfig, buildConfig, type ConfigStore, type EnvFunction } from '../src/config';
+import { config, env, runWithConfig, buildConfig, requireBinding, requireEnv, ConfigBindingError, type ConfigStore, type EnvFunction } from '../src/config';
 
 // Note: config() now reads directly from AsyncLocalStorage (no isServer flag,
 // no setConfigStoreGetter injection). Tests use runWithConfig() to scope a
@@ -191,5 +191,42 @@ describe('buildConfig()', () => {
 
     it('returns an empty object for no factories', () => {
         expect(buildConfig({}, (() => '') as any)).toEqual({});
+    });
+});
+
+describe('required bindings and variables (RT-24)', () => {
+    const store: ConfigStore = {
+        env: { DB: { prepare: () => {} }, APP_URL: 'https://example.test', APP_SECRET: 'super-secret-value' },
+        config: {},
+    };
+
+    it('returns present bindings and variables', () => {
+        runWithConfig(store, () => {
+            expect(requireBinding('DB')).toBe(store.env.DB);
+            expect(requireEnv('APP_URL')).toBe('https://example.test');
+        });
+    });
+
+    it('fails with a coded diagnostic naming the missing binding', () => {
+        runWithConfig(store, () => {
+            expect(() => requireBinding('CACHE_KV')).toThrow(ConfigBindingError);
+            try {
+                requireBinding('CACHE_KV');
+            } catch (caught) {
+                const error = caught as ConfigBindingError;
+                expect(error).toMatchObject({ code: 'COSSACK_BINDING_MISSING', bindingName: 'CACHE_KV' });
+                // The message lists binding NAMES, never values.
+                expect(error.message).toContain('CACHE_KV');
+                expect(error.message).toContain('APP_URL');
+                expect(error.message).not.toContain('super-secret-value');
+                expect(error.message).toContain('wrangler.jsonc');
+            }
+            expect(() => requireEnv('MISSING_VAR')).toThrow(/MISSING_VAR/);
+        });
+    });
+
+    it('fails outside a request scope with the binding name', () => {
+        expect(() => requireBinding('DB')).toThrow(/"DB"/);
+        expect(() => requireEnv('APP_URL')).toThrow(/"APP_URL"/);
     });
 });

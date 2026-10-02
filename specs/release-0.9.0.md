@@ -11,8 +11,8 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Explicit boolean values are implemented.
-- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands.
+- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): shared `CommandSpec` (flags, aliases, positionals, `forwardsArgs` boundary for vite/wrangler forwarding) validates every converted command before effects with `COSSACK_OPTION_UNKNOWN`/`COSSACK_ARGUMENT_*` codes and supported alternatives; remaining: conflict/repeat rules beyond last-wins and per-subcommand flag sets (lang/image/generate subcommands share one set).
+- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands (version, info, routes, build, dev, start, ssg, studio, adapter, lang, add, generate, remove, delete, upgrade, image); build/ssg capture child output under `--json`; thrown failures become coded diagnostics with exit 1; remaining: the database cluster's child-process JSON already conforms but is not yet on `runWithSpec`, and long-running commands still need their event-output contract.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
@@ -44,8 +44,8 @@ below link directly to those explanations.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; remaining: scaffold recipe gating and CLI inspection must consume the same model.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -328,6 +328,34 @@ not replace the final monorepo and runtime release gates.
   of stale tasks, typed client generator-result inference, preview/release
   tooling, and all other unchecked release requirements remain in scope.
   Versions remain 0.8.3 until the complete 0.9.0 checklist and release gates pass.
+
+### Group 2 start: CLI spec, required bindings, capability model (GLM, 2026-10-02)
+
+- `command-spec.js` (CLI-02/CLI-03): `CommandSpec` declares flags (type,
+  aliases), positionals, and forwarding boundaries; `runWithSpec` validates
+  before any effect (unknown options list their `--`-prefixed supported
+  alternatives; missing/extra positionals fail with stable codes), keeps the
+  `help` flag/positional convention, and emits the versioned JSON envelope —
+  data handlers, exit-code results, and `{ exitCode, data }` captured-output
+  results. 16 commands converted; database cluster commands already emit
+  isolated JSON via their child-process path and move to `runWithSpec` later.
+  `build`/`ssg` capture child output under `--json` via `runCaptured` so
+  stdout carries exactly one envelope. Existing tests updated to the new
+  validation contract; new `command-spec.test.js` (10 tests).
+- RT-24: `requireBinding`/`requireEnv` + `ConfigBindingError`
+  (`COSSACK_BINDING_MISSING`) name the missing binding, list available binding
+  names only — secret values never enter diagnostics — and point at
+  per-environment Wrangler configuration. Covered in `config.test.ts`.
+- RT-25: `runtime-capabilities.ts` models transports, durable realtime
+  coordination (binding-gated on `COSSACK_SSE`), process-local realtime,
+  scheduled handlers, serverless storage, and filesystem per runtime
+  (cloudflare/node/deno/desktop), distinguishing available, missing-binding,
+  and unsupported; `describeRuntimeCapabilities`/`formatCapabilityResult`
+  expose it for inspection. Covered in `runtime-capabilities.test.ts` (5
+  tests). Scaffold/CLI consumption remains open.
+- `pnpm --filter cossack exec vitest run` (273 tests),
+  `pnpm --filter @cossackframework/framework exec vitest run` (554 tests), and
+  both packages' `tsc --noEmit` passed.
 
 ### Group 1 runtime work: unified RPC contract and realtime recovery (GLM, 2026-10-02)
 
