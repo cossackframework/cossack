@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as coreCapabilities from '@cossackframework/core/runtime-capabilities';
 import {
     describeRuntimeCapabilities,
     evaluateCapability,
@@ -8,6 +9,11 @@ import {
 } from '../src/runtime-capabilities';
 
 describe('runtime capability model (RT-25)', () => {
+    it('re-exports the core model used by library-level scaffold planning', () => {
+        expect(evaluateCapability).toBe(coreCapabilities.evaluateCapability);
+        expect(evaluateTransportCapability).toBe(coreCapabilities.evaluateTransportCapability);
+        expect(describeRuntimeCapabilities).toBe(coreCapabilities.describeRuntimeCapabilities);
+    });
     it('does not advertise scheduled dispatch from the built-in Node or Deno adapters', () => {
         for (const runtime of ['node', 'deno'] as const) {
             const result = evaluateCapability(runtime, 'scheduledHandlers', {});

@@ -32,7 +32,14 @@ beforeEach(async () => {
   const pkg = JSON.parse(await fs.readFile(path.join(scaffold, 'package.json'), 'utf8'));
   pkg.version = '1.2.3';
   await fs.writeFile(path.join(release, 'package.json'), JSON.stringify(pkg));
-  await fs.symlink(fileURLToPath(new URL('../../../node_modules/', import.meta.url)), path.join(release, 'node_modules'), 'junction');
+  await fs.mkdir(path.join(release, 'node_modules'));
+  // The isolated release needs its declared dependencies, including workspace
+  // packages that pnpm links at package level rather than hoisting to the root.
+  for (const [name, directory] of Object.entries({
+    '@cossackframework': path.join(scaffold, 'node_modules/@cossackframework'),
+    prompts: fileURLToPath(new URL('../../../node_modules/prompts', import.meta.url)),
+    yaml: fileURLToPath(new URL('../../../node_modules/yaml', import.meta.url)),
+  })) await fs.symlink(directory, path.join(release, 'node_modules', name), 'junction');
   let source = await fs.readFile(path.join(release, 'src/index.js'), 'utf8');
   source = source.replace("dependencies.ws = dependencyVersion('ws');", "dependencies['release-added'] = '^2.0.0';");
   await fs.writeFile(path.join(release, 'src/index.js'), source);

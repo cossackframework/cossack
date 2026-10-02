@@ -1,6 +1,8 @@
+import type { CapabilityDiagnostic } from '@cossackframework/core/runtime-capabilities';
+
 export type Adapter = 'cloudflare' | 'node' | 'deno';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource' | 'mutation';
+export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource' | 'mutation' | 'scoped-service' | 'protected-route';
 export type AuthMethod = 'credentials' | 'oauth';
 export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
 export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';
@@ -169,3 +171,7 @@ export interface RecipeCapabilityUse {
   requires: { transports?: readonly ('http' | 'sse' | 'durable-object')[]; filesystem?: boolean; cloudflareBindings?: readonly string[] };
 }
 export declare function recipeCapabilityRequirements(recipe: ScaffoldRecipe, target?: 'web' | 'desktop'): RecipeCapabilityUse[];
+export interface RecipeCapabilityDiagnostic extends CapabilityDiagnostic {
+  target: 'web' | 'desktop';
+}
+export declare function recipeCapabilityDiagnostics(recipe: ScaffoldRecipe): RecipeCapabilityDiagnostic[];

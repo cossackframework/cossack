@@ -94,11 +94,16 @@ is selected; Desktop contributes one only to its side target. Source locations
 point to `.cossack/scaffold.json`, where the recipe selection is recorded.
 D1 declares the native `DB` binding; Hyperdrive providers declare `HYPERDRIVE`.
 These requirements apply to both targets because the generated database code is
-shared. A Desktop build that retains either provider fails with a recipe diagnostic;
+shared. Creation and composition reject either provider with Desktop during planning,
+before writing application files. Builds also check these requirements;
 select a portable provider or provide a separate target-specific database setup.
 Page transports and durable-state requirements remain discovered from page code.
-The shared framework checker evaluates availability; this registry does not copy
-runtime capability profiles. Requirements for other features must be added as
+The pure `@cossackframework/core/runtime-capabilities` checker evaluates availability;
+framework re-exports the same model. This registry does not copy runtime capability
+profiles or depend on framework. `recipeCapabilityDiagnostics(recipe)` reports host
+support for selected targets; binding configuration remains a build/deploy check.
+Recorded unsupported recipes remain inspectable with source-bearing diagnostics.
+Requirements for other features must be added as
 those features acquire runtime dependencies.
 
 Generated Cloudflare projects disable the Workers Vite plugin in Desktop mode.
@@ -136,3 +141,43 @@ declares HTTP capability, and preserves edited pages during repeat composition.
 Generated production browser acceptance runs in the CLI package with Playwright.
 Install its Chromium browser with `pnpm --filter cossack exec playwright install chromium`
 before running `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`.
+
+## Layout-scoped service recipe
+
+Run `cossack add scoped-service` to add `/scoped-service` and its sibling page.
+The layout declares `ScopedCounterService` in `@Page({ services })`. Its pages
+and a nested component use `@Inject` to receive that layout's instance. A
+`@Server` method updates public state through the service RPC proxy. `@Shared`
+formats it on both sides. Pending, failure, and retry behavior use client state.
+
+The browser keeps the same service while navigating between sibling pages.
+Leaving the layout disposes it; returning or reloading creates fresh state.
+HTTP RPC reconstructs request scopes and receives public service state from the
+browser. This counter is a demonstration, not durable storage or a trusted quota.
+Use server storage and authorization for authoritative records. The recipe declares
+HTTP capability and adds no database or UI dependency. Repeat composition preserves
+edited layout, pages, and service files.
+
+## Protected route recipe
+
+Run `cossack add protected-route` to add `/protected-route` and its details page.
+This selects the existing `auth`, `database`, and `ui` features. Choose a database
+supported by the web runtime, install dependencies, and run `cossack migration up`
+before signing in through `/auth/login`. Credentials registration is available at
+`/auth/register` when credentials authentication is selected.
+
+Global auth middleware resolves the session. The protected layout's
+`createAuthorizer().requireUser` middleware requires that identity before page
+rendering or RPC. Anonymous page requests redirect to the configured login route;
+RPC receives a coded 401 error. Server methods read `this.user` from the request,
+never an identity from component state. The example handles expired sessions and
+provides a sign-in link. Auth-only apps register only their selected entity models;
+RBAC relations and models are included only with the users or roles modules.
+
+New apps default the login destination to `/protected-route` unless dashboard is
+also selected. Composition preserves existing environment values and local edits,
+so set `AUTH_REDIRECT_AFTER_LOGIN` yourself when adding this to an existing app.
+The guard requires a session; application-specific permissions still belong in
+server authorization policies. Repeat composition preserves both pages, the layout,
+and middleware. Generated production acceptance uses real database migrations,
+sessions, login UI, nested navigation, forged client state, and session expiry.

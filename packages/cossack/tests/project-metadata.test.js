@@ -35,6 +35,19 @@ it('rejects provider/runtime conflicts using the scaffold registry', async () =>
   await write({ schemaVersion: 3, runtime: 'node', explicitFeatures: ['database'], config: { database: 'd1' } });
   expect((await inspectScaffoldMetadata(root)).status).toBe('invalid');
 });
+it('keeps an older unsupported target recipe inspectable with a capability diagnostic', async () => {
+  await write({ schemaVersion: 3, runtime: 'cloudflare', explicitFeatures: ['database', 'desktop'],
+    config: { database: 'd1', appSecret: 'PRIVATE_VALUE' } });
+  const result = await inspectScaffoldMetadata(root);
+  expect(result.status).toBe('recorded');
+  expect(result.recipe.config.database).toBe('d1');
+  expect(result.recipe.features.map(feature => feature.name)).toEqual(['database', 'desktop']);
+  expect(result.diagnostics).toEqual([expect.objectContaining({
+    code: 'COSSACK_CAPABILITY_UNSUPPORTED', severity: 'error', target: 'desktop',
+    feature: 'database/d1', source: '.cossack/scaffold.json',
+  })]);
+  expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
+});
 it('joins recorded recipes with route facts in the effective project model', async () => {
   await write({ schemaVersion: 3, runtime: 'node', explicitFeatures: ['database'], config: { database: 'sqlite' } });
   await fs.mkdir(path.join(root, 'src/pages'), { recursive: true });

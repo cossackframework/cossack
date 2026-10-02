@@ -43,6 +43,43 @@ async function assertPortableChunks(directory) {
     else if (entry.name.endsWith('.js')) expect(await fs.readFile(file, 'utf8'), file).not.toContain('cloudflare:workers');
   }
 }
+async function productionServer(root, environment = {}) {
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { serve } from '@hono/node-server';
+    const { app, env, runtime } = await import('./dist/server/index.js');
+    const server = await new Promise(resolve => {
+      const listener = serve({ fetch: request => app.fetch(request, env), port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
+      listener.once('error', error => { console.error(error); process.exit(1); });
+    });
+    env.APP_URL = 'http://127.0.0.1:' + server.address().port;
+    console.log('RECIPE_ORIGIN=' + env.APP_URL);
+    process.once('SIGTERM', async () => {
+      await runtime.dispose();
+      server.close(() => process.exit(0));
+    });
+  `], { cwd: root, env: { ...process.env, NODE_ENV: 'production', VITEST: '', ...environment }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  child.stdout.on('data', data => { output += data; });
+  child.stderr.on('data', data => { output += data; });
+  const exited = once(child, 'exit');
+  const close = async () => {
+    child.kill('SIGTERM');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+    const [code, signal] = await exited;
+    clearTimeout(kill);
+    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
+  };
+  try {
+    await expect.poll(() => {
+      if (child.exitCode !== null) throw new Error(output);
+      return /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+    }, { timeout: 10000 }).toBeTruthy();
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
+}
 it.each(['node', 'deno'])('builds a generated %s app through its real Vite configuration', async adapter => {
   const root = await project(adapter);
   if (adapter === 'node') {
@@ -100,6 +137,211 @@ it.each(['node', 'deno'])('builds a generated %s app through its real Vite confi
 
   }
   expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
+}, 120000);
+it('runs the scoped-service recipe across sibling navigation, nested injection, RPC, and disposal', async () => {
+  const root = await project('node', ['scoped-service']);
+  const serviceFile = path.join(root, 'src/services/scoped-counter.ts');
+  // Observe the framework's actual disposal hook without shipping test counters
+  // in the application recipe or replacing its service/ownership declarations.
+  await fs.writeFile(serviceFile, (await fs.readFile(serviceFile, 'utf8')).replace('  @Server()', `
+  @Shared()
+  onDispose() {
+    if (typeof window !== 'undefined') {
+      const observed = window as Window & { __serviceDisposals?: number };
+      observed.__serviceDisposals = (observed.__serviceDisposals ?? 0) + 1;
+    }
+  }
+  @Server()`));
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated service types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  await assertPortableChunks(path.join(root, 'dist/server'));
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    expect(await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8')).not.toContain('Counter updated on the server.');
+  }
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const ownerRouteId = manifest.filePathToId['/src/pages/scoped-service/layout.ts'];
+  expect(ownerRouteId).toBeTruthy();
+  const server = await productionServer(root);
+  let browser;
+  try {
+    const { origin } = server;
+    const rendered = await (await fetch(origin + '/scoped-service/other')).text();
+    expect(rendered).toContain('nested-service-count');
+    expect(rendered).toContain('Count: 0');
+    const rpc = async (action, service = { ownerRouteId, slot: '0' }) => {
+      const response = await fetch(origin + '/crpc', { method: 'POST', headers: { origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ service, action, payload: [], state: { count: 4 } }) });
+      return { status: response.status, body: await response.json() };
+    };
+    expect(await rpc('increment')).toMatchObject({ status: 200, body: {
+      _cossack_service_state: { count: 5 }, _cossack_return: 'Counter updated on the server.',
+    } });
+    expect((await rpc('formatCount')).status).toBe(403);
+    expect((await rpc('increment', { ownerRouteId, slot: 'missing' })).status).toBe(404);
+    expect((await rpc('increment', { ownerRouteId: 'missing', slot: '0' })).status).toBe(400);
+
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(origin + '/scoped-service');
+    const count = page.getByTestId('page-service-count');
+    const layoutCount = page.getByTestId('layout-service-count');
+    await browserExpect(count).toHaveText('Count: 0');
+    const sent = [];
+    page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') sent.push(request.postDataJSON()); });
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/crpc', async route => { await gate; await route.continue(); });
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await browserExpect(page.getByRole('button', { name: 'Updating…' })).toBeDisabled();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ service: { ownerRouteId, slot: '0' }, action: 'increment', state: { count: 0 } });
+    release();
+    await browserExpect(count).toHaveText('Count: 1');
+    await browserExpect(layoutCount).toHaveText('Count: 1');
+    await browserExpect(page.getByRole('status')).toHaveText('Counter updated on the server.');
+    await page.unroute('**/crpc');
+
+    await page.route('**/crpc', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Internal Server Error' }) }));
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await browserExpect(page.getByRole('alert')).toHaveText('Could not update the counter. Try again.');
+    await browserExpect(count).toHaveText('Count: 1');
+    await page.unroute('**/crpc');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await browserExpect(layoutCount).toHaveText('Count: 2');
+
+    await page.getByRole('link', { name: 'Sibling page', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Sibling page', exact: true })).toBeVisible();
+    await browserExpect(count).toHaveText('Count: 2');
+    await browserExpect(page.getByTestId('nested-service-count')).toHaveText('Count: 2');
+    expect(await page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(0);
+    await page.getByRole('link', { name: 'Counter page', exact: true }).click();
+    await browserExpect(page.getByRole('button', { name: 'Increment', exact: true })).toBeVisible();
+    await browserExpect(count).toHaveText('Count: 2');
+    expect(await page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(0);
+    await page.getByRole('link', { name: 'Leave the layout', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Layout-scoped service', exact: true })).toHaveCount(0);
+    await browserExpect.poll(() => page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(1);
+    await page.goBack();
+    await browserExpect(page.getByRole('button', { name: 'Increment', exact: true })).toBeVisible();
+    await browserExpect(count).toHaveText('Count: 0');
+    await browserExpect(layoutCount).toHaveText('Count: 0');
+    expect(await page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(1);
+    expect(errors).toEqual([]);
+  } finally {
+    await browser?.close();
+    await server.close();
+  }
+}, 120000);
+it('runs the protected-route recipe with real sessions, nested guards, forged state, and expiry', async () => {
+  const root = await project('node', ['protected-route']);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated protected route types: ${error.stdout}\n${error.stderr}`); }
+  let migrated;
+  try { migrated = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--json'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) {
+    let detail;
+    try { detail = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'plan'], { cwd: root, timeout: 30000 }); }
+    catch (diagnostic) { detail = diagnostic; }
+    throw new Error(`Generated auth migrations: ${error.stdout}\n${error.stderr}\n${detail.stdout}\n${detail.stderr}`);
+  }
+  expect(JSON.parse(migrated.stdout)).toMatchObject({ ok: true });
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  await assertPortableChunks(path.join(root, 'dist/server'));
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+    expect(code).not.toContain('Authenticated account:');
+    expect(code).not.toContain('pbkdf2$');
+  }
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const routeId = manifest.filePathToId['/src/pages/protected-route/index.ts'];
+  const server = await productionServer(root, { APP_SECRET: 'generated-protected-route-test-secret' });
+  let browser;
+  try {
+    const { origin } = server;
+    for (const route of ['/protected-route', '/protected-route/details']) {
+      const denied = await fetch(origin + route, { redirect: 'manual' });
+      expect(denied.status).toBe(302);
+      expect(denied.headers.get('location')).toBe('/auth/login');
+      expect(await denied.text()).not.toContain('Signed in as');
+    }
+    const call = async (componentRouteId, action, payload = [], cookie = '') => fetch(origin + '/crpc', {
+      method: 'POST', headers: { origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ componentRouteId, action, payload,
+        state: { public: { email: 'forged@example.test' }, user: { id: 'forged', email: 'forged@example.test' } } }),
+    });
+    const guest = await call(routeId, 'verifyIdentity');
+    expect(guest.status).toBe(401);
+    expect(await guest.json()).toMatchObject({ code: 'COSSACK_RPC_UNAUTHENTICATED' });
+    const registerId = manifest.filePathToId['/src/pages/auth/register/index.ts'];
+    const registered = await call(registerId, 'register', ['Agent', 'agent@example.test', 'test-password-123']);
+    expect(registered.status).toBe(200);
+    expect(await registered.json()).toMatchObject({ _cossack_redirect: '/protected-route' });
+    const sessionCookie = registered.headers.getSetCookie().find(value => value.startsWith('session_id='))?.split(';')[0];
+    expect(sessionCookie).toBeTruthy();
+    const authenticated = await call(routeId, 'verifyIdentity', [], sessionCookie);
+    expect(authenticated.status).toBe(200);
+    expect(await authenticated.json()).toMatchObject({ _cossack_return: 'Authenticated account: agent@example.test' });
+    const details = await fetch(origin + '/protected-route/details', { headers: { cookie: sessionCookie } });
+    expect(details.status).toBe(200);
+    expect((await details.text()).replace(/<!--[\s\S]*?-->/g, '')).toContain('Welcome, Agent.');
+    const fakeSession = await call(routeId, 'verifyIdentity', [], 'session_id=unrecognized');
+    expect(fakeSession.status).toBe(401);
+
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(origin + '/protected-route');
+    await browserExpect(page).toHaveURL(origin + '/auth/login');
+    await page.getByPlaceholder('user@example.com').fill('agent@example.test');
+    await page.locator('input[type="password"]').fill('test-password-123');
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await browserExpect(page).toHaveURL(origin + '/protected-route');
+    await browserExpect(page.getByRole('heading', { name: 'Your account', exact: true })).toBeVisible();
+    await browserExpect(page.getByText('agent@example.test', { exact: true })).toBeVisible();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/crpc', async route => { await gate; await route.continue(); });
+    await page.getByRole('button', { name: 'Verify session', exact: true }).click();
+    await browserExpect(page.getByRole('button', { name: 'Verifying…' })).toBeDisabled();
+    release();
+    await browserExpect(page.getByRole('status')).toHaveText('Authenticated account: agent@example.test');
+    await page.unroute('**/crpc');
+    await page.getByRole('link', { name: 'Account details', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Account details', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Account', exact: true }).click();
+    await browserExpect(page.getByRole('button', { name: 'Verify session', exact: true })).toBeVisible();
+
+    // Revoke the real persisted session; the already-hydrated page must reject
+    // its next action instead of trusting the user's cached identity/state.
+    const browserSession = (await context.cookies()).find(cookie => cookie.name === 'session_id');
+    expect(browserSession?.httpOnly).toBe(true);
+    expect(browserSession?.secure).toBe(true);
+    await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+      import { DatabaseSync } from 'node:sqlite';
+      const db = new DatabaseSync('./database.sqlite');
+      db.prepare('UPDATE sessions SET expires_at = ? WHERE id IN (?, ?)').run('2000-01-01T00:00:00.000Z', ${JSON.stringify(sessionCookie.slice('session_id='.length))}, ${JSON.stringify(browserSession?.value)});
+      db.close();
+    `], { cwd: root, timeout: 10000 });
+    await page.getByRole('button', { name: 'Verify session', exact: true }).click();
+    await browserExpect(page.getByRole('alert')).toContainText('Your session ended. Sign in again.');
+    await browserExpect(page.getByRole('status')).toHaveCount(0);
+    expect((await call(routeId, 'verifyIdentity', [], sessionCookie)).status).toBe(401);
+    const expired = await fetch(origin + '/protected-route/details', { headers: { cookie: sessionCookie }, redirect: 'manual' });
+    expect(expired.status).toBe(302);
+    expect(expired.headers.get('location')).toBe('/auth/login');
+    expect(errors).toEqual([]);
+  } finally {
+    await browser?.close();
+    await server.close();
+  }
 }, 120000);
 it('builds the generated Node application Desktop side target with its HTTP boundary', async () => {
   const root = await project('node', ['desktop']);
@@ -191,31 +433,10 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
   }
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
   const routeId = manifest.filePathToId['/src/pages/mutation/index.ts'];
-  const child = spawn(process.execPath, ['--input-type=module', '-e', `
-    import { serve } from '@hono/node-server';
-    const { app, env, runtime } = await import('./dist/server/index.js');
-    const server = await new Promise(resolve => {
-      const listener = serve({ fetch: request => app.fetch(request, env), port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
-      listener.once('error', error => { console.error(error); process.exit(1); });
-    });
-    env.APP_URL = 'http://127.0.0.1:' + server.address().port;
-    console.log('RECIPE_ORIGIN=' + env.APP_URL);
-    process.once('SIGTERM', async () => {
-      await runtime.dispose();
-      server.close(() => process.exit(0));
-    });
-  `], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
-  let output = '';
-  child.stdout.on('data', data => { output += data; });
-  child.stderr.on('data', data => { output += data; });
-  const exited = once(child, 'exit');
+  const server = await productionServer(root);
   let browser;
   try {
-    await expect.poll(() => {
-      if (child.exitCode !== null) throw new Error(output);
-      return /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
-    }, { timeout: 10000 }).toBeTruthy();
-    const origin = /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
+    const { origin } = server;
     const call = async payload => {
       const response = await fetch(origin + '/crpc', { method: 'POST', headers: { origin, 'content-type': 'application/json' },
         body: JSON.stringify({ componentRouteId: routeId, action: 'submitMessage', payload, state: { public: { acknowledgment: 'forged' } } }) });
@@ -308,11 +529,7 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();
-    child.kill('SIGTERM');
-    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
-    const [code, signal] = await exited;
-    clearTimeout(kill);
-    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
+    await server.close();
   }
 }, 120000);
 it('enforces selected database recipe requirements before compiling its modules', async () => {
@@ -327,9 +544,36 @@ it('enforces selected database recipe requirements before compiling its modules'
   await expect(vite(root, [])).rejects.toThrow(/\.cossack\/scaffold.json: database\/sqlite requires filesystem on cloudflare/);
 }, 30000);
 it('rejects a generated Desktop target that retains a native Cloudflare database', async () => {
-  const root = await project('cloudflare', ['database', 'desktop']);
+  const root = await project('cloudflare', ['database']);
+  // Defense in depth for manually configured targets: ordinary scaffold
+  // planning already rejects adding Desktop to a native database recipe.
   await expect(vite(root, ['--mode', 'desktop', '--ssr', 'src/desktop/index.ts', '--outDir', 'dist/desktop']))
     .rejects.toThrow(/\.cossack\/scaffold.json: database\/d1 requires cloudflareBindings on desktop/);
+}, 30000);
+
+it('returns source-bearing capability diagnostics from CLI create/add before unsupported recipes change files', async () => {
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-recipe-plan-'));
+  roots.push(parent);
+  const bin = path.join(repository, 'packages/cossack/bin/cossack.js');
+  const rejected = async (cwd, args) => {
+    try { await promisify(execFile)(process.execPath, [bin, ...args, '--json', '--yes'], { cwd, timeout: 15000 }); }
+    catch (error) {
+      expect(error.code).toBe(1);
+      expect(error.stderr).toBe('');
+      const result = JSON.parse(error.stdout);
+      expect(result).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_CAPABILITY_UNSUPPORTED',
+        message: expect.stringContaining('.cossack/scaffold.json: database/d1 requires cloudflareBindings on desktop') }] });
+      return;
+    }
+    throw new Error('Unsupported recipe unexpectedly passed');
+  };
+  await rejected(parent, ['create', 'bad', '--adapter=cloudflare', '--preset=minimal', '--features=protected-route,desktop']);
+  expect(await fs.readdir(parent)).toEqual([]);
+  const root = await project('cloudflare', ['protected-route']);
+  const original = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8');
+  await rejected(root, ['add', 'desktop']);
+  expect(await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8')).toBe(original);
+  await expect(fs.access(path.join(root, 'src/desktop/index.ts'))).rejects.toThrow();
 }, 30000);
 
 it('builds a portable Cloudflare application Desktop target without the Workers Vite plugin', async () => {

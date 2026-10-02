@@ -381,6 +381,9 @@ importers:
 
   packages/scaffold:
     dependencies:
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
       prompts:
         specifier: ^2.4.2
         version: 2.4.2

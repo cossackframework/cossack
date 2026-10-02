@@ -20,6 +20,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime-capabilities": {
+      "types": "./dist/shared/runtime-capabilities.d.ts",
+      "import": "./dist/shared/runtime-capabilities.js"
     }
   },
   "files": [

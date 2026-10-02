@@ -1295,7 +1295,7 @@ it('emits selected capability requirements into the generated Vite configuration
 });
 
 it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql', 'HYPERDRIVE']])('declares native %s requirements for both targets', (database, binding) => {
-  const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database, features: ['desktop'] });
+  const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database });
   for (const target of ['web', 'desktop']) {
     expect(recipeCapabilityRequirements(recipe, target)).toContainEqual({
       feature: `database/${database}`, source: { file: '.cossack/scaffold.json' }, requires: { cloudflareBindings: [binding] },
@@ -1303,7 +1303,22 @@ it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql
   }
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
 });
-it.each(['resource', 'mutation'])('composes the %s recipe predictably and preserves edited pages', async feature => {
+
+it.each(['d1', 'hyperdrive-postgres', 'hyperdrive-mysql'])('rejects native %s Desktop combinations during creation and composition before files change', async database => {
+  const root = await temporaryDirectory();
+  await expect(createApp('unsupported', { cwd: root, adapter: 'cloudflare', preset: 'minimal',
+    features: ['protected-route', 'desktop'], database, interactive: false }))
+    .rejects.toMatchObject({ code: 'COSSACK_CAPABILITY_UNSUPPORTED' });
+  await expect(fs.access(path.join(root, 'unsupported'))).rejects.toThrow();
+  const { projectDir } = await createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal',
+    features: ['protected-route'], database, interactive: false });
+  const manifest = await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8');
+  await expect(addFeature(projectDir, 'desktop', { interactive: false }))
+    .rejects.toThrow(`.cossack/scaffold.json: database/${database} requires cloudflareBindings on desktop`);
+  expect(await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8')).toBe(manifest);
+  await expect(fs.access(path.join(projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
+});
+it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes the %s recipe predictably and preserves edited pages', async feature => {
   const root = await temporaryDirectory();
   const { projectDir } = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
   const added = await addFeature(projectDir, feature, { interactive: false });
@@ -1313,18 +1328,62 @@ it.each(['resource', 'mutation'])('composes the %s recipe predictably and preser
   if (feature === 'resource') {
     expect(original).toContain("this.resourceStatus$('products')");
     expect(original).toContain("this.refresh$('products')");
-  } else {
+  } else if (feature === 'mutation') {
     expect(original).toContain('@Server({ input: inputRules })');
     expect(original).toContain('await this.validateAll()');
     expect(original).toContain('error.fieldErrors?.[field]');
+  } else if (feature === 'scoped-service') {
+    expect(original).toContain('@Inject(ScopedCounterService)');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/scoped-service/layout.ts'), 'utf8')).toContain('services: [ScopedCounterService]');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/scoped-service/other/index.ts'), 'utf8')).toContain('component(NestedCounterReadout)');
+    expect(await fs.readFile(path.join(projectDir, 'src/services/scoped-counter.ts'), 'utf8')).toContain('@Server()');
+  } else {
+    expect(original).toContain('this.user!.email');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/protected-route/layout.ts'), 'utf8')).toContain('middlewares: [requireProtectedUser]');
+    expect(await fs.readFile(path.join(projectDir, 'src/middlewares/protected-route.ts'), 'utf8')).toContain('authorizer.requireUser');
+    expect(await fs.readFile(path.join(projectDir, 'src/config/auth.ts'), 'utf8')).toContain("env('AUTH_REDIRECT_AFTER_LOGIN', '/protected-route')");
+    expect(await fs.readFile(path.join(projectDir, '.env'), 'utf8')).toContain('AUTH_REDIRECT_AFTER_LOGIN=/protected-route');
   }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
-  expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+  if (feature === 'protected-route') {
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/auth');
+  } else expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+  const files = [file, ...(feature === 'scoped-service'
+    ? ['src/pages/scoped-service/layout.ts', 'src/pages/scoped-service/other/index.ts', 'src/services/scoped-counter.ts']
+    : feature === 'protected-route'
+      ? ['src/pages/protected-route/layout.ts', 'src/pages/protected-route/details/index.ts', 'src/middlewares/protected-route.ts'] : [])
+    .map(relative => path.join(projectDir, relative))];
+  const originals = await Promise.all(files.map(file => fs.readFile(file, 'utf8')));
   await addFeature(projectDir, feature, { interactive: false });
-  expect(await fs.readFile(file, 'utf8')).toBe(original);
-  await fs.appendFile(file, '\n// application customization\n');
+  expect(await Promise.all(files.map(file => fs.readFile(file, 'utf8')))).toEqual(originals);
+  await Promise.all(files.map(file => fs.appendFile(file, '\n// application customization\n')));
   await addFeature(projectDir, feature, { interactive: false });
-  expect(await fs.readFile(file, 'utf8')).toBe(original + '\n// application customization\n');
+  expect(await Promise.all(files.map(file => fs.readFile(file, 'utf8')))).toEqual(originals.map(original => original + '\n// application customization\n'));
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [feature] })))
-    .toEqual([{ feature, source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } }]);
+    .toEqual([{ feature, source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } },
+      ...(feature === 'protected-route' ? [{ feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true } }] : [])]);
+});
+
+it.each([
+  { features: ['database'], auth: false, rbac: false },
+  { features: ['auth'], auth: true, rbac: false },
+  { features: ['dashboard'], dashboardModules: ['sessions'], auth: true, rbac: false },
+  { features: ['dashboard'], dashboardModules: ['users'], auth: true, rbac: true },
+])('keeps generated entity relations and registrations aligned with selected features: %j', async selection => {
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', ...selection }));
+  const registered = files.get('src/models/index.ts').content.toString();
+  for (const name of ['User', 'Session', 'OAuthAccount']) {
+    expect(files.has(`src/models/${name}.ts`)).toBe(selection.auth);
+    expect(registered.includes(`import { ${name} }`)).toBe(selection.auth);
+  }
+  for (const name of ['Role', 'UserRole']) {
+    expect(files.has(`src/models/${name}.ts`)).toBe(selection.rbac);
+    expect(registered.includes(`import { ${name} }`)).toBe(selection.rbac);
+  }
+  if (selection.auth) {
+    const user = files.get('src/models/User.ts').content.toString();
+    expect(user.includes('roleAssignments')).toBe(selection.rbac);
+    expect(user.includes("import { UserRole }")).toBe(selection.rbac);
+  }
 });

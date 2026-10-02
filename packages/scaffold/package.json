@@ -76,6 +76,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@cossackframework/core": "workspace:*",
     "prompts": "^2.4.2",
     "yaml": "^2.9.0"
   },

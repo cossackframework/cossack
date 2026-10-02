@@ -2,7 +2,36 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex mutation and browser acceptance (2026-10-03):** read
+> **Latest checkpoint — Codex four recipes and capability planning (2026-10-03):** read
+> [completion evidence](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03).
+> **Author: Codex.** CLI-05 and RT-25 are complete against their written criteria:
+> **14/58 tasks checked; all 44 unchecked tasks remain in scope.** Scoped-service
+> acceptance verifies explicit service RPC, nested/sibling injection, retained
+> browser state, disposal on layout exit, and fresh state on return. Protected-route
+> acceptance uses real migrations, registration/login, sessions, nested guards,
+> forged state, and persisted expiry. Fixed auth-only User relations targeting
+> unregistered RBAC entities; model ownership now follows selected features.
+> The pure capability model lives in core's published `runtime-capabilities`
+> entry, with framework re-exporting it. Scaffold planning imports core, never
+> framework. Native D1/Hyperdrive plus Desktop fails before create/add writes.
+> Older recorded combinations remain inspectable with target/source diagnostics.
+> Updated isolated upgrade fixtures to supply the newly declared core dependency.
+> Passed: scaffold 108, core 676, framework 617, and all 557 CLI tests across
+> 39 files (including 12 generated acceptance and 10 upgrade tests). Core build,
+> framework type generation, root TypeScript, all 11 package type checks, and the
+> final diff whitespace check passed.
+>
+> **Next phases:** follow the detailed plan and remaining checklist, starting
+> with RT-01 authored TypeScript/IDE RPC inference and RT-02 schema contracts,
+> then the remaining resource, DI ownership, and policy contracts (RT-03/12/14).
+> Existing recipes demonstrate current APIs; they do not close those broader
+> requirements. Keep validation shared, public state untrusted, and ownership
+> metadata aligned with the compiler. Deno execution and Electron packaging
+> remain REL-03 gates. Versions stay 0.8.3 until final REL-04 verification.
+> Build library declarations before dependent tests; avoid simultaneous builds
+> and type checks. Preserve unrelated `reports.md` and `.zcodeignore` changes.
+
+> **Previous checkpoint — Codex mutation and browser acceptance (2026-10-03):** read
 > [mutation recipe and hydrated UI acceptance](./release-0.9.0.md#codex-mutation-browser-recipe-2026-10-03).
 > **Author: Codex.** `cossack add mutation` creates a validated public HTTP form
 > with explicit payload snapshots, client-only form state, field errors, pending

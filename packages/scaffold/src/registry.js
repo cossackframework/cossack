@@ -1,5 +1,7 @@
+import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
+
 export const ADAPTERS = ['cloudflare', 'node', 'deno'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -16,6 +18,8 @@ export const FEATURE_REGISTRY = {
   desktop: { requires: [] },
   resource: { requires: [] },
   mutation: { requires: [] },
+  'scoped-service': { requires: [] },
+  'protected-route': { requires: ['auth'] },
 };
 
 export const PRESET_REGISTRY = {
@@ -142,7 +146,7 @@ export function resolveRecipe(options = {}) {
     resolvedFeatures.includes('dashboard'),
   );
 
-  return {
+  const recipe = {
     adapter,
     preset,
     explicitFeatures,
@@ -155,6 +159,19 @@ export function resolveRecipe(options = {}) {
       theme,
     },
   };
+  return recipe;
+}
+
+/** Host support for all selected targets. Recorded recipes remain inspectable. */
+export function recipeCapabilityDiagnostics(recipe) {
+  return ['web', ...(recipe.resolvedFeatures.includes('desktop') ? ['desktop'] : [])]
+    .flatMap(target => checkCapabilityRequirements(
+      target === 'desktop' ? 'desktop' : recipe.adapter,
+      recipeCapabilityRequirements(recipe, target),
+    )
+      // Binding configuration/remote readiness remain build/deploy checks.
+      .filter(result => result.code !== 'COSSACK_CAPABILITY_BINDING_MISSING')
+      .map(result => ({ ...result, target })));
 }
 
 /** Requirements selected by the recipe, separate from discovered page transports. */
@@ -166,6 +183,8 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('scoped-service')) add('scoped-service', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('protected-route')) add('protected-route', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite') {
     add('database/sqlite', { filesystem: true });
   }

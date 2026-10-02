@@ -6,6 +6,7 @@ export * from './shared/StateProvider';
 export type { User } from './shared/user';
 export * from './shared/head';
 export * from './shared/runtime';
+export * from './shared/runtime-capabilities';
 export * from './shared/image';
 export * from './shared/ref';
 export * from './shared/validation';

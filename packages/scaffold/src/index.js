@@ -22,6 +22,7 @@ import {
   resolveDashboardModules,
   resolveRecipe,
   recipeCapabilityRequirements,
+  recipeCapabilityDiagnostics,
 } from './registry.js';
 
 export {
@@ -40,6 +41,7 @@ export {
   resolveDashboardModules,
   resolveRecipe,
   recipeCapabilityRequirements,
+  recipeCapabilityDiagnostics,
 };
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -231,11 +233,6 @@ const ORM_PATHS = new Set([
   'src/middlewares/orm.ts',
   'src/models/index.ts',
   'src/models/CacheItem.ts',
-  'src/models/OAuthAccount.ts',
-  'src/models/Role.ts',
-  'src/models/Session.ts',
-  'src/models/User.ts',
-  'src/models/UserRole.ts',
   'src/migrations/index.ts',
   'src/seeders/index.ts',
   'src/migrations/0006_create_cache_table.ts',
@@ -250,6 +247,7 @@ const AUTH_PATHS = new Set([
   'src/migrations/0005_create_oauth_accounts.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
+  'src/models/OAuthAccount.ts',
   'src/pages/auth/forgot-password/index.ts',
   'src/pages/auth/layout.ts',
   'src/pages/auth/login/index.ts',
@@ -326,6 +324,12 @@ const DESKTOP_PATHS = new Set([
 function capabilityFor(rel, recipe) {
   if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
   if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
+  if (rel.startsWith('src/pages/scoped-service/') || rel === 'src/services/scoped-counter.ts') {
+    return recipe.resolvedFeatures.includes('scoped-service') ? 'scoped-service' : null;
+  }
+  if (rel.startsWith('src/pages/protected-route/') || rel === 'src/middlewares/protected-route.ts') {
+    return recipe.resolvedFeatures.includes('protected-route') ? 'protected-route' : null;
+  }
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
   if (UI_PATHS.has(rel)) return recipe.resolvedFeatures.includes('ui') ? 'ui' : null;
   if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
@@ -1477,7 +1481,8 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
   }
   if (recipe.resolvedFeatures.includes('auth')) {
     values.push(['AUTH_REDIRECT_AFTER_LOGIN',
-      recipe.resolvedFeatures.includes('dashboard') ? '/dashboard' : '/']);
+      recipe.resolvedFeatures.includes('dashboard') ? '/dashboard'
+        : recipe.resolvedFeatures.includes('protected-route') ? '/protected-route' : '/']);
     values.push(['AUTH_REDIRECT_AFTER_LOGOUT', '/auth/login']);
     if (recipe.config.authMethods.includes('credentials')) {
       values.push(['MAIL_FROM', 'no-reply@localhost']);
@@ -1561,6 +1566,13 @@ function applyTheme(content, theme) {
 }
 
 export async function renderRecipe(recipe, options = {}) {
+  const diagnostics = recipeCapabilityDiagnostics(recipe);
+  if (diagnostics.length) {
+    const diagnostic = diagnostics[0];
+    throw Object.assign(new Error(`${diagnostic.source.file}: ${diagnostic.message}`), {
+      code: diagnostic.code, diagnostics,
+    });
+  }
   const files = new Map();
   for (const rel of await walk(templateDir)) {
     if (rel === 'package.json') continue;
@@ -1588,8 +1600,15 @@ export async function renderRecipe(recipe, options = {}) {
     if (rel === 'src/config/auth.ts' && !recipe.resolvedFeatures.includes('dashboard')) {
       content = text(content.toString('utf8').replace(
         "env('AUTH_REDIRECT_AFTER_LOGIN', '/dashboard')",
-        "env('AUTH_REDIRECT_AFTER_LOGIN', '/')",
+        `env('AUTH_REDIRECT_AFTER_LOGIN', '${recipe.resolvedFeatures.includes('protected-route') ? '/protected-route' : '/'}')`,
       ));
+    }
+    if (rel === 'src/models/User.ts' && !recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
+      // An entity relation must only target another registered entity. Auth
+      // without RBAC has no Role/UserRole models or corresponding migrations.
+      content = text(content.toString('utf8')
+        .replace("import { UserRole } from './UserRole';\n", '')
+        .replace(/\n  @OneToMany\(\(\) => UserRole, \(assignment\) => assignment.user\)\n  declare roleAssignments: Relation<UserRole\[\]>;\n/, '\n'));
     }
     if (rel === 'src/auth.ts') {
       let authContent = content.toString('utf8');

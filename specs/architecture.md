@@ -19,6 +19,15 @@ The framework is built on a strict separation between the **library** (`core`, `
 
 This separation makes sure that the framework's core is reusable, maintainable, and decoupled from any single implementation.
 
+The pure runtime capability model lives at
+`@cossackframework/core/runtime-capabilities`. It has no filesystem, Node, or
+framework imports. The framework's existing `runtime-capabilities` entry re-exports
+it, and scaffold uses the same checker for planning. This keeps build, inspection,
+and recipe decisions consistent without making a library depend on framework.
+Recipe resolution records structural facts; rendering rejects unsupported targets
+before planning writes. Inspection can therefore report an older unsupported
+selection with its feature, target, and manifest source instead of discarding it.
+
 ## Desktop runtime boundary
 
 `@cossackframework/desktop` is the sole native application runtime. Its

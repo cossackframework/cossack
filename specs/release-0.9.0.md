@@ -14,7 +14,7 @@ below link directly to those explanations.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](#codex-handler-default-parity-2026-10-03).
-- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex (2026-10-03): resource and mutation recipes implemented with safe composition, generated type/build/RPC checks, and real Chromium hydration/state/failure/retry acceptance. Remaining: protected-route and scoped-service recipes and their acceptance.
+- [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
@@ -45,7 +45,7 @@ below link directly to those explanations.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Automatic page requirements now share the published source parser with CLI inspection. Generated recipes now enable runtime checks and Cloudflare builds discover selected-environment bindings through Wrangler. Remaining: selected feature planning requirements, further adapter capability audit, and complete generated-app acceptance.
+- [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. Codex completion (2026-10-03): one pure core model serves scaffold planning, framework builds, and CLI inspection; selected recipe requirements, transport bindings, durable-state and adapter requirements have source diagnostics. Published-export Node/Deno/Desktop build fixtures preserve the HTTP-only Desktop boundary and reject Workers imports. The [criterion audit](./release-0.9.0-plan.md#rt-25) is complete; Deno execution and Electron launch/packaging remain REL-03 gates.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -85,6 +85,45 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-four-recipe-capabilities-2026-10-03"></a>
+### Codex completion: four recipes and shared capability planning (2026-10-03)
+
+**Author: Codex.** Completed the remaining CLI-05 recipes through the existing
+registry/composition path. The scoped-service layout owns one service; sibling
+pages and a nested component inject it. Real RPC and browser acceptance cover
+pending/failure/retry, retained sibling state, disposal on exit, and fresh state
+on return. HTTP public state is client-supplied; the example is not durable storage.
+
+Protected-route uses existing auth/database/UI recipes and a layout session guard.
+Generated acceptance applies actual migrations, registers and signs in through
+real sessions, checks anonymous/nested redirects and coded RPC failures, rejects
+forged component identity, and expires the persisted session under a hydrated
+page. Fixed the auth-only scaffold's dangling UserRole relation: auth and RBAC
+model files, registration, and User relations now follow selected features.
+
+Moved the dependency-free capability model to core's published
+`runtime-capabilities` entry; framework re-exports it. Scaffold can now use the
+same checker without importing framework. Rendering validates all selected
+targets before planning writes. D1 and both Hyperdrive providers plus Desktop
+fail with feature/source diagnostics during creation and composition. CLI JSON
+preserves the diagnostic code. Recorded older unsupported recipes remain
+inspectable with target diagnostics rather than losing their recipe facts.
+Build checks retain their defense for manually configured combinations.
+
+All four recipes preserve edited files and behave predictably when reapplied.
+The expanded generated fixture passed all 12 production build/runtime/browser
+cases. Root TypeScript and all 11 package checks passed. Full scaffold: 108 tests;
+core: 676; framework: 617. Upgrade acceptance: 10 tests after adding the new core
+dependency to isolated release fixtures. The final full CLI suite passed all
+557 tests across 39 files, including the generated browser and upgrade fixtures.
+`pnpm tsc --noEmit`, `pnpm typecheck`, and the final diff whitespace check passed.
+Core build and framework type generation passed before dependent verification.
+
+**14/58 tasks are now checked.** CLI-05 and RT-25 meet their written criteria.
+The broader RT-01/02/03/12/14/29 contracts and every other unchecked item remain
+in scope. Deno process execution, Electron launch/packaging, and full release
+acceptance remain open. Package versions stay 0.8.3 until REL-04 gates pass.
 
 <a id="codex-mutation-browser-recipe-2026-10-03"></a>
 ### Codex continuation: validated mutation and browser acceptance (2026-10-03)

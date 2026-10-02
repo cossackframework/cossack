@@ -12,8 +12,10 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)
-records CLI-06 completion and remaining acceptance work. The preceding machine
+The latest [Codex recipe/capability checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03)
+records CLI-05 and RT-25 completion: 14/58 tasks are checked. The earlier
+[upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)
+records CLI-06 completion. The preceding machine
 contract checkpoint records CLI-03 completion. The earlier continuation
 records the development WebSocket fix and upgrade planning. The Group 3 review records corrections
 to GLM's implementations. This plan preserves the original task intent; use
@@ -279,10 +281,30 @@ empty results, error rendering, and successful retry. This caught a core bug:
 failed loaders updated their status without requesting a render. The fix notifies
 the client view while ignoring failures from replaced loads. Vite fixtures now
 explicitly set NODE_ENV=production instead of inheriting Vitest's test environment.
-CI installs Chromium before CLI tests. Remaining CLI-05 recipe work: protected
-route and layout-scoped service; complete their runtime/capability acceptance
-before checking the task. RT-03 still needs typed resource targeting and the
+CI installs Chromium before CLI tests. RT-03 still needs typed resource targeting and the
 broader unmount/SSR lifecycle matrix; this recipe slice does not complete it.
+
+Codex service/protected-route checkpoint (2026-10-03): the four recipes now build
+and run through published exports. `scoped-service` declares layout ownership,
+injects one browser instance into sibling pages and a nested component, and uses
+explicit service RPC for pending/failure/retry. Browser acceptance verifies state
+retention within the layout, disposal on exit, and fresh state on return. The
+public HTTP counter is client-supplied state, not an authoritative record.
+
+`protected-route` selects auth/database/UI, requires the trusted session in layout
+middleware, redirects anonymous pages, and returns coded RPC failures. Acceptance
+applies real migrations, registers/signs in, rejects forged identity/state, guards
+nested pages, and expires persisted sessions while the page is hydrated. This
+exposed an existing auth-only scaffold bug: User referenced an unregistered
+UserRole entity. Auth/RBAC files and relations now follow selected model ownership.
+
+All four recipes have repeat-composition and edited-file preservation tests.
+Creation/composition reject D1 or Hyperdrive plus Desktop before writes, with the
+feature and manifest source. Planning, build, and CLI inspection share the pure
+core capability model; framework retains its existing entry as a re-export.
+Inspection still describes older unsupported recipes with capability diagnostics.
+CLI-05 acceptance is complete. The broader runtime tasks listed below retain
+their own open contracts; these examples do not complete those tasks.
 
 Start in `packages/scaffold/src/registry.js`, `index.js`, and
 `packages/cossack/src/commands/add.js` and `generate.js`.
@@ -967,19 +989,20 @@ Codex acceptance audit (2026-10-03):
 
 | Written requirement | Current evidence | Status |
 | --- | --- | --- |
-| Unsupported selections fail with feature/source before deployment | `framework/tests/build-capabilities.test.ts` and generated native-database/Desktop rejection fixtures | Verified |
+| Unsupported selections fail with feature/source before deployment | Shared core checker; scaffold and black-box CLI creation/composition reject native database/Desktop before writes; framework build checks still reject manually configured combinations | Verified |
 | Supported fixtures build through published exports | Generated Node/Deno and Node/Cloudflare Desktop configurations in `cossack/tests/generated-runtime-build.test.js` | Verified |
 | Desktop retains HTTP-only boundary | Desktop SSE rejection and generated mode-specific checks | Verified |
 | Workers-only imports stay out of other runtime graphs | Every emitted server/Desktop JavaScript chunk checked in generated build fixtures | Verified |
-| CLI-04 and CLI-05 consume the same model | CLI runtime/project inspection and scaffold requirement projection share the checker; resource and mutation recipes declare HTTP | Partial: protected-route and scoped-service recipes remain to implement and integrate |
+| CLI-04 and CLI-05 consume the same model | All four recipes declare HTTP and selected database requirements; scaffold planning imports the pure core entry; framework/CLI use its re-export; identity and recorded-metadata tests verify one model | Verified |
 
 The model covers transport-specific bindings, durable state, scheduled integration
 requirements, filesystem access, and selected native database bindings. Node
 production/dev WebSockets use the guarded router factory and have live tests.
 Deno and Electron executable runtime coverage remains a broader release gate;
 absence of those executables is not itself a missing build-time RT-25 criterion.
-Finish the remaining CLI-05 recipe integration, then repeat this audit before
-checking RT-25 complete. Do not restore stale next steps already verified above.
+The completed four-recipe integration and repeated criterion audit close RT-25.
+This does not claim Deno process execution or Electron packaging was verified;
+those remain part of REL-03. Remote resource readiness is also a separate gate.
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.
