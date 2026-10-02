@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 242-case conformance matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Production workerd/Chromium exercises multipart/native bodies, auth/D1 ownership and cookies. Remaining: child/action isolation and rate-limit boundaries, file/schema/resource policies with RT-02/RT-14 and session criteria with RT-11. See the [latest checkpoint](#codex-rpc-protocol-boundaries-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 259-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Remaining: ordinary/error JSON-envelope audit, actual Cloudflare socket/peer/header context and rate-backend guarantees, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rpc-target-limits-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,82 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-target-limits-2026-10-03"></a>
+### Codex review: child targets and RPC action limit ownership (2026-10-03)
+
+**Author: Codex.** Continued RT-01 after `5fb8af7`. New rate regressions failed
+on all four paths: HTTP/service 429 replies lacked a stable code, and socket
+calls executed repeated mutations because they never checked `@RateLimit`.
+Child tests exposed process-local SSE publishing child state over same-named
+page keys, shared page/child method budgets and missing correlated target errors.
+
+Core now shares the counter decision between HTTP and WebSocket execution.
+Socket limits use inherited/forwarded action metadata and trusted peer identity
+before validation/mutation. Store failures reject with private details redacted.
+Server-assigned canonical route ownership supplies one action/class/caller/store
+namespace across JSON, multipart and socket dispatch; changing IDs or opening
+another socket does not restore the same budget. Renderer parents need not be
+Cossack components: owner lookup traverses wrappers without calling missing
+framework methods. Page and child classes have separate budgets, while sibling
+instances of one child class share theirs. Explicit layout-service budgets belong
+to the layout/slot and span its pages. HTTP 429 adds `COSSACK_RPC_RATE_LIMITED`,
+request ID and Retry-After; socket errors retain the ID and clean pending/loading.
+
+HTTP/SSE child actions now publish the page root's state to the process-local
+SSE store, matching distributed page/target separation. Caller replies retain
+child state. Numeric/blank target metadata rejects before dispatch rather than
+falling back to root socket execution. Missing children and denied component/
+service actions return `COSSACK_RPC_NOT_FOUND`/`COSSACK_RPC_FORBIDDEN` with IDs.
+The browser's actual socket message handler routes known-ID malformed frames
+before its broadcast type filter; a missing type rejects only its pending call.
+
+Evidence: **259 matrix cases** (56 shared x four = 224, six response-local,
+13 raw multipart, 15 multipart client/router, one cross-HTTP/socket budget);
+**18 child cases** cover JSON/multipart ordinary/stream snapshots with colliding
+keys, bad targets, action allowlists, descendant cleanup, same-named page/child
+limits and shared JSON/multipart limits. Separate real socket/core tests prove
+caller isolation across connections, forwarded service limits, valid child
+dispatch, invalid targets and route ownership through renderer wrappers.
+
+Generated production workerd now accepts one JSON limited call, rejects a
+multipart repeat with 429/ID/Retry-After, and proves via D1 that only permitted
+actions mutate. A layout service's spent budget persists across HTTP/SSE pages.
+The fixture still runs real auth/ORM, distributed SSE, native bodies, multipart
+generators, cancellation and Chromium acceptance through published entries.
+
+Verification: sequential core build/framework declarations; full core **744**
+tests/52 files, framework **931**/50, CLI **559**/39 (both workerd fixtures and
+all **14** generated runtime cases), root TypeScript/all **11** package checks.
+The first CLI run exposed a warm-cache dependency in the existing real-pnpm
+registry test: a cached release bypassed its local server. Its metadata/content
+caches are now test-local; focused and full runs pass. A short wall-clock DO
+expiry test also failed once; it now checks exact expiry with a controlled clock,
+preserving production behavior. Updated docs, architecture, migration, plan and
+Codex handoff describe the verified contract and remaining audit.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+pnpm --filter cossack exec vitest run tests/upgrade-release.test.js
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+git diff --check -- . ':!reports.md'
+```
+
+**14/58 tasks checked; no new task closes. All 44 unchecked tasks remain in
+scope.** Continue ordinary/error JSON-envelope validation and actual Cloudflare
+socket/DO peer context/reconnect/custom-key acceptance, then audit RT-01 against
+all criteria. Anonymous/header identity parity and configured rate-backend
+failure/persistence/consistency remain unverified; route namespaces do not make
+memory counters distributed. Continue RT-02/RT-14 policies and RT-11 session
+criteria. Deno execution, Electron packaging, full tarball/runtime gates and
+live deployment retain separate evidence requirements. Versions stay 0.8.3
+until REL-04; preserve `reports.md` and `.zcodeignore`.
 
 <a id="codex-rpc-protocol-boundaries-2026-10-03"></a>
 ### Codex review: RPC correlation and terminal response validation (2026-10-03)

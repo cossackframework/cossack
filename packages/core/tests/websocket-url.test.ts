@@ -1,9 +1,34 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connectWebSocket } from '../src/shared/transport-connections';
+import { connectWebSocket, wsPendingCalls } from '../src/shared/transport-connections';
 
 describe('connectWebSocket URL protocol', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('routes a malformed known-ID message before filtering broadcast types', () => {
+    class FakeWebSocket {
+      static OPEN = 1;
+      readyState = 1;
+      send() {}
+    }
+    vi.stubGlobal('window', { location: { protocol: 'http:', host: 'example.test' } });
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const component = {
+      _phase: 'Destroyed',
+      getInitialStateFromWindow: () => ({ providerTargets: { page: 'scope' }, routePath: '/' }),
+      websockets: new Map(), requestUpdate() {},
+    };
+    connectWebSocket(component);
+    const socket = component.websockets.get('page');
+    const sink = vi.fn(); const unrelated = vi.fn();
+    wsPendingCalls(socket).set('known', sink); wsPendingCalls(socket).set('other', unrelated);
+    try {
+      socket.onmessage({ data: JSON.stringify({ v: 1, requestId: 'known', state: { count: 999 } }) });
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'known' }));
+      expect(unrelated).not.toHaveBeenCalled(); expect(wsPendingCalls(socket).has('known')).toBe(false);
+      expect(wsPendingCalls(socket).has('other')).toBe(true);
+    } finally { socket.onclose(); }
+  });
 
   it.each([['https:', 'wss:'], ['http:', 'ws:']])('maps %s pages to %s sockets', (pageProtocol, socketProtocol) => {
     const urls: string[] = [];

@@ -482,9 +482,9 @@ function buildRateLimitStore(mode: string, env: Record<string, any>): RateLimitS
  */
 export function getClientIp(c: Context): string {
     return (
-        c.req.header('cf-connecting-ip') ||
-        c.req.header('x-real-ip') ||
-        (c.req.header('x-forwarded-for') || '').split(',')[0].trim() ||
+        c.req.header?.('cf-connecting-ip') ||
+        c.req.header?.('x-real-ip') ||
+        (c.req.header?.('x-forwarded-for') || '').split(',')[0].trim() ||
         'anonymous'
     );
 }
@@ -510,6 +510,21 @@ export async function enforceRateLimit(
     scopeKey: string,
     options: RateLimitOptions,
 ): Promise<Response | null> {
+    const blocked = await evaluateRateLimit(c, scopeKey, options);
+    if (!blocked) return null;
+    const requestId = c.res?.headers.get('X-Cossack-Request-Id');
+    const response = c.json({ error: blocked.message, code: 'COSSACK_RPC_RATE_LIMITED',
+        ...(requestId ? { requestId } : {}) }, 429);
+    response.headers.set('Retry-After', String(blocked.retryAfter));
+    return response;
+}
+
+/** @internal Shared counter decision for HTTP responses and socket frames. */
+export async function evaluateRateLimit(
+    c: Context,
+    scopeKey: string,
+    options: RateLimitOptions,
+): Promise<{ message: string; retryAfter: number } | null> {
     // Zero-code store config: lazily read `env.rateLimit` once, on first use.
     configureRateLimitFromEnv((c as unknown as { env?: Record<string, any> }).env);
 
@@ -520,9 +535,7 @@ export async function enforceRateLimit(
     if (count <= max) return null;
 
     const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
-    const response = c.json({ error: options.message ?? 'Too Many Requests' }, 429);
-    response.headers.set('Retry-After', String(retryAfter));
-    return response;
+    return { message: options.message ?? 'Too Many Requests', retryAfter };
 }
 
 /**

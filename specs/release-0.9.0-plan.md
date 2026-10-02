@@ -12,7 +12,13 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex protocol-boundary checkpoint](./release-0.9.0.md#codex-rpc-protocol-boundaries-2026-10-03)
+The latest [Codex target/limit checkpoint](./release-0.9.0.md#codex-rpc-target-limits-2026-10-03)
+records page/child snapshot separation on process-local SSE, correlated target
+denials, inherited/forwarded WebSocket limits and shared route budgets across
+HTTP/socket dispatch. Real production workerd proves limited D1 writes and
+layout-service budget ownership across pages. The matrix has 259 cases; 14/58
+tasks remain checked. See RT-01's next audit below before declaring it complete.
+The preceding [Codex protocol-boundary checkpoint](./release-0.9.0.md#codex-rpc-protocol-boundaries-2026-10-03)
 records known-ID preservation, response-header correlation and EOF validation
 before final state hydration, plus a 242-case shared transport matrix. RT-01
 remains open for child-target and rate-limit coverage and policy criteria.
@@ -641,16 +647,47 @@ initial snapshots/broadcasts remain untouched. Unknown socket IDs are ignored,
 malformed known-ID frames reject the pending call, and its terminal frame closes
 the call without waiting for the shared socket to end.
 
-Next, extend these real proxy/handler fixtures with child dispatch and rate-limit
-boundaries. Prove valid children receive only their own scope state and invalid
-child/action IDs cannot execute or hydrate another target. Test allowed and
-denied action calls with stable codes/request IDs, one dispatch, loading/pending
-cleanup and correct limit ownership across component/service and HTTP/SSE/WS.
-Audit constructor/disposal ordering and scoped metadata rather than adding
-isolated mocks of the permission check. Then settle file/unknown-key/schema
-policy with RT-02/RT-14 and session criteria with RT-11. Existing protocol and
-production-runtime evidence does not close these requirements. RT-01 stays open;
-the release still has 14/58 checked and all 44 unchecked tasks remain in scope.
+Codex target/limit checkpoint (2026-10-03): WebSocket execution now checks
+inherited or forwarded `@RateLimit` metadata before validation/mutation, with
+authenticated peer identity and the same counter decision as HTTP. The runtime
+assigns an internal canonical route owner, so the same action/caller/store budget
+survives switching JSON/multipart/socket and reopening connections. Child class
+budgets are separate from page class budgets; siblings of one class share a
+budget. Explicit service limits belong to their layout/slot and span its pages.
+Limit/store failures keep request IDs, release loading/pending state, redact
+private errors and never retry mutations. HTTP rate replies add a stable code.
+
+Process-local SSE was publishing child state as page state. Ordinary and stream
+actions now publish the root snapshot while their caller receives child state.
+New tests deliberately collide page/child state names across JSON and multipart,
+verify denied/missing/invalid targets and awaited descendant cleanup, and prove
+child/page budget separation. Numeric/empty action targets cannot fall back to
+root WebSocket execution. The actual browser socket message handler now routes
+known-ID malformed frames before filtering broadcast types, so a missing type
+rejects its call without waiting for timeout or poisoning another pending call.
+
+Evidence: 56 shared cases x four paths (224), six response-local cases, 13 raw
+multipart, 15 multipart client/router and one cross-HTTP/socket budget case:
+259 matrix cases. The child suite has 18 cases; separate real socket tests
+exercise trusted caller isolation, forwarded service limits and child dispatch.
+Generated production workerd proves JSON acceptance followed by multipart 429,
+request IDs/Retry-After and zero denied D1 writes. A layout service retains its
+spent budget across HTTP/SSE pages. Full core 744, framework 931 and CLI 559 pass
+with root/all 11 package checks. Test-only registry caches and the limiter's
+expiry clock are isolated so these checks do not depend on warm caches or sleep.
+
+Next audit ordinary JSON/error envelopes as rigorously as NDJSON: malformed
+service-state, redirect, error-code/field-error and payload shapes must reject
+before hydration with known IDs and no repeated dispatch. Extend actual
+Cloudflare WebSocket/DO acceptance for authenticated and anonymous peer context,
+reconnect and custom rate keys; the neutral socket matrix is not a substitute.
+Audit configured rate-store failures, namespace ownership, persistence and
+consistency limits before making stronger distributed guarantees. The current DO
+may have only hydrated route params, without original HTTP headers; anonymous
+identity and IP parity remain unverified. Complete RT-01's criterion audit after
+that evidence. Continue schema/file/unknown-key/resource policy with RT-02/RT-14
+and session recipes/secrets/rotation/concurrency with RT-11. RT-01 stays open;
+14/58 checked and all 44 unchecked tasks remain in scope.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

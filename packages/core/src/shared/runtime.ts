@@ -25,8 +25,14 @@ export async function dispatchSocketRpcMessage(
         if (typeof message.requestId === 'string') rpcCancellations(client).get(message.requestId)?.();
         return;
     }
-    if (message.type !== 'action' || typeof message.action !== 'string' || !Array.isArray(message.payload)) return;
+    if (message.type !== 'action') return;
     const requestId = typeof message.requestId === 'string' ? message.requestId : undefined;
+    if (typeof message.action !== 'string' || !message.action.trim() || !Array.isArray(message.payload) ||
+        (message.target !== undefined && (typeof message.target !== 'string' || !message.target.trim()))) {
+        if (requestId?.trim()) sendRpcFrame(client, { v: 1, type: 'error', requestId,
+            code: 'COSSACK_RPC_REQUEST_INVALID', message: 'Invalid RPC action request.' });
+        return;
+    }
     const user = getUser?.(client);
 
     let targetInstance = root;

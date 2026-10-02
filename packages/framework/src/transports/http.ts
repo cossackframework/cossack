@@ -45,6 +45,9 @@ export async function readRpcRequest(c: Context): Promise<Record<string, any>> {
         body = await c.req.json();
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('(root)');
+    for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
+        if (body[key] !== undefined && (typeof body[key] !== 'string' || !body[key].trim())) invalid(key);
+    }
     if (body.payload !== undefined && !Array.isArray(body.payload)) invalid('payload');
     for (const key of ['state', 'service', 'pageParams']) {
         if (body[key] !== undefined && (!body[key] || typeof body[key] !== 'object' || Array.isArray(body[key]))) invalid(key);

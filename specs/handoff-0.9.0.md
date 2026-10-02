@@ -2,7 +2,45 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RPC protocol boundaries (2026-10-03):** read
+> **Latest checkpoint — Codex child targets and action limits (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rpc-target-limits-2026-10-03),
+> [RT-01 next audit](./release-0.9.0-plan.md#rt-01), and
+> [rate-limit contract](../docs/rate-limiting.md). **Author: Codex.** Fixed
+> WebSocket dispatch bypassing `@RateLimit`, generic HTTP limit/target errors,
+> page and child actions charging one budget, process-local SSE child state
+> overwriting same-named page keys, and malformed targets falling through socket
+> root dispatch. The actual socket message handler now rejects a malformed known
+> ID even when its frame type is missing; unrelated pending calls remain intact.
+>
+> The shared counter decision uses trusted socket peer identity. Server-assigned
+> canonical route ownership prevents JSON/multipart/socket switching from
+> restoring the same action/caller/store budget. Child classes remain separate
+> from page classes; inherited and forwarded service limits work. Store failures
+> reject before mutation with private details redacted and loading cleaned.
+> Process-local SSE publishes the root snapshot for ordinary and generator child
+> actions, matching distributed target/page separation. HTTP limit replies add
+> `COSSACK_RPC_RATE_LIMITED`, the ID, 429 and Retry-After.
+>
+> Verified: sequential core build/framework declarations; matrix **259**,
+> child-target suite **18**, core **744**/52 files, framework **931**/50,
+> CLI **559**/39 including both real-workerd fixtures and all **14** generated
+> runtime cases, root TypeScript/all **11** package checks. New production
+> workerd checks prove JSON then multipart limiting, D1 writes only for allowed
+> calls, and layout-service budget sharing across HTTP/SSE pages. Fixed the
+> tarball fixture's warm-cache dependency by isolating pnpm metadata/content
+> caches; replaced a short wall-clock expiry delay with an exact clock boundary.
+>
+> **14/58 tasks checked; all 44 unchecked tasks remain in scope.** No checkbox
+> closes. Next audit ordinary/error JSON envelopes and actual Cloudflare socket/
+> DO peer identity, custom rate keys and reconnect. Anonymous/header context
+> parity and configured-store failure/consistency/persistence remain unverified;
+> shared namespaces do not make memory counters distributed. Then complete
+> RT-01's criterion audit and continue RT-02/RT-14 policies and RT-11 session
+> criteria. Preserve the separate Deno/Electron/tarball/live-deployment gates,
+> versions 0.8.3 until REL-04 and unrelated `reports.md`/`.zcodeignore`. Read the
+> detailed plan for each next task's purpose and evidence requirements.
+
+> **Previous checkpoint — Codex RPC protocol boundaries (2026-10-03):** read
 > [review and verification](./release-0.9.0.md#codex-rpc-protocol-boundaries-2026-10-03),
 > [RT-01 next steps](./release-0.9.0-plan.md#rt-01), and
 > [RPC contract](../docs/rpc.md). **Author: Codex.** Regressions reproduced lost

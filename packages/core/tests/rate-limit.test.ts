@@ -198,14 +198,14 @@ describe('enforceRateLimit', () => {
         expect(res.status).toBe(429);
         expect(res.headers.get('Retry-After')).toBeTruthy();
         const body = await res.json();
-        expect(body).toEqual({ error: 'Too Many Requests' });
+        expect(body).toEqual({ error: 'Too Many Requests', code: 'COSSACK_RPC_RATE_LIMITED' });
     });
 
     it('respects a custom message', async () => {
         const c = makeContext({ ip: '1.2.3.4' });
         const res = (await enforceRateLimit(c, 's', { window: 60_000, max: 0, message: 'Chill out' }))!;
         expect(res.status).toBe(429);
-        expect(await res.json()).toEqual({ error: 'Chill out' });
+        expect(await res.json()).toEqual({ error: 'Chill out', code: 'COSSACK_RPC_RATE_LIMITED' });
     });
 
     it('namespaces counters by scopeKey so limits do not leak across endpoints', async () => {
@@ -338,14 +338,17 @@ describe('RateLimit handler wrapper (functional API routes)', () => {
 
 describe('RateLimitDurableObject', () => {
     it('counts hits within a window and resets after it elapses', async () => {
+        let now = 1_700_000_000_000;
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
         const dobj = new RateLimitDurableObject({} as any, {});
         const hit = (w: number) =>
             dobj.fetch(new Request(`https://rl/?window=${w}`)).then((r) => r.json() as Promise<{ count: number }>);
-        expect((await hit(20)).count).toBe(1);
-        expect((await hit(20)).count).toBe(2);
-        expect((await hit(20)).count).toBe(3);
-        await new Promise((r) => setTimeout(r, 30)); // 30ms > 20ms window
-        expect((await hit(20)).count).toBe(1); // window elapsed -> fresh
+        try {
+            expect((await hit(20)).count).toBe(1);
+            expect((await hit(20)).count).toBe(2);
+            now += 19; expect((await hit(20)).count).toBe(3);
+            now++; expect((await hit(20)).count).toBe(1); // Exact reset boundary.
+        } finally { clock.mockRestore(); }
     });
 
     it('defaults to a 60s window when none is given', async () => {

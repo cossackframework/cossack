@@ -11,7 +11,7 @@ It works in three places:
 
 - **Functional API routes** : via the `RateLimit()` handler wrapper.
 - **Class-based API routes** (`get` / `post` / …) : via the `@RateLimit()` decorator.
-- **`@Server` component methods** (HTTP/SSE transport) : via the `@RateLimit()` decorator, enforced at the `/crpc` and `/upload` dispatch boundaries.
+- **`@Server` component and scoped service methods** : via `@RateLimit()`, enforced before mutation at `/crpc`, `/upload`, and correlated WebSocket action dispatch.
 
 ## Options
 
@@ -40,7 +40,30 @@ export const POST = RateLimit((c) => c.json({ ok: true }));
 
 ## Class-based API routes & `@Server` methods (decorator)
 
-The decorator form works anywhere the framework dispatches server-side: class-based API handlers (`get`/`post`/…) and `@Server` component methods (HTTP/SSE transport). It is enforced at the `/crpc` and API dispatch boundaries.
+The decorator form works on class-based API handlers (`get`/`post`/…) and
+`@Server` component/service methods. Inherited limits and forwarded service
+method limits use the declaring metadata. RPC rejection uses
+`COSSACK_RPC_RATE_LIMITED` and the request ID. HTTP replies also include status
+429 and `Retry-After`; WebSocket calls reject through their correlated error
+frame and release loading. Counter-store failures reject before mutation with
+a sanitized internal error. Calls are never retried automatically.
+
+Component budgets belong to the canonical server route, action-owning class,
+method and caller. Changing request IDs, opening another socket, or switching
+between JSON, multipart and WebSocket does not restore the same budget when
+the caller identity and configured store are shared. Child classes have separate
+budgets from the page; siblings of the same class share their action budget.
+Explicit layout services use their owning layout and service slot, so the same
+service shares its budget across pages that use that layout. These budgets do
+not limit direct server-to-server calls to the original local method.
+
+WebSocket identity comes from the runtime's authenticated peer rather than
+action arguments. An anonymous Durable Object action may have only hydrated
+route context, without original HTTP headers. Prefer authenticated user keys
+there; anonymous IP parity and custom header keys require runtime-specific
+context support. Custom keys receive the available action context. In-memory
+counters stay process-local; a shared route namespace does not itself make
+counters durable or distributed.
 
 ```typescript
 import { Cossack, Page, Server, State, RateLimit } from '@cossackframework/core';

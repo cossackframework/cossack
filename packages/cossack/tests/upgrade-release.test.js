@@ -270,7 +270,12 @@ describe('release-aligned upgrade planning and application', () => {
     try {
       const before = await snapshot();
       const { stdout, stderr } = await exec(process.execPath, [bin, 'upgrade', '--tag=1.2.3', '--apply-template', '--dry-run', '--json'],
-        { cwd: app, timeout: 45000, env: { ...process.env, pnpm_config_registry: origin, CI: 'true' } });
+        { cwd: app, timeout: 45000, env: { ...process.env, pnpm_config_registry: origin,
+          // A warm developer cache can satisfy the same fixture version without
+          // contacting this registry. Isolate both metadata and content caches
+          // so the assertion proves an actual download on every run.
+          pnpm_config_store_dir: path.join(root, 'pnpm-store'),
+          pnpm_config_cache_dir: path.join(root, 'pnpm-cache'), CI: 'true' } });
       expect(stderr).toBe('');
       const result = JSON.parse(stdout);
       expect(result.ok).toBe(true);

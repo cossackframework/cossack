@@ -15,6 +15,7 @@ import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, rpcCancellations, sendRpcFrame } from './rpc-stream';
+import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -380,6 +381,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /** HTTP RPC route ID for this exact hydrated component (page or layout). */
     public __cossack_componentRouteId?: string;
+    /** @internal Canonical server route owner, assigned by the runtime. */
+    public __cossack_rpcOwner?: string;
 
     /**
      * Throw (dev) or warn (prod) if a server-only method is being invoked during
@@ -1131,6 +1134,36 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
         let iterator: AsyncIterator<unknown> | undefined;
         try {
+            const actionClass = getForwardedServerMethodClass(this, action) ?? this.constructor;
+            const limit = getRateLimitForAction(actionClass, action);
+            if (limit) {
+                // Counter ownership is independent of socket/request/child IDs.
+                // Siblings of the same class share an action budget. Identity
+                // comes from the runtime's authenticated peer, never payload.
+                let root: Cossack = this;
+                let parent = this.getParentComponent();
+                const seen = new Set<CossackElement>();
+                while (parent && !seen.has(parent)) {
+                    seen.add(parent);
+                    // Renderer/UI parents need not be Cossack components.
+                    // Keep the canonical route even above an unowned wrapper.
+                    if (parent instanceof Cossack && (parent.__cossack_rpcOwner || !root.__cossack_rpcOwner)) root = parent;
+                    parent = (parent as unknown as CossackElementInternal).__parent;
+                }
+                const rateContext = new Proxy(context ?? {} as Context, {
+                    get: (target, property) => {
+                        if (property === 'get') return (key: string) => key === 'user' ? user : target.get?.(key);
+                        if (property === 'env') return this.env;
+                        if (property === 'req' && !target.req) return { header: () => undefined };
+                        const value = Reflect.get(target, property, target);
+                        return typeof value === 'function' ? value.bind(target) : value;
+                    },
+                });
+                const blocked = await evaluateRateLimit(rateContext,
+                    `${JSON.stringify(['crpc', root.__cossack_rpcOwner ?? root.constructor.name, actionClass.name])}:${action}`, limit);
+                if (blocked) throw new RpcError('COSSACK_RPC_RATE_LIMITED', blocked.message);
+                if (cancellation.cancelled) return;
+            }
             // RT-02: enforce @Server({ input }) before the method runs; a
             // failed contract rejects with client-visible field errors.
             const validatedPayload = await enforceActionInput(

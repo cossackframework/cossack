@@ -742,6 +742,7 @@ export function createApp(options: CreateAppOptions = {}) {
               activeScope.bindRequest({ context: componentContext, user, env: c.env });
             }
             instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
+            instance.__cossack_rpcOwner = componentPath;
             instance._ownServiceScopeLifetime(rootScope);
             await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider, providerTargets: { page: expectedTarget, [provider]: expectedTarget } });
             instance._render();
@@ -810,7 +811,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const safeState = sanitizeServiceState(owned.serviceClass, state);
         ownerScope.hydrateOwnedService(slot, safeState);
         if (!isRpcCallableAction(owned.serviceClass, action)) {
-          return c.json({ error: `Action '${String(action)}' is not a callable service method` }, 403);
+          return c.json({ error: `Action '${String(action)}' is not a callable service method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
         const rateLimited = await enforceMethodRateLimit(c, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
         if (rateLimited) return rateLimited;
@@ -959,6 +960,7 @@ export function createApp(options: CreateAppOptions = {}) {
           activeScope.bindRequest({ context: componentContext, user, env: c.env });
         }
         componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
+        componentInstance.__cossack_rpcOwner = componentPath;
         const coordinatorRuntime = sseStub ? attachCoordinatorRuntime(componentInstance, sseStub) : undefined;
         await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
         if (authoritativeState !== undefined) applyReceivedState(componentInstance, authoritativeState);
@@ -967,7 +969,7 @@ export function createApp(options: CreateAppOptions = {}) {
         let targetInstance: any = componentInstance;
         if (target && target !== targetInstance._id) {
           if (targetInstance.activeComponents.has(target)) targetInstance = targetInstance.activeComponents.get(target);
-          else return c.json({ error: `Target component '${target}' not found` }, 404);
+          else return c.json({ error: `Target component '${target}' not found`, code: 'COSSACK_RPC_NOT_FOUND', requestId }, 404);
         }
 
         // On the coordinator path the authoritative scope snapshot replaces the
@@ -987,7 +989,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Includes @Server methods on injected @Service dependencies (forwarded
         // onto the component instance but registered on the service class).
         if (!isRpcCallableActionOrService(targetInstance, action)) {
-          return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
+          return c.json({ error: `Action '${action}' is not a callable server method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
 
         // Rate-limit gate: enforce any @RateLimit declared on the action.
@@ -996,7 +998,8 @@ export function createApp(options: CreateAppOptions = {}) {
           ? targetInstance.constructor
           : getForwardedServerMethodClass(targetInstance, action);
 
-        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `crpc:${componentRouteId}`);
+        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action,
+          JSON.stringify(['crpc', componentPath, (rateLimitConstructor as typeof Cossack).name]));
         if (rateLimited) return rateLimited;
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
@@ -1043,7 +1046,7 @@ export function createApp(options: CreateAppOptions = {}) {
             onState: coordinatorRuntime
               ? () => coordinatorRuntime.flush()
               : targetPageOptions?.transport === 'sse'
-                ? state => syncSseState(`${componentRouteId}:${effectiveScopeKey}`, state) : undefined,
+                ? () => syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState()) : undefined,
             cleanup,
           });
           responseOwnsCleanup = true;
@@ -1058,7 +1061,7 @@ export function createApp(options: CreateAppOptions = {}) {
           await coordinatorRuntime?.flush();
           if (sseStub) return sseStub.publish(JSON.stringify(componentInstance!.getPublicState()));
           if (targetPageOptions?.transport === 'sse') {
-            syncSseState(`${componentRouteId}:${effectiveScopeKey}`, targetInstance.getPublicState());
+            syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState());
           }
           return Promise.resolve();
         };

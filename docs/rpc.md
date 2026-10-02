@@ -242,6 +242,12 @@ request IDs are ignored, so a foreign frame cannot hydrate another call's state.
 A malformed frame with a pending call's ID rejects that call and releases its
 pending entry.
 
+Invalid action targets reject with `COSSACK_RPC_REQUEST_INVALID`; a missing
+child returns `COSSACK_RPC_NOT_FOUND`. A valid target cannot expose framework
+methods outside the server allowlist (`COSSACK_RPC_FORBIDDEN`). Rate-limited
+actions reject before mutation with `COSSACK_RPC_RATE_LIMITED` and the known ID.
+See [rate-limit ownership](./rate-limiting.md) for caller keys and store limits.
+
 The shared [transport conformance matrix](../packages/framework/tests/rpc-conformance-matrix.test.ts)
 runs the same assertions against HTTP and SSE component actions, explicit service
 actions, and the WebSocket runtime dispatcher. It exercises real server handlers
@@ -260,4 +266,5 @@ production builds and navigation.
 | Unsupported payload / state / result | The diagnostic names the offending value path; invalid input does not dispatch. |
 | Malformed protocol / foreign ID | Invalid correlated frames reject before state hydration; unknown socket IDs are isolated. |
 | HTTP result followed by data | Rejects before final state hydration; accepted earlier yields remain visible. |
+| Action limit / unavailable counter store | Rejects before mutation with correlation and loading cleanup; private store errors remain private. |
 | Ownership | HTTP request scopes close with the response; WebSocket component ownership lasts until runtime teardown. |

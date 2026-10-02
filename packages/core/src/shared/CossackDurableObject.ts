@@ -23,6 +23,7 @@ export abstract class CossackDurableObject {
 
         if (PageComponent) {
             const componentInstance = new PageComponent();
+            componentInstance.__cossack_rpcOwner = componentName;
 
             const hydratedContext = {
                 req: { param: (key?: string) => key ? params?.[key] : params }

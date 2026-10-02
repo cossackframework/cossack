@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     Cossack, CossackService, ClientVisibleError, createInstance, InMemoryWebSocketRuntime,
-    Page, rpc$, Server, Service, ServiceScope, State, RPC_NATIVE_RESPONSE_MAX_BYTES, getRequestContext,
+    Page, rpc$, Server, Service, ServiceScope, State, RateLimit, setRateLimitStore, __resetRateLimitForTests, RPC_NATIVE_RESPONSE_MAX_BYTES, getRequestContext,
 } from '@cossackframework/core';
 // Wire browser-side transport boundaries from the same built core modules the
 // public entry uses. These internals are deliberately not new application APIs.
@@ -33,6 +33,10 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         // Keep that request attached to its original fixture counters.
         protected readonly effectOwner = effects.current;
         @State() count = 0;
+        @Server() @RateLimit({ max: 1, window: 60_000, message: 'Try later' })
+        limited() { this.effectOwner.runs++; return ++this.count; }
+        @Server() @RateLimit({ max: 1, window: 60_000 })
+        async *limitedStream() { this.effectOwner.runs++; yield ++this.count; return ++this.count; }
         @Server({ input: { title: { required: true } } })
         async fileInfo(input: { title: string; nested: { files: File[] } }) {
             this.effectOwner.runs++; this.count++;
@@ -180,6 +184,7 @@ async function harness(transport: Transport, uploadMode = false) {
 
     if (transport === 'websocket') {
         server = createInstance(HttpPage) as HttpPage;
+        server.__cossack_rpcOwner = httpPath;
         server.connectedCallback();
         const runtime = new InMemoryWebSocketRuntime(server);
         const peer = { readyState: 1, send(data: string) {
@@ -282,7 +287,7 @@ async function harness(transport: Transport, uploadMode = false) {
         } else proxyHttpMethods(client, Object.keys(Reflect.getMetadata('cossack:server-methods', HttpPage)).map(name => ({ name })));
     }
     return {
-        client, target, requests,
+        client, target, requests, responses,
         corruptFrame(change: (frame: any) => any, after = 0) { damage = change; damageAt = after; },
         pendingCalls: () => socket ? wsPendingCalls(socket).size : 0,
         disconnect() {
@@ -305,12 +310,44 @@ async function harness(transport: Transport, uploadMode = false) {
 describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC conformance', transport => {
     let wire: Awaited<ReturnType<typeof harness>>;
     beforeEach(async () => {
+        __resetRateLimitForTests();
         effects.current = { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0, fileContinue: undefined };
         vi.spyOn(console, 'error').mockImplementation(() => {});
         wire = await harness(transport);
     });
     afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
     const settled = () => { expect(wire.client.loading).toEqual({}); expect(wire.pendingCalls()).toBe(0); };
+
+    it.each(['limited', 'limitedStream'] as const)('limits %s before a second mutation with correlation and cleanup', async action => {
+        const first = rpc$(wire.target[action]());
+        if (action === 'limitedStream') {
+            const yields = []; for await (const value of first) yields.push(value);
+            expect(yields).toEqual([1]);
+        }
+        expect(await first).toBe(action === 'limited' ? 1 : 2);
+        const before = wire.target.count;
+        await expect(rpc$(wire.target[action]())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String),
+            ...(transport !== 'websocket' ? { status: 429 } : {}),
+            message: action === 'limited' ? 'Try later' : 'Too Many Requests',
+        });
+        expect(wire.target.count).toBe(before); expect(effects.current.runs).toBe(1);
+        expect(wire.requests).toHaveLength(2); settled();
+        if (transport !== 'websocket') expect(wire.responses.at(-1)?.headers.get('Retry-After')).toMatch(/^\d+$/);
+    });
+    it('keeps separate actions in separate rate buckets', async () => {
+        expect(await rpc$(wire.target.limited())).toBe(1);
+        expect(await rpc$(wire.target.limitedStream())).toBe(3);
+        expect(effects.current.runs).toBe(2); expect(wire.requests).toHaveLength(2); settled();
+    });
+    it('does not run a limited mutation when its counter store fails', async () => {
+        setRateLimitStore({ hit() { throw new Error('PRIVATE_COUNTER_TOKEN'); } });
+        await expect(rpc$(wire.target.limited())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error', requestId: expect.any(String),
+        });
+        expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0);
+        expect(wire.requests).toHaveLength(1); settled();
+    });
 
     it.each([
         ['unsupported version', (frame: any) => ({ ...frame, v: 2 })],
@@ -569,6 +606,22 @@ describe.each(['http', 'sse', 'service'] as const)('%s response-local protocol b
         await expect(iterator.next()).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });
         await expect(call).rejects.toBeDefined(); expect(wire.target.count).toBe(1);
         expect(wire.requests).toHaveLength(1); expect(wire.client.loading).toEqual({});
+    });
+});
+
+describe('HTTP and socket action budget ownership', () => {
+    it('does not regain a page budget by switching from JSON HTTP to WebSocket', async () => {
+        __resetRateLimitForTests();
+        effects.current = { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0, fileContinue: undefined };
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const http = await harness('http'); let socket: Awaited<ReturnType<typeof harness>> | undefined;
+        try {
+            expect(await rpc$(http.target.limited())).toBe(1);
+            socket = await harness('websocket');
+            await expect(rpc$(socket.target.limited())).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
+            expect(socket.target.count).toBe(0); expect(effects.current.runs).toBe(1);
+            expect(socket.requests).toHaveLength(1); expect(socket.client.loading).toEqual({}); expect(socket.pendingCalls()).toBe(0);
+        } finally { await socket?.dispose(); await http.dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); }
     });
 });
 

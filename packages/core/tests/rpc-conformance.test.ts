@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { CossackElement } from '@cossackframework/renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
 import { ClientVisibleError } from '../src/shared/errors';
@@ -11,6 +12,7 @@ import { ServiceScope } from '../src/shared/service-scope';
 import { Service } from '../src/shared/decorators';
 import { forwardServiceMethods } from '../src/shared/service-bootstrap';
 import { describeUnsupportedValue, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
+import { RateLimit, InMemoryRateLimitStore, setRateLimitStore, __resetRateLimitForTests } from '../src/shared/rate-limit';
 
 // The realtime server component must take the server lifecycle (no client
 // proxies on its actions); client surfaces in this suite are plain mocks.
@@ -132,6 +134,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
     let sockets: ReturnType<typeof makeLoopback>;
 
     beforeEach(() => {
+        __resetRateLimitForTests();
         (globalThis as any).WebSocket = Object.assign(class {}, { OPEN: 1 });
         server = createInstance(ServerComponent) as ServerComponent;
         // Initialize the reactive state container without the full bootstrap
@@ -159,6 +162,72 @@ describe('realtime (WebSocket) RPC conformance', () => {
         await expect(call).resolves.toBe(5);
         expect(client.count).toBe(5);
         expect(client.loading.ordinary).toBeUndefined();
+    });
+
+    it('shares a caller budget across connections while isolating authenticated users', async () => {
+        class Limited extends ServerComponent {
+            @Server() @RateLimit({ max: 1, window: 60_000, key: c => c.get('user').id })
+            limited() { return ++this.count; }
+        }
+        const limited = createInstance(Limited) as Limited; limited.connectedCallback();
+        const engine = new InMemoryWebSocketRuntime(limited);
+        const invoke = async (id: string, succeed: boolean) => {
+            const pair = makeLoopback(engine); engine.addClient(pair.serverSocket, { id });
+            client.websockets.set('page', pair.clientSocket);
+            proxyServerMethods(client, [{ name: 'limited', channel: 'global', provider: 'page' }]);
+            if (succeed) await expect(client.limited()).resolves.toBe(limited.count + 1);
+            else await expect(client.limited()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
+            expect(client.loading).toEqual({});
+        };
+        await invoke('alice', true); await invoke('alice', false); await invoke('bob', true);
+        expect(limited.count).toBe(2); await limited.destroyAsync();
+    });
+    it('enforces forwarded service rate metadata before mutation', async () => {
+        @Service() class LimitedService {
+            calls = 0;
+            @Server() @RateLimit({ max: 1, window: 60_000 })
+            limitedService() { return ++this.calls; }
+        }
+        const service = new LimitedService(); forwardServiceMethods(server, service);
+        proxyServerMethods(client, [{ name: 'limitedService', channel: 'global', provider: 'page' }]);
+        expect(await client.limitedService()).toBe(1);
+        await expect(client.limitedService()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
+        expect(service.calls).toBe(1); expect(client.loading).toEqual({});
+    });
+    it('finds a limited child route owner through a renderer parent without Cossack methods', async () => {
+        class LimitedChild extends ServerComponent {
+            @Server() @RateLimit({ max: 1, window: 60_000 })
+            limitedChild() { return ++this.count; }
+        }
+        const child = createInstance(LimitedChild) as LimitedChild; child.connectedCallback();
+        child._id = 'child'; server.__cossack_rpcOwner = '/src/pages/owner/index.ts';
+        const wrapper = new CossackElement();
+        (wrapper as any).__parent = server; (child as any).__parent = wrapper;
+        server.activeComponents.set(child._id, child);
+        const counter = new InMemoryRateLimitStore(); const keys: string[] = [];
+        setRateLimitStore({ hit(key, window) { keys.push(key); return counter.hit(key, window); } });
+        client._id = 'child'; proxyServerMethods(client, [{ name: 'limitedChild', channel: 'global', provider: 'page' }]);
+        expect(await client.limitedChild()).toBe(1);
+        await expect(client.limitedChild()).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED' });
+        expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]);
+        expect(keys[0]).toContain('/src/pages/owner/index.ts'); expect(child.count).toBe(1); expect(server.count).toBe(0);
+        await server.destroyAsync();
+    });
+    it('dispatches to a real child and cannot execute a root action through invalid targets', async () => {
+        const child = createInstance(ServerComponent) as ServerComponent; child.connectedCallback();
+        child._id = 'child'; server.activeComponents.set(child._id, child);
+        client._id = 'child'; expect(await client.ordinary(3)).toBe(3);
+        expect(child.count).toBe(3); expect(server.count).toBe(0); expect(client.count).toBe(3);
+        for (const target of ['missing', 7, '']) {
+            client._id = target;
+            await expect(client.ordinary(100)).rejects.toMatchObject({
+                code: target === 'missing' ? 'COSSACK_RPC_NOT_FOUND' : 'COSSACK_RPC_REQUEST_INVALID', requestId: expect.any(String),
+            });
+        }
+        client._id = 'child'; proxyServerMethods(client, [{ name: 'destroy', channel: 'global', provider: 'page' }]);
+        await expect(client.destroy()).rejects.toMatchObject({ code: 'COSSACK_RPC_FORBIDDEN', requestId: expect.any(String) });
+        expect(child.count).toBe(3); expect(server.count).toBe(0); expect(client.loading).toEqual({});
+        await server.destroyAsync();
     });
 
     it('streams generator yields and applies per-frame state', async () => {

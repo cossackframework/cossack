@@ -169,10 +169,11 @@ export function connectWebSocket(component: any): void {
                 console.error('[Cossack] Ignoring malformed WebSocket message:', e);
                 return;
             }
-            if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+            if (!data || typeof data !== 'object') return;
             // Request-scoped frames route to their waiting call; broadcasts
             // continue through the handlers below.
             if (routeSocketFrame(ws, data)) return;
+            if (typeof data.type !== 'string') return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
                 applyStateToComponent(component, data.state || {});

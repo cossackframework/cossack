@@ -112,6 +112,23 @@ present. Malformed data retains the known ID for diagnostics.
 WebSocket calls complete at their correlated terminal frame; their shared
 connection stays open. Unknown IDs do not affect a different pending call.
 
+## RPC limits and child state ownership
+
+`@RateLimit` now applies to WebSocket action execution, including inherited and
+forwarded service methods. Rejections use `COSSACK_RPC_RATE_LIMITED` and the
+request ID; HTTP responses retain 429 and `Retry-After`. HTTP limiter JSON bodies
+now include the stable code. Canonical route/action ownership prevents changing
+transport or request IDs from restoring the same shared-store/caller budget;
+page and child classes no longer charge each other for same-named methods.
+Existing rate-counter keys change, so counters start fresh after this upgrade.
+Anonymous identity/header availability and store consistency remain runtime
+constraints described in [rate limiting](../docs/rate-limiting.md).
+
+Process-local SSE publishes the page root's snapshot after child actions.
+Child-local state no longer overwrites page keys with identical names. Invalid
+target metadata rejects before dispatch, and missing/forbidden targets carry
+the same correlated diagnostic codes as WebSocket actions.
+
 ## Native HTTP RPC responses have an explicit client result
 
 Successful ordinary HTTP/SSE component and service actions returning `Response`

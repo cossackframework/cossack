@@ -21,7 +21,7 @@ export async function writeWorkerRpcAcceptance(root) {
     }
   `);
   await write('src/services/RpcAcceptance.ts', `
-    import { CossackService, Service, Server, State, cookie, flash, flashInput, getRequestContext } from '@cossackframework/core';
+    import { CossackService, Service, Server, State, RateLimit, cookie, flash, flashInput, getRequestContext } from '@cossackframework/core';
     import { config } from '@cossackframework/framework/config';
     import { sql } from '@cossackframework/database';
     import { audit } from '../rpc-audit';
@@ -29,6 +29,8 @@ export async function writeWorkerRpcAcceptance(root) {
     export class RpcAcceptance extends CossackService {
       @State() visits = 0;
       private key = '';
+      @Server() @RateLimit({ max: 1, window: 60000 })
+      async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
       @Server({ input: { title: { required: true } } })
       files(input: { title: string; key: string; nested: { files: File[] } }) {
         this.key = input.key; this.visits++;
@@ -90,7 +92,7 @@ export async function writeWorkerRpcAcceptance(root) {
   `);
   for (const transport of ['http', 'sse']) {
     await write(`src/pages/rpc-check/${transport}/index.ts`, `
-      import { Cossack, Page, Server, Client, ClientState, State, Inject, rpc$ } from '@cossackframework/core';
+      import { Cossack, Page, Server, Client, ClientState, State, Inject, RateLimit, rpc$ } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       import { RpcAcceptance } from '../../../services/RpcAcceptance';
       import { audit } from '../../../rpc-audit';
@@ -100,6 +102,8 @@ export async function writeWorkerRpcAcceptance(root) {
         @State() count = 0;
         @ClientState() output = ''; @ClientState() failure = ''; @ClientState() filesProgress = 0;
         private key = '';
+        @Server() @RateLimit({ max: 1, window: 60000 })
+        async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
         @Server({ input: { title: { required: true } } })
         files(input: { title: string; key: string; nested: { files: File[] } }) {
           this.key = input.key; this.count++;
@@ -189,6 +193,25 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
       return fetch(new URL('/upload', serverUrl), { method: 'POST', headers: requestHeaders, body: form });
     };
     for (const service of [false, true]) {
+      const limitedKey = `limited-${transport}-${service}`;
+      const envelope = { componentRouteId: state.componentRouteId, scopeKey: state.scopeKey,
+        ...(service ? { service: { ownerRouteId: owner, slot: '0' } } : {}), action: 'limited', payload: [limitedKey] };
+      const limited = await server.fetch('/crpc', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(envelope) });
+      // The same layout service owns one budget across both page routes.
+      if (service && transport === 'sse') {
+        expect(limited.status).toBe(429);
+        expect(await limited.json()).toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: limited.headers.get('X-Cossack-Request-Id') });
+        expect(await audit(limitedKey)).toEqual([]);
+      } else {
+        expect(limited.status).toBe(200); expect(await limited.json()).toMatchObject({ _cossack_return: 'saved' });
+        await vi.waitFor(async () => expect(await audit(limitedKey)).toEqual(['limited', service ? 'service' : 'page']
+          .map(kind => ({ kind, path: '/crpc', user: 'u1' }))));
+      }
+      const limitedAgainKey = limitedKey + '-denied';
+      const limitedAgain = await invoke('limited', [limitedAgainKey], service);
+      expect(limitedAgain.status).toBe(429); expect(limitedAgain.headers.get('Retry-After')).toMatch(/^\d+$/);
+      expect(await limitedAgain.json()).toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: limitedAgain.headers.get('X-Cossack-Request-Id') });
+      expect(await audit(limitedAgainKey)).toEqual([]);
       const key = `direct-${transport}-${service}`;
       const input = { title: 'Draft', key, nested: { files: [{ _cossack_file_id: 'file_0' }] } };
       const denied = await invoke('files', [input], service, { origin });

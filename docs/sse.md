@@ -110,11 +110,12 @@ export class LiveCounter extends Cossack {
 
 ## Shared state semantics
 
-- **The scope's authoritative state is the public state of the acting
-  component instance** — the page root, or the child explicitly addressed by
-  an RPC `target`. Actions on a child target publish that child's public state
-  as the scope snapshot; hydration only applies keys the receiving component
-  declares, so a child snapshot cannot inject foreign keys into the page root.
+- **The scope's authoritative state belongs to the page root.** A child
+  addressed by RPC `target` returns its own public state to its caller. Its
+  generator frames also carry the page's `scopeState` for the coordinator.
+  Ordinary and streaming child actions preserve the page snapshot, including
+  when child and page state keys have identical names. The process-local
+  backend also publishes the page root rather than child-local state.
 - **Child components and services not addressed by the action keep
   request-local state.** Their state is not shared through the scope. Page
   components injected with a declared service mirror the service's `@State`

@@ -293,6 +293,18 @@ validation. Abort/deadline ownership continues through EOF. WebSocket terminal
 frames complete their individual pending call; the multiplexed socket remains
 open and ignores foreign or completed request IDs.
 
+RPC action limits use the same counter decision for HTTP and socket dispatch.
+The server assigns a canonical route owner to components; it is internal state,
+not client hydration data. A component budget includes that owner, the action
+class, method and caller, so changing socket/request/child IDs or HTTP encoding
+does not restore a shared budget. Sibling instances of one child class share
+their budget while the page class remains separate. Explicit service budgets
+use the owning layout and slot. Socket evaluation uses authenticated peer
+identity; hydrated Durable Object contexts may lack HTTP headers. Counter
+storage retains its existing persistence and consistency limits. Store failures
+reject before mutation. Process-local SSE publishes page state after child
+actions, matching distributed page/target snapshot separation.
+
 Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they
