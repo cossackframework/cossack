@@ -148,6 +148,7 @@ export declare function migratePnpmBuildSettings(
   workspaceChanged: boolean;
 }>;
 export declare function planChanges(projectDir: string, recipe: ScaffoldRecipe, manifest?: unknown): Promise<ChangeSet>;
+export declare function resolveManifestRecipe(manifest: unknown): ScaffoldRecipe;
 export declare function readManifest(projectDir: string): Promise<any | null>;
 export declare function detectProjectRuntime(projectDir: string, manifest?: unknown): Promise<Adapter | undefined>;
 export declare function writeManifest(

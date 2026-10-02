@@ -59,7 +59,7 @@ async function inspectRoutes(args, ctx, command) {
     const root = await findProjectRoot(ctx.cwd);
     const effective = await buildEffectiveRouteModel(root);
     if (ctx.flags.json === true) {
-      return { scope: 'routes', routes: effective.pages, layouts: effective.layouts };
+      return { scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold };
     }
     for (const page of effective.pages) {
       console.log(`${page.route.padEnd(34)} ${String(page.transport ?? 'http').padEnd(15)} ${page.source}`);
@@ -92,7 +92,7 @@ async function checkRoutes(ctx) {
   try {
     const root = await findProjectRoot(ctx.cwd);
     const effective = await buildEffectiveRouteModel(root);
-    const diagnostics = [];
+    const diagnostics = [...effective.scaffold.diagnostics];
     const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
     for (const item of [...effective.pages, ...effective.layouts]) {
       if (item.extraction.method !== 'ast') {
@@ -109,7 +109,7 @@ async function checkRoutes(ctx) {
     }
     const ok = diagnostics.length === 0;
     const data = {
-      scope: 'routes', routes: effective.pages, layouts: effective.layouts,
+      scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold,
       readiness: { staticMetadata: ok ? 'valid' : 'invalid', inheritance: 'not-checked', runtime: 'not-checked' },
     };
     if (ctx.flags.json === true) writeResult('check', { ok, data, diagnostics });

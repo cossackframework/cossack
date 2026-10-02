@@ -169,6 +169,13 @@ method facts are unavailable, or a transport is invalid. JSON diagnostics use
 `COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Inspection can
 still succeed for those files so an agent can examine the available facts.
 
+Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
+through the scaffold recipe registry, including feature dependencies and provider
+compatibility. Missing manifests have status `unrecorded`; malformed or unsupported
+manifests have status `invalid` and make checks fail with
+`COSSACK_SCAFFOLD_METADATA_INVALID`. Arbitrary manifest fields and secret values
+are excluded. Recorded recipes do not prove that generated files are unchanged.
+
 These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior
 are reported as `not-checked`; success does not prove that the application runs.

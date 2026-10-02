@@ -1,3 +1,4 @@
+import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
@@ -300,5 +301,5 @@ export async function buildEffectiveRouteModel(projectRoot) {
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
     });
   }
-  return { pages, layouts };
+  return { pages, layouts, scaffold: await inspectScaffoldMetadata(projectRoot) };
 }

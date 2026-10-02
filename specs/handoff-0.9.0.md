@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex resource inspection (2026-10-02):** read
+> **Latest checkpoint — Codex scaffold inspection (2026-10-02):** read
+> [shared recipe facts and remaining work](./release-0.9.0.md#codex-scaffold-inspection-2026-10-02).
+> Inspection and composition now share manifest recipe reconstruction. Route JSON
+> includes recorded features/dependencies; invalid metadata makes checks fail.
+> Scaffold suite: 89 passed; CLI suites: 75 passed; final metadata suite: 4 passed.
+> **11/58 tasks remain checked.** Continue inheritance, binding-aware capabilities,
+> and CLI-04's complete acceptance fixture.
+
+> **Previous checkpoint — Codex resource inspection (2026-10-02):** read
 > [resource mapping and continuation requirements](./release-0.9.0.md#codex-resource-inspection-2026-10-02).
 > Supported resource macros now expose compiler method identities and authored
 > loader locations. Compiler tests: 147 passed; CLI suites: 72 passed; types passed.

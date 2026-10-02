@@ -16,7 +16,7 @@ export async function routesCommand(args, ctx) {
   const model = buildRouteModel(root);
 
   if (ctx.flags.json === true) {
-    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length };
+    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length, scaffold: effective.scaffold };
   }
 
   if (model.pages.length === 0 && model.layouts.length === 0) {

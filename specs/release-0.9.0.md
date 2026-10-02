@@ -86,6 +86,35 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-scaffold-inspection-2026-10-02"></a>
+### Codex continuation: shared scaffold recipe inspection (2026-10-02)
+
+**Author: Codex.** Exposed `resolveManifestRecipe` from scaffold and reused it in
+composition and CLI project inspection. Schema-v3 recorded recipes now resolve
+through the actual registry, including transitive feature requirements and
+provider/runtime compatibility. Effective route JSON includes these scaffold
+facts. Unknown fields, secrets, file contents, and dependency baseline values
+are not emitted.
+
+Missing manifests are `unrecorded`; invalid JSON, unsupported schemas, and
+invalid recipes are `invalid`. Invalid metadata produces
+`COSSACK_SCAFFOLD_METADATA_INVALID` and makes `check routes` fail. Inspection
+can still return available route facts. These are recorded recipe facts, not
+proof that generated files remain unchanged or that bindings are available.
+
+Verification:
+
+- Complete scaffold suite: **89 passed**, covering composition after extraction.
+- CLI metadata/route/subprocess suites: **75 passed**.
+- Final metadata suite: **4 passed**, including the added effective-model integration case.
+- `pnpm tsc --noEmit`: passed.
+
+**11/58 tasks remain checked; CLI-04 remains open.** GLM should now finish
+inheritance resolution, runtime capability evaluation using actual binding
+metadata, and the complete grouped-route/layout/service acceptance fixture.
+Recipe inspection is integrated; runtime capability gating and recipe completion
+under CLI-05/RT-25 still remain separate unfinished requirements.
+
 <a id="codex-resource-inspection-2026-10-02"></a>
 ### Codex continuation: authored resource inspection (2026-10-02)
 

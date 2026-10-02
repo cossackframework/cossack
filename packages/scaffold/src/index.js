@@ -2383,6 +2383,24 @@ export async function createApp(projectName, options = {}) {
   }
 }
 
+/** Resolve recorded features through the same registry used for composition. */
+export function resolveManifestRecipe(manifest) {
+  if (!manifest || manifest.schemaVersion !== 3 || !ADAPTERS.includes(manifest.runtime ?? manifest.adapter) ||
+      !Array.isArray(manifest.explicitFeatures ?? manifest.resolvedFeatures)) {
+    throw new Error('A schema-v3 scaffold manifest with a runtime and feature list is required.');
+  }
+  return resolveRecipe({
+    adapter: manifest.runtime ?? manifest.adapter,
+    preset: 'minimal',
+    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+    database: manifest.config?.database,
+    authMethods: manifest.config?.authMethods,
+    oauth: manifest.config?.oauth,
+    theme: manifest.config?.theme,
+    dashboardModules: manifest.dashboardModules,
+  });
+}
+
 async function inferRecipe(projectDir, manifest) {
   if (manifest?.schemaVersion === 2) {
     throw new Error(
@@ -2400,16 +2418,7 @@ async function inferRecipe(projectDir, manifest) {
     );
   }
   if (manifest?.schemaVersion === 3) {
-    return resolveRecipe({
-      adapter: manifest.runtime ?? manifest.adapter,
-      preset: 'minimal',
-      features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
-      database: manifest.config?.database,
-      authMethods: manifest.config?.authMethods,
-      oauth: manifest.config?.oauth,
-      theme: manifest.config?.theme,
-      dashboardModules: manifest.dashboardModules,
-    });
+    return resolveManifestRecipe(manifest);
   }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
   const dependencies = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
