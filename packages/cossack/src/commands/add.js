@@ -3,7 +3,7 @@ import path from 'node:path';
 import { findProjectRoot, writeFile } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { UI_COMPONENTS } from '../templates.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
 
 const spec = new CommandSpec({
   name: 'add',
@@ -21,6 +21,7 @@ const spec = new CommandSpec({
 
 export async function addCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
+    ctx.out = createCommandOutput(ctx);
   const [feature, componentName] = args;
   if (!feature || !FEATURES.includes(feature)) {
     throw Object.assign(
@@ -61,10 +62,10 @@ export async function addCommand(args, ctx) {
     });
 
     if (result.status === 'present') {
-      console.log(`  present  ${feature} is already installed`);
+      ctx.out.line(`  present  ${feature} is already installed`);
     }
     if (result.status === 'cancelled') {
-      console.log('Cancelled. No files were changed.');
+      ctx.out.line('Cancelled. No files were changed.');
       return 0;
     }
     if (uiComponent) {
@@ -74,45 +75,50 @@ export async function addCommand(args, ctx) {
         `${uiComponent.className}.ts`,
       );
       const status = await writeFile(target, uiComponent.template(), ctx);
-      if (status === 'skipped') {
-        console.error(
-          `  exists   ${path.relative(root, target)} ` +
-          '(use --force to overwrite)',
-        );
-        return 1;
-      }
-      console.log(
-        `  ${status === 'dry-run' ? 'would eject' : 'ejected'}  ` +
-        `${path.relative(root, target)}`,
-      );
+      if (status === 'skipped') return ctx.out.file('skipped', target);
+      ctx.out.file(status === 'dry-run' ? 'planned' : 'created', target);
     }
     if (result.status === 'present') return 0;
 
     const automaticallyAdded = result.addedFeatures.filter(
       (item) => item !== feature,
     );
-    console.log(
+    for (const change of result.changes.writes) {
+      ctx.out.file(result.status === 'dry-run' ? 'planned' : (change.overwrite ? 'overwritten' : 'created'),
+        path.join(root, change.path));
+    }
+    for (const change of result.changes.deletes) {
+      ctx.out.file('deleted', path.join(root, change.path));
+    }
+    ctx.out.line(
       `${result.status === 'dry-run' ? 'Would apply' : 'Applied'} ${result.changes.writes.length} write(s)` +
       (result.changes.deletes.length ? ` and ${result.changes.deletes.length} deletion(s)` : '') +
       `. Resolved features: ${result.recipe.resolvedFeatures.join(', ') || 'minimal'}.`,
     );
     if (automaticallyAdded.length) {
-      console.log(`Included prerequisites: ${automaticallyAdded.join(', ')}`);
+      ctx.out.line(`Included prerequisites: ${automaticallyAdded.join(', ')}`);
     }
     if (feature === 'dashboard') {
-      console.log(`Dashboard modules: ${result.recipe.dashboardModules.join(', ') || '(none)'}`);
+      ctx.out.line(`Dashboard modules: ${result.recipe.dashboardModules.join(', ') || '(none)'}`);
     }
     if (result.status !== 'dry-run') {
-      console.log('\nNext: run `pnpm install`.' +
+      ctx.out.line('\nNext: run `pnpm install`.' +
         (result.recipe.resolvedFeatures.includes('database')
           ? '\nThen apply migrations with `cossack migration up`.'
           : ''));
     }
-    return 0;
+    return ctx.out.data({
+      feature,
+      status: result.status,
+      resolvedFeatures: result.recipe.resolvedFeatures,
+      prerequisites: automaticallyAdded,
+    });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
-    console.error(`  error   ${error.message}`);
-    return 1;
+    throw Object.assign(
+      new Error(error.message),
+      { code: error.code ?? 'COSSACK_FEATURE_ADD_FAILED' },
+    );
   }
   });
 }

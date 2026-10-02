@@ -2,6 +2,13 @@ import { findProjectRoot } from '../fs-utils.js';
 import { inspectDeployment } from '../deployment.js';
 import { commandFailure, writeResult } from '../output.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const routesSpec = new CommandSpec({
+  name: 'inspect',
+  positionals: ['scope', 'route'],
+  flags: { verbose: { type: 'boolean' } },
+});
 
 /** Explain one route's effective behavior with reasons and source locations. */
 function explainRoute(effective, route) {
@@ -42,16 +49,15 @@ async function inspectRoutes(args, ctx, command) {
     const root = await findProjectRoot(ctx.cwd);
     const effective = buildEffectiveRouteModel(root);
     if (ctx.flags.json === true) {
-      writeResult(command, { ok: true, data: { scope: 'routes', routes: effective.pages, layouts: effective.layouts } });
-    } else {
-      for (const page of effective.pages) {
-        console.log(`${page.route.padEnd(34)} ${String(page.transport ?? 'http').padEnd(15)} ${page.source}`);
-      }
-      const owned = effective.layouts.filter(layout => layout.services.length);
-      if (owned.length) {
-        console.log('\nService ownership (layout -> declared services):');
-        for (const layout of owned) console.log(`  ${layout.filePath} -> ${layout.services.join(', ')}`);
-      }
+      return { scope: 'routes', routes: effective.pages, layouts: effective.layouts };
+    }
+    for (const page of effective.pages) {
+      console.log(`${page.route.padEnd(34)} ${String(page.transport ?? 'http').padEnd(15)} ${page.source}`);
+    }
+    const owned = effective.layouts.filter(layout => layout.services.length);
+    if (owned.length) {
+      console.log('\nService ownership (layout -> declared services):');
+      for (const layout of owned) console.log(`  ${layout.filePath} -> ${layout.services.join(', ')}`);
     }
     return 0;
   }
@@ -64,11 +70,10 @@ async function inspectRoutes(args, ctx, command) {
       `No route matches '${target}'. Run cossack inspect routes to list routes.`);
   }
   if (ctx.flags.json === true) {
-    writeResult(command, { ok: true, data: { scope: 'routes', ...explanation } });
-  } else {
-    console.log(`Route ${explanation.route} (${explanation.kind}) — ${explanation.source}`);
-    for (const reason of explanation.reasons) console.log(`  - ${reason}`);
+    return { scope: 'routes', ...explanation };
   }
+  console.log(`Route ${explanation.route} (${explanation.kind}) — ${explanation.source}`);
+  for (const reason of explanation.reasons) console.log(`  - ${reason}`);
   return 0;
 }
 
@@ -109,7 +114,9 @@ async function inspectCloudflare(args, ctx, command) {
 }
 
 export function inspectCommand(args, ctx) {
-  if (args[0] === 'routes') return inspectRoutes(args.slice(1), ctx, 'inspect');
+  if (args[0] === 'routes') {
+    return runWithSpec(routesSpec, args.slice(1), ctx, () => inspectRoutes(args.slice(1), ctx, 'inspect'));
+  }
   return inspectCloudflare(args, ctx, 'inspect');
 }
 export function checkCommand(args, ctx) { return inspectCloudflare(args, ctx, 'check'); }

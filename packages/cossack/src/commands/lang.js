@@ -14,7 +14,7 @@ import fs from 'node:fs/promises';
 import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
 
 const spec = new CommandSpec({
   name: 'lang',
@@ -27,6 +27,7 @@ const DEFAULT_LOCALE = 'en';
 
 export async function langCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
+    ctx.out = createCommandOutput(ctx);
   const [sub, ...rest] = args;
   if (sub === 'publish' || sub === 'init') {
     return publish(rest, ctx);
@@ -57,32 +58,34 @@ async function publish(args, ctx) {
       langJsonTemplate(defaultLangCatalog()),
       ctx,
     );
-    reportFile(`src/lang/${locale}.json`, result);
+    reportFile(`src/lang/${locale}.json`, result, ctx);
     if (result !== 'skipped') {
       // Wire {{ cossackLang }} and APP_LOCALE so the feature is fully
       // active immediately — no manual edits needed.
       await wireRootTemplate(root, ctx);
       await wireAppLocaleEnv(root, locale, ctx);
-      console.log(
+      ctx.out?.line(
         `\nLocalization enabled. Default locale: ${locale}.\n` +
           `Edit src/lang/${locale}.json, then use __('key') in any render().\n` +
           `Generate additional locales with \`cossack lang add <code>\`.`,
       );
     }
+        if (ctx.flags.json === true) return ctx.out?.data({ locale, wired: result !== 'skipped' });
     return 0;
   }
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result);
+  reportFile(`src/lang/${locale}.json`, result, ctx);
   if (result !== 'skipped') {
     await wireRootTemplate(root, ctx);
     await wireAppLocaleEnv(root, locale, ctx);
-    console.log(
+    ctx.out?.line(
       `\nCreated src/lang/${locale}.json from your ${DEFAULT_LOCALE} catalog.\n` +
         'Fill in the translations, then switch at runtime with setLocale(...).',
     );
   }
+    if (ctx.flags.json === true) return ctx.out?.data({ locale, wired: result !== 'skipped' });
   return 0;
 }
 
@@ -107,13 +110,13 @@ async function addLocale(args, ctx) {
   const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
   if ((await exists(target)) && !ctx.force && !ctx.dryRun) {
-    console.log(`  exists   src/lang/${locale}.json (use --force to overwrite)`);
+    ctx.out?.line(`  exists   src/lang/${locale}.json (use --force to overwrite)`);
     return 0;
   }
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result);
+  reportFile(`src/lang/${locale}.json`, result, ctx);
   return 0;
 }
 
@@ -172,7 +175,7 @@ function parseSimpleFlags(args, ctx) {
 async function wireRootTemplate(root, ctx) {
   const target = path.resolve(root, 'src', 'root.ts');
   if (!(await exists(target))) {
-    console.log(
+    ctx.out?.line(
       '  note     No src/root.ts found — if you supply a custom htmlTemplate,\n' +
         '           add {{ cossackLang }} to <html lang="..."> for dynamic locale.',
     );
@@ -193,18 +196,18 @@ async function wireRootTemplate(root, ctx) {
     (match) => match.replace(/["'][^"']*["']/i, '"{{ cossackLang }}"'),
   );
   if (replaced === content) {
-    console.log(
+    ctx.out?.line(
       '  note     src/root.ts does not have <html lang="..."> — add\n' +
         '           {{ cossackLang }} to your htmlTemplate for dynamic locale.',
     );
     return;
   }
   if (ctx.dryRun) {
-    console.log('  would wire  src/root.ts ({{ cossackLang }})');
+    ctx.out?.file('planned', target);
     return;
   }
   await fs.writeFile(target, replaced, 'utf8');
-  console.log('  wired    src/root.ts → {{ cossackLang }}');
+  ctx.out?.file('created', target);
 }
 
 /**
@@ -247,28 +250,23 @@ async function wireAppLocaleEnv(root, locale, ctx) {
     );
   }
   if (ctx.dryRun) {
-    console.log(`  would add  APP_LOCALE="${locale}" to wrangler.jsonc`);
+    ctx.out?.file('planned', target);
     return;
   }
   await fs.writeFile(target, updated, 'utf8');
-  console.log(`  added    APP_LOCALE="${locale}" to wrangler.jsonc`);
+  ctx.out?.file('created', target);
 }
 
-function reportFile(rel, result) {
-  switch (result) {
-    case 'wrote':
-      console.log(`  created  ${rel}`);
-      break;
-    case 'overwrote':
-      console.log(`  overwrite ${rel}`);
-      break;
-    case 'dry-run':
-      console.log(`  would create  ${rel}`);
-      break;
-    case 'skipped':
-      console.log(`  exists   ${rel} (use --force to overwrite)`);
-      break;
+function reportFile(rel, result, ctx) {
+  const out = ctx.out;
+  const action = { wrote: 'created', overwrote: 'overwritten', 'dry-run': 'planned', skipped: 'skipped' }[result];
+  if (!out) {
+    // Direct invocation without the shared formatter: keep human output.
+    if (result === 'skipped') console.error(`  exists   ${rel} (use --force to overwrite)`);
+    else if (ctx.flags.json !== true) console.log(`  ${action}  ${rel}`);
+    return;
   }
+  out.file(action, path.resolve(process.cwd(), rel));
 }
 
 export function langHelp() {

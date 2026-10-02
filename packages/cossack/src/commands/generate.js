@@ -36,7 +36,7 @@ const TYPE_ALIASES = {
   seeder: 'seeder',
 };
 
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
 
 const spec = new CommandSpec({
   name: 'generate',
@@ -56,7 +56,14 @@ const spec = new CommandSpec({
 });
 
 export async function generateCommand(args, ctx) {
-  return runWithSpec(spec, args, ctx, () => generateCommandInner(args, ctx));
+  return runWithSpec(spec, args, ctx, async () => {
+    ctx.out = createCommandOutput(ctx);
+    const code = await generateCommandInner(args, ctx);
+    if (code === 0 && ctx.flags.json === true) {
+      return ctx.out.data({ type: args[0], name: args[1] });
+    }
+    return code;
+  });
 }
 
 async function generateCommandInner(args, ctx) {
@@ -190,20 +197,19 @@ async function generateSeeder(raw, root, ctx) {
 }
 
 function report(target, result, ctx) {
-  const rel = path.relative(process.cwd(), target);
+  const out = ctx.out ?? createCommandOutput(ctx);
   switch (result) {
-    case 'wrote':
-      console.log(`  created  ${rel}`);
-      return 0;
-    case 'overwrote':
-      console.log(`  overwrite ${rel}`);
-      return 0;
-    case 'dry-run':
-      console.log(`  would create  ${rel}`);
-      return 0;
+    case 'wrote': return out.file('created', target);
+    case 'overwrote': return out.file('overwritten', target);
+    case 'dry-run': return out.file('planned', target);
     case 'skipped':
-      console.error(`  exists   ${rel} (use --force to overwrite)`);
-      return 1;
+      // A blocking failure with a code: numeric-only results would emit an
+      // envelope without diagnostics (CLI-03 review finding).
+      out.file('skipped', target);
+      throw Object.assign(
+        new Error(`Refusing to overwrite ${path.relative(process.cwd(), target)}. Use --force to overwrite.`),
+        { code: 'COSSACK_FILE_EXISTS' },
+      );
   }
   return 0;
 }

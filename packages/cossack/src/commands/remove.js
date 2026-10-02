@@ -2,9 +2,10 @@ import {
   FEATURES,
   removeFeatureFromProject,
 } from '@cossackframework/scaffold';
+import path from 'node:path';
 import { findProjectRoot } from '../fs-utils.js';
 
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
 
 const spec = new CommandSpec({
   name: 'remove',
@@ -14,7 +15,10 @@ const spec = new CommandSpec({
 });
 
 export async function removeCommand(args, ctx) {
-  return runWithSpec(spec, args, ctx, () => removeCommandInner(args, ctx));
+  return runWithSpec(spec, args, ctx, async () => {
+    ctx.out = createCommandOutput(ctx);
+    return removeCommandInner(args, ctx);
+  });
 }
 
 async function removeCommandInner(args, ctx) {
@@ -36,24 +40,32 @@ async function removeCommandInner(args, ctx) {
     });
 
     if (result.status === 'absent') {
-      console.log(`  absent   ${feature} is not installed`);
+      ctx.out.line(`  absent   ${feature} is not installed`);
       return 0;
     }
     if (result.status === 'cancelled') {
-      console.log('Cancelled. No files were changed.');
+      ctx.out.line('Cancelled. No files were changed.');
       return 0;
     }
 
-    console.log(
+    for (const change of result.changes.writes) {
+      ctx.out.file(result.status === 'dry-run' ? 'planned' : (change.overwrite ? 'overwritten' : 'created'),
+        path.join(root, change.path));
+    }
+    for (const change of result.changes.deletes) {
+      ctx.out.file('deleted', path.join(root, change.path));
+    }
+    ctx.out.line(
       `${result.status === 'dry-run' ? 'Would apply' : 'Applied'} ` +
       `${result.changes.writes.length} write(s) and ` +
       `${result.changes.deletes.length} deletion(s). ` +
       `Resolved features: ${result.recipe.resolvedFeatures.join(', ') || 'minimal'}.`,
     );
     if (result.status !== 'dry-run') {
-      console.log('\nNext: run `pnpm install` to reconcile dependencies.');
+      ctx.out.line('\nNext: run `pnpm install` to reconcile dependencies.');
     }
-    return 0;
+    return ctx.out.data({ feature, status: result.status,
+      resolvedFeatures: result.recipe.resolvedFeatures });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
     console.error(`  error   ${error.message}`);

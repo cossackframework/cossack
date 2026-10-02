@@ -47,8 +47,40 @@ their underlying tool. Command help is handled before starting that tool.
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
 | `--dry-run` | Show planned changes without writing them. |
+| `--json` | Emit exactly one machine-readable result envelope (see below). |
+| `--yes`, `-y` | Apply changes without confirmation (noninteractive mode). |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
+
+### Machine-readable output contract (GLM, 2026-10-02)
+
+Under `--json`, a command prints **exactly one** result envelope on stdout and
+nothing else:
+
+```json
+{ "schemaVersion": 1, "command": "generate", "ok": true,
+  "data": { "effects": [{ "action": "planned", "path": "src/components/X.ts" }] },
+  "diagnostics": [] }
+```
+
+- Success carries `data` (file effects with `created|overwritten|planned|skipped|deleted`
+  actions, planned paths for dry runs, structured facts for inspection).
+- Failure carries `ok: false`, a nonzero exit code, and `diagnostics` with
+  stable codes such as `COSSACK_OPTION_UNKNOWN` (including the supported
+  alternatives), `COSSACK_OPTION_VALUE_REQUIRED`, `COSSACK_OPTION_REPEATED`,
+  `COSSACK_ARGUMENT_MISSING`, `COSSACK_ARGUMENT_UNEXPECTED`,
+  `COSSACK_FILE_EXISTS`, and command-specific failure codes. Human-oriented
+  notes go to stderr or are suppressed; they never mix into stdout.
+- Exit codes: `0` success, `1` failure, `130` an interactive prompt was
+  declined. Prompts are skipped entirely with `--yes`, `--dry-run`, or when
+  required choices are provided as arguments (noninteractive callers should
+  always pass one of these).
+- Long-running interactive commands (`dev`, `start`) reject `--json` up front
+  with `COSSACK_JSON_UNSUPPORTED`; a streaming event contract for them is
+  future work. `build` and `ssg` capture the underlying tool output and emit
+  one envelope with `{ exitCode, output }`.
+- Dry runs perform no writes: `generate component X --dry-run --json` emits
+  the planned paths and leaves the filesystem untouched.
 
 ---
 

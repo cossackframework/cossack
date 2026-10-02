@@ -11,6 +11,7 @@
  *   COSSACK_ARGUMENT_UNEXPECTED   Extra positional argument.
  *   COSSACK_ARGUMENT_MISSING      Required positional argument absent.
  */
+import path from 'node:path';
 import { writeResult } from './output.js';
 
 /** Flags every command accepts without declaring them. */
@@ -151,4 +152,33 @@ export async function runWithSpec(spec, args, ctx, handler, help) {
     }
     return 1;
   }
+}
+
+/**
+ * One formatter for command output (CLI-03): handlers record structured
+ * effects and print human lines through the same object. Under `--json`
+ * nothing prints; the recorded effects become the envelope's `data`.
+ */
+export function createCommandOutput(ctx) {
+  const json = ctx.flags?.json === true;
+  const effects = [];
+  return {
+    effects,
+    /** Record a file effect (`created|overwritten|planned|skipped|preserved|deleted`). */
+    file(action, target) {
+      const relative = path.relative(process.cwd(), target);
+      effects.push({ action, path: relative });
+      if (!json) {
+        if (action === 'skipped') console.error(`  exists    ${relative} (use --force to overwrite)`);
+        else console.log(`  ${action.padEnd(9)} ${relative}`);
+      }
+      return action === 'skipped' ? 1 : 0;
+    },
+    /** Human-only informational line (never part of the JSON result). */
+    line(text) { if (!json) console.log(text); },
+    /** Human-only warning line (never part of the JSON result). */
+    warn(text) { if (!json) console.error(text); },
+    /** The structured result data for the JSON envelope. */
+    data(extra = {}) { return { effects, ...extra }; },
+  };
 }
