@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex combined inspection (2026-10-03):** read
+> **Latest checkpoint — Codex service inspection (2026-10-03):** read
+> [executed acceptance, fixes, and remaining audit](./release-0.9.0.md#codex-service-inspection-2026-10-03).
+> **Author: Codex.** SSG now verifies inspected layout service ownership,
+> shadowing, hydration, and disposal. Route checks reject ignored page service
+> declarations. Inspection selects the actual indirect default export instead
+> of a decorated helper. **11/58 tasks remain checked.** Next audit missing
+> exports, inherited layout options, and imported service token identity.
+
+> **Previous checkpoint — Codex combined inspection (2026-10-03):** read
 > [acceptance coverage and remaining work](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
 > **Author: Codex.** Combined compiler/static inspection acceptance passes.
 > Fixed missing layout middleware counts and exposed layout/page execution order;

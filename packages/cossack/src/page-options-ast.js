@@ -106,7 +106,22 @@ function pageClass(program, code) {
     });
     if (decorator) candidates.push({ cls, decorator, exported: statement.type.startsWith('Export') });
   }
-  return candidates.find(c => c.exported) ?? candidates[0];
+  // The router loads the default export, not whichever decorated class appears
+  // first. A helper's metadata must never stand in for an unresolved export.
+  const defaultExport = program.body.find(statement => statement.type === 'ExportDefaultDeclaration');
+  if (defaultExport) {
+    const declaration = defaultExport.declaration;
+    return candidates.find(candidate => candidate.cls === declaration ||
+      declaration?.type === 'Identifier' && candidate.cls.id?.name === declaration.name);
+  }
+  const exportedDefault = program.body.flatMap(statement => statement.type === 'ExportNamedDeclaration'
+    ? (statement.specifiers ?? []).filter(specifier => (specifier.exported?.name ?? specifier.exported?.value) === 'default')
+      .map(specifier => ({ name: specifier.local?.name, external: Boolean(statement.source) })) : []);
+  if (exportedDefault.length) {
+    return exportedDefault.length === 1 && !exportedDefault[0].external
+      ? candidates.find(candidate => candidate.cls.id?.name === exportedDefault[0].name) : undefined;
+  }
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 /**

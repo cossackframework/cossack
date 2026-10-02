@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: full application service ownership/DI acceptance and explicit diagnostics for unsupported project resolution. Declared member precedence, inherited RPC behavior, and a combined static/compiler fixture are verified. Binding-aware transport checks now use the shared runtime model.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: module validity, inherited layout options, and service token identity across imports. SSG service ownership/DI and check/explain acceptance now execute against the same source fixture. Declared member precedence, inherited RPC behavior, and a combined static/compiler fixture are verified. Binding-aware transport checks now use the shared runtime model.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,39 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-service-inspection-2026-10-03"></a>
+### Codex review: executed service inspection acceptance (2026-10-03)
+
+**Author: Codex.** Added a framework/CLI integration fixture that writes grouped
+route and nested layout sources, emits those same sources with TypeScript legacy
+decorators, and renders them through the real SSG renderer. It verifies inner
+layout shadowing, page sharing of the inner instance, owner IDs, per-owner
+hydration state, and inner-to-outer disposal. Check and explain commands run
+against the same source project. This is actual SSG/bootstrap execution, not a
+full Vite application build or browser navigation test.
+
+The fixture confirmed that page-level `services` declarations do not create a
+scope in either router or SSG bootstrap. Route checks now fail with
+`COSSACK_PAGE_SERVICES_UNSUPPORTED` and explain how to move declarations to a
+layout; inspection explains that the page does not own them. A throwing service
+constructor proves SSG does not instantiate a service merely listed on the page.
+
+Also fixed selection of the inspected class: indirect local default exports now
+select their actual class, even when an exported decorated helper comes first.
+Undecorated, dynamic, or external default exports no longer borrow that helper's
+options or methods. Regression cases cover both default export syntaxes.
+
+Verification: SSG/service acceptance suites **11 passed**; all **11 package type
+checks** and `pnpm tsc --noEmit` passed. Full CLI suite: **517 passed across
+37 files**. The service integration test also passed again after the default
+export selection fix.
+
+**11/58 tasks remain checked; CLI-04 remains open.** Next audit module validity
+(missing default exports still allow syntax-only inspection), inherited layout
+options, and service token identity across imports before treating inspection as
+complete. Keep browser/SSR lifecycle release gates separate from this SSG test.
+RT-25 build/recipe capability gating also remains unfinished.
 
 <a id="codex-inspection-acceptance-2026-10-03"></a>
 ### Codex review: combined inspection fixture and middleware order (2026-10-03)

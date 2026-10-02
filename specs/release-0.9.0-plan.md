@@ -221,10 +221,12 @@ Codex acceptance checkpoint (2026-10-03):
 `packages/cossack/tests/inspection-acceptance.test.js` now combines grouped routes,
 nested layouts, declared services, imported inheritance, scaffold recipes,
 resources, and compiler stripping parity. Layout/page middleware counts are
-ordered and unknown totals stay unknown. Next add actual service ownership and
-DI/bootstrap execution to this fixture, then check/explain assertions against the
-same project. Static declaration assertions alone do not prove service lifetime
-or ownership. See the [latest review](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
+ordered and unknown totals stay unknown. The companion framework fixture
+`inspection-service-acceptance.test.ts` now executes the same inspected sources
+through SSG, verifies layout service ownership/shadowing/hydration/disposal, and
+runs check/explain. Page service declarations now fail checks because only
+layouts create scopes. Next audit missing exports, inherited layout options,
+and imported service token identity. This is not full browser lifecycle proof. See the [latest review](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
 
 Start in `packages/framework/src/vite-plugin.ts`, `vite-security-plugin.ts`,
 `route-ids.ts`, `packages/scaffold/src/registry.js`, and CLI inspection commands.

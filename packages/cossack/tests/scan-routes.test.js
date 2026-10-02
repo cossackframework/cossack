@@ -310,6 +310,25 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(page.serverMethods[0]).toMatchObject({ rpc: 'automatic', source: { file: page.filePath } });
   });
 
+  it.each(['export default Actual;', 'export { Actual as default };'])('selects an indirect default export: %s', async exportStatement => {
+    mk('src/pages/selected/index.ts', `
+      @Page({ transport: 'http' }) export class Helper { @Server() wrong() {} }
+      @Page({ transport: 'sse' }) class Actual { @Server() correct() {} }
+      ${exportStatement}`);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.transport).toBe('sse');
+    expect(page.serverMethods.map(method => method.name)).toEqual(['correct']);
+  });
+
+  it.each(['export default class Actual {}', 'export default factory();', "export { Actual as default } from './other';"])(
+    'does not substitute a decorated helper for an unresolved default: %s', async exportStatement => {
+      mk('src/pages/unknown/index.ts', `@Page({ transport: 'sse' }) class Helper { @Server() wrong() {} } ${exportStatement}`);
+      const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+      expect(page.extraction.method).toBe('unknown');
+      expect(page.methodExtraction.method).toBe('unknown');
+      expect(page.serverMethods).toEqual([]);
+    });
+
   it('inspects the exported page, quoted keys, and only that page’s methods', async () => {
     mk('src/pages/scoped/index.ts', `
       @Page({ transport: 'http' }) class Helper { @Server() hidden() {} }

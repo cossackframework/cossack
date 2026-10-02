@@ -46,7 +46,7 @@ function explainRoute(effective, route) {
     reasons.push(`Injectable services (owned by ancestry): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
   }
   if (page.services.length) {
-    reasons.push(`Services declared on the page itself: ${page.services.join(', ')}`);
+    reasons.push(`Services declared on the page itself are not owned at runtime: ${page.services.join(', ')}. Move these declarations to an ancestor layout's @Page({ services: [...] }).`);
   }
   if (page.serverMethods?.length) {
     reasons.push(`Server methods (RPC proxies on the client): ${page.serverMethods.map(entry => `${entry.name} (${entry.reason})`).join('; ')}`);
@@ -111,6 +111,9 @@ async function checkRoutes(ctx) {
       }
     }
     for (const page of effective.pages) {
+      if (page.services.length) {
+        add('COSSACK_PAGE_SERVICES_UNSUPPORTED', 'Pages do not create service scopes. Move services to an ancestor layout\'s @Page({ services: [...] }).', page.source);
+      }
       if (page.declarationDispatch.status === 'unknown') {
         add('COSSACK_ROUTE_DISPATCH_UNKNOWN', 'Declared member precedence could not be resolved statically.', page.source);
       }
@@ -200,7 +203,7 @@ export function checkHelp() {
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
-for either scope. Route checks fail on unknown options,
+for either scope. Route checks fail on unknown options, ignored page service declarations,
 unavailable compiler method facts, invalid/unsupported transports, or missing
 required transport bindings. Inherited behavior
 and runtime execution are not yet checked.

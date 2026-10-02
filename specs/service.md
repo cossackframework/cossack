@@ -22,7 +22,10 @@ class DashboardChild extends Cossack {
 }
 ```
 
-`PageOptions.services` declares DI ownership. `PageOptions.providers` maps
+`PageOptions.services` declares DI ownership on layouts. Pages use the nearest
+layout scope; putting `services` on a page does not create an owner.
+`cossack check routes` reports `COSSACK_PAGE_SERVICES_UNSUPPORTED` for these
+ignored declarations. Move them to an ancestor layout. `PageOptions.providers` maps
 transport providers for WebSocket and Durable Object state. It does not declare
 DI ownership.
 
