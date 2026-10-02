@@ -1,3 +1,4 @@
+import { resolveImportedInheritance } from './inheritance.js';
 import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -243,6 +244,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
       methods = await extractMethodClassificationsFromAst(source, page.filePath, absolute) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
+      methods = await resolveImportedInheritance(source, absolute, page.filePath, methods);
     } catch { /* unreadable source keeps null options; the route still lists */
       method = 'unknown';
       reason = 'The page source could not be read.';

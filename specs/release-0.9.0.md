@@ -86,6 +86,31 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-imported-inheritance-2026-10-02"></a>
+### Codex continuation: relative imported base declarations (2026-10-02)
+
+**Author: Codex.** Added source-only resolution for relative TypeScript imports,
+named/default exports, import aliases, and explicit re-export chains. Base
+methods retain compiler classification, declaring class, resource identity, and
+project-relative source locations. The resolver reads source rather than loading
+modules; a subprocess fixture deliberately throws at module scope and still
+resolves its declarations successfully.
+
+Cycle detection prevents recursive export/base chains from looping. Missing
+files, package imports, namespace imports, wildcard exports, path aliases,
+dynamic bases, and ambiguous extensionless candidates remain unresolved.
+`.js` imports map to `.ts` source and `.mjs` to `.mts`; the resolver does not guess
+between competing extensionless candidates. Checks retain explicit diagnostics
+for unresolved cases. Known partial declarations may still be inspected.
+
+Verification: route suites **40 passed**; focused base-resolution subprocess
+tests and root TypeScript checks passed. This adds declaration resolution, not
+an effective inherited runtime dispatch model. **11/58 tasks remain checked.**
+
+GLM continuation: finish override/field/accessor dispatch semantics, extend
+resolution only where compiler/project configuration supports it, integrate
+binding-aware runtime capabilities, and prove CLI-04's full acceptance fixture.
+
 <a id="codex-local-inheritance-2026-10-02"></a>
 ### Codex continuation: local inheritance declarations (2026-10-02)
 

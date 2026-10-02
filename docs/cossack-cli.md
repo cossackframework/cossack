@@ -179,8 +179,10 @@ are excluded. Recorded recipes do not prove that generated files are unchanged.
 
 Local base declarations appear under `inheritedDeclarations`, grouped by declaring
 class with compiler facts and source locations. They are not flattened into own
-methods or presented as a resolved runtime dispatch table. Imported and dynamic
-bases remain unresolved until project resolution is implemented.
+methods or presented as a resolved runtime dispatch table. Relative TypeScript imports and explicit re-exports resolve through source files.
+Package imports, path aliases, wildcard exports, dynamic bases, and ambiguous
+extensionless paths remain unresolved. Resolving declarations does not establish
+effective inherited runtime dispatch.
 
 These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior

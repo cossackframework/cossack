@@ -384,6 +384,17 @@ describe('routes and inspection', () => {
     expect(checked.stdout).not.toContain('PRIVATE_LOADER');
   });
 
+  it('checks relative base declarations without evaluating their modules', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/base.ts'), "throw new Error('must not execute'); export default class Base extends Cossack { @Server() load() { return 1; } }");
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "import Base from '../base.js'; @Page() export default class P extends Base { render() { return 1; } }");
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(0);
+    const page = parseEnvelope(checked.stdout).data.routes[0];
+    expect(page.inheritance).toEqual({ status: 'resolved', bases: ['Base'] });
+    expect(page.inheritedDeclarations[0].methods[0]).toMatchObject({ name: 'load', rpc: 'explicit', source: { file: '/src/base.ts' } });
+  });
+
   it('check routes diagnoses imported bases without executing imports', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
     await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "import Base from './missing.js'; @Page() export default class P extends Base { render() { return 1; } }");

@@ -231,6 +231,31 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(page.ssg).toBe(false);
   });
 
+  it('resolves relative imported bases through aliases and explicit re-exports', async () => {
+    mk('src/shared/base.ts', `
+      export class Base extends Cossack { @Server() load() { return 'private'; } }
+      export default class Parent extends Base { @Client() local() { return 1; } }
+    `);
+    mk('src/shared/barrel.ts', "export { default as ParentAlias } from './base.js';");
+    mk('src/pages/imported/index.ts', `
+      import { ParentAlias as Imported } from '../../shared/barrel.js';
+      @Page() export default class P extends Imported { render() { return 1; } }
+    `);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.inheritance).toEqual({ status: 'resolved', bases: ['Parent', 'Base'] });
+    expect(page.inheritedDeclarations.map(d => d.className)).toEqual(['Parent', 'Base']);
+    expect(page.inheritedDeclarations[1].methods[0]).toMatchObject({ name: 'load', rpc: 'explicit', source: { file: '/src/shared/base.ts' } });
+  });
+
+  it('keeps cyclic re-exports and package bases unresolved without importing them', async () => {
+    mk('src/shared/a.ts', "export { Base } from './b.js';");
+    mk('src/shared/b.ts', "export { Base } from './a.js';");
+    mk('src/pages/cycle/index.ts', "import { Base } from '../../shared/a.js'; @Page() export default class P extends Base {}");
+    mk('src/pages/package/index.ts', "import Base from 'not-installed'; @Page() export default class P extends Base {}");
+    const model = await buildEffectiveRouteModel(tmp);
+    expect(model.pages.every(page => page.inheritance.status === 'unresolved')).toBe(true);
+  });
+
   it('includes local base declarations with their declaring class and source', async () => {
     mk('src/pages/inherited/index.ts', `
       class Parent extends Cossack { @Server() load() { return 1; } }

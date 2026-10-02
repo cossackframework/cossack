@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex local inheritance (2026-10-02):** read
+> **Latest checkpoint — Codex imported inheritance (2026-10-02):** read
+> [relative source resolution and remaining limits](./release-0.9.0.md#codex-imported-inheritance-2026-10-02).
+> Relative TypeScript bases and explicit re-exports now resolve without executing
+> modules. Cycles, ambiguous paths, and unsupported imports remain unresolved.
+> **11/58 tasks remain checked.** Continue inherited dispatch semantics,
+> binding-aware capabilities, and CLI-04's full acceptance fixture.
+
+> **Previous checkpoint — Codex local inheritance (2026-10-02):** read
 > [base declarations and remaining resolution work](./release-0.9.0.md#codex-local-inheritance-2026-10-02).
 > Local base methods now appear with declaring classes and source locations.
 > Imported/dynamic bases produce explicit unresolved diagnostics in route checks.
