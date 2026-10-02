@@ -979,3 +979,5 @@ export class ComponentsDemo extends Cossack {
         `;
     }
 }
+
+export default ComponentsDemo;

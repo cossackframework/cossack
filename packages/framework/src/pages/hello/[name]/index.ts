@@ -86,3 +86,5 @@ export class Greeting extends Cossack {
         `;
     }
 }
+
+export default Greeting;

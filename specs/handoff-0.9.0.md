@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex durable page capability (2026-10-03):** read
+> **Latest checkpoint — Codex bundled route exports (2026-10-03):** read
+> [example route corrections](./release-0.9.0.md#codex-bundled-route-exports-2026-10-03).
+> **Author: Codex.** Eighteen additional bundled demo pages now export their
+> component as default. The cache-regression store moved outside the pages tree
+> so it no longer registers as a route. A shared-parser contract test audits every
+> TypeScript page/layout/loading module in framework and scaffold trees.
+> Framework build, 614 tests, and all package type checks passed.
+> **12/58 tasks remain checked.** Continue RT-25 selected recipe requirements
+> and remaining runtime acceptance; the bundled default-export audit is complete.
+
+> **Previous checkpoint — Codex durable page capability (2026-10-03):** read
 > [build and inspection durability checks](./release-0.9.0.md#codex-durable-state-capability-2026-10-03).
 > **Author: Codex.** Builds and CLI inspection now distinguish WebSocket support
 > from durable page state. Static `stateful: true` requires `durableState`, which

@@ -1,7 +1,7 @@
 import { Client, Cossack, Page, Server } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { Button } from '@cossackframework/ui';
-import { incrementVersion } from '../store';
+import { incrementVersion } from '../../../stores/cache-regression';
 
 @Page({ transport: 'http' })
 export class CacheRegressionEdit extends Cossack {
@@ -28,3 +28,5 @@ export class CacheRegressionEdit extends Cossack {
         `;
     }
 }
+
+export default CacheRegressionEdit;

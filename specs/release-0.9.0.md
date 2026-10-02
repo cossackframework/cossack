@@ -86,6 +86,33 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-bundled-route-exports-2026-10-03"></a>
+### Codex continuation: bundled route export audit (2026-10-03)
+
+**Author: Codex.** Audited the framework and scaffold TypeScript route trees
+against the explicit default-export contract. Eighteen framework demo pages had
+only named class exports; they now also default-export their component. Existing
+named imports remain valid. Moved `pages/cache-regression/store.ts` to
+`stores/cache-regression.ts` and updated its two consumers: the old location
+incorrectly registered a helper module as a page.
+
+A regression test uses Vite route discovery and the shared AST inspector to check
+all TypeScript pages, layouts, and loading modules in both trees. Functional API
+handlers retain their separate contract; Markdown retains generated exports.
+The check rejects missing or unresolved default classes without executing page
+code or accessing external services. It also catches future helpers accidentally
+placed in the route tree.
+
+The full framework build and SSG output passed. Targeted contract checks passed
+(2 tests), followed by all 614 framework tests. Root `pnpm tsc --noEmit` and all
+11 package checks via `pnpm typecheck` passed after the build.
+An initial package type-check overlapped declaration regeneration and saw missing
+framework modules; the final verification runs after the build to avoid that race.
+
+**12/58 tasks remain checked.** This fixes shipped examples and strengthens route
+contract verification; it does not complete RT-25 or prove every demo's external
+integration. Continue selected recipe requirements and runtime acceptance.
+
 <a id="codex-durable-state-capability-2026-10-03"></a>
 ### Codex continuation: durable page capability (2026-10-03)
 

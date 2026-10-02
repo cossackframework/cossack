@@ -14,3 +14,5 @@ export class ContextDemoPage extends Cossack {
         `;
     }
 }
+
+export default ContextDemoPage;

@@ -98,3 +98,5 @@ export class LocalizationDemo extends Cossack {
         `;
     }
 }
+
+export default LocalizationDemo;

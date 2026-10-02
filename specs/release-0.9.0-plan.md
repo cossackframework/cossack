@@ -7,7 +7,9 @@ and the evidence needed to finish it. The implementation baseline is commit
 
 Read this document with [the handoff](./handoff-0.9.0.md),
 [the release checklist](./release-0.9.0.md), and [the architecture](./architecture.md).
-The checklist records scope and completion. This plan explains the work.
+The checklist records scope and completion. This plan explains the work. Bundled
+framework and scaffold route trees now have a static default-export contract test;
+keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
 The latest [Codex upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)

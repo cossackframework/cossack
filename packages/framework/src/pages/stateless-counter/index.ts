@@ -38,3 +38,5 @@ export class StatelessCounter extends Cossack {
         `;
     }
 }
+
+export default StatelessCounter;

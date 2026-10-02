@@ -38,3 +38,5 @@ export class Contact extends Cossack {
         `;
     }
 }
+
+export default Contact;

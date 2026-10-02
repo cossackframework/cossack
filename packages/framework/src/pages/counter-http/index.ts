@@ -44,3 +44,5 @@ export class CounterHttp extends Cossack {
         `;
     }
 }
+
+export default CounterHttp;

@@ -25,3 +25,5 @@ export class CSSClassDemo extends Cossack {
         `;
     }
 }
+
+export default CSSClassDemo;
