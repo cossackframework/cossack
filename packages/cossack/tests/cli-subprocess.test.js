@@ -384,6 +384,16 @@ describe('routes and inspection', () => {
     expect(checked.stdout).not.toContain('PRIVATE_LOADER');
   });
 
+  it('check routes fails when declared member precedence is unknown', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), '@Page() export default class P { [unknownName]() { return 1; } }');
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(1);
+    const result = parseEnvelope(checked.stdout);
+    expect(result.diagnostics.map(d => d.code)).toContain('COSSACK_ROUTE_DISPATCH_UNKNOWN');
+    expect(result.data.routes[0].declarationDispatch).toMatchObject({ status: 'unknown', members: [] });
+  });
+
   it('checks relative base declarations without evaluating their modules', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
     await fs.writeFile(path.join(tmp, 'src/base.ts'), "throw new Error('must not execute'); export default class Base extends Cossack { @Server() load() { return 1; } }");

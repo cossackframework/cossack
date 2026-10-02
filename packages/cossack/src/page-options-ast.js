@@ -170,11 +170,13 @@ export async function extractMethodClassificationsFromAst(code, file = 'page.ts'
   if (!facts) return { methods: [], reason: 'The compiler did not identify the selected page class.' };
   return {
     method: 'compiler',
+    className: facts.name,
     inheritance: facts.inheritance,
     members: facts.members,
+    membersComplete: facts.membersComplete,
     inheritedDeclarations: facts.inheritance.bases.flatMap(name => {
       const base = result.classes.find(cls => cls.name === name);
-      return base ? [{ className: name, members: base.members, methods: base.methods.map(fact => ({ ...fact, source: { ...fact.source, file } })) }] : [];
+      return base ? [{ className: name, source: file, members: base.members, membersComplete: base.membersComplete, methods: base.methods.map(fact => ({ ...fact, source: { ...fact.source, file } })) }] : [];
     }),
     methods: facts.methods.map(fact => ({
       ...fact,

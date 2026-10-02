@@ -104,6 +104,9 @@ async function checkRoutes(ctx) {
       }
     }
     for (const page of effective.pages) {
+      if (page.declarationDispatch.status === 'unknown') {
+        add('COSSACK_ROUTE_DISPATCH_UNKNOWN', 'Declared member precedence could not be resolved statically.', page.source);
+      }
       if (page.inheritance.status === 'unresolved') {
         add('COSSACK_ROUTE_INHERITANCE_UNKNOWN', 'Base declarations could not be resolved statically.', page.source);
       }

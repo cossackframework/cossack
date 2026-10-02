@@ -167,7 +167,8 @@ Checks return a nonzero exit code when static options are unknown, compiler
 method facts are unavailable, or a transport is invalid. JSON diagnostics use
 `COSSACK_ROUTE_OPTIONS_UNKNOWN`, `COSSACK_ROUTE_METHODS_UNKNOWN`, or
 `COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Unresolved base
-declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Inspection can
+declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared member
+precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
 still succeed for those files so an agent can examine the available facts.
 
 Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
@@ -181,8 +182,12 @@ Local base declarations appear under `inheritedDeclarations`, grouped by declari
 class with compiler facts and source locations. They are not flattened into own
 methods or presented as a resolved runtime dispatch table. Relative TypeScript imports and explicit re-exports resolve through source files.
 Package imports, path aliases, wildcard exports, dynamic bases, and ambiguous
-extensionless paths remain unresolved. Resolving declarations does not establish
-effective inherited runtime dispatch.
+extensionless paths remain unresolved. `declarationDispatch` resolves declared instance-field and prototype precedence,
+including overrides and accessor replacement, with declaring owners and sources.
+Unknown computed keys, unresolved bases, or constructor parameter properties
+produce an unknown result. Erased TypeScript `declare` fields are excluded. Constructor,
+decorator, initializer side effects, and later property mutations are not evaluated;
+this is not a guarantee of runtime method availability.
 
 These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior

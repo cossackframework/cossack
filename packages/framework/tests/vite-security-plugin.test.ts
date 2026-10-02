@@ -2299,6 +2299,12 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it('excludes erased declare fields and marks constructor parameter properties incomplete', () => {
+    const result = inspectCompilerMethods('@Page() class Demo { declare value: string; constructor(public value2: string) {} }', 'members.ts');
+    expect(result.classes[0].members).toEqual([]);
+    expect(result.classes[0].membersComplete).toBe(false);
+  });
+
   it('records fields, accessors, static and private members needed for dispatch resolution', () => {
     const result = inspectCompilerMethods(`@Page() class Demo {
       value = 1;

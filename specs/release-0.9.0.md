@@ -86,6 +86,39 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-declaration-dispatch-2026-10-03"></a>
+### Codex continuation: declared member precedence (2026-10-03)
+
+**Author: Codex.** Effective route inspection now includes `declarationDispatch`,
+using compiler member facts across local and imported bases. It resolves child
+prototype overrides, same-class getter/setter pairs, replacement of inherited
+accessor descriptors, and instance fields that shadow prototype members. Derived
+fields replace base fields. Static/private members are excluded. Entries identify
+the declaring class and source file.
+
+Tests compare these precedence rules with actual JavaScript class instances,
+including a base field shadowing a child method and a child setter removing an
+inherited getter. A compiler-backed imported-base route fixture verifies model
+integration. Erased TypeScript `declare` fields do not participate. Constructor
+parameter properties, computed names, missing member facts, and unresolved bases
+produce unknown results. `check routes` fails with
+`COSSACK_ROUTE_DISPATCH_UNKNOWN` when declaration precedence is unknown.
+
+This is explicitly declaration precedence, not proof of constructor, decorator,
+initializer side effects, later property mutation, or framework RPC installation.
+Those runtime effects must not be inferred from a resolved static result.
+
+Verification: compiler suite **150 passed**; dispatch/route/inspection suites
+**55 passed**; declaration generation, root TypeScript, and all **11 package type
+checks passed**. The complete CLI subprocess suite passed **38 tests**, including
+failing diagnostics for unknown declared precedence.
+
+**11/58 tasks remain checked; CLI-04 remains open.** Next integrate binding-aware
+capabilities and verify the complete grouped-route/layout/service fixture,
+including actual framework inherited RPC behavior and explicitly unsupported
+runtime mutations. Static declaration precedence now has runtime-language tests;
+the larger framework acceptance requirement remains open.
+
 <a id="codex-member-facts-2026-10-02"></a>
 ### Codex continuation: compiler member facts for dispatch (2026-10-02)
 

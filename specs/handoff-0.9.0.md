@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex member facts (2026-10-02):** read
+> **Latest checkpoint — Codex declaration dispatch (2026-10-03):** read
+> [member precedence and verification scope](./release-0.9.0.md#codex-declaration-dispatch-2026-10-03).
+> Route inspection resolves declared field/prototype/accessor precedence with
+> owners and sources. Unknown precedence makes route checks fail. JavaScript
+> fixtures verify the rules; runtime mutations and framework RPC installation
+> remain outside this static result. **11/58 tasks remain checked.** Continue
+> binding-aware capabilities and complete framework inspection acceptance.
+
+> **Previous checkpoint — Codex member facts (2026-10-02):** read
 > [member inventory and dispatch continuation](./release-0.9.0.md#codex-member-facts-2026-10-02).
 > Compiler/route metadata now distinguishes fields, methods, accessors, static
 > and private members, and unknown computed names, including imported bases.

@@ -1231,6 +1231,7 @@ export interface CompilerClassFacts {
   name: string;
   inheritance: { status: 'resolved' | 'unresolved'; bases: string[] };
   members: CompilerMemberFact[];
+  membersComplete: boolean;
   /** Own declarations; inheritance lists declaring classes without guessing dispatch. */
   methods: CompilerMethodFact[];
 }
@@ -1298,8 +1299,9 @@ export function inspectCompilerMethods(code: string, id: string): {
       classes.push({
         name: className,
         inheritance: inheritanceFor(originalClass),
+        membersComplete: !(cls.body?.body ?? []).some((member: any) => member.kind === 'constructor' && member.value?.params?.some((parameter: any) => parameter.type === 'TSParameterProperty')),
         members: (cls.body?.body ?? [])
-          .filter((member: any) => ['MethodDefinition', 'PropertyDefinition'].includes(member.type) && member.kind !== 'constructor')
+          .filter((member: any) => ['MethodDefinition', 'PropertyDefinition'].includes(member.type) && member.kind !== 'constructor' && !member.declare)
           .map((member: any): CompilerMemberFact => ({
             name: member.computed && member.key?.type !== 'Literal' ? null : memberKeyName(member.key),
             kind: member.type === 'PropertyDefinition' ? 'field' : member.kind === 'get' ? 'get' : member.kind === 'set' ? 'set' : 'method',

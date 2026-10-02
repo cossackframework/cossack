@@ -1,3 +1,4 @@
+import { resolveDeclarationDispatch } from './member-dispatch.js';
 import { resolveImportedInheritance } from './inheritance.js';
 import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
@@ -263,6 +264,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
       serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
       clientMethods: methods.methods?.filter(entry => entry.kind === 'client') ?? [],
       strippedMethods: methods.methods?.filter(entry => entry.kind === 'stripped') ?? [],
+      declarationDispatch: resolveDeclarationDispatch(methods, page.filePath),
       members: methods.members ?? [],
       inheritance: methods.inheritance ?? { status: 'unresolved', bases: [] },
       inheritedDeclarations: methods.inheritedDeclarations ?? [],

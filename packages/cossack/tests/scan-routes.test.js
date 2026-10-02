@@ -231,6 +231,14 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(page.ssg).toBe(false);
   });
 
+  it('resolves declared field/prototype precedence from compiler facts', async () => {
+    mk('src/shared/base.ts', 'export default class Base extends Cossack { action = () => 1; }');
+    mk('src/pages/dispatch/index.ts', "import Base from '../../shared/base.js'; @Page() export default class P extends Base { @Client() action() { return 2; } }");
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.declarationDispatch.status).toBe('resolved');
+    expect(page.declarationDispatch.members.find(member => member.name === 'action')).toEqual({ name: 'action', owner: 'Base', source: '/src/shared/base.ts', kind: 'field' });
+  });
+
   it('resolves relative imported bases through aliases and explicit re-exports', async () => {
     mk('src/shared/base.ts', `
       export class Base extends Cossack { @Server() load() { return 'private'; } }
