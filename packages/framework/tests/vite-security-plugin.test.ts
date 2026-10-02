@@ -2299,6 +2299,40 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it('classifies namespace decorators and strips server function fields and validators', () => {
+    const code = `
+import * as Core from '@cossackframework/core';
+@Core.Page()
+class Demo extends Core.Cossack {
+  @Core.Client() local() { return 'CLIENT_NAMESPACE'; }
+  @Core.Server({ input: { parse: () => 'SECRET_VALIDATOR' } }) remote = () => 'SECRET_NAMESPACE';
+  @Core.Server() regular() { return 'SECRET_REGULAR'; }
+  render() { return 'view'; }
+}`;
+    const result = inspectCompilerMethods(code, 'namespace.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].methods).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'local', clientBody: 'retained', rpc: null }),
+      expect.objectContaining({ name: 'remote', clientBody: 'stripped', rpc: 'explicit' }),
+      expect.objectContaining({ name: 'regular', clientBody: 'stripped', rpc: 'explicit' }),
+    ]));
+    const transformed = transformCossackClass(code, 'namespace.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(transformed).toContain('CLIENT_NAMESPACE');
+    expect(transformed).not.toContain('SECRET_NAMESPACE');
+    expect(transformed).not.toContain('SECRET_VALIDATOR');
+    expect(transformed).not.toContain('SECRET_REGULAR');
+    expect(transformed).toContain("__cossack_proxies?.get('remote')");
+    expect(transformed).toContain("__cossack_proxies?.get('regular')");
+  });
+
+  it('rejects unsupported server accessors behind namespace aliases', () => {
+    const code = `import * as Core from '@cossackframework/core';
+      @Core.Page() class Demo { @Core.Server() get value() { return 'SECRET'; } }`;
+    expect(inspectCompilerMethods(code, 'namespace.ts').diagnostics).toHaveLength(1);
+    expect(() => transformCossackClass(code, 'namespace.ts', isClientSafeMethod, new Set(['render']), false))
+      .toThrow('@Server requires');
+  });
+
   it('matches client bodies and RPC registration without executing source', () => {
     const code = `
 @Page()

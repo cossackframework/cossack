@@ -207,6 +207,20 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     }
   });
 
+  it('uses namespace decorators consistently for options and compiler methods', async () => {
+    mk('src/pages/namespace/index.ts', `
+      import * as Core from '@cossackframework/core';
+      @Core.Page({ transport: 'sse' }) export default class P {
+        @Core.Client() local() { return 1; }
+        @Core.Server() remote = () => 2;
+      }`);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.methodExtraction.method).toBe('compiler');
+    expect(page.transport).toBe('sse');
+    expect(page.serverMethods.map(m => m.name)).toEqual(['remote']);
+    expect(page.clientMethods.map(m => m.name)).toEqual(['local']);
+  });
+
   it('uses compiler facts for helpers, automatic RPC, retained fields, and stripped methods', async () => {
     mk('src/pages/compiler/index.ts', `
       @Page() export default class P {

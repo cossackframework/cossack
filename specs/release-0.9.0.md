@@ -86,6 +86,33 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-namespace-methods-2026-10-02"></a>
+### Codex review: namespace method decorators (2026-10-02)
+
+**Author: Codex.** Found a compiler/inspection mismatch during CLI-04 work:
+namespace `@Core.Page` decorators discovered framework classes, but method
+classification did not normalize `@Core.Server` or `@Core.Client`. A server
+function field could consequently retain its implementation in the browser,
+and ordinary server methods lacked explicit RPC classification.
+
+Method collection now resolves named and namespace decorator imports from the
+AST before classification. Both compilation and the shared inspection API use
+these normalized facts. Tests verify retained client methods, stripped server
+methods/function fields/input validators, RPC proxies, rejection of unsupported
+server accessors, and route inspection through the published compiler export.
+Computed decorator syntax was excluded after the parser rejected the attempted
+fixture; this change claims ordinary namespace member decorators only.
+
+Verification:
+
+- Framework security-plugin suite: **145 passed**.
+- CLI route-model suite: **27 passed**.
+- Framework declaration generation and `pnpm tsc --noEmit`: passed.
+
+**11/58 tasks remain checked; CLI-04 remains open.** GLM should continue inherited
+project facts, macro source mapping, and scaffold/capability integration. This
+fix is necessary compiler parity, not proof of complete project inspection.
+
 <a id="codex-route-checks-2026-10-02"></a>
 ### Codex continuation: static route checks (2026-10-02)
 

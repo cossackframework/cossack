@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex route checks (2026-10-02):** read
+> **Latest checkpoint — Codex namespace decorators (2026-10-02):** read
+> [the compiler correction and verification](./release-0.9.0.md#codex-namespace-methods-2026-10-02).
+> Namespace server methods/function fields now receive the same stripping and RPC
+> classification as named imports. Namespace client methods remain in the browser.
+> Compiler tests: 145 passed; route tests: 27 passed; type checks passed.
+> **11/58 tasks remain checked.** Continue CLI-04's project model and source maps.
+
+> **Previous checkpoint — Codex route checks (2026-10-02):** read
 > [static route checks and remaining acceptance](./release-0.9.0.md#codex-route-checks-2026-10-02).
 > `check routes` now fails for unknown metadata or invalid transports, with
 > source-bearing diagnostics. Inheritance and runtime remain explicitly unchecked.

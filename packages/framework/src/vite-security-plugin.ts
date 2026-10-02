@@ -904,14 +904,26 @@ interface AstMethod {
 function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   const methods: AstMethod[] = [];
   const aliases = new Map<string, string>();
+  const namespaces = new Set<string>();
   for (const statement of program.body ?? []) {
     if (statement.type !== 'ImportDeclaration' || !String(statement.source?.value).startsWith('@cossackframework/')) continue;
     for (const specifier of statement.specifiers ?? []) {
       if (specifier.imported?.name) aliases.set(specifier.local.name, specifier.imported.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
     }
   }
-  const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) =>
-    sourceSlice(code, d).replace(/^@([\w$]+)/, (_match: string, name: string) => `@${aliases.get(name) ?? name}`));
+  const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) => {
+    const expression = d.expression;
+    const callee = expression?.type === 'CallExpression' ? expression.callee : expression;
+    let canonical: string | undefined;
+    if (callee?.type === 'Identifier') canonical = aliases.get(callee.name);
+    if (callee?.type === 'MemberExpression' && namespaces.has(callee.object?.name)) {
+      canonical = !callee.computed && callee.property?.type === 'Identifier'
+        ? callee.property.name
+        : undefined;
+    }
+    return canonical ? `@${canonical}${code.slice(callee.end, d.end)}` : sourceSlice(code, d);
+  });
   for (const member of cls?.body?.body ?? []) {
     const decorators = decoratorSources(member);
     const serverOnly = decorators.some((d) => /@(?:Server|__CossackServerResource)\b/.test(d));
@@ -1533,7 +1545,7 @@ function stripServerActionInput(code: string): string {
         if (call?.type !== 'CallExpression') continue;
         const callee = call.callee;
         if (!(callee.type === 'Identifier' && aliases.has(callee.name)) &&
-            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && callee.property?.name === 'Server')) continue;
+            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && !callee.computed && callee.property?.name === 'Server')) continue;
         const argument = call.arguments[0];
         if (!argument) continue;
         if (argument.type !== 'ObjectExpression' || argument.properties.some((p: any) => p.type !== 'Property' || p.computed)) {
