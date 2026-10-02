@@ -695,10 +695,8 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch {
         return c.text('Invalid WebSocket route params', 400);
       }
-      const expectedTarget = await resolveSseScopeKey(
-        withRuntimeRouteParams(c, routeParams),
-        pageOptions,
-      );
+      const componentContext = withRuntimeRouteParams(c, routeParams);
+      const expectedTarget = await resolveSseScopeKey(componentContext, pageOptions);
       if (target !== expectedTarget) return c.text('Invalid WebSocket scope', 403);
 
       const pathname = c.req.query('pathname') || '/';
@@ -712,10 +710,28 @@ export function createApp(options: CreateAppOptions = {}) {
         user,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const instance = createInstance(ComponentClass) as Cossack;
-          await instance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
-          instance._render();
-          return instance;
+          const rootScope = createRootServiceScope();
+          rootScope.bindRequest({ context: componentContext, user, env: c.env });
+          let instance: Cossack | undefined;
+          try {
+            let activeScope = rootScope;
+            for (const layoutPath of getLayoutStack(componentPath)) {
+              const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
+              activeScope = createLayoutServiceScope(activeScope, Layout, {
+                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: expectedTarget,
+              });
+              activeScope.bindRequest({ context: componentContext, user, env: c.env });
+            }
+            instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
+            instance._ownServiceScopeLifetime(rootScope);
+            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
+            instance._render();
+            return instance;
+          } catch (error) {
+            try { await instance?.destroyAsync(); }
+            finally { await rootScope.disposeAsync(); }
+            throw error;
+          }
         },
       });
     });

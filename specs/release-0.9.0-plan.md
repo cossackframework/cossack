@@ -950,6 +950,13 @@ recipe configuration. Node HTTP SSR executes from the built app; Desktop rejects
 SSE. Deno runtime and Electron launch are not covered by these build tests.
 Generated Node entries still lack WebSocket adapter attachment; reconcile that
 with the capability profile and security/lifecycle requirements before completion.
+The guarded framework WebSocket factory now creates nested layout service scopes,
+uses original page params during bootstrap, and assigns scope-tree cleanup to the
+page without changing service-state ownership. Next wire Node through this hook,
+then make adapter eviction/shutdown await component destruction. Test concurrent
+creation for the same runtime key and real authenticated connections from a
+generated app. Factory tests alone do not prove transport lifecycle behavior.
+
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.

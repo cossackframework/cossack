@@ -86,6 +86,38 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-runtime-websocket-scopes-2026-10-03"></a>
+### Codex review: runtime WebSocket service scopes (2026-10-03)
+
+**Author: Codex.** Reviewing the prerequisite for Node realtime integration found
+that the framework's runtime WebSocket factory constructed a page without its
+ancestor layout service scopes. Bootstrap also received the WebSocket URL context
+instead of the original page parameters used by scope authorization.
+
+The factory now builds the root and nested layout scopes, binds authenticated
+user/context/environment to each, and injects from the innermost scope. The page
+owns cleanup of the scope tree separately from service-state ownership, so layout
+services are not incorrectly serialized as page-owned state. Constructor,
+bootstrap, or render failures dispose the tree; successful pages dispose it when
+`destroyAsync()` runs. Repeated destruction is safe.
+
+Verification: `pnpm --filter @cossackframework/core build` passed;
+`pnpm --filter @cossackframework/core test` passed (673 tests);
+`pnpm --filter @cossackframework/framework exec vitest run` passed (608 tests);
+`pnpm tsc --noEmit` and `pnpm typecheck` passed (all 11 package configurations).
+The three new factory tests cover nested service shadowing, page parameters,
+auth/bindings, serialization ownership, repeated cleanup, and constructor and
+bootstrap failure. They use the real router with a test transport adapter.
+
+**Completion audit: 12/58 checked, unchanged.** This is prerequisite work for
+RT-12/RT-25, not live Node WebSocket acceptance. Generated Node entries still need
+adapter wiring through the framework's guarded upgrade path. Node/Deno runtime
+entry eviction and shutdown must invoke component cleanup; concurrent creation
+for a shared runtime key also needs coverage. Do not attach the legacy Node
+adapter as-is: it independently constructs context/components and bypasses the
+shared router middleware and service-scope path. Retain origin/auth/scope checks,
+exercise real connections and shutdown, and then reconcile advertised capabilities.
+
 <a id="codex-generated-runtime-builds-2026-10-03"></a>
 ### Codex continuation: generated Node/Deno/Desktop builds (2026-10-03)
 

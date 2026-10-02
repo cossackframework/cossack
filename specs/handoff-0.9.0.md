@@ -2,7 +2,18 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex generated runtime builds (2026-10-03):** read
+> **Latest checkpoint — Codex runtime WebSocket scopes (2026-10-03):** read
+> [scope creation and cleanup fixes](./release-0.9.0.md#codex-runtime-websocket-scopes-2026-10-03).
+> **Author: Codex.** The guarded runtime WebSocket factory now constructs nested
+> layout service scopes and bootstraps with original page parameters, user, and
+> bindings. Page destruction disposes the whole tree; failed construction cleans
+> up too. **12/58 tasks remain checked; RT-12 and RT-25 remain open.** Core: 673
+> tests; framework: 608 tests; root and all package type checks passed.
+> Next: route Node upgrades through the guarded framework hook, add adapter
+> eviction/shutdown disposal and concurrent creation coverage, then verify real
+> generated Node WebSocket connections. The legacy adapter is not wired in.
+
+> **Previous checkpoint — Codex generated runtime builds (2026-10-03):** read
 > [real configuration builds and Node startup correction](./release-0.9.0.md#codex-generated-runtime-builds-2026-10-03).
 > **Author: Codex.** Generated Node/Deno and Desktop side-target builds now have
 > acceptance coverage; Node's built HTTP app is exercised. Fixed imports crashing

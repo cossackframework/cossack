@@ -172,6 +172,7 @@ function attachTemplateOwner(value: unknown, owner: CossackElement): void {
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     private _serviceScope?: ServiceScope;
     private _ownsServiceScope = false;
+    private _serviceScopeLifetime?: ServiceScope;
     private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
     private _cleanupCompletion?: Promise<unknown[]>;
     private _serverResources = new Map<string, ServerResourceEntry>();
@@ -632,6 +633,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     /** @internal Used by renderer-created descendants to inherit their parent scope. */
     public _getServiceScope(): ServiceScope | undefined {
         return this._serviceScope;
+    }
+
+    /** @internal Own cleanup of a runtime scope tree without claiming its service state. */
+    public _ownServiceScopeLifetime(scope: ServiceScope): void {
+        this._serviceScopeLifetime = scope;
     }
 
     /** @internal True when legacy constructor DI must not flatten a scoped service. */
@@ -2528,14 +2534,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // component's state) can be GC'd once the component is gone.
             this._storeProxies.clear();
         }
-        if (this._ownsServiceScope) {
-            const scope = this._serviceScope;
+        if (this._ownsServiceScope || this._serviceScopeLifetime) {
+            const scope = this._serviceScopeLifetime ?? this._serviceScope;
             // Keep request facilities available until asynchronous
             // component/descendant hooks have finished using services.
             release(() => pending.length
                 ? Promise.all(pending).then(() => scope?.disposeAsync())
                 : scope?.disposeAsync());
             this._ownsServiceScope = false;
+            this._serviceScopeLifetime = undefined;
         }
         this._serverResources.clear();
         const syncErrors = errors.slice();
