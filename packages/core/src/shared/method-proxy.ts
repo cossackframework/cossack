@@ -76,6 +76,9 @@ function extractFilesFromArg(arg: any, files: Map<string, File>): any {
     if (arg instanceof FileList) {
         return Array.from(arg).map(file => extractFilesFromArg(file, files));
     }
+    // Dates serialize to ISO strings through JSON on every transport; keep
+    // the value itself so the upload boundary matches WS/service behavior.
+    if (arg instanceof Date) return arg;
     if (Array.isArray(arg)) {
         return arg.map(item => extractFilesFromArg(item, files));
     }
@@ -351,17 +354,33 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             let requestState: Record<string, any> = {};
             let payload: unknown[] = args;
             let request: Promise<Response>;
+            // Validate the RAW arguments before the walker runs: the upload
+            // walker replaces DOM/Event values with null and Files with
+            // references by design, but would silently EMPTY Maps, Sets, and
+            // class instances (for..in copies nothing). Reject those with the
+            // original path so every transport behaves identically — and
+            // reject the CALL rather than throwing synchronously, matching
+            // the realtime proxies' contract.
+            const handledByUpload = (value: object) =>
+                value instanceof File || value instanceof FileList ||
+                value instanceof Node || value instanceof Event || value === (globalThis as any);
+            const rawUnsupported = describeUnsupportedValue(args, 'payload', new WeakSet(), { handled: handledByUpload });
+            if (rawUnsupported) {
+                const { cleanup: failClean, succeed } = createCallLifecycle(component, name);
+                succeed(); // serialization never dispatched a mutation; loading settles
+                cleanup();
+                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize arguments or state for '${name}': unsupported value at ${rawUnsupported}.`, name);
+            }
             try {
                 const files = new Map<string, File>();
                 payload = args.map(arg => extractFilesFromArg(arg, files));
                 const liveState = component.getPublicState();
                 requestState = liveState;
-                // JSON.stringify silently drops functions and throws only on
-                // cycles/bigints; reject both before dispatch with the path.
-                const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(liveState, 'state');
+                const unsupported = describeUnsupportedValue(liveState, 'state');
                 if (unsupported) {
                     throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                        `Cannot serialize arguments or state for '${name}': unsupported value at ${unsupported}.`);
+                        `Cannot serialize state for '${name}': unsupported value at ${unsupported}.`);
                 }
                 requestState = snapshotTransportState(liveState);
                 if (files.size) {
@@ -408,10 +427,16 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     });
                 }
             } catch (cause) {
-                const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
-                request = Promise.reject(new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize arguments or state for '${name}'` +
-                    `${where ? `: unsupported value at ${where}` : ''}.`, { cause }));
+                // Pre-dispatch validation already produced a path-accurate
+                // diagnostic; never bury it under a generic message.
+                if (cause instanceof RpcError && cause.code === 'COSSACK_RPC_SERIALIZATION_FAILED') {
+                    request = Promise.reject(cause);
+                } else {
+                    const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
+                    request = Promise.reject(new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                        `Cannot serialize arguments or state for '${name}'` +
+                        `${where ? `: unsupported value at ${where}` : ''}.`, { cause }));
+                }
             }
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});

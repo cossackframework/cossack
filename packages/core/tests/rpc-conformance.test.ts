@@ -434,6 +434,38 @@ describe('serialization diagnostics by value path (RT-01)', () => {
     });
 });
 
+describe('upload boundary normalization (RT-01 audit)', () => {
+    it('rejects Maps and Sets in raw arguments with the original path', async () => {
+        const component = makeClientComponent();
+        (globalThis as any).window = { location: { search: '' } };
+        const fetchMock = vi.fn(async () => new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
+        vi.stubGlobal('fetch', fetchMock);
+        Reflect.defineMetadata('cossack:server-methods', { save: {} }, component.constructor);
+        Reflect.defineMetadata('page:options', { transport: 'http' }, component.constructor);
+        component.getInitialStateFromWindow = () => ({ componentRouteId: 'cmp_x', scopeKey: 'user:anonymous' });
+        proxyHttpMethods(component, [{ name: 'save' }]);
+
+        await expect(Promise.resolve((component as any).save({ lookup: new Map([['a', 1]]) }))).rejects.toMatchObject({
+            code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            message: expect.stringContaining('payload[0].lookup (Map)'),
+        });
+        await expect(Promise.resolve((component as any).save(new Set([1]))))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED' });
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        delete (globalThis as any).window;
+        vi.unstubAllGlobals();
+    });
+
+    it('handled options exempt values from the shared walker', () => {
+        class FakeFile { }
+        const handled = (value: object) => value instanceof FakeFile;
+        expect(describeUnsupportedValue({ attachment: new FakeFile() }, '', new WeakSet(), { handled })).toBeNull();
+        expect(describeUnsupportedValue({ lookup: new Map() }, '', new WeakSet(), { handled }))
+            .toBe('lookup (Map)');
+    });
+});
+
 describe('rpc protocol helpers', () => {
     it('readRpcStream still enforces the frame contract for correlated frames', async () => {
         const response = new Response(

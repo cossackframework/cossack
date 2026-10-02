@@ -119,13 +119,19 @@ export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<
  * cross the RPC boundary. Returns null when the value is transportable.
  * Paths use dot/bracket notation from the root (e.g. `items[2].onChange`).
  */
-export function describeUnsupportedValue(value: unknown, path = '', seen = new WeakSet<object>()): string | null {
+export function describeUnsupportedValue(
+    value: unknown,
+    path = '',
+    seen = new WeakSet<object>(),
+    options: { handled?: (value: object) => boolean } = {},
+): string | null {
     if (value === null || value === undefined) return null;
     const type = typeof value;
     if (type === 'function') return `${path || '(root)'} (function)`;
     if (type === 'symbol') return `${path || '(root)'} (symbol)`;
     if (type === 'bigint') return `${path || '(root)'} (bigint)`;
     if (type !== 'object') return null;
+    if (options.handled?.(value as object)) return null; // transport handles it specially
     if (seen.has(value as object)) return `${path || '(root)'} (cyclic reference)`;
     if (value instanceof WeakMap || value instanceof WeakSet || value instanceof WeakRef) {
         return `${path || '(root)'} (weak collection)`;
@@ -137,13 +143,13 @@ export function describeUnsupportedValue(value: unknown, path = '', seen = new W
     try {
         if (Array.isArray(value)) {
             for (let index = 0; index < value.length; index++) {
-                const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen);
+                const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen, options);
                 if (failure) return failure;
             }
             return null;
         }
         for (const key of Object.keys(value as Record<string, unknown>)) {
-            const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen);
+            const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen, options);
             if (failure) return failure;
         }
         return null;
