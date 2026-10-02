@@ -884,6 +884,12 @@ interface AstMethod {
   fieldValueStart?: number;
   fieldKind?: 'arrow' | 'function';
   fieldIsAsync?: boolean;
+  /** Declared return-type annotation text (no colon), for RpcCall rewrites. */
+  returnTypeText?: string;
+  /** Annotation span INCLUDING the leading colon; replaced by the call type. */
+  returnTypeStart?: number;
+  returnTypeEnd?: number;
+  isGenerator?: boolean;
 }
 
 /**
@@ -928,6 +934,12 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         hasServerDecorator: decorators.some((d: string) => /@(?:Server|__CossackServerResource)\b/.test(d)),
         bodyStart: body.start,
         bodyEnd: body.end,
+        // Client-side result typing (RT-01): the original declared return
+        // type's text and span, used to rewrite the signature to RpcCall.
+        returnTypeText: fn.returnType ? typeAnnotationText(code, fn.returnType) : undefined,
+        returnTypeStart: fn.returnType?.start,
+        returnTypeEnd: fn.returnType?.end,
+        isGenerator: !!fn.generator,
       });
     } else if (member.type === 'PropertyDefinition') {
       const name = memberKeyName(member.key);
@@ -950,6 +962,10 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         fieldValueStart: value.start,
         fieldKind: kind,
         fieldIsAsync: !!value.async,
+        returnTypeText: value.returnType ? typeAnnotationText(code, value.returnType) : undefined,
+        returnTypeStart: value.returnType?.start,
+        returnTypeEnd: value.returnType?.end,
+        isGenerator: !!value.generator,
       });
     }
   }
@@ -1381,6 +1397,41 @@ export function injectAutomaticServerMethodMetadata(
  *
  * Exported for unit testing.
  */
+/** Text of a return-type annotation (without the leading colon). */
+function typeAnnotationText(code: string, returnType: any): string | undefined {
+  const annotation = returnType?.typeAnnotation;
+  if (!annotation || annotation.start === undefined || annotation.end === undefined) return undefined;
+  return code.slice(annotation.start, annotation.end);
+}
+
+/**
+ * Map a @Server method's declared return type to the client RPC call type.
+ * Recognizes AsyncGenerator<Y, R[, N]> (any arity via textual prefix),
+ * AsyncIterableIterator<Y>, and Promise<R>. Returns undefined when the
+ * annotation is absent or unrecognized — those keep their declared types.
+ */
+export function clientCallType(method: {
+  returnTypeText?: string;
+  isGenerator?: boolean;
+}): string | undefined {
+  const text = method.returnTypeText?.trim();
+  if (!text) return undefined;
+  const generator = text.match(/^AsyncGenerator\s*<([\s\S]*),([\s\S]*)(?:,[\s\S]*)?>$/);
+  if (generator) {
+    return `RpcCall<${generator[2].trim()}, ${generator[1].trim()}>`;
+  }
+  const oneArgGenerator = text.match(/^AsyncGenerator\s*<([\s\S]+)>$/);
+  if (oneArgGenerator) {
+    // AsyncGenerator<Y> — TReturn defaults to `any` in TypeScript.
+    return `RpcCall<any, ${oneArgGenerator[1].trim()}>`;
+  }
+  const iterable = text.match(/^AsyncIterableIterator\s*<([\s\S]+)>$/);
+  if (iterable) return `RpcCall<any, ${iterable[1].trim()}>`;
+  const promise = text.match(/^Promise\s*<([\s\S]+)>$/);
+  if (promise) return `RpcCall<${promise[1].trim()}, never>`;
+  return undefined;
+}
+
 export function transformCossackClass(
   code: string,
   id: string,
@@ -1417,6 +1468,16 @@ export function transformCossackClass(
     for (const m of methods) {
       if (preserved.has(m.name)) continue;
 
+      // Rewrite the declared return type to the client call contract:
+      // `AsyncGenerator<Y, R>` becomes `RpcCall<R, Y>` and `Promise<R>`
+      // becomes `RpcCall<R, never>`, so client code awaits/iterates the
+      // proxy with precise result types. Methods without an explicit,
+      // recognized annotation keep their original signature.
+      const callType = m.hasServerDecorator ? clientCallType(m) : undefined;
+      if (callType && m.returnTypeStart !== undefined && m.returnTypeEnd !== undefined) {
+        replacements.push({ start: m.returnTypeStart, end: m.returnTypeEnd, replacement: `: ${callType}` });
+      }
+
       if (m.fieldValueStart !== undefined) {
         // Class field with a function value. Only strip fields explicitly
         // marked @Server — undecorated arrow fields are commonly used as event
@@ -1451,6 +1512,15 @@ export function transformCossackClass(
   }
 
   if (replacements.length === 0) return code;
+
+  // The rewritten signatures reference RpcCall; ensure the emitted module has
+  // a type-only import available (the bundler erases it in production).
+  if (replacements.some(r => r.replacement.startsWith(': RpcCall'))) {
+    const firstImport = program.body.find((s: any) => s.type === 'ImportDeclaration');
+    const anchor = firstImport ? firstImport.end : 0;
+    const importText = `import type { RpcCall } from '@cossackframework/core';\n`;
+    replacements.push({ start: anchor, end: anchor, replacement: importText });
+  }
 
   // Apply in reverse offset order so earlier offsets stay valid.
   let result = code;
@@ -1513,6 +1583,15 @@ export function stripSsgGenerateStaticParams(code: string): string {
   }
 
   if (replacements.length === 0) return code;
+
+  // The rewritten signatures reference RpcCall; ensure the emitted module has
+  // a type-only import available (the bundler erases it in production).
+  if (replacements.some(r => r.replacement.startsWith(': RpcCall'))) {
+    const firstImport = program.body.find((s: any) => s.type === 'ImportDeclaration');
+    const anchor = firstImport ? firstImport.end : 0;
+    const importText = `import type { RpcCall } from '@cossackframework/core';\n`;
+    replacements.push({ start: anchor, end: anchor, replacement: importText });
+  }
   let result = code;
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);

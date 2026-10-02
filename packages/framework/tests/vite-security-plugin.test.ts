@@ -2209,3 +2209,51 @@ describe('server-only module detection', () => {
     });
   });
 });
+
+describe('client result typing (RT-01)', () => {
+  const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
+  function isClientSafe(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
+    return builtinMethods.has(methodName) || decorators.some(d => d.startsWith('@Client') || d.startsWith('@Shared'));
+  }
+  const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafe, BUILTIN_METHODS, false);
+
+  it('rewrites generator signatures to RpcCall<Return, Yield>', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server()
+        async *stream(): AsyncGenerator<string, number> { yield 'a'; return 1; }
+      }
+    `);
+    expect(result).toContain('stream(): RpcCall<number, string>');
+    expect(result).toContain("import type { RpcCall } from '@cossackframework/core'");
+    expect(result).not.toContain('AsyncGenerator<string, number>');
+  });
+
+  it('maps one-argument generators, async iterables, and promises', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server() async *one(): AsyncGenerator<string> { yield 'a'; }
+        @Server() async *iter(): AsyncIterableIterator<string> { yield 'a'; }
+        @Server() async plain(): Promise<boolean> { return true; }
+      }
+    `);
+    expect(result).toContain('one(): RpcCall<any, string>');
+    expect(result).toContain('iter(): RpcCall<any, string>');
+    expect(result).toContain('plain(): RpcCall<boolean, never>');
+  });
+
+  it('leaves unrecognized or missing annotations untouched', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server() async custom(): CustomResult { return result(); }
+        @Server() async untyped() { return 1; }
+      }
+    `);
+    expect(result).toContain('custom(): CustomResult');
+    expect(result).toContain('untyped()');
+    expect(result).not.toContain('RpcCall<any');
+  });
+});
