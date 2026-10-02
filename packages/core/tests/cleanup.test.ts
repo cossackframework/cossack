@@ -77,6 +77,25 @@ describe('awaitable cleanup', () => {
     expect(parentCleanup).toHaveBeenCalledTimes(1);
   });
 
+  it('disposes all server descendants replaced under the same render ID', async () => {
+    const cleaned: number[] = [];
+    class Child extends Cossack {
+      constructor(private readonly generation: number) { super(); }
+      onCleanup() { cleaned.push(this.generation); }
+    }
+    class Parent extends Cossack { protected isServer = true; }
+    const parent = new Parent();
+    const first = new Child(1);
+    const second = new Child(2);
+    first._id = second._id = 'stable-child-id';
+    parent.registerComponent(first);
+    parent.registerComponent(second);
+    expect(parent.activeComponents.get('stable-child-id')).toBe(second);
+    await parent.destroyAsync();
+    await parent.destroyAsync();
+    expect(cleaned).toEqual([1, 2]);
+  });
+
   it('keeps owned services alive for asynchronous component cleanup', async () => {
     const released = gate();
     const calls: string[] = [];

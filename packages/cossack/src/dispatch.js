@@ -113,7 +113,19 @@ export async function dispatch(argv) {
   // Preserve the downstream tool's argument syntax and ordering verbatim.
   // Framework parsing otherwise consumes values such as --mode and --port.
   if (['dev', 'build', 'start', 'ssg'].includes(command)) {
-    return def.run(rest, await buildCtx({}));
+    const toolArgs = [];
+    let json = false;
+    let forwarding = false;
+    for (const argument of rest) {
+      if (argument === '--') forwarding = true;
+      if (!forwarding && (argument === '--json' || argument === '--json=true')) json = true;
+      else if (!forwarding && argument === '--json=false') json = false;
+      else if (!forwarding && argument.startsWith('--json=')) {
+        return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+          'COSSACK_OPTION_INVALID', '--json expects true or false.');
+      } else toolArgs.push(argument);
+    }
+    return def.run(toolArgs, await buildCtx({ json }));
   }
   let parsed;
   try { parsed = parseFlags(rest); }

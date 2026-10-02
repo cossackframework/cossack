@@ -9,7 +9,7 @@ import {
     subscribeToService,
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
+import { createRpcCall, describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
     context?: Context;
@@ -335,18 +335,28 @@ export class ServiceScope {
                     timedOut = true;
                     controller.abort();
                 }, timeoutMs);
-                const request = fetch('/crpc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
-                    signal: controller.signal,
-                    body: JSON.stringify({
-                        service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
-                        action,
-                        payload,
-                        state: getServiceState(entry.instance),
-                        scopeKey: this.scopeKey,
-                    }),
-                });
+                let request: Promise<Response>;
+                try {
+                    const state = getServiceState(entry.instance);
+                    const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(state, 'state');
+                    if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                        `Cannot serialize service request: unsupported value at ${unsupported}.`);
+                    request = fetch('/crpc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
+                            action,
+                            payload,
+                            state,
+                            scopeKey: this.scopeKey,
+                        }),
+                    });
+                } catch (cause) {
+                    request = Promise.reject(cause instanceof RpcError ? cause : new RpcError(
+                        'COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize service request.', { cause }));
+                }
                 void request.catch(() => {});
                 const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
                     try {

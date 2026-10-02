@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
 
 /**
  * Pure route derivation replicated from the framework router
@@ -92,7 +93,7 @@ export function buildRouteModel(projectRoot) {
   const pagesDir = path.join(projectRoot, 'src', 'pages');
   const { pageKeys, layoutKeys } = scanPagesDir(pagesDir);
 
-  const pages = pageKeys.map((filePath) => {
+  const pages = resolvePageRouteFiles(pageKeys).map((filePath) => {
     const route = filePathToHttpRoute(filePath);
     return { filePath, route, kind: classifyRoute(route) };
   });
@@ -216,14 +217,8 @@ export function nearestSpecialPage(pageFilePath, pages, type) {
 export function buildEffectiveRouteModel(projectRoot) {
   const model = buildRouteModel(projectRoot);
   const layoutKeys = model.layouts.map((layout) => layout.filePath);
-  // Replicate computeRouteIds ordering: sorted resolved pages + layouts share
-  // one index space, so ids match the running router.
-  const resolved = model.pages.map((page) => page.filePath).sort();
-  const indexed = [...resolved, ...layoutKeys];
-  const idFor = (filePath) => {
-    const index = indexed.indexOf(filePath);
-    return index === -1 ? null : `cmp_${index.toString(36)}`;
-  };
+  const { routePathToIdMap } = computeRouteIds(model.pages.map(page => page.filePath), layoutKeys);
+  const idFor = filePath => routePathToIdMap.get(filePath) ?? null;
   const pages = model.pages.map((page) => {
     let options = { transport: null, ssg: null, middlewares: 0, services: [] };
     try {

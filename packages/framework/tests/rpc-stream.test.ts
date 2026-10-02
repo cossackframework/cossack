@@ -85,9 +85,18 @@ describe('response-local RPC streams', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const closed = vi.fn();
         const { response, cleanup } = create((async function* () { try { yield 1n; } finally { closed(); } })());
-        expect(await collect(response)).toEqual([{ v: 1, type: 'error', requestId: 'request-a', code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: 'Cannot serialize RPC stream yield value or state: unsupported value at (root) (bigint).' }]);
+        expect(await collect(response)).toEqual([{ v: 1, type: 'error', requestId: 'request-a', code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: 'Cannot serialize RPC stream yield value or state: unsupported value at value (bigint).' }]);
         expect(cleanup).toHaveBeenCalledOnce();
         expect(closed).toHaveBeenCalledOnce();
+    });
+    it('rejects values JSON would silently omit', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { response, cleanup } = create((async function* () { yield { nested: { cb: () => {} } }; })());
+        expect((await collect(response)).at(-1)).toMatchObject({
+            type: 'error', code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            message: expect.stringContaining('value.nested.cb (function)'),
+        });
+        expect(cleanup).toHaveBeenCalledOnce();
     });
     it('bounds server frames and returns cleanup failures as errors, not successful completion', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -2,8 +2,9 @@
 
 This document describes the SSE transport backends, the coordinator Durable
 Object, shared-state semantics, and the runtime contract for Node and Deno.
-It was written by GLM on 2026-10-02 for the 0.9.0 distributed SSE work; Codex
-reviews it against the implementation.
+It was written by GLM on 2026-10-02 and updated by Codex after reviewing the
+implementation. See the [Codex review](./release-0.9.0.md#codex-review-2026-10-02)
+for fixes, verification, and remaining release acceptance work.
 
 Related documents: [docs/sse.md](../docs/sse.md) (user-facing guide),
 [specs/architecture.md](./architecture.md), [specs/service.md](./service.md).
@@ -58,7 +59,7 @@ RPC surface:
 | `currentState()` | Snapshot or `null` before initialization (used by the subscription's cold start). |
 | `updates(after)` | Events after a cursor plus a `resync` flag (`after` ahead of the snapshot or behind the pruned history). |
 | `publish(state)` | Appends a `state-update` event and replaces the snapshot (used for ordinary action results). |
-| `broadcast(event, data)` | Appends an `event`/`client-action`/partial-state event without changing the snapshot. |
+| `broadcast(event, data)` | Appends an `event`/`client-action` event without changing the snapshot. Reserved `state-update` entries replace the snapshot; the runtime does not send partial state through this method. |
 | `execute(action)` | Serializes actions per scope; see below. |
 
 `execute` holds an explicit per-scope serialization slot (a promise chain —
@@ -68,15 +69,19 @@ its original `AsyncLocalStorage` snapshot, so request middleware, layout DI,
 ORM scope, config, locale, and auth contexts remain active. Response handling:
 
 - RPC-stream responses (`application/x-cossack-rpc+ndjson`) are re-emitted
-  frame by frame; each `yield`/`done` frame's `state` is published. Frames
-  without object state fail the stream explicitly
-  (`COSSACK_RPC_STATE_INVALID`) and release the slot.
-- Any other response — ordinary JSON results, `{_cossack_redirect}` bodies,
-  custom `Response` objects, and error statuses — passes through unchanged and
-  releases the slot immediately because the body is already materialized. The
-  router callback publishes final state itself before returning. Cookies set
-  through the request context are applied to ordinary JSON responses; reliable
-  stream-response cookie delivery is RT-11 work, not claimed here.
+  frame by frame. The coordinator publishes `scopeState` when supplied for a
+  child target, otherwise `state`. Protocol parsing requires both supplied
+  state objects to be valid; malformed frames fail with
+  `COSSACK_RPC_STREAM_INVALID` and release the slot.
+- Ordinary JSON results, `{_cossack_redirect}` bodies, custom `Response`
+  objects, and error statuses preserve their body and headers. The callback
+  publishes page state before returning an ordinary result. All response
+  bodies hold the serialization slot until EOF, failure, or cancellation;
+  a Response without a body releases it immediately.
+- The router wraps custom component/service Response bodies in their original
+  request context and retains middleware/DI lifetime through body completion.
+  Cookies set through the request context are applied to ordinary JSON
+  responses; reliable stream-response cookie delivery is RT-11 work.
 - The slot releases when the stream finishes, fails, or the caller cancels the
   response body. Cancellation propagates from the browser through the Worker
   (`c.req.raw.signal` is wired to `response.body.cancel()` in the router) and
@@ -93,11 +98,11 @@ ORM scope, config, locale, and auth contexts remain active. Response handling:
 
 ## Shared-state semantics
 
-- The authoritative scope state is the public state of the **acting component
-  instance** — the page root, or the child addressed by the RPC `target`.
-  Hydration applies only keys the receiving component declares
-  (`sanitizeClientState` plus the instance's public keys), so a child-authored
-  snapshot cannot inject foreign keys into the page root.
+- The authoritative scope state is the public state of the **page root**.
+  A child addressed by RPC `target` has separate target-local state. Child
+  generator frames carry target `state` for their caller and page `scopeState`
+  for the coordinator. Child actions cannot replace the page snapshot.
+  Hydration applies only declared/public keys of the receiving component.
 - Child components and services not addressed by an action keep request-local
   state. Services declared on a parent layout are injected into the page and
   their `@State` keys mirror into the page's public state, which then
@@ -106,13 +111,13 @@ ORM scope, config, locale, and auth contexts remain active. Response handling:
   (first-write-wins). When the scope already exists, SSR hydrates the
   authoritative snapshot so the HTML renders shared state; it never overwrites
   the snapshot.
-- `/crpc` hydrates the acting root component from the coordinator snapshot.
-  The browser-sent state is applied only to child targets (whose state the
-  scope does not track) — a stale tab cannot overwrite shared state.
-- Component `broadcastEvent` / scheduled state broadcasts are forwarded to the
-  coordinator as events by the `CoordinatorSseRuntime` attached to `/crpc`
-  instances. Broadcasts never replace the snapshot; only action results
-  publish authoritative state.
+- `/crpc` hydrates the page from the coordinator snapshot before rendering
+  and resolving its child target. Browser state applies only to child targets;
+  a stale tab cannot overwrite page shared state.
+- `CoordinatorSseRuntime` forwards event/client-action broadcasts and awaits
+  them before action/frame completion. Deferred partial state broadcasts are
+  ignored: complete page snapshots are committed by the action result or its
+  frames while the action owns the serialization slot.
 
 ## Subscription endpoint
 
@@ -122,19 +127,20 @@ request (a mismatched `scopeKey` is rejected with 403), then:
 1. Reads the cursor from `Last-Event-ID` (sent automatically by `EventSource`
    on reconnect) or the `cursor` query parameter; invalid cursors are rejected
    with 400.
-2. Cold-starts the scope when `currentState()` is null (constructs a component
-   with `skipInit: true`, `initialize()`s the scope, and disposes the
-   instance).
-3. Sends the authoritative snapshot as a `state-update` event whose SSE `id`
-   is the snapshot cursor, then a `connected` event.
-4. Polls `updates(cursor)` every 200 ms and forwards every event with its
-   cursor as the SSE `id`. The client's cursor is preserved (not advanced to
-   the snapshot cursor) so events between the client's cursor and the snapshot
-   — such as broadcasts — are still delivered; state events are idempotent for
-   the client.
-5. Resynchronizes with a fresh snapshot when `updates` reports `resync`, sends
-   heartbeats every 15 s, and closes the stream on poll failure so the browser
-   reconnects with `Last-Event-ID`.
+2. Cold-starts a missing scope using the actual layout service ancestry and
+   a component with `skipInit: true`. It initializes the scope and awaits
+   disposal of temporary components/services.
+3. Replays retained events after the supplied cursor in increasing ID order,
+   then sends the current `state-update` snapshot and `connected`. Sending the
+   latest snapshot ID first would acknowledge broadcasts before delivery.
+4. Delivers one frame per reader pull. While reader demand is pending and the
+   batch is empty, it waits 200 ms before polling `updates(cursor)` again.
+   Persisted history bounds each batch; a slow reader does not accumulate an
+   unbounded writer queue or keep polling without demand.
+5. Sends resync plus an authoritative snapshot for expired/invalid history,
+   and heartbeats after 15 s when the reader is waiting. Body cancellation and
+   request abort remove the wait timer/listener; poll failure errors the stream
+   so EventSource can reconnect with `Last-Event-ID`.
 
 ## Node and Deno backend contract
 
@@ -148,14 +154,17 @@ contracts**:
 - `/crpc` constructs a per-request component and applies the **client-sent**
   state (sanitized), because there is no authoritative server-side snapshot.
   Streams sync frames to the stored entry through the version counter.
-- The `/sse` endpoint serves from the stored entry via the same polling model
-  and event names. Broadcasts go through the process-local `SseRuntime`.
+- The `/sse` endpoint uses the earlier timer/writer polling implementation and
+  event names. It does not yet have the coordinator subscription's demand-driven
+  buffering/cancellation guarantees. Broadcasts use process-local `SseRuntime`.
+  RT-19/RT-25 follow-ups must verify adapter parity explicitly.
 - It is deliberately not a Cloudflare fallback: on Workers without
   `COSSACK_SSE`, requests fail with `COSSACK_SSE_BINDING_MISSING`.
 
 Applications needing cross-process coordination on Node or Deno must front
-requests with a single process; a distributed adapter for those runtimes is
-future work (tracked by RT-19/CF-05 follow-ups, not claimed here).
+requests through one process while retaining the limits described above. A
+distributed adapter is future work; single-process routing does not provide
+persistence or restart recovery.
 
 ## Cloudflare environment caveat
 
@@ -188,3 +197,15 @@ artifact comparison validates the built configuration.
   events, broadcasts fan out, and `Last-Event-ID` reconnects resume cleanly.
   The existing D1/context stream, cancellation, SSG, and asset checks are
   retained.
+
+## Codex regression verification (2026-10-02)
+
+The monorepo run passes 2,227 tests across 13 packages. New regressions cover
+page/child snapshot separation, SSR-derived child targets, cold-start layout
+services, monotonic reconnect cursors, demand-driven subscription cancellation,
+service/custom-response ORM lifetime, nested request helper scopes, and bounded
+WebSocket frame consumption. The native two-Worker coordinator suite additionally
+checks that a custom streaming Response keeps its action slot until cancellation.
+The generated staging application suite still passes against built public exports.
+These are local workerd tests; they do not prove a remote deployment or atomic
+external effects across a mid-action restart.

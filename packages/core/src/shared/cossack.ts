@@ -13,7 +13,7 @@ import {
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isClientVisibleError } from './errors';
-import { rpcCancellations, sendRpcFrame } from './rpc-stream';
+import { RpcError, rpcCancellations, sendRpcFrame } from './rpc-stream';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -296,6 +296,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     // Component Registry (Server-Side mostly)
     public activeComponents: Map<string, Cossack> = new Map();
+    private _retiredServerComponents: Set<Cossack> = new Set();
 
     // Unified State Management
     private _stateContainer = new StateContainer();
@@ -517,6 +518,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         if (component._id) {
+            const previous = this.activeComponents.get(component._id);
+            if (this.isServer && previous && previous !== component) {
+                this._retiredServerComponents.add(previous);
+            }
             this.activeComponents.set(component._id, component);
             const childState = this._childrenStateRegistry[component._id];
             if (childState) {
@@ -1016,12 +1021,30 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Chain onto the queue so actions run one at a time. The runner catches
         // its own errors so a failing action never breaks the chain for later
         // callers (and never surfaces as an unhandled rejection).
-        const run = () => this._runAction(action, payload, user, clientContext, requestId);
+        const cancellation = { cancelled: false, close: undefined as (() => void) | undefined };
+        if (requestId !== undefined) {
+            const hooks = rpcCancellations(clientContext);
+            if (hooks.has(requestId)) {
+                sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                    code: 'COSSACK_RPC_REQUEST_DUPLICATE', message: 'A call with this request ID is already active.' });
+                return Promise.resolve();
+            }
+            hooks.set(requestId, () => { cancellation.cancelled = true; cancellation.close?.(); });
+        }
+        const run = async () => {
+            try {
+                if (cancellation.cancelled) return;
+                await this._runAction(action, payload, user, clientContext, requestId, cancellation);
+            } finally {
+                if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
+            }
+        };
         this._actionQueue = this._actionQueue.then(run, run);
         return this._actionQueue;
     }
 
-    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown, requestId?: string): Promise<void> {
+    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
+        requestId: string | undefined, cancellation: { cancelled: boolean; close?: () => void }): Promise<void> {
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {
             if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
@@ -1040,23 +1063,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 },
             }),
         };
-        // Request-scoped cancellation: the runtime registers a per-socket hook
-        // the client's `cancel` message triggers.
-        let cancelHook: (() => void) | undefined;
-        if (requestId !== undefined) {
-            const cancellations = rpcCancellations(clientContext);
-            cancellations.set(requestId, () => cancelHook?.());
-        }
+        let iterator: AsyncIterator<unknown> | undefined;
         try {
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that
             // a longer client payload could displace.
             const result = await (actionMethod as any)(...(payload || []));
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
-                const iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-                cancelHook = () => { void iterator.return?.(undefined).catch(() => {}); };
-                while (true) {
+                iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };
+                while (!cancellation.cancelled) {
                     const next = await iterator.next();
+                    if (cancellation.cancelled) break;
                     if (next.done) {
                         sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
                             value: next.value, state: this.getPublicState() });
@@ -1065,7 +1083,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     sendRpcFrame(clientContext, { v: 1, type: 'yield', requestId,
                         value: next.value, state: this.getPublicState() });
                 }
-            } else if (requestId !== undefined) {
+            } else if (requestId !== undefined && !cancellation.cancelled) {
                 sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
                     value: result, state: this.getPublicState() });
             }
@@ -1074,12 +1092,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // unhandled rejection and so `loading[action]` is always released.
             if (requestId !== undefined) {
                 sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
-                    code: isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR' : 'COSSACK_RPC_INTERNAL_ERROR',
-                    message: isClientVisibleError(e) ? e.message : 'Internal Server Error' });
+                    code: isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
+                        : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR',
+                    message: isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error' });
             }
             console.error(`[Cossack] Error executing action '${action}':`, e);
         } finally {
-            if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
+            if (iterator) {
+                try { await iterator.return?.(undefined); }
+                catch (error) { console.error(`[Cossack] Error closing action '${action}':`, error); }
+            }
             this._actionIdentity = undefined;
             this._cossack_ws_context = undefined;
             // Legacy completion signal for callers without a request id. The
@@ -1782,6 +1804,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public _getWrappedTemplate(): TemplateResult | null {
+        // Direct SSR/layout composition must use the same child IDs as a
+        // standalone RPC render, including repeated resource render passes.
+        this.resetRenderState();
         // Mark the render window around every render()/loadingTemplate()
         // invocation. `_getWrappedTemplate` is the single chokepoint used by
         // `_render()` and `performUpdate()` (this package) AND by the framework's
@@ -2283,7 +2308,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
         // Drain descendants and each independent cleanup even when a user
         // hook fails. Publish the completion so server renders can await it.
-        for (const child of this.activeComponents.values()) release(() => child.destroyAsync());
+        for (const child of new Set([...this._retiredServerComponents, ...this.activeComponents.values()])) {
+            release(() => child.destroyAsync());
+        }
+        this._retiredServerComponents.clear();
         this.activeComponents.clear();
         release(() => this.onCleanup());
         for (const cleanup of this._serviceInjectionCleanups.values()) release(cleanup);

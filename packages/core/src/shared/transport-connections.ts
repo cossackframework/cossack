@@ -2,7 +2,7 @@
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
 import { isSharedMethod } from './shared-method';
-import { rpcCancellations, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
+import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
 /** Per-socket sinks for correlated request-scoped RPC frames. */
 export function wsPendingCalls(ws: RpcSocket): Map<string, (frame: RpcStreamFrame) => void> {
@@ -31,8 +31,19 @@ export function routeSocketFrame(ws: RpcSocket, data: unknown): boolean {
     const frame = data as unknown as RpcStreamFrame;
     const sink = wsPendingCalls(ws).get(frame.requestId);
     if (sink) {
-        sink(frame);
-        if (frame.type !== 'yield') wsPendingCalls(ws).delete(frame.requestId);
+        try {
+            validateRpcFrame(frame);
+            if (new TextEncoder().encode(JSON.stringify(frame)).length > RPC_STREAM_MAX_FRAME_BYTES) {
+                throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC frame exceeds the byte limit.');
+            }
+            sink(frame);
+            if (frame.type !== 'yield') wsPendingCalls(ws).delete(frame.requestId);
+        } catch (error) {
+            sink({ v: 1, type: 'error', requestId: frame.requestId,
+                code: error instanceof RpcError ? error.code : 'COSSACK_RPC_STREAM_INVALID',
+                message: error instanceof RpcError ? error.message : 'Invalid RPC frame.' });
+            wsPendingCalls(ws).delete(frame.requestId);
+        }
     }
     return true;
 }
@@ -142,6 +153,7 @@ export function connectWebSocket(component: any): void {
                 attempt === 0 ? { state: 'connecting', attempts: 0 } : { state: 'reconnecting', attempts: attempt });
 
             ws.onopen = () => {
+                attempt = 0;
                 updateStatus(component, { provider: providerName },
                     { state: 'open', attempts: 0, lastError: undefined });
             };

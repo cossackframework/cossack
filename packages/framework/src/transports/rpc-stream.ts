@@ -6,13 +6,63 @@ interface RpcStreamOptions {
     requestId: string;
     signal: AbortSignal;
     getState: () => Record<string, unknown>;
-    onState?: (state: Record<string, unknown>) => void;
+    getScopeState?: () => Record<string, unknown>;
+    onState?: (state: Record<string, unknown>) => void | Promise<void>;
     cleanup: () => Promise<void>;
 }
 
 export function isRpcStream(result: unknown): result is AsyncIterable<unknown> {
     return result !== null && typeof result === 'object' && Symbol.asyncIterator in result &&
         typeof (result as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function';
+}
+
+/** Keep a custom Response's request facilities alive through body consumption. */
+export async function retainRpcResponseBody(
+    response: Response, signal: AbortSignal, dispose: () => Promise<void>,
+): Promise<Response> {
+    const inRequest = AsyncLocalStorage.snapshot();
+    if (!response.body) { await inRequest(dispose); return response; }
+    const reader = response.body.getReader();
+    let closed = false;
+    let cleanupPromise: Promise<void> | undefined;
+    let controller: ReadableStreamDefaultController<Uint8Array>;
+    const cleanup = () => cleanupPromise ??= inRequest(async () => {
+        signal.removeEventListener('abort', abort);
+        try { await reader.cancel(); }
+        finally { reader.releaseLock(); await dispose(); }
+    });
+    const abort = () => {
+        if (closed) return;
+        closed = true;
+        controller.error(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
+        void cleanup().catch(error => console.error('[Cossack RPC] response cleanup failed:', error));
+    };
+    const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+            controller = streamController;
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+        },
+        pull(streamController) {
+            return inRequest(async () => {
+                if (closed) return;
+                try {
+                    const next = await reader.read();
+                    if (closed) return;
+                    if (!next.done) { streamController.enqueue(next.value); return; }
+                    await cleanup();
+                    if (!closed) { closed = true; streamController.close(); }
+                } catch (error) {
+                    if (closed) return;
+                    closed = true;
+                    try { await cleanup(); }
+                    finally { streamController.error(error); }
+                }
+            });
+        },
+        async cancel() { closed = true; await cleanup(); },
+    }, { highWaterMark: 0 });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
 /** A generator belongs to its action response, never a Worker-global store. */
@@ -27,6 +77,9 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
     let cleanupPromise: Promise<void> | undefined;
     const encode = (frame: RpcStreamFrame) => {
         let bytes: Uint8Array;
+        const unsupported = describeUnsupportedValue(frame);
+        if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+            `Cannot serialize RPC stream ${frame.type} value or state: unsupported value at ${unsupported}.`);
         try { bytes = encoder.encode(`${JSON.stringify(frame)}\n`); }
         catch (cause) {
             const where = frame.type === 'error'
@@ -66,9 +119,10 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     if (closed) return;
                     finished = next.done === true;
                     const state = options.getState();
-                    options.onState?.(state);
+                    await options.onState?.(state);
                     const bytes = encode({ v: 1, type: finished ? 'done' : 'yield',
-                        requestId: options.requestId, value: next.value, state });
+                        requestId: options.requestId, value: next.value, state,
+                        ...(options.getScopeState ? { scopeState: options.getScopeState() } : {}) });
                     if (finished) await cleanup();
                     if (closed) return;
                     controller.enqueue(bytes);

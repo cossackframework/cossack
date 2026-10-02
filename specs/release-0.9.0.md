@@ -11,8 +11,8 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): CommandSpec validates every converted command before effects (unknown options list `--`-prefixed supported alternatives; value flags reject flag-like/missing values instead of silent boolean coercion; zero-positional commands reject any positional); tests cover aliases, repeated values, `--` passthrough, explicit false, and flag-like values; vite/wrangler forwarding stays an explicit boundary.
-- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands; hard failures throw coded errors instead of printing (exit 1 + diagnostics under `--json`); build/ssg capture child output so stdout carries exactly one envelope; database commands keep their isolated child-process JSON; subprocess tests parse results without filtering banners. Long-running streaming event contracts remain part of CLI-07's tool surface.
+- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): CommandSpec validates every converted command before effects (unknown options list `--`-prefixed supported alternatives; value flags reject flag-like/missing values instead of silent boolean coercion; zero-positional commands reject any positional); tests cover aliases, repeated values, `--` passthrough, explicit false, and flag-like values; vite/wrangler forwarding stays an explicit boundary. Codex review (2026-10-02): reopened. Typed flag validation is fixed in converted commands, but command coverage and conflict validation are incomplete. See the Codex review below.
+- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands; hard failures throw coded errors instead of printing (exit 1 + diagnostics under `--json`); build/ssg capture child output so stdout carries exactly one envelope; database commands keep their isolated child-process JSON; subprocess tests parse results without filtering banners. Long-running streaming event contracts remain part of CLI-07's tool surface. Codex review (2026-10-02): reopened. Lifecycle JSON forwarding and route-list banners are fixed; several handlers still print human output or omit an envelope. Noninteractive and long-running contracts need completion.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` lists effective facts and explains behavior with reasons and source locations (`COSSACK_ROUTE_UNKNOWN` for misses) without executing components; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
@@ -32,7 +32,7 @@ below link directly to those explanations.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation.
-- [x] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM (2026-10-02): resolution failures name the service, requester, and scope-chain ancestry with per-layout declarations; service ownership visible through `cossack inspect routes` (layouts' declared services and per-page injectable ancestry); service RPC awaits scoped disposal matching component RPC; request-facility isolation, single layout cleanup, and independent hook failures covered by existing core suites. specs/service.md documents global vs layout vs request ownership.
+- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM (2026-10-02): resolution failures name the service, requester, and scope-chain ancestry with per-layout declarations; service ownership visible through `cossack inspect routes` (layouts' declared services and per-page injectable ancestry); service RPC awaits scoped disposal matching component RPC; request-facility isolation, single layout cleanup, and independent hook failures covered by existing core suites. specs/service.md documents global vs layout vs request ownership. Codex review (2026-10-02): reopened. SSR and RPC disposal fixes pass regression tests, but regex inspection does not prove actual service ownership for all valid declarations. Finish compiler-backed ownership inspection and navigation lifetime verification.
 - [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
 - [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -85,6 +85,221 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+
+<a id="codex-review-2026-10-02"></a>
+### Codex review of GLM Groups 1–2 (2026-10-02)
+
+**Reviewer: Codex.** Reviewed the seven GLM commits from `937843d` through
+`e6b7153`, against the detailed plan and checkpoint `289d181`. This review fixes
+regressions in those slices; it does not implement or close the remaining release
+phases. Versions remain 0.8.3. The checklist now has **8 of 58 tasks checked**:
+CLI-02, CLI-03, and RT-12 are reopened because their full acceptance criteria have
+not been met. Their implementations remain useful partial progress.
+
+#### Findings fixed in this review
+
+1. **CLI JSON dispatch was unreachable for lifecycle commands.** Dispatch
+   forwarded `--json` to Vite and supplied empty framework flags. Build and SSG
+   also printed a banner before their result. Dispatch now removes the framework
+   JSON option before the forwarding boundary, preserving downstream arguments
+   and everything after `--`. Build/SSG emit one envelope. `dev --json` and
+   `start --json` fail with `COSSACK_JSON_UNSUPPORTED` before launching a process;
+   event output remains unfinished. Route-list JSON also skips its human table.
+   Regression tests: `dispatch.test.js` and existing command-spec JSON tests.
+2. **CommandSpec ignored its declared value types.** Direct invocation accepted
+   boolean values for string flags, empty strings, repeated single-value options,
+   and arbitrary `x-*` options. The shared validator now enforces declared types
+   and repeat rules, rejects unknown options, and accepts the parser's `f`/`h`
+   aliases. Direct JSON help emits an envelope. This strengthens converted
+   commands; it does not provide complete command coverage by itself.
+3. **Inspection IDs and collision winners differed from the runtime.** The CLI
+   assigned page IDs before layouts, while runtime IDs use a combined sorted
+   list. Route-group collisions could also display a losing page. Inspection now
+   uses the published runtime `computeRouteIds` and `resolvePageRouteFiles`
+   functions. Tests compare exact IDs and concrete-vs-grouped route precedence.
+   Explanation no longer claims that a different dynamic pattern matches merely
+   because its prefix is the same.
+4. **Request helpers destroyed the production context getter.** A helper reset
+   the getter globally and disposed services after leaving its ALS context.
+   Nested or overlapping calls could expose another request or lose the
+   framework getter. `setRequestContextGetter` now returns the previous getter;
+   test-utils uses one ALS with active-scope accounting, composes the prior
+   getter, and awaits disposal inside the helper context. Tests cover nested
+   scopes, overlapping completion order, restored production context, and async
+   service cleanup. Controlled deferreds clear their timers on settlement.
+5. **Explicit service streams lost the ORM before their first pull.** Unlike
+   component streams, they did not retain response middleware lifetime. Both now
+   release the ORM and DI scope only after completion/cancellation. Tests execute
+   SQL between service frames and check that cleanup occurs exactly once.
+6. **SSR did not await or fully execute component cleanup.** The router called
+   synchronous scope disposal and left rendered component hooks unowned. It now
+   records constructed components before bootstrap, destroys them in reverse
+   order, and awaits root scope disposal. Independent cleanup failures do not
+   skip later owners. Replaced server descendants are retained for final cleanup.
+   A gated async service hook proves that SSR waits in its original request
+   context before returning.
+7. **SSR generated different child IDs from RPC.** A preliminary render followed
+   by composition advanced child counters; RPC rendered once and could not find
+   the hydrated child's target. Composition resets the render counter and SSR
+   removes the redundant preliminary pass. Child RPC tests now exercise actual
+   rendered children and their SSR-derived IDs.
+8. **Child SSE actions replaced the page's shared snapshot.** Ordinary and
+   generator calls published the target child's state into the page DO.
+   Ordinary actions now publish the page state. Child stream frames carry
+   separate target `state` and page `scopeState`; the coordinator publishes the
+   latter. The page is hydrated before rendering conditional children. Tests
+   prove that child-local values do not overwrite the page snapshot.
+9. **Partial state broadcasts could corrupt the authoritative snapshot.**
+   Deferred `broadcastState` messages were treated as complete state replacement,
+   potentially after the action slot released. Coordinator state commits now
+   come only from full action results/frames. Event and client-action broadcasts
+   are tracked and flushed before committing or releasing their action context.
+10. **SSE subscriptions ignored backpressure and body cancellation.** Timer
+    callbacks accumulated unawaited writer operations and kept polling after
+    reader cancellation. The Cloudflare subscription uses a demand-driven
+    readable stream, one delivered frame per pull, a bounded persisted-log batch,
+    and a cancellable wait timer. Cancellation/abort removes its listener and
+    timer. Cold starts construct the actual layout service ancestry before
+    rendering, then dispose temporary owners. Tests cover subscription without
+    SSR, no polling without reader demand, and cancellation.
+11. **Reconnect cursors could acknowledge events before delivering them.**
+    Sending the latest snapshot ID before older broadcasts made IDs move
+    backwards and allowed a disconnect to skip an unseen broadcast. Replay now
+    precedes the latest snapshot, in increasing cursor order. Expired history
+    produces resync plus a snapshot. Tests check ordering and a missed broadcast.
+12. **WebSocket reconnect backoff did not reset internally.** Status reported
+    zero attempts on open, but the retry closure retained its old count. A
+    successful open now resets both. The test closes the connection again and
+    verifies the first 500 ms retry delay.
+13. **RPC serialization silently discarded values or hung callers.** Functions
+    could disappear during cloning or JSON encoding; service serialization could
+    throw before lifecycle cleanup; WebSocket send failures in encoding were
+    swallowed. Validation now precedes state cloning and frame encoding, includes
+    ordinary component/service results, and returns coded path diagnostics.
+    Shared references are accepted as aliases rather than mistaken for cycles;
+    Maps/Sets are rejected at boundaries that inspect them. Generator failures
+    close the iterator. Regression tests cover nested function results, aliases,
+    unsupported collections, and loading cleanup.
+14. **Cancellation and deadline handling left calls waiting.** Local WebSocket
+    cancellation now wakes its frame queue immediately; a deadline sends a
+    best-effort cancel and clears per-frame timers. Server hooks are registered
+    before an action enters its queue, so cancelling a queued mutation skips it.
+    Running generator hooks close on cancellation/failure. Arbitrary application
+    I/O remains cooperative: cancellation cannot undo an external side effect,
+    and uncertain outcomes must never trigger automatic replay.
+15. **Realtime frame input and queues were unbounded/unvalidated.** HTTP and
+    WebSocket frames now share structural validation, including optional page
+    scope state. Socket frames are byte bounded, and pending yields have limits
+    of 256 frames / 4 MiB per call. Overflow rejects with
+    `COSSACK_RPC_BUFFER_EXCEEDED`, clears loading, and requests cancellation.
+    Tests cover malformed frames, slow consumers, and queued cancellation.
+16. **Custom Response streams released ownership on return.** A custom body may
+    execute SQL or other request I/O when pulled. The router now wraps component
+    and explicit-service Responses with captured request context and retained
+    middleware/DI cleanup. The DO holds its action slot through all response-body
+    completion, failure, or cancellation, including non-NDJSON bodies. Tests
+    cover custom body SQL/context, headers, cleanup, and native cross-Worker queue
+    ordering/cancellation. Cookie/flash propagation remains RT-11 work.
+17. **The root test command raced framework builds with CLI imports.** Sharing
+    the authoritative route-ID export exposed the framework/CLI workspace cycle:
+    framework pretest deleted `dist/esm` while CLI subprocess tests loaded it.
+    Root `test:unit` now uses `--workspace-concurrency=1`. Package suites retain
+    their own tests/build hooks; package-level parallel test workers still run.
+
+#### GLM continuation: concrete remaining work
+
+Follow this order before advancing to the next major feature group:
+
+1. **Finish CLI-02/CLI-03 as one coherent command contract.** Inspect/check route
+   commands still bypass shared validation; the parser maintains a separate
+   hard-coded boolean list; aliases/conflicts and all positional counts need a
+   complete audit. Several converted handlers still print human status lines
+   under `--json` (for example generate/add/remove/lang), and a handler returning
+   nothing emits no envelope. A numeric failure result can lack a diagnostic.
+   Convert handlers to return structured data, affected paths, and coded errors,
+   with one formatter deciding human/JSON output. Do not capture process-global
+   console methods around async work. Add actual CLI subprocess tests for every
+   command's success, invalid option, conflict, and failure paths. Specify the
+   noninteractive and long-running behavior explicitly. Example acceptance:
+   `generate component ReviewProbe --dry-run --json` must produce exactly one
+   parseable envelope with planned paths and perform no writes.
+2. **Complete CLI-04/RT-07/RT-12 from compiler metadata.** `extractPageOptions`
+   remains a regex heuristic. Nested option objects, comments/string text,
+   trailing commas, aliased decorators, imported options, and namespaced service
+   declarations can be misreported. Declared identifier lists do not prove DI
+   ownership or lifetime. Reuse the AST/import-resolution machinery in
+   `framework/src/vite-security-plugin.ts`, or extract a shared Node-only
+   compiler module. Keep inspection read-only and never execute application
+   constructors/configuration to obtain facts. Represent unresolved dynamic
+   options as unknown with a reason. Verify inspection against the actual layout
+   scope chain, including route groups and navigation cleanup. Add source
+   locations and proxy classification reasons as required by the original plan.
+3. **Finish RT-01's remaining transport contract.** Compiler/client typing of
+   generator yields and final returns is still missing. Audit request upload
+   normalization: HTTP's file walker transforms objects before validation, so
+   Maps/Sets and other special objects can still lose information there, while
+   direct WebSocket/service boundaries reject them. Define supported values and
+   paths consistently, including dates, cycles, and DOM/file arguments. Add
+   generated-app conformance cases and avoid claiming transport parity from
+   source-only tests. Coordinate Response cookies/flash with RT-11.
+4. **Finish RT-24/RT-25 using real adapter capabilities.** The new capability
+   model is not yet wired into builds, recipes, or inspection. Its profiles need
+   correction before they become authoritative: Node/Deno do have process-local
+   WebSocket support for the `durable-object` protocol; their framework scheduled
+   handlers are not implemented; transport evaluation ignores its requirement;
+   storage availability does not verify a concrete bucket binding. Derive facts
+   from installed adapters and actual named bindings. Reject unsupported/missing
+   capabilities before effects and test the emitted diagnostics. Binding presence
+   and platform support must remain separate concepts.
+5. **Finish RT-29 without overstating the helper.** `withRequestScope` scopes the
+   core request getter and DI, not the framework's config/locale/auth/ORM stores.
+   Add fixtures using the actual Hono/router lifecycle, authenticated requests,
+   RPC dispatch, SSR/hydration, cancellation, and tarball imports. Keep the
+   nested/overlap restoration regression tests. Verify framework middleware
+   getter registration alongside helper use, including lazy module loading.
+6. **Extend runtime adversarial coverage before release gates.** Preserve the two
+   real workerd suites. Add conditional-child scope cases, multi-field state
+   broadcasts, dynamic-param subscription cold starts, slow native subscribers,
+   response-cookie handling, and restart *during* active callbacks. Harness reload
+   proves persisted state across instances; it does not prove atomic external
+   side effects or safe replay after an in-flight restart. Node/Deno still use
+   the older process-local subscription implementation with timer/writer queues;
+   do not imply Cloudflare durability or backpressure guarantees for that path.
+
+After these acceptance gaps, continue the original execution groups in
+[release-0.9.0-plan.md](./release-0.9.0-plan.md). No unchecked feature was removed
+from scope. Preserve user edits to `reports.md` and the untracked `.zcodeignore`.
+The user arranges GLM continuation. This review did not publish, push, deploy,
+provision, rotate credentials, or start/message another chat.
+
+#### Verification by Codex
+
+Passed after the fixes:
+
+- `pnpm build`.
+- `pnpm tsc --noEmit`.
+- `pnpm typecheck` — all 11 package checks.
+- `pnpm test:unit` — **2,227 tests across 13 packages**: auth 118, database 84,
+  renderer 256, scaffold 82, core 647, node-adapter 10, test-utils 8, UI 112,
+  CLI 292, framework 547, deno-adapter 3, desktop 16, Studio 52. This includes
+  `deploy-integration.test.js` (generated staging artifact, public exports,
+  real workerd/D1/auth/RPC/SSE/SSG/assets/migrations) and
+  `sse-coordinator-integration.test.js` (two native Workers sharing a SQLite DO,
+  state persistence, cursor history, custom-response ownership, cancellation).
+- `pnpm audit:bundle` — 28 neutral modules; the database Cloudflare entry
+  remains Workers-safe. Native framework import boundaries are also exercised
+  by the generated application build.
+- `git diff --check -- . ':!reports.md'`.
+
+The first full run exposed the framework/CLI build race described above; the
+final run passed using the corrected root test command. An initial new SSR test
+also needed `Promise.resolve(app.request(...))` for Hono's synchronous-or-async
+return type; package type checks pass after that test correction. Focused new
+regressions passed before the full run. No Playwright suite, complete tarball
+matrix, or live Cloudflare deployment was run. Passing this checkpoint does not
+close REL-02, REL-03, or REL-05 for the full 0.9.0 release.
+
 
 ### CLI lifecycle and creation
 

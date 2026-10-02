@@ -1,7 +1,7 @@
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, isOriginAllowed, sanitizeClientState, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
-import type { RouterContext } from '../route-ids.js';
+import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
 
 interface SseStoreEntry {
@@ -125,25 +125,35 @@ export function sseBindingMissingResponse(): Response {
  * change the authoritative scope state; only action results publish state.
  */
 class CoordinatorSseRuntime implements CossackServerRuntime {
+    private pendingBroadcasts: Promise<unknown>[] = [];
     constructor(private readonly stub: SseCoordinatorStub) {}
+
+    private enqueue(event: string, data: string): void {
+        const pending = this.stub.broadcast(event, data);
+        void pending.catch(() => {});
+        this.pendingBroadcasts.push(pending);
+    }
+
+    async flush(): Promise<void> {
+        while (this.pendingBroadcasts.length) await Promise.all(this.pendingBroadcasts.splice(0));
+    }
 
     async onClientMessage(): Promise<void> {
         // SSE is server → client only; client messages arrive through /crpc.
     }
 
-    broadcastState(partialState: Record<string, any>): void {
-        void this.stub.broadcast('state-update', JSON.stringify(partialState))
-            .catch(error => console.error('[Cossack SSE] broadcastState failed:', error));
+    broadcastState(_partialState: Record<string, any>): void {
+        // Action results and stream frames publish the full snapshot inside
+        // their serialization slot. A delayed partial-state microtask must
+        // never replace that snapshot or publish stale fields after release.
     }
 
     broadcastEvent(eventName: string, payload: any[]): void {
-        void this.stub.broadcast('event', JSON.stringify({ eventName, payload }))
-            .catch(error => console.error('[Cossack SSE] broadcastEvent failed:', error));
+        this.enqueue('event', JSON.stringify({ eventName, payload }));
     }
 
     sendClientAction(_client: unknown, action: string, payload: any[]): void {
-        void this.stub.broadcast('client-action', JSON.stringify({ action, payload }))
-            .catch(error => console.error('[Cossack SSE] sendClientAction failed:', error));
+        this.enqueue('client-action', JSON.stringify({ action, payload }));
     }
 
     async persistState(): Promise<void> {
@@ -152,8 +162,10 @@ class CoordinatorSseRuntime implements CossackServerRuntime {
 }
 
 /** Attach coordinator broadcasts to a request-constructed SSE component instance. */
-export function attachCoordinatorRuntime(instance: any, stub: SseCoordinatorStub): void {
-    instance._runtime = new CoordinatorSseRuntime(stub);
+export function attachCoordinatorRuntime(instance: any, stub: SseCoordinatorStub): CoordinatorSseRuntime {
+    const runtime = new CoordinatorSseRuntime(stub);
+    instance._runtime = runtime;
+    return runtime;
 }
 
 /**
@@ -372,99 +384,115 @@ async function handleCoordinatorSubscription(
     PageComponent: new () => Cossack,
 ): Promise<Response> {
     const stub = getSseScopeStub(c.env, componentRouteId, scopeKey)!;
-    // Prefer the browser-managed Last-Event-ID; `cursor` supports other clients.
     const rawCursor = c.req.header('last-event-id') ?? c.req.query('cursor');
-    const cursor = rawCursor === undefined || rawCursor === '' ? 0 : Number(rawCursor);
-    if (!Number.isSafeInteger(cursor) || cursor < 0) {
+    const cursor = rawCursor === undefined || rawCursor === '' ? undefined : Number(rawCursor);
+    if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 0)) {
         return new Response('Invalid SSE cursor', { status: 400 });
     }
 
-    let snapshot = await stub.currentState().catch(error => {
-        throw new Error(`[Cossack SSE] coordinator is unavailable: ${error instanceof Error ? error.message : String(error)}`);
-    });
+    let snapshot = await stub.currentState();
     if (!snapshot) {
-        // Cold start: seed the scope with the component's default state. First
-        // initialization wins, so a concurrent SSR or subscription cannot reset
-        // shared state.
-        const user = c.get('user');
-        const instance = createInstance(PageComponent) as any;
-        await instance.bootstrap({
-            context: c, user, env: c.env,
-            runtime: await ctx.runtimeInfo?.(),
-            skipInit: true,
-        });
-        instance._render();
+        // Subscription cold starts need the same layout declarations as SSR
+        // and RPC. Construct and dispose the temporary instance in this request.
+        const rootScope = createRootServiceScope();
+        const facilities = { context: c, user: c.get('user'), env: c.env };
+        rootScope.bindRequest(facilities);
+        let instance: Cossack | undefined;
         try {
+            let active = rootScope;
+            const path = ctx.routeIdMap.get(componentRouteId)!;
+            for (const layout of resolveLayoutPaths(path, Object.keys(ctx.layouts))) {
+                const Layout = Object.values(ctx.layouts[layout] as object)[0] as new () => Cossack;
+                active = createLayoutServiceScope(active, Layout, {
+                    ownerRouteId: ctx.routePathToIdMap.get(layout), ownerRoutePath: layout, scopeKey,
+                });
+                active.bindRequest(facilities);
+            }
+            instance = createInstance(PageComponent, { serviceScope: active });
+            await instance.bootstrap({ ...facilities, runtime: await ctx.runtimeInfo?.(), skipInit: true });
+            instance._render();
             snapshot = await stub.initialize(JSON.stringify(instance.getPublicState()));
         } finally {
-            await instance.destroyAsync().catch((error: unknown) =>
-                console.error('[Cossack SSE] cold-start instance cleanup failed:', error));
+            try { await instance?.destroyAsync(); }
+            finally { await rootScope.disposeAsync(); }
         }
     }
 
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
     const encoder = new TextEncoder();
-    const send = (event: string, data: string, id?: number) => {
-        writer.write(encoder.encode(`event: ${event}\n${id === undefined ? '' : `id: ${id}\n`}data: ${data}\n\n`))
-            .catch(() => {});
-    };
+    const signal = c.req.raw.signal;
+    let after = cursor ?? snapshot.cursor;
+    const initial = await stub.updates(after);
+    // Replay in increasing cursor order before advancing to the latest
+    // snapshot. Advertising its cursor first would acknowledge broadcasts
+    // the browser has not received if it disconnects during the replay.
+    const pending: Array<{ event: string; data: string; cursor?: number }> = [];
+    if (initial.resync) pending.push({ event: 'resync', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
+    else pending.push(...initial.events);
+    pending.push({ event: 'state-update', data: initial.snapshot.state, cursor: initial.snapshot.cursor });
+    pending.push({ event: 'connected', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
+    after = initial.snapshot.cursor;
 
-    send('state-update', snapshot.state, snapshot.cursor);
-    send('connected', JSON.stringify({ cursor: snapshot.cursor }));
-
-    // Keep the client's cursor: the snapshot above already supersedes older
-    // state, but events between the client's cursor and the snapshot (such as
-    // broadcasts) must still be delivered. Expired cursors trigger a resync
-    // snapshot through updates().
-    let after = cursor;
-    let polling = false;
     let closed = false;
-
-    const heartbeat = setInterval(() => {
-        if (!closed) writer.write(encoder.encode(': heartbeat\n\n')).catch(() => {});
-    }, 15000);
-
-    const poll = async () => {
-        if (polling || closed) return;
-        polling = true;
-        try {
-            const updates = await stub.updates(after);
-            if (closed) return;
-            if (updates.resync) {
-                // The client's cursor predates the retained history: announce
-                // resynchronization, then deliver the authoritative snapshot.
-                send('resync', JSON.stringify({ cursor: updates.snapshot.cursor }), updates.snapshot.cursor);
-                send('state-update', updates.snapshot.state, updates.snapshot.cursor);
-                after = updates.snapshot.cursor;
-            } else {
-                for (const event of updates.events) {
-                    send(event.event, event.data, event.cursor);
-                    after = event.cursor;
-                }
-            }
-        } catch (error) {
-            // Close the stream; the browser reconnects with Last-Event-ID and
-            // resynchronizes from the authoritative snapshot when needed.
-            console.error('[Cossack SSE] subscription poll failed:', error);
-            cleanup();
-        } finally {
-            polling = false;
-        }
-    };
-
-    const driver = setInterval(() => { void poll(); }, 200);
+    let lastWrite = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let wake: (() => void) | undefined;
+    let streamController: ReadableStreamDefaultController<Uint8Array>;
     const cleanup = () => {
         if (closed) return;
         closed = true;
-        clearInterval(heartbeat);
-        clearInterval(driver);
-        writer.close().catch(() => {});
+        signal.removeEventListener('abort', abort);
+        if (timer !== undefined) clearTimeout(timer);
+        wake?.();
     };
-    (c.req.raw as any).signal?.addEventListener('abort', cleanup);
-    void poll();
-
-    return new Response(readable, { headers: SSE_HEADERS });
+    const abort = () => {
+        if (closed) return;
+        cleanup();
+        streamController.close();
+    };
+    const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+            streamController = controller;
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+        },
+        async pull(controller) {
+            try {
+                while (!closed) {
+                    const event = pending.shift();
+                    if (event) {
+                        controller.enqueue(encoder.encode(`event: ${event.event}\n${event.cursor === undefined ? '' : `id: ${event.cursor}\n`}data: ${event.data}\n\n`));
+                        lastWrite = Date.now();
+                        return;
+                    }
+                    if (Date.now() - lastWrite >= 15000) {
+                        controller.enqueue(encoder.encode(': heartbeat\n\n'));
+                        lastWrite = Date.now();
+                        return;
+                    }
+                    await new Promise<void>(resolve => { wake = resolve; timer = setTimeout(resolve, 200); });
+                    wake = undefined;
+                    timer = undefined;
+                    if (closed) return;
+                    const updates = await stub.updates(after);
+                    if (closed) return;
+                    if (updates.resync) {
+                        pending.push({ event: 'resync', data: JSON.stringify({ cursor: updates.snapshot.cursor }) });
+                        pending.push({ event: 'state-update', data: updates.snapshot.state, cursor: updates.snapshot.cursor });
+                        after = updates.snapshot.cursor;
+                    } else {
+                        pending.push(...updates.events);
+                        after = updates.events.at(-1)?.cursor ?? after;
+                    }
+                }
+            } catch (error) {
+                if (closed) return;
+                cleanup();
+                controller.error(error);
+            }
+        },
+        cancel() { cleanup(); },
+    }, { highWaterMark: 0 });
+    return new Response(body, { headers: SSE_HEADERS });
 }
 
 /** Sync state changes to the SSE store entry identified by storeKey. */

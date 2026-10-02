@@ -153,6 +153,11 @@ describe('realtime recovery: WebSocket reconnect', () => {
             // A successful open resets the attempt counter and clears errors.
             second.onopen?.();
             expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'open', attempts: 0 });
+            second.readyState = 3;
+            second.onclose?.();
+            expect(realtimeStatus(component).websockets.page.attempts).toBe(1);
+            vi.advanceTimersByTime(500);
+            expect(MockWebSocket.instances).toHaveLength(3);
         } finally {
             vi.useRealTimers();
         }

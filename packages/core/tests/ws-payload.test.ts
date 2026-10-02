@@ -55,7 +55,7 @@ describe('WS payload keeps serializable objects', () => {
         expect(msg.payload).toEqual([{ id: 5, name: 'task' }]);
     });
 
-    it('keeps arrays and primitives, drops DOM nodes / Events / functions', () => {
+    it('keeps arrays and primitives and drops DOM nodes / Events', () => {
         const component = makeComponent();
         const ws = new MockWS();
         component.websockets.set('page', ws as any);
@@ -64,8 +64,7 @@ describe('WS payload keeps serializable objects', () => {
         proxyServerMethods(component, [{ name: 'mix', channel: 'global', provider: 'page' }]);
 
         const node = { nodeType: 1 } as any;
-        const fn = () => {};
-        void component.mix('keep', [1, 2, { a: 3 }], 42, node, fn);
+        void component.mix('keep', [1, 2, { a: 3 }], 42, node);
 
         const msg = JSON.parse(ws.sent[0]);
         // DOM node and function dropped; primitive + array kept.

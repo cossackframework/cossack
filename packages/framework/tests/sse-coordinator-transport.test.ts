@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cossack, CossackService, getRequestContext, Inject, Page, readRpcStream, RPC_STREAM_CONTENT_TYPE, Server, Service, State } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { component, html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 
 // A faithful in-memory stand-in for the SseDurableObject namespace: one scope
@@ -65,7 +65,7 @@ class FakeSseScope {
                     const next = await iterator.next();
                     if (next.done) { finish(); controller.close(); return; }
                     const frame = next.value;
-                    if (frame.type !== 'error') await scope.publish(JSON.stringify(frame.state));
+                    if (frame.type !== 'error') await scope.publish(JSON.stringify(frame.scopeState ?? frame.state));
                     controller.enqueue(encoder.encode(`${JSON.stringify(frame)}\n`));
                     if (frame.type !== 'yield') { await iterator.return(undefined); finish(); controller.close(); }
                 } catch (error) {
@@ -117,6 +117,14 @@ class Shared extends CossackService {
     @State() serviceCount = 0;
 }
 
+let childTarget: string;
+class Child extends Cossack {
+    @State() childCount = 0;
+    @Server() async childIncrement() { return ++this.childCount; }
+    @Server() async *childStream() { yield ++this.childCount; return ++this.childCount; }
+    render() { childTarget = this._id; return html`child ${this.childCount}`; }
+}
+
 @Page({ services: [Shared] })
 class Layout extends Cossack {
     render() { return html`${this.children}`; }
@@ -126,7 +134,7 @@ class Layout extends Cossack {
 class LivePage extends Cossack {
     @State() count = 0;
     @Inject(Shared) shared!: Shared;
-    render() { return html`live ${this.count}`; }
+    render() { return html`live ${this.count}${component(Child, {})}`; }
     @Server()
     async increment() {
         this.count++;
@@ -257,6 +265,21 @@ describe('SSE coordinator transport (/crpc and SSR through the distributed backe
         expect(JSON.parse(scope().snapshot!.state)).toMatchObject({ count: 2 });
     });
 
+    it.each(['childIncrement', 'childStream'])('keeps page state authoritative during child action %s', async action => {
+        await page();
+        const target = childTarget;
+        expect(target).toBeTruthy();
+        await call('increment');
+        const response = await call(action, { target, state: { childCount: 0 } });
+        expect(response.status).toBe(200);
+        if (action === 'childStream') {
+            const frames = await collect(response);
+            expect(frames.at(-1)).toMatchObject({ state: { childCount: 2 }, scopeState: { count: 1 } });
+        } else expect(await response.json()).toMatchObject({ childCount: 1, _cossack_return: 1 });
+        expect(JSON.parse(scope().snapshot!.state)).toEqual({ count: 1 });
+        expect(readHydration(await (await page()).text()).public.count).toBe(1);
+    });
+
     it('returns redirects as JSON while still publishing the mutated state', async () => {
         await page();
         const redirected = await call('redirectToHome');
@@ -295,6 +318,43 @@ describe('SSE coordinator transport (/crpc and SSR through the distributed backe
 });
 
 describe('SSE coordinator subscription endpoint', () => {
+    it('cold starts with layout services even before SSR', async () => {
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);
+        expect(response.status).toBe(200);
+        const reader = response.body!.getReader();
+        const initial = await readSseUntil(reader, events => events.some(event => event.event === 'connected'));
+        expect(JSON.parse(initial[0].data)).toEqual({ count: 0 });
+        await reader.cancel();
+    });
+
+    it('polls only with reader demand and stops after response cancellation', async () => {
+        await page();
+        const updates = vi.spyOn(scope(), 'updates');
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);
+        const setupCalls = updates.mock.calls.length;
+        await new Promise(resolve => setTimeout(resolve, 450));
+        expect(updates).toHaveBeenCalledTimes(setupCalls);
+        await response.body!.cancel();
+        await new Promise(resolve => setTimeout(resolve, 450));
+        expect(updates).toHaveBeenCalledTimes(setupCalls);
+    });
+
+    it('replays missed events before acknowledging the latest snapshot cursor', async () => {
+        await page();
+        await call('increment');
+        await call('announce');
+        await call('increment');
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {
+            headers: { 'Last-Event-ID': '0' },
+        }, env() as any);
+        const reader = response.body!.getReader();
+        const events = await readSseUntil(reader, events => events.some(event => event.event === 'connected'));
+        const ids = events.flatMap(event => event.id === undefined ? [] : [event.id]);
+        expect(ids).toEqual([...ids].sort((a, b) => a - b));
+        expect(events.some(event => event.event === 'event')).toBe(true);
+        expect(JSON.parse(events.findLast(event => event.event === 'state-update')!.data)).toEqual({ count: 2 });
+        await reader.cancel();
+    });
     it('streams the snapshot, then incremental events with cursors', async () => {
         await page();
         const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);

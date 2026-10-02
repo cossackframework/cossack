@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { computeRouteIds } from '@cossackframework/framework/route-ids';
 import {
   filePathToHttpRoute,
   classifyRoute,
@@ -167,6 +168,18 @@ describe('effective route metadata (RT-07)', () => {
     // Route ids are unique and stable across the sorted index space.
     const ids = model.pages.map((page) => page.routeId);
     expect(new Set(ids).size).toBe(ids.length);
+    const runtimeIds = computeRouteIds(model.pages.map(page => page.filePath), model.layouts.map(layout => layout.filePath));
+    for (const page of model.pages) {
+      expect(page.routeId).toBe(runtimeIds.routePathToIdMap.get(page.filePath));
+    }
+  });
+
+  it('uses runtime route precedence before assigning IDs', () => {
+    write('src/pages/(fallback)/home/index.ts', 'class Fallback {}');
+    write('src/pages/home/index.ts', 'class Home {}');
+    write('src/pages/layout.ts', 'class Layout {}');
+    const model = buildEffectiveRouteModel(project());
+    expect(model.pages.map(page => page.filePath)).toEqual(['/src/pages/home/index.ts']);
   });
 
   it('finds the nearest special page without executing it', () => {

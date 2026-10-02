@@ -5,7 +5,7 @@ const spec = new CommandSpec({ name: 'build', forwardsArgs: true });
 
 export async function buildCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
-    console.log('  build   vite build');
+    if (!ctx.flags.json) console.log('  build   vite build');
     // SSG runs inside `vite build` via the cossackSsg plugin's closeBundle hook,
     // so there is no separate SSG step to invoke here.
     if (ctx.flags.json === true) {

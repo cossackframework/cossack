@@ -28,8 +28,10 @@ let requestContextGetter: (() => Context | undefined) | null = null;
 /** @internal Framework wires the per-request Context getter here (once). */
 export function setRequestContextGetter(
     getter: (() => Context | undefined) | null,
-): void {
+): (() => Context | undefined) | null {
+    const previous = requestContextGetter;
     requestContextGetter = getter;
+    return previous;
 }
 
 /**

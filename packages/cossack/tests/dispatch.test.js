@@ -3,9 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { COMMANDS, dispatch } from '../src/dispatch.js';
-import { run } from '../src/spawn.js';
+import { run, runCaptured } from '../src/spawn.js';
 
-vi.mock('../src/spawn.js', () => ({ run: vi.fn(async () => 0) }));
+vi.mock('../src/spawn.js', () => ({
+  run: vi.fn(async () => 0),
+  runCaptured: vi.fn(async () => ({ code: 0, stdout: 'built\n', stderr: '' })),
+}));
 
 const temporaryDirectories = [];
 afterEach(async () => {
@@ -38,6 +41,23 @@ describe('command dispatch', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await dispatch(['dev', '--', '--help']);
     expect(run).toHaveBeenCalledWith('vite', ['dev', '--', '--help']);
+  });
+
+  it.each(['build', 'ssg'])('%s consumes --json and emits exactly one envelope', async command => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await dispatch([command, '--json', '--mode', 'staging'])).toBe(0);
+    expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'staging']);
+    expect(run).not.toHaveBeenCalled();
+    expect(output).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
+      schemaVersion: 1, command, ok: true, data: { exitCode: 0, output: 'built' },
+    });
+  });
+
+  it('preserves --json after the forwarding boundary and handles explicit false', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dispatch(['build', '--json=false', '--', '--json']);
+    expect(run).toHaveBeenCalledWith('vite', ['build', '--', '--json']);
   });
 
   it('reaches legacy SSG option diagnostics while preserving Vite flags', async () => {

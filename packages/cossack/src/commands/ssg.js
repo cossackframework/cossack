@@ -51,7 +51,7 @@ export async function ssgCommand(args, ctx) {
         'and the project root is the current working directory.',
     );
   }
-  console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
+  if (!ctx.flags.json) console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
   if (ctx.flags.json === true) {
     const { code, stdout, stderr } = await runCaptured('vite', ['build', ...viteArgs]);
     return { exitCode: code, data: { exitCode: code, legacyFlags: legacy, output: `${stdout}${stderr}`.trim() } };

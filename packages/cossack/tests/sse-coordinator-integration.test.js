@@ -55,6 +55,18 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
           return stub.execute(state => inRequest(async () => {
             const snapshot = JSON.parse(state);
             started++;
+            if (url.pathname === '/custom') {
+              let sent = false;
+              let cancelled = false;
+              return new Response(new ReadableStream({
+                async pull(controller) {
+                  if (!sent) { sent = true; controller.enqueue(new TextEncoder().encode('first')); return; }
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                  if (!cancelled) { closed++; controller.close(); }
+                },
+                cancel() { cancelled = true; closed++; },
+              }, { highWaterMark: 0 }), { headers: { 'Content-Type': 'text/plain' } });
+            }
             return createRpcStreamResponse({
               requestId: crypto.randomUUID(), signal: request.signal,
               getState: () => url.pathname === '/invalid-state' ? undefined : snapshot,
@@ -171,4 +183,15 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
   await reader.cancel();
   // The canceled response must release the serialization slot.
   expect((await invoke('first')).at(-1).value).toBeGreaterThan(340);
+
+  // A custom streaming Response holds the same slot and releases it on cancel.
+  const custom = await fetch(new URL('/custom', url));
+  const customReader = custom.body.getReader();
+  expect(new TextDecoder().decode((await customReader.read()).value)).toBe('first');
+  const beforeQueued = await (await server.fetch('/counts')).json();
+  const afterCustom = invoke('second');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect((await (await server.fetch('/counts')).json()).started).toBe(beforeQueued.started);
+  await customReader.cancel();
+  expect((await afterCustom).at(-1).type).toBe('done');
 }, 60_000);

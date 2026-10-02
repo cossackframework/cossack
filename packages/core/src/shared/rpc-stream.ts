@@ -3,7 +3,7 @@ export const RPC_STREAM_CONTENT_TYPE = 'application/x-cossack-rpc+ndjson';
 export const RPC_STREAM_MAX_FRAME_BYTES = 1024 * 1024;
 
 export type RpcStreamFrame =
-    | { v: 1; type: 'yield' | 'done'; requestId: string; state: Record<string, unknown>; value?: unknown }
+    | { v: 1; type: 'yield' | 'done'; requestId: string; state: Record<string, unknown>; value?: unknown; scopeState?: Record<string, unknown> }
     | { v: 1; type: 'error'; requestId: string; code: string; message: string };
 
 /** Stable transport diagnostics. Application failures reject the RPC call. */
@@ -28,11 +28,18 @@ function parseFrame(bytes: Uint8Array): RpcStreamFrame {
     } catch (cause) {
         throw new RpcError('COSSACK_RPC_STREAM_INVALID', 'Invalid RPC stream frame.', { cause });
     }
+    return validateRpcFrame(frame);
+}
+
+/** Validate the same correlated protocol on HTTP and WebSocket transports. */
+export function validateRpcFrame(frame: any): RpcStreamFrame {
     if (!frame || frame.v !== 1 || typeof frame.requestId !== 'string' || !frame.requestId ||
         !['yield', 'done', 'error'].includes(frame.type) ||
         (frame.type === 'error'
             ? typeof frame.code !== 'string' || typeof frame.message !== 'string'
-            : !frame.state || typeof frame.state !== 'object' || Array.isArray(frame.state))) {
+            : !frame.state || typeof frame.state !== 'object' || Array.isArray(frame.state) ||
+                (frame.scopeState !== undefined && (!frame.scopeState ||
+                    typeof frame.scopeState !== 'object' || Array.isArray(frame.scopeState))))) {
         throw new RpcError('COSSACK_RPC_STREAM_INVALID', 'Unsupported or malformed RPC stream frame.');
     }
     return frame;
@@ -120,37 +127,27 @@ export function describeUnsupportedValue(value: unknown, path = '', seen = new W
     if (type === 'bigint') return `${path || '(root)'} (bigint)`;
     if (type !== 'object') return null;
     if (seen.has(value as object)) return `${path || '(root)'} (cyclic reference)`;
-    seen.add(value as object);
     if (value instanceof WeakMap || value instanceof WeakSet || value instanceof WeakRef) {
         return `${path || '(root)'} (weak collection)`;
     }
-    if (Array.isArray(value)) {
-        for (let index = 0; index < value.length; index++) {
-            const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen);
+    if (value instanceof Map || value instanceof Set) {
+        return `${path || '(root)'} (${value instanceof Map ? 'Map' : 'Set'})`;
+    }
+    seen.add(value as object);
+    try {
+        if (Array.isArray(value)) {
+            for (let index = 0; index < value.length; index++) {
+                const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen);
+                if (failure) return failure;
+            }
+            return null;
+        }
+        for (const key of Object.keys(value as Record<string, unknown>)) {
+            const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen);
             if (failure) return failure;
         }
         return null;
-    }
-    if (value instanceof Map) {
-        for (const [key, entry] of value) {
-            const failure = describeUnsupportedValue(entry, `${path}.get(${String(key)})`, seen);
-            if (failure) return failure;
-        }
-        return null;
-    }
-    if (value instanceof Set) {
-        let index = 0;
-        for (const entry of value) {
-            const failure = describeUnsupportedValue(entry, `${path}[${index++}]`, seen);
-            if (failure) return failure;
-        }
-        return null;
-    }
-    for (const key of Object.keys(value as Record<string, unknown>)) {
-        const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen);
-        if (failure) return failure;
-    }
-    return null;
+    } finally { seen.delete(value as object); }
 }
 
 /** Minimal structural socket used by the correlated WebSocket RPC protocol. */
@@ -160,7 +157,17 @@ export type RpcSocket = { readyState?: number; send: (data: string) => void };
 export function sendRpcFrame(client: unknown, frame: RpcStreamFrame): void {
     const socket = client as RpcSocket | null | undefined;
     if (socket && socket.readyState === 1) {
-        try { socket.send(JSON.stringify(frame)); } catch { /* the socket died mid-send */ }
+        const unsupported = describeUnsupportedValue(frame);
+        if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+            `Cannot serialize RPC frame: unsupported value at ${unsupported}.`, { requestId: frame.requestId });
+        let serialized: string;
+        try { serialized = JSON.stringify(frame); }
+        catch (cause) { throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize RPC frame.',
+            { requestId: frame.requestId, cause }); }
+        if (new TextEncoder().encode(serialized).length > RPC_STREAM_MAX_FRAME_BYTES) {
+            throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC frame exceeds the byte limit.', { requestId: frame.requestId });
+        }
+        try { socket.send(serialized); } catch { /* the socket died mid-send */ }
     }
 }
 

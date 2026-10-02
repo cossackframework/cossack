@@ -31,6 +31,14 @@ describe('CommandSpec validation (CLI-02)', () => {
     expect(diagnostics[0].supported).toEqual(expect.arrayContaining(['--port', '--verbose', '--json']));
   });
 
+  it('validates declared types, empty values, repetition, and aliases before effects', () => {
+    expect(spec.validate(['x'], { port: true })[0]).toMatchObject({ code: 'COSSACK_OPTION_VALUE_REQUIRED' });
+    expect(spec.validate(['x'], { port: '' })[0]).toMatchObject({ code: 'COSSACK_OPTION_VALUE_REQUIRED' });
+    expect(spec.validate(['x'], { port: ['3000', '8080'] })[0]).toMatchObject({ code: 'COSSACK_OPTION_REPEATED' });
+    expect(spec.validate(['x'], { 'x-typo': 'oops' })[0]).toMatchObject({ code: 'COSSACK_OPTION_UNKNOWN' });
+    expect(spec.validate(['x'], { force: true, f: true })).toEqual([]);
+  });
+
   it('rejects missing and extra positionals with stable codes', () => {
     expect(spec.validate([], {})).toEqual([expect.objectContaining({ code: 'COSSACK_ARGUMENT_MISSING' })]);
     expect(spec.validate(['a', 'b'], {})).toEqual([expect.objectContaining({ code: 'COSSACK_ARGUMENT_UNEXPECTED' })]);

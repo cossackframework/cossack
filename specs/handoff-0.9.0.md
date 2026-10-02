@@ -2,6 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest handoff — Codex review (2026-10-02):** read the
+> [Codex findings, fixes, and continuation instructions](./release-0.9.0.md#codex-review-2026-10-02)
+> before starting the next phase. The seven GLM commits through `e6b7153` were
+> reviewed and regression fixes were added. CLI-02, CLI-03, and RT-12 are reopened;
+> **8/58 tasks remain checked**. Start with the six concrete continuation tasks
+> in that review, then resume the detailed 58-task plan. The older distributed
+> SSE prototype instructions below describe the original checkpoint and are
+> superseded by the GLM implementation and Codex fixes.
+
 > **GLM continuation (2026-10-02):** the "Immediate continuation: distributed
 > SSE" work below is finished — CF-05 is checked in
 > [release-0.9.0.md](./release-0.9.0.md) and the design/verification record is
@@ -33,7 +42,8 @@ scope even where a partial implementation already exists. All versions remain
 
 The current branch is `fix-084`. This handoff is committed with the implementation
 checkpoint. The user will arrange GLM's continuation; no new agent or chat was
-started. The Codex thread goal is paused. No packages were published, no changes
+started. The original checkpoint paused the release implementation goal; the later
+Codex review has its own completion and verification record above. No packages were published, no changes
 were pushed, and no Cloudflare deployment, provisioning, or credential rotation
 was performed.
 
@@ -100,10 +110,11 @@ configuration, D1 queries between stream frames, layout services, cancellation
 over native HTTP, public SSG, and protected assets. These are local tests, not
 evidence of a live deployment.
 
-## Immediate continuation: distributed SSE
+## Original checkpoint history: distributed SSE prototype
 
-**The application still uses Worker-local SSE state. Distributed SSE is not
-finished.** The last implementation step added a coordinator prototype:
+**Historical baseline at `289d181`, superseded by the later GLM/Codex work.**
+At that checkpoint the application still used Worker-local SSE state. The last
+implementation step had added a coordinator prototype:
 
 - `packages/framework/src/SseDurableObject.ts`: native Cloudflare Durable Object,
   SQLite snapshot/event history, first-initialization-wins behavior, bounded

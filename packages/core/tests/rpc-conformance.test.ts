@@ -148,7 +148,6 @@ describe('realtime (WebSocket) RPC conformance', () => {
     });
 
     it('awaits ordinary results with server state and clears loading', async () => {
-        console.log('DBG isServer:', (server as any).isServer, 'typeof window:', typeof (globalThis as any).window);
         const call = client.ordinary(5);
         expect(client.loading.ordinary).toBeTruthy();
         await expect(call).resolves.toBe(5);
@@ -218,6 +217,65 @@ describe('realtime (WebSocket) RPC conformance', () => {
             message: expect.stringContaining('outcome is unknown'),
         });
         expect(client.loading.neverResponds).toBeUndefined();
+    });
+
+    it('cancels locally without waiting for an unresponsive server', async () => {
+        const call = client.neverResponds();
+        const observer = Promise.resolve(call).catch(error => error);
+        await Promise.resolve();
+        await expect(Promise.race([
+            call.cancel().then(() => 'cancelled'),
+            new Promise(resolve => setTimeout(() => resolve('stalled'), 100)),
+        ])).resolves.toBe('cancelled');
+        expect(await observer).toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+    });
+
+    it('rejects unsupported results instead of dropping values or hanging', async () => {
+        vi.spyOn(server, 'ordinary').mockResolvedValue({ nested: { cb: () => {} } } as any);
+        await expect(Promise.resolve(client.ordinary(1))).rejects.toMatchObject({
+            code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            message: expect.stringContaining('value.nested.cb'),
+        });
+        expect(client.loading.ordinary).toBeUndefined();
+    });
+
+    it('rejects malformed correlated socket frames before applying state', async () => {
+        sockets.clientSocket.send = vi.fn();
+        const call = client.ordinary(1);
+        const requestId = JSON.parse(sockets.clientSocket.send.mock.calls[0][0]).requestId;
+        routeSocketFrame(sockets.clientSocket, { v: 2, type: 'done', requestId, state: { count: 999 } });
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID' });
+        expect(client.count).toBe(0);
+        expect(client.loading.ordinary).toBeUndefined();
+    });
+
+    it('bounds queued socket yields when the iterator consumer falls behind', async () => {
+        sockets.clientSocket.send = vi.fn();
+        const call = client.stream(300);
+        const iterator = call[Symbol.asyncIterator]();
+        const requestId = JSON.parse(sockets.clientSocket.send.mock.calls[0][0]).requestId;
+        for (let index = 0; index < 300; index++) {
+            routeSocketFrame(sockets.clientSocket, { v: 1, type: 'yield', requestId, value: index, state: { count: index } });
+        }
+        await expect(iterator.next()).rejects.toMatchObject({ code: 'COSSACK_RPC_BUFFER_EXCEEDED' });
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_BUFFER_EXCEEDED' });
+        expect(client.loading.stream).toBeUndefined();
+        expect(sockets.clientSocket.send.mock.calls.map(([data]: [string]) => JSON.parse(data).type)).toContain('cancel');
+    });
+
+    it('cancels a queued mutation before it starts', async () => {
+        let release!: () => void;
+        const gate = new Promise<number>(resolve => { release = () => resolve(0); });
+        vi.spyOn(server, 'ordinary').mockImplementationOnce(() => gate);
+        const first = client.ordinary(1);
+        await Promise.resolve();
+        const queued = client.ordinary(10);
+        await queued.cancel();
+        release();
+        await first;
+        await expect(Promise.resolve(queued)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+        await server.executeAction('ordinary', [1], undefined, sockets.serverSocket, 'after-cancel');
+        expect(server.count).toBe(1);
     });
 
     it('times out mid-stream and cancels the server generator', async () => {
@@ -349,6 +407,9 @@ describe('serialization diagnostics by value path (RT-01)', () => {
         cyclic.self = cyclic;
         expect(describeUnsupportedValue(cyclic)).toBe('self (cyclic reference)');
         expect(describeUnsupportedValue(new WeakMap())).toBe('(root) (weak collection)');
+        const shared = { value: 1 };
+        expect(describeUnsupportedValue({ left: shared, right: shared })).toBeNull();
+        expect(describeUnsupportedValue({ items: new Map([['a', 1]]) })).toBe('items (Map)');
     });
 
     it('HTTP proxy serialization failures name the offending argument path', async () => {

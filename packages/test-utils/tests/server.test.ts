@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { getRequestContext } from '@cossackframework/core';
+import { CossackService, getRequestContext, Service, ServiceScope, setRequestContextGetter } from '@cossackframework/core';
 import { controlledAsync, withRequestScope } from '../src/server';
 
 describe('withRequestScope (RT-29)', () => {
@@ -31,6 +31,57 @@ describe('withRequestScope (RT-29)', () => {
         })).rejects.toThrow('boom');
         // The request-context getter is restored even on failure.
         expect(getRequestContext()).toBeUndefined();
+    });
+
+    it('preserves an existing framework getter through nested scopes', async () => {
+        const framework = { req: { path: '/framework' } } as any;
+        const outer = { req: { path: '/outer' } } as any;
+        const inner = { req: { path: '/inner' } } as any;
+        setRequestContextGetter(() => framework);
+        try {
+            await withRequestScope({ context: outer }, async () => {
+                await withRequestScope({ context: inner }, async () => {
+                    expect(getRequestContext()).toBe(inner);
+                });
+                expect(getRequestContext()).toBe(outer);
+            });
+            expect(getRequestContext()).toBe(framework);
+        } finally { setRequestContextGetter(null); }
+    });
+
+    it('isolates overlapping scopes even when one completes first', async () => {
+        const firstReady = controlledAsync<void>();
+        const releaseFirst = controlledAsync<void>();
+        const first = { req: { path: '/first' } } as any;
+        const second = { req: { path: '/second' } } as any;
+        const a = withRequestScope({ context: first }, async () => {
+            firstReady.resolve();
+            await releaseFirst.promise;
+            expect(getRequestContext()).toBe(first);
+        });
+        await firstReady.promise;
+        await withRequestScope({ context: second }, async () => {
+            expect(getRequestContext()).toBe(second);
+        });
+        releaseFirst.resolve();
+        await a;
+        expect(getRequestContext()).toBeUndefined();
+    });
+
+    it('retains request context until asynchronous service disposal finishes', async () => {
+        const context = { req: { path: '/cleanup' } } as any;
+        const observed: unknown[] = [];
+        class Owned extends CossackService {
+            async onDispose() {
+                await Promise.resolve();
+                observed.push(getRequestContext());
+            }
+        }
+        Service()(Owned);
+        await withRequestScope({ context }, async ({ serviceScope }) => {
+            new ServiceScope(serviceScope, [Owned], { ownerRouteId: 'layout' });
+        });
+        expect(observed).toEqual([context]);
     });
 });
 

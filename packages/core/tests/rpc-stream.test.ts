@@ -35,6 +35,7 @@ describe('RPC frame parsing', () => {
         [encode({ ...frame('done'), v: 2 }), 'COSSACK_RPC_STREAM_INVALID'],
         [Uint8Array.of(255, 10), 'COSSACK_RPC_STREAM_INVALID'],
         [encode({ ...frame('done'), state: [] }), 'COSSACK_RPC_STREAM_INVALID'],
+        [encode({ ...frame('done'), scopeState: [] }), 'COSSACK_RPC_STREAM_INVALID'],
     ])('rejects incomplete and invalid protocol data', async (bytes, code) => {
         await expect(collect(response([bytes as Uint8Array]))).rejects.toMatchObject({ code });
     });

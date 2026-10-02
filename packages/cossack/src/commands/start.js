@@ -8,6 +8,8 @@ const spec = new CommandSpec({ name: 'start', forwardsArgs: true });
 
 export async function startCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
+  if (ctx.flags.json) throw Object.assign(new Error('start is a long-running command. JSON event output is not implemented yet.'),
+    { code: 'COSSACK_JSON_UNSUPPORTED' });
   const root = await findProjectRoot(ctx.cwd);
   const adapter = await detectAdapter(root);
 

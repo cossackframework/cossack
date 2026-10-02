@@ -14,7 +14,7 @@
 import { writeResult } from './output.js';
 
 /** Flags every command accepts without declaring them. */
-const GLOBAL_FLAGS = ['force', 'dry-run', 'json', 'help'];
+const GLOBAL_FLAGS = ['force', 'f', 'dry-run', 'json', 'help', 'h'];
 
 /**
  * @typedef {Object} CommandFlag
@@ -39,18 +39,29 @@ export class CommandSpec {
     const diagnostics = [];
     if (!this.forwardsArgs) {
       const accepted = new Map();
+      for (const name of GLOBAL_FLAGS) accepted.set(name, { type: 'boolean' });
       for (const [flag, definition] of Object.entries(this.flags)) {
         accepted.set(flag, definition);
         for (const alias of definition.aliases ?? []) accepted.set(alias, definition);
       }
-      for (const name of Object.keys(flags)) {
-        if (name.startsWith('x-')) continue; // explicit escape hatch for tools
-        if (GLOBAL_FLAGS.includes(name) || accepted.has(name)) continue;
+      for (const [name, value] of Object.entries(flags)) {
+        const definition = accepted.get(name);
+        if (definition) {
+          if (Array.isArray(value) && !definition.repeated) {
+            diagnostics.push({ code: 'COSSACK_OPTION_REPEATED', severity: 'error',
+              message: `Option --${name} accepts one value.`, });
+          } else if ((Array.isArray(value) ? value : [value]).some(item => definition.type === 'boolean'
+            ? typeof item !== 'boolean' : typeof item !== 'string' || !item.trim())) {
+            diagnostics.push({ code: 'COSSACK_OPTION_VALUE_REQUIRED', severity: 'error',
+              message: `Option --${name} requires ${definition.type === 'boolean' ? 'true or false' : 'a nonempty string value'}.` });
+          }
+          continue;
+        }
         diagnostics.push({
           code: 'COSSACK_OPTION_UNKNOWN',
           severity: 'error',
           message: `Unknown option --${name} for '${this.name}'.`,
-          supported: [...GLOBAL_FLAGS, ...accepted.keys()].map(name => `--${name}`),
+          supported: [...accepted.keys()].map(name => `--${name}`),
         });
       }
     }
@@ -98,7 +109,8 @@ export async function runWithSpec(spec, args, ctx, handler, help) {
   const wantsHelp = typeof help === 'function' &&
     (['help', '--help', '-h'].includes(args[0]) || ctx.flags?.help === true || ctx.flags?.h === true);
   if (wantsHelp) {
-    console.log(help());
+    if (ctx.flags?.json === true) writeResult(spec.name, { data: { help: help() } });
+    else console.log(help());
     return 0;
   }
   const diagnostics = spec.validate(args, ctx.flags ?? {});

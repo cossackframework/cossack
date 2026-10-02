@@ -134,4 +134,12 @@ describe('Route inspection and explanation (CLI-04)', () => {
       ok: false, diagnostics: [{ code: 'COSSACK_ROUTE_UNKNOWN' }],
     });
   });
+
+  it('does not explain a different dynamic route with the same prefix', async () => {
+    const ctx = await routeFixture();
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['routes', '/dashboard/users/:missing'], { ...ctx, flags: { json: true } })).toBe(1);
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ ok: false,
+      diagnostics: [{ code: 'COSSACK_ROUTE_UNKNOWN' }] });
+  });
 });

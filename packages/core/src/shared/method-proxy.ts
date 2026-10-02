@@ -34,12 +34,11 @@ function getAllReactiveStateKeys(constructor: any): string[] {
 /**
  * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
  * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
- * instances, and functions (none of which are JSON-transportable).
+ * instances. Unsupported data values are rejected with a diagnostic.
  */
 function isWsTransportable(arg: unknown): boolean {
     if (arg === null) return true;
     const t = typeof arg;
-    if (t === 'function') return false;
     if (t !== 'object') return true; // primitive (string/number/boolean/undefined/bigint)
     // Object: reject DOM nodes, Events, Files, Blobs.
     const obj = arg as { nodeType?: unknown };
@@ -238,18 +237,40 @@ function createCallLifecycle(component: any, name: string) {
 
 /** Ordered frame queue for request-scoped realtime calls. */
 class SocketFrameQueue {
-    private frames: RpcStreamFrame[] = [];
+    private frames: Array<{ frame: RpcStreamFrame; bytes: number }> = [];
+    private bytes = 0;
+    private failed = false;
     private resolvers: Array<(result: IteratorResult<RpcStreamFrame>) => void> = [];
 
     push(frame: RpcStreamFrame): void {
+        if (this.failed) return;
         const resolve = this.resolvers.shift();
         if (resolve) resolve({ value: frame, done: false });
-        else this.frames.push(frame);
+        else {
+            const bytes = new TextEncoder().encode(JSON.stringify(frame)).length;
+            if (this.frames.length >= 256 || this.bytes + bytes > 4 * 1024 * 1024) {
+                this.fail({ v: 1, type: 'error', requestId: frame.requestId,
+                    code: 'COSSACK_RPC_BUFFER_EXCEEDED', message: 'RPC consumer fell behind the bounded realtime buffer.' });
+                return;
+            }
+            this.frames.push({ frame, bytes });
+            this.bytes += bytes;
+        }
+    }
+
+    fail(frame: RpcStreamFrame): void {
+        this.failed = true;
+        this.frames = [{ frame, bytes: 0 }];
+        this.bytes = 0;
+        for (const resolve of this.resolvers.splice(0)) resolve({ value: frame, done: false });
     }
 
     next(): Promise<IteratorResult<RpcStreamFrame>> {
-        const frame = this.frames.shift();
-        if (frame) return Promise.resolve({ value: frame, done: false });
+        const queued = this.frames.shift();
+        if (queued) {
+            this.bytes -= queued.bytes;
+            return Promise.resolve({ value: queued.frame, done: false });
+        }
         return new Promise(resolve => this.resolvers.push(resolve));
     }
 }
@@ -280,12 +301,17 @@ async function nextFrameWithDeadline(
         throw new RpcError('COSSACK_RPC_TIMEOUT',
             `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
     }
-    return Promise.race([
-        queue.next(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new RpcError('COSSACK_RPC_TIMEOUT',
-            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`,
-            { requestId })), remaining)),
-    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            queue.next(),
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new RpcError('COSSACK_RPC_TIMEOUT',
+                    `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`,
+                    { requestId })), remaining);
+            }),
+        ]);
+    } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
@@ -328,14 +354,16 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             try {
                 const files = new Map<string, File>();
                 payload = args.map(arg => extractFilesFromArg(arg, files));
-                requestState = snapshotTransportState(component.getPublicState());
+                const liveState = component.getPublicState();
+                requestState = liveState;
                 // JSON.stringify silently drops functions and throws only on
                 // cycles/bigints; reject both before dispatch with the path.
-                const unsupported = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
+                const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(liveState, 'state');
                 if (unsupported) {
                     throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
                         `Cannot serialize arguments or state for '${name}': unsupported value at ${unsupported}.`);
                 }
+                requestState = snapshotTransportState(liveState);
                 if (files.size) {
                     const formData = new FormData();
                     formData.append('componentRouteId', componentRouteId);
@@ -480,23 +508,19 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             component.requestUpdate();
 
             const requestId = crypto.randomUUID();
-            const requestState = snapshotTransportState(component.getPublicState());
-            const apply = createStateApplier(component, requestState);
             const { cleanup, succeed } = createCallLifecycle(component, name);
             // Keep serializable args (primitives, plain objects, arrays), drop
-            // non-transportable ones (DOM nodes, Event, File, Blob, functions).
+            // non-transportable UI objects (DOM nodes, Event, File, Blob).
             const payload = args.filter(isWsTransportable);
-            // isWsTransportable drops non-JSON values from the payload; state
-            // still has to serialize. Reject unsupported state before sending.
-            const unsupported = describeUnsupportedValue(requestState);
-            if (unsupported) {
-                cleanup();
-                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize state for '${name}': unsupported value at ${unsupported}.`, name);
-            }
             const queue = new SocketFrameQueue();
             let message: string;
+            let requestState: Record<string, unknown> = {};
             try {
+                requestState = component.getPublicState();
+                const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(requestState, 'state');
+                if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize the realtime request for '${name}': unsupported value at ${unsupported}.`);
+                requestState = snapshotTransportState(requestState);
                 message = JSON.stringify({
                     v: 1,
                     type: 'action',
@@ -513,6 +537,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `Cannot serialize the realtime request for '${name}'` +
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
+            const apply = createStateApplier(component, requestState);
             wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
             try {
                 ws.send(message);
@@ -535,12 +560,22 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                         if (frame.type === 'done') { succeed(); return frame.value; }
                         yield frame.value;
                     }
+                } catch (error) {
+                    if (error instanceof RpcError && ['COSSACK_RPC_TIMEOUT', 'COSSACK_RPC_BUFFER_EXCEEDED',
+                        'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE'].includes(error.code)) {
+                        try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
+                    }
+                    throw error;
                 } finally {
                     wsPendingCalls(ws).delete(requestId);
                     cleanup();
                 }
             };
             return createRpcCall(operation(), () => {
+                // Wake local consumers immediately. Server cancellation is a
+                // best effort and cannot interrupt arbitrary application I/O.
+                queue.fail({ v: 1, type: 'error', requestId,
+                    code: 'COSSACK_RPC_CANCELLED', message: 'RPC call was cancelled.' });
                 try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
             }, error => console.error(`Error calling server action '${name}':`, error));
         };

@@ -40,6 +40,12 @@ class Counter extends CossackService {
     }
     @Server()
     async serviceRegular() { this.count += 10; return this.count; }
+    @Server()
+    async *serviceQuery() {
+        yield (await sql`SELECT ${1} AS value`).rows;
+        yield (await sql`SELECT ${2} AS value`).rows;
+        return 'queried';
+    }
 }
 @Page({ services: [Counter] })
 class Layout extends Cossack { render() { return html`${this.children}`; } }
@@ -103,6 +109,72 @@ beforeEach(() => { Object.assign(effects, { constructed: 0, runs: 0, closed: 0, 
 afterEach(() => { middlewareStore.database = undefined; vi.restoreAllMocks(); });
 
 describe('router RPC streaming lifecycle', () => {
+    it('rejects ordinary component and service values that JSON would silently drop', async () => {
+        vi.spyOn(StreamPage.prototype, 'regular').mockResolvedValue({ nested: { cb: () => {} } } as any);
+        vi.spyOn(Counter.prototype, 'serviceRegular').mockResolvedValue({ nested: { cb: () => {} } } as any);
+        for (const response of [await request('regular'), await serviceRequest('serviceRegular')]) {
+            expect(response.status).toBe(500);
+            expect(await response.json()).toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+                error: expect.stringContaining('value.nested.cb') });
+        }
+        expect(effects.services).toBe(2);
+        expect(effects.components).toBe(1);
+    });
+
+    it.each(['component', 'service'])('owns a custom %s response through body cleanup', async target => {
+        let opened = 0;
+        let closed = 0;
+        middlewareStore.database = ormMiddleware(async () => {
+            opened++;
+            const driver = new MemoryDriver();
+            const orm = createORM({ adapter: { driver, scope: createAsyncLocalScope(new AsyncLocalStorage()) }, entities: [] });
+            const originalClose = orm.close.bind(orm);
+            vi.spyOn(orm, 'close').mockImplementation(async () => { closed++; await originalClose(); });
+            return orm;
+        });
+        let step = 0;
+        const custom = () => new Response(new ReadableStream<Uint8Array>({
+            async pull(controller) {
+                expect(getRequestContext()?.req.path).toBe('/crpc');
+                const query = await sql`SELECT ${++step} AS value`;
+                controller.enqueue(new TextEncoder().encode(JSON.stringify(query.rows)));
+            },
+        }, { highWaterMark: 0 }), { headers: { 'Content-Type': 'text/plain', 'X-Custom': 'kept' } });
+        if (target === 'component') vi.spyOn(StreamPage.prototype, 'regular').mockImplementation(custom as any);
+        else vi.spyOn(Counter.prototype, 'serviceRegular').mockImplementation(custom as any);
+        const response = target === 'component' ? await request('regular') : await serviceRequest('serviceRegular');
+        expect(opened).toBe(1);
+        expect(closed).toBe(0);
+        expect(response.headers.get('X-Custom')).toBe('kept');
+        const reader = response.body!.getReader();
+        await middlewareStore.current!.run('another-reader', () => reader.read());
+        expect(step).toBe(1);
+        expect(closed).toBe(0);
+        await reader.cancel();
+        expect(closed).toBe(1);
+        expect(effects.services).toBe(1);
+        expect(effects.components).toBe(target === 'component' ? 1 : 0);
+    });
+    it('awaits SSR cleanup inside the request context before returning', async () => {
+        let release!: () => void;
+        let disposalStarted = false;
+        let returned = false;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        vi.spyOn(Counter.prototype, 'onDispose').mockImplementation(async () => {
+            disposalStarted = true;
+            await gate;
+            expect(getRequestContext()?.req.path).toBe('/stream');
+            effects.services++;
+        });
+        const pending = Promise.resolve(createApp().request('/stream', {}, { APP_URL: 'https://configured.test' } as any))
+            .then(response => { returned = true; return response; });
+        await vi.waitFor(() => expect(disposalStarted).toBe(true));
+        expect(returned).toBe(false);
+        release();
+        expect((await pending).status).toBe(200);
+        expect(effects.services).toBe(1);
+        expect(effects.components).toBe(1);
+    });
     it('runs once, preserves middleware/config/request context, and keeps layout services until completion', async () => {
         const response = await request();
         expect(response.status).toBe(200);
@@ -133,6 +205,32 @@ describe('router RPC streaming lifecycle', () => {
         const response = await serviceRequest('serviceRegular');
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ _cossack_service_state: { count: 10 }, _cossack_return: 10 });
+    });
+
+    it('retains the request ORM through explicit service streaming and cancellation', async () => {
+        const orm = createORM({ adapter: {
+            driver: new MemoryDriver('sqlite', query => ({ rows: [{ value: query.parameters[0] }] })),
+            scope: createAsyncLocalScope(new AsyncLocalStorage()),
+        }, entities: [] });
+        const close = vi.spyOn(orm, 'close');
+        middlewareStore.database = ormMiddleware(() => orm);
+        const response = await serviceRequest('serviceQuery');
+        expect(close).not.toHaveBeenCalled();
+        expect(await collect(response)).toMatchObject([
+            { type: 'yield', value: [{ value: 1 }] },
+            { type: 'yield', value: [{ value: 2 }] },
+            { type: 'done', value: 'queried' },
+        ]);
+        expect(close).toHaveBeenCalledOnce();
+
+        const cancelledOrm = createORM({ adapter: { driver: new MemoryDriver(),
+            scope: createAsyncLocalScope(new AsyncLocalStorage()) }, entities: [] });
+        const cancelledClose = vi.spyOn(cancelledOrm, 'close');
+        middlewareStore.database = ormMiddleware(() => cancelledOrm);
+        const cancelled = await serviceRequest('serviceQuery');
+        expect(cancelledClose).not.toHaveBeenCalled();
+        await cancelled.body!.cancel();
+        expect(cancelledClose).toHaveBeenCalledOnce();
     });
 
     it('awaits ordinary async methods even if an old client requests streaming', async () => {

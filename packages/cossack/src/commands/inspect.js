@@ -5,8 +5,7 @@ import { buildEffectiveRouteModel } from '../scan-routes.js';
 
 /** Explain one route's effective behavior with reasons and source locations. */
 function explainRoute(effective, route) {
-  const page = effective.pages.find(candidate => candidate.route === route)
-    ?? effective.pages.find(candidate => candidate.route.split('/:')[0] === route.split('/:')[0]);
+  const page = effective.pages.find(candidate => candidate.route === route);
   if (!page) return null;
   const reasons = [];
   reasons.push(`Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`

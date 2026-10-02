@@ -84,9 +84,9 @@ export class SseDurableObject extends DurableObject {
     /**
      * No replay: an action executes once and owns the serialization slot until
      * its response closes. Streaming responses release the slot when their body
-     * finishes, fails, or is cancelled by the caller; fully materialized
-     * responses (ordinary results, redirects, custom Responses) release it on
-     * return. A caller that disconnects while queued cannot cancel its callback
+     * finishes, fails, or is cancelled by the caller, including custom Responses.
+     * Responses without a body release it on return.
+     * A caller that disconnects while queued cannot cancel its callback
      * on the tested runtime baseline; that action still runs once and its
      * result is discarded — it is never replayed.
      */
@@ -108,15 +108,32 @@ export class SseDurableObject extends DurableObject {
         await before;
         try {
             const response = await action(this.#snapshot().state);
-            if (!response.ok) { finish(); return response; }
-            if (response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
-                // Ordinary result, redirect, or custom response: the body is
-                // fully materialized, so the callback already published state
-                // and the serialization slot is released immediately.
-                finish();
-                return response;
+            if (!response.ok || response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
+                // Custom bodies may perform application I/O during pulls. Hold
+                // the same serialization slot until their owned body closes.
+                if (!response.body) { finish(); return response; }
+                const reader = response.body.getReader();
+                let cancelling = false;
+                const body = new ReadableStream<Uint8Array>({
+                    pull: async controller => {
+                        if (closed || cancelling) return;
+                        try {
+                            const next = await reader.read();
+                            if (closed || cancelling) return;
+                            if (next.done) { reader.releaseLock(); finish(); controller.close(); }
+                            else controller.enqueue(next.value);
+                        } catch (error) { reader.releaseLock(); finish(); controller.error(error); }
+                    },
+                    cancel: async () => {
+                        cancelling = true;
+                        try { await reader.cancel(); }
+                        finally { reader.releaseLock(); finish(); }
+                    },
+                }, { highWaterMark: 0 });
+                return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
             }
-            iterator = readRpcStream(response)[Symbol.asyncIterator]();
+            const cancellation = new AbortController();
+            iterator = readRpcStream(response, cancellation.signal)[Symbol.asyncIterator]();
             const body = new ReadableStream<Uint8Array>({
                 pull: async controller => {
                     if (closed) { try { controller.close(); } catch { /* already closed */ } return; }
@@ -129,7 +146,7 @@ export class SseDurableObject extends DurableObject {
                             throw new Error('COSSACK_RPC_STATE_INVALID: SSE action frame carries no object state.');
                         }
                         if (frame.type === 'yield' || frame.type === 'done') {
-                            this.#publishState(JSON.stringify(frame.state));
+                            this.#publishState(JSON.stringify(frame.scopeState ?? frame.state));
                         }
                         controller.enqueue(encoder.encode(`${JSON.stringify(frame)}\n`));
                         if (frame.type !== 'yield') {
@@ -142,7 +159,11 @@ export class SseDurableObject extends DurableObject {
                         finally { finish(); controller.error(error); }
                     }
                 },
-                cancel: async () => { try { await iterator!.return(undefined); } finally { finish(); } },
+                cancel: async () => {
+                    cancellation.abort();
+                    try { await iterator!.return(undefined); }
+                    finally { finish(); }
+                },
             }, { highWaterMark: 0 });
             return new Response(body, { status: response.status, headers: response.headers });
         } catch (error) { finish(); throw error; }

@@ -14,6 +14,10 @@ export async function routesCommand(args, ctx) {
   const effective = buildEffectiveRouteModel(root);
   const model = buildRouteModel(root);
 
+  if (ctx.flags.json === true) {
+    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length };
+  }
+
   if (model.pages.length === 0 && model.layouts.length === 0) {
     if (ctx.flags.json === true) return { routes: [], pages: 0, layouts: 0 };
     console.log('No routes found under src/pages/.');
@@ -57,13 +61,6 @@ export async function routesCommand(args, ctx) {
     }
   }
 
-  if (ctx.flags.json === true) {
-    return {
-      routes: effective.pages,
-      pages: effective.pages.length,
-      layouts: effective.layouts.length,
-    };
-  }
   if (ctx.flags.verbose) {
     for (const page of effective.pages) {
       if (page.params.length) {

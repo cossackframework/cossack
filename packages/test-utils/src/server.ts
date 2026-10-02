@@ -2,11 +2,11 @@
 //
 // Server-side test entry (RT-29): run test code inside the same request
 // facilities production uses — per-request AsyncLocalStorage scopes for the
-// Hono request context, config, and DI services — plus deterministic async
+// Hono request context and DI services — plus deterministic async
 // control for testing slow responses, cancellation, and cleanup ordering.
 //
 // Core-only dependency: these helpers exercise the production scoping that
-// core owns (request-context getter, config store injection, service scopes)
+// core owns (request-context getter and service scopes)
 // without requiring the framework's router.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -14,10 +14,13 @@ import type { Context } from 'hono';
 import {
     createRootServiceScope,
     setRequestContextGetter,
-    __resetRequestContextForTests,
     type ServiceScope,
     type ServiceScopeRequestContext,
 } from '@cossackframework/core';
+
+const requestAls = new AsyncLocalStorage<RequestScopeOptions>();
+let activeScopes = 0;
+let previousGetter: (() => Context | undefined) | null = null;
 
 export interface RequestScopeOptions extends ServiceScopeRequestContext {
     // NOTE: config() / env() / binding() scoping is owned by the framework's
@@ -37,23 +40,25 @@ export async function withRequestScope<T>(
     options: RequestScopeOptions,
     fn: (scope: { serviceScope: ServiceScope }) => Promise<T> | T,
 ): Promise<T> {
-    const requestAls = new AsyncLocalStorage<Context>();
-    const previousGetter = (globalThis as any).__cossack_test_prev_getter;
-    setRequestContextGetter(() => requestAls.getStore());
-
-    const serviceScope = createRootServiceScope();
-    serviceScope.bindRequest({
-        context: options.context,
-        user: options.user,
-        env: options.env,
-    });
+    if (activeScopes++ === 0) {
+        previousGetter = setRequestContextGetter(() => {
+            const scope = requestAls.getStore();
+            return scope ? scope.context : previousGetter?.();
+        });
+    }
 
     try {
-        return await requestAls.run(options.context as Context, () => fn({ serviceScope }));
+        return await requestAls.run(options, async () => {
+            const serviceScope = createRootServiceScope();
+            serviceScope.bindRequest(options);
+            try { return await fn({ serviceScope }); }
+            finally { await serviceScope.disposeAsync(); }
+        });
     } finally {
-        __resetRequestContextForTests();
-        if (previousGetter !== undefined) (globalThis as any).__cossack_test_prev_getter = previousGetter;
-        await serviceScope.disposeAsync();
+        if (--activeScopes === 0) {
+            setRequestContextGetter(previousGetter);
+            previousGetter = null;
+        }
     }
 }
 
@@ -66,8 +71,8 @@ export async function withRequestScope<T>(
  * ```ts
  * const slow = controlledAsync<string>();
  * const call = component.load(slow.promise);
- * fast.resolve('fast');            // a newer result lands first
- * expect(await call).toBe('fast'); // the stale value cannot win
+ * slow.resolve('ready');
+ * expect(await call).toBe('ready');
  * ```
  */
 export interface ControlledAsync<T> {
@@ -88,13 +93,15 @@ export function controlledAsync<T>(options: { timeoutMs?: number } = {}): Contro
     });
     const controller = new AbortController();
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const settle = <A extends unknown[]>(action: (...args: A) => void) => (...args: A) => {
         if (settled || controller.signal.aborted) return;
         settled = true;
+        if (timer !== undefined) clearTimeout(timer);
         action(...args);
     };
     if (options.timeoutMs !== undefined) {
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
             if (!settled) {
                 settled = true;
                 rejectFn(new Error(`controlledAsync timed out after ${options.timeoutMs}ms`));
@@ -114,6 +121,7 @@ export function controlledAsync<T>(options: { timeoutMs?: number } = {}): Contro
         cancel: () => {
             if (settled) return;
             settled = true;
+            if (timer !== undefined) clearTimeout(timer);
             controller.abort();
             rejectFn(new Error('controlledAsync was cancelled'));
         },
