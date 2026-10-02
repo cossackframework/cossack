@@ -132,11 +132,11 @@ export const commandSpecs = {
   inspect: new CommandSpec({ name: 'inspect', globals: readonly, positionals: ['scope', 'route'],
     minPositionals: 1, subcommands: {
       cloudflare: { flags: { env } },
-      routes: { positionals: ['route'], flags: { verbose: bool('Include route details.') } },
+      routes: { positionals: ['route'], flags: { env, verbose: bool('Include route details.') } },
     } }),
   check: new CommandSpec({ name: 'check', globals: readonly, positionals: ['scope'],
-    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: {} } }),
-  routes: new CommandSpec({ name: 'routes', globals: readonly, flags: { verbose: bool('Include route details.') } }),
+    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } } } }),
+  routes: new CommandSpec({ name: 'routes', globals: readonly, flags: { env, verbose: bool('Include route details.') } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {
@@ -156,5 +156,5 @@ for (const name of ['dev', 'build', 'start', 'ssg']) {
 }
 export const inspectRoutesSpec = new CommandSpec({
   name: 'inspect', globals: readonly, positionals: ['route'],
-  flags: { verbose: bool('Include route details.') },
+  flags: { env, verbose: bool('Include route details.') },
 });

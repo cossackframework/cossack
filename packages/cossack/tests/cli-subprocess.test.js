@@ -419,7 +419,7 @@ describe('routes and inspection', () => {
     const checked = await runCli(['check', 'routes', '--json']);
     expect(checked.code).toBe(1);
     expect(parseEnvelope(checked.stdout).diagnostics.map(d => d.code)).toContain('COSSACK_ROUTE_METHODS_UNKNOWN');
-    const invalid = await runCli(['check', 'routes', '--env', 'staging', '--json']);
+    const invalid = await runCli(['check', 'routes', '--remote', '--json']);
     expect(invalid.code).toBe(1);
     expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_OPTION_UNKNOWN');
   });

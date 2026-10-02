@@ -14,6 +14,10 @@
       "types": "./dist/esm/public.d.ts",
       "import": "./dist/esm/public.js"
     },
+    "./runtime-capabilities": {
+      "types": "./dist/esm/runtime-capabilities.d.ts",
+      "import": "./dist/esm/runtime-capabilities.js"
+    },
     "./config": {
       "types": "./dist/esm/config.d.ts",
       "import": "./dist/esm/config.js"

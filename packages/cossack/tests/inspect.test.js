@@ -65,6 +65,28 @@ describe('Cloudflare configuration inspection', () => {
     expect(JSON.parse(output.mock.calls[0][0]).ok).toBe(false);
   });
 
+  it('checks route bindings against the selected Wrangler environment', async () => {
+    const durable_objects = { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] };
+    const ctx = await fixture({ durable_objects, env: {
+      staging: { durable_objects: { bindings: [] } },
+      production: { durable_objects },
+    } });
+    await fs.mkdir(path.join(ctx.cwd, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(ctx.cwd, 'src/pages/index.ts'), "@Page({ transport: 'sse' }) export default class P { render() { return 1; } }");
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await checkCommand(['routes'], { ...ctx, flags: { json: true, env: 'staging' } })).toBe(1);
+    const missing = JSON.parse(output.mock.calls[0][0]);
+    expect(missing.data.runtime.environment).toBe('staging');
+    expect(missing.diagnostics.map(d => d.code)).toContain('COSSACK_TRANSPORT_BINDING_MISSING');
+    output.mockClear();
+    expect(await checkCommand(['routes'], { ...ctx, flags: { json: true, env: 'production' } })).toBe(0);
+    const ready = JSON.parse(output.mock.calls[0][0]);
+    expect(ready.data.runtime.transports[0]).toMatchObject({ status: 'available', missingBindings: [] });
+    output.mockClear();
+    expect(await inspectCommand(['routes', '/'], { ...ctx, flags: { json: true, env: 'production' } })).toBe(0);
+    expect(JSON.parse(output.mock.calls[0][0]).data.reasons.join(' ')).toContain('Runtime cloudflare: sse transport is available');
+  });
+
   it('rejects unknown environments with a structured diagnostic', async () => {
     const ctx = await fixture();
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     describeRuntimeCapabilities,
     evaluateCapability,
+    evaluateTransportCapability,
     formatCapabilityResult,
     supportsTransport,
 } from '../src/runtime-capabilities';
@@ -31,8 +32,26 @@ describe('runtime capability model (RT-25)', () => {
 
     it('transport support differs per runtime', () => {
         expect(supportsTransport('cloudflare', 'durable-object')).toBe(true);
-        expect(supportsTransport('node', 'durable-object')).toBe(false);
+        expect(supportsTransport('node', 'durable-object')).toBe(true);
+        expect(supportsTransport('deno', 'durable-object')).toBe(true);
         expect(supportsTransport('unknown', 'http')).toBe(false);
+    });
+
+    it('requires transport-specific bindings only on Cloudflare', () => {
+        expect(evaluateTransportCapability('cloudflare', 'http', {})).toMatchObject({ status: 'available' });
+        expect(evaluateTransportCapability('cloudflare', 'sse', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_SSE'] });
+        expect(evaluateTransportCapability('cloudflare', 'durable-object', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_OBJECT'] });
+        expect(evaluateTransportCapability('cloudflare', 'sse', { COSSACK_SSE: {} })).toMatchObject({ status: 'available' });
+        for (const runtime of ['node', 'deno'] as const) {
+            expect(evaluateTransportCapability(runtime, 'durable-object', {})).toMatchObject({ status: 'available' });
+            expect(evaluateCapability(runtime, 'realtimeCoordination', {})).toMatchObject({ status: 'unsupported' });
+        }
+    });
+
+    it('evaluates requested transports instead of accepting every request', () => {
+        expect(evaluateCapability('desktop', 'transports', {}, ['sse'])).toMatchObject({ status: 'unsupported' });
+        expect(evaluateCapability('cloudflare', 'transports', {}, ['sse', 'durable-object'])).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_SSE', 'COSSACK_OBJECT'] });
+        expect(evaluateTransportCapability('node', 'not-a-transport', {})).toMatchObject({ status: 'unsupported' });
     });
 
     it('summarizes every capability with names only', () => {

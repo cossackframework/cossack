@@ -48,13 +48,12 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         serverlessStorage: true,
         filesystem: false,
         bindingRequirements: {
-            transports: ['ASSETS'],
             realtimeCoordination: ['COSSACK_SSE'],
             serverlessStorage: [],
         },
     },
     node: {
-        transports: ['http', 'sse'],
+        transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
         scheduledHandlers: true,
@@ -63,7 +62,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         bindingRequirements: {},
     },
     deno: {
-        transports: ['http', 'sse'],
+        transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
         scheduledHandlers: true,
@@ -110,9 +109,11 @@ export function evaluateCapability(
         return { capability, status: 'unsupported', missingBindings: [] };
     }
     if (capability === 'transports') {
-        // Transport support is a set question, answered by the caller with the
-        // page's transport; see supportsTransport.
-        return { capability, status: 'available', missingBindings: [] };
+        const requested = Array.isArray(requirement) ? requirement : profile.transports;
+        const results = requested.map(transport => evaluateTransportCapability(runtime, transport, env));
+        if (results.some(result => result.status === 'unsupported')) return { capability, status: 'unsupported', missingBindings: [] };
+        const missingBindings = [...new Set(results.flatMap(result => result.missingBindings))];
+        return { capability, status: missingBindings.length ? 'missing-binding' : 'available', missingBindings };
     }
     const supported = profile[capability] === true;
     if (!supported) return { capability, status: 'unsupported', missingBindings: [] };
@@ -126,9 +127,24 @@ export function evaluateCapability(
 }
 
 /** Whether a page transport can run on the runtime at all. */
-export function supportsTransport(runtime: RuntimeName, transport: 'http' | 'sse' | 'durable-object'): boolean {
+export function supportsTransport(runtime: RuntimeName, transport: string): boolean {
     const profile = profileFor(runtime);
-    return profile ? profile.transports.includes(transport) : false;
+    return profile ? profile.transports.some(candidate => candidate === transport) : false;
+}
+
+/** Check a specific page transport; support does not imply durable state. */
+export function evaluateTransportCapability(
+    runtime: RuntimeName,
+    transport: string,
+    env: Record<string, unknown> | undefined,
+): CapabilityResult {
+    const capability = 'transports';
+    if (!supportsTransport(runtime, transport)) return { capability, status: 'unsupported', missingBindings: [] };
+    const binding = runtime === 'cloudflare'
+        ? transport === 'sse' ? 'COSSACK_SSE' : transport === 'durable-object' ? 'COSSACK_OBJECT' : undefined
+        : undefined;
+    const missingBindings = binding && (env?.[binding] === undefined || env?.[binding] === null) ? [binding] : [];
+    return { capability, status: missingBindings.length ? 'missing-binding' : 'available', missingBindings };
 }
 
 /** All capability results for a runtime, for inspection and CLI output. */

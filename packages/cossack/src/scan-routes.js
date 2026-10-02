@@ -1,3 +1,4 @@
+import { inspectRuntimeMetadata } from './runtime-metadata.js';
 import { resolveDeclarationDispatch } from './member-dispatch.js';
 import { resolveImportedInheritance } from './inheritance.js';
 import { inspectScaffoldMetadata } from './project-metadata.js';
@@ -219,7 +220,7 @@ export function nearestSpecialPage(pageFilePath, pages, type) {
  * parameters, layout ancestry, nearest 404/error boundaries, and source-level
  * @Page options. Inspection reads facts; it never executes components.
  */
-export async function buildEffectiveRouteModel(projectRoot) {
+export async function buildEffectiveRouteModel(projectRoot, options = {}) {
   const model = buildRouteModel(projectRoot);
   const layoutKeys = model.layouts.map((layout) => layout.filePath);
   const { routePathToIdMap } = computeRouteIds(model.pages.map(page => page.filePath), layoutKeys);
@@ -308,5 +309,5 @@ export async function buildEffectiveRouteModel(projectRoot) {
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
     });
   }
-  return { pages, layouts, scaffold: await inspectScaffoldMetadata(projectRoot) };
+  return { pages, layouts, scaffold: await inspectScaffoldMetadata(projectRoot), runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment) };
 }

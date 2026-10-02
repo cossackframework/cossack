@@ -12,11 +12,11 @@ export async function routesCommand(args, ctx) {
   // Effective metadata (RT-07): params, layout ancestry, boundaries, and
   // source-level @Page options come from the effective model; the compact
   // model still drives the human table.
-  const effective = await buildEffectiveRouteModel(root);
+  const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV });
   const model = buildRouteModel(root);
 
   if (ctx.flags.json === true) {
-    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length, scaffold: effective.scaffold };
+    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length, scaffold: effective.scaffold, runtime: effective.runtime };
   }
 
   if (model.pages.length === 0 && model.layouts.length === 0) {

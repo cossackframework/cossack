@@ -193,7 +193,14 @@ These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior
 are reported as `not-checked`; success does not prove that the application runs.
 Resource macros expose generated RPC method names, resource names, and authored
-loader locations. Unsupported resource declarations produce unknown method facts. `--env` applies to Cloudflare checks, not route checks.
+loader locations. Unsupported resource declarations produce unknown method facts.
+Route commands accept `--env <name>` for Cloudflare configuration selection, or
+use `CLOUDFLARE_ENV` when the flag is absent. Their `runtime` metadata evaluates
+route transports with the shared framework capability model. Missing required
+transport bindings or unsupported transports make checks fail. Configuration
+presence does not prove remote resources exist or adapter setup is correct.
+Node/Deno support the `durable-object` transport name through process-local
+adapters; this does not provide durable cross-instance coordination.
 
 ### `cossack inspect cloudflare` and `cossack check cloudflare`
 

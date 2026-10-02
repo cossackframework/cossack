@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: effective inherited dispatch, unsupported project resolution cases, binding-aware capability checks, and complete acceptance verification.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: effective inherited dispatch, unsupported project resolution cases, complete framework acceptance verification, and unsupported project-resolution cases. Binding-aware transport checks now use the shared runtime model.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -45,7 +45,7 @@ below link directly to those explanations.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; remaining: scaffold recipe gating and CLI inspection must consume the same model.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Remaining: scaffold recipe gating and build-time capability enforcement.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -85,6 +85,45 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-runtime-inspection-2026-10-03"></a>
+### Codex continuation: binding-aware transport inspection (2026-10-03)
+
+**Author: Codex.** Published the shared runtime-capability module and included it
+in declaration generation. Corrected its transport model: Node/Deno support the
+`durable-object` transport through process-local adapters, while durable
+cross-instance coordination remains unsupported. Requested transports are now
+actually evaluated. Cloudflare SSE and Durable Object transports require
+`COSSACK_SSE` and `COSSACK_OBJECT`, respectively; HTTP requires neither.
+
+Route listing, inspection, checks, and explanations consume this model. Runtime
+selection reuses scaffold detection. Cloudflare binding names come from the
+existing Wrangler-backed deployment inspector. `--env` or `CLOUDFLARE_ENV`
+selects the configuration environment. Missing route bindings and unsupported
+transports produce failing diagnostics. Unreadable bindings remain unknown;
+an undetected runtime is not guessed. Only binding names are passed to capability
+evaluation; configuration values and raw parser errors are excluded.
+
+Results explicitly describe configuration presence, not provisioned remote
+resources, correct adapter installation, durable Node/Deno state, or successful
+runtime execution. General capability summaries do not replace per-route checks.
+
+Verification:
+
+- Runtime capability suite: **7 passed**.
+- Six CLI inspection/route/command/subprocess suites: **110 passed**.
+- Final metadata/inspection suites: **15 passed**, including a new real Wrangler
+  parser fixture proving named-environment non-inheritance and redeclared SSE
+  binding availability, plus the route explanation result.
+- Framework declaration generation, root TypeScript, and all **11 package type
+  checks passed**. The initial CLI run caught the missing declaration-build entry;
+  that packaging omission was fixed before the successful runs above.
+
+**11/58 tasks remain checked.** CLI-04 now has shared compiler, scaffold, and
+runtime transport facts, but its full grouped-route/layout/service acceptance
+and actual inherited framework RPC behavior still need verification. RT-25 remains
+open for build-time and recipe gating. Continue those requirements; do not infer
+remote deployment readiness from local binding presence.
 
 <a id="codex-declaration-dispatch-2026-10-03"></a>
 ### Codex continuation: declared member precedence (2026-10-03)

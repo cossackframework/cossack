@@ -12,6 +12,12 @@ function explainRoute(effective, route) {
   const page = effective.pages.find(candidate => candidate.route === route);
   if (!page) return null;
   const reasons = [];
+  const capability = effective.runtime.transports.find(item => item.source === page.source);
+  if (capability) {
+    reasons.push(`Runtime ${effective.runtime.name}: ${capability.transport} transport is ${capability.status} (configured binding presence only).`);
+    if (capability.missingBindings.length) reasons.push(`Missing transport bindings: ${capability.missingBindings.join(', ')}`);
+  } else reasons.push('Runtime transport capability is unknown.');
+
   reasons.push(page.extraction.method === 'unknown'
     ? `Transport and options are unknown: ${page.extraction.reason} (${page.source})`
     : `Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`
@@ -61,9 +67,9 @@ async function inspectRoutes(args, ctx, command) {
   const [target] = args;
   if (!target) {
     const root = await findProjectRoot(ctx.cwd);
-    const effective = await buildEffectiveRouteModel(root);
+    const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV });
     if (ctx.flags.json === true) {
-      return { scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold };
+      return { scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold, runtime: effective.runtime };
     }
     for (const page of effective.pages) {
       console.log(`${page.route.padEnd(34)} ${String(page.transport ?? 'http').padEnd(15)} ${page.source}`);
@@ -77,7 +83,7 @@ async function inspectRoutes(args, ctx, command) {
   }
   // `inspect routes <route>` / `explain <route>`: facts with reasons.
   const root = await findProjectRoot(ctx.cwd);
-  const effective = await buildEffectiveRouteModel(root);
+  const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV });
   const explanation = explainRoute(effective, target);
   if (!explanation) {
     throw Object.assign(new Error(`No route matches '${target}'. Run cossack inspect routes to list routes.`),
@@ -95,8 +101,8 @@ async function inspectRoutes(args, ctx, command) {
 async function checkRoutes(ctx) {
   try {
     const root = await findProjectRoot(ctx.cwd);
-    const effective = await buildEffectiveRouteModel(root);
-    const diagnostics = [...effective.scaffold.diagnostics];
+    const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV });
+    const diagnostics = [...effective.scaffold.diagnostics, ...effective.runtime.diagnostics];
     const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
     for (const item of [...effective.pages, ...effective.layouts]) {
       if (item.extraction.method !== 'ast') {
@@ -119,7 +125,7 @@ async function checkRoutes(ctx) {
     }
     const ok = diagnostics.length === 0;
     const data = {
-      scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold,
+      scope: 'routes', routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold, runtime: effective.runtime,
       readiness: { staticMetadata: ok ? 'valid' : 'invalid', inheritance: 'not-checked', runtime: 'not-checked' },
     };
     if (ctx.flags.json === true) writeResult('check', { ok, data, diagnostics });
@@ -192,8 +198,10 @@ export function checkHelp() {
   return commandSpecs.check.help(`cossack check <cloudflare|routes> [--json]
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
-route metadata without writing files. Route checks fail on unknown options,
-unavailable compiler method facts, or invalid transports. Inherited behavior
+route metadata without writing files. --env selects Cloudflare configuration
+for either scope. Route checks fail on unknown options,
+unavailable compiler method facts, invalid/unsupported transports, or missing
+required transport bindings. Inherited behavior
 and runtime execution are not yet checked.
 Returns a nonzero exit code for configuration errors. Build artifacts,
 remote resources, permissions, and secret availability are not checked.

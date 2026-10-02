@@ -209,7 +209,9 @@ Do not execute constructors or server methods merely to inspect a project.
 
 Codex review checkpoint (2026-10-02): compiler helper preservation now traverses
 all reachable calls instead of stopping at three hops. Own-method inspection now consumes the shared compiler classifier. Recorded scaffold recipes now use the shared composition registry. Inheritance
-and binding-aware capability integration remain open. Supported resource macros now map generated
+semantics and full acceptance verification remain open. Binding-aware transport
+inspection now consumes the published runtime model and selected-environment
+configuration names. Supported resource macros now map generated
 RPC methods to authored loader locations through compiler expansion metadata. `check routes` now
 validates available static metadata with failing exits; checks over the complete
 project model remain open. See the [implementation sequence and validation fixture](./release-0.9.0.md#codex-compiler-preservation-2026-10-02)

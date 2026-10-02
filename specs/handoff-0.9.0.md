@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex declaration dispatch (2026-10-03):** read
+> **Latest checkpoint — Codex runtime inspection (2026-10-03):** read
+> [shared capabilities, binding checks, and verification](./release-0.9.0.md#codex-runtime-inspection-2026-10-03).
+> Route commands now use selected-environment bindings and the shared transport
+> model. Missing bindings/unsupported transports fail checks. Node/Deno transport
+> support remains explicitly process-local. **11/58 tasks remain checked.**
+> Continue CLI-04's full framework acceptance fixture and inherited RPC behavior;
+> RT-25 still needs build-time and recipe capability gating.
+
+> **Previous checkpoint — Codex declaration dispatch (2026-10-03):** read
 > [member precedence and verification scope](./release-0.9.0.md#codex-declaration-dispatch-2026-10-03).
 > Route inspection resolves declared field/prototype/accessor precedence with
 > owners and sources. Unknown precedence makes route checks fail. JavaScript
