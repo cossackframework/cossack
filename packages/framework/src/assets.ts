@@ -23,6 +23,10 @@ export function createAssetsMiddleware(ctx: RouterContext): MiddlewareHandler {
   }
 
   return async (c, next) => {
+    // Upgrade handshakes belong to the transport pipeline. ASSETS is an HTTP
+    // binding (a Node middleware bridge in Vite dev), not a WebSocket proxy.
+    // Forwarding the handshake there can crash Miniflare before /ws runs.
+    if (c.req.header('upgrade')) return next();
     const assets = c.env?.ASSETS as AssetsBinding | undefined;
     if (!assets?.fetch || !['GET', 'HEAD'].includes(c.req.method)) return next();
     // Encoded separators can be interpreted differently by route and asset

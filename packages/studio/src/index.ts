@@ -33,6 +33,10 @@ export interface StudioRunOptions {
   connection?: StudioConnection;
   applicationName?: string;
   provider?: StudioProvider;
+  /** Suppress launch URL/logs when a caller owns the output protocol. */
+  quiet?: boolean;
+  /** Called only after the loopback server is listening; never includes its token. */
+  onReady?: (info: { origin: string; remote: boolean }) => void;
 }
 
 async function loadProjectORM(projectRoot: string, options: StudioRunOptions): Promise<ORM> {
@@ -173,56 +177,69 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
   const database = new StudioDatabase(connection, {
     applicationName: options.applicationName ?? await resolveApplicationName(projectRoot),
   });
-  await database.getSchema();
-  setStudioDatabase(database);
+  let server: ReturnType<typeof createServer> | undefined;
+  try {
+    await database.getSchema();
+    setStudioDatabase(database);
 
-  const security = createStudioSecurity(port);
-  const packageRoot = path.dirname(fileURLToPath(import.meta.url));
-  const clientRoot = path.resolve(packageRoot, 'app', 'client');
-  const serverEntry = path.resolve(packageRoot, 'app', 'server', 'entry-server.js');
-  let fetchApp: ((request: Request, env?: Record<string, unknown>) => Promise<Response>) | undefined;
+    const security = createStudioSecurity(port);
+    const packageRoot = path.dirname(fileURLToPath(import.meta.url));
+    const clientRoot = path.resolve(packageRoot, 'app', 'client');
+    const serverEntry = path.resolve(packageRoot, 'app', 'server', 'entry-server.js');
+    let fetchApp: ((request: Request, env?: Record<string, unknown>) => Promise<Response>) | undefined;
 
-  const server = createServer(async (request, response) => {
-    security.applyHeaders(response);
-    try {
-      const authorized = security.authorize(request, response);
-      if (authorized !== true) return;
-      if (await serveStudioAsset(request, response, clientRoot)) return;
-      if (!fetchApp) {
-        const module = await import(pathToFileURL(serverEntry).href);
-        fetchApp = (incoming, env) => module.app.fetch(incoming, env);
+    server = createServer(async (request, response) => {
+      security.applyHeaders(response);
+      try {
+        const authorized = security.authorize(request, response);
+        if (authorized !== true) return;
+        if (await serveStudioAsset(request, response, clientRoot)) return;
+        if (!fetchApp) {
+          const module = await import(pathToFileURL(serverEntry).href);
+          fetchApp = (incoming, env) => module.app.fetch(incoming, env);
+        }
+        const webRequest = await toWebRequest(request, security.origin);
+        await writeWebResponse(await fetchApp(webRequest, {}), response);
+      } catch (error: any) {
+        if (!response.headersSent) response.statusCode = 500;
+        response.end(error?.message ?? String(error));
       }
-      const webRequest = await toWebRequest(request, security.origin);
-      await writeWebResponse(await fetchApp(webRequest, {}), response);
-    } catch (error: any) {
-      if (!response.headersSent) response.statusCode = 500;
-      response.end(error?.message ?? String(error));
-    }
-  });
+    });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
-  });
-  const launchUrl = `${security.origin}/?token=${security.launchToken}`;
-  console.log(`Cossack Studio: ${launchUrl}`);
-  if (connection.info.remote) {
-    console.warn('WARNING: Studio is connected to remote D1. Changes affect deployed data immediately.');
+    await new Promise<void>((resolve, reject) => {
+      server!.once('error', reject);
+      server!.listen(port, '127.0.0.1', resolve);
+    });
+    const launchUrl = `${security.origin}/?token=${security.launchToken}`;
+    if (!options.quiet) console.log(`Cossack Studio: ${launchUrl}`);
+    if (connection.info.remote && !options.quiet) {
+      console.warn('WARNING: Studio is connected to remote D1. Changes affect deployed data immediately.');
+    }
+    options.onReady?.({ origin: security.origin, remote: connection.info.remote });
+    if (options.open !== false) openBrowser(launchUrl);
+
+    await new Promise<void>((resolve) => {
+      const shutdown = () => {
+        options.signal?.removeEventListener('abort', shutdown);
+        process.removeListener('SIGINT', shutdown);
+        process.removeListener('SIGTERM', shutdown);
+        resolve();
+      };
+      if (options.signal?.aborted) shutdown();
+      else options.signal?.addEventListener('abort', shutdown, { once: true });
+      if (!options.signal) {
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+      }
+    });
+  } finally {
+    try {
+      if (server?.listening) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+    } finally {
+      setStudioDatabase(undefined);
+      await database.close();
+    }
   }
-  if (options.open !== false) openBrowser(launchUrl);
-
-  await new Promise<void>((resolve) => {
-    const shutdown = () => resolve();
-    if (options.signal?.aborted) resolve();
-    else options.signal?.addEventListener('abort', shutdown, { once: true });
-    if (!options.signal) {
-      process.once('SIGINT', shutdown);
-      process.once('SIGTERM', shutdown);
-    }
-  });
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  setStudioDatabase(undefined);
-  await database.close();
 }
 
 export type {

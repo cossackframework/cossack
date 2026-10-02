@@ -5,6 +5,29 @@ test.describe('Optimistic Counter Page', () => {
     await page.goto('/optimistic-counter');
   });
 
+  test('routes upgrade handshakes to the Durable Object and completes a correlated server action', async ({ page }) => {
+    const sent: Array<Record<string, unknown>> = [];
+    const received: Array<Record<string, unknown>> = [];
+    page.on('websocket', socket => {
+      if (!new URL(socket.url()).pathname.startsWith('/ws/')) return;
+      const record = (target: Array<Record<string, unknown>>, payload: string | Buffer) => {
+        try { target.push(JSON.parse(String(payload))); } catch { /* ping/pong */ }
+      };
+      socket.on('framesent', frame => record(sent, frame.payload));
+      socket.on('framereceived', frame => record(received, frame.payload));
+    });
+    await page.reload();
+    await expect.poll(() => received.some(frame => frame.type === 'state-update')).toBe(true);
+    await page.getByRole('button', { name: 'Increment (+1)', exact: true }).click();
+    await expect.poll(() => sent.find(frame => frame.type === 'action' && frame.action === 'increment')).toBeDefined();
+    const action = sent.find(frame => frame.type === 'action' && frame.action === 'increment')!;
+    expect(action.requestId).toEqual(expect.any(String));
+    expect(action.payload).toEqual([]);
+    await expect.poll(() => received.find(frame => frame.requestId === action.requestId && frame.type === 'done'),
+      { timeout: 10_000 }).toBeDefined();
+    expect(received.filter(frame => frame.requestId === action.requestId && frame.type === 'error')).toEqual([]);
+  });
+
   test('should display counter value', async ({ page }) => {
     await page.waitForLoadState('networkidle');
 

@@ -2,18 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest handoff — Codex Group 3 review (2026-10-02):** read the
-> [Codex findings, fixes, and continuation instructions](./release-0.9.0.md#codex-review-group3-2026-10-02)
-> before starting the next phase. The 13 GLM commits through `fac3daf` were
-> reviewed after Codex checkpoint `59fa58e`. CLI-02 and CLI-03 are reopened;
-> RT-12 and the new Group 3 tasks remain partial. **8/58 tasks are checked**.
-> Build, type checks, bundle audit, and 2,288 unit tests pass. Browser checks
-> reproduce a Vite/Miniflare WebSocket upgrade crash with both one and two
-> workers; resolve that integration failure before claiming browser acceptance.
-> Start with the seven continuation steps in that review, then resume the
-> detailed 58-task plan. The older distributed
-> SSE prototype instructions below describe the original checkpoint and are
-> superseded by the GLM implementation and Codex fixes.
+> **Latest checkpoint — Codex continuation (2026-10-02):** read the
+> [Codex implementation and continuation instructions](./release-0.9.0.md#codex-continuation-2026-10-02)
+> before the next phase. The development WebSocket crash is fixed: Upgrade
+> requests now bypass the HTTP asset bridge. Adapter, image, upgrade, and
+> Studio have machine-output paths; Studio uses isolated lifecycle events.
+> Upgrade plans precede effects and report partial failures; build/SSG JSON
+> excludes raw project logs. **8/58 tasks are checked** and versions remain
+> 0.8.3. CLI-02/03/06 still have acceptance work; the full release goal is active.
+> Exact checks and limitations are in that new section. The prior
+> [Group 3 review](./release-0.9.0.md#codex-review-group3-2026-10-02)
+> records GLM's reviewed commits and earlier corrections. The distributed SSE
+> prototype instructions below are historical and superseded by the completed
+> GLM implementation and Codex fixes.
 
 > **GLM continuation (2026-10-02):** the "Immediate continuation: distributed
 > SSE" work below is finished — CF-05 is checked in
@@ -46,8 +47,9 @@ scope even where a partial implementation already exists. All versions remain
 
 The current branch is `fix-084`. This handoff is committed with the implementation
 checkpoint. The user will arrange GLM's continuation; no new agent or chat was
-started. The original checkpoint paused the release implementation goal; the later
-Codex review has its own completion and verification record above. No packages were published, no changes
+started. The original checkpoint paused the release implementation goal; the
+user has since resumed the full unfinished release objective. The latest Codex
+continuation records current implementation and verification above. No packages were published, no changes
 were pushed, and no Cloudflare deployment, provisioning, or credential rotation
 was performed.
 

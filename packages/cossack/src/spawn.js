@@ -28,16 +28,16 @@ export function run(cmd, args = [], opts = {}) {
 export function runCaptured(cmd, args = [], opts = {}) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
-      stdio: ['inherit', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       shell: opts.shell ?? process.platform === 'win32',
       cwd: opts.cwd || process.cwd(),
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('exit', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.stdout.on('data', chunk => { if (!opts.discardOutput) stdout += chunk; });
+    child.stderr.on('data', chunk => { if (!opts.discardOutput) stderr += chunk; });
+    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
     child.on('error', (err) => resolve({ code: 1, stdout, stderr: `${stderr}${err.message}` }));
   });
 }

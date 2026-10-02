@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createApp } from '@cossackframework/scaffold';
 
 const bin = fileURLToPath(new URL('../bin/cossack.js', import.meta.url));
 
@@ -22,6 +23,7 @@ function runCli(argv, options = {}) {
     const child = spawn(process.execPath, [bin, ...argv], {
       cwd: options.cwd ?? tmp,
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: options.env ?? process.env,
     });
     liveChildren.add(child);
     let stdout = '';
@@ -47,6 +49,208 @@ beforeEach(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-subprocess-'));
   liveChildren = new Set();
   await fs.writeFile(path.join(tmp, 'package.json'), '{}');
+});
+
+describe('adapter, image, upgrade, and Studio machine contracts', () => {
+  it.each(['build', 'ssg'])('%s isolates project logs and reports tool failure', async command => {
+    const toolDir = path.join(tmp, 'tools');
+    await fs.mkdir(toolDir);
+    await fs.writeFile(path.join(toolDir, 'vite'), '#!/usr/bin/env node\n' +
+      'console.log("project-private-value"); console.error("parser-private-value"); process.exit(1);\n', { mode: 0o755 });
+    const result = await runCli([command, '--json', ...(command === 'ssg' ? ['--base-url', 'https://private-value.test'] : [])],
+      { env: { ...process.env, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).not.toContain('private-value');
+    const envelope = parseEnvelope(result.stdout);
+    expect(envelope.diagnostics.some(item => item.code === (command === 'build' ? 'COSSACK_BUILD_FAILED' : 'COSSACK_SSG_BUILD_FAILED'))).toBe(true);
+    expect(envelope.data).not.toHaveProperty('output');
+  });
+
+  async function project(preservePackage = false) {
+    const result = await createApp('app', { cwd: tmp, adapter: 'node', preset: 'minimal', interactive: false });
+    // Keep registry access out of file-planning fixtures.
+    if (!preservePackage) await fs.writeFile(path.join(result.projectDir, 'package.json'), '{"name":"app","type":"module"}\n');
+    return result.projectDir;
+  }
+
+  it('adapter plans and applies without prompts or secret output', async () => {
+    const cwd = await project(true);
+    await fs.writeFile(path.join(cwd, '.env'), 'APP_SECRET=adapter-private-value\n');
+    const planned = await runCli(['adapter', 'cloudflare', '--dry-run', '--json'], { cwd });
+    expect(planned.code).toBe(0);
+    expect(planned.stderr).toBe('');
+    expect(parseEnvelope(planned.stdout).data).toMatchObject({ status: 'dry-run', previousAdapter: 'node', targetAdapter: 'cloudflare' });
+    expect(planned.stdout).not.toContain('adapter-private-value');
+    const applied = await runCli(['adapter', 'cloudflare', '--json'], { cwd });
+    expect(applied.code).toBe(0);
+    expect(applied.stderr).toBe('');
+    expect(parseEnvelope(applied.stdout).data.status).toBe('changed');
+    expect(applied.stdout).not.toContain('adapter-private-value');
+    const present = await runCli(['adapter', 'cloudflare', '--json'], { cwd });
+    expect(parseEnvelope(present.stdout).data.status).toBe('present');
+  });
+
+  it('adapter reports unsupported database choices without printing a human error', async () => {
+    const cwd = await project();
+    const result = await runCli(['adapter', 'cloudflare', '--database', 'postgres', '--json'], { cwd });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_ADAPTER_FAILED');
+  });
+
+  it('image plans files without a converter and rejects unsafe sources and invalid quality', async () => {
+    await fs.mkdir(path.join(tmp, 'src'));
+    await fs.mkdir(path.join(tmp, 'public'));
+    await fs.writeFile(path.join(tmp, 'public/photo.png'), 'image');
+    await fs.writeFile(path.join(tmp, 'src/page.ts'), "Image({ src: '/photo.png', width: 200 });");
+    const result = await runCli(['image', 'optimize', '--dry-run', '--json']);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    const data = parseEnvelope(result.stdout).data;
+    expect(data).toMatchObject({ status: 'dry-run', planned: 1, optimized: 0 });
+    expect(data.effects[0].action).toBe('planned');
+    expect(await fs.readdir(path.join(tmp, 'public'))).toEqual(['photo.png']);
+    for (const quality of ['-1', '101', '2.5', 'oops']) {
+      const invalid = await runCli(['image', 'optimize', `--quality=${quality}`, '--json']);
+      expect(invalid.code).toBe(1);
+      expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_QUALITY_INVALID');
+    }
+    await fs.writeFile(path.join(tmp, 'src/page.ts'), "Image({ src: '/../outside.png', width: 200 });");
+    const unsafe = await runCli(['image', 'optimize', '--dry-run', '--json']);
+    expect(unsafe.code).toBe(1);
+    expect(parseEnvelope(unsafe.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_PATH_INVALID');
+    await fs.writeFile(path.join(tmp, 'src/page.ts'), "Image({ src: '/photo.png', width: 200 });");
+    await fs.symlink(path.join(tmp, 'outside-output.webp'), path.join(tmp, 'public/photo-200.webp'));
+    const linked = await runCli(['image', 'optimize', '--dry-run', '--json']);
+    expect(linked.code).toBe(1);
+    expect(parseEnvelope(linked.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_PATH_INVALID');
+  });
+
+  it('image reports empty projects and invalid subcommands in one envelope', async () => {
+    const empty = await runCli(['image', 'optimize', '--json']);
+    expect(empty.code).toBe(0);
+    expect(empty.stderr).toBe('');
+    expect(parseEnvelope(empty.stdout).data.status).toBe('empty');
+    const invalid = await runCli(['image', 'unknown', '--json']);
+    expect(invalid.code).toBe(1);
+    expect(invalid.stderr).toBe('');
+    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_SUBCOMMAND_UNKNOWN');
+  });
+
+  it('upgrade exposes preserved conflicts and rejects an unowned force-file before writes', async () => {
+    const cwd = await project();
+    const appPath = path.join(cwd, 'src/App.ts');
+    await fs.writeFile(appPath, '// custom application\n');
+    const before = await fs.readFile(path.join(cwd, 'package.json'), 'utf8');
+    const planned = await runCli(['upgrade', '--apply-template', '--dry-run', '--json'], { cwd });
+    expect(planned.code).toBe(0);
+    expect(planned.stderr).toBe('');
+    const plan = parseEnvelope(planned.stdout).data.plan;
+    expect(plan.files.preserved).toContain('src/App.ts');
+    expect(plan.files.conflicts).toContainEqual({ path: 'src/App.ts', resolution: 'preserve' });
+    expect(plan.dependencies).toMatchObject({ updates: [], additions: [], removals: [] });
+    expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
+    const invalid = await runCli(['upgrade', '--force-file=../outside.ts', '--json'], { cwd });
+    expect(invalid.code).toBe(1);
+    expect(invalid.stderr).toBe('');
+    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_FILE_UNKNOWN');
+    expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(before);
+    const applied = await runCli(['upgrade', '--apply-template', '--json'], { cwd });
+    expect(applied.code).toBe(0);
+    expect(parseEnvelope(applied.stdout).data.status).toBe('completed');
+    expect(await fs.readFile(appPath, 'utf8')).toBe('// custom application\n');
+  });
+
+  it('upgrade reports installation failure with its applied dependency changes and recovery', async () => {
+    const cwd = await project();
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'app', type: 'module',
+      dependencies: { '@cossackframework/core': '^0.8.3' }, packageManager: 'pnpm@11.19.0' }));
+    const toolDir = path.join(tmp, 'tools');
+    await fs.mkdir(toolDir);
+    await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
+      'if (process.argv[2] === "view") console.log(JSON.stringify("0.9.0"));\n' +
+      'else { console.error("installer-private-value"); process.exit(1); }\n', { mode: 0o755 });
+    const result = await runCli(['upgrade', '--json'], { cwd,
+      env: { ...process.env, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).not.toContain('installer-private-value');
+    const envelope = parseEnvelope(result.stdout);
+    expect(envelope.diagnostics[0].code).toBe('COSSACK_UPGRADE_INSTALL_FAILED');
+    expect(envelope.data).toMatchObject({ status: 'partial-failure', applied: { dependencies: true, installed: false } });
+    expect(envelope.data.nextActions).toContain('pnpm install');
+    expect(JSON.parse(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).dependencies['@cossackframework/core']).toBe('^0.9.0');
+  });
+
+  it('upgrade rejects a stale plan if files change during registry resolution', async () => {
+    const cwd = await project();
+    const relative = 'src/App.ts';
+    const file = path.join(cwd, relative);
+    // Make the file unchanged against its old baseline, with a template update available.
+    await fs.writeFile(file, '// previous template\n');
+    const { createHash } = await import('node:crypto');
+    const manifestFile = path.join(cwd, '.cossack/scaffold.json');
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+    manifest.files[relative].hash = createHash('sha256').update('// previous template\n').digest('hex');
+    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+    const packageSource = JSON.stringify({ name: 'app', type: 'module',
+      dependencies: { '@cossackframework/core': '^0.8.3' } });
+    await fs.writeFile(path.join(cwd, 'package.json'), packageSource);
+    const toolDir = path.join(tmp, 'tools');
+    await fs.mkdir(toolDir);
+    await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
+      'require("node:fs").writeFileSync(process.env.FIXTURE_EDIT_PATH, "// edit during planning\\n");\n' +
+      'console.log(JSON.stringify("0.9.0"));\n', { mode: 0o755 });
+    const result = await runCli(['upgrade', '--apply-template', '--json'], { cwd,
+      env: { ...process.env, FIXTURE_EDIT_PATH: file, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
+    expect(result.code).toBe(1);
+    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_PLAN_STALE');
+    expect(await fs.readFile(file, 'utf8')).toBe('// edit during planning\n');
+    expect(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).toBe(packageSource);
+  });
+
+  async function studioFixture(body) {
+    const packageRoot = path.join(tmp, 'node_modules/@cossackframework/studio');
+    await fs.mkdir(path.join(packageRoot, 'dist'), { recursive: true });
+    await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify({ type: 'module',
+      exports: { './package.json': './package.json' } }));
+    await fs.writeFile(path.join(packageRoot, 'dist/index.js'), body);
+    await fs.writeFile(path.join(tmp, 'package.json'), JSON.stringify({ type: 'module',
+      devDependencies: { '@cossackframework/studio': '^0.9.0' } }));
+  }
+
+  it('Studio emits ready/stopped NDJSON events while isolating application logs and launch tokens', async () => {
+    await studioFixture(`console.log('module-private-value');
+      export async function runStudio(options) {
+        console.error('launch-token-private-value');
+        options.onReady({ origin: 'http://localhost:4983', remote: false, token: 'launch-token-private-value' });
+      }`);
+    const result = await runCli(['studio', '--json']);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).not.toContain('private-value');
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+    expect(events.map(event => event.data.event)).toEqual(['ready', 'stopped']);
+    expect(events.every(event => event.schemaVersion === 1 && event.ok)).toBe(true);
+    expect(events[0].data.origin).toBe('http://localhost:4983');
+  });
+
+  it('Studio has bounded startup and structured failures without importing source in dry runs', async () => {
+    await studioFixture(`throw new Error('module-private-value');`);
+    const planned = await runCli(['studio', '--dry-run', '--json']);
+    expect(planned.code).toBe(0);
+    expect(parseEnvelope(planned.stdout).data.event).toBe('planned');
+    const failed = await runCli(['studio', '--json']);
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).not.toContain('module-private-value');
+    expect(parseEnvelope(failed.stdout).diagnostics[0].code).toBe('COSSACK_STUDIO_EXECUTION_FAILED');
+    await studioFixture(`export async function runStudio() { setInterval(() => {}, 10000); await new Promise(() => {}); }`);
+    const timeout = await runCli(['studio', '--json', '--timeout=100']);
+    expect(timeout.code).toBe(1);
+    expect(timeout.stderr).toBe('');
+    expect(parseEnvelope(timeout.stdout).diagnostics[0].code).toBe('COSSACK_STUDIO_STARTUP_TIMEOUT');
+  });
 });
 afterEach(async () => {
   const running = liveChildren.size;

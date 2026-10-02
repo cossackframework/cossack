@@ -36,7 +36,7 @@ export async function ssgCommand(args, ctx) {
     const hasConfigurable = legacy.some((f) =>
       ['--base-url', '--baseUrl', '--out-dir', '--outDir'].includes(f.flag),
     );
-    console.warn(
+    if (ctx.flags.json !== true) console.warn(
       '[cossack/ssg] The following flags are no longer supported and were ignored:\n' +
         legacy.map((f) => `  ${f.flag}${f.value !== undefined ? ` ${f.value}` : ''}`).join('\n') +
         '\nSSG now runs inside `vite build` via the `cossackSsg()` plugin.' +
@@ -53,8 +53,13 @@ export async function ssgCommand(args, ctx) {
   }
   if (!ctx.flags.json) console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
   if (ctx.flags.json === true) {
-    const { code, stdout, stderr } = await runCaptured('vite', ['build', ...viteArgs]);
-    return { exitCode: code, data: { exitCode: code, legacyFlags: legacy, output: `${stdout}${stderr}`.trim() } };
+    const { code } = await runCaptured('vite', ['build', ...viteArgs], { discardOutput: true });
+    return { exitCode: code, data: { exitCode: code, legacyFlags: legacy.map(item => item.flag),
+      ...(code ? { nextActions: ['cossack ssg'] } : {}) },
+      diagnostics: [...(legacy.length ? [{ code: 'COSSACK_SSG_LEGACY_OPTION_IGNORED', severity: 'warning',
+        message: 'Legacy SSG options were ignored. Configure cossackSsg() in vite.config.ts.' }] : []),
+      ...(code ? [{ code: 'COSSACK_SSG_BUILD_FAILED', severity: 'error',
+        message: 'SSG build failed. Run cossack ssg without --json for tool diagnostics.' }] : [])] };
   }
   return run('vite', ['build', ...viteArgs]);
   });

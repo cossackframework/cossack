@@ -225,8 +225,9 @@ pnpm test:unit
 ```
 
 The root command runs Vitest once (no watch mode), including UI, auth, Node
-adapter, and framework tests. `test-utils` currently has no suite and is
-excluded. Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
+adapter, framework, and test-utils tests. The root command runs package suites
+serially because framework pretest recreates library exports used by CLI tests.
+Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
 focused run. Similar direct-binding and spread-binding renderer tests cover
 different execution paths and should both be retained.
 

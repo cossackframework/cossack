@@ -47,15 +47,15 @@ their underlying tool. Command help is handled before starting that tool.
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
 | `--dry-run` | Show planned changes without writing them. |
-| `--json` | Emit exactly one machine-readable result envelope (see below). |
+| `--json` | Emit a machine-readable result envelope; Studio emits lifecycle events (see below). |
 | `--yes`, `-y` | Apply changes without confirmation (noninteractive mode). |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
 
 ### Machine-readable output contract (GLM, 2026-10-02)
 
-Under `--json`, a command prints **exactly one** result envelope on stdout and
-nothing else:
+Under `--json`, a finite command prints **exactly one** result envelope on
+stdout and nothing else. Studio uses the same envelope for its lifecycle events:
 
 ```json
 { "schemaVersion": 1, "command": "generate", "ok": true,
@@ -63,7 +63,7 @@ nothing else:
   "diagnostics": [] }
 ```
 
-- Success carries `data` (file effects with `created|overwritten|planned|skipped|deleted`
+- Success carries `data` (file effects with `created|overwritten|planned|planned-delete|skipped|deleted`
   actions, planned paths for dry runs, structured facts for inspection).
 - Failure carries `ok: false`, a nonzero exit code, and `diagnostics` with
   stable codes such as `COSSACK_OPTION_UNKNOWN` (including the supported
@@ -77,8 +77,17 @@ nothing else:
   always pass one of these).
 - Long-running interactive commands (`dev`, `start`) reject `--json` up front
   with `COSSACK_JSON_UNSUPPORTED`; a streaming event contract for them is
-  future work. `build` and `ssg` capture the underlying tool output and emit
-  one envelope with `{ exitCode, output }`.
+  future work. `build` and `ssg` isolate tool output and emit one envelope
+  with `exitCode` and coded failures. Raw project/tool logs are omitted because
+  they can contain credentials. Run human mode to inspect those logs locally.
+- `studio --json` emits newline-delimited JSON: a `data.event: "ready"`
+  envelope after the server starts, then `"stopped"` on clean shutdown or a
+  failed envelope with a nonzero exit. A startup failure produces one failed
+  envelope. Project logs and launch tokens are isolated in a child process.
+  The ready event contains the loopback origin and remote/local selection.
+  Studio stays running after readiness; send SIGINT or SIGTERM to stop it.
+  `--timeout <milliseconds>` bounds startup (default 30000, maximum 300000).
+  JSON mode never opens a browser. Use human mode to open its authenticated UI.
 - Dry runs perform no writes: `generate component X --dry-run --json` emits
   the planned paths and leaves the filesystem untouched.
 
@@ -440,11 +449,16 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 | --- | --- |
 | `--format <webp\|avif>` | Output format (default: `webp`). |
 | `--quality <0-100>` | Output quality (default: `80`). |
-| `--dry-run` | List the image variants without writing them. |
+| `--dry-run` | List the image variants without writing them or launching ImageMagick. |
+
+`--json` reports file effects and optimized/planned/skipped counts. Quality must
+be an integer from 0 through 100. Missing sources, unsafe paths, and conversion
+failures return coded diagnostics and a nonzero exit; converter output does not
+enter the JSON result. Empty projects succeed without requiring ImageMagick.
 
 **Installing ImageMagick**
 
-If the binary is missing, the command prints platform-specific instructions:
+Install ImageMagick before applying an optimization plan:
 
 ```bash
 # macOS
@@ -499,6 +513,19 @@ cossack upgrade --force-file <path>   # surgically overwrite one file, even if e
 | `--dry-run` | Show planned changes without writing them. |
 
 Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
+
+Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
+It includes dependency versions, selected file writes, preserved edits, conflicts,
+build-setting migration, installation requirements, and follow-up actions. Planning
+uses the recipe templates installed with this CLI; `templateVersion` identifies
+that version. It updates existing Cossack dependencies; automatic dependency
+additions and removals are not implemented yet. No files change during a dry run.
+
+An unknown `--force-file` or an unresolved package version fails before writes.
+If a selected file changes during registry resolution, the plan fails as stale.
+An installation failure returns `status: "partial-failure"`, the changes already
+applied, and a retry command. It does not report a successful upgrade. Raw package
+manager output stays outside the machine-readable protocol.
 
 ---
 

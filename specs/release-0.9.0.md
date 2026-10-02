@@ -12,10 +12,10 @@ below link directly to those explanations.
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex Group 3 review (2026-10-02): reopened. CommandSpec validates types, aliases, repeats, and positional counts; this review fixes inspect route arity. Remaining: command-specific conflicts and incompatible targets, canonical alias conflict handling, and parser/help generation from the same command metadata. See the latest Codex review below.
-- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex Group 3 review (2026-10-02): reopened. This review fixes duplicate inspect envelopes, empty handler results, numeric failure diagnostics, add/remove noninteractive output, and delete planning/results. Remaining: adapter, upgrade, image, and Studio still have human-printing or prompt/process paths under --json. The original 17 subprocess tests did not cover every command family.
+- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex continuation (2026-10-02): adapter, image, upgrade, and Studio machine paths are implemented; Studio has isolated ready/stopped/failed NDJSON and a startup deadline. Build/SSG omit raw project logs and provide coded failures. Remaining: full subprocess success/failure/dry-run coverage for every command family, with shared command metadata from CLI-02. See the latest Codex continuation below.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
-- [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
+- [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex continuation (2026-10-02): computes dependency/file/migration/install decisions before effects, preserves edited files, rejects unknown force targets and stale plans, and records partial installation failures with recovery actions. Remaining: owned dependency additions/removals and target-version template alignment; current rendering uses the installed CLI's reported templateVersion.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
 
@@ -70,7 +70,7 @@ below link directly to those explanations.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
-- [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline.
+- [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
 
 ## Release gates
@@ -85,6 +85,92 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-continuation-2026-10-02"></a>
+### Codex continuation: development upgrades and machine contracts (2026-10-02)
+
+**Author: Codex.** Continued the unfinished release after review checkpoint
+`3731dbb`. The full 58-task objective remains active. **8/58 tasks remain
+checked**; the changes below complete useful slices, not whole-task acceptance.
+Versions remain 0.8.3. Preserve the user's `reports.md` and `.zcodeignore`.
+
+1. **Development WebSockets.** The previous Miniflare assertion was triggered
+   by framework asset middleware probing ASSETS with an Upgrade request before
+   `/ws` dispatch. The Vite plugin implements this binding as an HTTP Node
+   middleware bridge. Upgrade requests now skip asset lookup and retain global
+   and transport policies. Regression tests reject any attempted ASSETS probe,
+   including mixed-case WebSocket and other upgrade values. The existing 24
+   navigation/guard/view-transition tests now pass. A browser regression checks
+   actual Durable Object state frames, an action request ID, and its correlated
+   `done` frame rather than accepting an optimistic UI change as proof.
+2. **Adapter and image JSON.** Adapter suppresses human lines and prompts in
+   JSON/non-TTY operation, returns its public plan and follow-up commands, and
+   propagates coded failures. Its public recipe removes generated secret values.
+   Image validates format/quality, plans without a converter, reports effects
+   and counts, rejects traversal and escaping symlinks, and fails for missing
+   sources or conversion errors. Converter logs never enter machine output.
+3. **Upgrade planning.** File drift, force-file ownership, dependency resolution,
+   build-setting migration, installation, and follow-up actions are computed
+   before writes. Locally modified files remain preserved unless explicitly
+   selected. A file changed during registry resolution rejects the stale plan
+   before effects. Installation failure returns a nonzero structured partial
+   result with applied changes and a retry command. pnpm build-setting migration
+   keeps its merged approvals instead of being overwritten by a template copy.
+   Resolution uses bounded `pnpm view`; unresolved versions fail before effects.
+   **Still partial:** additions/removals are empty, and templates come from the
+   installed CLI, not the dependency version selected at the registry. Finish
+   those requirements before checking CLI-06.
+4. **Studio lifecycle.** JSON execution imports project code in an isolated
+   child process. Ready/stopped/failed events use the versioned envelope, with
+   token-free loopback metadata and no browser launch. Startup defaults to a
+   30-second deadline; SIGINT/SIGTERM request cleanup. The Studio library has
+   `quiet`/`onReady` hooks and finally-based server/database disposal on schema,
+   readiness, and shutdown failures. Dry-run does not import project code.
+   CLI subprocess tests cover log/token isolation, import failure, and timeout;
+   library tests use an actual loopback server and in-memory SQLite connection.
+5. **Build/SSG privacy.** Their JSON path previously included raw project and
+   parser output in `data.output`. It now discards that output and supplies an
+   exit code, coded diagnostic, and a human-mode follow-up command. Legacy SSG
+   warnings are structured and include option names only. Captured processes
+   have no inherited stdin and resolve on close.
+
+**Verification:**
+
+- `pnpm build`: passes.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass; all 11 package configs.
+- `pnpm test:unit`: **2,305 passing tests in 13 packages** — auth 118,
+  database 84, renderer 256, scaffold 82, core 669, node-adapter 10,
+  test-utils 8, UI 112, CLI 328, framework 564, deno-adapter 3, desktop 16,
+  Studio 55. The final CLI package run repeats all 328 after tightening the
+  image output-symlink guard, including dangling links.
+- Focused CLI protocol/dispatch tests: 65 passing; Studio lifecycle: 3;
+  asset middleware: 14.
+- `pnpm --filter @cossackframework/framework exec playwright test
+  e2e/core-features/navigation.spec.ts e2e/pages/prevent-navigation.spec.ts
+  e2e/pages/view-transitions.spec.ts --reporter=line --workers=2`:
+  **24 passing**.
+- `pnpm --filter @cossackframework/framework exec playwright test
+  e2e/pages/optimistic-counter.spec.ts --reporter=line --workers=1`:
+  **7 passing**, including the actual correlated WebSocket action regression.
+- `git diff --check -- docs packages specs`: passes.
+
+Logs for this checkpoint are `/tmp/cossack-continuation-build.log`,
+`types-final.log`, `unit.log`, `navigation-e2e.log`, `ws-actions-final.log`, and
+`cli-package-final.log`, each latter filename with the same
+`/tmp/cossack-continuation-` prefix. No full generated-app/native production
+matrix was repeated in this slice; REL-02/03/05 remain open.
+
+**Continue next:** finish CLI-02's metadata-backed parser/help and conflict
+handling, then complete CLI-03's full command-family matrix. Finish CLI-06's
+dependency ownership/version alignment, compiler-backed CLI-04, and scaffold
+capabilities (CLI-05/RT-25). Resume the remaining runtime/service/Cloudflare
+tasks in the detailed plan; do not treat this checkpoint as the release.
+
+Do not run builds or framework pretest concurrently with CLI or browser tests:
+they recreate dist exports. One exploratory browser attempt overlapped a core
+rebuild and failed entry resolution; run the final gates serially. The first
+new protocol assertion incorrectly looked for `result`; the defined terminal
+frame is `done`, and the corrected assertion remains in the browser suite.
 
 
 <a id="codex-review-group3-2026-10-02"></a>

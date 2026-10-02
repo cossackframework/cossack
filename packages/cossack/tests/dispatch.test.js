@@ -46,11 +46,11 @@ describe('command dispatch', () => {
   it.each(['build', 'ssg'])('%s consumes --json and emits exactly one envelope', async command => {
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, '--json', '--mode', 'staging'])).toBe(0);
-    expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'staging']);
+    expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'staging'], { discardOutput: true });
     expect(run).not.toHaveBeenCalled();
     expect(output).toHaveBeenCalledTimes(1);
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
-      schemaVersion: 1, command, ok: true, data: { exitCode: 0, output: 'built' },
+      schemaVersion: 1, command, ok: true, data: { exitCode: 0 },
     });
   });
 

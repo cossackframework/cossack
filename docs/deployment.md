@@ -63,10 +63,11 @@ framework's `ASSETS` binding.
 SSG only publishes anonymous, public HTML. A route that requires login or
 sets visitor cookies must use SSR. See [Static Site Generation](./static-site-generation.md).
 
-The current SSE implementation stores shared state in a Worker instance.
-Do not rely on cross-request synchronization across Worker instances until
-the distributed SSE backend is available. Durable Object transport provides
-coordination for stateful pages.
+SSE pages use the `COSSACK_SSE` Durable Object binding to coordinate scoped
+state and broadcasts across Worker requests. Generated apps export
+`SseDurableObject` and configure its SQLite migration. Declare this binding
+in each named environment too. Node and Deno use a process-local SSE backend;
+multiple server processes need a shared coordinator for cross-process state.
 
 ### Inspect configuration
 
@@ -122,6 +123,30 @@ Use distinct resources for previews. A preview URL alone does not isolate a
 database or bucket. Apply migrations explicitly to the intended database;
 this command does not apply migrations. Rolling back Worker code does not
 restore database, bucket, or Durable Object state.
+
+### Development compatibility checkpoint
+
+The 0.9.0 work uses this installed combination for its development browser checks:
+
+| Tool or setting | Tested value |
+| --- | --- |
+| Node.js | 24.19.0 |
+| Vite | 8.1.4 |
+| `@cloudflare/vite-plugin` | 1.47.0 |
+| Wrangler | 4.114.0 |
+| Miniflare | 4.20260722.0 |
+| Demo Worker compatibility date | 2025-08-03 |
+| Demo Worker compatibility flags | `nodejs_compat` |
+
+Static-asset middleware must let requests with an `Upgrade` header reach the
+transport handler. Forwarding a WebSocket handshake to `ASSETS` crashes this
+combination's development HTTP asset bridge. Cossack excludes those handshakes
+before asset lookup; global request and transport policies still run.
+
+The focused navigation, guard, and view-transition suites pass with this fix.
+This checkpoint does not yet certify other dependency combinations or the
+complete deployment guide. Keep the release checklist open until generated
+projects and all release gates pass.
 
 ### Environment Variables and Secrets
 
