@@ -84,7 +84,7 @@ describe('Route inspection and explanation (CLI-04)', () => {
     };
     await write('package.json', '{}');
     await write('src/pages/layout.ts', 'export default class Layout {}');
-    await write('src/pages/dashboard/layout.ts', 'export default class Dash {}');
+    await write('src/pages/dashboard/layout.ts', "@Page({ services: [Session, Audit] })\nexport default class Dash {}");
     await write('src/pages/dashboard/users/[id]/index.ts',
       "@Page({ transport: 'sse', middlewares: [async (c, next) => { await next(); }] })\nexport default class Users {}");
     await write('src/pages/dashboard/404/index.ts', 'export default class NotFound {}');
@@ -106,6 +106,10 @@ describe('Route inspection and explanation (CLI-04)', () => {
       notFoundBoundary: '/src/pages/dashboard/404/index.ts',
       params: [{ name: 'id', catchAll: false }],
     });
+    // Service ownership matches what DI resolution finds: the dashboard
+    // layout declares Session and Audit for its subtree.
+    const dashboardLayout = result.data.layouts.find((layout) => layout.filePath === '/src/pages/dashboard/layout.ts');
+    expect(dashboardLayout).toMatchObject({ services: ['Session', 'Audit'] });
   });
 
   it('explains a route with reasons and source locations', async () => {
@@ -119,6 +123,7 @@ describe('Route inspection and explanation (CLI-04)', () => {
     expect(reasons).toContain('src/pages/layout.ts');
     expect(reasons).toContain('1 middleware(s)');
     expect(reasons).toContain('Nearest 404 boundary');
+    expect(reasons).toContain('Session, Audit (/src/pages/dashboard/layout.ts)');
   });
 
   it('fails with a coded diagnostic for unknown routes', async () => {

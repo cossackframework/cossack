@@ -23,14 +23,16 @@ export async function addCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
   const [feature, componentName] = args;
   if (!feature || !FEATURES.includes(feature)) {
-    console.error(
-      `Unknown feature: ${feature || '(none)'}.\nAvailable features: ${FEATURES.join(', ')}`,
+    throw Object.assign(
+      new Error(`Unknown feature: ${feature}. Available features: ${FEATURES.join(', ')}`),
+      { code: 'COSSACK_FEATURE_UNKNOWN' },
     );
-    return 1;
   }
   if (componentName && feature !== 'ui') {
-    console.error('A component name is only supported by `cossack add ui`.');
-    return 1;
+    throw Object.assign(
+      new Error('A component name is only supported by `cossack add ui`.'),
+      { code: 'COSSACK_ARGUMENT_UNEXPECTED' },
+    );
   }
   const uiComponent = componentName ? UI_COMPONENTS[componentName] : undefined;
   if (componentName && !uiComponent) {

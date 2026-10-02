@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
 import { ClientVisibleError } from '../src/shared/errors';
 import { Server, State } from '../src/shared/decorators';
-import { proxyServerMethods } from '../src/shared/method-proxy';
+import { proxyHttpMethods, proxyServerMethods } from '../src/shared/method-proxy';
 import { failPendingSocketCalls, routeSocketFrame } from '../src/shared/transport-connections';
 import { InMemoryWebSocketRuntime } from '../src/shared/runtime';
 import { createInstance } from '../src/shared/container';
 import { ServiceScope } from '../src/shared/service-scope';
 import { Service } from '../src/shared/decorators';
-import { readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
+import { describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
 
 // The realtime server component must take the server lifecycle (no client
 // proxies on its actions); client surfaces in this suite are plain mocks.
@@ -337,6 +337,39 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
         await call.cancel();
         await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+    });
+});
+
+describe('serialization diagnostics by value path (RT-01)', () => {
+    it('locates unsupported values in nested trees', async () => {
+        expect(describeUnsupportedValue({ a: { b: 1 } })).toBeNull();
+        expect(describeUnsupportedValue({ items: [1, { onChange: () => {} }] })).toBe('items[1].onChange (function)');
+        expect(describeUnsupportedValue({ meta: { count: 10n } })).toBe('meta.count (bigint)');
+        const cyclic: any = { self: null };
+        cyclic.self = cyclic;
+        expect(describeUnsupportedValue(cyclic)).toBe('self (cyclic reference)');
+        expect(describeUnsupportedValue(new WeakMap())).toBe('(root) (weak collection)');
+    });
+
+    it('HTTP proxy serialization failures name the offending argument path', async () => {
+        const component = makeClientComponent();
+        // Client component without window-independent HTTP proxies: exercise
+        // the proxy through proxyHttpMethods with stubbed fetch/globals.
+        (globalThis as any).window = { location: { search: '' } };
+        const fetchMock = vi.fn(async () => new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
+        vi.stubGlobal('fetch', fetchMock);
+        Reflect.defineMetadata('cossack:server-methods', { save: {} }, component.constructor);
+        Reflect.defineMetadata('page:options', { transport: 'http' }, component.constructor);
+        component.getInitialStateFromWindow = () => ({ componentRouteId: 'cmp_x', scopeKey: 'user:anonymous' });
+        proxyHttpMethods(component, [{ name: 'save' }]);
+        const call = (component as any).save({ ok: 1, cb: () => {} });
+        await expect(Promise.resolve(call)).rejects.toMatchObject({
+            code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            message: expect.stringContaining('cb (function)'),
+        });
+        expect(fetchMock).not.toHaveBeenCalled();
+        delete (globalThis as any).window;
+        vi.unstubAllGlobals();
     });
 });
 

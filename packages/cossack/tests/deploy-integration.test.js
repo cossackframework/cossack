@@ -145,6 +145,41 @@ it('builds a generated staging app and validates deployment without uploading', 
     });
   `);
   await fs.mkdir(path.join(projectDir, 'src/pages/api/auth'), { recursive: true });
+  await fs.mkdir(path.join(projectDir, 'src/migrations'), { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'src/migrations/0001_create_notes.ts'), `
+    import type { Migration } from '@cossackframework/database';
+    export default {
+      name: '0001_create_notes',
+      up({ orm, schema }) {
+        schema.raw(orm.sql.unsafe(
+          'CREATE TABLE notes (id VARCHAR(191) PRIMARY KEY, body TEXT NOT NULL, created_at VARCHAR(32) NOT NULL)',
+        ));
+      },
+      down({ schema }) { schema.dropTable('notes'); },
+    } satisfies Migration;
+  `);
+  await fs.mkdir(path.join(projectDir, 'src/pages/api/db'), { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'src/pages/api/db/migrate.ts'), `
+    import { MigrationRunner, sql } from '@cossackframework/database';
+    import { getRequestContext } from '@cossackframework/core';
+    import migration from '../../../migrations/0001_create_notes';
+    export const POST = async c => {
+      const orm = c.get('orm');
+      const runner = new MigrationRunner(orm, [migration]);
+      const applied = await runner.up();
+      const history = await runner.applied();
+      let note = null;
+      if (applied.length) {
+        note = crypto.randomUUID();
+        await sql\`INSERT INTO notes VALUES (\${note}, 'migrated through the artifact', 'now')\`;
+      }
+      return c.json({ applied, history: history.map(entry => entry.name), note });
+    };
+    export const GET = async c => {
+      const rows = await sql\`SELECT id, body FROM notes\`;
+      return c.json({ count: rows.rows.length });
+    };
+  `);
   await fs.writeFile(path.join(projectDir, 'src/pages/api/auth/login.ts'), `
     import { sql } from '@cossackframework/database';
     import { auth, ensureSchema } from '../../../auth';
@@ -219,7 +254,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       async (c, next) => {
         if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
         const path = c.req.path;
-        const needsDatabase = path === '/crpc' || path.startsWith('/api/auth') || path.startsWith('/me') || path.startsWith('/shared');
+        const needsDatabase = path === '/crpc' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/me') || path.startsWith('/shared');
         if (needsDatabase) await database(c, next);
         else await next();
         c.header('x-worker-pipeline', 'ran');
@@ -438,6 +473,24 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect((await (await authedInvoke('increment')).json())._cossack_return).toBe(1);
     const anonymousShared = await server.fetch('/shared');
     expect(readHydration(await anonymousShared.text()).public).toEqual({ count: 4 });
+    // Migrations apply through the built artifact: the migration system runs
+    // against the bound D1, records bookkeeping, and the schema serves data.
+    const migrate = await server.fetch('/api/db/migrate', {
+      method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json' },
+    });
+    expect(migrate.status).toBe(200);
+    const migrated = await migrate.json();
+    expect(migrated.applied).toEqual(['0001_create_notes']);
+    expect(migrated.history).toEqual(['0001_create_notes']);
+    const notes = await server.fetch('/api/db/migrate');
+    expect(await notes.json()).toEqual({ count: 1 });
+    // Re-running applies nothing twice.
+    const rerun = await (await server.fetch('/api/db/migrate', {
+      method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json' },
+    })).json();
+    expect(rerun.applied).toEqual([]);
+    expect(rerun.history).toEqual(['0001_create_notes']);
+    expect((await (await server.fetch('/api/db/migrate')).json()).count).toBe(1);
     for (const url of ['/private/', '/private/record.txt', '/private/index.html']) {
       const denied = await server.fetch(url, { redirect: 'manual' });
       expect(denied.status, url).toBe(401);

@@ -85,7 +85,7 @@ describe('response-local RPC streams', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const closed = vi.fn();
         const { response, cleanup } = create((async function* () { try { yield 1n; } finally { closed(); } })());
-        expect(await collect(response)).toEqual([{ v: 1, type: 'error', requestId: 'request-a', code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: 'Cannot serialize RPC stream result or state.' }]);
+        expect(await collect(response)).toEqual([{ v: 1, type: 'error', requestId: 'request-a', code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: 'Cannot serialize RPC stream yield value or state: unsupported value at (root) (bigint).' }]);
         expect(cleanup).toHaveBeenCalledOnce();
         expect(closed).toHaveBeenCalledOnce();
     });

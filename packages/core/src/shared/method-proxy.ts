@@ -3,7 +3,7 @@ import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { createRpcCall, describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
 import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
@@ -323,11 +323,19 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 finish();
             };
             let requestState: Record<string, any> = {};
+            let payload: unknown[] = args;
             let request: Promise<Response>;
             try {
                 const files = new Map<string, File>();
-                const payload = args.map(arg => extractFilesFromArg(arg, files));
+                payload = args.map(arg => extractFilesFromArg(arg, files));
                 requestState = snapshotTransportState(component.getPublicState());
+                // JSON.stringify silently drops functions and throws only on
+                // cycles/bigints; reject both before dispatch with the path.
+                const unsupported = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
+                if (unsupported) {
+                    throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                        `Cannot serialize arguments or state for '${name}': unsupported value at ${unsupported}.`);
+                }
                 if (files.size) {
                     const formData = new FormData();
                     formData.append('componentRouteId', componentRouteId);
@@ -372,8 +380,10 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     });
                 }
             } catch (cause) {
+                const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
                 request = Promise.reject(new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize arguments or state for '${name}'.`, { cause }));
+                    `Cannot serialize arguments or state for '${name}'` +
+                    `${where ? `: unsupported value at ${where}` : ''}.`, { cause }));
             }
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});
@@ -476,6 +486,14 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             // Keep serializable args (primitives, plain objects, arrays), drop
             // non-transportable ones (DOM nodes, Event, File, Blob, functions).
             const payload = args.filter(isWsTransportable);
+            // isWsTransportable drops non-JSON values from the payload; state
+            // still has to serialize. Reject unsupported state before sending.
+            const unsupported = describeUnsupportedValue(requestState);
+            if (unsupported) {
+                cleanup();
+                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize state for '${name}': unsupported value at ${unsupported}.`, name);
+            }
             const queue = new SocketFrameQueue();
             let message: string;
             try {
@@ -490,8 +508,10 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 });
             } catch (cause) {
                 cleanup();
+                const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
                 return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize the realtime request for '${name}'.`, name);
+                    `Cannot serialize the realtime request for '${name}'` +
+                    `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
             wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
             try {

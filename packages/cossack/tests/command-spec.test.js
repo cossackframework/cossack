@@ -88,7 +88,9 @@ describe('command integration', () => {
 
   it('version rejects unknown flags and extra positionals', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await versionCommand([], ctxWith(['--bogus']))).toBe(1);
+    // Unknown flag: use the =value form so parsing succeeds and the command
+    // spec (not the parser) rejects it with the supported alternatives.
+    expect(await versionCommand([], ctxWith(['--bogus=1']))).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining('Unknown option --bogus'));
     expect(await versionCommand(['extra'], ctxWith(['--json']))).toBe(1);
   });
@@ -104,5 +106,39 @@ describe('command integration', () => {
       expect(route).toHaveProperty('filePath');
       expect(Array.isArray(route.layouts)).toBe(true);
     }
+  });
+});
+
+describe('flag parsing edge cases (CLI-02 acceptance)', () => {
+  it('aliases resolve to their canonical flag', () => {
+    const { args, flags } = parseFlags(['--yes', 'target']);
+    expect(flags.yes).toBe(true);
+    const { flags: aliased } = parseFlags(['-f']);
+    expect(aliased.force).toBe(true);
+  });
+
+  it('repeated string values collect in order', () => {
+    const { flags } = parseFlags(['--port', '3000', '--port', '8080']);
+    expect(flags.port).toEqual(['3000', '8080']);
+  });
+
+  it('stops flag parsing at -- so tool arguments survive verbatim', () => {
+    const { args, flags } = parseFlags(['--json', '--', '--weird', 'value']);
+    expect(flags.json).toBe(true);
+    expect(args).toEqual(['--weird', 'value']);
+  });
+
+  it('a flag value that resembles another flag is a parse error, not a silent boolean', () => {
+    expect(() => parseFlags(['--tag', '--force'])).toThrow('--tag expects a value');
+    expect(() => parseFlags(['--tag'])).toThrow('--tag expects a value');
+  });
+
+  it('explicit false survives and overrides an earlier true', () => {
+    const { flags } = parseFlags(['--force', '--force=false']);
+    expect(flags.force).toBe(false);
+  });
+
+  it('invalid boolean values are rejected with a parse error', () => {
+    expect(() => parseFlags(['--force=maybe'])).toThrow();
   });
 });

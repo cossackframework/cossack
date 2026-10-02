@@ -92,8 +92,10 @@ async function addLocale(args, ctx) {
   const { flags } = parseSimpleFlags(args, ctx);
   const locale = cleaned[0] || flagString(flags.locale);
   if (!locale) {
-    console.error('Usage: cossack lang add <locale>   (e.g. `cossack lang add es`)');
-    return 1;
+    throw Object.assign(
+      new Error('Usage: cossack lang add <locale>   (e.g. `cossack lang add es`)'),
+      { code: 'COSSACK_ARGUMENT_MISSING' },
+    );
   }
   if (locale === DEFAULT_LOCALE) {
     console.error(

@@ -106,6 +106,53 @@ export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<
     cancel(): Promise<void>;
 }
 
+/**
+ * Locate the first RPC-unsupported value in a tree and describe it by path:
+ * functions, symbols, bigints, cyclic structures, and weak collections cannot
+ * cross the RPC boundary. Returns null when the value is transportable.
+ * Paths use dot/bracket notation from the root (e.g. `items[2].onChange`).
+ */
+export function describeUnsupportedValue(value: unknown, path = '', seen = new WeakSet<object>()): string | null {
+    if (value === null || value === undefined) return null;
+    const type = typeof value;
+    if (type === 'function') return `${path || '(root)'} (function)`;
+    if (type === 'symbol') return `${path || '(root)'} (symbol)`;
+    if (type === 'bigint') return `${path || '(root)'} (bigint)`;
+    if (type !== 'object') return null;
+    if (seen.has(value as object)) return `${path || '(root)'} (cyclic reference)`;
+    seen.add(value as object);
+    if (value instanceof WeakMap || value instanceof WeakSet || value instanceof WeakRef) {
+        return `${path || '(root)'} (weak collection)`;
+    }
+    if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index++) {
+            const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen);
+            if (failure) return failure;
+        }
+        return null;
+    }
+    if (value instanceof Map) {
+        for (const [key, entry] of value) {
+            const failure = describeUnsupportedValue(entry, `${path}.get(${String(key)})`, seen);
+            if (failure) return failure;
+        }
+        return null;
+    }
+    if (value instanceof Set) {
+        let index = 0;
+        for (const entry of value) {
+            const failure = describeUnsupportedValue(entry, `${path}[${index++}]`, seen);
+            if (failure) return failure;
+        }
+        return null;
+    }
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+        const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen);
+        if (failure) return failure;
+    }
+    return null;
+}
+
 /** Minimal structural socket used by the correlated WebSocket RPC protocol. */
 export type RpcSocket = { readyState?: number; send: (data: string) => void };
 

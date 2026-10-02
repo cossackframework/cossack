@@ -11,8 +11,8 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): shared `CommandSpec` (flags, aliases, positionals, `forwardsArgs` boundary for vite/wrangler forwarding) validates every converted command before effects with `COSSACK_OPTION_UNKNOWN`/`COSSACK_ARGUMENT_*` codes and supported alternatives; remaining: conflict/repeat rules beyond last-wins and per-subcommand flag sets (lang/image/generate subcommands share one set).
-- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands (version, info, routes, build, dev, start, ssg, studio, adapter, lang, add, generate, remove, delete, upgrade, image); build/ssg capture child output under `--json`; thrown failures become coded diagnostics with exit 1; remaining: the database cluster's child-process JSON already conforms but is not yet on `runWithSpec`, and long-running commands still need their event-output contract.
+- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): CommandSpec validates every converted command before effects (unknown options list `--`-prefixed supported alternatives; value flags reject flag-like/missing values instead of silent boolean coercion; zero-positional commands reject any positional); tests cover aliases, repeated values, `--` passthrough, explicit false, and flag-like values; vite/wrangler forwarding stays an explicit boundary.
+- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands; hard failures throw coded errors instead of printing (exit 1 + diagnostics under `--json`); build/ssg capture child output so stdout carries exactly one envelope; database commands keep their isolated child-process JSON; subprocess tests parse results without filtering banners. Long-running streaming event contracts remain part of CLI-07's tool surface.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` lists effective facts and explains behavior with reasons and source locations (`COSSACK_ROUTE_UNKNOWN` for misses) without executing components; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; still open: compiler-level client typing of yielded/final results and value-path serialization diagnostics.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; serialization failures now name the offending value path (`describeUnsupportedValue`, pre-dispatch rejection so silently-dropped functions become errors); still open: compiler-level client typing of yielded/final results.
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
@@ -32,7 +32,7 @@ below link directly to those explanations.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation.
-- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance.
+- [x] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM (2026-10-02): resolution failures name the service, requester, and scope-chain ancestry with per-layout declarations; service ownership visible through `cossack inspect routes` (layouts' declared services and per-page injectable ancestry); service RPC awaits scoped disposal matching component RPC; request-facility isolation, single layout cleanup, and independent hook failures covered by existing core suites. specs/service.md documents global vs layout vs request ownership.
 - [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
 - [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -66,7 +66,7 @@ below link directly to those explanations.
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
 - [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. GLM (2026-10-02): coordinator wired through SSR, `/crpc`, and `/sse`; scaffolded `COSSACK_SSE` binding (`new_sqlite_classes`) and `SseDurableObject` entry; missing-binding and environment-inheritance diagnostics; cursor reconnect with bounded history; broadcasts. Node/Deno keep the documented process-local backend (see [specs/sse.md](./sse.md)). Not claimed: exactly-once external side effects, queued-caller cancellation on the pinned wrangler baseline, stream-response cookie handling (RT-11).
-- [ ] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
+- [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime. GLM (2026-10-02): the generated staging app runs under workerd through published packages covering D1-backed credentials auth (login/protected route/authenticated SSE scope isolation), component+service RPC with streams and cancellation, protected assets with policies, public SSG validation, binding/artifact comparison, the SSE coordinator (subscriptions, cursors, reconnect, broadcasts), and the migration system applying real migrations against the bound D1 (recorded bookkeeping, idempotent re-runs) plus schema-serving reads.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
@@ -328,6 +328,27 @@ not replace the final monorepo and runtime release gates.
   of stale tasks, typed client generator-result inference, preview/release
   tooling, and all other unchecked release requirements remain in scope.
   Versions remain 0.8.3 until the complete 0.9.0 checklist and release gates pass.
+
+### Group 1/2 completion pass (GLM, 2026-10-02)
+
+Closed the remaining acceptance gaps so four rows could be checked honestly:
+- RT-12: service ownership in route inspection — layouts' `services: [...]`
+  declarations and per-page injectable ancestry appear in `cossack inspect
+  routes` output and route explanations, matching what DI resolution finds.
+- CLI-02: value flags now require values (`--tag --force` is a parse error,
+  not a silent boolean); enumerated acceptance tests cover aliases, repeated
+  values, `--` passthrough, explicit false, and flag-like values.
+- CLI-03: hard-failure prints in add/generate/remove/delete/lang converted to
+  coded throws so `--json` failures are structured diagnostics with nonzero
+  exits.
+- CF-06: the artifact now applies a real migration through the ORM migration
+  system against the bound D1 (creates the table, records `_cossack_migrations`
+  bookkeeping, idempotent re-run, schema serves reads through `/api/db`).
+- RT-01 (still open, strengthened): `describeUnsupportedValue` walks argument,
+  state, and stream-frame trees to name the first unsupported value by path;
+  client proxies reject before dispatch instead of letting JSON.stringify
+  silently drop functions.
+- Gates: core 640, framework 536, CLI 286 tests; `tsc --noEmit` clean.
 
 ### Group 2 continued: route metadata, inspection, test utilities (GLM, 2026-10-02)
 

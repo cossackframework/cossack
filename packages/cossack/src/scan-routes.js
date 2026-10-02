@@ -152,17 +152,22 @@ export function extractRouteParams(route) {
  * facts inspection needs; middleware identities live in code, not metadata.
  */
 export function extractPageOptions(source) {
-  if (!source) return { transport: null, ssg: null, middlewares: 0, decoratorLine: null };
+  if (!source) return { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
   const decorator = source.match(/@Page\(\s*\{([\s\S]*?)\}\s*\)/);
-  if (!decorator) return { transport: null, ssg: null, middlewares: 0, decoratorLine: null };
+  if (!decorator) return { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
   const body = decorator[1];
   const transport = body.match(/transport\s*:\s*['"](http|sse|durable-object)['"]/);
   const ssg = body.match(/ssg\s*:\s*(true|false)/);
   const middlewares = body.match(/middlewares\s*:\s*\[([\s\S]*?)\]/);
+  const services = body.match(/services\s*:\s*\[([^\]]*)\]/);
   return {
     transport: transport ? transport[1] : null,
     ssg: ssg ? ssg[1] === 'true' : null,
     middlewares: middlewares ? countTopLevelEntries(middlewares[1]) : 0,
+    // Declared service class names — the ownership facts DI resolution uses.
+    services: services
+      ? services[1].split(',').map(name => name.trim()).filter(name => /^[A-Za-z_$][\w$]*$/.test(name))
+      : [],
     decoratorLine: source.slice(0, decorator.index).split('\n').length,
   };
 }
@@ -220,7 +225,7 @@ export function buildEffectiveRouteModel(projectRoot) {
     return index === -1 ? null : `cmp_${index.toString(36)}`;
   };
   const pages = model.pages.map((page) => {
-    let options = { transport: null, ssg: null, middlewares: 0 };
+    let options = { transport: null, ssg: null, middlewares: 0, services: [] };
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       options = extractPageOptions(fs.readFileSync(absolute, 'utf8'));
@@ -236,11 +241,26 @@ export function buildEffectiveRouteModel(projectRoot) {
       transport: options.transport,
       ssg: options.ssg,
       middlewares: options.middlewares,
+      services: options.services,
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine
         ? `${page.filePath}:${options.decoratorLine}`
         : page.filePath,
     };
   });
-  return { pages, layouts: model.layouts };
+  // Layouts declare the services their subtrees can inject: inspection
+  // reports ownership exactly as DI resolution finds it.
+  const layouts = model.layouts.map((layout) => {
+    let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    try {
+      const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
+      options = extractPageOptions(fs.readFileSync(absolute, 'utf8'));
+    } catch { /* keep defaults */ }
+    return {
+      ...layout,
+      services: options.services,
+      source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
+    };
+  });
+  return { pages, layouts };
 }

@@ -64,14 +64,16 @@ async function generateCommandInner(args, ctx) {
   const type = TYPE_ALIASES[typeArg];
 
   if (!type) {
-    console.error(
-      `Unknown generate type: ${typeArg || '(none)'}.\nValid: page(p) component(c) layout(l) middleware(m) service(s) model migration seeder`,
+    throw Object.assign(
+      new Error(`Unknown generate type: ${typeArg}. Valid: page(p) component(c) layout(l) middleware(m) service(s) model migration seeder`),
+      { code: 'COSSACK_GENERATE_TYPE_UNKNOWN' },
     );
-    return 1;
   }
   if (!nameArg) {
-    console.error(`Missing name. Usage: cossack generate ${typeArg} <name>`);
-    return 1;
+    throw Object.assign(
+      new Error(`Missing name. Usage: cossack generate ${typeArg} <name>`),
+      { code: 'COSSACK_ARGUMENT_MISSING' },
+    );
   }
 
   const root = ctx.projectRoot || process.cwd();

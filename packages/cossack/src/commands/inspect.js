@@ -23,6 +23,15 @@ function explainRoute(effective, route) {
   if (page.params.length) {
     reasons.push(`Parameters: ${page.params.map(param => param.name + (param.catchAll ? ' (catch-all)' : '')).join(', ')}`);
   }
+  const ownedServices = page.layouts
+    .map(filePath => effective.layouts.find(layout => layout.filePath === filePath))
+    .filter(layout => layout && layout.services.length);
+  if (ownedServices.length) {
+    reasons.push(`Injectable services (owned by ancestry): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
+  }
+  if (page.services.length) {
+    reasons.push(`Services declared on the page itself: ${page.services.join(', ')}`);
+  }
   if (page.notFoundBoundary) reasons.push(`Nearest 404 boundary: ${page.notFoundBoundary}`);
   if (page.errorBoundary) reasons.push(`Nearest error boundary: ${page.errorBoundary}`);
   return { route: page.route, routeId: page.routeId, kind: page.kind, source: page.source, reasons };
@@ -38,6 +47,11 @@ async function inspectRoutes(args, ctx, command) {
     } else {
       for (const page of effective.pages) {
         console.log(`${page.route.padEnd(34)} ${String(page.transport ?? 'http').padEnd(15)} ${page.source}`);
+      }
+      const owned = effective.layouts.filter(layout => layout.services.length);
+      if (owned.length) {
+        console.log('\nService ownership (layout -> declared services):');
+        for (const layout of owned) console.log(`  ${layout.filePath} -> ${layout.services.join(', ')}`);
       }
     }
     return 0;

@@ -68,14 +68,15 @@ export function parseFlags(argv) {
         if (KNOWN_BOOL.has(name)) {
           setFlag(flags, name, true);
         } else {
-          // expect a value
+          // Value flags require a value. A missing or flag-like next token is
+          // an explicit error: silently coercing `--tag --force` into
+          // `--tag=true --force` hides agent mistakes (CLI-02).
           const next = argv[i + 1];
           if (next === undefined || next.startsWith('-')) {
-            setFlag(flags, name, true);
-          } else {
-            setFlag(flags, name, next);
-            i++;
+            throw new Error(`--${name} expects a value.`);
           }
+          setFlag(flags, name, next);
+          i++;
         }
       }
       continue;
@@ -88,11 +89,10 @@ export function parseFlags(argv) {
       } else {
         const next = argv[i + 1];
         if (next === undefined || next.startsWith('-')) {
-          setFlag(flags, name, true);
-        } else {
-          setFlag(flags, name, next);
-          i++;
+          throw new Error(`-${name} expects a value.`);
         }
+        setFlag(flags, name, next);
+        i++;
       }
       continue;
     }

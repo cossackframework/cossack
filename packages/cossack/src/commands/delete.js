@@ -40,14 +40,16 @@ async function deleteCommandInner(args, ctx) {
   const type = TYPE_ALIASES[typeArg];
 
   if (!type) {
-    console.error(
-      `Unknown delete type: ${typeArg || '(none)'}.\nValid: page(p) component(c) layout(l) middleware(m) service(s)`,
+    throw Object.assign(
+      new Error(`Unknown delete type: ${typeArg}. Valid: page(p) component(c) layout(l) middleware(m) service(s)`),
+      { code: 'COSSACK_DELETE_TYPE_UNKNOWN' },
     );
-    return 1;
   }
   if (!nameArg) {
-    console.error(`Missing name. Usage: cossack delete ${typeArg} <name>`);
-    return 1;
+    throw Object.assign(
+      new Error(`Missing name. Usage: cossack delete ${typeArg} <name>`),
+      { code: 'COSSACK_ARGUMENT_MISSING' },
+    );
   }
 
   const root = ctx.projectRoot || process.cwd();

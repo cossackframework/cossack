@@ -20,10 +20,10 @@ export async function removeCommand(args, ctx) {
 async function removeCommandInner(args, ctx) {
   const [feature] = args;
   if (!feature || !FEATURES.includes(feature)) {
-    console.error(
-      `Unknown feature: ${feature || '(none)'}.\nAvailable features: ${FEATURES.join(', ')}`,
+    throw Object.assign(
+      new Error(`Unknown feature: ${feature}. Available features: ${FEATURES.join(', ')}`),
+      { code: 'COSSACK_FEATURE_UNKNOWN' },
     );
-    return 1;
   }
 
   try {

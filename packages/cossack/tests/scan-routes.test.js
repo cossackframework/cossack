@@ -138,10 +138,12 @@ describe('effective route metadata (RT-07)', () => {
 
   it('extracts @Page options from source without executing modules', () => {
     expect(extractPageOptions("@Page({ transport: 'sse', ssg: true })\nclass P {}"))
-      .toEqual({ transport: 'sse', ssg: true, middlewares: 0, decoratorLine: 1 });
+      .toEqual({ transport: 'sse', ssg: true, middlewares: 0, services: [], decoratorLine: 1 });
+    expect(extractPageOptions("@Page({ services: [Session, Audit] })\nclass Q {}"))
+      .toMatchObject({ services: ['Session', 'Audit'] });
     expect(extractPageOptions("import x;\n@Page({ middlewares: [async (c, n) => { await n(); }, (c) => c.text('x')] })"))
       .toMatchObject({ transport: null, ssg: null, middlewares: 2, decoratorLine: 2 });
-    expect(extractPageOptions('class Plain {}')).toEqual({ transport: null, ssg: null, middlewares: 0, decoratorLine: null });
+    expect(extractPageOptions('class Plain {}')).toEqual({ transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null });
   });
 
   it('builds per-page effective metadata: id, params, layouts, boundaries', () => {
