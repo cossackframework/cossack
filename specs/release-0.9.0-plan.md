@@ -12,7 +12,9 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex recipe/capability checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03)
+The latest [Codex authored RPC checkpoint](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
+records typed client inference and a transport result correction; RT-01 remains
+open. The preceding [recipe/capability checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03)
 records CLI-05 and RT-25 completion: 14/58 tasks are checked. The earlier
 [upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)
 records CLI-06 completion. The preceding machine
@@ -416,6 +418,31 @@ Add configurable deadlines and distinguish remote application errors from
 transport failure and uncertain completion. Describe serialization failures by
 component, action, and value path. Define supported value types explicitly.
 Keep cookies and redirects subject to HTTP header timing.
+
+Codex authored-client checkpoint (2026-10-03): added public
+`rpc$(this.method(...))` as the explicit client type view. TypeScript decorators
+cannot alter a method's authored signature; Vite's signature rewriting alone
+does not supply editor inference. The helper derives `RpcCall<Result, Yield>`
+from the invoked native return, including inferred/annotated generators,
+inherited/generic methods, function fields, and scoped service methods. It checks
+that the value is a framework proxy call and returns it by identity. It does not
+wrap or redispatch the operation. Ordinary returns have no yielded values;
+broad AsyncIterable completion and native Response completion stay unknown.
+
+An isolated TypeScript fixture compiles against published declarations without
+Vite, with positive exact-type assertions and negative argument/result/yield
+checks. Production Node browser acceptance executes HTTP and SSE generators,
+page function fields, and a scoped service function field from the authored
+source. Existing WebSocket/service conformance now consumes calls through the
+helper too. Fixed ordinary HTTP/SSE JSON calls yielding their final result once;
+they now match WebSocket/service completion and `RpcCall<Result, never>`.
+The change is recorded in the [draft migration guide](./migration-0.9.0.md).
+
+Remaining before RT-01 completion: audit/consolidate the transport conformance
+matrix across HTTP, SSE, WebSocket, and explicit service calls, including each
+error, deadline, disconnect, cancellation, duplicate consumer, and cleanup path.
+Finish native Response/cookie/flash handling with RT-11, including header timing.
+Typed client inference is now verified; do not restore it as an unfinished item.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

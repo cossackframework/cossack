@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM implemented correlated calls, deadlines, cancellation, service streams, and raw upload argument validation. Codex Group 3 review fixes nested generic parsing, invalid async/generator modifiers, duplicate RpcCall imports, overlapping field replacements, and validation error propagation. Remaining: actual authored-client/IDE type inference and semantic type tests (a Vite text rewrite alone does not provide these), generator/function-field coverage, and Response cookie/flash coordination with RT-11.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Codex authored-client checkpoint adds inferred `rpc$(this.method(...))` types verified against published declarations without Vite, plus production HTTP/SSE generator and function-field/service browser coverage. Ordinary calls now consistently return only a final result. Remaining: audit/consolidate the complete transport conformance matrix and finish native Response/cookie/flash coordination with RT-11. See the [checkpoint](#codex-authored-rpc-types-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,42 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-authored-rpc-types-2026-10-03"></a>
+### Codex continuation: authored client RPC types (2026-10-03)
+
+**Author: Codex.** Added `rpc$`, `RpcResult`, and `RpcYield` through core's public
+entry. A client handler can use `rpc$(this.generate(...))` to infer generator
+yields and final results from authored TypeScript. It also supports native sync
+and async signatures, inherited/generic methods, function fields, and scoped
+service calls. The helper returns the same framework operation; duplicate awaits,
+cancellation, and failures keep their existing behavior. Native return values and
+lookalike calls fail with `COSSACK_RPC_CALL_REQUIRED`. Native Response completions
+and broad iterable final results are unknown rather than fabricated client types.
+
+The isolated semantic TypeScript test uses the published entry with no Vite
+rewrite. Exact types and expected errors cover arguments, yielded fields,
+terminal values, inheritance, generics, function fields, scoped services, catch,
+finally, and cancellation. The production Node browser fixture executes inferred
+HTTP and SSE generators, decorated page/service function fields, ordinary results,
+and repeated awaits; all four actions dispatch once per run. Client chunks omit
+both server generator marker strings. Existing WebSocket and service conformance
+also consume streaming calls through the helper.
+
+Fixed an actual transport mismatch: ordinary HTTP/SSE JSON calls yielded their
+final value, unlike WebSocket and explicit service calls. They now return it only
+at completion, matching `RpcCall<Result, never>`. Generator yields remain separate.
+See [the client guide](../docs/rpc.md) and [draft migration record](./migration-0.9.0.md).
+
+**14/58 tasks remain checked.** RT-01 stays open for the complete conformance
+audit/matrix and native Response/cookie/flash behavior coordinated with RT-11.
+Every other unchecked task retains its full scope.
+
+Verification: core build passed; full core 682 tests, framework 617, and CLI 558
+passed. CLI includes all 13 generated runtime/browser cases. After strengthening
+native Response type safety, the 57 focused RPC/semantic checks and root/all 11
+package type checks passed again. `git diff --check` passed. No deployment or
+package publishing was performed.
 
 <a id="codex-four-recipe-capabilities-2026-10-03"></a>
 ### Codex completion: four recipes and shared capability planning (2026-10-03)

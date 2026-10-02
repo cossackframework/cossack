@@ -220,6 +220,11 @@ collision-safe tuple that names the coordinator's Durable Object instance.
 
 HTTP and SSE pages support streaming action responses using `async *` generator methods. This is useful for chat, AI responses, or other incremental results.
 
+For typed yields and completion in a client handler, use
+`const call = rpc$(this.sendMessage(text))`, iterate `call`, then await `call`
+for its final result. Ordinary methods yield no values. See
+[server calls and client types](./rpc.md) for inference and cancellation.
+
 ### Example: Streaming Chat
 
 ```typescript

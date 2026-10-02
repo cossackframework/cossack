@@ -260,6 +260,11 @@ Undecorated helpers, `@Shared()` methods, `@Client()` methods, internal members,
 and forged action names are not RPC-callable. The Vite security transform also
 strips server-only method bodies from client bundles.
 
+Use `rpc$(this.service.action(...))` in a client handler when you need typed
+generator yields, final results, or cancellation. It returns the same service
+proxy call and infers its types from the authored method. See
+[server calls and client types](./rpc.md).
+
 ## Service Dependencies
 
 Services can use constructor injection for other services:

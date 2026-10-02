@@ -10,7 +10,7 @@ import { createInstance } from '../src/shared/container';
 import { ServiceScope } from '../src/shared/service-scope';
 import { Service } from '../src/shared/decorators';
 import { forwardServiceMethods } from '../src/shared/service-bootstrap';
-import { describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
+import { describeUnsupportedValue, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
 
 // The realtime server component must take the server lifecycle (no client
 // proxies on its actions); client surfaces in this suite are plain mocks.
@@ -163,7 +163,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
 
     it('streams generator yields and applies per-frame state', async () => {
         const collected: unknown[] = [];
-        const call = client.stream(3);
+        const call = rpc$(client.stream(3));
         const consumer = (async () => { for await (const value of call) collected.push(value); })();
         await expect(call).resolves.toBe('done:1');
         await consumer;
@@ -419,7 +419,7 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         vi.stubGlobal('fetch', fetchMock);
         (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
         const collected: unknown[] = [];
-        const call = (instance as any).stream();
+        const call = rpc$((instance as any).stream());
         for await (const value of call) collected.push(value);
         await expect(call).resolves.toBe('finished');
         expect(collected).toEqual(['a', 'b']);

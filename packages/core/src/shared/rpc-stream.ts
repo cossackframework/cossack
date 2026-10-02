@@ -116,6 +116,42 @@ export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<
     cancel(): Promise<void>;
 }
 
+// HTTP control-flow responses are handled by the transport, not transferred
+// as Response objects. Their client body/completion is not statically known.
+type RpcClientValue<T> = T extends Response ? unknown : T;
+type RpcTerminal<T> = RpcClientValue<Awaited<T>>;
+
+/** Final client result inferred from an authored server method's return type. */
+export type RpcResult<T> = T extends RpcCall<infer Result, any> ? RpcTerminal<Result>
+    : T extends PromiseLike<infer Value> ? RpcResult<Value>
+    : T extends AsyncIterable<unknown> & AsyncIterator<unknown, infer Result, any> ? RpcTerminal<Result>
+    : T extends AsyncIterable<unknown> ? unknown
+    : T extends Response ? unknown
+    : T;
+
+/** Client stream values; ordinary server methods have no yielded values. */
+export type RpcYield<T> = T extends RpcCall<any, infer Yield> ? Yield
+    : T extends PromiseLike<infer Value> ? RpcYield<Value>
+    : T extends AsyncIterable<infer Yield> ? Awaited<Yield>
+    : never;
+
+const rpcCalls = new WeakSet<object>();
+
+/**
+ * View a browser server-method call with its inferred RPC result/yield types.
+ * TypeScript decorators cannot change the authored method signature. This
+ * helper exposes the proxy contract to the editor without invoking another
+ * operation, wrapping its consumers, or relying on Vite's signature rewrite.
+ * Use synchronously around the call in client code, before awaiting/iterating.
+ */
+export function rpc$<ServerReturn>(call: ServerReturn): RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>> {
+    if (!call || typeof call !== 'object' || !rpcCalls.has(call)) {
+        throw new RpcError('COSSACK_RPC_CALL_REQUIRED',
+            'rpc$ requires a browser server-method proxy call. Use it in @Client code before awaiting or iterating the call.');
+    }
+    return call as unknown as RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>>;
+}
+
 /**
  * Locate the first RPC-unsupported value in a tree and describe it by path:
  * functions, symbols, bigints, cyclic structures, and weak collections cannot
@@ -262,6 +298,7 @@ export function createRpcCall<Result, Yield>(
             };
         },
     };
+    rpcCalls.add(call);
     queueMicrotask(drive);
     return call;
 }

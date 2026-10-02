@@ -480,7 +480,6 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         }
                         apply(data);
                         succeed();
-                        if (data._cossack_return !== undefined) yield data._cossack_return;
                         return data._cossack_return;
                     }
                 } catch (cause) {

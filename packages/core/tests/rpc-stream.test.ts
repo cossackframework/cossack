@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES } from '../src/shared/rpc-stream';
+import { createRpcCall, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES } from '../src/shared/rpc-stream';
 import { proxyHttpMethods } from '../src/shared/method-proxy';
 
 const frame = (type: 'yield' | 'done' = 'yield', value: unknown = 'é🌿', state = { count: 1 }) =>
@@ -19,6 +19,45 @@ async function collect(response: Response) {
 }
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+describe('authored client RPC view', () => {
+    it('returns the same operation and consumers without another dispatch', async () => {
+        let runs = 0;
+        const original = createRpcCall((async function* () {
+            runs++;
+            yield { step: 1 };
+            return { total: 1 };
+        })(), () => {});
+        const call = rpc$(original);
+        expect(call).toBe(original);
+        expect(rpc$(call)).toBe(call);
+        const yielded = [];
+        for await (const value of call) yielded.push(value);
+        expect(yielded).toEqual([{ step: 1 }]);
+        await expect(call).resolves.toEqual({ total: 1 });
+        await expect(call).resolves.toEqual({ total: 1 });
+        expect(runs).toBe(1);
+    });
+    it('retains the original cancellation and rejection contract', async () => {
+        const abort = vi.fn();
+        const original = createRpcCall((async function* () {
+            yield 'first';
+            return 'final';
+        })(), abort);
+        const call = rpc$(original);
+        const iterator = call[Symbol.asyncIterator]();
+        expect(await iterator.next()).toEqual({ done: false, value: 'first' });
+        await call.cancel();
+        expect(abort).toHaveBeenCalledOnce();
+        await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+    });
+    it('rejects native return values and lookalike calls instead of inventing a local RPC', () => {
+        for (const value of [42, null, Promise.resolve(42), (async function* () { yield 1; })(),
+            { then() {}, cancel() {}, [Symbol.asyncIterator]() {} }]) {
+            expect(() => rpc$(value)).toThrow(expect.objectContaining({ code: 'COSSACK_RPC_CALL_REQUIRED' }));
+        }
+    });
+});
 
 describe('RPC frame parsing', () => {
     it('decodes UTF-8 frames split at every byte and handles multiple frames in a chunk', async () => {
@@ -80,6 +119,20 @@ function component(transport: 'http' | 'sse' = 'sse') {
 }
 
 describe('single-dispatch RPC calls', () => {
+    it.each(['http', 'sse'] as const)('returns ordinary %s results without inventing generator yields', async transport => {
+        const fetchMock = vi.fn(async () => new Response(JSON.stringify({ count: 7, _cossack_return: { total: 7 } }),
+            { headers: { 'Content-Type': 'application/json' } }));
+        vi.stubGlobal('fetch', fetchMock);
+        const target = component(transport);
+        const call = rpc$(target.run());
+        const values = [];
+        for await (const value of call) values.push(value);
+        expect(values).toEqual([]);
+        expect(await call).toEqual({ total: 7 });
+        expect(target.count).toBe(7);
+        expect(target.loading).toEqual({});
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
     it.each(['http', 'sse'] as const)('iterates one %s response, applies every frame, and shares its final result', async transport => {
         const fetchMock = vi.fn((_input: unknown, _init?: RequestInit) => Promise.resolve(response([encode(frame()), encode(frame('yield', 'second', { count: 2 })), encode(frame('done', 42, { count: 3 }))])));
         vi.stubGlobal('fetch', fetchMock);

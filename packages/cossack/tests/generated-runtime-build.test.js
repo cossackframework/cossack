@@ -138,6 +138,108 @@ it.each(['node', 'deno'])('builds a generated %s app through its real Vite confi
   }
   expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
 }, 120000);
+it('runs inferred client RPC views for HTTP/SSE methods, function fields, and scoped services', async () => {
+  const root = await project('node');
+  const write = async (relative, source) => {
+    await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await fs.writeFile(path.join(root, relative), source);
+  };
+  await write('src/services/rpc-report.ts', `
+    import { Server, Service, CossackService } from '@cossackframework/core';
+    @Service() export class ReportService extends CossackService {
+      @Server() report = async function* (label: string) {
+        const serverMarker = 'private-service-generator-marker';
+        yield { label };
+        return { length: label.length, marker: serverMarker };
+      };
+    }
+  `);
+  await write('src/pages/rpc/layout.ts', `
+    import { Cossack, Page } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { ReportService } from '../../services/rpc-report';
+    @Page({ transport: 'http', services: [ReportService] })
+    export default class RpcLayout extends Cossack { render() { return html\`\${this.children}\`; } }
+  `);
+  for (const transport of ['http', 'sse']) await write(`src/pages/rpc/${transport}/index.ts`, `
+    import { Cossack, Page, Server, Client, ClientState, Inject, rpc$ } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { ReportService } from '../../../services/rpc-report';
+    @Page({ transport: '${transport}' })
+    export default class RpcPage extends Cossack {
+      @Inject(ReportService) private report!: ReportService;
+      @ClientState() output = '';
+      @ClientState() failure = '';
+      @ClientState() pending = false;
+      @Server() async *steps(limit: number) {
+        for (let step = 1; step <= limit; step++) yield { step };
+        return { total: limit };
+      }
+      @Server() field = async function* (amount: number) {
+        const marker = 'private-page-generator-marker';
+        yield { amount };
+        return { amount, marker };
+      };
+      @Server() async ordinary(amount: number) { return { amount }; }
+      @Client() async run() {
+        this.pending = true; this.failure = ''; this.output = '';
+        try {
+          const values: string[] = [];
+          const steps = rpc$(this.steps(2));
+          for await (const value of steps) values.push('step:' + value.step);
+          const first = await steps;
+          const repeated = await steps;
+          if (first.total !== repeated.total) throw new Error('Changed terminal result');
+          const field = rpc$(this.field(3));
+          for await (const value of field) values.push('field:' + value.amount);
+          const second = await field;
+          const report = rpc$(this.report.report('report'));
+          for await (const value of report) values.push('service:' + value.label);
+          const third = await report;
+          const ordinary = rpc$(this.ordinary(7));
+          for await (const value of ordinary) values.push('unexpected ordinary yield:' + value);
+          const fourth = await ordinary;
+          this.output = values.join(',') + '|done:' + [first.total, second.amount, third.length, fourth.amount].join('/');
+        } catch (error) { this.failure = error instanceof Error ? error.message : 'RPC failed'; }
+        finally { this.pending = false; }
+      }
+      render() { return html\`<main><h1>Typed ${transport} RPC</h1>
+        <button @click=\${this.run} ?disabled=\${this.pending}>Run</button>
+        <p role="status">\${this.output}</p><p role="alert">\${this.failure}</p></main>\`; }
+    }
+  `);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated authored RPC types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  await assertPortableChunks(path.join(root, 'dist/server'));
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+    expect(code).not.toContain('private-service-generator-marker');
+    expect(code).not.toContain('private-page-generator-marker');
+  }
+  const server = await productionServer(root);
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    for (const transport of ['http', 'sse']) {
+      const page = await browser.newPage();
+      const errors = [];
+      const actions = [];
+      page.on('pageerror', error => errors.push(error.message));
+      page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') actions.push(request.postDataJSON()); });
+      await page.goto(server.origin + '/rpc/' + transport);
+      await browserExpect(page.getByRole('heading', { name: 'Typed ' + transport + ' RPC' })).toBeVisible();
+      await page.getByRole('button', { name: 'Run', exact: true }).click();
+      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report|done:2/3/6/7');
+      await browserExpect(page.getByRole('alert')).toHaveText('');
+      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary']);
+      expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
+      expect(errors).toEqual([]);
+      await page.close();
+    }
+  } finally { await browser?.close(); await server.close(); }
+}, 120000);
 it('runs the scoped-service recipe across sibling navigation, nested injection, RPC, and disposal', async () => {
   const root = await project('node', ['scoped-service']);
   const serviceFile = path.join(root, 'src/services/scoped-counter.ts');

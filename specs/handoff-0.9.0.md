@@ -2,7 +2,33 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex four recipes and capability planning (2026-10-03):** read
+> **Latest checkpoint — Codex authored client RPC types (2026-10-03):** read
+> [implementation and acceptance](./release-0.9.0.md#codex-authored-rpc-types-2026-10-03)
+> and [the client guide](../docs/rpc.md). **Author: Codex.** Public
+> `rpc$(this.method(...))` exposes inferred `RpcCall<Result, Yield>` types in
+> authored client code without a Vite rewrite or user cast. It returns the same
+> proxy call by identity. Published-declaration semantic checks cover methods,
+> inferred/annotated generators, inheritance, generics, function fields, services,
+> result/yield errors, and cancellation. Production browser acceptance executes
+> HTTP/SSE methods plus page/service generator fields and verifies one dispatch
+> per action and stripping. Existing WebSocket/service conformance uses the helper.
+> Fixed ordinary HTTP/SSE JSON return values appearing as extra yields; they now
+> complete without yields, matching other transports and their types. Record this
+> break in final release docs; a [draft migration guide](./migration-0.9.0.md) now
+> tracks it. Passed: core build; full core 682 tests, framework 617, and CLI 558
+> (all 13 generated cases included). Final focused RPC/semantic checks: 57;
+> root TypeScript and all 11 package type checks pass. No release/deploy performed.
+>
+> **14/58 tasks checked. RT-01 remains open.** Next audit/consolidate one transport
+> conformance matrix for all four paths and finish native Response/cookie/flash
+> coordination with RT-11, including committed streaming headers. Typed authored
+> inference and function-field/browser coverage are complete; do not redo that
+> work. Then continue RT-02 schema inference/unknown keys/arrays/files and shared
+> policies (RT-14), plus every other unchecked task. Preserve the complete release
+> scope. Versions stay 0.8.3 until REL-04. The migration guide is a draft, not a
+> claim that all release breaks are already recorded or verified.
+
+> **Previous checkpoint — Codex four recipes and capability planning (2026-10-03):** read
 > [completion evidence](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03).
 > **Author: Codex.** CLI-05 and RT-25 are complete against their written criteria:
 > **14/58 tasks checked; all 44 unchecked tasks remain in scope.** Scoped-service

@@ -80,6 +80,13 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 
 ### 3. Server Runtime Interaction & State Synchronization
 
+Authored TypeScript retains a server method's native signature. Client handlers
+can use `rpc$(this.method(...))` to infer `RpcCall<Result, Yield>` from that
+signature without waiting for Vite transformation. This returns the framework's
+existing call by identity; it does not execute another request. Server execution
+keeps native return types. Ordinary calls only return final results; generator
+calls expose yields and completion separately on every transport.
+
 1. When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
 2. **Function Binding**: Component methods are automatically bound during bootstrap. Use regular methods for event handlers and mark browser handlers with `@Client()` (or another appropriate client-safe decorator). Arrow-function class fields are unnecessary.
 3. **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
