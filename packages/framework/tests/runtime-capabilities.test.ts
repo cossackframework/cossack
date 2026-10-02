@@ -68,7 +68,7 @@ describe('runtime capability model (RT-25)', () => {
         const results = describeRuntimeCapabilities('cloudflare', {});
         expect(Object.keys(results)).toEqual([
             'transports', 'realtimeCoordination', 'processLocalRealtime',
-            'scheduledHandlers', 'serverlessStorage', 'filesystem',
+            'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState',
         ]);
         expect(formatCapabilityResult(results.realtimeCoordination))
             .toBe('realtimeCoordination: missing binding(s) COSSACK_SSE');
@@ -76,4 +76,12 @@ describe('runtime capability model (RT-25)', () => {
         const full = describeRuntimeCapabilities('cloudflare', { COSSACK_SSE: {} });
         expect(formatCapabilityResult(full.realtimeCoordination)).toBe('realtimeCoordination: available');
     });
+});
+
+it('distinguishes durable page storage from process-local WebSocket support', () => {
+  for (const runtime of ['node', 'deno', 'desktop'] as const) {
+    expect(evaluateCapability(runtime, 'durableState', {})).toMatchObject({ status: 'unsupported' });
+  }
+  expect(evaluateCapability('cloudflare', 'durableState', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_OBJECT'] });
+  expect(evaluateCapability('cloudflare', 'durableState', { COSSACK_OBJECT: {} })).toMatchObject({ status: 'available' });
 });

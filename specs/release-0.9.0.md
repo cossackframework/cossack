@@ -86,6 +86,34 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-durable-state-capability-2026-10-03"></a>
+### Codex continuation: durable page capability (2026-10-03)
+
+**Author: Codex.** The capability audit found that Node/Deno WebSocket support
+allowed `stateful: true` pages through builds even though the runtime rejects
+that option. Added the shared `durableState` capability: available on Cloudflare
+with `COSSACK_OBJECT`, unsupported on Node, Deno, and Desktop.
+
+The shared static page parser now reads boolean `stateful` declarations and marks
+dynamic values unknown. Build discovery adds the durability requirement for
+stateful WebSocket pages. CLI route metadata exposes `stateful`, inspection adds
+source-bearing capability diagnostics, and explain distinguishes durable state
+from transport availability. Stateless/process-local pages remain valid. These
+checks inspect configuration only; they do not prove remote resource readiness.
+
+Targeted validation passed: 28 framework capability/build tests and 65 CLI
+metadata/route/inspection tests. Published declaration/ESM generation, root
+`pnpm tsc --noEmit`, and all package checks via `pnpm typecheck` passed.
+The full framework suite passed (612 tests). The first full CLI run passed 545
+of 546 tests; its multi-subprocess add/remove test exceeded the default five-second
+limit. It passed alone in 4.92 seconds. That test now has a bounded 30-second
+allowance for its real CLI processes and project snapshots; assertions are unchanged.
+The full CLI rerun passed all 546 tests (39 files).
+
+**12/58 tasks remain checked.** RT-25 still needs selected recipe feature
+requirements and remaining runtime acceptance. No Deno/Electron execution is
+claimed. This closes one capability mismatch rather than the entire task.
+
 <a id="codex-node-development-runtime-2026-10-03"></a>
 ### Codex continuation: Node development runtime (2026-10-03)
 

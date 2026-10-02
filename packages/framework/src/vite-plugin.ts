@@ -157,6 +157,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           this.addWatchFile(file);
           // The Markdown transform below fixes its generated transport to HTTP.
           let transport = 'http';
+          let stateful = false;
           let line: number | undefined;
           if (key.endsWith('.ts')) {
             const source = readFileSync(file, 'utf8');
@@ -167,10 +168,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
               message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,
             });
             transport = facts.options.transport ?? 'http';
+            stateful = facts.options.stateful === true;
             line = facts.decoratorLine ?? undefined;
           }
           requirements.push({ feature: 'page transport', source: { file, line },
-            requires: { transports: [transport as 'http' | 'sse' | 'durable-object'] } });
+            requires: { transports: [transport as 'http' | 'sse' | 'durable-object'],
+              ...(transport === 'durable-object' && stateful ? { durableState: true } : {}) } });
         }
         const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
         const first = diagnostics[0];

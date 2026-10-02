@@ -156,7 +156,7 @@ describe('finite command success / failure / dry-run matrix', () => {
     const bad = envelope(await execute(['remove', 'ui', '--json'], { cwd }), 'remove', false);
     expect(bad.diagnostics[0].code).toBe('COSSACK_FEATURE_REMOVE_FAILED');
     expect(await snapshot(cwd)).toEqual(modified);
-  });
+  }, 30_000); // Multiple real CLI subprocesses and whole-project snapshots.
 
   it('generate/delete plan and apply affected paths', async () => {
     const cwd = await application();

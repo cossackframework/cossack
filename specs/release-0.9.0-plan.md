@@ -955,6 +955,11 @@ on source reload while retaining the Vite HMR connection. Real generated-app
 acceptance covers reload, rapid edits, HTTP, and graceful signal shutdown.
 Continue selected recipe requirements and remaining capability audits before
 completion.
+Build/CLI discovery now checks `stateful: true` as `durableState`, separate from
+WebSocket transport support. Cloudflare requires COSSACK_OBJECT; process runtimes
+reject durable state. Dynamic declarations remain unknown. Keep this distinction
+in selected recipe requirements and agent-facing capability output.
+
 The guarded framework WebSocket factory now creates nested layout service scopes,
 uses original page params during bootstrap, and assigns scope-tree cleanup to the
 page without changing service-state ownership. Node now uses this hook, and both new process adapters await destruction during

@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex Node development runtime (2026-10-03):** read
+> **Latest checkpoint — Codex durable page capability (2026-10-03):** read
+> [build and inspection durability checks](./release-0.9.0.md#codex-durable-state-capability-2026-10-03).
+> **Author: Codex.** Builds and CLI inspection now distinguish WebSocket support
+> from durable page state. Static `stateful: true` requires `durableState`, which
+> Node/Deno/Desktop cannot supply. Cloudflare requires `COSSACK_OBJECT`.
+> Dynamic durability stays unknown. Framework: 612 tests; CLI: 546 tests; all
+> package types passed. **12/58 tasks remain checked.**
+> Continue RT-25 selected recipe requirements and remaining capability/runtime
+> acceptance; inspect bundled examples for default-export compliance.
+
+> **Previous checkpoint — Codex Node development runtime (2026-10-03):** read
 > [dev WebSockets, HMR, and reload acceptance](./release-0.9.0.md#codex-node-development-runtime-2026-10-03).
 > **Author: Codex.** Generated dev servers attach the exported runtime, dispose
 > replaced instances, coalesce reload requests, and keep Vite HMR on the same

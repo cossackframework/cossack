@@ -21,6 +21,8 @@ export interface CapabilityRequirement {
     realtimeCoordination?: boolean;
     /** Process-local realtime (single-instance WebSocket runtime). */
     processLocalRealtime?: boolean;
+    /** Durable page state across runtime restarts (stateful WebSocket pages). */
+    durableState?: boolean;
     /** Cron/scheduled handlers. */
     scheduledHandlers?: boolean;
     /** Serverless object storage (R2-style bindings). */
@@ -38,7 +40,7 @@ interface RuntimeProfile extends RequirementSet {
 
 type RequirementSet = Required<Pick<CapabilityRequirement,
     'transports' | 'realtimeCoordination' | 'processLocalRealtime' | 'scheduledHandlers'
-    | 'serverlessStorage' | 'filesystem'>>;
+    | 'serverlessStorage' | 'filesystem' | 'durableState'>>;
 
 const HTTP_ONLY: readonly ('http' | 'sse' | 'durable-object')[] = ['http'];
 
@@ -47,11 +49,13 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: true,
         processLocalRealtime: false,
+        durableState: true,
         scheduledHandlers: true,
         serverlessStorage: true,
         filesystem: false,
         bindingRequirements: {
             realtimeCoordination: ['COSSACK_SSE'],
+            durableState: ['COSSACK_OBJECT'],
             serverlessStorage: [],
         },
     },
@@ -60,6 +64,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
+        durableState: false,
         scheduledHandlers: true,
         serverlessStorage: false,
         filesystem: true,
@@ -70,6 +75,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
+        durableState: false,
         scheduledHandlers: true,
         serverlessStorage: false,
         filesystem: true,
@@ -80,6 +86,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         transports: HTTP_ONLY,
         realtimeCoordination: false,
         processLocalRealtime: false,
+        durableState: false,
         scheduledHandlers: false,
         serverlessStorage: false,
         filesystem: true,
@@ -202,7 +209,7 @@ export function describeRuntimeCapabilities(
     const profile = profileFor(runtime);
     const capabilities: Array<keyof RequirementSet> = [
         'transports', 'realtimeCoordination', 'processLocalRealtime',
-        'scheduledHandlers', 'serverlessStorage', 'filesystem',
+        'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState',
     ];
     const results = {} as Record<keyof RequirementSet, CapabilityResult>;
     for (const capability of capabilities) {

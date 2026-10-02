@@ -270,6 +270,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       errorBoundary: nearestSpecialPage(page.filePath, model.pages, 'error'),
       notFoundBoundary: nearestSpecialPage(page.filePath, model.pages, '404'),
       transport: options.transport,
+      stateful: options.stateful ?? null,
       ssg: options.ssg,
       middlewares: options.middlewares,
       services: options.services,

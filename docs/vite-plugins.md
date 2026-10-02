@@ -55,6 +55,12 @@ Configured Markdown routes use the HTTP transport emitted by the Markdown
 transform. Layout, loading, declaration, and test files are excluded from page
 transport discovery using the same route scanner as the plugin.
 
+Discovered WebSocket pages with `stateful: true` also require `durableState`.
+Node and Deno WebSockets hold process-local state, so their builds reject that
+setting before bundle output. Cloudflare requires `COSSACK_OBJECT`. Dynamic
+`stateful` expressions produce an unknown-requirements diagnostic instead of
+being assumed safe. Use a static boolean in the page declaration.
+
 Add `requirements` inside `capabilities` for other selected features:
 
 ```ts

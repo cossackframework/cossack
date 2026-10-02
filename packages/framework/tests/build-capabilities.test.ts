@@ -108,3 +108,17 @@ it('accepts discovered named HTTP handler modules without component decorators',
   await expect(buildFixture('desktop', 'http', [], {},
     'export const POST = factory(); export async function GET(c) { return c.json({ ok: true }); }', undefined, 'src/pages/api/chat.ts')).resolves.toBeDefined();
 });
+
+it.each(['node', 'deno'] as const)('rejects durable state before bundling on %s but allows process-local pages', async runtime => {
+  const page = (stateful: string) => `@Page({ transport: 'durable-object', stateful: ${stateful} }) export default class Chat {}`;
+  await expect(buildFixture(runtime, 'http', [], {}, page('true')))
+    .rejects.toMatchObject({ message: expect.stringMatching(/chat\/index.ts:1: page transport requires durableState/) });
+  await expect(buildFixture(runtime, 'http', [], {}, page('false'))).resolves.toBeDefined();
+  await expect(buildFixture(runtime, 'http', [], {}, page('isDurable()')))
+    .rejects.toMatchObject({ message: expect.stringContaining('requirements are unknown') });
+});
+it('allows durable Cloudflare pages only with their binding', async () => {
+  const page = "@Page({ transport: 'durable-object', stateful: true }) export default class Chat {}";
+  await expect(buildFixture('cloudflare', 'http', [], {}, page)).rejects.toThrow('COSSACK_OBJECT');
+  await expect(buildFixture('cloudflare', 'http', ['COSSACK_OBJECT'], {}, page)).resolves.toBeDefined();
+});

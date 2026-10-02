@@ -24,6 +24,9 @@ function explainRoute(effective, route) {
     ? `Transport and options are unknown: ${page.extraction.reason} (${page.source})`
     : `Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`
       + (page.transport ? '' : ' (no explicit transport; http is the default)'));
+  if (page.transport === 'durable-object' && page.stateful === true) {
+    reasons.push(`Durable page state: ${effective.runtime.capabilities?.durableState?.status ?? 'unknown'} on ${effective.runtime.name}. Process-local WebSockets alone do not persist state across restarts.`);
+  }
   if (page.layouts.length) {
     reasons.push(`Layout ancestry (${page.layouts.length}): ${page.layouts.join(' -> ')}`);
   } else {

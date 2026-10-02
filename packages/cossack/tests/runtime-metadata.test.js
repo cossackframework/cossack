@@ -42,3 +42,13 @@ it.each(['node', 'deno'])('reports missing schedule integration without rejectin
   expect(result.transports[0].status).toBe('available');
   expect(result.diagnostics).toEqual([]);
 });
+it.each(['node', 'deno'])('rejects stateful WebSocket pages on %s while permitting ephemeral state', async runtime => {
+  detectProjectRuntime.mockResolvedValue(runtime);
+  const stateful = { ...pages[0], transport: 'durable-object', stateful: true };
+  const result = await inspectRuntimeMetadata('/app', [stateful]);
+  expect(result.transports[0].status).toBe('available');
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: 'COSSACK_CAPABILITY_UNSUPPORTED', capability: 'durableState', source: stateful.source, severity: 'error',
+  }));
+  expect((await inspectRuntimeMetadata('/app', [{ ...stateful, stateful: false }])).diagnostics).toEqual([]);
+});

@@ -392,3 +392,12 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     expect(dynamic.extraction.reason).toContain('cannot be resolved statically');
   });
 });
+it('reports static stateful options and leaves dynamic durability unknown', async () => {
+  const directory = path.join(tmp, 'src/pages/live');
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, 'index.ts');
+  fs.writeFileSync(file, "@Page({ transport: 'durable-object', stateful: true }) export default class Live {}");
+  expect((await buildEffectiveRouteModel(tmp)).pages[0]).toMatchObject({ stateful: true, extraction: { method: 'ast' } });
+  fs.writeFileSync(file, "@Page({ transport: 'durable-object', stateful: computeDurability() }) export default class Live {}");
+  expect((await buildEffectiveRouteModel(tmp)).pages[0]).toMatchObject({ stateful: null, extraction: { method: 'unknown' } });
+});

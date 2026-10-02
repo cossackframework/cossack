@@ -47,7 +47,7 @@ function pageDecoratorAliases(program: AstNode) {
 
 /** Extract scalar/array facts from one @Page options object literal. */
 function readOptionsObject(objectExpression: AstNode, code: string) {
-  const options: { transport: string | null; ssg: boolean | null; middlewares: number; services: string[] } = { transport: null, ssg: null, middlewares: 0, services: [] };
+  const options: { transport: string | null; stateful: boolean | null; ssg: boolean | null; middlewares: number; services: string[] } = { transport: null, stateful: null, ssg: null, middlewares: 0, services: [] };
   const unresolved = [];
   for (const property of objectExpression.properties ?? []) {
     if (property.type !== 'Property' || property.computed) {
@@ -57,6 +57,8 @@ function readOptionsObject(objectExpression: AstNode, code: string) {
     const key = property.key.name ?? property.key.value;
     if (key === 'transport' && property.value.type === 'Literal' && typeof property.value.value === 'string') {
       options.transport = property.value.value;
+    } else if (key === 'stateful' && property.value.type === 'Literal' && typeof property.value.value === 'boolean') {
+      options.stateful = property.value.value;
     } else if (key === 'ssg' && property.value.type === 'Literal' && typeof property.value.value === 'boolean') {
       options.ssg = property.value.value;
     } else if (key === 'ssg' && property.value.type === 'ObjectExpression') {
@@ -80,7 +82,7 @@ function readOptionsObject(objectExpression: AstNode, code: string) {
         node?.type === 'MemberExpression' && !node.computed && !node.optional &&
         node.property?.type === 'Identifier' && staticReference(node.object);
       if (property.value.elements.some((e: AstNode) => !staticReference(e))) unresolved.push('services');
-    } else if (['transport', 'ssg', 'middlewares', 'services'].includes(key)) {
+    } else if (['transport', 'stateful', 'ssg', 'middlewares', 'services'].includes(key)) {
       unresolved.push(key);
     }
   }
