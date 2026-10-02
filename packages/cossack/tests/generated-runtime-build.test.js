@@ -8,6 +8,7 @@ import { WebSocket } from 'ws';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
+import { chromium, expect as browserExpect } from '@playwright/test';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -31,7 +32,7 @@ async function project(adapter, features = []) {
 async function vite(root, args) {
   try {
     return await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/vite/bin/vite.js'), 'build', ...args], {
-      cwd: root, env: { ...process.env, VITEST: '', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 4 * 1024 * 1024,
+      cwd: root, env: { ...process.env, NODE_ENV: 'production', VITEST: '', WRANGLER_SEND_METRICS: 'false' }, maxBuffer: 4 * 1024 * 1024,
     });
   } catch (error) { throw new Error(`${error.stdout}\n${error.stderr}`); }
 }
@@ -177,6 +178,143 @@ it('runs generated Node development WebSockets, preserves HMR, and replaces runt
     expect({ code, signal }, output).toEqual({ code: 0, signal: null });
   }
 }, 60000);
+
+it('runs generated mutation contracts and hydrated resource/mutation UI with failure recovery', async () => {
+  const root = await project('node', ['resource', 'mutation']);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated recipe types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+    expect(code).not.toContain('Submission received for'); // Server action body is stripped.
+  }
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const routeId = manifest.filePathToId['/src/pages/mutation/index.ts'];
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { serve } from '@hono/node-server';
+    const { app, env, runtime } = await import('./dist/server/index.js');
+    const server = await new Promise(resolve => {
+      const listener = serve({ fetch: request => app.fetch(request, env), port: 0, hostname: '127.0.0.1' }, () => resolve(listener));
+      listener.once('error', error => { console.error(error); process.exit(1); });
+    });
+    env.APP_URL = 'http://127.0.0.1:' + server.address().port;
+    console.log('RECIPE_ORIGIN=' + env.APP_URL);
+    process.once('SIGTERM', async () => {
+      await runtime.dispose();
+      server.close(() => process.exit(0));
+    });
+  `], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  child.stdout.on('data', data => { output += data; });
+  child.stderr.on('data', data => { output += data; });
+  const exited = once(child, 'exit');
+  let browser;
+  try {
+    await expect.poll(() => {
+      if (child.exitCode !== null) throw new Error(output);
+      return /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+    }, { timeout: 10000 }).toBeTruthy();
+    const origin = /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
+    const call = async payload => {
+      const response = await fetch(origin + '/crpc', { method: 'POST', headers: { origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ componentRouteId: routeId, action: 'submitMessage', payload, state: { public: { acknowledgment: 'forged' } } }) });
+      return { status: response.status, body: await response.json() };
+    };
+    for (const payload of [[], [null], ['bad input']]) {
+      const result = await call(payload);
+      expect(result).toMatchObject({ status: 400, body: { code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { _: expect.any(String) } } });
+    }
+    for (const input of [{ email: 'bad', message: '' }, { email: ['a@b.test'], message: ['hello'] }, { email: 'a@b.test', message: 'x'.repeat(501) }]) {
+      expect(await call([input])).toMatchObject({ status: 400, body: { code: 'COSSACK_VALIDATION_FAILED', fieldErrors: expect.any(Object) } });
+    }
+    expect(await call([{ email: 'AGENT@example.test', message: 'Please contact me.' }]))
+      .toMatchObject({ status: 200, body: { _cossack_return: 'Submission received for agent@example.test.' } });
+
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', error => { errors.push(error.message); console.error('Generated recipe browser error:', error); });
+    const rpcRequests = [];
+    page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') rpcRequests.push(request.postDataJSON()); });
+    await page.goto(origin + '/mutation');
+    expect(await page.locator('script[type="module"][src]').getAttribute('src')).toMatch(/^\/assets\/.+\.js$/);
+    const email = page.getByLabel('Email', { exact: true });
+    const message = page.getByLabel('Message', { exact: true });
+    const submit = page.getByRole('button', { name: 'Submit', exact: true });
+    await email.fill('invalid');
+    await message.fill('x');
+    await submit.click();
+    await browserExpect(page.locator('#mutation-email-error')).toHaveText('Enter a valid email address.');
+    await browserExpect(page.locator('#mutation-message-error')).toHaveText('Enter a message of 3 to 500 characters.');
+    expect(rpcRequests).toHaveLength(0); // Built-in client validation prevents a call.
+    await email.fill('AGENT@example.test');
+    await message.fill('Please contact me.');
+
+    // Hold the actual request to make pending and duplicate-submit behavior observable.
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    await page.route('**/crpc', async route => { await gate; await route.continue(); });
+    await submit.click();
+    await browserExpect(page.getByRole('button', { name: 'Submitting…' })).toBeDisabled();
+    await browserExpect(email).toBeDisabled();
+    expect(rpcRequests).toHaveLength(1);
+    const sent = rpcRequests[0];
+    expect(sent.payload).toEqual([{ email: 'AGENT@example.test', message: 'Please contact me.' }]);
+    expect(sent.state).toEqual({}); // Client-only form/error/pending state is excluded.
+    release();
+    await browserExpect(page.getByRole('status')).toHaveText('Submission received for agent@example.test.');
+    await browserExpect(email).toHaveValue('');
+    await browserExpect(message).toHaveValue('');
+    await page.unroute('**/crpc');
+
+    await email.fill('retry@example.test');
+    await message.fill('Keep this message.');
+    await page.route('**/crpc', route => route.fulfill({ status: 400, contentType: 'application/json',
+      body: JSON.stringify({ error: 'Validation failed.', code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { email: 'Email was rejected by the server.' } }) }));
+    await submit.click();
+    await browserExpect(page.locator('#mutation-email-error')).toHaveText('Email was rejected by the server.');
+    await browserExpect(email).toHaveValue('retry@example.test');
+    await page.unroute('**/crpc');
+    await page.route('**/crpc', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Internal Server Error' }) }));
+    await submit.click();
+    await browserExpect(page.getByRole('alert')).toHaveText('Could not submit. Your input is preserved; try again.');
+    await browserExpect(message).toHaveValue('Keep this message.');
+    await browserExpect(submit).toBeEnabled();
+    await page.unroute('**/crpc');
+    await submit.click();
+    await browserExpect(page.getByRole('status')).toHaveText('Submission received for retry@example.test.');
+
+    await page.goto(origin + '/resource');
+    await browserExpect(page.getByText('Framework guide', { exact: true })).toBeVisible();
+    const category = page.getByLabel('Category');
+    const delayed = new Promise(resolve => { release = resolve; });
+    await page.route('**/crpc', async route => { await delayed; await route.continue(); });
+    await category.selectOption('books');
+    await browserExpect(page.getByRole('status')).toHaveText('Updating results…');
+    await browserExpect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeDisabled();
+    await browserExpect(page.getByText('Project notebook', { exact: true })).toBeVisible(); // Stale results remain.
+    release();
+    await browserExpect(page.getByText('Project notebook', { exact: true })).toHaveCount(0);
+    await page.unroute('**/crpc');
+    await category.selectOption('other');
+    await browserExpect(page.getByText('No products in this category.')).toBeVisible();
+    await page.route('**/crpc', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Internal Server Error' }) }));
+    await category.selectOption('tools');
+    await browserExpect(page.getByRole('alert')).toHaveText('Could not load products. Retry to try again.');
+    await page.unroute('**/crpc');
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await browserExpect(page.getByText('Project notebook', { exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await browser?.close();
+    child.kill('SIGTERM');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+    const [code, signal] = await exited;
+    clearTimeout(kill);
+    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
+  }
+}, 120000);
 it('enforces selected database recipe requirements before compiling its modules', async () => {
   const root = await project('node', ['database']);
   const file = path.join(root, 'vite.config.ts');

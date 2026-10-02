@@ -71,6 +71,9 @@ jobs:
       - name: Check package types
         run: pnpm run typecheck
 
+      - name: Install Playwright browsers
+        run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
+
       - name: Run all unit tests
         run: pnpm run test:unit
 
@@ -86,9 +89,6 @@ jobs:
       - name: Test generated app with local package tarballs
         if: steps.changes.outputs.generated_app == 'true'
         run: pnpm run test:scaffold:local
-
-      - name: Install Playwright browsers
-        run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
       - name: Run Framework E2E tests
         run: pnpm --filter @cossackframework/framework run test:e2e

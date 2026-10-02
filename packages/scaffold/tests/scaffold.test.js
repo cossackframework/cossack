@@ -1303,22 +1303,28 @@ it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql
   }
   expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
 });
-it('composes a resource recipe predictably and preserves edited pages', async () => {
+it.each(['resource', 'mutation'])('composes the %s recipe predictably and preserves edited pages', async feature => {
   const root = await temporaryDirectory();
   const { projectDir } = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
-  const added = await addFeature(projectDir, 'resource', { interactive: false });
+  const added = await addFeature(projectDir, feature, { interactive: false });
   expect(added.status).toBe('added');
-  const file = path.join(projectDir, 'src/pages/resource/index.ts');
+  const file = path.join(projectDir, `src/pages/${feature}/index.ts`);
   const original = await fs.readFile(file, 'utf8');
-  expect(original).toContain("this.resourceStatus$('products')");
-  expect(original).toContain("this.refresh$('products')");
+  if (feature === 'resource') {
+    expect(original).toContain("this.resourceStatus$('products')");
+    expect(original).toContain("this.refresh$('products')");
+  } else {
+    expect(original).toContain('@Server({ input: inputRules })');
+    expect(original).toContain('await this.validateAll()');
+    expect(original).toContain('error.fieldErrors?.[field]');
+  }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
   expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
-  await addFeature(projectDir, 'resource', { interactive: false });
+  await addFeature(projectDir, feature, { interactive: false });
   expect(await fs.readFile(file, 'utf8')).toBe(original);
   await fs.appendFile(file, '\n// application customization\n');
-  await addFeature(projectDir, 'resource', { interactive: false });
+  await addFeature(projectDir, feature, { interactive: false });
   expect(await fs.readFile(file, 'utf8')).toBe(original + '\n// application customization\n');
-  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: ['resource'] })))
-    .toEqual([{ feature: 'resource', source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } }]);
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [feature] })))
+    .toEqual([{ feature, source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } }]);
 });

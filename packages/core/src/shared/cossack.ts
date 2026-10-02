@@ -246,7 +246,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     entry.pending = undefined;
                     entry.error = error;
                     entry.failed = true;
-                    if (!this.isServer) console.error(`[Cossack server$:${name}]`, error);
+                    if (!this.isServer) {
+                        console.error(`[Cossack server$:${name}]`, error);
+                        // Error status is observable state too. Notify the view
+                        // after settlement so it can offer retry without an
+                        // unrelated state change or a successful refresh.
+                        void this.requestUpdate();
+                    }
                 }
                 if (this.isServer) throw error;
             });

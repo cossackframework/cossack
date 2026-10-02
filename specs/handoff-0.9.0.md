@@ -2,7 +2,23 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex resource recipe (2026-10-03):** read
+> **Latest checkpoint — Codex mutation and browser acceptance (2026-10-03):** read
+> [mutation recipe and hydrated UI acceptance](./release-0.9.0.md#codex-mutation-browser-recipe-2026-10-03).
+> **Author: Codex.** `cossack add mutation` creates a validated public HTTP form
+> with explicit payload snapshots, client-only form state, field errors, pending
+> controls, preserved failed input, reset, and retry. It saves/sends nothing;
+> application authorization/persistence must be added server-side. Chromium
+> acceptance now verifies both resource and mutation recipes in a built Node app.
+> Fixed failed resource loaders not requesting a render; obsolete failures remain
+> ignored. Fixtures build with NODE_ENV=production, and CI installs Chromium
+> before CLI tests. Passed: 99 scaffold tests, 676 core tests, all 553 CLI tests
+> (including generated browser acceptance), 2 bundled-route checks, root TypeScript,
+> and all 11 package type checks. **12/58 tasks remain checked.** Next add the
+> protected-route and scoped-service recipes through the same registry and shared
+> capability model; complete their generated runtime/browser acceptance and repeat
+> the RT-25 audit. Keep every other unchecked release task in scope.
+
+> **Previous checkpoint — Codex resource recipe (2026-10-03):** read
 > [resource acceptance and capability audit](./release-0.9.0.md#codex-resource-recipe-2026-10-03).
 > **Author: Codex.** `cossack add resource` now creates a read-only HTTP resource
 > with loading/error/empty/retry UI and no database dependency. Generated types,

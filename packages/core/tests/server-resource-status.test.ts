@@ -93,6 +93,30 @@ describe('resourceStatus$ (RT-03)', () => {
         expect((host.status('failing').error as Error).message).toBe('backend down');
     });
 
+    it('rerenders an active client after failure, but ignores a replaced load failure', async () => {
+        const host = new Host();
+        const update = vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const failed = deferred<number>();
+        const obsolete = deferred<number>();
+        try {
+            host.__serverResource('item', (_id: number) => obsolete.promise, { deps: () => [1] as const, initial: 10 });
+            const oldPending = host.__serverResourcePending();
+            host.__serverResource('item', (_id: number) => failed.promise, { deps: () => [2] as const });
+            const pending = host.__serverResourcePending();
+            obsolete.reject(new Error('obsolete'));
+            await Promise.all(oldPending);
+            expect(update).not.toHaveBeenCalled();
+            expect(host.status('item')).toMatchObject({ state: 'pending', value: 10 });
+            failed.reject(new Error('current failure'));
+            await Promise.all(pending);
+            expect(update).toHaveBeenCalledOnce();
+            expect(host.status('item')).toMatchObject({ state: 'error', value: 10 });
+        } finally {
+            log.mockRestore();
+        }
+    });
+
     it('refresh$ re-runs the loader and settles again', async () => {
         const host = new Host();
         host.loadUsers(1);

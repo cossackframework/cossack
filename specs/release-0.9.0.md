@@ -14,7 +14,7 @@ below link directly to those explanations.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](#codex-handler-default-parity-2026-10-03).
-- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex (2026-10-03): resource recipe implemented with safe composition, generated type checks, SSR and RPC acceptance. Remaining: browser state coverage and the other three recipes.
+- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex (2026-10-03): resource and mutation recipes implemented with safe composition, generated type/build/RPC checks, and real Chromium hydration/state/failure/retry acceptance. Remaining: protected-route and scoped-service recipes and their acceptance.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
@@ -85,6 +85,48 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-mutation-browser-recipe-2026-10-03"></a>
+### Codex continuation: validated mutation and browser acceptance (2026-10-03)
+
+**Author: Codex.** Added `cossack add mutation` / `--features=mutation` with a
+complete public HTTP submission example. It shares typed built-in form rules
+with server input validation, sends an explicit argument snapshot, and excludes
+client form/error/pending state from synchronized state. It shows field errors,
+disables controls while submitting, preserves failed input, resets after success,
+and reports safe generic failures. It returns an acknowledgment without saving
+or sending data. Application writes belong inside the server method after
+authorization. No database/UI dependency is added; the registry declares HTTP
+capability, and composition preserves repeated applications and edited files.
+
+Acceptance runs the actual generated app through published package exports,
+TypeScript, production client/server builds, stripped server bodies, SSR, and
+real RPC input validation (missing/nonobject/invalid/array/oversized input plus
+valid normalized output). Chromium covers both mutation and resource hydration,
+client validation without RPC, pending/disabled controls, argument/state
+separation, server field errors, failure, preserved input, reset, and retry.
+Resource checks also cover filtered/empty results and retained stale data.
+
+The browser fixture found two problems absent from server-only checks. Vite
+fixtures inherited NODE_ENV=test and emitted development asset paths; builds
+now explicitly set NODE_ENV=production and assert hashed module paths. Core
+failed resource loaders updated status without requesting a render, leaving
+loading UI visible. Failure now requests an update while the existing ownership
+guard prevents obsolete/destroyed loads from changing the current view. A core
+regression verifies that only the active failure requests a render. CI browser
+installation now precedes CLI tests in both E2E and publishing workflows.
+
+Verification: `pnpm --filter @cossackframework/scaffold test` passed 99 tests;
+core build and `pnpm --filter @cossackframework/core test --run` passed 676 tests.
+The combined generated-app/inspection/command-spec suite passed 37 tests,
+including real Chromium interaction. Bundled route contract checks passed 2
+tests. Root `pnpm tsc --noEmit` and all 11 package checks via `pnpm typecheck`
+passed. Full `pnpm --filter cossack test` passed all 553 tests, including the
+generated production browser case. Whitespace checks passed for authored files;
+the user's unrelated `reports.md` and `.zcodeignore` remain untouched/uncommitted.
+**12/58 tasks remain checked:** CLI-05 still needs two recipes, RT-03 still needs
+typed targeting and broader lifecycle coverage, and RT-25 remains open for the
+remaining recipe integration audit. Continue all unchecked release tasks.
 
 <a id="codex-resource-recipe-2026-10-03"></a>
 ### Codex continuation: resource recipe and RT-25 audit (2026-10-03)

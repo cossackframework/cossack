@@ -254,13 +254,35 @@ UI states, failure handling, and tests. Declare feature dependencies and runtime
 capabilities. Generate database-specific pieces only when that feature is selected.
 Use existing conflict detection when composing into an edited application.
 
-Codex checkpoint (2026-10-03): `cossack add resource` now generates a read-only
+Codex resource checkpoint (2026-10-03): `cossack add resource` generates a read-only
 HTTP resource page with explicit dependencies, pending/stale/error/empty states,
 and refresh/retry. It declares capabilities, adds no database dependency, and has
 composition preservation, generated-app type, SSR, code-stripping, and real RPC
-acceptance tests. Browser interaction/hydration state coverage remains to add.
-Next implement the validated mutation, protected route, and layout-scoped service
-recipes using the same registry/composition path and shared capability model.
+acceptance tests. The following checkpoint adds browser coverage and the mutation
+recipe using the same registry/composition path and shared capability model.
+
+Codex mutation/browser checkpoint (2026-10-03): `cossack add mutation` now
+generates `/mutation` with typed built-in form rules and an explicit
+`@Server({ input })` contract. Client-only form/error/pending state is excluded
+from RPC component state. Submission snapshots are revalidated server-side.
+The page shows field errors and generic failures, keeps input on failure, and
+clears it after a successful acknowledgment. This is a public, database-free
+demonstration that explicitly saves/sends nothing; real writes require server
+authorization and an application service/database call.
+
+Generated acceptance now runs Chromium against the actual production Node app.
+It covers mutation hydration, client validation without a request, real server
+validation of malformed/tampered inputs, pending/disabled controls, payload/state
+separation, server field errors, failed submission, reset, and retry. Resource
+coverage now includes hydration, filtered reads, pending with stale results,
+empty results, error rendering, and successful retry. This caught a core bug:
+failed loaders updated their status without requesting a render. The fix notifies
+the client view while ignoring failures from replaced loads. Vite fixtures now
+explicitly set NODE_ENV=production instead of inheriting Vitest's test environment.
+CI installs Chromium before CLI tests. Remaining CLI-05 recipe work: protected
+route and layout-scoped service; complete their runtime/capability acceptance
+before checking the task. RT-03 still needs typed resource targeting and the
+broader unmount/SSR lifecycle matrix; this recipe slice does not complete it.
 
 Start in `packages/scaffold/src/registry.js`, `index.js`, and
 `packages/cossack/src/commands/add.js` and `generate.js`.
@@ -949,7 +971,7 @@ Codex acceptance audit (2026-10-03):
 | Supported fixtures build through published exports | Generated Node/Deno and Node/Cloudflare Desktop configurations in `cossack/tests/generated-runtime-build.test.js` | Verified |
 | Desktop retains HTTP-only boundary | Desktop SSE rejection and generated mode-specific checks | Verified |
 | Workers-only imports stay out of other runtime graphs | Every emitted server/Desktop JavaScript chunk checked in generated build fixtures | Verified |
-| CLI-04 and CLI-05 consume the same model | CLI runtime/project inspection and scaffold requirement projection share the checker; the resource recipe declares HTTP | Partial: three CLI-05 recipes remain to implement and integrate |
+| CLI-04 and CLI-05 consume the same model | CLI runtime/project inspection and scaffold requirement projection share the checker; resource and mutation recipes declare HTTP | Partial: protected-route and scoped-service recipes remain to implement and integrate |
 
 The model covers transport-specific bindings, durable state, scheduled integration
 requirements, filesystem access, and selected native database bindings. Node

@@ -117,3 +117,22 @@ application service or a database read when needed. Database support is not adde
 implicitly. Keep authorization inside the server loader for private data.
 Composition records ownership, supports repeated application, and preserves edited
 pages. The recipe declares HTTP transport capability for every selected target.
+
+## Validated mutation recipe
+
+Run `cossack add mutation` to add `/mutation`, or select `--features=mutation`
+during creation. This HTTP recipe uses a typed `storeRules` map for built-in
+client form validation and `@Server({ input })` for server validation. Client-only
+form state is sent as an explicit argument snapshot. The handler displays field
+errors, disables the form while submitting, keeps input after failure, and clears
+it after success. It uses framework RPC proxies; no manual fetch is needed.
+
+The public demonstration returns an acknowledgment. It does not persist data or
+send email. To perform a real write, add authorization and call an application
+service or selected database inside the server method. Component state and client
+input are not a trusted database. The recipe adds no database or UI dependency,
+declares HTTP capability, and preserves edited pages during repeat composition.
+
+Generated production browser acceptance runs in the CLI package with Playwright.
+Install its Chromium browser with `pnpm --filter cossack exec playwright install chromium`
+before running `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`.
