@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 /**
  * `cossack lang <subcommand>` — localization scaffolding.
  *
@@ -14,14 +15,9 @@ import fs from 'node:fs/promises';
 import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
-import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'lang',
-  positionals: ['subcommand', 'arg'],
-  minPositionals: 1,
-  flags: { locale: { type: 'string' } },
-});
+const spec = commandSpecs.lang;
 
 const DEFAULT_LOCALE = 'en';
 
@@ -44,7 +40,7 @@ export async function langCommand(args, ctx) {
 
 /** `cossack lang publish` — create the default locale catalog + wire root.ts. */
 async function publish(args, ctx) {
-  const { flags } = parseSimpleFlags(args, ctx);
+  const flags = ctx.flags;
   const locale = flagString(flags.locale) || DEFAULT_LOCALE;
   const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
@@ -92,7 +88,7 @@ async function publish(args, ctx) {
 /** `cossack lang add <locale>` — create an empty locale catalog. */
 async function addLocale(args, ctx) {
   const cleaned = args.filter((a) => !a.startsWith('-'));
-  const { flags } = parseSimpleFlags(args, ctx);
+  const flags = ctx.flags;
   const locale = cleaned[0] || flagString(flags.locale);
   if (!locale) {
     throw Object.assign(
@@ -101,10 +97,8 @@ async function addLocale(args, ctx) {
     );
   }
   if (locale === DEFAULT_LOCALE) {
-    console.error(
-      `Use \`cossack lang publish\` to create the default (${DEFAULT_LOCALE}) catalog.`,
-    );
-    return 1;
+    throw Object.assign(new Error('Use cossack lang publish to create the default en catalog.'),
+      { code: 'COSSACK_LOCALE_DEFAULT' });
   }
 
   const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
@@ -147,20 +141,6 @@ async function seedEntries(root, locale) {
   return seed;
 }
 
-function parseSimpleFlags(args, ctx) {
-  // ctx already carries parsed flags for top-level options; combine with any
-  // inline `--locale=xx` passed after the subcommand.
-  const flags = { ...(ctx.flags || {}) };
-  for (const tok of args) {
-    if (typeof tok !== 'string') continue;
-    if (tok.startsWith('--locale=')) {
-      flags.locale = tok.slice('--locale='.length);
-    } else if (tok === '--locale') {
-      // value should follow; handled by the dispatcher's parseFlags already
-    }
-  }
-  return { flags };
-}
 
 /**
  * Ensures `src/root.ts` uses the `{{ cossackLang }}` placeholder in
@@ -270,17 +250,12 @@ function reportFile(rel, result, ctx) {
 }
 
 export function langHelp() {
-  return `cossack lang <subcommand>
+  return commandSpecs.lang.help(`cossack lang <subcommand>
 
 Manage localization catalogs under src/lang/.
 
 Subcommands:
   publish                Create src/lang/en.json with starter keys.
   add <locale>           Create src/lang/<locale>.json with empty values,
-                         mirroring the keys of an existing en.json.
-
-Options:
-  --locale=<code>        Override the default locale for \`publish\` (default: en).
-  --force, -f            Overwrite an existing file.
-  --dry-run              Show what would happen without writing.`;
+                         mirroring the keys of an existing en.json.`);
 }

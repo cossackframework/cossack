@@ -1,14 +1,11 @@
+import { commandSpecs, inspectRoutesSpec } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { inspectDeployment } from '../deployment.js';
 import { commandFailure, writeResult } from '../output.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { showCommandHelp, validateCommand, runWithSpec } from '../command-spec.js';
 
-const routesSpec = new CommandSpec({
-  name: 'inspect',
-  positionals: ['route'],
-  flags: { verbose: { type: 'boolean' } },
-});
+const routesSpec = inspectRoutesSpec;
 
 /** Explain one route's effective behavior with reasons and source locations. */
 function explainRoute(effective, route) {
@@ -91,18 +88,6 @@ async function inspectRoutes(args, ctx, command) {
 }
 
 async function inspectCloudflare(args, ctx, command) {
-  if (args.length !== 1 || args[0] !== 'cloudflare') {
-    return commandFailure(ctx, command, 'COSSACK_INSPECTION_SCOPE_INVALID',
-      `Use cossack ${command} cloudflare to inspect Cloudflare configuration.`);
-  }
-  for (const name of Object.keys(ctx.flags)) {
-    if (!['env', 'json', 'help', 'h'].includes(name)) {
-      return commandFailure(ctx, command, 'COSSACK_OPTION_UNKNOWN', `Unknown ${command} option --${name}.`);
-    }
-  }
-  if (ctx.flags.env !== undefined && (typeof ctx.flags.env !== 'string' || !ctx.flags.env.trim())) {
-    return commandFailure(ctx, command, 'COSSACK_OPTION_VALUE_REQUIRED', '--env requires one nonempty value.');
-  }
   try {
     const root = await findProjectRoot(ctx.cwd);
     const { summary, diagnostics } = await inspectDeployment(root, ctx.flags.env ?? process.env.CLOUDFLARE_ENV);
@@ -127,28 +112,36 @@ async function inspectCloudflare(args, ctx, command) {
 }
 
 export function inspectCommand(args, ctx) {
+  if (showCommandHelp(commandSpecs.inspect, args, ctx, inspectHelp)) return 0;
+  if (!validateCommand(commandSpecs.inspect, args, ctx)) return 1;
   if (args[0] === 'routes') {
     return runWithSpec(routesSpec, args.slice(1), ctx, () => inspectRoutes(args.slice(1), ctx, 'inspect'));
   }
   return inspectCloudflare(args, ctx, 'inspect');
 }
-export function checkCommand(args, ctx) { return inspectCloudflare(args, ctx, 'check'); }
+export function checkCommand(args, ctx) {
+  if (showCommandHelp(commandSpecs.check, args, ctx, checkHelp)) return 0;
+  if (!validateCommand(commandSpecs.check, args, ctx)) return 1;
+  return inspectCloudflare(args, ctx, 'check');
+}
 
 export function inspectHelp() {
-  return `cossack inspect cloudflare [--env <name>] [--json]
+  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes> [route]
 
 Read the project's resolved Worker, environment, bindings, required secret
 names, and configuration diagnostics. Inspection succeeds when configuration
 can be read, even if diagnostics identify deployment errors.
 No builds, generated files, resource provisioning, or cloud requests.
-Use cossack check cloudflare for a failing exit code on invalid configuration.`;
+Use cossack check cloudflare for a failing exit code on invalid configuration.
+Use cossack inspect routes to list effective routes, or supply a route to
+explain its options, layout ancestry, methods, and source locations.`);
 }
 
 export function checkHelp() {
-  return `cossack check cloudflare [--env <name>] [--json]
+  return commandSpecs.check.help(`cossack check cloudflare [--env <name>] [--json]
 
 Validate local Cloudflare deployment configuration without writing files.
 Returns a nonzero exit code for configuration errors. Build artifacts,
 remote resources, permissions, and secret availability are not checked.
---json emits one versioned result with resource names and diagnostics.`;
+--json emits one versioned result with resource names and diagnostics.`);
 }

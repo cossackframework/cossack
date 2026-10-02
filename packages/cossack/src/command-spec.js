@@ -2,7 +2,7 @@
  * Shared command specification: one source of truth for accepted flags,
  * positional arguments, and machine-readable failures (CLI-02/CLI-03).
  *
- * Every command declares a spec and runs through `runWithSpec`, which
+ * Every command declares a spec and uses shared preflight validation, which
  * validates unknown options and positional counts before any effect, and
  * emits the versioned JSON envelope under `--json` with stable codes:
  *
@@ -14,88 +14,145 @@
 import path from 'node:path';
 import { writeResult } from './output.js';
 
-/** Flags every command accepts without declaring them. */
-const GLOBAL_FLAGS = ['force', 'f', 'dry-run', 'json', 'help', 'h'];
+export const GLOBAL_FLAGS = {
+  force: { type: 'boolean', aliases: ['f'], repeated: 'last', description: 'Overwrite owned files / skip confirmation.' },
+  'dry-run': { type: 'boolean', repeated: 'last', description: 'Preview effects without applying changes.' },
+  json: { type: 'boolean', repeated: 'last', description: 'Emit versioned JSON without prompts.' },
+  help: { type: 'boolean', aliases: ['h'], repeated: 'last', description: 'Show command help.' },
+};
 
-/**
- * @typedef {Object} CommandFlag
- * @property {'boolean'|'string'} type
- * @property {string[]} [aliases]
- * @property {boolean} [repeated]  Accept the flag multiple times (last wins).
- */
+/** Shared parser, preflight, and help metadata. */
 export class CommandSpec {
-  /** @param {{name: string, flags?: Record<string, CommandFlag>, positionals?: string[], minPositionals?: number, forwardsArgs?: boolean}} definition */
-  constructor({ name, flags = {}, positionals = [], minPositionals = 0, forwardsArgs = false }) {
-    this.name = name;
-    this.flags = flags;
-    this.positionals = positionals;
-    this.minPositionals = minPositionals;
-    // Commands that forward raw args to an underlying tool (vite, wrangler)
-    // cannot validate unknown flags; they declare the boundary instead.
-    this.forwardsArgs = forwardsArgs;
+  constructor({ name, aliases = [], flags = {}, globals = Object.keys(GLOBAL_FLAGS),
+    positionals = [], minPositionals = 0, forwardsArgs = false, subcommands, check }) {
+    Object.assign(this, { name, aliases, flags, globals, positionals, minPositionals, forwardsArgs, subcommands, check });
   }
 
-  /** Validate parsed flags and positional arguments before any effect. */
-  validate(args, flags) {
+  definitions(args, all = false) {
+    const definitions = Object.fromEntries(this.globals.map(name => [name, GLOBAL_FLAGS[name]]));
+    Object.assign(definitions, this.flags);
+    if (all) for (const sub of Object.values(this.subcommands ?? {})) Object.assign(definitions, sub.flags);
+    else Object.assign(definitions, this.subcommands?.[args?.[0]]?.flags);
+    return definitions;
+  }
+
+  options(args, all = false) {
+    const accepted = new Map();
+    for (const [name, definition] of Object.entries(this.definitions(args, all))) {
+      accepted.set(name, { name, ...definition });
+      for (const alias of definition.aliases ?? []) accepted.set(alias, { name, ...definition });
+    }
+    return accepted;
+  }
+
+  normalizeFlags(flags) {
+    const accepted = this.options([], true);
+    const normalized = {};
     const diagnostics = [];
-    if (!this.forwardsArgs) {
-      const accepted = new Map();
-      for (const name of GLOBAL_FLAGS) accepted.set(name, { type: 'boolean' });
-      for (const [flag, definition] of Object.entries(this.flags)) {
-        accepted.set(flag, definition);
-        for (const alias of definition.aliases ?? []) accepted.set(alias, definition);
+    for (const [spelling, value] of Object.entries(flags)) {
+      const name = accepted.get(spelling)?.name ?? spelling;
+      if (Object.hasOwn(normalized, name) && JSON.stringify(normalized[name]) !== JSON.stringify(value)) {
+        diagnostics.push({ code: 'COSSACK_OPTION_CONFLICT', severity: 'error',
+          message: `Conflicting values were supplied for --${name} and its alias.` });
+      } else normalized[name] = value;
+    }
+    return { flags: normalized, diagnostics };
+  }
+
+  validate(args, flags) {
+    if (this.forwardsArgs) return [];
+    const normalized = this.normalizeFlags(flags);
+    const diagnostics = [...normalized.diagnostics];
+    const accepted = this.options(args);
+    flags = normalized.flags;
+    for (const [name, value] of Object.entries(flags)) {
+      const definition = accepted.get(name);
+      if (!definition) {
+        diagnostics.push({ code: 'COSSACK_OPTION_UNKNOWN', severity: 'error',
+          message: `Unknown option --${name} for '${this.name}'${this.subcommands ? ' ' + (args[0] ?? '') : ''}.`,
+          supported: [...accepted.keys()].map(name => `--${name}`) });
+        continue;
       }
-      for (const [name, value] of Object.entries(flags)) {
-        const definition = accepted.get(name);
-        if (definition) {
-          if (Array.isArray(value) && !definition.repeated) {
-            diagnostics.push({ code: 'COSSACK_OPTION_REPEATED', severity: 'error',
-              message: `Option --${name} accepts one value.`, });
-          } else if ((Array.isArray(value) ? value : [value]).some(item => definition.type === 'boolean'
-            ? typeof item !== 'boolean' : typeof item !== 'string' || !item.trim())) {
-            diagnostics.push({ code: 'COSSACK_OPTION_VALUE_REQUIRED', severity: 'error',
-              message: `Option --${name} requires ${definition.type === 'boolean' ? 'true or false' : 'a nonempty string value'}.` });
-          }
-          continue;
+      const values = Array.isArray(value) ? value : [value];
+      if (Array.isArray(value) && !definition.repeated) {
+        diagnostics.push({ code: 'COSSACK_OPTION_REPEATED', severity: 'error',
+          message: `Option --${name} accepts one value.` });
+      } else if (values.some(item => definition.type === 'boolean'
+        ? typeof item !== 'boolean' : typeof item !== 'string' || !item.trim())) {
+        diagnostics.push({ code: 'COSSACK_OPTION_VALUE_REQUIRED', severity: 'error',
+          message: `Option --${name} requires ${definition.type === 'boolean' ? 'true or false' : 'a nonempty string value'}.` });
+      } else {
+        if (definition.choices && values.flatMap(item => definition.list ? item.split(',').map(s => s.trim()) : [item])
+          .some(item => !definition.choices.includes(item))) {
+          diagnostics.push({ code: 'COSSACK_OPTION_INVALID', severity: 'error',
+            message: `Option --${name} accepts: ${definition.choices.join(', ')}.` });
         }
-        diagnostics.push({
-          code: 'COSSACK_OPTION_UNKNOWN',
-          severity: 'error',
-          message: `Unknown option --${name} for '${this.name}'.`,
-          supported: [...accepted.keys()].map(name => `--${name}`),
-        });
+        if (definition.when && !definition.when.includes(args[0])) {
+          diagnostics.push({ code: 'COSSACK_OPTION_UNSUPPORTED', severity: 'error',
+            message: `Option --${name} is supported for: ${definition.when.join(', ')}.` });
+        }
       }
     }
-    if (!this.forwardsArgs && args.length > this.positionals.length) {
-      diagnostics.push({
-        code: 'COSSACK_ARGUMENT_UNEXPECTED',
-        severity: 'error',
-        message: this.positionals.length
-          ? `Unexpected argument '${args[this.positionals.length]}'. '${this.name}' accepts ${this.positionals.length} positional argument(s): ${this.positionals.join(', ')}.`
-          : `Unexpected argument '${args[0]}'. '${this.name}' accepts no positional arguments.`,
-      });
-    }
-    if (args.length < this.minPositionals) {
-      diagnostics.push({
-        code: 'COSSACK_ARGUMENT_MISSING',
-        severity: 'error',
-        message: `'${this.name}' requires ${this.minPositionals} positional argument(s): ${this.positionals.slice(args.length).join(', ')}.`,
-      });
-    }
+    const sub = this.subcommands?.[args[0]];
+    if (this.subcommands && args.length && !sub) diagnostics.push({
+      code: 'COSSACK_ACTION_UNKNOWN', severity: 'error',
+      message: `Unknown subcommand for '${this.name}'. Available: ${Object.keys(this.subcommands).join(', ')}.`,
+    });
+    const positionals = this.subcommands && sub ? ['subcommand', ...(sub.positionals ?? [])] : this.positionals;
+    if (args.length > positionals.length) diagnostics.push({
+      code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error',
+      message: `'${this.name}' accepts ${positionals.length} positional argument(s): ${positionals.join(', ') || '(none)'}.`,
+    });
+    if (args.length < this.minPositionals) diagnostics.push({
+      code: 'COSSACK_ARGUMENT_MISSING', severity: 'error',
+      message: `'${this.name}' requires ${this.minPositionals} positional argument(s): ${this.positionals.slice(args.length).join(', ')}.`,
+    });
+    // Custom constraints only run after type validation, before any project import.
+    if (!diagnostics.length && this.check) diagnostics.push(...this.check(args, flags));
     return diagnostics;
   }
 
-  /** Render the options section for command help. */
   helpOptions() {
     const lines = [];
-    for (const [flag, definition] of Object.entries(this.flags)) {
-      const aliases = (definition.aliases ?? []).map(a => `-${a}`).join(' ');
-      const label = `  --${flag}${aliases ? `, ${aliases}` : ''}${definition.type === 'string' ? ' <value>' : ''}`;
-      lines.push(label);
+    for (const [flag, definition] of Object.entries(this.definitions([], true))) {
+      const aliases = (definition.aliases ?? []).map(a => `${a.length === 1 ? '-' : '--'}${a}`).join(', ');
+      const label = `  --${flag}${aliases ? ', ' + aliases : ''}${definition.type === 'string'
+        ? ' <' + (definition.choices?.join('|') ?? 'value') + '>' : ''}`;
+      const scopes = this.subcommands ? Object.entries(this.subcommands)
+        .filter(([, sub]) => Object.hasOwn(sub.flags ?? {}, flag)).map(([name]) => name) : definition.when;
+      lines.push(label + (definition.description ? '  ' + definition.description : '') +
+        (scopes?.length ? ' (' + scopes.join(', ') + ')' : ''));
     }
-    if (this.forwardsArgs) lines.push('  (forwards extra arguments to the underlying tool)');
+    if (this.forwardsArgs) lines.push('  Extra arguments are forwarded verbatim to the underlying tool; -- ends framework option handling.');
     return lines;
   }
+
+  help(prose) {
+    return prose.trimEnd() + '\n\nOptions:\n' + this.helpOptions().join('\n');
+  }
+}
+
+/** Help is read-only and never needs a project or required positional values. */
+export function showCommandHelp(spec, args, ctx, help) {
+  if (typeof help !== 'function' || !(ctx.flags?.help === true || ctx.flags?.h === true ||
+      ['help', '--help', '-h'].includes(args[0]))) return false;
+  if (ctx.flags?.json === true) writeResult(spec.name, { data: { help: help() } });
+  else console.log(help());
+  return true;
+}
+
+/** Validate direct API calls as well as dispatcher calls. Does not emit success. */
+export function validateCommand(spec, args, ctx) {
+  const diagnostics = spec.validate(args, ctx.flags ?? {});
+  if (diagnostics.length) {
+    if (ctx.flags?.json === true) writeResult(spec.name, { ok: false, diagnostics });
+    else for (const diagnostic of diagnostics) console.error(`Error: ${diagnostic.message}`);
+    return false;
+  }
+  ctx.flags = spec.normalizeFlags(ctx.flags ?? {}).flags;
+  if (ctx.flags.force !== undefined) ctx.force = ctx.flags.force === true;
+  if (ctx.flags['dry-run'] !== undefined) ctx.dryRun = ctx.flags['dry-run'] === true;
+  return true;
 }
 
 /**
@@ -105,24 +162,8 @@ export class CommandSpec {
  * `--json`), or nothing. Failures produce coded diagnostics and exit code 1.
  */
 export async function runWithSpec(spec, args, ctx, handler, help) {
-  // The `help` positional/flag convention predates dispatcher-level handling;
-  // keep it working for direct invocations and documented aliases.
-  const wantsHelp = typeof help === 'function' &&
-    (['help', '--help', '-h'].includes(args[0]) || ctx.flags?.help === true || ctx.flags?.h === true);
-  if (wantsHelp) {
-    if (ctx.flags?.json === true) writeResult(spec.name, { data: { help: help() } });
-    else console.log(help());
-    return 0;
-  }
-  const diagnostics = spec.validate(args, ctx.flags ?? {});
-  if (diagnostics.length) {
-    if (ctx.flags?.json === true) {
-      writeResult(spec.name, { ok: false, diagnostics });
-    } else {
-      for (const diagnostic of diagnostics) console.error(`Error: ${diagnostic.message}`);
-    }
-    return 1;
-  }
+  if (showCommandHelp(spec, args, ctx, help)) return 0;
+  if (!validateCommand(spec, args, ctx)) return 1;
   try {
     const result = await handler(args, ctx);
     if (typeof result === 'number') {

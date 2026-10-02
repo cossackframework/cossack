@@ -1,7 +1,8 @@
+import { commandSpecs } from '../command-specs.js';
 import { run, runCaptured } from '../spawn.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({ name: 'build', forwardsArgs: true });
+const spec = commandSpecs.build;
 
 export async function buildCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -19,12 +20,9 @@ export async function buildCommand(args, ctx) {
 }
 
 export function buildHelp() {
-  return `cossack build
+  return commandSpecs.build.help(`cossack build
 
 Create a production build (\`vite build\`). Pages marked \`ssg: true\` are
 pre-rendered to static HTML during the build via the \`cossackSsg\` plugin.
-Extra args are forwarded to vite.
-
-Options:
-  --json   Emit one JSON result with the exit code; project logs stay private.`;
+Extra args are forwarded to vite.`);
 }

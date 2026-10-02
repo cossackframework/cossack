@@ -1,23 +1,12 @@
+import { commandSpecs } from '../command-specs.js';
 import { addFeature, FEATURES, parseList } from '@cossackframework/scaffold';
 import path from 'node:path';
 import { findProjectRoot, writeFile } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { UI_COMPONENTS } from '../templates.js';
-import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'add',
-  positionals: ['feature', 'component'],
-  minPositionals: 1,
-  flags: {
-    theme: { type: 'string' },
-    features: { type: 'string' },
-    database: { type: 'string' },
-    oauth: { type: 'string' },
-    runtime: { type: 'string' },
-    yes: { type: 'boolean', aliases: ['y'] },
-  },
-});
+const spec = commandSpecs.add;
 
 export async function addCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -123,17 +112,7 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return `cossack add <ui|database|studio|auth|dashboard|markdown|examples|desktop> [component]
-
-Options:
-  component                         Eject a UI component for customization
-  --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
-  --runtime <cloudflare|node|deno>
-  --auth-methods <credentials,oauth>
-  --oauth <github,google,gitlab,facebook,microsoft>
-  --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
-  --features <users,sessions,settings,roles>  Dashboard modules
-  --yes                                      Apply without confirmation`;
+  return commandSpecs.add.help(`cossack add <ui|database|studio|auth|dashboard|markdown|examples|desktop> [component]`);
 }
 
 /* wrapper closed below */

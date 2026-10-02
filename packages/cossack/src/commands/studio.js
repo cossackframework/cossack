@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -5,21 +6,10 @@ import { fork } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 import { writeResult } from '../output.js';
 
-const spec = new CommandSpec({
-  name: 'studio',
-  flags: {
-    port: { type: 'string' },
-    remote: { type: 'boolean' },
-    database: { type: 'string' },
-    driver: { type: 'string' },
-    env: { type: 'string' },
-    'no-open': { type: 'boolean' },
-    timeout: { type: 'string' },
-  },
-});
+const spec = commandSpecs.studio;
 
 export async function studioCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -114,19 +104,7 @@ function runMachineStudio(entry, options, timeout) {
 }
 
 export function studioHelp() {
-  return `cossack studio [options]
+  return commandSpecs.studio.help(`cossack studio [options]
 
-Open a loopback-only database inspector using this project's orm.config.ts.
-
-Options:
-  --remote                       Connect to deployed Cloudflare D1 via Wrangler
-  --database <d1-binding>        Select a D1 binding
-  --driver <driver>              sqlite|turso|d1|postgres|mysql
-  --env <wrangler-environment>   Select a Wrangler environment
-  --port <number>                Server port (default: 4983)
-  --no-open                      Do not open the browser automatically
-  --json                         NDJSON ready/stopped or failed events; no browser launch
-  --timeout <milliseconds>       JSON startup deadline (default: 30000)
-  --dry-run                      Return launch options without starting a server
-  --help, -h                     Show this help`;
+Open a loopback-only database inspector using this project's orm.config.ts.`);
 }

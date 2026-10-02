@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import prompts from 'prompts';
@@ -23,13 +24,9 @@ const TYPE_ALIASES = {
 
 const PAGE_EXTS = ['.ts', '.md', '.mdx'];
 
-import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'delete',
-  positionals: ['type', 'name'],
-  minPositionals: 2,
-});
+const spec = commandSpecs.delete;
 
 export async function deleteCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, () => {
@@ -134,12 +131,9 @@ function resolveCandidates(type, raw, root) {
 }
 
 export function deleteHelp() {
-  return `cossack delete <type> <name>   (alias: d)
+  return commandSpecs.delete.help(`cossack delete <type> <name>   (alias: d)
 
 Delete a generated page/component/layout/middleware/service.
 
-Types: page(p) component(c) layout(l) middleware(m) service(s)
-
-Options:
-  --force, -f   Skip the confirmation prompt.`;
+Types: page(p) component(c) layout(l) middleware(m) service(s)`);
 }

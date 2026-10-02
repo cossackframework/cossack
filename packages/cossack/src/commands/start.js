@@ -1,10 +1,11 @@
+import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { detectProjectRuntime } from '@cossackframework/scaffold';
 import { exists, findProjectRoot } from '../fs-utils.js';
 import { run } from '../spawn.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({ name: 'start', forwardsArgs: true });
+const spec = commandSpecs.start;
 
 export async function startCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -34,11 +35,11 @@ export async function detectAdapter(root) {
 }
 
 export function startHelp() {
-  return `cossack start
+  return commandSpecs.start.help(`cossack start
 
 Start the production server.
   - Cloudflare adapter: \`wrangler dev\`
   - Node adapter: \`node dist/server/index.js\`
 Adapter is read from the scaffold manifest or package metadata, with
-adapter-specific files used as a legacy fallback.`;
+adapter-specific files used as a legacy fallback.`);
 }

@@ -99,7 +99,7 @@ describe('command dispatch', () => {
     expect(await dispatch(['create', '--json'])).toBe(1);
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
       schemaVersion: 1, command: 'create', ok: false,
-      diagnostics: [{ code: 'COSSACK_PROJECT_NAME_REQUIRED', severity: 'error' }],
+      diagnostics: [{ code: 'COSSACK_ARGUMENT_MISSING', severity: 'error' }],
     });
   });
 });

@@ -1,9 +1,10 @@
+import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { buildRouteModel, buildEffectiveRouteModel, layoutStackForPage } from '../scan-routes.js';
 import { findProjectRoot } from '../fs-utils.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({ name: 'routes', flags: { verbose: { type: 'boolean' } } });
+const spec = commandSpecs.routes;
 
 export async function routesCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -80,10 +81,7 @@ function formatRow(method, route, filePath) {
 }
 
 export function routesHelp() {
-  return `cossack routes
+  return commandSpecs.routes.help(`cossack routes
 
-List all routes discovered under src/pages/.
-
-Options:
-  --verbose   Show counts and extra detail.`;
+List all routes discovered under src/pages/.`);
 }

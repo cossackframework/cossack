@@ -2,7 +2,16 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex continuation (2026-10-02):** read the
+> **Latest checkpoint — Codex CLI metadata (2026-10-02):** read
+> [Codex's validation completion and GLM instructions](./release-0.9.0.md#codex-cli-metadata-2026-10-02).
+> **CLI-02 is complete; 9/58 tasks are checked.** Parser, help, aliases,
+> scoped options, arity, repetition, and target conflicts share command metadata.
+> Invalid inputs fail before project imports/effects. Continue CLI-03's complete
+> command-family machine contract matrix, then CLI-06, CLI-04, and recipe/runtime
+> capabilities. Versions remain 0.8.3; the full release goal remains active.
+> This supersedes the CLI-02 status in the historical checkpoints below.
+
+> **Previous checkpoint — Codex continuation (2026-10-02):** read the
 > [Codex implementation and continuation instructions](./release-0.9.0.md#codex-continuation-2026-10-02)
 > before the next phase. The development WebSocket crash is fixed: Upgrade
 > requests now bypass the HTTP asset bridge. Adapter, image, upgrade, and

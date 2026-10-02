@@ -132,7 +132,7 @@ describe('create command', () => {
       force: false,
     })).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining(
-      'Use npm, pnpm, yarn, bun, or deno',
+      'Option --package-manager accepts: npm, pnpm, yarn, bun, deno',
     ));
     expect(createAppMock).not.toHaveBeenCalled();
   });

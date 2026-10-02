@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import {
   resolvePageTarget,
@@ -36,24 +37,9 @@ const TYPE_ALIASES = {
   seeder: 'seeder',
 };
 
-import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'generate',
-  positionals: ['type', 'name'],
-  minPositionals: 2,
-  flags: {
-    dialect: { type: 'string' },
-    database: { type: 'string' },
-    tag: { type: 'string' },
-    yes: { type: 'boolean', aliases: ['y'] },
-    head: { type: 'boolean' },
-    title: { type: 'string' },
-    description: { type: 'string' },
-    'no-index': { type: 'boolean' },
-    ni: { type: 'boolean' },
-  },
-});
+const spec = commandSpecs.generate;
 
 export async function generateCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -215,7 +201,7 @@ function report(target, result, ctx) {
 }
 
 export function generateHelp() {
-  return `cossack generate <type> <name>   (alias: g)
+  return commandSpecs.generate.help(`cossack generate <type> <name>   (alias: g)
 
 Generate a page, component, layout, middleware, service, model, migration, or seeder.
 
@@ -237,12 +223,5 @@ Examples:
   cossack g s counter
   cossack g model User
   cossack g migration create_posts
-  cossack g seeder posts
-
-Options:
-  --force, -f        Overwrite an existing file.
-  --head             (page) Include a head() method with title/description.
-  --title <string>   (page) Set the head <title> and <h1>.
-  --description <string>   (page) Set the head description and <p>.
-  --no-index, --ni   (page) Generate a flat src/pages/<name>.ts file instead of <name>/index.ts.`;
+  cossack g seeder posts`);
 }

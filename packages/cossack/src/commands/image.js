@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -10,17 +11,9 @@ const execFileP = promisify(execFile);
 
 const SUPPORTED_SOURCE_EXT = new Set(['.ts', '.mdx', '.md', '.js', '.jsx']);
 
-import { CommandSpec, runWithSpec, createCommandOutput } from '../command-spec.js';
+import { runWithSpec, createCommandOutput } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'image',
-  positionals: ['subcommand'],
-  minPositionals: 1,
-  flags: {
-    format: { type: 'string' },
-    quality: { type: 'string' },
-  },
-});
+const spec = commandSpecs.image;
 
 export async function imageCommand(args, ctx) {
   ctx.out ??= createCommandOutput(ctx);
@@ -179,16 +172,11 @@ async function detectImagemagick() {
 }
 
 export function imageHelp() {
-  return `cossack image <subcommand>
+  return commandSpecs.image.help(`cossack image <subcommand>
 
 Image tooling.
 
 Subcommands:
   optimize   Scan src/ for <Image> usages and generate optimized webp/avif
-             variants next to the originals in public/ (requires ImageMagick).
-
-Options for \`optimize\`:
-  --format <webp|avif>   Output format (default: webp).
-  --quality <0-100>      Output quality (default: 80).
-  --dry-run              Show what would be generated without writing.`;
+             variants next to the originals in public/ (requires ImageMagick).`);
 }

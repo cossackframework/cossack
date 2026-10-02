@@ -1,7 +1,8 @@
+import { commandSpecs } from '../command-specs.js';
 import { run } from '../spawn.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({ name: 'dev', forwardsArgs: true });
+const spec = commandSpecs.dev;
 
 export async function devCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -13,8 +14,8 @@ export async function devCommand(args, ctx) {
 }
 
 export function devHelp() {
-  return `cossack dev
+  return commandSpecs.dev.help(`cossack dev
 
 Start the development server (delegates to \`vite dev\`).
-Any extra args are forwarded to vite.`;
+Any extra args are forwarded to vite.`);
 }

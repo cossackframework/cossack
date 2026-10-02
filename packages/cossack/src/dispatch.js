@@ -1,3 +1,4 @@
+import { commandSpecs } from './command-specs.js';
 /**
  * Command resolution + top-level dispatch.
  *
@@ -26,40 +27,45 @@ import { upgradeCommand, upgradeHelp } from './commands/upgrade.js';
 import { imageCommand, imageHelp } from './commands/image.js';
 import { adapterCommand, adapterHelp } from './commands/adapter.js';
 import { studioCommand, studioHelp } from './commands/studio.js';
-import { parseFlags, requestsJSON } from './flags.js';
+import { parseFlags, requestsJSON, requestsHelp } from './flags.js';
 import { commandFailure, writeResult } from './output.js';
 import { deployCommand, deployHelp } from './commands/deploy.js';
 import { inspectCommand, inspectHelp, checkCommand, checkHelp } from './commands/inspect.js';
 
 const COMMANDS = {
   // lifecycle
-  dev: { run: devCommand, help: devHelp, aliases: [] },
-  build: { run: buildCommand, help: buildHelp, aliases: [] },
-  start: { run: startCommand, help: startHelp, aliases: [] },
-  deploy: { run: deployCommand, help: deployHelp, aliases: [] },
+  dev: { run: devCommand, help: devHelp },
+  build: { run: buildCommand, help: buildHelp },
+  start: { run: startCommand, help: startHelp },
+  deploy: { run: deployCommand, help: deployHelp },
   // scaffolding
-  create: { run: createCommand, help: createHelp, aliases: [] },
-  generate: { run: generateCommand, help: generateHelp, aliases: ['g'] },
-  delete: { run: deleteCommand, help: deleteHelp, aliases: ['d'] },
-  add: { run: addCommand, help: addHelp, aliases: [] },
-  remove: { run: removeCommand, help: removeHelp, aliases: [] },
-  adapter: { run: adapterCommand, help: adapterHelp, aliases: [] },
-  lang: { run: langCommand, help: langHelp, aliases: [] },
-  migration: { run: migrationCommand, help: migrationHelp, aliases: ['migrate'] },
-  seeder: { run: seederCommand, help: seederHelp, aliases: ['seed'] },
-  schema: { run: schemaCommand, help: schemaHelp, aliases: [] },
-  studio: { run: studioCommand, help: studioHelp, aliases: [] },
+  create: { run: createCommand, help: createHelp },
+  generate: { run: generateCommand, help: generateHelp },
+  delete: { run: deleteCommand, help: deleteHelp },
+  add: { run: addCommand, help: addHelp },
+  remove: { run: removeCommand, help: removeHelp },
+  adapter: { run: adapterCommand, help: adapterHelp },
+  lang: { run: langCommand, help: langHelp },
+  migration: { run: migrationCommand, help: migrationHelp },
+  seeder: { run: seederCommand, help: seederHelp },
+  schema: { run: schemaCommand, help: schemaHelp },
+  studio: { run: studioCommand, help: studioHelp },
   // introspection
-  inspect: { run: inspectCommand, help: inspectHelp, aliases: [] },
-  check: { run: checkCommand, help: checkHelp, aliases: [] },
-  routes: { run: routesCommand, help: routesHelp, aliases: [] },
-  info: { run: infoCommand, help: infoHelp, aliases: [] },
-  version: { run: versionCommand, help: versionHelp, aliases: ['v'] },
+  inspect: { run: inspectCommand, help: inspectHelp },
+  check: { run: checkCommand, help: checkHelp },
+  routes: { run: routesCommand, help: routesHelp },
+  info: { run: infoCommand, help: infoHelp },
+  version: { run: versionCommand, help: versionHelp },
   // engine / maintenance
-  ssg: { run: ssgCommand, help: ssgHelp, aliases: [] },
-  upgrade: { run: upgradeCommand, help: upgradeHelp, aliases: [] },
-  image: { run: imageCommand, help: imageHelp, aliases: [] },
+  ssg: { run: ssgCommand, help: ssgHelp },
+  upgrade: { run: upgradeCommand, help: upgradeHelp },
+  image: { run: imageCommand, help: imageHelp },
 };
+
+for (const [name, definition] of Object.entries(COMMANDS)) {
+  definition.spec = commandSpecs[name];
+  definition.aliases = definition.spec.aliases;
+}
 
 function resolveCommand(name) {
   if (!name) return undefined;
@@ -103,16 +109,14 @@ export async function dispatch(argv) {
   }
 
   const def = COMMANDS[command];
-  const optionEnd = rest.indexOf('--');
-  const options = optionEnd === -1 ? rest : rest.slice(0, optionEnd);
-  if (options.includes('--help') || options.includes('-h')) {
+  if (requestsHelp(rest)) {
     if (requestsJSON(rest)) writeResult(command, { data: { help: def.help() } });
     else console.log(def.help());
     return 0;
   }
   // Preserve the downstream tool's argument syntax and ordering verbatim.
   // Framework parsing otherwise consumes values such as --mode and --port.
-  if (['dev', 'build', 'start', 'ssg'].includes(command)) {
+  if (def.spec.forwardsArgs) {
     const toolArgs = [];
     let json = false;
     let forwarding = false;
@@ -128,9 +132,16 @@ export async function dispatch(argv) {
     return def.run(toolArgs, await buildCtx({ json }));
   }
   let parsed;
-  try { parsed = parseFlags(rest); }
+  try { parsed = parseFlags(rest, def.spec); }
   catch (error) {
-    return commandFailure({ flags: { json: requestsJSON(rest) } }, command, 'COSSACK_OPTION_INVALID', error.message);
+    if (requestsJSON(rest)) {
+      writeResult(command, { ok: false, diagnostics: error.diagnostics ?? [{
+        code: error.code ?? 'COSSACK_OPTION_INVALID', severity: 'error', message: error.message,
+        ...(error.supported ? { supported: error.supported } : {}),
+      }] });
+      return 1;
+    }
+    return commandFailure({ flags: { json: requestsJSON(rest) } }, command, error.code ?? 'COSSACK_OPTION_INVALID', error.message);
   }
   const { args, flags } = parsed;
   const ctx = await buildCtx(flags);

@@ -133,6 +133,12 @@ alone does not prove that the operation was read-only. Related tasks: CLI-02 and
 <a id="cli-02"></a>
 ### CLI-02: Consistent command validation
 
+Status: **Complete (Codex, 2026-10-02).** See the
+[metadata acceptance checkpoint](./release-0.9.0.md#codex-cli-metadata-2026-10-02).
+The baseline/approach below records the original plan. Extend command contracts
+in `packages/cossack/src/command-specs.js` when adding future commands; parser,
+help, and preflight validation consume the same definitions. CLI-03 remains open.
+
 Purpose: A misspelled flag or ambiguous target must fail before a command changes
 files or connects to a database. Silent flag acceptance makes agent mistakes
 hard to discover.

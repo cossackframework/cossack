@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import {
   FEATURES,
   removeFeatureFromProject,
@@ -5,14 +6,9 @@ import {
 import path from 'node:path';
 import { findProjectRoot } from '../fs-utils.js';
 
-import { CommandSpec, createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'remove',
-  positionals: ['feature'],
-  minPositionals: 1,
-  flags: { yes: { type: 'boolean', aliases: ['y'] } },
-});
+const spec = commandSpecs.remove;
 
 export async function removeCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -74,13 +70,8 @@ async function removeCommandInner(args, ctx) {
 }
 
 export function removeHelp() {
-  return `cossack remove <ui|database|studio|auth|dashboard|markdown|examples>
+  return commandSpecs.remove.help(`cossack remove <ui|database|studio|auth|dashboard|markdown|examples>
 
 Remove a feature and any installed features that depend on it. Automatically
-added prerequisites are removed when no remaining feature needs them.
-
-Options:
-  --yes                Apply without confirmation
-  --force              Delete locally modified scaffold-owned files
-  --dry-run            Show changes without writing`;
+added prerequisites are removed when no remaining feature needs them.`);
 }

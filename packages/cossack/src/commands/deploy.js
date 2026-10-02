@@ -1,3 +1,5 @@
+import { showCommandHelp, validateCommand } from '../command-spec.js';
+import { commandSpecs } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { commandFailure, writeResult } from '../output.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../deployment.js';
@@ -6,19 +8,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export async function deployCommand(args, ctx) {
-  const allowed = new Set(['env', 'mode', 'dry-run', 'json', 'help', 'h']);
-  for (const name of Object.keys(ctx.flags)) {
-    if (!allowed.has(name)) return commandFailure(ctx, 'deploy', 'COSSACK_OPTION_UNKNOWN',
-      `Unknown deploy option --${name}.`);
-  }
-  if (args.length) return commandFailure(ctx, 'deploy', 'COSSACK_ARGUMENT_UNEXPECTED',
-    'Deploy does not accept positional arguments.');
-  for (const name of ['env', 'mode']) {
-    if (ctx.flags[name] !== undefined && (typeof ctx.flags[name] !== 'string' || !ctx.flags[name].trim())) {
-      return commandFailure(ctx, 'deploy', 'COSSACK_OPTION_VALUE_REQUIRED',
-        `--${name} requires one nonempty value.`);
-    }
-  }
+  if (showCommandHelp(commandSpecs.deploy, args, ctx, deployHelp)) return 0;
+  if (!validateCommand(commandSpecs.deploy, args, ctx)) return 1;
   let data;
   try {
     const root = await findProjectRoot(ctx.cwd);
@@ -73,7 +64,7 @@ export async function deployCommand(args, ctx) {
 }
 
 export function deployHelp() {
-  return `cossack deploy [--env <name>] [--mode <vite-mode>] [--dry-run] [--json]
+  return commandSpecs.deploy.help(`cossack deploy [--env <name>] [--mode <vite-mode>] [--dry-run] [--json]
 
 Validate Cloudflare configuration, generate binding types, build with the
 selected environment, and deploy the verified artifact using project tools.
@@ -81,5 +72,5 @@ selected environment, and deploy the verified artifact using project tools.
 It writes generated types and build artifacts. Remote secrets are validated
 by Wrangler on a real deployment, not by the local preflight.
 --json emits one versioned result with diagnostics and step results; tool
-output is suppressed to prevent configuration and secret values leaking.`;
+output is suppressed to prevent configuration and secret values leaking.`);
 }

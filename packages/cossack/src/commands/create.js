@@ -1,3 +1,5 @@
+import { showCommandHelp, validateCommand } from '../command-spec.js';
+import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { createApp } from '@cossackframework/scaffold';
 import { renderBanner } from '../banner.js';
@@ -12,25 +14,12 @@ import { checkForCossackUpdate } from '../update-notice.js';
 import { commandFailure, writeResult } from '../output.js';
 
 export async function createCommand(args, ctx) {
+  if (showCommandHelp(commandSpecs.create, args, ctx, createHelp)) return 0;
+  if (!validateCommand(commandSpecs.create, args, ctx)) return 1;
   const [projectName] = args;
-  if (!projectName) {
-    return commandFailure(ctx, 'create', 'COSSACK_PROJECT_NAME_REQUIRED',
-      'Missing project name. Usage: cossack create <project-name>');
-  }
-
   const adapter = flagString(ctx.flags.adapter);
-  if (adapter && adapter !== 'cloudflare' && adapter !== 'node' && adapter !== 'deno') {
-    return commandFailure(ctx, 'create', 'COSSACK_ADAPTER_INVALID',
-      `Invalid --adapter "${adapter}". Use cloudflare, node, or deno.`);
-  }
   const requestedPackageManager = flagString(ctx.flags['package-manager']);
   const selectedPackageManager = normalizePackageManager(requestedPackageManager);
-  if (requestedPackageManager && !selectedPackageManager) {
-    return commandFailure(ctx, 'create', 'COSSACK_PACKAGE_MANAGER_INVALID',
-      `Invalid --package-manager "${requestedPackageManager}". ` +
-      'Use npm, pnpm, yarn, bun, or deno.',
-    );
-  }
 
   try {
     const currentVersion = readPackageVersion();
@@ -93,21 +82,7 @@ export async function createCommand(args, ctx) {
 }
 
 export function createHelp() {
-  return `cossack create <project-name>
+  return commandSpecs.create.help(`cossack create <project-name>
 
-Scaffold a new Cossack project.
-
-Options:
-  --adapter <cloudflare|node|deno>
-  --package-manager <manager>   npm|pnpm|yarn|bun|deno
-  --preset <minimal|database|auth|full-stack>
-  --features <ui,database,studio,auth,dashboard,markdown,examples,desktop>
-  --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
-  --auth-methods <credentials,oauth>
-  --oauth <github,google,gitlab,facebook,microsoft>
-  --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
-  --dashboard-features <users,sessions,settings,roles>
-  --dry-run                     Show planned files without writing or prompting.
-  --json                        Emit a versioned result and run without prompts.
-  --yes                         Accept defaults and write without confirmation.`;
+Scaffold a new Cossack project.`);
 }

@@ -1,36 +1,20 @@
+import { showCommandHelp, validateCommand } from '../command-spec.js';
+import { commandSpecs } from '../command-specs.js';
 import { runORMToolingCommand } from './db-run.js';
-import { commandFailure } from '../output.js';
-
-const ACTIONS = new Set([
-  'generate',
-  'snapshot',
-  'squash',
-  'up',
-  'down',
-  'status',
-  'check',
-  'baseline',
-  'plan',
-]);
 
 export async function migrationCommand(args, ctx) {
+  if (showCommandHelp(commandSpecs.migration, args, ctx, migrationHelp)) return 0;
+  if (!validateCommand(commandSpecs.migration, args, ctx)) return 1;
   const [rawAction, ...rest] = args;
   const action = rawAction === 'latest' ? 'up' : rawAction;
-  if (action === '--help' || action === '-h' || action === 'help') {
-    console.log(migrationHelp());
-    return 0;
-  }
-  if (!action || !ACTIONS.has(action)) {
-    return commandFailure(ctx, 'migration', 'COSSACK_ACTION_UNKNOWN',
-      `Unknown migration subcommand: ${action || '(none)'}.\n${migrationHelp()}`);
-  }
   return runORMToolingCommand(['migration', action, ...rest], ctx);
 }
 
 export function migrationHelp() {
-  return `cossack migration <subcommand>
+  return commandSpecs.migration.help(`cossack migration <subcommand>
 
 Run deterministic ORM migrations from orm.config.ts.
+Use cossack migration plan to preview pending SQL.
 
 Subcommands:
   generate <name>   Generate a migration from the model snapshot diff.
@@ -41,17 +25,5 @@ Subcommands:
   status            List migration state.
   check             Fail unless all migrations are applied and checksums match.
   baseline          Record an existing schema after a clean drift check.
-  plan              Preview pending migration SQL without applying it.
-
-Options:
-  --config <path>              ORM config (default: orm.config.ts)
-  --env <name>                 Select the Cloudflare/application environment
-  --target <local|remote>      Explicit database target (default: local)
-  --local, --remote            Target aliases
-  --dry-run                    Preview database/file changes without applying
-  --json                       Emit versioned results and diagnostics
-  --direction <up|down>        Direction for migration plan (default: up)
-  --output <path>              Generated migration path
-  --allow-destructive          Allow destructive diff operations
-  --prune                      With squash, replace migration files and the barrel`;
+  plan              Preview pending migration SQL without applying it.`);
 }

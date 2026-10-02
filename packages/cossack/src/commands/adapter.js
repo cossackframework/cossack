@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import {
   ADAPTERS,
   switchAdapter,
@@ -10,17 +11,9 @@ import {
   detectProjectPackageManager,
   packageManagerCommands,
 } from '../package-manager.js';
-import { CommandSpec, runWithSpec, createCommandOutput } from '../command-spec.js';
+import { runWithSpec, createCommandOutput } from '../command-spec.js';
 
-const spec = new CommandSpec({
-  name: 'adapter',
-  positionals: ['adapter'],
-  minPositionals: 1,
-  flags: {
-    database: { type: 'string' },
-    yes: { type: 'boolean', aliases: ['y'] },
-  },
-});
+const spec = commandSpecs.adapter;
 
 export async function adapterCommand(args, ctx) {
   ctx.out ??= createCommandOutput(ctx);
@@ -116,15 +109,9 @@ export async function detectInstallCommand(root) {
 }
 
 export function adapterHelp() {
-  return `cossack adapter <node|cloudflare|deno>
+  return commandSpecs.adapter.help(`cossack adapter <node|cloudflare|deno>
 
 Switch a schema-v3 scaffolded project to one runtime adapter. The complete
 recorded recipe is re-rendered; application features and unrelated edits are
-preserved. Database contents are never migrated.
-
-Options:
-  --database <provider>          Select a compatible ORM database provider
-  --yes                         Apply without confirmation
-  --dry-run                     Preview every change without writing
-  --force                       Replace conflicting runtime/provider files`;
+preserved. Database contents are never migrated.`);
 }

@@ -1,7 +1,8 @@
+import { commandSpecs } from '../command-specs.js';
 import { run, runCaptured } from '../spawn.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
-const spec = new CommandSpec({ name: 'ssg', forwardsArgs: true });
+const spec = commandSpecs.ssg;
 
 /**
  * Legacy SSG CLI flags that mapped to `buildSsg()` options. SSG now runs inside
@@ -91,7 +92,7 @@ export function splitArgs(args) {
 }
 
 export function ssgHelp() {
-  return `cossack ssg [options]
+  return commandSpecs.ssg.help(`cossack ssg [options]
 
 Pre-render pages marked with \`ssg: true\` (and all \`.md\`/\`.mdx\` pages) to
 static HTML.
@@ -109,5 +110,5 @@ SSG options are configured on the \`cossackSsg\` plugin in \`vite.config.ts\`:
         outDir: 'dist/client',           // default: <root>/dist/client
         enabled: true,                   // default: true; false skips SSG
       })],
-    });`;
+    });`);
 }

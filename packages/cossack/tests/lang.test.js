@@ -59,7 +59,8 @@ describe('lang publish', () => {
   });
 
   it('respects --locale=<code> for a non-default locale', async () => {
-    expect(await langCommand(['publish', '--locale=es'], ctx)).toBe(0);
+    ctx.flags.locale = 'es';
+    expect(await langCommand(['publish'], ctx)).toBe(0);
     const file = path.join(tmp, 'src/lang/es.json');
     expect(fs.existsSync(file)).toBe(true);
     // Non-default locales seed empty values against the starter keys.
@@ -78,7 +79,8 @@ describe('lang publish', () => {
       JSON.stringify({ custom: 'Custom' }) + '\n',
       'utf8',
     );
-    expect(await langCommand(['publish', '--locale=es'], ctx)).toBe(0);
+    ctx.flags.locale = 'es';
+    expect(await langCommand(['publish'], ctx)).toBe(0);
     const parsed = readLang('es');
     expect(Object.keys(parsed)).toEqual(['custom']);
     expect(parsed.custom).toBe('');
@@ -134,7 +136,8 @@ describe('lang add', () => {
 
   it('supports --locale=<code> form', async () => {
     await langCommand(['publish'], ctx);
-    expect(await langCommand(['add', '--locale=de'], ctx)).toBe(0);
+    ctx.flags.locale = 'de';
+    expect(await langCommand(['add'], ctx)).toBe(0);
     expect(fs.existsSync(path.join(tmp, 'src/lang/de.json'))).toBe(true);
   });
 });
@@ -262,7 +265,8 @@ describe('lang publish auto-wires wrangler.jsonc', () => {
       'wrangler.jsonc',
       '{\n  "vars": {\n    "BASE_URL": "https://example.com"\n  }\n}\n',
     );
-    await langCommand(['publish', '--locale=es'], ctx);
+    ctx.flags.locale = 'es';
+    await langCommand(['publish'], ctx);
     expect(readFile('wrangler.jsonc')).toContain('"APP_LOCALE": "es"');
   });
 });

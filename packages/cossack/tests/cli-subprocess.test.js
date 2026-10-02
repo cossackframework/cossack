@@ -96,7 +96,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     const result = await runCli(['adapter', 'cloudflare', '--database', 'postgres', '--json'], { cwd });
     expect(result.code).toBe(1);
     expect(result.stderr).toBe('');
-    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_ADAPTER_FAILED');
+    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_TARGET_INCOMPATIBLE');
   });
 
   it('image plans files without a converter and rejects unsafe sources and invalid quality', async () => {
@@ -135,7 +135,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     const invalid = await runCli(['image', 'unknown', '--json']);
     expect(invalid.code).toBe(1);
     expect(invalid.stderr).toBe('');
-    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_SUBCOMMAND_UNKNOWN');
+    expect(parseEnvelope(invalid.stdout).diagnostics[0].code).toBe('COSSACK_ACTION_UNKNOWN');
   });
 
   it('upgrade exposes preserved conflicts and rejects an unowned force-file before writes', async () => {
@@ -400,10 +400,10 @@ describe('generate', () => {
   });
 
   it('flag values resembling flags are parse errors, not silent booleans', async () => {
-    const ambiguous = await runCli(['g', 'c', 'X', '--tag', '--force', '--json']);
+    const ambiguous = await runCli(['g', 'page', 'X', '--title', '--force', '--json']);
     expect(ambiguous.code).toBe(1);
     const result = parseEnvelope(ambiguous.stdout);
-    expect(result.diagnostics[0].code).toBe('COSSACK_OPTION_INVALID');
+    expect(result.diagnostics[0].code).toBe('COSSACK_OPTION_VALUE_REQUIRED');
   });
 });
 

@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -5,10 +6,10 @@ import { promisify } from 'node:util';
 import { exists, findProjectRoot, readJsonIfExists } from '../fs-utils.js';
 import { resolvePackageVersion, readPackageVersion } from '../pkg.js';
 import { detectAdapter } from './start.js';
-import { CommandSpec, runWithSpec } from '../command-spec.js';
+import { runWithSpec } from '../command-spec.js';
 
 const execFileP = promisify(execFile);
-const spec = new CommandSpec({ name: 'info' });
+const spec = commandSpecs.info;
 
 export async function infoCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
@@ -83,10 +84,7 @@ async function spawnVersion(bin) {
 }
 
 export function infoHelp() {
-  return `cossack info
+  return commandSpecs.info.help(`cossack info
 
-Print system/environment details for bug reports.
-
-Options:
-  --json   Output JSON.`;
+Print system/environment details for bug reports.`);
 }

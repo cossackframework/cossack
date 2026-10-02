@@ -11,7 +11,7 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex Group 3 review (2026-10-02): reopened. CommandSpec validates types, aliases, repeats, and positional counts; this review fixes inspect route arity. Remaining: command-specific conflicts and incompatible targets, canonical alias conflict handling, and parser/help generation from the same command metadata. See the latest Codex review below.
+- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex continuation (2026-10-02): adapter, image, upgrade, and Studio machine paths are implemented; Studio has isolated ready/stopped/failed NDJSON and a startup deadline. Build/SSG omit raw project logs and provide coded failures. Remaining: full subprocess success/failure/dry-run coverage for every command family, with shared command metadata from CLI-02. See the latest Codex continuation below.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
@@ -85,6 +85,90 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli-metadata-2026-10-02"></a>
+### Codex continuation: complete CLI validation metadata (2026-10-02)
+
+**Author: Codex.** Continues the review and fixes in `3731dbb` and the
+implementation checkpoint `01c3c4b`. **CLI-02 is complete: 9/58 tasks checked.**
+The other 49 tasks remain in scope; versions remain 0.8.3.
+
+**Problems fixed and acceptance evidence:**
+
+- Create, migration, seeder, schema, and Cloudflare inspection could bypass
+  shared option validation. Database wrappers could import project tooling
+  before rejecting invalid options. All commands now validate before dispatch
+  and direct calls also use shared preflight validation.
+- `src/command-specs.js` owns accepted flags, types, aliases, repeats, scoped
+  options, positional counts, choices, and constraints. Parser and generated
+  help use that metadata. Recipe choices/runtime compatibility come from the
+  scaffold's pure `@cossackframework/scaffold/registry` export with declarations.
+  Libraries do not import the CLI.
+- Boolean repeats using the same spelling explicitly use the last value.
+  Contradictory canonical/alias values fail; identical aliases are accepted.
+  Scalars reject repeats; supported lists and `--force-file` retain order.
+  Short inline boolean values such as `-f=false` work. Separate flag-looking
+  values fail; inline values such as `--title=--literal` work. `--` ends parsing.
+- Local/remote/target conflicts, explicit runtime/provider incompatibility,
+  remote Studio with a non-D1 driver, page-only generation options on other
+  types, and options used on the wrong database subcommand fail before effects.
+  Language commands reject extra arguments, conflicting locales, and locale
+  path traversal. Default-locale errors use the JSON formatter.
+- Vite lifecycle forwarding and help remain read-only. Help supports explicit
+  booleans, command aliases, and metadata-generated scoped options. JSON
+  validation retains all diagnostics and supported alternatives without echoing
+  invalid values.
+- `command-contracts.test.js` adds **92 tests**, including actual subprocesses
+  for invalid booleans across all 23 commands, unknown options across all 19
+  non-forwarding commands, command aliases, and incompatible/scoped inputs.
+  Those subprocess fixtures contain malformed private project data; results
+  must be one JSON envelope, empty stderr, and no files created or changed.
+  Three additional fixtures declare real importable ORM modules with filesystem
+  and console effects; invalid scoped options must never import those modules.
+  Existing actual ORM and deployment integration tests remain part of the CLI
+  suite.
+
+**Intentional alpha changes:** unknown/missing/repeated options now receive the
+shared `COSSACK_OPTION_*` / `COSSACK_ARGUMENT_*` codes. Removed generate options
+`--tag`, `--database`, `--dialect`, and `--yes`, which were accepted but ignored.
+Direct command APIs take parsed flags in `ctx.flags`; lang no longer reparses
+inline argv. CLI inline flags continue to work through the shared parser.
+Studio's remote forwarding fixture now uses D1 instead of an invalid Postgres
+combination.
+
+**GLM continuation:** next finish **CLI-03**, using this metadata and the existing
+subprocess fixtures. Add success/failure/dry-run coverage for every meaningful
+command family. Audit raw project/parser errors, especially project ORM imports;
+do not include secrets or project logs in JSON. Long-running commands must have
+an explicit structured event or unsupported-mode contract. Keep the full
+acceptance criteria in the detailed plan. Then finish CLI-06's dependency
+ownership and target-version templates, CLI-04's compiler classification, and
+CLI-05/RT-25's recipes/capabilities. Do not re-check these partial tasks merely
+because helper APIs or tests exist. The earlier Group 3 review still records
+the runtime tasks needing completion.
+
+**Verification:**
+
+- `pnpm build`: passes.
+- `pnpm tsc --noEmit`: passes.
+- `pnpm typecheck`: passes, all 11 package configurations.
+- `pnpm test:unit`: **2,394 passing tests in 13 packages** — auth 118,
+  database 84, renderer 256, scaffold 82, core 669, node-adapter 10,
+  test-utils 8, UI 112, CLI 417, framework 564, deno-adapter 3, desktop 16,
+  Studio 55. The final CLI package run also covers the three additional
+  project-import regressions added after its portion of the root run.
+- `pnpm --filter cossack test`: **420 passing tests in 30 files**, including all
+  **92** metadata-contract tests and the final project-import regressions.
+- Focused metadata/dispatch/Studio checks before those last regressions:
+  **128 passing**. Scaffold package: **82 passing**.
+- `git diff --check -- docs packages specs`: passes.
+
+Logs: `/tmp/cossack-cli-metadata-build.log`, `root-tsc.log`,
+`package-types.log`, `unit.log`, and `cli-final.log`, each latter filename
+with the same `/tmp/cossack-cli-metadata-` prefix. No browser suite or complete
+tarball/generated-app matrix was repeated; prior runtime/browser results remain
+in the preceding checkpoint. REL-02/03/05 stay open. No deployment, push, or
+publication was run. Preserve the user's `reports.md` and `.zcodeignore`.
 
 <a id="codex-continuation-2026-10-02"></a>
 ### Codex continuation: development upgrades and machine contracts (2026-10-02)

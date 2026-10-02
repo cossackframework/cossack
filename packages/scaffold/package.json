@@ -16,6 +16,10 @@
       "import": "./src/index.js",
       "types": "./src/index.d.ts"
     },
+    "./registry": {
+      "types": "./src/registry.d.ts",
+      "import": "./src/registry.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

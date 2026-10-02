@@ -1,109 +1,59 @@
-/**
- * Minimal argv flag parser.
- *
- * Supports:
- *   --flag value
- *   --flag=value
- *   -f value            (single-char aliases)
- *   --bool              (true when present)
- *   --                  (everything after is positional)
- *
- * Returns `{ args: string[], flags: Record<string, string|boolean|string[]> }`.
- * Repeated `--force-file a --force-file b` collects into an array.
- */
+/** Parse framework options from the same metadata used by validation/help. */
+import { commandSpecs } from './command-specs.js';
+const defaultOptions = new Map();
+for (const spec of Object.values(commandSpecs)) {
+  for (const [name, definition] of spec.options([], true)) defaultOptions.set(name, definition);
+}
 
-const KNOWN_BOOL = new Set([
-  'force',
-  'f',
-  'dry-run',
-  'json',
-  'verbose',
-  'apply-template',
-  'head',
-  'no-index',
-  'ni',
-  'yes',
-  'y',
-  'remote',
-  'local',
-  'allow-destructive',
-  'prune',
-  'no-open',
-  'help',
-  'h',
-]);
-
-export function parseFlags(argv) {
+export function parseFlags(argv, spec) {
   const args = [];
   const flags = {};
+  const options = spec ? spec.options([], true) : defaultOptions;
   let onlyPositional = false;
-
+  const fail = (code, message, supported) => {
+    throw Object.assign(new Error(message), { code, ...(supported ? { supported } : {}) });
+  };
   for (let i = 0; i < argv.length; i++) {
-    const tok = argv[i];
-
-    if (onlyPositional) {
-      args.push(tok);
+    const token = argv[i];
+    if (onlyPositional || token === '-' || !token.startsWith('-')) {
+      args.push(token);
       continue;
     }
-
-    if (tok === '--') {
-      onlyPositional = true;
-      continue;
-    }
-
-    if (tok.startsWith('--')) {
-      const eq = tok.indexOf('=');
-      if (eq !== -1) {
-        const name = tok.slice(2, eq);
-        let value = tok.slice(eq + 1);
-        if (KNOWN_BOOL.has(name)) {
-          if (value !== 'true' && value !== 'false') {
-            throw new Error(`--${name} expects true or false.`);
-          }
-          value = value === 'true';
-        }
-        setFlag(flags, name, value);
-      } else {
-        const name = tok.slice(2);
-        if (KNOWN_BOOL.has(name)) {
-          setFlag(flags, name, true);
-        } else {
-          // Value flags require a value. A missing or flag-like next token is
-          // an explicit error: silently coercing `--tag --force` into
-          // `--tag=true --force` hides agent mistakes (CLI-02).
-          const next = argv[i + 1];
-          if (next === undefined || next.startsWith('-')) {
-            throw new Error(`--${name} expects a value.`);
-          }
-          setFlag(flags, name, next);
-          i++;
-        }
+    if (token === '--') { onlyPositional = true; continue; }
+    const prefix = token.startsWith('--') ? 2 : 1;
+    const equal = token.indexOf('=');
+    const name = token.slice(prefix, equal < 0 ? undefined : equal);
+    const definition = options.get(name);
+    if (spec && !definition) fail('COSSACK_OPTION_UNKNOWN',
+      `Unknown option --${name} for '${spec.name}'.`, [...options.keys()].map(key => '--' + key));
+    const boolean = definition?.type === 'boolean';
+    let value;
+    if (equal >= 0) {
+      value = token.slice(equal + 1);
+      if (boolean) {
+        if (!['true', 'false'].includes(value)) fail('COSSACK_OPTION_INVALID', `--${name} expects true or false.`);
+        value = value === 'true';
       }
-      continue;
+    } else if (boolean) value = true;
+    else {
+      value = argv[++i];
+      if (value === undefined || value.startsWith('-')) fail('COSSACK_OPTION_VALUE_REQUIRED', `--${name} expects a value.`);
     }
-
-    if (tok.startsWith('-') && tok.length > 1 && tok !== '-') {
-      const name = tok.slice(1);
-      if (KNOWN_BOOL.has(name)) {
-        setFlag(flags, name, true);
-      } else {
-        const next = argv[i + 1];
-        if (next === undefined || next.startsWith('-')) {
-          throw new Error(`-${name} expects a value.`);
-        }
-        setFlag(flags, name, next);
-        i++;
-      }
-      continue;
-    }
-
-    args.push(tok);
+    if (boolean) flags[name] = value; // Same spelling: explicitly last wins.
+    else if (flags[name] === undefined) flags[name] = value;
+    else if (Array.isArray(flags[name])) flags[name].push(value);
+    else flags[name] = [flags[name], value];
   }
-
-  // Convenience aliases mapped to canonical names.
+  if (spec) {
+    const diagnostics = spec.validate(args, flags);
+    if (diagnostics.length) {
+      const first = diagnostics[0];
+      throw Object.assign(new Error(first.message), { code: first.code, diagnostics });
+    }
+    return { args, flags: spec.normalizeFlags(flags).flags };
+  }
+  // Standalone utility callers receive original spellings; dispatch uses a spec.
   if (flags.f !== undefined && flags.force === undefined) flags.force = flags.f;
-
-
   return { args, flags };
 }
 
@@ -118,20 +68,15 @@ export function requestsJSON(argv) {
   return requested;
 }
 
-function setFlag(flags, name, value) {
-  if (KNOWN_BOOL.has(name)) {
-    flags[name] = value;
-    return;
+/** Framework help intent follows boolean repetition and the forwarding boundary. */
+export function requestsHelp(argv) {
+  let requested = argv[0] === 'help';
+  for (const value of argv) {
+    if (value === '--') break;
+    if (['--help', '--help=true', '-h', '-h=true'].includes(value)) requested = true;
+    else if (['--help=false', '-h=false'].includes(value)) requested = false;
   }
-  if (flags[name] === undefined) {
-    flags[name] = value;
-    return;
-  }
-  if (Array.isArray(flags[name])) {
-    flags[name].push(value);
-  } else {
-    flags[name] = [flags[name], value];
-  }
+  return requested;
 }
 
 /** Normalize a possibly-array flag value to an array. */
