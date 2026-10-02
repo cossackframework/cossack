@@ -106,6 +106,24 @@ export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<
     cancel(): Promise<void>;
 }
 
+/** Minimal structural socket used by the correlated WebSocket RPC protocol. */
+export type RpcSocket = { readyState?: number; send: (data: string) => void };
+
+/** Send one correlated RPC frame over a client socket when it is open. */
+export function sendRpcFrame(client: unknown, frame: RpcStreamFrame): void {
+    const socket = client as RpcSocket | null | undefined;
+    if (socket && socket.readyState === 1) {
+        try { socket.send(JSON.stringify(frame)); } catch { /* the socket died mid-send */ }
+    }
+}
+
+/** Per-socket cancellation hooks for request-scoped WebSocket calls. */
+export function rpcCancellations(client: unknown): Map<string, () => void> {
+    const socket = client as { __cossack_rpc_cancellations?: Map<string, () => void> } | null | undefined;
+    if (!socket || typeof socket !== 'object') return new Map();
+    return socket.__cossack_rpc_cancellations ??= new Map();
+}
+
 /**
  * One operation, one response, one iterator. Await drains the stream and returns
  * its final result. Iteration yields values with backpressure. A discarded call

@@ -81,6 +81,20 @@ export async function inspectDeployment(root, environment) {
   const diagnostics = [];
   const bindings = [];
   const error = (code, message) => diagnostics.push({ code, severity: 'error', message });
+  if (environment) {
+    // Wrangler does not inherit bindings into named environments. Compare the
+    // raw top-level Durable Object bindings with the selected environment so a
+    // silently dropped binding fails before the build.
+    const wrangler = await projectWrangler(root);
+    const { rawConfig } = wrangler.experimental_readRawConfig({ config: configPath });
+    const declared = rawConfig.env?.[environment]?.durable_objects?.bindings;
+    for (const binding of rawConfig.durable_objects?.bindings ?? []) {
+      if (!declared?.some(candidate => candidate.name === binding.name && candidate.class_name === binding.class_name)) {
+        error('COSSACK_ENV_BINDING_NOT_INHERITED',
+          `Durable Object binding ${binding.name} is declared at the top level but Cloudflare environments do not inherit bindings. Re-declare it inside env.${environment}.`);
+      }
+    }
+  }
   if (config.assets && config.assets.run_worker_first !== true) {
     error('COSSACK_ASSETS_WORKER_FIRST_REQUIRED',
       'Set assets.run_worker_first to true so authentication and route policies run before static assets.');

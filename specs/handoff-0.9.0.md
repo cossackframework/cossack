@@ -2,6 +2,21 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **GLM continuation (2026-10-02):** the "Immediate continuation: distributed
+> SSE" work below is finished — CF-05 is checked in
+> [release-0.9.0.md](./release-0.9.0.md) and the design/verification record is
+> [specs/sse.md](./sse.md). Deviations from the suggested approach: the
+> coordinator's `execute()` takes no AbortSignal (AbortSignal-over-RPC needs
+> the experimental `abort_signal` flag, unavailable on the pinned wrangler
+> 4.114.0 baseline; cancellation uses response-body cancel propagation and the
+> router wires `c.req.raw.signal` to `body.cancel()`), non-stream responses
+> pass through `execute()` with an explicit `publish()` by the router callback,
+> and the scaffold additionally emits a `COSSACK_ENV_BINDING_NOT_INHERITED`
+> preflight diagnostic because Wrangler environments do not inherit Durable
+> Object bindings. Environment note: the workspace pnpm virtual store was
+> found emptied before this session; `pnpm install` was rerun. The rest of
+> this handoff is the original checkpoint record.
+
 Read [the detailed implementation plan](./release-0.9.0-plan.md) before continuing.
 It explains all 58 checklist tasks, including their purpose, current baseline,
 proposed implementation, dependencies, source locations, and acceptance criteria.

@@ -94,6 +94,10 @@
       "types": "./dist/esm/DurableObject.d.ts",
       "import": "./dist/esm/DurableObject.js"
     },
+    "./SseDurableObject": {
+      "types": "./dist/esm/SseDurableObject.d.ts",
+      "import": "./dist/esm/SseDurableObject.js"
+    },
     "./vite-env": "./src/vite-env.d.ts"
   },
   "files": [

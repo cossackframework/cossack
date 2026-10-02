@@ -2,6 +2,83 @@
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
 import { isSharedMethod } from './shared-method';
+import { rpcCancellations, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
+
+/** Per-socket sinks for correlated request-scoped RPC frames. */
+export function wsPendingCalls(ws: RpcSocket): Map<string, (frame: RpcStreamFrame) => void> {
+    const socket = ws as { __cossack_rpc_pending?: Map<string, (frame: RpcStreamFrame) => void> };
+    return socket.__cossack_rpc_pending ??= new Map();
+}
+
+/** Reject every request-scoped call on a socket that is no longer usable. */
+export function failPendingSocketCalls(ws: RpcSocket): void {
+    const pending = wsPendingCalls(ws);
+    for (const [requestId, sink] of [...pending]) {
+        sink({ v: 1, type: 'error', requestId,
+            code: 'COSSACK_RPC_TRANSPORT_CLOSED',
+            message: 'The realtime connection closed before the call finished. The server result is unknown.' });
+    }
+    pending.clear();
+    rpcCancellations(ws).clear();
+}
+
+/**
+ * Route one parsed socket message to its request-scoped call. Returns true
+ * when the message was consumed as a correlated RPC frame.
+ */
+export function routeSocketFrame(ws: RpcSocket, data: unknown): boolean {
+    if (!data || typeof data !== 'object' || typeof (data as any).requestId !== 'string') return false;
+    const frame = data as unknown as RpcStreamFrame;
+    const sink = wsPendingCalls(ws).get(frame.requestId);
+    if (sink) {
+        sink(frame);
+        if (frame.type !== 'yield') wsPendingCalls(ws).delete(frame.requestId);
+    }
+    return true;
+}
+
+/** Per-connection realtime status exposed to applications as `component.realtime`. */
+export interface RealtimeConnectionStatus {
+    state: 'connecting' | 'open' | 'reconnecting' | 'closed';
+    /** Reconnect attempts since the last successful open (WebSockets). */
+    attempts: number;
+    /** Last delivered event cursor (SSE coordinator) or message marker. */
+    lastEventId?: number | string;
+    /** Human-readable description of the latest transport failure. */
+    lastError?: string;
+    /** True after the latest reconnect resynchronized from an authoritative snapshot. */
+    resynced?: boolean;
+    updatedAt: number;
+}
+
+export interface RealtimeStatusRecord {
+    sse: RealtimeConnectionStatus;
+    websockets: Record<string, RealtimeConnectionStatus>;
+}
+
+export function realtimeStatus(component: any): RealtimeStatusRecord {
+    return component.__realtimeStatus ??= {
+        sse: { state: 'connecting', attempts: 0, updatedAt: Date.now() },
+        websockets: {},
+    };
+}
+
+function updateStatus(
+    component: any,
+    scope: 'sse' | { provider: string },
+    patch: Partial<RealtimeConnectionStatus>,
+): void {
+    const record = realtimeStatus(component);
+    const status = scope === 'sse' ? record.sse : (record.websockets[scope.provider] ??= {
+        state: 'connecting', attempts: 0, updatedAt: Date.now() });
+    Object.assign(status, patch, { updatedAt: Date.now() });
+    component.requestUpdate?.();
+}
+
+/** Bounded exponential reconnect delay: 0.5s doubling to a 30s ceiling. */
+export function realtimeReconnectDelay(attempts: number): number {
+    return Math.min(30_000, 500 * 2 ** Math.min(Math.max(attempts - 1, 0), 6));
+}
 
 /**
  * Initialize provider map for the component (server-side only).
@@ -55,9 +132,19 @@ export function connectWebSocket(component: any): void {
         const wsUrl = `/ws/${providerName}/${target}?${params}`;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
-        const ws = new WebSocket(fullWsUrl);
-        component.websockets.set(providerName, ws);
 
+        // Connect with bounded exponential reconnect. A socket closed by the
+        // application (component destruction) never reconnects.
+        const connect = (attempt: number) => {
+            const ws = new WebSocket(fullWsUrl);
+            component.websockets.set(providerName, ws);
+            updateStatus(component, { provider: providerName },
+                attempt === 0 ? { state: 'connecting', attempts: 0 } : { state: 'reconnecting', attempts: attempt });
+
+            ws.onopen = () => {
+                updateStatus(component, { provider: providerName },
+                    { state: 'open', attempts: 0, lastError: undefined });
+            };
         ws.onmessage = (event: MessageEvent) => {
             if (event.data === 'pong') {
                 return; // Server heartbeat response, ignore.
@@ -71,6 +158,9 @@ export function connectWebSocket(component: any): void {
                 return;
             }
             if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+            // Request-scoped frames route to their waiting call; broadcasts
+            // continue through the handlers below.
+            if (routeSocketFrame(ws, data)) return;
             if (data.type === 'state-update') {
                 // Update public state from the new structure
                 applyStateToComponent(component, data.state || {});
@@ -127,8 +217,33 @@ export function connectWebSocket(component: any): void {
             }
         }, 25000);
         const stopPing = () => clearInterval(pingInterval);
-        ws.onclose = stopPing;
-        ws.onerror = stopPing;
+        ws.onclose = () => {
+            stopPing();
+            failPendingSocketCalls(ws);
+            if ((ws as any).__cossack_intentional_close || component._phase === 'Destroyed') {
+                updateStatus(component, { provider: providerName }, { state: 'closed' });
+                return;
+            }
+            const nextAttempt = attempt + 1;
+            updateStatus(component, { provider: providerName }, {
+                state: 'reconnecting',
+                attempts: nextAttempt,
+                lastError: 'WebSocket closed before the component was destroyed.',
+            });
+            setTimeout(() => {
+                if (!(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed') {
+                    connect(nextAttempt);
+                }
+            }, realtimeReconnectDelay(nextAttempt));
+        };
+        ws.onerror = () => {
+            stopPing();
+            updateStatus(component, { provider: providerName }, {
+                lastError: 'WebSocket error; the connection is closed or reconnecting.',
+            });
+        };
+        };
+        connect(0);
     }
 }
 
@@ -156,10 +271,38 @@ export function connectSSE(component: any): void {
     params.set('params', JSON.stringify(initialState?.metadata?.params || {}));
     const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
     component._sseConnection = es;
+    updateStatus(component, 'sse', { state: 'connecting', attempts: 0 });
+    es.onopen = () => {
+        // EventSource reconnects automatically; onopen after a failure marks
+        // recovery. A following `resync` event reports whether the snapshot
+        // had to replace expired history.
+        updateStatus(component, 'sse', { state: 'open', attempts: 0, lastError: undefined });
+    };
+    es.onerror = () => {
+        const status = realtimeStatus(component).sse;
+        updateStatus(component, 'sse', {
+            state: es.readyState === EventSource.CLOSED ? 'closed' : 'reconnecting',
+            attempts: status.attempts + 1,
+            lastError: 'The SSE connection failed; EventSource is reconnecting.',
+        });
+    };
+    es.addEventListener('resync', (event: MessageEvent) => {
+        updateStatus(component, 'sse', { resynced: true });
+        try {
+            const marker = JSON.parse((event as any).data);
+            if (marker && typeof marker.cursor === 'number') {
+                updateStatus(component, 'sse', { lastEventId: marker.cursor });
+            }
+        } catch { /* keep the flag */ }
+    });
 
     es.addEventListener('state-update', (event: MessageEvent) => {
         try {
             const stateUpdate = JSON.parse((event as any).data);
+            const id = (event as any).lastEventId;
+            if (id !== undefined && id !== '') {
+                updateStatus(component, 'sse', { lastEventId: id });
+            }
             applyStateToComponent(component, stateUpdate);
             component.requestUpdate();
         } catch (e) {
@@ -221,13 +364,9 @@ export function connectSSE(component: any): void {
     });
 
     es.addEventListener('connected', () => {
-        // Connection confirmed by server
+        // Connection confirmed by server; status already reflects the open state.
     });
 
     // Streaming events — passive listeners; stream proxy instances attach/detach their own
     // listeners dynamically via addEventListener/removeEventListener on this EventSource.
-
-    es.onerror = () => {
-        // EventSource auto-reconnects per spec
-    };
 }

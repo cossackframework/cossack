@@ -147,22 +147,41 @@ describe('Cossack Core: Client-Side', () => {
       expect(global.WebSocket).toHaveBeenCalledWith('ws://localhost/ws/page/durable-object-id-123?routePath=%2Ftest&pathname=%2Ftest&params=%7B%22name%22%3A%22cossack%22%7D');
   });
 
-  it('should proxy server methods to send WebSocket messages', async () => {
+  it('should proxy server methods as request-scoped realtime RPC calls', async () => {
       await component.bootstrap();
       const wsInstance = (global.WebSocket as any).mock.results[0].value;
 
-      // This is now a proxied method
-      await component.increment();
-
-      expect(wsInstance.send).toHaveBeenCalledWith(JSON.stringify({
-          type: 'action',
-          action: 'increment',
-          payload: [],
-          channel: 'global',
-          target: 'root',
-      }));
-      // It should also update the loading state
+      // The proxy dispatches one action frame and settles on the correlated
+      // done frame; loading is tracked while the call is in flight.
+      const call = component.increment();
+      const sent = JSON.parse(wsInstance.send.mock.calls.at(-1)[0]);
+      expect(sent).toMatchObject({
+          v: 1, type: 'action', action: 'increment', payload: [], channel: 'global', target: 'root',
+      });
       expect(component.loading['increment']).toBeTruthy();
+      wsInstance.onmessage({
+          data: JSON.stringify({ v: 1, type: 'done', requestId: sent.requestId, value: 11, state: { count: 10 } }),
+      });
+      await expect(call).resolves.toBe(11);
+      expect(component.loading['increment']).toBeUndefined();
+  });
+
+  it('streams yields before the final result and applies frame state', async () => {
+      await component.bootstrap();
+      const wsInstance = (global.WebSocket as any).mock.results[0].value;
+
+      const collected: unknown[] = [];
+      const call: any = component.increment();
+      (async () => { for await (const value of call) collected.push(value); })().catch(() => {});
+      const sent = JSON.parse(wsInstance.send.mock.calls.at(-1)[0]);
+      wsInstance.onmessage({
+          data: JSON.stringify({ v: 1, type: 'yield', requestId: sent.requestId, value: 'step', state: { count: 10 } }),
+      });
+      wsInstance.onmessage({
+          data: JSON.stringify({ v: 1, type: 'done', requestId: sent.requestId, value: 11, state: { count: 10 } }),
+      });
+      await expect(call).resolves.toBe(11);
+      expect(collected).toEqual(['step']);
   });
 
   it('should render the template into the container if provided', async () => {
@@ -174,18 +193,21 @@ describe('Cossack Core: Client-Side', () => {
 
   it('should replace server methods with a proxy and not execute the original implementation', async () => {
     await component.bootstrap();
-    
+    const wsInstance = (global.WebSocket as any).mock.results[0].value;
+
     // The initial count from the server is 10
     expect(component.count).toBe(10);
 
-    // Call the proxied server method
-    await component.increment();
-
-    // The count should NOT have changed on the client, proving the original implementation was not called
+    // Call the proxied server method; only the correlated server frame can
+    // change state, never the local implementation.
+    const call = component.increment();
+    const sent = JSON.parse(wsInstance.send.mock.calls.at(-1)[0]);
+    wsInstance.onmessage({
+        data: JSON.stringify({ v: 1, type: 'done', requestId: sent.requestId, value: 11, state: { count: 10 } }),
+    });
+    await expect(call).resolves.toBe(11);
     expect(component.count).toBe(10);
-
-    // But the loading state should have been updated by the proxy
-    expect(component.loading['increment']).toBeTruthy();
+    expect(component.loading['increment']).toBeUndefined();
   });
 
   it('runs synchronous and asynchronous @Shared methods locally without transport or loading state', async () => {
@@ -199,23 +221,23 @@ describe('Cossack Core: Client-Side', () => {
     expect(component.loading.formatCountAsync).toBeUndefined();
   });
 
-  it('should clear loading state when action-complete is received', async () => {
+  it('should clear loading state and reject the call when an error frame arrives', async () => {
       await component.bootstrap();
       const wsInstance = (global.WebSocket as any).mock.results[0].value;
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      // Call action
-      await component.increment();
+      const call = component.increment();
       expect(component.loading['increment']).toBeTruthy();
-
-      // Simulate response
+      const sent = JSON.parse(wsInstance.send.mock.calls.at(-1)[0]);
       wsInstance.onmessage({
-          data: JSON.stringify({
-              type: 'action-complete',
-              action: 'increment'
-          })
+          data: JSON.stringify({ v: 1, type: 'error', requestId: sent.requestId,
+              code: 'COSSACK_RPC_CLIENT_ERROR', message: 'Prompt is required' }),
       });
-
+      await expect(Promise.resolve(call)).rejects.toMatchObject({
+          code: 'COSSACK_RPC_CLIENT_ERROR', message: 'Prompt is required', requestId: sent.requestId,
+      });
       expect(component.loading['increment']).toBeUndefined();
+      errorSpy.mockRestore();
   });
 
   it('handles non-serializable server$ results without an unhandled client rejection', async () => {

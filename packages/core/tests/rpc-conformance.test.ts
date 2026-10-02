@@ -1,0 +1,355 @@
+import 'reflect-metadata';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Cossack } from '../src/shared/cossack';
+import { ClientVisibleError } from '../src/shared/errors';
+import { Server, State } from '../src/shared/decorators';
+import { proxyServerMethods } from '../src/shared/method-proxy';
+import { failPendingSocketCalls, routeSocketFrame } from '../src/shared/transport-connections';
+import { InMemoryWebSocketRuntime } from '../src/shared/runtime';
+import { createInstance } from '../src/shared/container';
+import { ServiceScope } from '../src/shared/service-scope';
+import { Service } from '../src/shared/decorators';
+import { readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
+
+// The realtime server component must take the server lifecycle (no client
+// proxies on its actions); client surfaces in this suite are plain mocks.
+vi.mock('../src/shared/environment', () => ({ isServer: true }));
+
+/**
+ * RT-01 conformance: WebSocket transport and explicit service RPC follow the
+ * same request-scoped contract as HTTP/SSE component calls — one dispatched
+ * mutation per call, promise-or-iterator consumption, correlated errors,
+ * cancellation, deadlines, and uncertain-outcome semantics.
+ */
+
+class Shared {
+    ready = false;
+}
+
+// Server-side component: executed by the in-memory runtime through real
+// executeAction dispatch (no window → server environment).
+class ServerComponent extends Cossack {
+    @State() count = 0;
+    runs = 0;
+
+    @Server()
+    async ordinary(delta: number) {
+        this.count += delta;
+        return this.count;
+    }
+
+    @Server()
+    async *stream(steps: number) {
+        this.runs++;
+        for (let step = 1; step <= steps; step++) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+            this.count++;
+            yield { step, count: this.count };
+        }
+        return `done:${this.runs}`;
+    }
+
+    @Server()
+    async failVisible() {
+        throw new ClientVisibleError('Prompt is required');
+    }
+
+    @Server()
+    async failInternal() {
+        throw new Error('SECRET_TOKEN must stay private');
+    }
+
+    @Server({ timeout: 30 })
+    async neverResponds() {
+        return new Promise(() => {});
+    }
+
+    @Server({ timeout: 20 })
+    async *slowStream() {
+        yield 'first';
+        await new Promise(() => {});
+        return 'never';
+    }
+
+    render() { return null as any; }
+}
+
+function makeClientComponent() {
+    const component: any = {
+        constructor: class Client {},
+        websockets: new Map(),
+        __cossack_proxies: new Map(),
+        loading: {},
+        _optimisticLockedKeys: {},
+        _optimisticPendingState: {},
+        count: 0,
+        consume: () => undefined,
+        hasMethod: () => false,
+        getMethod: () => undefined,
+        getPublicState() { return { count: this.count }; },
+        _isOptimisticLocked: () => false,
+        setProperty(key: string, value: unknown) { (this as any)[key] = value; },
+        requestUpdate() {},
+    };
+    return component;
+}
+
+/** Loopback socket pair wiring the client proxy to the real server runtime. */
+function makeLoopback(runtime: InMemoryWebSocketRuntime) {
+    const serverSocket = { readyState: 1, sent: [] as string[], send: (data: string) => deliverToClient(data) };
+    const clientSocket: any = {
+        readyState: 1,
+        sent: [] as string[],
+        onmessage: null as ((event: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        send(data: string) {
+            clientSocket.sent.push(data);
+            void runtime.onClientMessage(serverSocket, data);
+        },
+        close() { clientSocket.readyState = 3; },
+    };
+    clientSocket.onmessage = ({ data }: { data: string }) => {
+        try { routeSocketFrame(clientSocket, JSON.parse(data)); } catch { /* not JSON */ }
+    };
+    const deliverToClient = (data: string) => {
+        clientSocket.onmessage?.({ data });
+    };
+    runtime.addClient(serverSocket);
+    return { serverSocket, clientSocket };
+}
+
+describe('realtime (WebSocket) RPC conformance', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let server: ServerComponent;
+    let runtime: InMemoryWebSocketRuntime;
+    let client: any;
+    let sockets: ReturnType<typeof makeLoopback>;
+
+    beforeEach(() => {
+        (globalThis as any).WebSocket = Object.assign(class {}, { OPEN: 1 });
+        server = createInstance(ServerComponent) as ServerComponent;
+        // Initialize the reactive state container without the full bootstrap
+        // lifecycle (which expects a request context).
+        server.connectedCallback();
+        runtime = new InMemoryWebSocketRuntime(server);
+        client = makeClientComponent();
+        sockets = makeLoopback(runtime);
+        client.websockets.set('page', sockets.clientSocket);
+        Reflect.defineMetadata('cossack:server-methods', {
+            neverResponds: { timeout: 30 },
+            slowStream: { timeout: 20 },
+        }, client.constructor);
+        proxyServerMethods(client, ['ordinary', 'stream', 'failVisible', 'failInternal', 'neverResponds', 'slowStream']
+            .map(name => ({ name, channel: 'global', provider: 'page' })));
+    });
+    afterEach(() => {
+        delete (globalThis as any).WebSocket;
+        errSpy.mockClear();
+    });
+
+    it('awaits ordinary results with server state and clears loading', async () => {
+        console.log('DBG isServer:', (server as any).isServer, 'typeof window:', typeof (globalThis as any).window);
+        const call = client.ordinary(5);
+        expect(client.loading.ordinary).toBeTruthy();
+        await expect(call).resolves.toBe(5);
+        expect(client.count).toBe(5);
+        expect(client.loading.ordinary).toBeUndefined();
+    });
+
+    it('streams generator yields and applies per-frame state', async () => {
+        const collected: unknown[] = [];
+        const call = client.stream(3);
+        const consumer = (async () => { for await (const value of call) collected.push(value); })();
+        await expect(call).resolves.toBe('done:1');
+        await consumer;
+        expect(collected).toEqual([
+            { step: 1, count: 1 },
+            { step: 2, count: 2 },
+            { step: 3, count: 3 },
+        ]);
+        expect(client.count).toBe(3);
+        expect(server.runs).toBe(1);
+    });
+
+    it('rejects client-visible failures with stable codes', async () => {
+        await expect(Promise.resolve(client.failVisible()))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_CLIENT_ERROR', message: 'Prompt is required' });
+        expect(client.loading.failVisible).toBeUndefined();
+    });
+
+    it('redacts internal failures', async () => {
+        await expect(Promise.resolve(client.failInternal()))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error' });
+        expect(errSpy).toHaveBeenCalled();
+    });
+
+    it('consuming the call twice never dispatches a second mutation', async () => {
+        const call = client.ordinary(2);
+        const values: unknown[] = [];
+        const consumer = (async () => { for await (const value of call) values.push(value); })();
+        await expect(call).resolves.toBe(2);
+        await expect(call).resolves.toBe(2);
+        await consumer;
+        expect(values).toEqual([]);
+        expect(client.count).toBe(2);
+        // Exactly one action frame for this method was dispatched.
+        const dispatched = sockets.clientSocket.sent.filter((raw: string) => JSON.parse(raw).action === 'ordinary');
+        expect(dispatched).toHaveLength(1);
+    });
+
+    it('cancels a streaming call and stops the server generator', async () => {
+        const collected: unknown[] = [];
+        const call = client.stream(5);
+        const consumer = (async () => { for await (const value of call) collected.push(value); })().catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 25));
+        expect(collected.length).toBeGreaterThanOrEqual(1);
+        expect(collected.length).toBeLessThan(5);
+        await call.cancel();
+        await consumer;
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+        expect(client.loading.stream).toBeUndefined();
+        // The cancel message terminated the server-side generator.
+        expect(sockets.clientSocket.sent.some((raw: string) => JSON.parse(raw).type === 'cancel')).toBe(true);
+    });
+
+    it('reports deadline expiry with uncertain-outcome semantics', async () => {
+        await expect(Promise.resolve(client.neverResponds())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_TIMEOUT',
+            message: expect.stringContaining('outcome is unknown'),
+        });
+        expect(client.loading.neverResponds).toBeUndefined();
+    });
+
+    it('times out mid-stream and cancels the server generator', async () => {
+        const collected: unknown[] = [];
+        const call = client.slowStream();
+        const consumer = (async () => { for await (const value of call) collected.push(value); })().catch(() => {});
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
+        await consumer;
+        expect(collected).toEqual(['first']);
+        expect(client.loading.slowStream).toBeUndefined();
+    });
+
+    it('rejects pending calls with an uncertain outcome when the socket closes', async () => {
+        const call = client.neverResponds();
+        sockets.clientSocket.readyState = 3;
+        failPendingSocketCalls(sockets.clientSocket);
+        await expect(Promise.resolve(call)).rejects.toMatchObject({
+            code: 'COSSACK_RPC_TRANSPORT_CLOSED',
+            message: expect.stringContaining('unknown'),
+        });
+    });
+
+    it('answers forbidden actions with a correlated error and stays usable', async () => {
+        const frames: any[] = [];
+        sockets.clientSocket.onmessage = ({ data }: { data: string }) => {
+            frames.push(JSON.parse(data));
+            routeSocketFrame(sockets.clientSocket, JSON.parse(data));
+        };
+        sockets.clientSocket.send(JSON.stringify({ v: 1, type: 'action', requestId: 'forged', action: 'destroy', payload: [] }));
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(frames.at(-1)).toMatchObject({
+            type: 'error', requestId: 'forged', code: 'COSSACK_RPC_FORBIDDEN',
+        });
+        // The runtime remains usable for legitimate calls afterwards.
+        sockets.clientSocket.onmessage = ({ data }: { data: string }) => routeSocketFrame(sockets.clientSocket, JSON.parse(data));
+        await expect(Promise.resolve(client.ordinary(1))).resolves.toBe(1);
+    });
+});
+
+describe('service RPC conformance (client proxy over /crpc)', () => {
+    @Service()
+    class CounterService {
+        @State() count = 0;
+    }
+
+    let scope: ServiceScope;
+    let instance: CounterService;
+    const subscribers: Array<() => void> = [];
+
+    beforeEach(() => {
+        (globalThis as any).window = {};
+        Reflect.defineMetadata('cossack:server-methods', {
+            increment: {}, stream: {}, fail: {}, cancelable: {},
+        }, CounterService);
+        scope = new ServiceScope(undefined, [CounterService], { ownerRouteId: 'layout_1' });
+        instance = scope.resolveDeclared(CounterService) as CounterService;
+    });
+    afterEach(() => {
+        delete (globalThis as any).window;
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        for (const off of subscribers.splice(0)) off();
+    });
+
+    function ndjsonResponse(frames: unknown[]) {
+        const body = frames.map(frame => `${JSON.stringify(frame)}\n`).join('');
+        return new Response(body, { headers: { 'Content-Type': RPC_STREAM_CONTENT_TYPE } });
+    }
+
+    it('awaits ordinary results and hydrates service state', async () => {
+        const fetchMock = vi.fn(async () => new Response(
+            JSON.stringify({ _cossack_service_state: { count: 7 }, _cossack_return: 7 }),
+            { headers: { 'Content-Type': 'application/json' } }));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        await expect((instance as any).increment()).resolves.toBe(7);
+        expect(instance.count).toBe(7);
+        const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body);
+        expect(body.service).toEqual({ ownerRouteId: 'layout_1', slot: '0' });
+        expect(body.action).toBe('increment');
+    });
+
+    it('streams service generator results frame by frame', async () => {
+        const fetchMock = vi.fn(async () => ndjsonResponse([
+            { v: 1, type: 'yield', requestId: 'r1', value: 'a', state: { count: 1 } },
+            { v: 1, type: 'yield', requestId: 'r1', value: 'b', state: { count: 2 } },
+            { v: 1, type: 'done', requestId: 'r1', value: 'finished', state: { count: 2 } },
+        ]));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        const collected: unknown[] = [];
+        const call = (instance as any).stream();
+        for await (const value of call) collected.push(value);
+        await expect(call).resolves.toBe('finished');
+        expect(collected).toEqual(['a', 'b']);
+        expect(instance.count).toBe(2);
+    });
+
+    it('maps HTTP failures to RpcError codes and clears loading', async () => {
+        const fetchMock = vi.fn(async () => new Response(
+            JSON.stringify({ error: 'Prompt is required', code: 'COSSACK_RPC_CLIENT_ERROR' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        await expect(Promise.resolve((instance as any).fail()))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_CLIENT_ERROR', status: 400 });
+    });
+
+    it('supports cancellation through the request signal', async () => {
+        const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+                reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })));
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        const call = (instance as any).cancelable();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        await call.cancel();
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+    });
+});
+
+describe('rpc protocol helpers', () => {
+    it('readRpcStream still enforces the frame contract for correlated frames', async () => {
+        const response = new Response(
+            `{"v":1,"type":"yield","requestId":"a","value":1,"state":{}}\n` +
+            `{"v":1,"type":"done","requestId":"a","value":2,"state":{}}\n`,
+            { headers: { 'Content-Type': RPC_STREAM_CONTENT_TYPE } });
+        const frames = [];
+        for await (const frame of readRpcStream(response)) frames.push(frame);
+        expect(frames).toHaveLength(2);
+        expect(frames[1]).toMatchObject({ type: 'done', value: 2 });
+        expect(new RpcError('COSSACK_RPC_TIMEOUT', 'x')).toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
+    });
+});

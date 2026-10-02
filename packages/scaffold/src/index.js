@@ -418,6 +418,13 @@ function wranglerConfig(recipe, projectName) {
       recipe.config.authMethods.includes('credentials')
     ? `,\n  "send_email": [{ "name": "EMAIL" }]`
     : '';
+  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
+  // SseDurableObject is SQLite-backed: new_sqlite_classes, not new_classes.
+  const sse = `,
+  "durable_objects": {
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]`;
   const compatibilityFlag = recipe.config.database.startsWith('hyperdrive-')
     ? 'nodejs_compat'
     : 'nodejs_als';
@@ -432,7 +439,7 @@ function wranglerConfig(recipe, projectName) {
   "vars": {
     "APP_URL": "https://example.com",
     "APP_LOCALE": "en"
-  }${database}${email}
+  }${database}${email}${sse}
 }
 `;
 }

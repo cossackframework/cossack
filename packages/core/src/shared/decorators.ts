@@ -106,6 +106,12 @@ function isValidationRuleMap(rules: Record<string, unknown>): boolean {
 export interface ServerOptions {
   channel?: string;
   provider?: string;
+  /**
+   * Client-side deadline for calls to this method, in milliseconds. Exceeding
+   * it rejects the call with `COSSACK_RPC_TIMEOUT`; the server-side mutation
+   * may still have completed, so the outcome is uncertain, never retried.
+   */
+  timeout?: number;
   /** @internal Compiler marker for generated server$ loaders. */
   serverResource?: boolean;
 }
@@ -124,6 +130,8 @@ export function Server(options: ServerOptions = {}): any {
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      ...(Number.isFinite(options.timeout) && (options.timeout as number) > 0
+        ? { timeout: options.timeout } : {}),
       ...(options.serverResource ? { serverResource: true } : {}),
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);

@@ -3,7 +3,8 @@ import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
+import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
     name: string;
@@ -186,6 +187,107 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
+/**
+ * Build the response-state applier shared by every transport proxy: apply the
+ * server state, skip fields the client edited while the request was in flight,
+ * and advance the request snapshot so later frames do not clobber local edits.
+ */
+function createStateApplier(component: any, requestState: Record<string, any>) {
+    return (state: Record<string, unknown>) => {
+        // Advance the snapshot only for fields this response can apply. This
+        // lets later stream frames update the same field without clobbering
+        // edits made locally while the request was in flight.
+        const applicable = Object.keys(state).filter(key => !Object.prototype.hasOwnProperty.call(requestState, key)
+            || transportValuesEqual(component[key], requestState[key]));
+        applyStateToComponent(component, state, requestState);
+        for (const key of applicable) {
+            if (!key.startsWith('_cossack_') && !RESERVED_STATE_KEYS.has(key)) {
+                requestState[key] = snapshotTransportState({ value: component[key] }).value;
+            }
+        }
+        component.requestUpdate();
+    };
+}
+
+/** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
+function createCallLifecycle(component: any, name: string) {
+    let cleaned = false;
+    let success = false;
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        if (component.loading[name] > 0) component.loading[name]--;
+        if (!component.loading[name]) {
+            delete component.loading[name];
+            const lockedKeys = component._optimisticLockedKeys[name];
+            delete component._optimisticLockedKeys[name];
+            if (lockedKeys) {
+                for (const key of lockedKeys) {
+                    if (component._isOptimisticLocked(key)) continue;
+                    if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
+                        component.setProperty(key, component._optimisticPendingState[key]);
+                    }
+                    delete component._optimisticPendingState[key];
+                }
+            }
+        }
+        component.requestUpdate();
+    };
+    return { cleanup, succeed: () => { success = true; } };
+}
+
+/** Ordered frame queue for request-scoped realtime calls. */
+class SocketFrameQueue {
+    private frames: RpcStreamFrame[] = [];
+    private resolvers: Array<(result: IteratorResult<RpcStreamFrame>) => void> = [];
+
+    push(frame: RpcStreamFrame): void {
+        const resolve = this.resolvers.shift();
+        if (resolve) resolve({ value: frame, done: false });
+        else this.frames.push(frame);
+    }
+
+    next(): Promise<IteratorResult<RpcStreamFrame>> {
+        const frame = this.frames.shift();
+        if (frame) return Promise.resolve({ value: frame, done: false });
+        return new Promise(resolve => this.resolvers.push(resolve));
+    }
+}
+
+/** A call that rejects without dispatching anything (for example, no socket). */
+function rejectedRpcCall(code: string, message: string, name: string): ReturnType<typeof createRpcCall> {
+    return createRpcCall((async function* () { throw new RpcError(code, message); })(), () => {},
+        error => console.error(`Error calling server action '${name}':`, error));
+}
+
+/** Resolve the @Server({ timeout }) deadline declared for a method, if any. */
+function serverMethodTimeout(constructor: any, name: string): number | undefined {
+    const metadata = Reflect.getMetadata('cossack:server-methods', constructor) || {};
+    const timeout = Number(metadata[name]?.timeout);
+    return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
+}
+
+/** Race a frame wait against the call deadline. */
+async function nextFrameWithDeadline(
+    queue: SocketFrameQueue,
+    deadline: number,
+    requestId: string,
+    timeoutMs: number | undefined,
+): Promise<IteratorResult<RpcStreamFrame>> {
+    if (deadline === Infinity) return queue.next();
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+        throw new RpcError('COSSACK_RPC_TIMEOUT',
+            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
+    }
+    return Promise.race([
+        queue.next(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new RpcError('COSSACK_RPC_TIMEOUT',
+            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`,
+            { requestId })), remaining)),
+    ]);
+}
+
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
 export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
     const initialState = component.getInitialStateFromWindow();
@@ -200,35 +302,27 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
     const stateKeys = getAllReactiveStateKeys(component.constructor);
     for (const { name } of serverMethods) {
         if (isSharedMethod(component.constructor, name)) continue;
+        const timeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
             runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
             const controller = new AbortController();
             let upload: XMLHttpRequest | undefined;
-            let cleaned = false;
-            let success = false;
+            let timedOut = false;
+            // A deadline aborts the call but never retries it: the mutation may
+            // have completed server-side, so its outcome stays unknown.
+            const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+                upload?.abort();
+            }, timeoutMs);
+            const { cleanup: finish, succeed } = createCallLifecycle(component, name);
             const cleanup = () => {
-                if (cleaned) return;
-                cleaned = true;
-                if (component.loading[name] > 0) component.loading[name]--;
-                if (!component.loading[name]) {
-                    delete component.loading[name];
-                    const lockedKeys = component._optimisticLockedKeys[name];
-                    delete component._optimisticLockedKeys[name];
-                    if (lockedKeys) {
-                        for (const key of lockedKeys) {
-                            if (component._isOptimisticLocked(key)) continue;
-                            if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
-                                component.setProperty(key, component._optimisticPendingState[key]);
-                            }
-                            delete component._optimisticPendingState[key];
-                        }
-                    }
-                }
-                component.requestUpdate();
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                finish();
             };
-            let requestState: Record<string, any>;
+            let requestState: Record<string, any> = {};
             let request: Promise<Response>;
             try {
                 const files = new Map<string, File>();
@@ -283,20 +377,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             }
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});
-            const apply = (state: Record<string, unknown>) => {
-                // Advance the snapshot only for fields this response can apply. This
-                // lets later stream frames update the same field without clobbering
-                // edits made locally while the request was in flight.
-                const applicable = Object.keys(state).filter(key => !Object.prototype.hasOwnProperty.call(requestState, key)
-                    || transportValuesEqual(component[key], requestState[key]));
-                applyStateToComponent(component, state, requestState);
-                for (const key of applicable) {
-                    if (!key.startsWith('_cossack_') && !RESERVED_STATE_KEYS.has(key)) {
-                        requestState[key] = snapshotTransportState({ value: component[key] }).value;
-                    }
-                }
-                component.requestUpdate();
-            };
+            const apply = createStateApplier(component, requestState);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
                 try {
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
@@ -314,7 +395,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId: frame.requestId });
                             if (!invalidated) { invalidateClientPageCache(); invalidated = true; }
                             apply(frame.state);
-                            if (frame.type === 'done') { success = true; return frame.value; }
+                            if (frame.type === 'done') { succeed(); return frame.value; }
                             yield frame.value;
                         }
                     } else {
@@ -327,17 +408,21 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         }
                         invalidateClientPageCache();
                         if (typeof data._cossack_redirect === 'string') {
-                            success = true;
+                            succeed();
                             window.location.href = data._cossack_redirect;
                             return;
                         }
                         apply(data);
-                        success = true;
+                        succeed();
                         if (data._cossack_return !== undefined) yield data._cossack_return;
                         return data._cossack_return;
                     }
                 } catch (cause) {
-                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                    if (controller.signal.aborted) {
+                        if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
+                            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause });
+                        throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                    }
                     if (cause instanceof RpcError) throw cause;
                     throw new RpcError('COSSACK_RPC_NETWORK_FAILED', 'RPC request failed.', { cause });
                 } finally { cleanup(); }
@@ -355,7 +440,9 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
 
 /**
  * Create WebSocket-based proxies for @Server methods (client-side only).
- * Sends actions over the provider's WebSocket and integrates optimistic handlers.
+ * Every call is one request-scoped realtime RPC: correlated yield/done/error
+ * frames by request id, promise-or-iterator consumption, cancellation, and
+ * the same optimistic and loading lifecycle as HTTP/SSE calls.
  */
 export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[]): void {
     const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
@@ -364,6 +451,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
         if (isSharedMethod(component.constructor, name)) continue;
+        const timeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
             let ws = component.websockets.get(provider);
             if (!ws) {
@@ -372,38 +460,69 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     ws = (root as any).websockets.get(provider);
                 }
             }
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // Optimistic UI Handler
-                runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
-
-                component.loading[name] = (component.loading[name] || 0) + 1;
-                component.requestUpdate();
-
-                // Keep serializable args (primitives, plain objects, arrays),
-                // drop non-transportable ones (DOM nodes, Event, File, Blob,
-                // functions). The previous implementation dropped ALL objects,
-                // so calling e.g. this.updateItem({ id: 5 }) over WebSocket
-                // sent an empty payload.
-                const payload = args.filter(isWsTransportable);
-                let message;
-                try {
-                    message = JSON.stringify({
-                        type: 'action',
-                        action: name,
-                        payload: payload,
-                        channel: channel,
-                        target: component._id,
-                    });
-                } catch (e) {
-                    console.error(`[Cossack] Failed to serialise WS payload for '${name}':`, e);
-                    return;
-                }
-                ws.send(message);
-                invalidateClientPageCache();
-            } else {
-                console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
+                    `Realtime connection for provider '${provider}' is not open, so '${name}' was not dispatched.`, name);
             }
+
+            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
+            component.loading[name] = (component.loading[name] || 0) + 1;
+            component.requestUpdate();
+
+            const requestId = crypto.randomUUID();
+            const requestState = snapshotTransportState(component.getPublicState());
+            const apply = createStateApplier(component, requestState);
+            const { cleanup, succeed } = createCallLifecycle(component, name);
+            // Keep serializable args (primitives, plain objects, arrays), drop
+            // non-transportable ones (DOM nodes, Event, File, Blob, functions).
+            const payload = args.filter(isWsTransportable);
+            const queue = new SocketFrameQueue();
+            let message: string;
+            try {
+                message = JSON.stringify({
+                    v: 1,
+                    type: 'action',
+                    requestId,
+                    action: name,
+                    payload: payload,
+                    channel: channel,
+                    target: component._id,
+                });
+            } catch (cause) {
+                cleanup();
+                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize the realtime request for '${name}'.`, name);
+            }
+            wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
+            try {
+                ws.send(message);
+            } catch (cause) {
+                wsPendingCalls(ws).delete(requestId);
+                cleanup();
+                return rejectedRpcCall('COSSACK_RPC_TRANSPORT_FAILED',
+                    `Cannot send the realtime request for '${name}'.`, name);
+            }
+            invalidateClientPageCache();
+
+            const operation = async function* (): AsyncGenerator<unknown, unknown> {
+                const deadline = timeoutMs === undefined ? Infinity : Date.now() + timeoutMs;
+                try {
+                    while (true) {
+                        const next = await nextFrameWithDeadline(queue, deadline, requestId, timeoutMs);
+                        const frame = next.value;
+                        if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId });
+                        apply(frame.state);
+                        if (frame.type === 'done') { succeed(); return frame.value; }
+                        yield frame.value;
+                    }
+                } finally {
+                    wsPendingCalls(ws).delete(requestId);
+                    cleanup();
+                }
+            };
+            return createRpcCall(operation(), () => {
+                try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
+            }, error => console.error(`Error calling server action '${name}':`, error));
         };
 
         // Store proxy in the map so stubbed methods can find it

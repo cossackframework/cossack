@@ -9,6 +9,7 @@ import {
     subscribeToService,
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
+import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
     context?: Context;
@@ -118,16 +119,48 @@ export class ServiceScope {
         return this.parent?.getRequestContext() || {};
     }
 
-    /** Resolve an explicit declaration, searching the innermost scope first. */
-    resolveDeclared<T>(serviceClass: ServiceClass<T>): T {
+    /**
+     * Resolve an explicit declaration, searching the innermost scope first.
+     * The optional consumer names the requesting component in failure
+     * diagnostics; it never affects resolution.
+     */
+    resolveDeclared<T>(serviceClass: ServiceClass<T>, consumer?: object): T {
         const entry = this.findDeclaration(serviceClass);
         if (!entry) {
-            throw new Error(
-                `[Cossack] Cannot inject ${serviceClass.name || '<anonymous>'}: no active layout declares it. ` +
-                `Add it to @Page({ services: [${serviceClass.name || 'Service'}] }) on a parent layout.`,
-            );
+            throw new Error(this.describeResolutionFailure(serviceClass, consumer));
         }
         return entry.instance as T;
+    }
+
+    /**
+     * Actionable DI failure text: the requested service, the requesting
+     * component, the active layout ancestry, and what each level declares.
+     */
+    describeResolutionFailure(serviceClass: ServiceClass, consumer?: object): string {
+        const name = serviceClass.name || '<anonymous>';
+        const consumerName = consumer?.constructor?.name;
+        const target = consumerName && consumerName !== 'Object' ? ` into ${consumerName}` : '';
+        return `[Cossack] Cannot inject ${name}${target}: no active layout declares it. ` +
+            `Add it to @Page({ services: [${name}] }) on the layout that should own its lifetime.\n` +
+            `Active scope chain (innermost first):\n${this.describeScopeChain().join('\n')}\n` +
+            `Services that hold no layout state can stay global singletons through the container instead of a declaration.`;
+    }
+
+    /** Ancestry summary for diagnostics and inspection: innermost scope first. */
+    describeScopeChain(): string[] {
+        const lines: string[] = [];
+        let scope: ServiceScope | undefined = this;
+        while (scope) {
+            const owner = scope.ownerRoutePath || scope.ownerRouteId;
+            if (!owner) {
+                lines.push('  - request root scope (no service declarations)');
+            } else {
+                const names = [...scope.owned.keys()].map(item => item.name || '<anonymous>');
+                lines.push(`  - ${owner} ${names.length ? `declares [${names.join(', ')}]` : 'declares no services'}`);
+            }
+            scope = scope.parent;
+        }
+        return lines;
     }
 
     /** Constructor DI: prefer an explicit declaration, otherwise use legacy DI. */
@@ -154,7 +187,7 @@ export class ServiceScope {
         const owner = this.getOwnerScope(serviceClass);
         if (!owner) {
             // Resolve here solely to produce the canonical missing-declaration error.
-            this.resolveDeclared(serviceClass);
+            this.resolveDeclared(serviceClass, consumer);
             return () => {};
         }
         const instance = owner.resolveDeclared(serviceClass);
@@ -289,31 +322,80 @@ export class ServiceScope {
         const clientMethods = Reflect.getMetadata('cossack:client-methods', entry.serviceClass) || {};
         for (const action of Object.keys(serverMethods)) {
             if (clientMethods[action] || isSharedMethod(entry.serviceClass, action)) continue;
-            entry.instance[action] = async (...payload: unknown[]) => {
+            const declared = Number(serverMethods[action]?.timeout);
+            const timeoutMs = Number.isFinite(declared) && declared > 0 ? declared : undefined;
+            // One request-scoped RPC with the same contract as component calls:
+            // promise or iterator consumption, stream frames, cancellation,
+            // deadlines, and correlated RpcError failures.
+            entry.instance[action] = (...payload: unknown[]) => {
                 this.setLoading(action, 1);
-                try {
-                    const response = await fetch('/crpc', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
-                            action,
-                            payload,
-                            state: getServiceState(entry.instance),
-                            scopeKey: this.scopeKey,
-                        }),
-                    });
-                    const data = await response.json() as Record<string, any>;
-                    if (!response.ok) throw new Error(data?.error || `HTTP error! status: ${response.status}`);
-                    if (data._cossack_redirect) {
-                        window.location.href = data._cossack_redirect;
-                        return undefined;
+                const controller = new AbortController();
+                let timedOut = false;
+                const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
+                    timedOut = true;
+                    controller.abort();
+                }, timeoutMs);
+                const request = fetch('/crpc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
+                        action,
+                        payload,
+                        state: getServiceState(entry.instance),
+                        scopeKey: this.scopeKey,
+                    }),
+                });
+                void request.catch(() => {});
+                const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
+                    try {
+                        const response = await request;
+                        if (!response.ok) {
+                            let body: any;
+                            try { body = await response.json(); } catch { /* preserve HTTP status */ }
+                            throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
+                                typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
+                                { status: response.status });
+                        }
+                        if (response.headers.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
+                            for await (const frame of readRpcStream(response, controller.signal)) {
+                                if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId: frame.requestId });
+                                if (frame.state && typeof frame.state === 'object') {
+                                    hydrateServiceState(entry.instance, frame.state as Record<string, unknown>);
+                                }
+                                if (frame.type === 'done') return frame.value;
+                                yield frame.value;
+                            }
+                        }
+                        let data: Record<string, unknown>;
+                        try {
+                            data = await response.json() as Record<string, unknown>;
+                            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a service response object.');
+                        } catch (cause) {
+                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid service RPC response.', { cause });
+                        }
+                        if (typeof (data as any)._cossack_redirect === 'string') {
+                            window.location.href = (data as any)._cossack_redirect;
+                            return undefined;
+                        }
+                        hydrateServiceState(entry.instance, (data as any)._cossack_service_state || {});
+                        return (data as any)._cossack_return;
+                    } catch (cause) {
+                        if (controller.signal.aborted) {
+                            if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
+                                `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause });
+                            throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                        }
+                        if (cause instanceof RpcError) throw cause;
+                        throw new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Service RPC request failed.', { cause });
+                    } finally {
+                        if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                        scope.setLoading(action, -1);
                     }
-                    hydrateServiceState(entry.instance, data._cossack_service_state || {});
-                    return data._cossack_return;
-                } finally {
-                    this.setLoading(action, -1);
-                }
+                };
+                return createRpcCall(operation(this), () => controller.abort(),
+                    error => console.error(`Error calling service action '${action}':`, error));
             };
         }
         this.clientProxyInstalled.add(entry.instance);

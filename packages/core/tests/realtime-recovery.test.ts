@@ -1,0 +1,194 @@
+import 'reflect-metadata';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { connectSSE, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
+
+/**
+ * RT-19: realtime lifecycle and recovery. Connection status, bounded
+ * WebSocket reconnect backoff, snapshot resynchronization markers, and
+ * no-reconnect after intentional disposal.
+ */
+
+class MockEventSource {
+    static CONNECTED = 1;
+    static OPEN = 1;
+    static CONNECTING = 0;
+    static CLOSED = 2;
+    static instances: MockEventSource[] = [];
+    readyState = 0;
+    listeners = new Map<string, Array<(event: any) => void>>();
+    constructor(public url: string) { MockEventSource.instances.push(this); }
+    addEventListener(type: string, listener: (event: any) => void) {
+        (this.listeners.get(type) ?? this.listeners.set(type, []).get(type)!).push(listener);
+    }
+    onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    emit(type: string, data: string, lastEventId?: string) {
+        for (const listener of this.listeners.get(type) ?? []) {
+            listener({ data, lastEventId: lastEventId ?? '' });
+        }
+    }
+}
+
+class MockWebSocket {
+    static OPEN = 1;
+    static CONNECTING = 0;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    static instances: MockWebSocket[] = [];
+    readyState = 1;
+    onopen: (() => void) | null = null;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    constructor(public url: string) { MockWebSocket.instances.push(this); }
+    send() {}
+    close() { this.readyState = 3; }
+}
+
+function makeComponent() {
+    return {
+        constructor: class {},
+        _phase: 'Mounted',
+        websockets: new Map(),
+        _sseConnection: undefined,
+        requestUpdate: vi.fn(),
+        setProperty(key: string, value: unknown) { (this as any)[key] = value; },
+        _isOptimisticLocked: () => false,
+        _optimisticLockedKeys: {},
+        _optimisticPendingState: {},
+        getInitialStateFromWindow: () => ({
+            componentRouteId: 'cmp_sse',
+            scopeKey: 'user:anonymous',
+            providerTargets: { page: 'target-1' },
+            routePath: '/page',
+            metadata: { params: {}, pathname: '/page' },
+        }),
+        getPublicState: () => ({}),
+        hasMethod: () => false,
+        getMethod: () => undefined,
+    };
+}
+
+describe('realtime recovery: SSE status', () => {
+    beforeEach(() => {
+        vi.stubGlobal('EventSource', MockEventSource);
+        MockEventSource.instances.length = 0;
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('tracks connecting → open, delivery cursors, failures, and resync', () => {
+        const component: any = makeComponent();
+        connectSSE(component);
+        const es = MockEventSource.instances[0];
+        expect(realtimeStatus(component).sse.state).toBe('connecting');
+
+        es.readyState = 1;
+        es.onopen?.();
+        expect(realtimeStatus(component).sse).toMatchObject({ state: 'open', attempts: 0 });
+
+        es.emit('state-update', '{"count":3}', '7');
+        expect(realtimeStatus(component).sse.lastEventId).toBe('7');
+
+        es.onerror?.();
+        expect(realtimeStatus(component).sse).toMatchObject({ state: 'reconnecting', attempts: 1 });
+        expect(realtimeStatus(component).sse.lastError).toContain('reconnecting');
+
+        // Recovery: open clears the error and resets attempts.
+        es.onopen?.();
+        expect(realtimeStatus(component).sse).toMatchObject({ state: 'open', attempts: 0, lastError: undefined });
+
+        es.emit('resync', '{"cursor":9}', '9');
+        expect(realtimeStatus(component).sse).toMatchObject({ resynced: true, lastEventId: 9 });
+    });
+
+    it('marks a permanently closed source as closed', () => {
+        const component: any = makeComponent();
+        connectSSE(component);
+        const es = MockEventSource.instances[0];
+        es.readyState = MockEventSource.CLOSED;
+        es.onerror?.();
+        expect(realtimeStatus(component).sse.state).toBe('closed');
+    });
+});
+
+describe('realtime recovery: WebSocket reconnect', () => {
+    beforeEach(() => {
+        vi.stubGlobal('WebSocket', MockWebSocket);
+        MockWebSocket.instances.length = 0;
+        vi.stubGlobal('window', { location: { protocol: 'http:', host: 'localhost' }, search: '' });
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('reconnects with bounded exponential backoff and resets after open', () => {
+        vi.useFakeTimers();
+        try {
+            const component: any = makeComponent();
+            connectWebSocket(component);
+            const first = MockWebSocket.instances[0];
+            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'connecting', attempts: 0 });
+
+            first.onopen?.();
+            expect(realtimeStatus(component).websockets.page.state).toBe('open');
+
+            first.readyState = 3;
+            first.onclose?.();
+            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'reconnecting', attempts: 1 });
+
+            vi.advanceTimersByTime(realtimeReconnectDelay(1) - 1);
+            expect(MockWebSocket.instances).toHaveLength(1);
+            vi.advanceTimersByTime(1);
+            expect(MockWebSocket.instances).toHaveLength(2);
+            const second = MockWebSocket.instances[1];
+            expect(component.websockets.get('page')).toBe(second);
+
+            // The delay doubles per attempt and is bounded.
+            expect(realtimeReconnectDelay(1)).toBe(500);
+            expect(realtimeReconnectDelay(2)).toBe(1000);
+            expect(realtimeReconnectDelay(7)).toBe(30_000);
+            expect(realtimeReconnectDelay(50)).toBe(30_000);
+
+            // A successful open resets the attempt counter and clears errors.
+            second.onopen?.();
+            expect(realtimeStatus(component).websockets.page).toMatchObject({ state: 'open', attempts: 0 });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not reconnect after intentional disposal', () => {
+        vi.useFakeTimers();
+        try {
+            const component: any = makeComponent();
+            connectWebSocket(component);
+            const first = MockWebSocket.instances[0];
+            first.onopen?.();
+            (first as any).__cossack_intentional_close = true;
+            first.readyState = 3;
+            first.onclose?.();
+            expect(realtimeStatus(component).websockets.page.state).toBe('closed');
+            vi.advanceTimersByTime(60_000);
+            expect(MockWebSocket.instances).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not reconnect a destroyed component', () => {
+        vi.useFakeTimers();
+        try {
+            const component: any = makeComponent();
+            connectWebSocket(component);
+            const first = MockWebSocket.instances[0];
+            first.readyState = 3;
+            first.onclose?.();
+            component._phase = 'Destroyed';
+            vi.advanceTimersByTime(60_000);
+            expect(MockWebSocket.instances).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});

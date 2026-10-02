@@ -1,9 +1,46 @@
+import { rpcCancellations, sendRpcFrame } from './rpc-stream';
+
 export interface CossackServerRuntime {
     onClientMessage(client: unknown, message: string): Promise<void>;
     broadcastState(partialState: Record<string, any>): void;
     broadcastEvent(eventName: string, payload: any[]): void;
     sendClientAction(client: unknown, action: string, payload: any[]): void;
     persistState(): Promise<void>;
+}
+
+/**
+ * Shared WebSocket RPC dispatch. Actions carry a request id when the caller
+ * expects correlated yield/done/error frames; `cancel` messages terminate a
+ * request-scoped generator through the per-socket cancellation hook.
+ */
+export async function dispatchSocketRpcMessage(
+    root: any,
+    data: unknown,
+    client: unknown,
+    getUser?: (client: any) => unknown,
+): Promise<void> {
+    if (!data || typeof data !== 'object') return;
+    const message = data as Record<string, unknown>;
+    if (message.type === 'cancel') {
+        if (typeof message.requestId === 'string') rpcCancellations(client).get(message.requestId)?.();
+        return;
+    }
+    if (message.type !== 'action' || typeof message.action !== 'string' || !Array.isArray(message.payload)) return;
+    const requestId = typeof message.requestId === 'string' ? message.requestId : undefined;
+    const user = getUser?.(client);
+
+    let targetInstance = root;
+    const target = message.target;
+    if (typeof target === 'string' && target !== targetInstance._id) {
+        targetInstance = root.activeComponents?.get?.(target);
+        if (!targetInstance) {
+            console.warn(`[Cossack] Target component '${target}' not found. Action '${message.action}' dropped.`);
+            if (requestId !== undefined) sendRpcFrame(client, { v: 1, type: 'error', requestId,
+                code: 'COSSACK_RPC_NOT_FOUND', message: `Target component '${target}' not found.` });
+            return;
+        }
+    }
+    await targetInstance.executeAction(message.action, message.payload, user, client, requestId);
 }
 
 /** Minimal socket surface shared by process runtimes such as Node and Deno. */
@@ -71,18 +108,9 @@ export class InMemoryWebSocketRuntime<
             this.options.onError?.(error);
             return;
         }
-        if (!data || typeof data !== 'object' || data.type !== 'action' ||
-            typeof data.action !== 'string' || !Array.isArray(data.payload)) return;
-
-        let target = this.component;
-        if (typeof data.target === 'string' && data.target !== target._id) {
-            target = target.activeComponents?.get?.(data.target);
-            if (!target) return;
-        }
-
-        const user = this.options.getUser?.(socket) ??
-            (typeof socket === 'object' && socket !== null ? this.users.get(socket) : undefined);
-        await target.executeAction(data.action, data.payload, user, socket);
+        await dispatchSocketRpcMessage(this.component, data, socket, candidate =>
+            this.options.getUser?.(candidate as Client) ??
+            (typeof candidate === 'object' && candidate !== null ? this.users.get(candidate) : undefined));
     }
 
     broadcastState(partialState: Record<string, any>): void {

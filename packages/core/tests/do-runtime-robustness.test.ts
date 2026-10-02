@@ -44,7 +44,20 @@ describe('DurableObjectRuntime.onClientMessage robustness', () => {
         await runtime.onClientMessage(client, JSON.stringify({
             type: 'action', action: 'doThing', payload: [1, 2],
         }));
-        expect(component.executeAction).toHaveBeenCalledWith('doThing', [1, 2], { id: 'u1' }, client);
+        expect(component.executeAction).toHaveBeenCalledWith('doThing', [1, 2], { id: 'u1' }, client, undefined);
+    });
+
+    it('passes the request id through and honors cancel messages', async () => {
+        const { runtime, component } = makeRuntime();
+        const client: any = { deserializeAttachment: () => ({}), send: vi.fn() };
+        const cancellations = new Map([['req-1', vi.fn()]]);
+        (client as any).__cossack_rpc_cancellations = cancellations;
+        await runtime.onClientMessage(client, JSON.stringify({
+            v: 1, type: 'action', requestId: 'req-9', action: 'doThing', payload: [],
+        }));
+        expect(component.executeAction).toHaveBeenCalledWith('doThing', [], undefined, client, 'req-9');
+        await runtime.onClientMessage(client, JSON.stringify({ type: 'cancel', requestId: 'req-1' }));
+        expect(cancellations.get('req-1')).toHaveBeenCalled();
     });
 
     it('drops actions targeting an unknown component without throwing', async () => {

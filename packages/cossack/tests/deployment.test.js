@@ -55,6 +55,26 @@ describe('deployment inspection with project Wrangler', () => {
     await expect(inspectDeployment(root, 'typo')).rejects.toMatchObject({ code: 'COSSACK_ENVIRONMENT_UNKNOWN' });
   });
 
+  it('flags Durable Object bindings that a named environment will not inherit', async () => {
+    const root = await project({
+      durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+      env: { staging: { vars: { APP_URL: 'https://staging.test' } } },
+    });
+    const inspection = await inspectDeployment(root, 'staging');
+    expect(inspection.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'COSSACK_ENV_BINDING_NOT_INHERITED',
+      message: expect.stringContaining('env.staging'),
+    }));
+    // Re-declaring the binding in the environment clears the diagnostic.
+    const fixed = await project({
+      durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+      env: { staging: { vars: { APP_URL: 'https://staging.test' },
+        durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] } } },
+    });
+    expect((await inspectDeployment(fixed, 'staging')).diagnostics).toEqual([]);
+    expect((await inspectDeployment(fixed)).diagnostics).toEqual([]);
+  });
+
   it('reports secret names and placeholder resources without disclosing values', async () => {
     const secret = 'test-sensitive-value-do-not-print';
     const root = await project({ vars: { APP_SECRET: secret, APP_URL: 'https://example.com' },

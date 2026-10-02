@@ -23,22 +23,24 @@
       "preview_database_id": "app-local"
     }
   ],
-  // "durable_objects": {
-  //   "bindings": [
-  //     {
-  //       "name": "COSSACK_OBJECT",
-  //       "class_name": "AppDurableObject"
-  //     }
-  //   ]
-  // },
-  // "migrations": [
-  //   {
-  //     "tag": "v1",
-  //     "new_classes": [
-  //       "AppDurableObject"
-  //     ]
-  //   }
-  // ],
+  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
+  // SseDurableObject is SQLite-backed: add new_sqlite_classes (not new_classes).
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COSSACK_SSE",
+        "class_name": "SseDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SseDurableObject"
+      ]
+    }
+  ],
   "assets": {
     "binding": "ASSETS",
     "run_worker_first": true

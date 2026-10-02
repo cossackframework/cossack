@@ -1,5 +1,6 @@
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
@@ -41,6 +42,12 @@ import {
   syncSseState,
   registerSseStoreEntry,
   resolveSseScopeKey,
+  getSseScopeStub,
+  isCloudflareRuntime,
+  sseBindingMissingMessage,
+  sseBindingMissingResponse,
+  hydrateSseScopeState,
+  attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
 import { handleUpload } from './transports/http.js';
@@ -509,13 +516,29 @@ export function createApp(options: CreateAppOptions = {}) {
           (pageInstance as any).loading.init = 1;
         }
 
+        // For SSE transport, connect the shared scope before rendering so SSR
+        // renders the authoritative state. On Cloudflare the coordinator owns
+        // the scope: first initialization wins and later requests hydrate the
+        // snapshot instead of overwriting it. Node and Deno keep the
+        // process-local store entry for the SSE endpoint and /crpc.
+        if (pageOptions?.transport === 'sse') {
+          const componentRouteId = routePathToIdMap.get(path);
+          const sseStub = componentRouteId ? getSseScopeStub(c.env, componentRouteId, scopeKey) : undefined;
+          if (sseStub) {
+            const initialized = await sseStub.initialize(JSON.stringify(pageInstance.getPublicState()));
+            if (!initialized.fresh) {
+              try { hydrateSseScopeState(pageInstance, JSON.parse(initialized.state)); }
+              catch (error) { throw new Error(`[Cossack SSE] scope state is not valid JSON: ${error instanceof Error ? error.message : String(error)}`); }
+            }
+          } else if (isCloudflareRuntime()) {
+            throw new Error(`${sseBindingMissingMessage()} (page: ${path})`);
+          } else {
+            registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+          }
+        }
+
         // Force render to populate registry
         pageInstance._render();
-
-        // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
-        if (pageOptions?.transport === 'sse') {
-          registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
-        }
 
         // Wrap rendering
         let body: any;
@@ -709,6 +732,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
       const requestScope = createRootServiceScope();
       requestScope.bindRequest({ context: c, user, env: c.env });
+      let responseOwnsCleanup = false;
       try {
         let activeScope = requestScope;
         let ownerScope: ReturnType<typeof createLayoutServiceScope> | undefined;
@@ -741,10 +765,23 @@ export function createApp(options: CreateAppOptions = {}) {
         try {
           actionResult = await owned.instance[action](...(Array.isArray(payload) ? payload : []));
         } catch (e: any) {
-          if (isClientVisibleError(e)) return c.json({ error: e.message }, 400);
-          console.error('[/crpc service] internal error:', e);
+          if (isClientVisibleError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
+          }
+          console.error('[/crpc service] internal error:', { requestId, error: e });
           const isDev = (import.meta as any).env?.DEV;
-          return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
+          return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+        }
+        // Generator results stream through the same response-local protocol as
+        // component calls; the stream owns request-scope cleanup until it ends.
+        if (isRpcStream(actionResult)) {
+          const response = createRpcStreamResponse({
+            result: actionResult, requestId, signal: c.req.raw.signal,
+            getState: () => getServiceState(owned.instance),
+            cleanup: async () => { await requestScope.disposeAsync(); },
+          });
+          responseOwnsCleanup = true;
+          return response;
         }
 
         const location = c.res.headers.get('Location');
@@ -755,12 +792,49 @@ export function createApp(options: CreateAppOptions = {}) {
           ...(actionResult !== undefined ? { _cossack_return: actionResult } : {}),
         });
       } finally {
-        requestScope.dispose();
+        // Match component RPC: await scoped-service cleanup so onDispose
+        // hooks finish before the response completes.
+        if (!responseOwnsCleanup) await requestScope.disposeAsync();
       }
     }
 
     const componentPath = routeIdMap.get(componentRouteId);
     if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+
+    let ComponentClass: new (...args: any[]) => Cossack;
+    if (componentPath === '/src/App') {
+      ComponentClass = options.AppComponent ?? RouterFallbackApp;
+    } else {
+      const module = pages[componentPath] || layouts[componentPath];
+      if (!module) return c.json({ error: 'Component not found' }, 404);
+      ComponentClass = Object.values(module as object)[0] as new (...args: any[]) => Cossack;
+      if (typeof ComponentClass !== 'function') return c.json({ error: 'Invalid component' }, 500);
+    }
+    // Resolve and authorize scope before constructors, rendering, or user actions.
+    const targetPageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
+    let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
+    let componentContext: Context = c;
+    if (targetPageOptions?.transport === 'sse') {
+      let params: Record<string, string>;
+      try {
+        params = decodeRuntimeRouteParams(body.pageParams === undefined ? undefined : JSON.stringify(body.pageParams));
+      } catch {
+        return c.json({ error: 'Invalid route params' }, 400);
+      }
+      componentContext = withRuntimeRouteParams(c, params);
+      effectiveScopeKey = await resolveSseScopeKey(componentContext, targetPageOptions);
+      if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
+    }
+
+    // Cloudflare's distributed backend serializes scope actions inside the
+    // coordinator Durable Object and hydrates them from the authoritative
+    // snapshot instead of the browser's state. Node and Deno keep executing
+    // against the process-local store.
+    const sseStub = targetPageOptions?.transport === 'sse'
+      ? getSseScopeStub(c.env, componentRouteId, effectiveScopeKey) : undefined;
+    if (targetPageOptions?.transport === 'sse' && !sseStub && isCloudflareRuntime()) {
+      return sseBindingMissingResponse();
+    }
 
     const requestScope = createRootServiceScope();
     requestScope.bindRequest({ context: c, user, env: c.env });
@@ -774,132 +848,174 @@ export function createApp(options: CreateAppOptions = {}) {
         finally { await finishResponseLifetime?.(); }
       }
     };
-    try {
-      let ComponentClass: new (...args: any[]) => Cossack;
-      if (componentPath === '/src/App') {
-        ComponentClass = options.AppComponent ?? RouterFallbackApp;
-      } else {
-        const module = pages[componentPath] || layouts[componentPath];
-        if (!module) return c.json({ error: 'Component not found' }, 404);
-        ComponentClass = Object.values(module as object)[0] as new (...args: any[]) => Cossack;
-        if (typeof ComponentClass !== 'function') return c.json({ error: 'Invalid component' }, 500);
-      }
-      // Resolve and authorize scope before constructors, rendering, or user actions.
-      const targetPageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
-      let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
-      let componentContext: Context = c;
-      if (targetPageOptions?.transport === 'sse') {
-        let params: Record<string, string>;
-        try {
-          params = decodeRuntimeRouteParams(body.pageParams === undefined ? undefined : JSON.stringify(body.pageParams));
-        } catch {
-          return c.json({ error: 'Invalid route params' }, 400);
-        }
-        componentContext = withRuntimeRouteParams(c, params);
-        effectiveScopeKey = await resolveSseScopeKey(componentContext, targetPageOptions);
-        if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
-      }
-      let activeScope = requestScope;
-      for (const layoutPath of getLayoutStack(componentPath)) {
-        const LayoutClass = Object.values(layouts[layoutPath] as object)[0] as new () => Cossack;
-        activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
-          ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
-        });
-        activeScope.bindRequest({ context: componentContext, user, env: c.env });
-      }
-      componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
-      await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
-      componentInstance._render();
-      let targetInstance: any = componentInstance;
-      if (target && target !== targetInstance._id) {
-        if (targetInstance.activeComponents.has(target)) targetInstance = targetInstance.activeComponents.get(target);
-        else return c.json({ error: `Target component '${target}' not found` }, 404);
-      }
 
-      // Apply the received state to the target component. First restrict to the
-      // component's own @State keys (sanitizeClientState) to block overwrites of
-      // internal/security-sensitive props. Then also apply keys in the instance's
-      // actual public state — covers @State from injected @Service dependencies
-      // (synced into the container) which must round-trip or per-action service
-      // state would reset on every call.
-      const safeState = sanitizeClientState(targetInstance.constructor, state);
+    // Apply received state to a component instance. First restrict to the
+    // component's own @State keys (sanitizeClientState) to block overwrites of
+    // internal/security-sensitive props. Then also apply keys in the instance's
+    // actual public state — covers @State from injected @Service dependencies
+    // (synced into the container) which must round-trip or per-action service
+    // state would reset on every call.
+    const applyReceivedState = (instance: any, source: Record<string, unknown> | undefined) => {
+      const safeState = sanitizeClientState(instance.constructor, source);
       for (const key in safeState) {
-        (targetInstance as any)[key] = safeState[key];
+        instance[key] = safeState[key];
       }
-      const publicStateKeys = new Set(Object.keys(targetInstance.getPublicState()));
-      if (state && typeof state === 'object') {
-        for (const key of Object.keys(state)) {
+      const publicStateKeys = new Set(Object.keys(instance.getPublicState()));
+      if (source && typeof source === 'object') {
+        for (const key of Object.keys(source)) {
           if (key in safeState) continue;
           if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
-          if (publicStateKeys.has(key)) (targetInstance as any)[key] = (state as Record<string, unknown>)[key];
+          if (publicStateKeys.has(key)) instance[key] = (source as Record<string, unknown>)[key];
         }
       }
+    };
 
-      // Authorisation gate: only @Server-registered methods are RPC-callable.
-      // Prevents crafted requests from invoking framework-internal methods
-      // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
-      // Includes @Server methods on injected @Service dependencies (forwarded
-      // onto the component instance but registered on the service class).
-      if (!isRpcCallableActionOrService(targetInstance, action)) {
-        return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
-      }
-
-      // Rate-limit gate: enforce any @RateLimit declared on the action.
-      // If this is a forwarded @Service method, the metadata lives on the service class.
-      const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
-        ? targetInstance.constructor
-        : getForwardedServerMethodClass(targetInstance, action);
-
-      const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `crpc:${componentRouteId}`);
-      if (rateLimited) return rateLimited;
-
-      if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-
-      // Await promises before inspecting the result. Awaiting an async generator
-      // does not pull it; its response owns iteration and request-context lifetime.
-      let actionResult: unknown;
+    const runComponentAction = async (
+      authoritativeState: Record<string, unknown> | undefined,
+    ): Promise<Response> => {
       try {
-        actionResult = await targetInstance[action](...(payload || []));
-      } catch (e: any) {
-        if (isClientVisibleError(e)) {
-          return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
+        let activeScope = requestScope;
+        for (const layoutPath of getLayoutStack(componentPath)) {
+          const LayoutClass = Object.values(layouts[layoutPath] as object)[0] as new () => Cossack;
+          activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
+            ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
+          });
+          activeScope.bindRequest({ context: componentContext, user, env: c.env });
         }
-        console.error('[/crpc] internal error:', { requestId, error: e });
+        componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
+        if (sseStub) attachCoordinatorRuntime(componentInstance, sseStub);
+        await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
+        componentInstance._render();
+        let targetInstance: any = componentInstance;
+        if (target && target !== targetInstance._id) {
+          if (targetInstance.activeComponents.has(target)) targetInstance = targetInstance.activeComponents.get(target);
+          else return c.json({ error: `Target component '${target}' not found` }, 404);
+        }
+
+        // On the coordinator path the authoritative scope snapshot replaces the
+        // browser snapshot, so a stale tab cannot overwrite shared state. Child
+        // targets still receive the client state because the scope tracks the
+        // acting component's public state, not child-local state.
+        if (authoritativeState !== undefined) {
+          applyReceivedState(componentInstance, authoritativeState);
+          if (targetInstance !== componentInstance) applyReceivedState(targetInstance, state);
+        } else {
+          applyReceivedState(targetInstance, state);
+        }
+
+        // Authorisation gate: only @Server-registered methods are RPC-callable.
+        // Prevents crafted requests from invoking framework-internal methods
+        // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
+        // Includes @Server methods on injected @Service dependencies (forwarded
+        // onto the component instance but registered on the service class).
+        if (!isRpcCallableActionOrService(targetInstance, action)) {
+          return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
+        }
+
+        // Rate-limit gate: enforce any @RateLimit declared on the action.
+        // If this is a forwarded @Service method, the metadata lives on the service class.
+        const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
+          ? targetInstance.constructor
+          : getForwardedServerMethodClass(targetInstance, action);
+
+        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `crpc:${componentRouteId}`);
+        if (rateLimited) return rateLimited;
+
+        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+
+        // Await promises before inspecting the result. Awaiting an async generator
+        // does not pull it; its response owns iteration and request-context lifetime.
+        let actionResult: unknown;
+        try {
+          actionResult = await targetInstance[action](...(payload || []));
+        } catch (e: any) {
+          if (isClientVisibleError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
+          }
+          console.error('[/crpc] internal error:', { requestId, error: e });
+          return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+        }
+        if (isRpcStream(actionResult)) {
+          finishResponseLifetime = retainResponseLifetime(c);
+          const response = createRpcStreamResponse({
+            result: actionResult, requestId, signal: c.req.raw.signal,
+            getState: () => targetInstance.getPublicState(),
+            // The coordinator publishes every frame's state itself; only the
+            // process-local backend needs the store sync.
+            onState: targetPageOptions?.transport === 'sse' && !sseStub
+              ? state => syncSseState(`${componentRouteId}:${effectiveScopeKey}`, state) : undefined,
+            cleanup,
+          });
+          responseOwnsCleanup = true;
+          return response;
+        }
+
+        // Ordinary results publish the final scope state once. Through the
+        // coordinator this is an explicit publish (the DO passes non-stream
+        // responses through without inspecting them); locally it bumps the
+        // store's version counter for the polling endpoint.
+        const publishScopeState = () => {
+          if (sseStub) return sseStub.publish(JSON.stringify(targetInstance.getPublicState()));
+          if (targetPageOptions?.transport === 'sse') {
+            syncSseState(`${componentRouteId}:${effectiveScopeKey}`, targetInstance.getPublicState());
+          }
+          return Promise.resolve();
+        };
+        const location = c.res.headers.get('Location');
+        if (location) {
+          await publishScopeState();
+          return c.json({ _cossack_redirect: location });
+        }
+        if (actionResult instanceof Response) {
+          await publishScopeState();
+          return actionResult;
+        }
+
+        // Get the state of the component that was actually modified
+        const responseData = targetInstance.getPublicState();
+        await publishScopeState();
+
+        // Non-streaming path: regular method return
+        if (actionResult !== undefined) {
+          (responseData as any)._cossack_return = actionResult;
+        }
+
+        return c.json(responseData);
+      } catch (error) {
+        // Unexpected framework failures (construction, DI, serialization) still
+        // produce one JSON RPC error on both backends.
+        console.error('[/crpc] request failed:', { requestId, error });
+        return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+      } finally {
+        if (!responseOwnsCleanup) await cleanup();
+      }
+    };
+
+    if (sseStub) {
+      // The action executes exactly once inside the coordinator's per-scope
+      // serialization slot. Request middleware, layout DI, ORM, and config
+      // contexts are restored from this request's AsyncLocalStorage snapshot.
+      const inRequest = AsyncLocalStorage.snapshot();
+      try {
+        const response = await sseStub.execute(
+          snapshot => inRequest(async () => runComponentAction(JSON.parse(snapshot))),
+        );
+        // When this request aborts before the response is returned, cancel the
+        // coordinator's stream explicitly so the serialization slot releases
+        // instead of waiting for runtime teardown.
+        const signal = (c.req.raw as any).signal as AbortSignal | undefined;
+        if (signal && response.body) {
+          const abortBody = () => { void response.body!.cancel().catch(() => {}); };
+          if (signal.aborted) abortBody();
+          else signal.addEventListener('abort', abortBody, { once: true });
+        }
+        return response;
+      } catch (error) {
+        console.error('[/crpc sse coordinator] action failed:', { requestId, error });
         return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       }
-      if (isRpcStream(actionResult)) {
-        finishResponseLifetime = retainResponseLifetime(c);
-        const response = createRpcStreamResponse({
-          result: actionResult, requestId, signal: c.req.raw.signal,
-          getState: () => targetInstance.getPublicState(),
-          onState: targetPageOptions?.transport === 'sse'
-            ? state => syncSseState(`${componentRouteId}:${effectiveScopeKey}`, state) : undefined,
-          cleanup,
-        });
-        responseOwnsCleanup = true;
-        return response;
-      }
-
-      const location = c.res.headers.get('Location');
-      if (location) return c.json({ _cossack_redirect: location });
-      if (actionResult instanceof Response) return actionResult;
-
-      // Get the state of the component that was actually modified
-      const responseData = targetInstance.getPublicState();
-
-      if (targetPageOptions?.transport === 'sse') {
-        syncSseState(`${componentRouteId}:${effectiveScopeKey}`, responseData);
-      }
-
-      // Non-streaming path: regular method return
-      if (actionResult !== undefined) {
-        (responseData as any)._cossack_return = actionResult;
-      }
-
-      return c.json(responseData);
-    } finally {
-      if (!responseOwnsCleanup) await cleanup();
     }
+    return runComponentAction(undefined);
   });
 
   // Register all routes.

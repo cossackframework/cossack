@@ -110,6 +110,80 @@ it('builds a generated staging app and validates deployment without uploading', 
       async *fail() { yield 'started'; throw new ClientVisibleError('Prompt is required'); }
     }
   `);
+  await fs.writeFile(path.join(projectDir, 'src/auth.ts'), `
+    import { getCookie, setCookie } from 'hono/cookie';
+    import { createAuth } from '@cossackframework/auth';
+    import { sql } from '@cossackframework/database';
+
+    export interface DemoUser { id: string; email: string }
+
+    export async function ensureSchema() {
+      await sql\`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT NOT NULL)\`;
+      await sql\`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL)\`;
+      await sql\`INSERT OR IGNORE INTO users VALUES ('u1', 'ada@example.test', 'pw-trusted')\`;
+    }
+
+    export const auth = createAuth({
+      extractSessionId: c => getCookie(c, 'session_id'),
+      validateSessionId: async id => {
+        await ensureSchema();
+        const rows = await sql\`SELECT user_id FROM sessions WHERE id = \${id} AND expires_at > unixepoch()\`;
+        return rows.rows[0]?.user_id ?? null;
+      },
+      resolveUserById: async id => {
+        const rows = await sql\`SELECT id, email FROM users WHERE id = \${id}\`;
+        return rows.rows[0] ?? null;
+      },
+      createSession: async (user, c) => {
+        const id = crypto.randomUUID();
+        await sql\`INSERT INTO sessions VALUES (\${id}, \${user.id}, unixepoch() + 3600)\`;
+        const headers = new Headers();
+        setCookie(c, 'session_id', id, { httpOnly: true, path: '/', sameSite: 'Lax', maxAge: 3600 });
+        headers.append('Set-Cookie', c.res.headers.getSetCookie().at(-1) ?? '');
+        return { headers };
+      },
+    });
+  `);
+  await fs.mkdir(path.join(projectDir, 'src/pages/api/auth'), { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'src/pages/api/auth/login.ts'), `
+    import { sql } from '@cossackframework/database';
+    import { auth, ensureSchema } from '../../../auth';
+    export const POST = auth.createLoginHandler({
+      validateCredentials: async credentials => {
+        const { email, password } = credentials ?? {};
+        await ensureSchema();
+        const rows = await sql\`SELECT id, email FROM users WHERE email = \${email} AND password_hash = \${password}\`;
+        return rows.rows[0] ?? null;
+      },
+    });
+  `);
+  await fs.mkdir(path.join(projectDir, 'src/pages/shared'));
+  await fs.mkdir(path.join(projectDir, 'src/pages/me'));
+  await fs.writeFile(path.join(projectDir, 'src/pages/me/index.ts'), `
+    import { Cossack, getRequestContext, Page, State } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    @Page({ transport: 'http' })
+    export default class MePage extends Cossack {
+      @State() email = 'guest';
+      async init() { this.email = getRequestContext()?.get('user')?.email ?? 'guest'; }
+      render() { return html\`<main>signed in as \${this.email}</main>\`; }
+    }
+  `);
+  await fs.writeFile(path.join(projectDir, 'src/pages/shared/index.ts'), `
+    import { Cossack, getRequestContext, Page, Server, State } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    @Page({ transport: 'sse' })
+    export default class SharedCounter extends Cossack {
+      @State() count = 0;
+      render() { return html\`<main>shared \${this.count}</main>\`; }
+      @Server()
+      async increment() { this.count++; return this.count; }
+      @Server()
+      async goHome() { this.count++; getRequestContext()?.header('Location', '/shared'); return 'redirected'; }
+      @Server()
+      async ping() { this.broadcastEvent('shared:ping', this.count); return 'sent'; }
+    }
+  `);
   await fs.mkdir(path.join(projectDir, 'src/pages/(private)/private'), { recursive: true });
   await fs.writeFile(path.join(projectDir, 'src/pages/(private)/layout.ts'), `
     import { Cossack, Page } from '@cossackframework/core';
@@ -136,15 +210,26 @@ it('builds a generated staging app and validates deployment without uploading', 
     import { createAsyncLocalScope } from '@cossackframework/database/adapter';
     import { d1 } from '@cossackframework/database/cloudflare';
     import { ormMiddleware } from '@cossackframework/database/cossack';
+    import { auth } from '../auth';
     const database = ormMiddleware(async c => {
       const adapter = await d1(c.env.DB);
       return createORM({ adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) }, entities: [] });
     });
-    const middlewares: MiddlewareHandler[] = [async (c, next) => {
-      if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
-      if (c.req.path === '/crpc') await database(c, next); else await next();
-      c.header('x-worker-pipeline', 'ran');
-    }];
+    const middlewares: MiddlewareHandler[] = [
+      async (c, next) => {
+        if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
+        const path = c.req.path;
+        const needsDatabase = path === '/crpc' || path.startsWith('/api/auth') || path.startsWith('/me') || path.startsWith('/shared');
+        if (needsDatabase) await database(c, next);
+        else await next();
+        c.header('x-worker-pipeline', 'ran');
+      },
+      auth.middleware,
+      async (c, next) => {
+        if (c.req.path.startsWith('/me') && !c.get('user')) return c.text('authentication required', 401);
+        await next();
+      },
+    ];
     export default middlewares;
   `);
   for (const [directory, body] of [['private', 'private static body'], ['guarded', 'guarded static body']]) {
@@ -154,8 +239,13 @@ it('builds a generated staging app and validates deployment without uploading', 
   }
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-  config.env = { staging: { vars: { APP_URL: 'https://staging.example.test', APP_LOCALE: 'en' }, secrets: config.secrets,
-    d1_databases: [{ binding: 'DB', database_name: 'stream-test-database' }] } };
+  config.env = { staging: {
+    vars: { APP_URL: 'https://staging.example.test', APP_LOCALE: 'en' }, secrets: config.secrets,
+    d1_databases: [{ binding: 'DB', database_name: 'stream-test-database' }],
+    // Cloudflare environments do not inherit bindings; the coordinator must
+    // be re-declared for staging or the built Worker loses COSSACK_SSE.
+    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+  } };
   await fs.writeFile(configPath, JSON.stringify(config));
   await fs.copyFile(path.join(projectDir, '.dev.vars'), path.join(projectDir, '.dev.vars.staging'));
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -233,6 +323,121 @@ it('builds a generated staging app and validates deployment without uploading', 
     await vi.waitFor(async () => {
       expect((await (await invoke('status')).json())._cossack_return).toEqual({ runs: 2, closed: 2 });
     }, { timeout: 2000, interval: 50 });
+    // The distributed SSE coordinator now backs every `transport: 'sse'` page.
+    // Shared scope state survives across separate HTTP requests and workers;
+    // SSR renders the authoritative snapshot instead of resetting it.
+    const sharedPage = await server.fetch('/shared');
+    const sharedState = readHydration(await sharedPage.text());
+    expect(sharedPage.status).toBe(200);
+    expect(sharedState.public).toEqual({ count: 0 });
+    const sharedInvoke = (action, state) => server.fetch('/crpc', {
+      method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ componentRouteId: sharedState.componentRouteId, scopeKey: sharedState.scopeKey,
+        action, payload: [], ...(state === undefined ? {} : { state }) }),
+    });
+    expect((await (await sharedInvoke('increment')).json())._cossack_return).toBe(1);
+    // A stale browser snapshot (count: 0) cannot overwrite the authoritative
+    // scope state (count: 1): the mutation continues from the coordinator.
+    expect((await (await sharedInvoke('increment', { count: 0 })).json())._cossack_return).toBe(2);
+    // Redirects through the coordinator still return the JSON contract.
+    expect(await (await sharedInvoke('goHome')).json()).toEqual({ _cossack_redirect: '/shared' });
+    const reRendered = await server.fetch('/shared');
+    expect(readHydration(await reRendered.text()).public).toEqual({ count: 3 });
+    // Subscriptions receive bounded incremental events with cursor ids, and
+    // EventSource-style reconnects resume from Last-Event-ID.
+    const subscribe = async (headers = {}) => {
+      const stream = await fetch(new URL(`/sse/${sharedState.componentRouteId}?scopeKey=${encodeURIComponent(sharedState.scopeKey)}`, serverUrl), { headers });
+      expect(stream.status).toBe(200);
+      return stream.body.getReader();
+    };
+    const parseSseBlock = block => {
+      const parsed = { event: '', id: undefined, data: '' };
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event: ')) parsed.event = line.slice(7);
+        if (line.startsWith('id: ')) parsed.id = Number(line.slice(4));
+        if (line.startsWith('data: ')) parsed.data = line.slice(6);
+      }
+      return parsed;
+    };
+    // Lossless SSE reader: chunks may split events, and a timed-out poll must
+    // never orphan an in-flight read (its chunk would be dropped).
+    const sseReader = reader => {
+      const decoder = new TextDecoder();
+      let text = '';
+      let pending = null;
+      const nextChunk = () => pending ??= reader.read().then(
+        chunk => { pending = null; return chunk; },
+        error => { pending = null; throw error; });
+      const completeEvents = () => text.slice(0, text.lastIndexOf('\n\n') + 2)
+        .split('\n\n').filter(Boolean).map(parseSseBlock).filter(parsed => parsed.event);
+      return async function readUntil(predicate, timeout = 4000) {
+        const deadline = Date.now() + timeout;
+        while (true) {
+          const found = completeEvents().filter(predicate);
+          if (found.length) return found.at(-1);
+          if (Date.now() >= deadline) {
+            throw new Error(`Timed out waiting for SSE events; received: ${JSON.stringify(text)}`);
+          }
+          const chunk = await Promise.race([
+            nextChunk(),
+            new Promise(resolve => setTimeout(() => resolve(undefined), deadline - Date.now())),
+          ]);
+          if (chunk?.value) text += decoder.decode(chunk.value, { stream: true });
+        }
+      };
+    };
+    let reader = await subscribe();
+    let readUntil = sseReader(reader);
+    const isCount = value => parsed =>
+      parsed.event === 'state-update' && JSON.parse(parsed.data).count === value;
+    const initial = await readUntil(isCount(3));
+    expect(initial.id).toBeGreaterThanOrEqual(1);
+    expect((await (await sharedInvoke('increment')).json())._cossack_return).toBe(4);
+    const update = await readUntil(isCount(4));
+    expect(update.id).toBeGreaterThan(initial.id);
+    // Component broadcasts fan out to every subscriber through the coordinator.
+    expect((await (await sharedInvoke('ping')).json())._cossack_return).toBe('sent');
+    const broadcast = await readUntil(parsed => parsed.event === 'event'
+      && JSON.parse(parsed.data).eventName === 'shared:ping');
+    expect(JSON.parse(broadcast.data)).toEqual({ eventName: 'shared:ping', payload: [4] });
+    await reader.cancel();
+    // Reconnect from the last delivered cursor: fresh snapshot, no replay of
+    // events the client already observed.
+    reader = await subscribe({ 'Last-Event-ID': String(update.id) });
+    readUntil = sseReader(reader);
+    const resumed = await readUntil(isCount(4));
+    expect(resumed.id).toBeGreaterThanOrEqual(update.id);
+    expect(JSON.parse(resumed.data)).toMatchObject({ count: 4 });
+    await reader.cancel();
+    // Credentials authentication through the built artifact: D1-backed
+    // sessions, protected routes, and authenticated SSE scope isolation.
+    const login = (email, password) => server.fetch('/api/auth/login', {
+      method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    expect((await login('ada@example.test', 'wrong')).status).toBe(401);
+    const accepted = await login('ada@example.test', 'pw-trusted');
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toEqual({ success: true });
+    const cookie = accepted.headers.getSetCookie().find(value => value.startsWith('session_id='));
+    expect(cookie).toBeDefined();
+    expect((await server.fetch('/me', { redirect: 'manual' })).status).toBe(401);
+    const me = await server.fetch('/me', { headers: { cookie } });
+    expect(me.status).toBe(200);
+    // SSR interleaves hydration markers inside the text node; assert the value.
+    expect(await me.text()).toContain('ada@example.test');
+    // The authenticated request joins its own SSE coordinator scope: state is
+    // isolated from the anonymous scope used above.
+    const authedShared = await server.fetch('/shared', { headers: { cookie } });
+    const authedState = readHydration(await authedShared.text());
+    expect(authedState.scopeKey).toBe('user:u1');
+    const authedInvoke = action => server.fetch('/crpc', {
+      method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ componentRouteId: sharedState.componentRouteId, scopeKey: 'user:u1', action, payload: [] }),
+    });
+    expect((await (await authedInvoke('increment')).json())._cossack_return).toBe(1);
+    const anonymousShared = await server.fetch('/shared');
+    expect(readHydration(await anonymousShared.text()).public).toEqual({ count: 4 });
     for (const url of ['/private/', '/private/record.txt', '/private/index.html']) {
       const denied = await server.fetch(url, { redirect: 'manual' });
       expect(denied.status, url).toBe(401);

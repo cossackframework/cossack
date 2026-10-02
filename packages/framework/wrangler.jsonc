@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "durable_objects": {
     "bindings": [
-      { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }
+      { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" },
+      { "name": "COSSACK_SSE", "class_name": "SseDurableObject" }
     ]
   },
   "migrations": [
@@ -14,6 +15,12 @@
       "tag": "v1",
       "new_classes": [
         "AppDurableObject"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "SseDurableObject"
       ]
     }
   ],

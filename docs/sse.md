@@ -1,13 +1,58 @@
 ---
 title: "Server-Sent Events (SSE) Transport"
-description: "Lightweight real-time transport using SSE for server-to-client state sync on plain Cloudflare Workers without Durable Objects."
+description: "Real-time transport with distributed scope coordination on Cloudflare and a process-local backend for Node and Deno."
 ---
 
 # Server-Sent Events (SSE) Transport
 
-SSE sends real-time state updates from the server to connected clients on **plain Cloudflare Workers**. It does not require a Durable Object or WebSocket. The client sends actions with HTTP POST (`/crpc`). The server sends state updates through a long-lived SSE connection.
+SSE sends real-time state updates from the server to connected clients. The
+client sends actions with HTTP POST (`/crpc`). The server sends state updates
+through a long-lived SSE connection.
 
-Use SSE to subscribe to state updates. Async generator action results stream through their own HTTP response and also work on HTTP pages. Shared SSE state currently lives in one Worker instance; cross-instance broadcasts require the distributed backend, which is still pending.
+SSE pages use one of two backends, selected by the runtime:
+
+- **Cloudflare Workers — distributed coordination.** Scope state lives in a
+  SQLite-backed Durable Object (`SseDurableObject`, binding `COSSACK_SSE`).
+  State is shared across Worker instances, survives restarts, and actions are
+  serialized per scope.
+- **Node and Deno — process-local backend.** State lives in an in-memory store
+  inside one process. This is a development convenience, not durable
+  coordination; see [Runtime backends](#runtime-backends).
+
+> Authored by GLM (2026-10-02) for the 0.9.0 distributed SSE work; Codex to
+> review against the implementation.
+
+## Cloudflare setup
+
+Generated Cloudflare applications are already configured. In an existing
+application, add the binding to `wrangler.jsonc` and export the class from the
+Worker entry:
+
+```jsonc
+{
+  "durable_objects": {
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]
+}
+```
+
+```typescript
+// src/index.ts
+import { SseDurableObject } from '@cossackframework/framework/SseDurableObject';
+export { SseDurableObject };
+```
+
+`SseDurableObject` uses `new_sqlite_classes` (not `new_classes`) because it
+stores its snapshot and event log in the Durable Object's SQLite storage.
+
+Cloudflare environments do **not** inherit bindings. Every named environment
+that deploys SSE pages must re-declare the `durable_objects` binding. The
+deployment preflight fails with `COSSACK_ENV_BINDING_NOT_INHERITED` when the
+selected environment is missing it. An SSE page running on Cloudflare without
+the binding fails with `COSSACK_SSE_BINDING_MISSING` (HTTP 500 on `/crpc`,
+`/sse`, and the SSR route) instead of silently falling back to process-local
+state.
 
 ## Usage
 
@@ -36,22 +81,87 @@ export class LiveCounter extends Cossack {
 }
 ```
 
-### How it works
+### How it works (Cloudflare coordinator)
 
-1. When the page loads, the client opens an SSE connection to `/sse/:componentRouteId`.
-2. The server sends the current state as an initial `state-update` event.
-3. When the user triggers a server action (e.g., clicking "Increment"), the client sends a POST to `/crpc`.
-4. The server processes the action, mutates state, and bumps a version counter on the shared SSE store entry.
-5. The SSE endpoint's polling loop detects the version change and pushes a `state-update` event to every connected client.
-6. Each client receives the new state and re-renders.
+1. **SSR** evaluates the page scope and calls `initialize()` on the scope's
+   Durable Object with the rendered page's public state. First initialization
+   wins: rendering another tab, or SSR after a restart, never resets shared
+   state. If the scope already exists, SSR hydrates the authoritative snapshot
+   so the HTML shows the shared state.
+2. When the page loads, the client opens an SSE connection to
+   `/sse/:componentRouteId`. The endpoint re-evaluates the scope with the live
+   authenticated request, then streams the authoritative snapshot followed by
+   incremental events. Each event carries its cursor as the SSE `id`, so the
+   browser's automatic `EventSource` reconnect sends `Last-Event-ID` and
+   resumes without replaying delivered events.
+3. When the user triggers a server action, the client POSTs to `/crpc`. The
+   router executes the action inside the coordinator's per-scope serialization
+   slot, hydrating the component from the authoritative snapshot — not from the
+   browser's state. Request middleware, layout DI, ORM scope, configuration,
+   rate limits, and the `@Server` allowlist all apply as usual.
+4. Generator actions stream NDJSON frames back through the coordinator; each
+   frame's state is published to the scope. Ordinary results, redirects
+   (`_cossack_redirect`), and custom `Response` objects pass through the
+   coordinator after publishing the final state once.
+5. Every subscribed client receives `state-update` events. When the event
+   history for a cursor has expired, the subscriber receives a fresh
+   authoritative snapshot instead of a gap.
 
----
+## Shared state semantics
+
+- **The scope's authoritative state is the public state of the acting
+  component instance** — the page root, or the child explicitly addressed by
+  an RPC `target`. Actions on a child target publish that child's public state
+  as the scope snapshot; hydration only applies keys the receiving component
+  declares, so a child snapshot cannot inject foreign keys into the page root.
+- **Child components and services not addressed by the action keep
+  request-local state.** Their state is not shared through the scope. Page
+  components injected with a declared service mirror the service's `@State`
+  keys into the page's public state, which then round-trips through the
+  coordinator.
+- **A stale browser snapshot cannot overwrite shared state.** `/crpc` hydrates
+  from the coordinator's snapshot; the client-sent state is only applied to
+  child targets, whose state the scope does not track.
+- **Actions execute at most once per request and are never replayed.** A
+  caller that disconnects mid-action cannot cancel a queued callback on the
+  tested runtime baseline; that action still runs once and its result is
+  discarded. A lost response does not prove failure, so the framework never
+  retries a mutation automatically. The framework does not claim exactly-once
+  external side effects (for example database writes) for actions that were
+  interrupted mid-flight.
+- **Broadcasts do not change the authoritative snapshot.** Component
+  `broadcastEvent(...)` calls and scheduled state broadcasts append
+  `event`/`client-action`/partial `state-update` events that every subscriber
+  receives; only action results publish authoritative state.
+- **Serialization is per scope.** Concurrent actions on the same scope execute
+  one at a time; different scopes run in parallel. The pending-action queue is
+  bounded (HTTP 429 `COSSACK_SSE_BUSY` beyond 32 pending actions per scope).
+- **History is bounded.** The event log keeps at most 128 events and 1 MiB of
+  event data per scope. Subscribers with older cursors are resynchronized from
+  the snapshot.
+
+## Runtime backends
+
+| Runtime | Backend | Guarantees |
+| --- | --- | --- |
+| Cloudflare Workers | `SseDurableObject` via the `COSSACK_SSE` binding | Shared across instances and requests; SQLite-persisted across restarts; per-scope action serialization; bounded event history with cursor reconnect. |
+| Node.js / Deno | Process-local in-memory store | Same endpoint and `/crpc` contracts, but state is per-process: it is not shared across machine boundaries, does not survive restarts, and SSR resets the stored entry. Actions still hydrate the client-sent state because there is no authoritative server-side snapshot. |
+
+The process-local backend is deliberately **not** a Cloudflare fallback. If an
+SSE page runs on Cloudflare without the `COSSACK_SSE` binding, requests fail
+with an actionable diagnostic instead of silently degrading to per-isolate
+state. Applications that need cross-process coordination on Node or Deno should
+front multiple instances with a single process or wait for a distributed
+adapter for those runtimes.
 
 ## Scope
 
-By default, SSE state is scoped **per-user**. Each authenticated user has separate state. Unauthenticated users share one `anonymous` scope.
+By default, SSE state is scoped **per-user**. Each authenticated user has
+separate state. Unauthenticated users share one `anonymous` scope.
 
-The `scope` option controls which users share the same state. It receives the Hono `Context` (with access to the user, route params, query params, env bindings) and returns a scope key string.
+The `scope` option controls which users share the same state. It receives the
+Hono `Context` (with access to the user, route params, query params, env
+bindings) and returns a scope key string.
 
 > **Note:** `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per URL. See [WebSockets: Scope](./websockets.md#scope-controlling-which-durable-object-instance-a-page-connects-to).
 
@@ -71,7 +181,8 @@ The `scope` option controls which users share the same state. It receives the Ho
 })
 ```
 
-Connected users with the same `teamId` can receive the same state updates when their requests reach the same Worker instance.
+Connected users with the same `teamId` share one coordinator scope regardless
+of which Worker instance serves their requests.
 
 ### Per-Room
 
@@ -91,17 +202,19 @@ Connected users with the same `teamId` can receive the same state updates when t
 })
 ```
 
-Every user on this page shares the same state. This matches the behavior before scope support.
+Every user on this page shares the same coordinator scope.
 
 ### How scope works
 
-The scope function runs during SSR and is recomputed for each subscription and action using the authenticated request and forwarded page parameters. The browser receives the SSR scope key, but cannot use it to authorize another scope.
+The scope function runs during SSR and is recomputed for each subscription and
+action using the authenticated request and forwarded page parameters. The
+browser receives the SSR scope key, but cannot use it to authorize another
+scope. On Cloudflare, the scope key and the component route ID form a
+collision-safe tuple that names the coordinator's Durable Object instance.
 
-1. **SSR** : evaluates `scope(c)`, registers the SSE store entry with the scoped key, includes `scopeKey` in the initial state sent to the client
-2. **`/sse` endpoint** : receives `scopeKey` as a query param from the client, looks up the store entry
-3. **`/crpc`** : receives `scopeKey` in the request body, syncs state to the correct scoped entry
-
----
+1. **SSR** evaluates `scope(c)`, initializes or hydrates the coordinator scope, and includes `scopeKey` in the initial state sent to the client.
+2. **`/sse` endpoint** re-evaluates the scope and rejects a mismatched `scopeKey` with 403 before subscribing.
+3. **`/crpc`** re-evaluates the scope, rejects mismatches with 403, and executes the action inside the scope's serialization slot.
 
 ## Async Generator Streaming
 
@@ -186,6 +299,10 @@ export class SseChat extends Cossack {
 4. A `done` frame contains the final return value and public state. An `error` frame contains a stable error code, a request ID, and a message. Internal exceptions are logged on the server and redacted in the response.
 5. Completion, failure, or cancellation closes the generator and releases the request's components and services.
 
+On SSE pages under the Cloudflare coordinator, the action runs inside the
+scope's serialization slot and every frame's state is published to the scope,
+so other subscribers observe progress while the caller streams.
+
 Use `for await` to consume yielded values. Breaking the loop cancels the response:
 
 ```typescript
@@ -209,50 +326,66 @@ after iteration observes the same completion.
 
 Frames use `application/x-cossack-rpc+ndjson` and have a maximum size of 1 MiB.
 Both ends parse or produce frames incrementally. State edits made by the client
-while a call is pending remain protected from stale responses.
+while a call is pending remain protected from stale responses. A streaming
+response owns its serialization slot until it finishes, fails, or the caller
+cancels it; cancelling the response body releases the slot.
 
 Cancellation requests generator closure. A generator must finish its current
 pending operation before JavaScript can run its `finally` block. Pass the
 request's abort signal to cancellable external operations. There is no automatic
 mutation retry.
 
-HTTP and SSE component action failures now reject their calls. Catch failures
+HTTP and SSE component action failures reject their calls. Catch failures
 in client handlers when the application should show an error. `RpcError` exposes
 `code`, an optional HTTP `status`, and a server `requestId` when available.
-This replaces the previous behavior that logged failures and resolved with
-`undefined`. WebSocket and explicit service RPC parity remain separate work.
+WebSocket and explicit service RPC parity remain separate work.
 
-Cookie, session, and redirect headers must be decided before returning a stream;
-HTTP headers cannot change after streaming starts.
+Cookie, session, and redirect headers must be decided before returning a
+response; HTTP headers cannot change after streaming starts. Ordinary
+(non-streaming) results and redirects are handled identically on both
+backends: redirects return `{ _cossack_redirect }` JSON, and cookies set
+through the request context are applied to ordinary JSON responses. Reliable
+cookie delivery for streaming responses and late-cookie diagnostics remain
+open work (RT-11).
 
-## Multi-Tab Support
+## Connection status and recovery
 
-The current SSE subscription backend polls an in-memory store keyed by
-`componentRouteId:scopeKey`. Other subscribers in the same Worker instance can
-receive public state updates after action frames. Generator values belong only
-to the response that invoked the action.
-
-This is not durable or distributed coordination. SSR replaces the stored
-component for its scope, and updates can be lost across Worker instances or
-restarts. Use Durable Object transport when shared state must be coordinated.
+`this.realtime.sse` exposes the subscription health (GLM, 2026-10-02):
+`state` (`connecting` | `open` | `reconnecting` | `closed`), `attempts`,
+`lastEventId` (the last delivered cursor), `lastError`, and `resynced` — set
+when a reconnect had to replace expired history with an authoritative
+snapshot. WebSocket providers expose the same fields per provider under
+`this.realtime.websockets` with bounded reconnect backoff; see
+[WebSockets](./websockets.md#connection-status). Pending calls that lose their
+transport reject with an explicit uncertain-outcome error and are never
+replayed.
 
 ## SSE Event Types
 
 | Event | Description |
 |-------|-------------|
-| `state-update` | Public state on initial connection and after an action changes the stored version. |
+| `state-update` | Authoritative snapshot on connection, incremental public state after action frames, and partial state broadcasts. |
+| `event` | Application broadcast emitted by `broadcastEvent(...)` in a server action. |
+| `client-action` | Server-initiated client method invocation. |
 | `connected` | Confirms that the subscription is active. |
 | `: heartbeat` | Periodic SSE comment. |
+
+Every event carries `id: <cursor>`. Reconnecting with `Last-Event-ID` (sent
+automatically by `EventSource`) resumes after the delivered cursor; state
+events may be re-delivered idempotently, but events the client already observed
+are not replayed twice. When the cursor's history has expired, the client
+receives a fresh `state-update` snapshot instead.
 
 Action yields, completion, and failures are response frames, not SSE events.
 
 ## Constraints
 
 - **Server-to-client only**: SSE is a one-directional protocol. Client actions are sent via separate HTTP POST requests, not through the SSE connection itself.
-- **Plain Workers**: No Durable Object binding required. State lives in-memory within the Worker's global scope. State is **not persisted** across Worker restarts.
-- **Per-scope state**: The SSE store is keyed by `componentRouteId:scopeKey`. Default scope is per-user. Use `scope` to customize (per-team, per-room, shared, etc.).
-- **Cold starts**: If the SSE endpoint receives a connection before SSR has registered the store entry (e.g., direct navigation), it creates a component instance on demand with `skipInit: true`.
-- **Separate from Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication, persistent state, or multi-user coordination beyond simple broadcast.
+- **Cloudflare binding required**: SSE pages on Cloudflare need the `COSSACK_SSE` Durable Object binding; missing bindings produce `COSSACK_SSE_BINDING_MISSING` diagnostics.
+- **Environment inheritance**: Cloudflare environments do not inherit bindings; re-declare `durable_objects` per environment.
+- **Per-scope state**: Coordinator scopes are keyed by the `[componentRouteId, scopeKey]` tuple. Default scope is per-user. Use `scope` to customize (per-team, per-room, shared, etc.).
+- **Cold starts**: If the SSE endpoint receives a connection before SSR has initialized the scope, it constructs a component instance on demand with `skipInit: true` and initializes the scope. First initialization wins.
+- **Separate from Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication or per-page persistent actors. The SSE coordinator coordinates shared scope state, not component lifecycles.
 
 ## Scope access
 

@@ -33,7 +33,7 @@ describe('InMemoryWebSocketRuntime', () => {
     await runtime.onClientMessage(client, JSON.stringify({
       type: 'action', target: 'child', action: 'increment', payload: [2],
     }));
-    expect(nested.executeAction).toHaveBeenCalledWith('increment', [2], user, client);
+    expect(nested.executeAction).toHaveBeenCalledWith('increment', [2], user, client, undefined);
     expect(component.executeAction).not.toHaveBeenCalled();
   });
 

@@ -12,6 +12,8 @@ import {
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
+import { isClientVisibleError } from './errors';
+import { rpcCancellations, sendRpcFrame } from './rpc-stream';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -21,6 +23,8 @@ import {
     initializeProviders as initializeProvidersFn,
     connectWebSocket as connectWebSocketFn,
     connectSSE as connectSSEFn,
+    realtimeStatus,
+    type RealtimeStatusRecord,
 } from './transport-connections';
 import {
     proxyHttpMethods as proxyHttpMethodsFn,
@@ -609,7 +613,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             'the component is not attached to an active layout service scope.',
                         );
                     }
-                    resolved = this._serviceScope.resolveDeclared(serviceClass);
+                    resolved = this._serviceScope.resolveDeclared(serviceClass, this);
                     this._serviceInjectionCleanups.set(
                         propertyKey,
                         this._serviceScope.subscribe(serviceClass, this),
@@ -999,25 +1003,31 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     private _actionQueue: Promise<void> = Promise.resolve();
 
-    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown): Promise<void> {
+    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string): Promise<void> {
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
         // crafted WebSocket message, bypassing the client-side stripping.
         if (!isRpcCallableAction(this.constructor, action)) {
+            if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                code: 'COSSACK_RPC_FORBIDDEN', message: `Action '${action}' is not a callable server method.` });
             return Promise.resolve();
         }
         // Chain onto the queue so actions run one at a time. The runner catches
         // its own errors so a failing action never breaks the chain for later
         // callers (and never surfaces as an unhandled rejection).
-        const run = () => this._runAction(action, payload, user, clientContext);
+        const run = () => this._runAction(action, payload, user, clientContext, requestId);
         this._actionQueue = this._actionQueue.then(run, run);
         return this._actionQueue;
     }
 
-    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown): Promise<void> {
+    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown, requestId?: string): Promise<void> {
         const actionMethod = this.getMethod(action);
-        if (!actionMethod) return;
+        if (!actionMethod) {
+            if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                code: 'COSSACK_RPC_NOT_FOUND', message: `Action '${action}' not found.` });
+            return;
+        }
         this._cossack_ws_context = clientContext;
         const context = this.c;
         this._actionIdentity = {
@@ -1030,24 +1040,58 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 },
             }),
         };
+        // Request-scoped cancellation: the runtime registers a per-socket hook
+        // the client's `cancel` message triggers.
+        let cancelHook: (() => void) | undefined;
+        if (requestId !== undefined) {
+            const cancellations = rpcCancellations(clientContext);
+            cancellations.set(requestId, () => cancelHook?.());
+        }
         try {
-            // Arguments are entirely client-controlled. Identity belongs in
-            // the action context, never an appended positional argument that
+            // Arguments are entirely client-controlled. Identity belongs in the
+            // action context, never an appended positional argument that
             // a longer client payload could displace.
-            await (actionMethod as any)(...(payload || []));
+            const result = await (actionMethod as any)(...(payload || []));
+            if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
+                const iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                cancelHook = () => { void iterator.return?.(undefined).catch(() => {}); };
+                while (true) {
+                    const next = await iterator.next();
+                    if (next.done) {
+                        sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
+                            value: next.value, state: this.getPublicState() });
+                        break;
+                    }
+                    sendRpcFrame(clientContext, { v: 1, type: 'yield', requestId,
+                        value: next.value, state: this.getPublicState() });
+                }
+            } else if (requestId !== undefined) {
+                sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
+                    value: result, state: this.getPublicState() });
+            }
         } catch (e) {
             // Error boundary: log and continue so the runtime doesn't receive an
             // unhandled rejection and so `loading[action]` is always released.
+            if (requestId !== undefined) {
+                sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                    code: isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR' : 'COSSACK_RPC_INTERNAL_ERROR',
+                    message: isClientVisibleError(e) ? e.message : 'Internal Server Error' });
+            }
             console.error(`[Cossack] Error executing action '${action}':`, e);
         } finally {
+            if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
             this._actionIdentity = undefined;
             this._cossack_ws_context = undefined;
-            const ws = clientContext as { readyState?: number; send: (d: string) => void };
-            // Use the numeric literal (1 === WebSocket.OPEN) rather than the
-            // global so this works in the Node adapter where `WebSocket` is
-            // imported from 'ws' and may not be a global.
-            if (ws && ws.readyState === 1) {
-                ws.send(JSON.stringify({ type: 'action-complete', action }));
+            // Legacy completion signal for callers without a request id. The
+            // correlated protocol manages its own call lifecycle.
+            if (requestId === undefined) {
+                const ws = clientContext as { readyState?: number; send: (d: string) => void };
+                // Use the numeric literal (1 === WebSocket.OPEN) rather than the
+                // global so this works in the Node adapter where `WebSocket` is
+                // imported from 'ws' and may not be a global.
+                if (ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'action-complete', action }));
+                }
             }
         }
     }
@@ -2207,6 +2251,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._stateContainer.getPublicState();
     }
 
+    /**
+     * Realtime connection status for this component (client side): the SSE
+     * subscription state plus one entry per WebSocket provider. Values update
+     * on connect, failure, reconnect, delivery, and snapshot resynchronization;
+     * renders can read `this.realtime.sse.state` directly.
+     */
+    public get realtime(): RealtimeStatusRecord {
+        return realtimeStatus(this);
+    }
+
     public destroy() {
         if (this._phase === LifecyclePhase.Destroyed) return;
         // Transition to Destroyed phase from any phase except already Destroyed
@@ -2242,6 +2296,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._taskCleanups.clear();
         if (!this.isServer) {
             this.websockets.forEach(ws => {
+                // Marked so the reconnect handler does not revive a socket
+                // that the application closed on purpose.
+                (ws as any).__cossack_intentional_close = true;
                 release(() => ws.close());
             });
             this.websockets.clear();

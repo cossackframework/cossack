@@ -1,4 +1,5 @@
 import type { CossackServerRuntime } from '../runtime';
+import { dispatchSocketRpcMessage } from '../runtime';
 import type { Cossack } from '../cossack';
 
 export class DurableObjectRuntime implements CossackServerRuntime {
@@ -23,23 +24,10 @@ export class DurableObjectRuntime implements CossackServerRuntime {
             console.error('[Cossack] Ignoring malformed WebSocket message:', e);
             return;
         }
-        if (!data || typeof data !== 'object' || data.type !== 'action' ||
-            typeof data.action !== 'string' || !Array.isArray(data.payload)) {
-            return;
-        }
-        const { user } = (client as any).deserializeAttachment() as any;
-
-        let targetInstance = this.component;
-        if (data.target && data.target !== targetInstance._id) {
-            if (targetInstance.activeComponents.has(data.target)) {
-                targetInstance = targetInstance.activeComponents.get(data.target)!;
-            } else {
-                console.warn(`[Cossack] Target component '${data.target}' not found. Action '${data.action}' dropped.`);
-                return;
-            }
-        }
-
-        await targetInstance.executeAction(data.action, data.payload, user, client);
+        // The attachment deserializes lazily so non-action frames (broadcasts,
+        // pings, malformed payloads) never touch DO storage APIs.
+        await dispatchSocketRpcMessage(this.component, data, client,
+            () => (client as any).deserializeAttachment?.()?.user);
     }
 
     broadcastState(partialState: Record<string, any>): void {

@@ -5,7 +5,8 @@ import { proxyServerMethods } from '../src/shared/method-proxy';
 /**
  * Verifies that object arguments are transported over WebSocket (regression:
  * the WS payload filter previously dropped ALL objects, so
- * this.updateItem({ id: 5 }) sent an empty payload).
+ * this.updateItem({ id: 5 }) sent an empty payload), and that every call
+ * follows the request-scoped realtime RPC contract.
  */
 
 class MockWS {
@@ -21,9 +22,13 @@ function makeComponent() {
         websockets: new Map(),
         __cossack_proxies: new Map(),
         loading: {},
+        _optimisticLockedKeys: {},
+        _optimisticPendingState: {},
         consume: () => undefined,
         hasMethod: () => false,
         getMethod: () => undefined,
+        getPublicState: () => ({}),
+        _isOptimisticLocked: () => false,
         setProperty(key: string, val: unknown) { (this as any)[key] = val; },
         requestUpdate() {},
     };
@@ -40,11 +45,12 @@ describe('WS payload keeps serializable objects', () => {
         proxyServerMethods(component, [{ name: 'updateItem', channel: 'global', provider: 'page' }]);
 
         // Call the proxied server method with an object argument.
-        component.updateItem({ id: 5, name: 'task' });
+        void component.updateItem({ id: 5, name: 'task' });
 
         expect(ws.sent.length).toBe(1);
         const msg = JSON.parse(ws.sent[0]);
         expect(msg.type).toBe('action');
+        expect(typeof msg.requestId).toBe('string');
         expect(msg.action).toBe('updateItem');
         expect(msg.payload).toEqual([{ id: 5, name: 'task' }]);
     });
@@ -59,14 +65,14 @@ describe('WS payload keeps serializable objects', () => {
 
         const node = { nodeType: 1 } as any;
         const fn = () => {};
-        component.mix('keep', [1, 2, { a: 3 }], 42, node, fn);
+        void component.mix('keep', [1, 2, { a: 3 }], 42, node, fn);
 
         const msg = JSON.parse(ws.sent[0]);
         // DOM node and function dropped; primitive + array kept.
         expect(msg.payload).toEqual(['keep', [1, 2, { a: 3 }], 42]);
     });
 
-    it('does not crash on circular references (logs and skips send)', () => {
+    it('rejects instead of crashing on circular references', async () => {
         const component = makeComponent();
         const ws = new MockWS();
         component.websockets.set('page', ws as any);
@@ -77,10 +83,9 @@ describe('WS payload keeps serializable objects', () => {
 
         const circular: any = { a: 1 };
         circular.self = circular;
-        component.circ(circular);
-
+        await expect(Promise.resolve(component.circ(circular)))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED' });
         expect(ws.sent.length).toBe(0);
-        expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
     });
 
@@ -94,14 +99,14 @@ describe('WS payload keeps serializable objects', () => {
         (globalThis as any).__cossack_invalidatePageCache = () => { invalidated++; };
         try {
             proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
-            component.doThing();
+            void component.doThing();
             expect(invalidated).toBe(1);
         } finally {
             delete (globalThis as any).__cossack_invalidatePageCache;
         }
     });
 
-    it('retains the client page cache when serialization or send fails', () => {
+    it('retains the client page cache when serialization or send fails', async () => {
         const component = makeComponent();
         const ws = new MockWS();
         component.websockets.set('page', ws as any);
@@ -114,11 +119,13 @@ describe('WS payload keeps serializable objects', () => {
             proxyServerMethods(component, [{ name: 'doThing', channel: 'global', provider: 'page' }]);
             const circular: any = {};
             circular.self = circular;
-            component.doThing(circular);
+            await expect(Promise.resolve(component.doThing(circular)))
+                .rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED' });
             expect(invalidate).not.toHaveBeenCalled();
 
             ws.send = () => { throw new Error('send failed'); };
-            expect(() => component.doThing('serializable')).toThrow('send failed');
+            await expect(Promise.resolve(component.doThing('serializable')))
+                .rejects.toMatchObject({ code: 'COSSACK_RPC_TRANSPORT_FAILED' });
             expect(invalidate).not.toHaveBeenCalled();
         } finally {
             delete (globalThis as any).__cossack_invalidatePageCache;

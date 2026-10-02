@@ -11,6 +11,43 @@ Cossack's primary goal is to unify client and server state management. For real-
 
 **Note:** The patterns described here:Automatic State Synchronization and Event-Driven Re-fetch:are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
 
+## Calling actions over WebSockets (GLM, 2026-10-02)
+
+`@Server()` methods on WebSocket-transport components are **request-scoped RPC
+calls**, not fire-and-forget messages. Every call dispatches one action frame
+with a unique request id and follows the same contract as HTTP/SSE:
+
+- `await this.myAction(...)` resolves the method's return value; generator
+  methods stream their yields through `for await`.
+- Failures reject with `RpcError` (`code`, `requestId`): client-visible errors
+  keep their message (`COSSACK_RPC_CLIENT_ERROR`), internal errors are redacted
+  (`COSSACK_RPC_INTERNAL_ERROR`), forbidden actions answer
+  `COSSACK_RPC_FORBIDDEN`.
+- `call.cancel()` sends a cancel frame, closes the generator server-side, and
+  rejects with `COSSACK_RPC_CANCELLED`. Consuming the same call twice never
+  dispatches a second mutation.
+- `@Server({ timeout: ms })` adds a deadline. Exceeding it rejects with
+  `COSSACK_RPC_TIMEOUT` — the server outcome stays **unknown** and is never
+  retried automatically.
+- If the socket closes mid-call, the call rejects with
+  `COSSACK_RPC_TRANSPORT_CLOSED` (uncertain outcome). The transport reconnects
+  automatically with bounded exponential backoff (0.5 s doubling to 30 s) and
+  resets after a successful open.
+
+Connection health is exposed on every component as `this.realtime`:
+
+```typescript
+render() {
+    const status = this.realtime.websockets.page; // one entry per provider
+    return html`<span class=${status.state}>${status.state}</span>`; // connecting | open | reconnecting | closed
+}
+```
+
+Each status entry tracks `state`, `attempts` (reconnects since the last open),
+`lastEventId`, `lastError`, and `resynced`. SSE pages expose the same fields on
+`this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
+expired history with an authoritative snapshot.
+
 ## Stateless vs Stateful Durable Objects
 
 By default, `transport: 'durable-object'` creates a **stateless** DO that acts as a WebSocket hub only. State is ephemeral : it lives in-memory during the session but is not persisted to DO storage. This is ideal for applications that use a database (D1, R2, etc.) as the source of truth.

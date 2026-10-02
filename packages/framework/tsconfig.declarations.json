@@ -21,6 +21,7 @@
     "src/client/index.ts",
     "src/config.ts",
     "src/DurableObject.ts",
+    "src/SseDurableObject.ts",
     "src/middlewares/cors.ts",
     "src/public.ts",
     "src/root.ts",

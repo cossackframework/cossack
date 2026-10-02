@@ -28,8 +28,11 @@ DI ownership.
 
 `@Inject(ServiceClass)` injects a read-only property when code first reads it.
 This happens after the renderer gives the component a parent. If no layout
-declares the service, Cossack throws an error that names it and points to a
-parent layout.
+declares the service, Cossack throws an error that names the requested service
+and the requesting component, prints the active scope chain innermost-first
+with the services each layout declares, and suggests the
+`@Page({ services: [...] })` fix on the owning layout. `describeScopeChain()`
+on a scope exposes the same ancestry for inspection without failing.
 
 `CossackService` exposes these protected request facilities:
 
@@ -79,6 +82,24 @@ ordering. Component RPC uses awaitable cleanup.
 Duplicate entries in one `services` array and entries lacking `@Service()` are
 configuration errors. Service ownership is never inferred from the first
 consumer.
+
+## Global singletons versus layout and request scopes (GLM, 2026-10-02)
+
+Choose ownership by state lifetime, not convenience:
+
+| Ownership | Lifetime | Use for |
+| --- | --- | --- |
+| Global container (`@Service({ scope: 'singleton' })`, undeclared constructor injection) | One isolate; survives across requests | Stateless helpers, pure functions over inputs, immutable configuration |
+| Layout declaration (`@Page({ services: [...] })`) | Layout presence on the route stack; disposed when the layout leaves | Subtree state shared by pages and children under the layout |
+| Request root scope | One SSR/SSG/RPC request | Request-local work; nothing shared with other requests |
+
+A global singleton **must not** retain request/user-specific mutable state:
+concurrent requests in one isolate would observe each other's data. The
+resolution error's scope chain shows which layouts are active and what they
+declare, so a misplaced declaration is visible without tracing framework
+internals. Undeclared constructor injection falls back to the global container
+silently (legacy compatibility); `@Inject` on a property is strict and fails
+with the diagnostic above when no active layout declares the service.
 
 ## Compatibility
 

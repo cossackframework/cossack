@@ -28,6 +28,18 @@ middlewareStore.current = new AsyncLocalStorage<string>();
 class Counter extends CossackService {
     @State() count = 0;
     onDispose() { effects.services++; }
+    @Server()
+    async *serviceStream() {
+        try {
+            this.count++;
+            yield { serviceCount: this.count };
+            await Promise.resolve();
+            this.count++;
+            return 'service finished';
+        } finally { effects.closed++; }
+    }
+    @Server()
+    async serviceRegular() { this.count += 10; return this.count; }
 }
 @Page({ services: [Counter] })
 class Layout extends Cossack { render() { return html`${this.children}`; } }
@@ -69,11 +81,18 @@ class StreamPage extends Cossack {
 registry.pages[path] = { default: StreamPage };
 registry.layouts[layout] = { default: Layout };
 const { createApp } = await import('../src/router');
-const id = computeRouteIds([path], [layout]).routePathToIdMap.get(path)!;
+const routeIds = computeRouteIds([path], [layout]);
+const id = routeIds.routePathToIdMap.get(path)!;
+const layoutId = routeIds.routePathToIdMap.get(layout)!;
 const request = (action = 'stream', extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
     createApp().request('/crpc', {
         method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({ componentRouteId: id, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
+    }, { APP_URL: 'https://configured.test' } as any);
+const serviceRequest = (action: string, extra: Record<string, unknown> = {}) =>
+    createApp().request('/crpc', {
+        method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
     }, { APP_URL: 'https://configured.test' } as any);
 async function collect(response: Response) {
     const frames = [];
@@ -96,6 +115,26 @@ describe('router RPC streaming lifecycle', () => {
         ]);
         expect(effects).toMatchObject({ runs: 1, closed: 1, components: 1, services: 1 });
     });
+    it('streams explicit service RPC generators with service state and awaited disposal', async () => {
+        const response = await serviceRequest('serviceStream');
+        expect(response.status).toBe(200);
+        const frames = await collect(response);
+        expect(frames).toMatchObject([
+            { type: 'yield', value: { serviceCount: 1 }, state: { count: 1 } },
+            { type: 'done', value: 'service finished', state: { count: 2 } },
+        ]);
+        expect(new Set(frames.map(frame => frame.requestId)).size).toBe(1);
+        // The stream owns the request scope: disposal completes after the done frame.
+        await vi.waitFor(() => expect(effects.services).toBe(1));
+        expect(effects.closed).toBe(1);
+    });
+
+    it('returns ordinary explicit service results as JSON with state and return value', async () => {
+        const response = await serviceRequest('serviceRegular');
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ _cossack_service_state: { count: 10 }, _cossack_return: 10 });
+    });
+
     it('awaits ordinary async methods even if an old client requests streaming', async () => {
         const response = await request('regular', { _cossack_stream: true });
         expect(await response.json()).toEqual({ count: 1, _cossack_return: 'regular result' });

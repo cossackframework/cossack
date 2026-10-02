@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; still open: compiler-level client typing of yielded/final results and value-path serialization diagnostics.
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
@@ -39,7 +39,7 @@ below link directly to those explanations.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
 - [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
-- [ ] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
+- [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
@@ -65,7 +65,7 @@ below link directly to those explanations.
 - [ ] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system.
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
 - [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
-- [ ] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
+- [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. GLM (2026-10-02): coordinator wired through SSR, `/crpc`, and `/sse`; scaffolded `COSSACK_SSE` binding (`new_sqlite_classes`) and `SseDurableObject` entry; missing-binding and environment-inheritance diagnostics; cursor reconnect with bounded history; broadcasts. Node/Deno keep the documented process-local backend (see [specs/sse.md](./sse.md)). Not claimed: exactly-once external side effects, queued-caller cancellation on the pinned wrangler baseline, stream-response cookie handling (RT-11).
 - [ ] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
@@ -328,6 +328,121 @@ not replace the final monorepo and runtime release gates.
   of stale tasks, typed client generator-result inference, preview/release
   tooling, and all other unchecked release requirements remain in scope.
   Versions remain 0.8.3 until the complete 0.9.0 checklist and release gates pass.
+
+### Group 1 runtime work: unified RPC contract and realtime recovery (GLM, 2026-10-02)
+
+- RT-01 slice: WebSocket `@Server` calls are now request-scoped RPCs on the
+  shared `createRpcCall` contract — correlated `yield`/`done`/`error` frames
+  by request id through `executeAction` and both socket runtimes (in-memory
+  and Durable Object), cancellation frames that close the server generator,
+  forbidden/not-found error frames, and per-socket cancellation registries.
+  Explicit service RPC (`/crpc` service envelope) streams generators through
+  the same NDJSON response protocol with service state per frame, awaits
+  scoped-service disposal on ordinary results (matching component RPC), and
+  its client proxy consumes `createRpcCall` with redirects, stream frames,
+  cancellation, and RpcError mapping. `@Server({ timeout })` adds client-side
+  deadlines on HTTP/SSE, WebSocket, and service calls; expiry rejects with
+  `COSSACK_RPC_TIMEOUT` and an unknown-outcome message, never a retry.
+  Transport failures reject: unopened sockets `COSSACK_RPC_TRANSPORT_UNAVAILABLE`,
+  send failures `COSSACK_RPC_TRANSPORT_FAILED`, socket loss mid-call
+  `COSSACK_RPC_TRANSPORT_CLOSED`.
+- RT-19: `component.realtime` (sse + per-provider websockets) exposes
+  `state`, `attempts`, `lastEventId`, `lastError`, `resynced`; WebSocket
+  reconnect uses bounded exponential backoff and never revives sockets closed
+  by component disposal; the SSE subscription endpoint announces snapshot
+  resynchronization with a `resync` event carrying the cursor.
+- CF-06 slice: the generated staging app now exercises credentials
+  authentication through the built artifact — D1-backed sessions via
+  `@cossackframework/auth` `createAuth`, a login API route, a protected page,
+  and authenticated SSE coordinator scope isolation (`user:u1` state separate
+  from the anonymous scope). Artifact-level application of the migration
+  system is still open, so CF-06 stays unchecked.
+- Tests: core `rpc-conformance.test.ts` (WS loopback through the real runtime:
+  ordinary/generator/error/cancel/timeout/disconnect/duplicate-consumer,
+  service proxy over mocked fetch, protocol helpers) and
+  `realtime-recovery.test.ts` (status transitions, backoff bounds and reset,
+  no reconnect after disposal); framework service-stream router tests;
+  expanded deploy-integration auth assertions.
+- `pnpm --filter @cossackframework/core exec vitest run` (638 tests),
+  `pnpm --filter @cossackframework/framework exec vitest run` (528 tests),
+  `pnpm --filter cossack exec vitest run` (263 tests), and core/framework
+  `tsc --noEmit` passed.
+
+### DI resolution diagnostics (GLM, 2026-10-02, RT-12 slice)
+
+- Missing `@Inject` declarations now fail with an actionable error: the
+  requested service, the requesting component, the active scope chain
+  innermost-first (each layout with the services it declares, ending at the
+  request root), the `@Page({ services: [...] })` fix, and the
+  global-singleton alternative. `ServiceScope.describeScopeChain()` exposes
+  the same ancestry for inspection without failing; `resolveDeclared` accepts
+  an optional consumer used only for diagnostics.
+- specs/service.md now documents the global-singleton versus layout versus
+  request ownership table and when each is request-safe.
+- RT-12 remains open: SSR, navigation, and explicit service RPC cleanup
+  completion parity and inspection that matches actual ownership (CLI-04
+  dependency) are not done.
+- `pnpm --filter @cossackframework/core exec vitest run` (616 tests),
+  `pnpm --filter @cossackframework/framework exec vitest run` (526 tests), and
+  `pnpm tsc --noEmit` passed.
+
+### Distributed SSE coordinator integration (GLM, 2026-10-02)
+
+- Finished CF-05 from the agent handoff. `SseDurableObject` now publishes an
+  explicit RPC surface (`initialize` with a `fresh` flag via `rowsWritten`,
+  `currentState`, `updates`, `publish`, `broadcast`, `execute`) with
+  first-initialization-wins snapshots, per-scope action serialization through
+  an explicit queue, per-frame state publication for RPC streams, pass-through
+  for materialized responses, explicit failure for frames without object
+  state, and a bounded (128 events / 1 MiB) SQLite event log.
+- The neutral router and SSE transport reach the coordinator only through the
+  `COSSACK_SSE` binding (a structural stub contract; no `cloudflare:workers`
+  imports outside the Cloudflare-only `@cossackframework/framework/SseDurableObject`
+  entry). On Cloudflare without the binding, `/crpc`, `/sse`, and SSR fail
+  with `COSSACK_SSE_BINDING_MISSING` instead of falling back to
+  process-local state; Node and Deno keep the documented process-local
+  backend.
+- SSR initializes the scope with the rendered public state and hydrates the
+  authoritative snapshot on later renders; it never resets shared state.
+  `/crpc` executes SSE actions inside the coordinator's serialization slot
+  with the request's AsyncLocalStorage snapshot, hydrating from the
+  authoritative state — a stale browser snapshot cannot overwrite shared
+  state. Middleware, layout DI, ORM scope, rate limits, and the `@Server`
+  allowlist are preserved; component broadcasts fan out through the
+  coordinator.
+- The `/sse` subscription streams the snapshot plus incremental events with
+  SSE `id` cursors, resumes from `Last-Event-ID` without replaying observed
+  events, resynchronizes from the snapshot when history expired, and
+  reconnects by closing the stream on poll failure. Ordinary results,
+  redirects, custom Responses, and generators are supported through the
+  coordinator.
+- Scaffold/template/demo wiring: generated Cloudflare apps declare the
+  `COSSACK_SSE` binding with a `new_sqlite_classes` migration and export
+  `SseDurableObject` from the Worker entry; the framework library type
+  generation includes the binding. New preflight diagnostic
+  `COSSACK_ENV_BINDING_NOT_INHERITED` (Cloudflare environments do not inherit
+  bindings — re-declare `durable_objects` per environment).
+- Tests: two-Worker coordinator integration under workerd (serialization,
+  publish/broadcast, disconnected queued caller, invalid frames, history
+  bounds with resync, reload persistence, cancel slot release); framework
+  router/endpoint tests against a structural fake coordinator (SSR hydration,
+  authoritative stale-state protection, redirects, subscriptions,
+  Last-Event-ID resume, missing-binding diagnostics); the generated staging
+  app now builds and runs with the coordinator and covers shared-state
+  continuation, stale client state, redirects, subscriptions, broadcasts, and
+  reconnect under workerd. Existing D1/context stream, SSG, and asset checks
+  retained.
+- Environment note: the workspace `node_modules` pnpm virtual store was found
+  emptied (2026-10-02 05:29, before this session); `pnpm install` was rerun
+  after removing the stale state markers. The earlier intermittent deploy-test
+  build failures came from this broken install, not from source changes.
+- `pnpm build`, `pnpm tsc --noEmit`, `pnpm typecheck` (all packages),
+  `pnpm audit:bundle` (28 neutral modules; Cloudflare entry Workers-safe), and
+  `git diff --check -- . ':!reports.md'` passed after the final documentation
+  edits. `pnpm test:unit` passed with 2,137 tests across 12 packages (auth 118,
+  renderer 256, database 84, scaffold 82, core 615, node-adapter 10, UI 112,
+  framework 526, CLI 263, desktop 16, deno-adapter 3, Studio 52), including
+  both real-workerd integration tests.
 
 ### Distributed SSE prototype and agent handoff
 
