@@ -2299,6 +2299,34 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it('maps expanded resource methods and following methods to authored bodies', () => {
+    const code = `import { server$ as resource } from '@cossackframework/core';
+@Page() class Demo {
+  data = resource(() => 'PRIVATE_LOADER', { initial: '' });
+  render() { return resource(() => 42); }
+  @Client() after() { return 'CLIENT_AFTER'; }
+}`;
+    const result = inspectCompilerMethods(code, 'resource.ts');
+    expect(result.diagnostics).toEqual([]);
+    const methods = result.classes[0].methods;
+    expect(methods.find(m => m.resource === 'data')).toMatchObject({
+      clientBody: 'stripped', rpc: 'explicit', source: { file: 'resource.ts', line: 3, column: 25 },
+    });
+    expect(methods.find(m => m.resource === 'render:0')).toMatchObject({ source: { line: 4 } });
+    expect(methods.find(m => m.name === 'after')).toMatchObject({ source: { line: 5, column: 21 } });
+    const expanded = transformServerResources(code, 'resource.ts');
+    const client = transformCossackClass(expanded, 'resource.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(client).not.toContain('PRIVATE_LOADER');
+    expect(client).toContain('CLIENT_AFTER');
+    for (const fact of methods.filter(m => m.resource)) expect(client).toContain(`__cossack_proxies?.get('${fact.name}')`);
+  });
+
+  it('does not mistake server$ text in comments for resource syntax', () => {
+    const result = inspectCompilerMethods('@Page() class Demo { /* server$ */ render() { return 1; } }', 'text.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].methods[0].name).toBe('render');
+  });
+
   it('classifies namespace decorators and strips server function fields and validators', () => {
     const code = `
 import * as Core from '@cossackframework/core';
@@ -2365,7 +2393,7 @@ class Demo extends Cossack {
   it.each([
     'class Broken {',
     '@Page() class Demo { @Server() get secret() { return 1; } }',
-    '@Page() class Demo { value = server$(() => 1); }',
+    "import { server$ } from '@cossackframework/core'; @Page() class Demo { value = server$(() => 1); }",
   ])('reports unknown input without partial facts or source excerpts', (source) => {
     const result = inspectCompilerMethods(source, 'demo.ts');
     expect(result.classes).toEqual([]);

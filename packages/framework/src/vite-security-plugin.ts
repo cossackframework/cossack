@@ -302,7 +302,14 @@ function stableResourceHash(value: string): string {
 }
 
 /** Transform imported server$ bindings into generated @Server RPC methods. */
-export function transformServerResources(code: string, id: string): string {
+interface ResourceSource {
+  className: string;
+  method: string;
+  resource: string;
+  offset: number;
+}
+
+export function transformServerResources(code: string, id: string, sources?: ResourceSource[]): string {
   const program = parseProgram(code);
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
@@ -341,6 +348,7 @@ export function transformServerResources(code: string, id: string): string {
         ? sourceSlice(code, loader.body)
         : `{ return ${sourceSlice(code, loader.body)}; }`;
       generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) ${body}\n`);
+      sources?.push({ className, method, resource: name, offset: loader.body.start });
       hasGeneratedResources = true;
       return `this.__serverResource(${JSON.stringify(name)}, this.${method}.bind(this), ${options})`;
     };
@@ -1204,6 +1212,7 @@ function analyzeClassMethods(
 
 export interface CompilerMethodFact {
   name: string;
+  resource?: string;
   clientBody: 'retained' | 'stripped';
   rpc: 'explicit' | 'automatic' | null;
   reason: string;
@@ -1220,7 +1229,7 @@ export interface CompilerClassFacts {
 /**
  * Inspect authored declarations without importing or executing application code.
  * This is file-level compiler metadata, not a resolved project/inheritance model.
- * Macro input is rejected until generated spans can be mapped to authored code.
+ * Resource methods retain the authored loader location through macro expansion.
  */
 export function inspectCompilerMethods(code: string, id: string): {
   classes: CompilerClassFacts[];
@@ -1230,23 +1239,37 @@ export function inspectCompilerMethods(code: string, id: string): {
     classes: [],
     diagnostics: [{ code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: id, message }],
   });
+  const authored = code;
+  const originalProgram = parseProgram(code);
+  if (!originalProgram) return unknown('Source could not be parsed.');
+  const resources: ResourceSource[] = [];
+  try { code = transformServerResources(code, id, resources); }
+  catch { return unknown('Unsupported server resource declaration.'); }
   const program = parseProgram(code);
-  if (!program) return unknown('Source could not be parsed.');
-  if (code.includes('server$')) return unknown('Server resource source mapping is not yet available.');
+  if (!program) return unknown('Expanded source could not be parsed.');
+  const originalClasses = [...frameworkClasses(originalProgram)];
   const classes: CompilerClassFacts[] = [];
   try {
     for (const cls of frameworkClasses(program)) {
       const { methods, preserved, automaticRpc } = analyzeClassMethods(
         cls, code, program, isClientSafeMethod, BUILTIN_METHODS,
       );
+      const className = cls.id?.name ?? 'Anonymous';
+      const originalClass = originalClasses.find(candidate => (candidate.id?.name ?? 'Anonymous') === className);
+      const originals = originalClass ? collectAstMethods(originalClass, authored, originalProgram) : [];
       classes.push({
-        name: cls.id?.name ?? 'Anonymous',
+        name: className,
         methods: methods.map((method) => {
           const kept = preserved.has(method.name);
           const retainedField = Boolean(method.fieldKind && !method.hasServerDecorator);
-          const prefix = code.slice(0, method.bodyStart);
+          const resource = resources.find(item => item.className === className && item.method === method.name);
+          const original = originals.find(item => item.name === method.name);
+          const offset = resource?.offset ?? original?.bodyStart;
+          if (offset === undefined) throw new Error('Missing authored source mapping');
+          const prefix = authored.slice(0, offset);
           return {
             name: method.name,
+            ...(resource ? { resource: resource.resource } : {}),
             clientBody: kept || retainedField ? 'retained' : 'stripped',
             rpc: kept ? null : method.hasServerDecorator ? 'explicit' : automaticRpc.has(method.name) ? 'automatic' : null,
             reason: kept

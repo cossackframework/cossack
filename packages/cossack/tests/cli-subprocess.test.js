@@ -364,9 +364,29 @@ describe('routes and inspection', () => {
     expect(parseEnvelope(inspected.stdout).ok).toBe(true);
   });
 
+  it('check routes accepts compiled resources and reports authored locations', async () => {
+    await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), `import { server$ } from '@cossackframework/core';
+@Page() export default class P {
+  data = server$(() => 'PRIVATE_LOADER', { initial: '' });
+  render() { return this.data; }
+}`);
+    const checked = await runCli(['check', 'routes', '--json']);
+    expect(checked.code).toBe(0);
+    const result = parseEnvelope(checked.stdout);
+    expect(result.data.routes[0].serverMethods).toEqual([
+      expect.objectContaining({ resource: 'data', rpc: 'explicit', source: { file: '/src/pages/index.ts', line: 3, column: 24 } }),
+    ]);
+    const { inspectCompilerMethods } = await import('@cossackframework/framework/vite-security-plugin');
+    const file = path.join(tmp, 'src/pages/index.ts');
+    const compiled = inspectCompilerMethods(await fs.readFile(file, 'utf8'), file);
+    expect(result.data.routes[0].serverMethods[0].name).toBe(compiled.classes[0].methods.find(m => m.resource === 'data').name);
+    expect(checked.stdout).not.toContain('PRIVATE_LOADER');
+  });
+
   it('check routes rejects unsupported method metadata and scoped flags', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages'), { recursive: true });
-    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), '@Page() export default class P { data = server$(() => 1); }');
+    await fs.writeFile(path.join(tmp, 'src/pages/index.ts'), "import { server$ } from '@cossackframework/core'; @Page() export default class P { data = server$(() => 1); }");
     const checked = await runCli(['check', 'routes', '--json']);
     expect(checked.code).toBe(1);
     expect(parseEnvelope(checked.stdout).diagnostics.map(d => d.code)).toContain('COSSACK_ROUTE_METHODS_UNKNOWN');

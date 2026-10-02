@@ -146,7 +146,7 @@ export async function extractPageOptionsFromAst(code) {
 }
 
 /** Own-method classification from the same analysis used by the compiler. */
-export async function extractMethodClassificationsFromAst(code, file = 'page.ts') {
+export async function extractMethodClassificationsFromAst(code, file = 'page.ts', compilerId = file) {
   const parseSync = await loadParseSync();
   if (!parseSync) return null;
   const program = parsedProgram(parseSync, code);
@@ -162,7 +162,7 @@ export async function extractMethodClassificationsFromAst(code, file = 'page.ts'
   if (typeof inspectCompilerMethods !== 'function') {
     return { methods: [], reason: 'The framework package does not expose compiler inspection metadata.' };
   }
-  const result = inspectCompilerMethods(code, file);
+  const result = inspectCompilerMethods(code, compilerId);
   if (result.diagnostics.length) {
     return { methods: [], reason: result.diagnostics.map(d => d.message).join(' ') };
   }
@@ -172,6 +172,7 @@ export async function extractMethodClassificationsFromAst(code, file = 'page.ts'
     method: 'compiler',
     methods: facts.methods.map(fact => ({
       ...fact,
+      source: { ...fact.source, file },
       kind: fact.rpc ? 'server' : fact.clientBody === 'retained' ? 'client' : 'stripped',
       line: fact.source.line,
     })),

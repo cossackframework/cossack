@@ -241,7 +241,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
         method = 'unknown';
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
-      methods = await extractMethodClassificationsFromAst(source, page.filePath) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
+      methods = await extractMethodClassificationsFromAst(source, page.filePath, absolute) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
     } catch { /* unreadable source keeps null options; the route still lists */
       method = 'unknown';
       reason = 'The page source could not be read.';

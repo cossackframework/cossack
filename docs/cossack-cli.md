@@ -172,8 +172,8 @@ still succeed for those files so an agent can examine the available facts.
 These commands do not execute page constructors or server methods. Current
 checks cover static metadata only. Inheritance resolution and runtime behavior
 are reported as `not-checked`; success does not prove that the application runs.
-Resource macros without authored source mapping currently produce unknown
-method facts. `--env` applies to Cloudflare checks, not route checks.
+Resource macros expose generated RPC method names, resource names, and authored
+loader locations. Unsupported resource declarations produce unknown method facts. `--env` applies to Cloudflare checks, not route checks.
 
 ### `cossack inspect cloudflare` and `cossack check cloudflare`
 

@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex parser availability (2026-10-02):** read
+> **Latest checkpoint — Codex resource inspection (2026-10-02):** read
+> [resource mapping and continuation requirements](./release-0.9.0.md#codex-resource-inspection-2026-10-02).
+> Supported resource macros now expose compiler method identities and authored
+> loader locations. Compiler tests: 147 passed; CLI suites: 72 passed; types passed.
+> **11/58 tasks remain checked.** Continue CLI-04 inheritance resolution and
+> scaffold/capability integration, followed by its full acceptance fixture.
+
+> **Previous checkpoint — Codex parser availability (2026-10-02):** read
 > [the removal of heuristic route facts](./release-0.9.0.md#codex-parser-unavailable-2026-10-02).
 > Parser-unavailable page/layout options now remain unknown. Route suites:
 > 37 passed; TypeScript passed. **11/58 tasks remain checked.** Continue CLI-04's
