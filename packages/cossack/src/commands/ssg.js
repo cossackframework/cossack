@@ -1,4 +1,7 @@
-import { run } from '../spawn.js';
+import { run, runCaptured } from '../spawn.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({ name: 'ssg', forwardsArgs: true });
 
 /**
  * Legacy SSG CLI flags that mapped to `buildSsg()` options. SSG now runs inside
@@ -27,6 +30,7 @@ const LEGACY_FLAGS = new Set([
  * directory) are configured on the `cossackSsg()` plugin in `vite.config.ts`.
  */
 export async function ssgCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const { viteArgs, legacy } = splitArgs(args);
   if (legacy.length > 0) {
     const hasConfigurable = legacy.some((f) =>
@@ -48,7 +52,12 @@ export async function ssgCommand(args, ctx) {
     );
   }
   console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
+  if (ctx.flags.json === true) {
+    const { code, stdout, stderr } = await runCaptured('vite', ['build', ...viteArgs]);
+    return { exitCode: code, data: { exitCode: code, legacyFlags: legacy, output: `${stdout}${stderr}`.trim() } };
+  }
   return run('vite', ['build', ...viteArgs]);
+  });
 }
 
 /**

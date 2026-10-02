@@ -40,7 +40,24 @@ const EXCLUDE_FROM_SYNC = new Set([
   '.cossack/scaffold.json',
 ]);
 
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'upgrade',
+  positionals: ['dir'],
+  flags: {
+    yes: { type: 'boolean', aliases: ['y'] },
+    tag: { type: 'string' },
+    'force-file': { type: 'string', repeated: true },
+    'apply-template': { type: 'boolean' },
+  },
+});
+
 export async function upgradeCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => upgradeCommandInner(args, ctx));
+}
+
+async function upgradeCommandInner(args, ctx) {
   const dir = args[0];
   const tag = flagString(ctx.flags.tag) || 'latest';
   const applyTemplate = ctx.flags['apply-template'] === true;

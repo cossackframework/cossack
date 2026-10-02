@@ -304,7 +304,14 @@ describe('schema-v3 recipe upgrades', () => {
     manifest.schemaVersion = 1;
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 
-    await expect(runUpgrade(project.projectDir, ['--dry-run']))
-      .rejects.toThrow('Unsupported scaffold manifest schema 1');
+    // CLI-03: command failures resolve to exit code 1 with the coded
+    // message instead of throwing out of the command.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(runUpgrade(project.projectDir, ['--dry-run'])).resolves.toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unsupported scaffold manifest schema 1'));
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

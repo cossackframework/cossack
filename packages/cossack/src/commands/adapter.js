@@ -10,19 +10,26 @@ import {
   detectProjectPackageManager,
   packageManagerCommands,
 } from '../package-manager.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'adapter',
+  positionals: ['adapter'],
+  minPositionals: 1,
+  flags: {
+    database: { type: 'string' },
+    yes: { type: 'boolean', aliases: ['y'] },
+  },
+});
 
 export async function adapterCommand(args, ctx) {
-  if (ctx.flags.help === true || ctx.flags.h === true) {
-    console.log(adapterHelp());
-    return 0;
-  }
+  return runWithSpec(spec, args, ctx, async () => {
   const [target] = args;
-  if (!target || !ADAPTERS.includes(target)) {
-    console.error(
-      `Unknown adapter: ${target || '(none)'}.\n` +
-      `Supported values: ${ADAPTERS.join(', ')}`,
+  if (!ADAPTERS.includes(target)) {
+    throw Object.assign(
+      new Error(`Unknown adapter: ${target}. Supported values: ${ADAPTERS.join(', ')}`),
+      { code: 'COSSACK_ADAPTER_UNKNOWN' },
     );
-    return 1;
   }
 
   try {
@@ -85,6 +92,7 @@ export async function adapterCommand(args, ctx) {
     console.error(`  error   ${error.message}`);
     return 1;
   }
+  }, adapterHelp);
 }
 
 function printChanges(changes, prefix) {

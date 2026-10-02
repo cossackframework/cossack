@@ -19,3 +19,25 @@ export function run(cmd, args = [], opts = {}) {
     });
   });
 }
+
+/**
+ * Run a command with captured output for machine-readable callers: stdout and
+ * stderr never mix with CLI result envelopes. Resolves with the exit code and
+ * both streams.
+ */
+export function runCaptured(cmd, args = [], opts = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      stdio: ['inherit', 'pipe', 'pipe'],
+      shell: opts.shell ?? process.platform === 'win32',
+      cwd: opts.cwd || process.cwd(),
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('exit', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('error', (err) => resolve({ code: 1, stdout, stderr: `${stderr}${err.message}` }));
+  });
+}

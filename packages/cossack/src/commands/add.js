@@ -3,8 +3,24 @@ import path from 'node:path';
 import { findProjectRoot, writeFile } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { UI_COMPONENTS } from '../templates.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'add',
+  positionals: ['feature', 'component'],
+  minPositionals: 1,
+  flags: {
+    theme: { type: 'string' },
+    features: { type: 'string' },
+    database: { type: 'string' },
+    oauth: { type: 'string' },
+    runtime: { type: 'string' },
+    yes: { type: 'boolean', aliases: ['y'] },
+  },
+});
 
 export async function addCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const [feature, componentName] = args;
   if (!feature || !FEATURES.includes(feature)) {
     console.error(
@@ -96,6 +112,7 @@ export async function addCommand(args, ctx) {
     console.error(`  error   ${error.message}`);
     return 1;
   }
+  });
 }
 
 export function addHelp() {
@@ -111,3 +128,5 @@ Options:
   --features <users,sessions,settings,roles>  Dashboard modules
   --yes                                      Apply without confirmation`;
 }
+
+/* wrapper closed below */

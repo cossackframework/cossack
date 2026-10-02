@@ -1,14 +1,15 @@
 import { readPackageVersion } from '../pkg.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({ name: 'version' });
 
 export async function versionCommand(args, ctx) {
-  if (ctx.flags.json) {
-    const cli = readPackageVersion();
-    console.log(JSON.stringify({ cossack: cli }, null, 2));
-    return 0;
-  }
-  const cli = readPackageVersion();
-  console.log(`cossack/${cli}`);
-  return 0;
+  return runWithSpec(spec, args, ctx, () => {
+    const version = readPackageVersion();
+    if (ctx.flags.json === true) return { version };
+    console.log(`cossack/${version}`);
+    return null;
+  });
 }
 
 export function versionHelp() {

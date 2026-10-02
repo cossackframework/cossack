@@ -108,11 +108,13 @@ describe('adapter command', () => {
     })).toBe(0);
     expect(log).toHaveBeenCalledWith('Cancelled. No files were changed.');
 
+    // CLI-02: a missing positional is rejected before any effect with a
+    // stable validation message naming the expected argument.
     expect(await adapterCommand([], {
       cwd: '/project', flags: {}, force: false, dryRun: false,
     })).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining(
-      'Supported values: cloudflare, node',
+      "'adapter' requires 1 positional argument(s): adapter",
     ));
 
     expect(await adapterCommand([], {

@@ -10,7 +10,23 @@ const execFileP = promisify(execFile);
 
 const SUPPORTED_SOURCE_EXT = new Set(['.ts', '.mdx', '.md', '.js', '.jsx']);
 
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'image',
+  positionals: ['subcommand'],
+  minPositionals: 1,
+  flags: {
+    format: { type: 'string' },
+    quality: { type: 'string' },
+  },
+});
+
 export async function imageCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => imageCommandInner(args, ctx));
+}
+
+async function imageCommandInner(args, ctx) {
   const [sub] = args;
   if (sub === 'optimize') return optimize(args.slice(1), ctx);
   console.error(

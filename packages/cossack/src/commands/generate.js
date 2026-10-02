@@ -36,7 +36,30 @@ const TYPE_ALIASES = {
   seeder: 'seeder',
 };
 
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'generate',
+  positionals: ['type', 'name'],
+  minPositionals: 2,
+  flags: {
+    dialect: { type: 'string' },
+    database: { type: 'string' },
+    tag: { type: 'string' },
+    yes: { type: 'boolean', aliases: ['y'] },
+    head: { type: 'boolean' },
+    title: { type: 'string' },
+    description: { type: 'string' },
+    'no-index': { type: 'boolean' },
+    ni: { type: 'boolean' },
+  },
+});
+
 export async function generateCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => generateCommandInner(args, ctx));
+}
+
+async function generateCommandInner(args, ctx) {
   const [typeArg, nameArg] = args;
   const type = TYPE_ALIASES[typeArg];
 

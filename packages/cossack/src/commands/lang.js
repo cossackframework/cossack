@@ -14,10 +14,19 @@ import fs from 'node:fs/promises';
 import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'lang',
+  positionals: ['subcommand', 'arg'],
+  minPositionals: 1,
+  flags: { locale: { type: 'string' } },
+});
 
 const DEFAULT_LOCALE = 'en';
 
 export async function langCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const [sub, ...rest] = args;
   if (sub === 'publish' || sub === 'init') {
     return publish(rest, ctx);
@@ -25,14 +34,11 @@ export async function langCommand(args, ctx) {
   if (sub === 'add') {
     return addLocale(rest, ctx);
   }
-  if (sub === '--help' || sub === '-h' || sub === 'help') {
-    console.log(langHelp());
-    return 0;
-  }
-  console.error(
-    `Unknown lang subcommand: ${sub || '(none)'}.\n${langHelp()}`,
+  throw Object.assign(
+    new Error(`Unknown lang subcommand: ${sub}. Available: publish, add`),
+    { code: 'COSSACK_SUBCOMMAND_UNKNOWN' },
   );
-  return 1;
+  }, langHelp);
 }
 
 /** `cossack lang publish` — create the default locale catalog + wire root.ts. */

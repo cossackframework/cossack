@@ -23,7 +23,19 @@ const TYPE_ALIASES = {
 
 const PAGE_EXTS = ['.ts', '.md', '.mdx'];
 
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'delete',
+  positionals: ['type', 'name'],
+  minPositionals: 2,
+});
+
 export async function deleteCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => deleteCommandInner(args, ctx));
+}
+
+async function deleteCommandInner(args, ctx) {
   const [typeArg, nameArg] = args;
   const type = TYPE_ALIASES[typeArg];
 

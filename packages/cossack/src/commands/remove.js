@@ -4,7 +4,20 @@ import {
 } from '@cossackframework/scaffold';
 import { findProjectRoot } from '../fs-utils.js';
 
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'remove',
+  positionals: ['feature'],
+  minPositionals: 1,
+  flags: { yes: { type: 'boolean', aliases: ['y'] } },
+});
+
 export async function removeCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => removeCommandInner(args, ctx));
+}
+
+async function removeCommandInner(args, ctx) {
   const [feature] = args;
   if (!feature || !FEATURES.includes(feature)) {
     console.error(

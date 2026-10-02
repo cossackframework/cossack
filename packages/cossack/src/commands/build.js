@@ -1,10 +1,19 @@
-import { run } from '../spawn.js';
+import { run, runCaptured } from '../spawn.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({ name: 'build', forwardsArgs: true });
 
 export async function buildCommand(args, ctx) {
-  console.log('  build   vite build');
-  // SSG runs inside `vite build` via the cossackSsg plugin's closeBundle hook,
-  // so there is no separate SSG step to invoke here.
-  return run('vite', ['build', ...args]);
+  return runWithSpec(spec, args, ctx, async () => {
+    console.log('  build   vite build');
+    // SSG runs inside `vite build` via the cossackSsg plugin's closeBundle hook,
+    // so there is no separate SSG step to invoke here.
+    if (ctx.flags.json === true) {
+      const { code, stdout, stderr } = await runCaptured('vite', ['build', ...args]);
+      return { exitCode: code, data: { exitCode: code, output: `${stdout}${stderr}`.trim() } };
+    }
+    return run('vite', ['build', ...args]);
+  });
 }
 
 export function buildHelp() {
@@ -12,5 +21,8 @@ export function buildHelp() {
 
 Create a production build (\`vite build\`). Pages marked \`ssg: true\` are
 pre-rendered to static HTML during the build via the \`cossackSsg\` plugin.
-Extra args are forwarded to vite.`;
+Extra args are forwarded to vite.
+
+Options:
+  --json   Capture the build and emit one JSON result with its exit code.`;
 }

@@ -1,14 +1,19 @@
 import path from 'node:path';
 import { buildRouteModel, layoutStackForPage } from '../scan-routes.js';
 import { findProjectRoot } from '../fs-utils.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({ name: 'routes', flags: { verbose: { type: 'boolean' } } });
 
 export async function routesCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const root = await findProjectRoot(ctx.cwd);
   const model = buildRouteModel(root);
 
   if (model.pages.length === 0 && model.layouts.length === 0) {
+    if (ctx.flags.json === true) return { routes: [], pages: 0, layouts: 0 };
     console.log('No routes found under src/pages/.');
-    return 0;
+    return null;
   }
 
   const pagesByRoute = new Map();
@@ -48,10 +53,23 @@ export async function routesCommand(args, ctx) {
     }
   }
 
+  if (ctx.flags.json === true) {
+    return {
+      routes: model.pages.map(page => ({
+        kind: page.kind,
+        route: page.route,
+        filePath: page.filePath,
+        layouts: layoutStackForPage(page.filePath, layoutKeys),
+      })),
+      pages: model.pages.length,
+      layouts: model.layouts.length,
+    };
+  }
   if (ctx.flags.verbose) {
     console.log(`\n${model.pages.length} page(s), ${model.layouts.length} layout(s).`);
   }
-  return 0;
+  return null;
+  });
 }
 
 function formatRow(method, route, filePath) {

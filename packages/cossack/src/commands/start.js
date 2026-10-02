@@ -2,8 +2,12 @@ import path from 'node:path';
 import { detectProjectRuntime } from '@cossackframework/scaffold';
 import { exists, findProjectRoot } from '../fs-utils.js';
 import { run } from '../spawn.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({ name: 'start', forwardsArgs: true });
 
 export async function startCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const root = await findProjectRoot(ctx.cwd);
   const adapter = await detectAdapter(root);
 
@@ -20,6 +24,7 @@ export async function startCommand(args, ctx) {
   }
   console.log('  start   node dist/server/index.js');
   return run('node', [entry, ...args]);
+  });
 }
 
 export async function detectAdapter(root) {

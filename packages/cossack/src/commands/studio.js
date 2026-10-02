@@ -3,16 +3,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
+import { CommandSpec, runWithSpec } from '../command-spec.js';
+
+const spec = new CommandSpec({
+  name: 'studio',
+  flags: {
+    port: { type: 'string' },
+    remote: { type: 'boolean' },
+    database: { type: 'string' },
+    driver: { type: 'string' },
+    env: { type: 'string' },
+    'no-open': { type: 'boolean' },
+  },
+});
 
 export async function studioCommand(args, ctx) {
-  if (ctx.flags.help === true || ctx.flags.h === true || args[0] === 'help') {
-    console.log(studioHelp());
-    return 0;
-  }
-  if (args.length) {
-    console.error(`Unexpected Studio argument: ${args[0]}\n${studioHelp()}`);
-    return 1;
-  }
+  return runWithSpec(spec, args, ctx, async () => {
   try {
     const root = await findProjectRoot(ctx.cwd);
     const requireFromProject = createRequire(path.join(root, 'package.json'));
@@ -60,6 +66,7 @@ export async function studioCommand(args, ctx) {
     console.error(`  error   ${error.message}`);
     return 1;
   }
+  }, studioHelp);
 }
 
 export function studioHelp() {
