@@ -166,6 +166,6 @@ export declare class PromptAbortedError extends Error {
 export interface RecipeCapabilityUse {
   feature: string;
   source: { file: string };
-  requires: { filesystem?: boolean };
+  requires: { filesystem?: boolean; cloudflareBindings?: readonly string[] };
 }
 export declare function recipeCapabilityRequirements(recipe: ScaffoldRecipe, target?: 'web' | 'desktop'): RecipeCapabilityUse[];

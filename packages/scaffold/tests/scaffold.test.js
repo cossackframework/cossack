@@ -1293,3 +1293,13 @@ it('emits selected capability requirements into the generated Vite configuration
   expect(config).toContain('"file":".cossack/scaffold.json"');
   expect(config).toContain('"filesystem":true');
 });
+
+it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql', 'HYPERDRIVE']])('declares native %s requirements for both targets', (database, binding) => {
+  const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database, features: ['desktop'] });
+  for (const target of ['web', 'desktop']) {
+    expect(recipeCapabilityRequirements(recipe, target)).toContainEqual({
+      feature: `database/${database}`, source: { file: '.cossack/scaffold.json' }, requires: { cloudflareBindings: [binding] },
+    });
+  }
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
+});

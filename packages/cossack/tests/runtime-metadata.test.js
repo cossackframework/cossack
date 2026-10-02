@@ -63,3 +63,14 @@ it('checks selected recipe requirements through the shared capability model', as
     code: 'COSSACK_CAPABILITY_UNSUPPORTED', source: '.cossack/scaffold.json', feature: 'database/sqlite',
   }));
 });
+it('reports native database binding requirements from selected recipes', async () => {
+  detectProjectRuntime.mockResolvedValue('cloudflare');
+  inspectDeployment.mockResolvedValue({ summary: { bindings: [] } });
+  const requirements = [{ feature: 'database/d1', source: { file: '.cossack/scaffold.json' }, requires: { cloudflareBindings: ['DB'] } }];
+  expect((await inspectRuntimeMetadata('/app', [], undefined, requirements)).diagnostics)
+    .toContainEqual(expect.objectContaining({ code: 'COSSACK_CAPABILITY_BINDING_MISSING', missingBindings: ['DB'] }));
+  inspectDeployment.mockResolvedValue({ summary: { bindings: [{ name: 'DB', resource: 'PRIVATE_VALUE' }] } });
+  const result = await inspectRuntimeMetadata('/app', [], undefined, requirements);
+  expect(result.diagnostics).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
+});

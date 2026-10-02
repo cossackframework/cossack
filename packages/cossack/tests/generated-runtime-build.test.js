@@ -188,3 +188,15 @@ it('enforces selected database recipe requirements before compiling its modules'
     .replace('capabilities: { runtime:', 'capabilities: { bindings: [], runtime:'));
   await expect(vite(root, [])).rejects.toThrow(/\.cossack\/scaffold.json: database\/sqlite requires filesystem on cloudflare/);
 }, 30000);
+it('rejects a generated Desktop target that retains a native Cloudflare database', async () => {
+  const root = await project('cloudflare', ['database', 'desktop']);
+  await expect(vite(root, ['--mode', 'desktop', '--ssr', 'src/desktop/index.ts', '--outDir', 'dist/desktop']))
+    .rejects.toThrow(/\.cossack\/scaffold.json: database\/d1 requires cloudflareBindings on desktop/);
+}, 30000);
+
+it('builds a portable Cloudflare application Desktop target without the Workers Vite plugin', async () => {
+  const root = await project('cloudflare', ['desktop']);
+  await vite(root, ['--mode', 'desktop', '--ssr', 'src/desktop/index.ts', '--outDir', 'dist/desktop']);
+  await assertPortableChunks(path.join(root, 'dist/desktop'));
+  expect(await fs.readFile(path.join(root, 'dist/desktop/index.js'), 'utf8')).toContain('electron');
+}, 30000);

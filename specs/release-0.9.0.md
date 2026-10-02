@@ -86,6 +86,38 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-native-database-capabilities-2026-10-03"></a>
+### Codex continuation: native database bindings (2026-10-03)
+
+**Author: Codex.** Added `cloudflareBindings` to the shared capability requirement
+model. A selected feature supplies native binding names; Cloudflare checks their
+presence and other runtimes report unsupported. No values or resource IDs enter
+results. Capability summaries distinguish host support from selected named needs.
+
+Selected D1 recipes declare DB, and Hyperdrive PostgreSQL/MySQL declare HYPERDRIVE.
+Both web and Desktop configurations receive those requirements because the ORM
+factory is shared. Desktop therefore rejects a retained native provider before
+compiling application modules instead of generating an app that cannot supply
+its database binding. Inactive database defaults add no requirements. Custom
+platform emulation is not advertised as native binding support.
+
+Verification: 97 scaffold tests and 30 framework capability/build tests passed.
+The generated-app acceptance suite includes a Cloudflare/D1 application's Desktop
+build failing with the manifest source and database/d1 feature in its diagnostic.
+CLI metadata tests verify missing native bindings and successful name-only checks.
+The generated Desktop test also exposed Cloudflare's Vite plugin running in
+Desktop mode and rejecting Electron's external module configuration. The template
+now omits that plugin in Desktop mode. A portable Cloudflare application's
+Desktop build verifies the correction and checks emitted chunks for Workers-only
+imports; the D1 Desktop case reaches the intended capability diagnostic.
+Final CLI/generated-app acceptance passed (21 tests). Published framework
+declaration/ESM generation, root `pnpm tsc --noEmit`, and all 11 package checks via
+`pnpm typecheck` passed.
+
+**12/58 tasks remain checked.** Continue the RT-25 audit against its documented
+acceptance criteria and the remaining release tasks. These are configuration
+checks; remote resources and Deno/Electron runtime execution are not verified here.
+
 <a id="codex-recipe-requirements-2026-10-03"></a>
 ### Codex continuation: selected recipe requirements (2026-10-03)
 

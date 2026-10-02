@@ -19,9 +19,9 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     tailwindcss(),
     // @cossack:cloudflare-start
-    cloudflare({
+    ...(mode === 'desktop' ? [] : [cloudflare({
       viteEnvironment: { name: 'ssr' },
-    }),
+    })]),
     // @cossack:cloudflare-end
     cossackSecurityPlugin({ devWarning: true }),
     cossackPages(),

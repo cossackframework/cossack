@@ -92,7 +92,15 @@ include these declarations and CLI inspection exposes them without reading secre
 values. SQLite contributes a filesystem requirement only when database support
 is selected; Desktop contributes one only to its side target. Source locations
 point to `.cossack/scaffold.json`, where the recipe selection is recorded.
+D1 declares the native `DB` binding; Hyperdrive providers declare `HYPERDRIVE`.
+These requirements apply to both targets because the generated database code is
+shared. A Desktop build that retains either provider fails with a recipe diagnostic;
+select a portable provider or provide a separate target-specific database setup.
 Page transports and durable-state requirements remain discovered from page code.
 The shared framework checker evaluates availability; this registry does not copy
 runtime capability profiles. Requirements for other features must be added as
 those features acquire runtime dependencies.
+
+Generated Cloudflare projects disable the Workers Vite plugin in Desktop mode.
+The web build still uses that plugin; the Desktop build uses Electron's runtime
+boundary and evaluates its own selected capability requirements.

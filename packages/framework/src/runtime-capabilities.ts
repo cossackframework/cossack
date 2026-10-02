@@ -27,11 +27,14 @@ export interface CapabilityRequirement {
     scheduledHandlers?: boolean;
     /** Serverless object storage (R2-style bindings). */
     serverlessStorage?: boolean;
+    /** Named native Cloudflare bindings required by selected features. */
+    cloudflareBindings?: readonly string[];
     /** Direct filesystem access. */
     filesystem?: boolean;
 }
 
-interface RuntimeProfile extends RequirementSet {
+interface RuntimeProfile extends Omit<RequirementSet, 'cloudflareBindings'> {
+    cloudflareBindings: boolean;
     /** Supported by the host, but not dispatched by the built-in runtime adapter. */
     adapterRequirements?: readonly (keyof RequirementSet)[];
     /** Bindings that upgrade a capability from missing-binding to available. */
@@ -40,12 +43,13 @@ interface RuntimeProfile extends RequirementSet {
 
 type RequirementSet = Required<Pick<CapabilityRequirement,
     'transports' | 'realtimeCoordination' | 'processLocalRealtime' | 'scheduledHandlers'
-    | 'serverlessStorage' | 'filesystem' | 'durableState'>>;
+    | 'serverlessStorage' | 'filesystem' | 'durableState' | 'cloudflareBindings'>>;
 
 const HTTP_ONLY: readonly ('http' | 'sse' | 'durable-object')[] = ['http'];
 
 const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
     cloudflare: {
+        cloudflareBindings: true,
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: true,
         processLocalRealtime: false,
@@ -60,6 +64,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         },
     },
     node: {
+        cloudflareBindings: false,
         adapterRequirements: ['scheduledHandlers'],
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
@@ -71,6 +76,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         bindingRequirements: {},
     },
     deno: {
+        cloudflareBindings: false,
         adapterRequirements: ['scheduledHandlers'],
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
@@ -82,6 +88,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         bindingRequirements: {},
     },
     desktop: {
+        cloudflareBindings: false,
         // Desktop keeps an HTTP-only native boundary by design.
         transports: HTTP_ONLY,
         realtimeCoordination: false,
@@ -172,7 +179,8 @@ export function evaluateCapability(
     if (!supported) return { capability, status: 'unsupported', missingBindings: [] };
     if (requirement === false) return { capability, status: 'unsupported', missingBindings: [] };
     if (profile.adapterRequirements?.includes(capability)) return { capability, status: 'adapter-required', missingBindings: [] };
-    const required = profile.bindingRequirements[capability] ?? [];
+    const required: readonly string[] = capability === 'cloudflareBindings' && Array.isArray(requirement)
+        ? [...new Set(requirement)] : profile.bindingRequirements[capability] ?? [];
     const present = env ?? {};
     const missingBindings = required.filter(name => present[name] === undefined || present[name] === null);
     return missingBindings.length
@@ -209,7 +217,7 @@ export function describeRuntimeCapabilities(
     const profile = profileFor(runtime);
     const capabilities: Array<keyof RequirementSet> = [
         'transports', 'realtimeCoordination', 'processLocalRealtime',
-        'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState',
+        'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState', 'cloudflareBindings',
     ];
     const results = {} as Record<keyof RequirementSet, CapabilityResult>;
     for (const capability of capabilities) {

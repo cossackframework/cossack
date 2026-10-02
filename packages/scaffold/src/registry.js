@@ -165,6 +165,12 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite') {
     add('database/sqlite', { filesystem: true });
   }
+  if (recipe.resolvedFeatures.includes('database')) {
+    if (recipe.config.database === 'd1') add('database/d1', { cloudflareBindings: ['DB'] });
+    if (recipe.config.database.startsWith('hyperdrive-')) {
+      add(`database/${recipe.config.database}`, { cloudflareBindings: ['HYPERDRIVE'] });
+    }
+  }
   if (target === 'desktop' && recipe.resolvedFeatures.includes('desktop')) {
     add('desktop', { filesystem: true });
   }

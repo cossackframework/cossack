@@ -2,7 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex recipe requirements (2026-10-03):** read
+> **Latest checkpoint — Codex native database bindings (2026-10-03):** read
+> [D1/Hyperdrive capability requirements](./release-0.9.0.md#codex-native-database-capabilities-2026-10-03).
+> **Author: Codex.** Selected D1/Hyperdrive recipes now declare native Cloudflare
+> bindings. Builds and CLI checks report missing DB/HYPERDRIVE configuration;
+> Desktop rejects those native requirements before module compilation. Fixed
+> Cloudflare Vite plugin activation in Desktop mode; a portable Cloudflare
+> application now builds its Desktop target with Workers-free chunks.
+> Passed: 97 scaffold tests, 30 capability tests, 21 CLI/build tests, all types.
+> **12/58 tasks remain checked.** Continue the RT-25 acceptance audit against its
+> written criteria and finish remaining release tasks; do not treat capability
+> configuration checks as proof of remote resource readiness.
+
+> **Previous checkpoint — Codex recipe requirements (2026-10-03):** read
 > [selected recipe capability declarations](./release-0.9.0.md#codex-recipe-requirements-2026-10-03).
 > **Author: Codex.** Scaffold exports `recipeCapabilityRequirements()` and emits
 > target-specific requirements into generated Vite configs. SQLite filesystem

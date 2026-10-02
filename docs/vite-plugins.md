@@ -88,6 +88,10 @@ Unused provider-specific modules outside the route set do not make portable
 code unsupported. Generated recipes declare selected SQLite filesystem needs
 and, only for Desktop builds, native filesystem needs. Their diagnostic source is
 `.cossack/scaffold.json`. Unselected recipe defaults contribute no requirements.
+Generated D1/Hyperdrive recipes also declare `cloudflareBindings: ['DB']` or
+`['HYPERDRIVE']`. The shared model requires their names in the selected Cloudflare
+configuration and rejects them on process runtimes, including Desktop. The check
+proves binding configuration presence, not remote resource readiness.
 Other feature requirements still need explicit declarations.
 `checkCapabilityRequirements` is exported from
 `@cossackframework/framework/runtime-capabilities` for tooling that needs all

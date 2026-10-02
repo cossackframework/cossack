@@ -967,6 +967,11 @@ only when selected, with source provenance to the scaffold manifest. CLI checks
 consume web requirements through the shared model. Extend this projection as
 new recipes/providers need additional runtime capabilities; do not duplicate the
 framework's runtime profiles inside the recipe engine.
+D1 and Hyperdrive now declare native Cloudflare binding names through
+`cloudflareBindings`, checked for the selected environment and rejected by
+process runtimes. This catches shared native database code in Desktop targets;
+no automatic database migration or emulation is implied.
+
 
 
 The guarded framework WebSocket factory now creates nested layout service scopes,

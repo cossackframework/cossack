@@ -122,3 +122,11 @@ it('allows durable Cloudflare pages only with their binding', async () => {
   await expect(buildFixture('cloudflare', 'http', [], {}, page)).rejects.toThrow('COSSACK_OBJECT');
   await expect(buildFixture('cloudflare', 'http', ['COSSACK_OBJECT'], {}, page)).resolves.toBeDefined();
 });
+
+it('checks native database bindings before modules are bundled', async () => {
+  await expect(buildFixture('cloudflare', 'http', [], { cloudflareBindings: ['DB'] }))
+    .rejects.toThrow('missing binding(s) DB');
+  await expect(buildFixture('cloudflare', 'http', ['DB'], { cloudflareBindings: ['DB'] })).resolves.toBeDefined();
+  await expect(buildFixture('desktop', 'http', ['DB'], { cloudflareBindings: ['DB'] }))
+    .rejects.toThrow('cloudflareBindings on desktop');
+});

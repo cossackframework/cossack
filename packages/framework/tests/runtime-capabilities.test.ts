@@ -68,7 +68,7 @@ describe('runtime capability model (RT-25)', () => {
         const results = describeRuntimeCapabilities('cloudflare', {});
         expect(Object.keys(results)).toEqual([
             'transports', 'realtimeCoordination', 'processLocalRealtime',
-            'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState',
+            'scheduledHandlers', 'serverlessStorage', 'filesystem', 'durableState', 'cloudflareBindings',
         ]);
         expect(formatCapabilityResult(results.realtimeCoordination))
             .toBe('realtimeCoordination: missing binding(s) COSSACK_SSE');
@@ -84,4 +84,14 @@ it('distinguishes durable page storage from process-local WebSocket support', ()
   }
   expect(evaluateCapability('cloudflare', 'durableState', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_OBJECT'] });
   expect(evaluateCapability('cloudflare', 'durableState', { COSSACK_OBJECT: {} })).toMatchObject({ status: 'available' });
+});
+
+it('requires native named bindings and rejects process runtime polyfill assumptions', () => {
+  expect(evaluateCapability('cloudflare', 'cloudflareBindings', {}, ['DB', 'HYPERDRIVE', 'DB']))
+    .toMatchObject({ status: 'missing-binding', missingBindings: ['DB', 'HYPERDRIVE'] });
+  expect(evaluateCapability('cloudflare', 'cloudflareBindings', { DB: 'private' }, ['DB']))
+    .toEqual({ capability: 'cloudflareBindings', status: 'available', missingBindings: [] });
+  for (const runtime of ['node', 'deno', 'desktop'] as const) {
+    expect(evaluateCapability(runtime, 'cloudflareBindings', { DB: {} }, ['DB'])).toMatchObject({ status: 'unsupported' });
+  }
 });
