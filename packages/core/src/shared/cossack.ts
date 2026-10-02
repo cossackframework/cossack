@@ -389,6 +389,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isMounted: boolean = false;
     private skipRenderTasks: boolean = false;
     private isRunningTasks: boolean = false;
+    /** Cancellation controllers for in-flight task executions (RT-05). */
+    private _taskExecutions = new Map<string | symbol, AbortController>();
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
     /**
@@ -1180,6 +1182,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 : [];
             const allTasks = [...tasks, ...serverTasks, ...clientTasks];
             const isFilteredRun = changedPaths !== undefined;
+            // Each task runs under its own cancellation identity. A dependency
+            // change aborts the previous execution's signal and its stale
+            // result is never applied (RT-05). Slow tasks do not block their
+            // siblings; only their own cleanup ordering is preserved.
+            const inFlight: Promise<void>[] = [];
             for (const { propertyKey: task, track } of allTasks) {
                 if (isFilteredRun && track && track.length > 0) {
                     if (!track.some(dep => matchesTrackedPath(dep, changedPaths!))) {
@@ -1187,21 +1194,45 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     }
                 }
                 if (this.hasMethod(task)) {
-                    // Run the previous cleanup before re-invoking (React style).
+                    // Cancel the previous execution before re-invoking, then
+                    // run its cleanup (React style, still ordered per task).
+                    this._taskExecutions.get(task)?.abort();
                     const previousCleanup = this._runTaskCleanup(task);
-                    if (previousCleanup) await previousCleanup;
-                    try {
-                        const taskMethod = this.getMethod(task);
-                        const result = (taskMethod as any)();
-                        const resolved = result instanceof Promise ? await result : result;
-                        if (typeof resolved === 'function') {
-                            this._taskCleanups.set(task, resolved as () => unknown);
+                    const previousCleanupPromise = previousCleanup ?? undefined;
+                    const controller = new AbortController();
+                    this._taskExecutions.set(task, controller);
+                    const trigger = isFilteredRun
+                        ? `dependency change (${[...changedPaths!].map(String).join(', ')})`
+                        : 'bootstrap';
+                    const start = async () => {
+                        try {
+                            if (previousCleanupPromise) await previousCleanupPromise;
+                            const taskMethod = this.getMethod(task);
+                            const result = (taskMethod as any)(controller.signal);
+                            const resolved = result instanceof Promise ? await result : result;
+                            if (controller.signal.aborted) return; // stale: discard result
+                            if (typeof resolved === 'function') {
+                                this._taskCleanups.set(task, resolved as () => unknown);
+                            }
+                        } catch (e: any) {
+                            if (controller.signal.aborted) return; // cancelled work stops quietly
+                            console.error(
+                                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger}:`, e);
+                        } finally {
+                            if (this._taskExecutions.get(task) === controller) {
+                                this._taskExecutions.delete(task);
+                            }
                         }
-                    } catch (e) {
-                        console.error(`[Cossack] Error in task '${String(task)}':`, e);
+                    };
+                    const started = start();
+                    if (started instanceof Promise && typeof (started as any).then === 'function') {
+                        inFlight.push(started as Promise<void>);
                     }
                 }
             }
+            // Async tasks settle in the background; a rejected task already
+            // logged its own diagnostic above (never unhandled).
+            for (const flight of inFlight) void flight.catch(() => {});
         } finally {
             this.isRunningTasks = false;
         }
@@ -2318,6 +2349,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._serviceInjectionCleanups.clear();
         // Drain task cleanup functions (React `useEffect` style). Runs on
         // both server and client since tasks themselves run on both.
+        for (const controller of this._taskExecutions.values()) controller.abort();
+        this._taskExecutions.clear();
         for (const taskKey of [...this._taskCleanups.keys()]) {
             release(() => this._runTaskCleanup(taskKey));
         }
