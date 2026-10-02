@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex runtime inspection (2026-10-03):** read
+> **Latest checkpoint — Codex inherited RPC registration (2026-10-03):** read
+> [compiled execution findings and next verification](./release-0.9.0.md#codex-inherited-rpc-2026-10-03).
+> Fixed pre-super access to `this`, dropped constructor arguments, and missing
+> inherited automatic RPC registration. Server/client compiled execution tests
+> pass; full framework suite: 581 passed; all package types passed.
+> **11/58 tasks remain checked.** Continue inherited option/real bootstrap parity
+> and the complete CLI-04 acceptance fixture.
+
+> **Previous checkpoint — Codex runtime inspection (2026-10-03):** read
 > [shared capabilities, binding checks, and verification](./release-0.9.0.md#codex-runtime-inspection-2026-10-03).
 > Route commands now use selected-environment bindings and the shared transport
 > model. Missing bindings/unsupported transports fail checks. Node/Deno transport

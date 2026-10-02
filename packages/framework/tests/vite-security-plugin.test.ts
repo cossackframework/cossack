@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+import { transformWithOxc } from 'vite';
 /**
  * Unit tests for vite-security-plugin
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
@@ -719,7 +721,7 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       // Constructor should be preserved
       expect(result).toContain('constructor() {');
-      expect(result).toContain('super()');
+      expect(result).toMatch(/super\(/);
       expect(result).toContain("this.value = 'init'");
     });
 
@@ -1595,7 +1597,7 @@ export class TestPage extends Cossack {
       // The existing constructor body must be preserved.
       expect(result).toContain("console.log('custom ctor')");
       // The registration call must be injected (once).
-      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      const regCount = (result.match(/new\.target as any\)\.__registerServerOnlyMethods\?\.\(\)/g) || []).length;
       expect(regCount).toBe(1);
     });
 
@@ -1613,7 +1615,7 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       // Exactly one constructor injected.
       expect(countTopLevelConstructors(result)).toBe(1);
-      expect(result).toContain('super()');
+      expect(result).toMatch(/super\(/);
       expect(result).toContain('__registerServerOnlyMethods');
     });
 
@@ -1648,7 +1650,7 @@ export class TestPage extends Cossack {
       expect(countTopLevelConstructors(result)).toBe(1);
       // The __registerServerOnlyMethods call must run inside the constructor.
       expect(result).toContain('doThing'); // method name listed in registration
-      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      const regCount = (result.match(/new\.target as any\)\.__registerServerOnlyMethods\?\.\(\)/g) || []).length;
       expect(regCount).toBe(1);
       // Constructor params preserved.
       expect(result).toContain('public foo: string');
@@ -2299,6 +2301,42 @@ describe('client result typing (RT-01)', () => {
 
 
 describe('compiler inspection facts', () => {
+  it.each([['server', 'implicit'], ['server', 'explicit'], ['client', 'implicit'], ['client', 'explicit']])('executes %s inherited automatic RPC registration with %s constructors', async (target, mode) => {
+    const code = `
+      class Parent extends Cossack {
+        parentAction() { return 1; }
+        render() { return html\`<button @click=\"\${this.parentAction}\"></button>\`; }
+      }
+      class Child extends Parent {
+        ${mode === 'explicit' ? 'constructor(value) { super(value); }' : ''}
+        childAction() { return 2; }
+        render() { return html\`<button @click=\"\${this.childAction}\"></button>\`; }
+      }
+    `;
+    const transformed = target === 'server'
+      ? injectAutomaticServerMethodMetadata(code, 'inheritance.ts', isClientSafeMethod, new Set(['render']))
+      : transformCossackClass(code, 'inheritance.ts', isClientSafeMethod, new Set(['render']), false);
+    const js = await transformWithOxc(transformed, 'inheritance.ts');
+    class Root {
+      args: unknown[];
+      metadata: Record<string, unknown>;
+      constructor(...args: unknown[]) {
+        this.args = args;
+        this.metadata = Reflect.getMetadata('cossack:server-methods', this.constructor) ?? {};
+      }
+    }
+    const classes = new Function('Cossack', `${js.code}; return { Parent, Child };`)(Root);
+    const child = new classes.Child('dependency');
+    expect(child.args).toEqual(['dependency']);
+    expect(Object.keys(child.metadata).sort()).toEqual(['childAction', 'parentAction']);
+    if (target === 'client') child.__cossack_proxies = new Map([['parentAction', () => 10], ['childAction', () => 20]]);
+    expect(child.parentAction()).toBe(target === 'client' ? 10 : 1);
+    expect(child.childAction()).toBe(target === 'client' ? 20 : 2);
+    const parent = new classes.Parent('parent dependency');
+    expect(parent.args).toEqual(['parent dependency']);
+    expect(Object.keys(parent.metadata)).toEqual(['parentAction']);
+  });
+
   it('excludes erased declare fields and marks constructor parameter properties incomplete', () => {
     const result = inspectCompilerMethods('@Page() class Demo { declare value: string; constructor(public value2: string) {} }', 'members.ts');
     expect(result.classes[0].members).toEqual([]);

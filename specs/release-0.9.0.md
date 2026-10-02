@@ -86,6 +86,37 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-inherited-rpc-2026-10-03"></a>
+### Codex review: inherited compiler RPC registration (2026-10-03)
+
+**Author: Codex.** Executing compiled inheritance fixtures exposed a runtime bug
+that text assertions missed: registration inserted before `super()` accessed
+`this.constructor`, which throws in derived constructors. Generated constructors
+also dropped arguments, and child automatic RPC registration omitted base-class
+methods.
+
+Registration now uses `new.target`, which is valid before `super()`, so the full
+derived registry is available during base construction. Generated constructors
+forward arguments. Static registration chains through the superclass before
+adding local methods, preserving child metadata without contaminating the
+parent's own registry.
+
+The new tests run both server and client compiler output through Vite's TypeScript
+transform, execute explicit and generated derived constructors, verify arguments
+and registration during base construction, and call inherited/local server bodies
+or client proxies. Parent metadata remains independent. These fixtures prove
+compiler registration behavior; they are not a full Cossack bootstrap/DI test.
+
+Verification: focused compiler suite **154 passed**; complete framework suite
+**581 passed**; declaration generation, root TypeScript, and all **11 package type
+checks passed**.
+
+**11/58 tasks remain checked; CLI-04 remains open.** Next verify inherited
+per-method options and actual framework bootstrap/dispatch. In particular,
+`serverMethodTimeout` still reads the nearest `Reflect.getMetadata` map; inherited
+options must be checked when a derived class owns another metadata map. Then
+complete the grouped-route/layout/service acceptance fixture and remaining gates.
+
 <a id="codex-runtime-inspection-2026-10-03"></a>
 ### Codex continuation: binding-aware transport inspection (2026-10-03)
 

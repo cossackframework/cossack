@@ -1479,6 +1479,7 @@ function createMetadataInjection(
     // Register server-only methods for RPC proxying
     static __registerServerOnlyMethods() {
       if (typeof Reflect === 'undefined' || !Reflect.hasMetadata) return;
+      super.__registerServerOnlyMethods?.();
       const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', this) || {};
       const methods = ${methodList};
       for (const name of methods) {
@@ -1491,9 +1492,10 @@ function createMetadataInjection(
 `;
 }
 
-/** The statement injected into a constructor to register server-only methods. */
+/** Register before super(): new.target is legal before this is initialized,
+ * and base constructors need the full derived RPC registry during bootstrap. */
 const REGISTER_SERVER_METHODS_CALL =
-  '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
+  '      (new.target as any).__registerServerOnlyMethods?.();\n';
 
 function appendMetadataRegistration(
   cls: any,
@@ -1510,12 +1512,12 @@ function appendMetadataRegistration(
     ];
   }
 
-  const superCall = cls.superClass != null ? '      super();\n' : '';
+  const superCall = cls.superClass != null ? '      super(...args);\n' : '';
   return [{
     start: closeBrace,
     end: closeBrace,
-    replacement: metadataInjection + `    constructor() {
-${superCall}${REGISTER_SERVER_METHODS_CALL}    }
+    replacement: metadataInjection + `    constructor(...args: any[]) {
+${REGISTER_SERVER_METHODS_CALL}${superCall}    }
 `,
   }];
 }
