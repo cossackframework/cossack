@@ -2,7 +2,14 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex structured upgrades (2026-10-02):** read
+> **Latest checkpoint — Codex compiler review (2026-10-02):** read
+> [the preservation fix and CLI-04 continuation steps](./release-0.9.0.md#codex-compiler-preservation-2026-10-02).
+> Deep client helper chains now survive compilation; cycles terminate and explicit
+> server boundaries remain stripped. Security-plugin tests: 139 passed; root
+> TypeScript check passed. **11/58 tasks remain checked; CLI-04 is still open.**
+> Continue the shared compiler/scaffold inspection model described in that note.
+
+> **Previous checkpoint — Codex structured upgrades (2026-10-02):** read
 > [Codex's CLI-06 completion and continuation instructions](./release-0.9.0.md#codex-cli-upgrades-2026-10-02).
 > **CLI-06 is complete; 11/58 tasks are checked.** Upgrade plans use the requested
 > scaffold release and recorded dependency ownership. They preserve local edits,

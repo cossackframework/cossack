@@ -86,6 +86,50 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-compiler-preservation-2026-10-02"></a>
+### Codex review: deep client helper preservation (2026-10-02)
+
+**Author: Codex.** Reviewed the compiler classification used as the foundation
+for CLI-04 after `cd9f489`. Found that `computePreservedSet` stopped after three
+rounds. A client lifecycle method calling a longer helper chain therefore had
+reachable helpers replaced by server stubs. The existing test explicitly
+accepted the depth limit rather than testing complete reachability.
+
+Replaced the cap with a finite worklist. Each reachable method is visited once;
+cycles terminate, and explicit `@Server` methods remain RPC boundaries. Their
+bodies and helpers reached only through those bodies remain stripped. The same
+function feeds client transforms and automatic server method registration.
+The regression fixture covers a five-helper chain, a cycle, and a server-only
+branch in one class.
+
+Verification:
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/vite-security-plugin.test.ts`: **139 passed**.
+- `pnpm tsc --noEmit`: passed.
+
+**Status: 11/58 checked; no additional task completed.** CLI-04 remains open.
+This focused correction does not establish compiler/inspection parity or replace
+release-wide checks. User changes to `reports.md` and `.zcodeignore` are excluded.
+
+**GLM next steps for CLI-04:**
+
+1. Extract a shared per-class analysis from the security compiler. Both transforms
+   and inspection must consume it, including preserved methods, explicit and
+   automatic RPC registration, stripped methods, and retained function fields.
+   Share the built-in method policy; do not create another decorator-only scanner.
+2. Export analysis through the existing framework security-plugin subpath. Retain
+   source positions and reasons, and account for `server$` transformations without
+   presenting generated offsets as authored source locations.
+3. Replace `extractMethodClassificationsFromAst` in the CLI with these facts.
+   Resolve supported inheritance and report unresolved imported/dynamic cases
+   explicitly. Do not execute project classes to infer behavior.
+4. Join compiler facts with route/layout ancestry and scaffold recipe/capability
+   metadata. Keep unknown options unknown; a regex fallback cannot prove facts.
+   Add route checks with failing exit codes alongside inspection/explanation.
+5. Prove parity using a grouped-route fixture with nested layouts, services,
+   inheritance, function fields, automatic RPC, deep helper chains, and unsupported
+   syntax. Only then evaluate CLI-04's complete acceptance criteria in the plan.
+
 <a id="codex-cli-upgrades-2026-10-02"></a>
 ### Codex continuation: complete release-aligned upgrade plans (2026-10-02)
 

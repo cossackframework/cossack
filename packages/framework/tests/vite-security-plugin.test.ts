@@ -1936,23 +1936,28 @@ export class Counter extends Cossack {
     expect(result).not.toContain('this.count++');
   });
 
-  it('preserves transitive this.foo() chains to the documented depth-3 cap', () => {
-    // The preservation closure runs 3 rounds, covering the common chain
-    // onMount -> setup -> wire -> listen (3 hops). The deepest helper's body
-    // must survive. (Deeper chains are intentionally not guaranteed.)
+  it('preserves deep client chains and cycles without traversing server boundaries', () => {
     const code = `
 @Page()
 export class Page extends Cossack {
-  onMount() { this.setup(); }
-  setup() { this.wire(); }
-  wire() { this.listen(); }
-  listen() { const secret = 'DEEP_SECRET'; return secret; }
+  onMount() { this.first(); }
+  first() { this.second(); }
+  second() { this.third(); }
+  third() { this.fourth(); }
+  fourth() { this.fifth(); }
+  fifth() { this.second(); this.save(); return 'DEEP_CLIENT_BODY'; }
+  @Server() save() { return this.secretHelper(); }
+  secretHelper() { return 'SERVER_ONLY_BODY'; }
   render() { return html\`<p>x</p>\`; }
 }`;
     const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-    // The deepest helper's body survives (it was transitively preserved).
-    expect(result).toContain('DEEP_SECRET');
-    expect(result).toContain('listen()');
+    expect(result).toContain('DEEP_CLIENT_BODY');
+    for (const name of ['first', 'second', 'third', 'fourth', 'fifth']) {
+      expect(result).not.toContain(`__cossack_proxies?.get('${name}')`);
+    }
+    expect(result).toContain("__cossack_proxies?.get('save')");
+    expect(result).not.toContain('return this.secretHelper()');
+    expect(result).not.toContain('SERVER_ONLY_BODY');
   });
 
   it('handles @Server with options object', () => {

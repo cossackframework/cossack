@@ -1105,8 +1105,7 @@ function computeAutomaticRpcSet(
 /**
  * Compute the preserved set: methods that must retain their full implementation
  * in the client bundle. Seeds with client-safe methods (by decorator or builtin
- * name) and then iterates a transitive closure to a fixed point (capped at 3
- * rounds) — any `this.foo(...)` call from a preserved method to another method
+ * name) and then computes the complete transitive closure — any `this.foo(...)` call from a preserved method to another method
  * on the same class preserves `foo` as well.
  *
  * AST-driven: call edges come from {@link collectThisCalls} walking each
@@ -1158,22 +1157,20 @@ function computePreservedSet(
     }
   }
 
-  // Fixed-point iteration, capped at 3 rounds. Depth 3 covers the common
-  // onMount -> setupReveal -> wireObserver -> addListener chain.
-  for (let round = 0; round < 3; round++) {
-    const before = preserved.size;
-    for (const name of [...preserved]) {
-      const body = bodyByName.get(name);
-      if (!body) continue;
-      for (const callee of collectThisCalls(body)) {
-        const target = byName.get(callee);
-        // A client-safe method can call an explicit @Server method through its
-        // generated RPC proxy. Keeping that body would ship server-only code
-        // (and any native imports it uses) to the browser.
-        if (target && !target.hasServerDecorator) preserved.add(callee);
+  // Visit each reachable method once. The finite worklist also handles cycles
+  // without imposing an arbitrary limit on valid client helper chains.
+  const pending = [...preserved];
+  for (let index = 0; index < pending.length; index++) {
+    const body = bodyByName.get(pending[index]);
+    if (!body) continue;
+    for (const callee of collectThisCalls(body)) {
+      const target = byName.get(callee);
+      // Explicit server methods remain RPC boundaries, including their callees.
+      if (target && !target.hasServerDecorator && !preserved.has(callee)) {
+        preserved.add(callee);
+        pending.push(callee);
       }
     }
-    if (preserved.size === before) break;
   }
 
   return preserved;
