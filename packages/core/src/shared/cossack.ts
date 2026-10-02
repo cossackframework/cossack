@@ -168,6 +168,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         resolved: boolean;
         pending?: Promise<unknown>;
         error?: unknown;
+        loader?: (...args: unknown[]) => Promise<unknown> | unknown;
     }>();
 
     private _serverResourceKey(
@@ -212,6 +213,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             entry = { argsKey, value: entry?.hasValue ? entry.value : options.initial, hasValue: entry?.hasValue || 'initial' in options, resolved: false };
             this._serverResources.set(name, entry);
         }
+        entry.loader = loader as unknown as (...args: unknown[]) => Promise<unknown> | unknown;
         if (!entry.resolved && !entry.pending && !entry.error) {
             entry.pending = Promise.resolve(loader(...args)).then((value) => {
                 // Results use the same JSON-safe contract as hydration/RPC.
@@ -236,14 +238,65 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return entry.value as TValue | undefined;
     }
 
+    /**
+     * Observe a server$ resource's lifecycle (RT-03): `pending` while loading
+     * (or refreshing), `error` with the last failure, `value`/`hasValue` for
+     * the latest data, and `stale` true when a new load runs over existing
+     * data. Returns a plain snapshot; unknown resources fail loudly.
+     */
+    public resourceStatus$(name: string): {
+        state: 'pending' | 'ready' | 'error';
+        hasValue: boolean;
+        value?: unknown;
+        error?: unknown;
+        stale: boolean;
+    } {
+        const entry = this._serverResources.get(name);
+        if (!entry) {
+            throw new Error(`[Cossack] Unknown server$ resource "${name}". Declare it with server$() first.`);
+        }
+        if (entry.pending) {
+            return { state: 'pending', hasValue: entry.hasValue, value: entry.value, stale: entry.hasValue };
+        }
+        if (entry.error !== undefined) {
+            return { state: 'error', hasValue: entry.hasValue, value: entry.value, error: entry.error, stale: false };
+        }
+        // Not resolved and not failed: either a cold first load or the window
+        // between refresh$() clearing the entry and the loader restarting —
+        // existing data is stale in both cases.
+        return { state: entry.resolved ? 'ready' : 'pending', hasValue: entry.hasValue, value: entry.value,
+            stale: entry.hasValue && !entry.resolved };
+    }
+
     public async refresh$(name: string): Promise<void> {
         const entry = this._serverResources.get(name);
         if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         entry.error = undefined;
         entry.pending = undefined;
         entry.resolved = false;
-        await this.requestUpdate();
-        await this._serverResources.get(name)?.pending;
+        // Retry directly (RT-03): a re-render is not required to re-run the
+        // loader — status observers see pending-over-stale-data immediately.
+        if (entry.loader) {
+            const loader = entry.loader;
+            entry.pending = Promise.resolve(loader()).then((value) => {
+                if (this._serverResources.get(name) !== entry) return value;
+                entry.value = value;
+                entry.hasValue = true;
+                entry.resolved = true;
+                entry.error = undefined;
+                entry.pending = undefined;
+                if (!this.isServer) void this.requestUpdate();
+                return value;
+            }).catch((error) => {
+                if (this._serverResources.get(name) === entry) {
+                    entry.pending = undefined;
+                    entry.error = error;
+                }
+                if (this.isServer) throw error;
+            });
+        }
+        void this.requestUpdate();
+        await entry.pending;
     }
 
     public invalidate$(name: string): void {
