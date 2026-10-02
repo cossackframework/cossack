@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex page capability discovery (2026-10-03):** read
+> **Latest checkpoint — Codex recipe capability wiring (2026-10-03):** read
+> [generated config and binding discovery](./release-0.9.0.md#codex-recipe-capability-wiring-2026-10-03).
+> **Author: Codex.** Recipes now select runtime capability checks, including
+> Desktop mode. Cloudflare binding discovery uses the project's Wrangler parser
+> and selected environment, returning names only. **CLI-04 reopened; 11/58 checked.**
+> Generated-app validation exposed named HTTP route handling and first-export
+> versus default-export runtime selection that CLI inspection must reconcile.
+> Build discovery now accepts named HTTP handlers. Continue those CLI/runtime
+> fixes, then RT-25 complete generated-app acceptance and feature planning.
+
+> **Previous checkpoint — Codex page capability discovery (2026-10-03):** read
 > [shared parser and automatic build checks](./release-0.9.0.md#codex-page-capability-discovery-2026-10-03).
 > **Author: Codex.** Framework now publishes `page-inspection`; CLI re-exports it.
 > Selecting a build runtime automatically checks discovered page transports,

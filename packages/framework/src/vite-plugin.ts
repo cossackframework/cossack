@@ -4,7 +4,8 @@ import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
-import { extractPageOptionsFromAst } from './page-inspection.js';
+import { extractPageOptionsFromAst, hasNamedHttpHandlers } from './page-inspection.js';
+import { readBuildBindingNames } from './build-bindings.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -72,6 +73,8 @@ export interface CossackPagesOptions {
   capabilities?: {
     runtime: Exclude<RuntimeName, 'unknown'>;
     bindings?: readonly string[];
+    /** Defaults to CLOUDFLARE_ENV when reading project bindings. */
+    environment?: string;
     requirements?: readonly CapabilityUse[];
   };
   /**
@@ -144,7 +147,9 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     async buildStart() {
       if (options.capabilities) {
-        const { runtime, bindings } = options.capabilities;
+        const { runtime } = options.capabilities;
+        const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
+          ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV) : []);
         const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
         const { pageKeys } = scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled);
         for (const key of pageKeys.sort()) {
@@ -154,7 +159,9 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           let transport = 'http';
           let line: number | undefined;
           if (key.endsWith('.ts')) {
-            const facts = await extractPageOptionsFromAst(readFileSync(file, 'utf8'));
+            const source = readFileSync(file, 'utf8');
+            if (await hasNamedHttpHandlers(source)) continue; // All supported runtimes provide HTTP handlers.
+            const facts = await extractPageOptionsFromAst(source);
             if (facts?.method !== 'ast' || !facts.options) this.error({
               code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
               message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,

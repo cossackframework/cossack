@@ -228,3 +228,18 @@ export async function extractMethodClassificationsFromAst(code: string, file = '
     reason: 'Own methods classified by the compiler; inherited declarations require project resolution.',
   };
 }
+
+/** Named HTTP handler modules need HTTP, not component transport metadata. */
+export async function hasNamedHttpHandlers(code: string): Promise<boolean> {
+  const parser = await loadParseSync();
+  const program = parser && parsedProgram(parser, code);
+  if (!program || program.body.some((node: AstNode) => node.type === 'ExportDefaultDeclaration' ||
+    node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration')) return false;
+  const methods = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
+  return program.body.some((node: AstNode) => {
+    if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') return false;
+    if (node.declaration?.type === 'FunctionDeclaration') return methods.has(node.declaration.id?.name);
+    if (node.declaration?.type === 'VariableDeclaration') return node.declaration.declarations.some((entry: AstNode) => methods.has(entry.id?.name));
+    return !node.source && node.specifiers?.some((entry: AstNode) => methods.has(entry.exported?.name ?? entry.exported?.value));
+  });
+}

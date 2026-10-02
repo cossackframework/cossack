@@ -219,7 +219,10 @@ layout options and dynamic service expressions stay unknown. Service names are
 source declarations, not inferred token identity across modules.
 
 The [requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03)
-records completion evidence and limits. CLI-04 is complete; browser/production
+records the prior completion evidence and limits. CLI-04 was reopened during
+generated-app capability acceptance: classify named HTTP handler modules in CLI
+checks and reconcile runtime first-export selection with inspected default exports.
+Browser/production
 runtime gates, RT-07 typed URL/API generation, RT-24 config registry work, and
 RT-25 build/recipe capability enforcement remain under their own tasks.
 
@@ -932,8 +935,11 @@ explicit `capabilities` declarations checked before bundle output. Real Vite
 fixtures cover unsupported/missing-binding failure and portable supported builds.
 Page transport requirements now derive automatically from the published
 `page-inspection` parser shared with the CLI when a build runtime is selected.
-Next connect recipe selection and generated config to this API and resolve
-selected-environment bindings.
+Generated recipes now select the web adapter or Desktop mode automatically.
+Cloudflare builds resolve binding names through the installed Wrangler parser,
+using an explicit environment or CLOUDFLARE_ENV. Next verify actual generated
+application configurations and integrate selected feature requirements into
+recipe planning where applicable.
 The adapter audit found that Node/Deno do not dispatch schedules; their
 `scheduledHandlers` capability now reports `adapter-required` and selected
 requirements fail builds. Do not mark this capability available until a real

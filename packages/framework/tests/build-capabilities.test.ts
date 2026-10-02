@@ -3,6 +3,7 @@ import { build } from 'vite';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
 import { checkCapabilityRequirements, type RuntimeName, type CapabilityRequirement } from '@cossackframework/framework/runtime-capabilities';
 
@@ -23,9 +24,19 @@ it('returns all selected feature failures with their source and no binding value
   expect(checkCapabilityRequirements('cloudflare', [{ feature: 'chat', source, requires: { transports: ['sse'] } }], ['COSSACK_SSE'])).toEqual([]);
 });
 
-async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] = [], requires: CapabilityRequirement = { transports: [transport] }, pageSource?: string) {
+async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] | null = [], requires: CapabilityRequirement = { transports: [transport] }, pageSource?: string, environment?: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-capability-build-'));
   roots.push(root);
+  if (bindings === null) {
+    const require = createRequire(import.meta.url);
+    await fs.writeFile(path.join(root, 'package.json'), '{}');
+    await fs.mkdir(path.join(root, 'node_modules'));
+    await fs.symlink(path.dirname(require.resolve('wrangler/package.json')), path.join(root, 'node_modules/wrangler'), 'junction');
+    await fs.writeFile(path.join(root, 'wrangler.jsonc'), JSON.stringify({ name: 'capability-test', compatibility_date: '2026-01-01',
+      durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+      env: { staging: { durable_objects: { bindings: [] } } },
+    }));
+  }
   await fs.writeFile(path.join(root, 'entry.js'), 'export const portable = true;');
   if (pageSource) {
     await fs.mkdir(path.join(root, 'src/pages/chat'), { recursive: true });
@@ -34,7 +45,7 @@ async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport:
   // An unselected optional module must not change the portable build's result.
   await fs.writeFile(path.join(root, 'unused-cloudflare.js'), "import { DurableObject } from 'cloudflare:workers'; export class Optional extends DurableObject {}");
   return build({ root, configFile: false, logLevel: 'silent', plugins: [cossackPages({ capabilities: {
-    runtime, bindings, requirements: [{ feature: 'page transport', source: { file: path.join(root, 'src/pages/chat/index.ts'), line: 3 }, requires }],
+    runtime, bindings: bindings ?? undefined, environment, requirements: [{ feature: 'page transport', source: { file: path.join(root, 'src/pages/chat/index.ts'), line: 3 }, requires }],
   } })], build: { write: false, minify: false, lib: { entry: path.join(root, 'entry.js'), formats: ['es'] } } });
 }
 
@@ -82,4 +93,18 @@ it('fails unknown discovered options rather than defaulting them to HTTP', async
 it('does not instantiate a discovered page to determine its requirements', async () => {
   await expect(buildFixture('desktop', 'http', [], {},
     '@Page() export default class Chat { constructor() { throw new Error("must not execute"); } }')).resolves.toBeDefined();
+});
+
+it('discovers bindings through the project Wrangler parser and honors environment isolation', async () => {
+  const page = "@Page({ transport: 'sse' }) export default class Chat {}";
+  await expect(buildFixture('cloudflare', 'http', null, {}, page)).resolves.toBeDefined();
+  await expect(buildFixture('cloudflare', 'http', null, {}, page, 'staging'))
+    .rejects.toMatchObject({ message: expect.stringContaining('COSSACK_SSE') });
+  await expect(buildFixture('cloudflare', 'http', null, {}, page, 'missing'))
+    .rejects.toMatchObject({ message: expect.stringContaining('COSSACK_BUILD_ENVIRONMENT_UNKNOWN') });
+});
+
+it('accepts discovered named HTTP handler modules without component decorators', async () => {
+  await expect(buildFixture('desktop', 'http', [], {},
+    'export const POST = factory(); export async function GET(c) { return c.json({ ok: true }); }')).resolves.toBeDefined();
 });

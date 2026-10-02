@@ -29,7 +29,10 @@ local placeholder interface for it.
 
 Select a runtime in `cossackPages` to check page transports before a build emits
 bundles. Build checks and route inspection use the same source parser and
-capability model. Pass binding names, never binding values or secrets.
+capability model. Generated recipes enable this selection automatically, using
+Desktop in desktop mode and their web adapter otherwise. For Cloudflare, the
+plugin reads the project Wrangler configuration through its installed Wrangler
+parser, including selected-environment inheritance rules.
 
 ```ts
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
@@ -37,7 +40,7 @@ import { cossackPages } from '@cossackframework/framework/vite-plugin';
 cossackPages({
   capabilities: {
     runtime: 'cloudflare',
-    bindings: ['COSSACK_SSE'],
+    // Optional: environment: 'staging' (otherwise uses CLOUDFLARE_ENV).
   },
 });
 ```
@@ -46,6 +49,7 @@ The plugin scans routes under the Vite project's `src/pages`, extracts static
 `@Page` options, and adds their transport requirements. It does not execute
 constructors or import application modules. Unknown options fail with
 `COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN` rather than defaulting to HTTP.
+Named HTTP handler modules use HTTP without needing component decorators.
 Configured Markdown routes use the HTTP transport emitted by the Markdown
 transform. Layout, loading, declaration, and test files are excluded from page
 transport discovery using the same route scanner as the plugin.
@@ -67,8 +71,12 @@ produce `COSSACK_CAPABILITY_BINDING_MISSING`; unsupported requirements produce
 produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, built-in Node and Deno
 adapters do not dispatch scheduled handlers. Desktop supports HTTP transport only.
 
-These checks do not validate remote resources or install adapters. Runtime and
-binding selection are explicit; bindings must match the environment being built.
+These checks do not validate remote resources or install adapters. Runtime selection is explicit. Cloudflare uses `capabilities.environment` or
+`CLOUDFLARE_ENV` to choose bindings; an unknown environment fails the build.
+Missing Wrangler/configuration and invalid syntax fail safely without parser
+excerpts. You may provide `bindings: ['COSSACK_SSE']` to override discovery for
+custom tooling; pass names only, never values, and keep them aligned with the
+environment being built.
 Unused provider-specific modules outside the route set do not make portable
 code unsupported. Other feature requirements still need explicit declarations.
 `checkCapabilityRequirements` is exported from

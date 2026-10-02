@@ -303,7 +303,7 @@ describe('composition', () => {
       path.join(project.projectDir, 'package.json'),
       'utf8',
     ));
-    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
 
@@ -317,7 +317,7 @@ describe('composition', () => {
     )).resolves.toContain('export async function processMarkdown');
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('cossackPages({ markdownProcessor: processMarkdown })');
+    expect(viteConfig).toContain("cossackPages({ markdownProcessor: processMarkdown, capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } })");
     expect(viteConfig).toContain("from './src/markdown-processor.ts'");
     expect(pkg.devDependencies).toHaveProperty('unified');
     expect(pkg.devDependencies).toHaveProperty('remark-parse');
@@ -332,7 +332,7 @@ describe('composition', () => {
     )).rejects.toThrow();
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
   });
@@ -1258,4 +1258,15 @@ describe('prompt navigation and cancellation', () => {
       path.join(project.projectDir, 'src/auth.ts'),
     )).rejects.toThrow();
   });
+});
+
+it.each(['cloudflare', 'node', 'deno'])('enables build capability discovery for generated %s recipes and their Desktop target', async adapter => {
+  for (const features of [[], ['markdown']]) {
+    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
+    const config = files.get('vite.config.ts').content.toString();
+    expect(config).toContain(`capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${adapter}' }`);
+    expect(config.includes('markdownProcessor: processMarkdown')).toBe(features.includes('markdown'));
+    // Binding names must come from the selected build environment, not a fixed template list.
+    expect(config).not.toContain('bindings: [');
+  }
 });

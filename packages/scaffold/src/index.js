@@ -1616,6 +1616,10 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if (rel === 'vite.config.ts') {
       let viteConfig = content.toString('utf8');
+      const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}' }`;
+      viteConfig = viteConfig.replace('cossackPages(),', `cossackPages({ ${runtimeCapability} }),`)
+        .replace('cossackPages({ markdownProcessor: processMarkdown }),',
+          `cossackPages({ markdownProcessor: processMarkdown, ${runtimeCapability} }),`);
       if (!recipe.resolvedFeatures.includes('ui')) {
         viteConfig = viteConfig.replace(
           /^\s*exclude: \['@cossackframework\/solar-icons'\],\n/gm,

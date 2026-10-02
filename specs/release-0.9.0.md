@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03).
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Reopened during generated-app acceptance: named HTTP handler modules still need CLI check classification, and router selection via the first module export must be reconciled with inspection's default-export selection.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -45,7 +45,7 @@ below link directly to those explanations.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Automatic page requirements now share the published source parser with CLI inspection. Remaining: recipe integration, selected-environment binding discovery, further adapter capability audit, and generated-app acceptance.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Automatic page requirements now share the published source parser with CLI inspection. Generated recipes now enable runtime checks and Cloudflare builds discover selected-environment bindings through Wrangler. Remaining: selected feature planning requirements, further adapter capability audit, and complete generated-app acceptance.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -85,6 +85,44 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-recipe-capability-wiring-2026-10-03"></a>
+### Codex continuation: recipe wiring and environment binding discovery (2026-10-03)
+
+**Author: Codex.** Generated Vite configurations now enable capability checks
+for their selected web adapter and switch to Desktop's HTTP-only profile in
+desktop mode. Markdown composition preserves the capability option. Bindings are
+not baked into templates.
+
+When explicit binding names are absent, Cloudflare builds load the project's
+installed Wrangler parser and read its configuration for `capabilities.environment`
+or `CLOUDFLARE_ENV`. Unknown environments fail. Wrangler's non-inherited binding
+rules remain authoritative; resource values and variables never leave the helper.
+Missing configuration/dependencies and parser errors fail without secret-bearing
+configuration excerpts. Node/Deno/Desktop do not load Wrangler for these checks.
+
+Published-export Vite builds prove that root SSE bindings work but do not satisfy
+an environment that omits them. Additional real-parser tests cover names-only
+output and safe parser errors. Recipe tests cover all adapters with and without
+Markdown plus feature addition/removal.
+
+Generated-app validation exposed named HTTP handler files in the route set.
+Build discovery now recognizes their named method exports and treats them as HTTP
+without requiring component decorators. This also revealed two remaining CLI-04
+acceptance gaps: CLI checks still apply component metadata requirements to these
+modules, and router selection through the first module export can differ from
+inspection's default-export choice. **CLI-04 is reopened; 11/58 tasks are checked.**
+Fix these discrepancies before claiming full inspection/runtime parity.
+
+Verification: **92 scaffold tests**, **18 binding/build tests**, and the complete
+generated staging deployment/Worker integration passed. The broader CLI run
+passed 535 tests and exposed the named-handler build failure; that previously
+failing integration passed on its own after correction. Framework declaration
+build, root TypeScript, and all **11 package type checks passed**.
+**RT-25 remains open.** Next verify complete generated applications through their
+actual generated configuration, including Desktop side targets, and add selected
+feature requirements to recipe planning where needed. A small Vite transport
+fixture is not proof of full application or native packaging compatibility.
 
 <a id="codex-page-capability-discovery-2026-10-03"></a>
 ### Codex continuation: shared source parser and page capability discovery (2026-10-03)
