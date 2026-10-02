@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex inherited options (2026-10-03):** read
+> **Latest checkpoint — Codex combined inspection (2026-10-03):** read
+> [acceptance coverage and remaining work](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
+> **Author: Codex.** Combined compiler/static inspection acceptance passes.
+> Fixed missing layout middleware counts and exposed layout/page execution order;
+> unresolved counts remain unknown. **11/58 tasks remain checked.** Next extend
+> the fixture with executed service ownership/DI and check/explain diagnostics
+> before closing CLI-04. Continue RT-25 build/recipe gating afterward.
+
+> **Previous checkpoint — Codex inherited options (2026-10-03):** read
 > [option resolution and real dispatch corrections](./release-0.9.0.md#codex-inherited-options-2026-10-03).
 > Core now merges inherited server-method options with nearest declarations
 > winning. Generated registration preserves inherited policies. Actual RPC dispatch

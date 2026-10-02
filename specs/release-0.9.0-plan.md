@@ -217,6 +217,15 @@ validates available static metadata with failing exits; checks over the complete
 project model remain open. See the [implementation sequence and validation fixture](./release-0.9.0.md#codex-compiler-preservation-2026-10-02)
 for the remaining work; this compiler correction does not complete CLI-04.
 
+Codex acceptance checkpoint (2026-10-03):
+`packages/cossack/tests/inspection-acceptance.test.js` now combines grouped routes,
+nested layouts, declared services, imported inheritance, scaffold recipes,
+resources, and compiler stripping parity. Layout/page middleware counts are
+ordered and unknown totals stay unknown. Next add actual service ownership and
+DI/bootstrap execution to this fixture, then check/explain assertions against the
+same project. Static declaration assertions alone do not prove service lifetime
+or ownership. See the [latest review](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
+
 Start in `packages/framework/src/vite-plugin.ts`, `vite-security-plugin.ts`,
 `route-ids.ts`, `packages/scaffold/src/registry.js`, and CLI inspection commands.
 

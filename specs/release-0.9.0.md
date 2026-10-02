@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: effective inherited dispatch, unsupported project resolution cases, complete framework acceptance verification, and unsupported project-resolution cases. Binding-aware transport checks now use the shared runtime model.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: full application service ownership/DI acceptance and explicit diagnostics for unsupported project resolution. Declared member precedence, inherited RPC behavior, and a combined static/compiler fixture are verified. Binding-aware transport checks now use the shared runtime model.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,36 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-inspection-acceptance-2026-10-03"></a>
+### Codex review: combined inspection fixture and middleware order (2026-10-03)
+
+**Author: Codex.** Added a combined project fixture covering grouped routes,
+nested layouts, declared services, recorded scaffold features, imported base
+methods, resource expansion, and mixed client/server methods. Inspection reads a
+page whose constructor throws without executing it. The fixture compares method
+facts with the published compiler transform and checks that private bodies are
+removed while reachable client helpers remain.
+
+The fixture exposed missing layout middleware facts. Inspection now reports
+layout/page middleware counts in execution order: outer layouts, inner layouts,
+then the page. An unresolved layout keeps the total unknown. Explanations
+explicitly exclude global bootstrap middleware from this result.
+
+Verification: focused acceptance/inspection/scanner suite **53 passed**;
+`pnpm tsc --noEmit` passed; full CLI suite **512 passed across 37 files**.
+The full run also exposed a stale contract test that rejected the now-supported
+`inspect routes --env=production`; it now checks rejection of a missing environment
+value instead.
+
+**11/58 tasks remain checked; CLI-04 remains open.** This fixture validates
+compiler output and static declarations, but does not instantiate a complete
+application to verify service ownership and DI/bootstrap behavior. GLM should
+extend it with real layout/page service resolution, compare the reported owners
+with executed behavior, and exercise check/explain diagnostics on the same
+project. Keep unsupported project resolution explicit; do not equate declared
+member precedence with constructor or decorator side effects. RT-25 still needs
+build/recipe capability gating. No release versions changed.
 
 <a id="codex-inherited-options-2026-10-03"></a>
 ### Codex review: inherited options and action receivers (2026-10-03)

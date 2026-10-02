@@ -304,10 +304,22 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     }
     layouts.push({
       ...layout,
+      middlewares: method === 'ast' ? options.middlewares : null,
       services: options.services,
       extraction: { method, reason },
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
     });
+  }
+  for (const page of pages) {
+    page.middlewareStack = [
+      ...page.layouts.map(filePath => {
+        const layout = layouts.find(candidate => candidate.filePath === filePath);
+        return { source: layout?.source ?? filePath, count: layout?.middlewares ?? null };
+      }),
+      { source: page.source, count: page.extraction.method === 'ast' ? page.middlewares : null },
+    ];
+    page.layoutAndPageMiddlewareCount = page.middlewareStack.every(entry => entry.count !== null)
+      ? page.middlewareStack.reduce((total, entry) => total + entry.count, 0) : null;
   }
   return { pages, layouts, scaffold: await inspectScaffoldMetadata(projectRoot), runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment) };
 }

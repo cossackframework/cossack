@@ -85,7 +85,7 @@ describe('metadata-backed command validation', () => {
     ['lang', ['add', '../escape'], 'COSSACK_LOCALE_INVALID'],
     ['lang', ['add', 'es', '--locale=de'], 'COSSACK_OPTION_CONFLICT'],
     ['generate', ['service', 'Thing', '--head'], 'COSSACK_OPTION_UNSUPPORTED'],
-    ['inspect', ['routes', '--env=production'], 'COSSACK_OPTION_UNKNOWN'],
+    ['inspect', ['routes', '--env'], 'COSSACK_OPTION_VALUE_REQUIRED'],
     ['check', ['cloudflare', 'ignored'], 'COSSACK_ARGUMENT_UNEXPECTED'],
   ])('%s rejects invalid input before project parsing/effects', async (command, args, code) => {
     const result = await run([command, ...args, '--json']);

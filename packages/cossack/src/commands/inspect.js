@@ -27,6 +27,7 @@ function explainRoute(effective, route) {
   } else {
     reasons.push('Layout ancestry: none (no layout.ts on the path from src/pages)');
   }
+  reasons.push(`Layout/page middleware order (global bootstrap middleware excluded): ${page.middlewareStack.map(entry => `${entry.source}: ${entry.count ?? 'unknown'}`).join(' -> ')}`);
   if (page.middlewares > 0) {
     reasons.push(`${page.middlewares} middleware(s) declared on the page's @Page options at ${page.source}`);
   }
