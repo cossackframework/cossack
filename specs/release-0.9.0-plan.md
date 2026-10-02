@@ -950,9 +950,10 @@ recipe configuration. Node HTTP SSR executes from the built app; Desktop rejects
 SSE. Deno runtime and Electron launch are not covered by these build tests.
 Generated Node production entries now use `createNodeAdapter()` and attach its
 guarded upgrade path. Live generated-app tests cover SSR, initial snapshots,
-origin rejection, and scope rejection. Development attachment remains missing;
-wire the exported runtime into the Vite dev server and dispose replaced runtimes
-on reload without disrupting HMR. Reconcile that with capability claims before
+origin rejection, and scope rejection. Development entries now attach the exported runtime and dispose replaced scopes
+on source reload while retaining the Vite HMR connection. Real generated-app
+acceptance covers reload, rapid edits, HTTP, and graceful signal shutdown.
+Continue selected recipe requirements and remaining capability audits before
 completion.
 The guarded framework WebSocket factory now creates nested layout service scopes,
 uses original page params during bootstrap, and assigns scope-tree cleanup to the

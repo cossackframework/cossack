@@ -3,7 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { WebSocket } from 'ws';
+import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
 
@@ -110,3 +112,68 @@ it('builds the generated Node application Desktop side target with its HTTP boun
   await expect(vite(root, ['--mode', 'desktop', '--ssr', 'src/desktop/index.ts', '--outDir', 'dist/desktop', '--minify', 'false']))
     .rejects.toThrow(/page transport requires transports on desktop/);
 }, 120000);
+
+it('runs generated Node development WebSockets, preserves HMR, and replaces runtime state on source reload', async () => {
+  const root = await project('node');
+  const page = path.join(root, 'src/pages/live/index.ts');
+  await fs.mkdir(path.dirname(page), { recursive: true });
+  const source = count => `import { Cossack, Page, State } from '@cossackframework/core'; @Page({ transport: 'durable-object', stateful: false }) export default class Live extends Cossack { @State() count = ${count}; }`;
+  await fs.writeFile(page, source(7));
+  const child = spawn(process.execPath, ['scripts/dev.js'], {
+    cwd: root, env: { ...process.env, PORT: '0', VITEST: '', COSSACK_LOCAL: '', APP_URL: '' }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', data => { output += data; });
+  child.stderr.on('data', data => { output += data; });
+  const exited = once(child, 'exit');
+  const sockets = [];
+  try {
+    await expect.poll(() => {
+      if (child.exitCode !== null) throw new Error(output);
+      return /dev server → http:\/\/localhost:(\d+)/.exec(output)?.[1];
+    }, { timeout: 30000 }).toBeTruthy();
+    const port = /dev server → http:\/\/localhost:(\d+)/.exec(output)[1];
+    const origin = `http://localhost:${port}`;
+    const client = await (await fetch(origin + '/@vite/client')).text();
+    const token = /const wsToken = "([^"]+)"/.exec(client)?.[1];
+    expect(token, client.slice(0, 500)).toBeTruthy();
+    const hmr = new WebSocket(origin.replace('http:', 'ws:') + '/?token=' + token, 'vite-hmr');
+    sockets.push(hmr);
+    const [hmrMessage] = await once(hmr, 'message');
+    expect(JSON.parse(String(hmrMessage)).type).toBe('connected');
+    const connect = async () => {
+      const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
+      const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query, { headers: { origin } });
+      sockets.push(socket);
+      const state = await Promise.race([
+        once(socket, 'message').then(([data]) => JSON.parse(String(data))),
+        once(socket, 'close').then(([code]) => { throw new Error('Closed before snapshot: ' + code + '\n' + output); }),
+      ]);
+      return { socket, state };
+    };
+    const first = await connect();
+    expect(first.state.state.public.count).toBe(7);
+    const closed = once(first.socket, 'close');
+    await fs.writeFile(page, source(9));
+    await closed;
+    await expect.poll(async () => {
+      try { return (await connect()).state.state.public.count; }
+      catch { return undefined; }
+    }, { timeout: 15000 }).toBe(9);
+    await fs.writeFile(page, source(10));
+    await fs.writeFile(page, source(11));
+    await expect.poll(async () => {
+      try { return (await connect()).state.state.public.count; }
+      catch { return undefined; }
+    }, { timeout: 15000 }).toBe(11);
+    expect(hmr.readyState).toBe(WebSocket.OPEN);
+    expect((await fetch(origin + '/')).status).toBe(200);
+  } finally {
+    for (const socket of sockets) socket.terminate();
+    child.kill('SIGTERM');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+    const [code, signal] = await exited;
+    clearTimeout(kill);
+    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
+  }
+}, 60000);

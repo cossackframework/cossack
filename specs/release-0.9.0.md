@@ -86,6 +86,35 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-node-development-runtime-2026-10-03"></a>
+### Codex continuation: Node development runtime (2026-10-03)
+
+**Author: Codex.** The generated Node dev server now requires the entry's exported
+`app` and `runtime`, attaches runtime upgrades, and disposes replaced runtimes on
+source reload. Reloads share one promise with a queued repeat, invalidate the SSR
+module graph, and clear failed loads so later edits can recover. Previous runtime
+cleanup errors are reported without preventing the replacement from attaching.
+
+The HTTP server is passed to Vite's HMR configuration. Removed the old catch-all
+upgrade listener, which both rejected Cossack upgrades and attempted to dispatch
+HMR through a middleware object. Vite and Cossack now own their respective upgrade
+paths. SIGINT/SIGTERM stop reloads, drain runtime disposal, close Vite, and close
+the HTTP server, collecting cleanup failures. PORT=0 supports ephemeral test ports.
+
+Verification: all four `packages/cossack/tests/generated-runtime-build.test.js`
+cases pass. The new case creates a real project, launches its actual dev script,
+connects to Vite's authenticated HMR socket and the Cossack page socket, verifies
+state, edits the page, observes old socket closure, and receives updated state on
+reconnect. Two rapid writes converge to the final value, HMR remains connected,
+HTTP still works, and SIGTERM exits normally without the fallback kill. All 92
+scaffold tests and root `pnpm tsc --noEmit` pass. No TypeScript runtime source
+changed in this checkpoint.
+
+**12/58 tasks remain checked.** RT-25 remains open for selected feature requirements,
+remaining capability audits, and runtime acceptance outside Node. Deno execution
+and Electron launch/packaging have not been verified. User actions that never
+settle can still delay runtime disposal/reload; no forced timeout is claimed.
+
 <a id="codex-node-guarded-runtime-2026-10-03"></a>
 ### Codex continuation: guarded Node runtime (2026-10-03)
 

@@ -100,5 +100,6 @@ cleanup to finish. Disposed adapters cannot be attached again.
 
 The request scheme follows the actual Node socket (HTTP or TLS); the adapter does
 not trust forwarded scheme headers. Configure origin policy for a trusted proxy
-in the application. Generated production entries attach the adapter automatically;
-development-server attachment is still pending.
+in the application. Generated production and development entries attach the adapter automatically.
+The dev server disposes the previous runtime on source reload while Vite retains
+its HMR connection; clients reconnect to a fresh process-local scope.

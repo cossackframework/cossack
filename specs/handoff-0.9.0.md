@@ -2,7 +2,18 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex guarded Node runtime (2026-10-03):** read
+> **Latest checkpoint — Codex Node development runtime (2026-10-03):** read
+> [dev WebSockets, HMR, and reload acceptance](./release-0.9.0.md#codex-node-development-runtime-2026-10-03).
+> **Author: Codex.** Generated dev servers attach the exported runtime, dispose
+> replaced instances, coalesce reload requests, and keep Vite HMR on the same
+> HTTP server. SIGINT/SIGTERM drain runtime and server resources.
+> Four generated runtime acceptance cases pass, including real HMR/Cossack
+> sockets, page reload, rapid edits, HTTP, and graceful process exit.
+> **12/58 tasks remain checked.** Next audit RT-25 selected feature requirements
+> and advertised capabilities; Deno execution/Electron launch remain unverified.
+> Also audit bundled page examples for the required default exports.
+
+> **Previous checkpoint — Codex guarded Node runtime (2026-10-03):** read
 > [Node integration and portable targets](./release-0.9.0.md#codex-node-guarded-runtime-2026-10-03).
 > **Author: Codex.** New `createNodeAdapter()` sends upgrades through the full
 > application before handshaking, preserving router guards and layout scopes.

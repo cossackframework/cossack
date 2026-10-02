@@ -17,7 +17,7 @@ import { createServer, mergeConfig } from 'vite';
 import http from 'node:http';
 import { Readable } from 'node:stream';
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT ?? 3000);
 const ENTRY = '/src/index.ts';
 
 /**
@@ -123,40 +123,54 @@ async function sendWebResponse(res, response) {
 }
 
 async function main() {
+  const server = http.createServer();
   const inlineConfig = await loadInlineConfig();
   const vite = await createServer({
     ...inlineConfig,
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, hmr: { server } },
     appType: 'custom', // we handle routing ourselves
     // Inherit the project's vite.config.ts (cossackPages/lang/middlewares/
     // config + security + ssg plugins + tailwind). No Cloudflare plugin in a
     // Node project, so Vite's default SSR environment handles `ssrLoadModule`.
   });
 
-  // Cached app + env. `app` is invalidated on source change.
   let app;
+  let runtime;
   const env = await buildEnv();
-
-  // In-flight reload guard so rapid saves coalesce into one reload rather than
-  // racing (whichever resolves first wins, and overlapping loads can observe
-  // torn state). `loadApp` is always awaited before app.fetch is invoked.
   let loadingPromise = null;
-  async function loadApp() {
+  let reloadRequested = false;
+  let stopping = false;
+  function loadApp() {
+    if (stopping) return Promise.resolve();
+    reloadRequested = true;
+    if (loadingPromise) return loadingPromise;
     loadingPromise = (async () => {
-      const appModule = await vite.ssrLoadModule(ENTRY);
-      app = appModule.app;
-      if (!app || typeof app.fetch !== 'function') {
-        throw new Error(
-          'Expected src/index.ts to export the Hono app as a named `app` export.',
-        );
-      }
-    })();
-    await loadingPromise;
-    loadingPromise = null;
+      do {
+        reloadRequested = false;
+        // Invalidate SSR dependencies too: a changed page may already have
+        // finished transforming while another reload was still draining actions.
+        vite.moduleGraph.invalidateAll();
+        const appModule = await vite.ssrLoadModule(ENTRY);
+        if (!appModule.app || typeof appModule.app.fetch !== 'function' ||
+            !appModule.runtime?.attach || !appModule.runtime?.dispose) {
+          throw new Error('Expected src/index.ts to export app and a createNodeAdapter() runtime.');
+        }
+        if (stopping) { await appModule.runtime.dispose(); return; }
+        const previous = runtime;
+        if (previous && previous !== appModule.runtime) {
+          try { await previous.dispose(); }
+          catch (error) { console.error('[cossack dev] previous runtime cleanup failed:', error); }
+        }
+        app = appModule.app;
+        runtime = appModule.runtime;
+        if (runtime !== previous) runtime.attach(server, request => app.fetch(request, env));
+      } while (reloadRequested && !stopping);
+    })().finally(() => { loadingPromise = null; });
+    return loadingPromise;
   }
   await loadApp();
 
-  const server = http.createServer(async (req, res) => {
+  server.on('request', async (req, res) => {
     // 1) Vite middleware first: serves /@vite/client, transforms, client
     //    assets, and HMR. It calls next() when it doesn't handle a request,
     //    routing us to the app handler below.
@@ -183,17 +197,8 @@ async function main() {
     });
   });
 
-  // Delegate Vite's own WebSocket upgrades (HMR/ping) to Vite. Anything else
-  // (e.g. the Cossack WS adapter) is only relevant for
-  // `transport: 'durable-object'`, which is off by default.
-  server.on('upgrade', (req, socket, head) => {
-    const pathname = new URL(req.url || '', `http://${req.headers.host}`).pathname;
-    if (pathname === '/' || pathname.startsWith('/__vite') || pathname.startsWith('/@')) {
-      vite.middlewares.emit('upgrade', req, socket, head);
-      return;
-    }
-    socket.destroy();
-  });
+  // Vite owns its HMR upgrades through server.hmr.server; the runtime owns /ws/.
+  // Do not add a catch-all upgrade listener that closes either connection.
 
   // Reload the app module when any src/ server file changes (client code still
   // hot-updates via Vite for CSS/client-only modules). Previously only
@@ -209,13 +214,27 @@ async function main() {
       !normalized.includes('/src/client/');
     if (!isSrcChange) return;
     console.log(`[cossack dev] ${normalized.split('/src/')[1]} changed — reloading app module`);
-    const mod = vite.moduleGraph.urlToModuleMap.get(ENTRY);
-    if (mod) vite.moduleGraph.invalidateModule(mod);
     loadApp().catch((e) => console.error('[cossack dev] reload failed:', e));
   });
 
+  let shutdown;
+  const stop = () => shutdown ??= (async () => {
+    stopping = true;
+    await loadingPromise?.catch(() => {});
+    const results = await Promise.allSettled([
+      runtime?.dispose(),
+      vite.close(),
+      new Promise((resolve, reject) => server.close(error =>
+        error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve())),
+    ]);
+    const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Development server cleanup failed');
+  })().catch(error => { console.error('[cossack dev] shutdown failed:', error); process.exitCode = 1; });
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+
   server.listen(PORT, () => {
-    console.log(`\n  Cossack (Node) dev server → http://localhost:${PORT}\n`);
+    console.log(`\n  Cossack (Node) dev server → http://localhost:${server.address().port}\n`);
   });
 }
 
