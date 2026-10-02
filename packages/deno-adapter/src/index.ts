@@ -21,6 +21,8 @@ interface DenoSocket {
 interface RuntimeEntry {
   runtime: InMemoryWebSocketRuntime<DenoSocket>;
   lastActive: number;
+  clients: Set<DenoSocket>;
+  actions: Set<Promise<void>>;
   dispose(): Promise<void>;
 }
 
@@ -37,6 +39,7 @@ export interface CossackDenoAdapter extends CossackRuntimeAdapter {
   fetch(app: DenoApplication, request: Request, env?: Record<string, unknown>): Promise<Response>;
   serve(app: DenoApplication): DenoServer;
   readonly instanceCount: number;
+  dispose(): Promise<void>;
 }
 
 function denoGlobal(): any {
@@ -46,6 +49,31 @@ function denoGlobal(): any {
 export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDenoAdapter {
   const instances = new Map<string, RuntimeEntry>();
   const pending = new Map<string, Promise<RuntimeEntry>>();
+  const retiring = new Set<Promise<void>>();
+  let stopped = false;
+  let disposal: Promise<void> | undefined;
+  const settle = async (work: Promise<unknown>[]) => {
+    const results = await Promise.allSettled(work);
+    const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Deno runtime cleanup failed');
+  };
+  const retire = (entry: RuntimeEntry) => {
+    const work = entry.dispose();
+    retiring.add(work);
+    void work.then(() => retiring.delete(work), () => retiring.delete(work));
+    return work;
+  };
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal;
+    stopped = true;
+    disposal = (async () => {
+      await Promise.allSettled([...pending.values()]);
+      const entries = [...instances.values()];
+      instances.clear();
+      await settle([...retiring, ...entries.map(retire)]);
+    })();
+    return disposal;
+  };
   const fetchHandlers = new WeakMap<DenoApplication, (
     request: Request,
     env?: Record<string, unknown>,
@@ -82,7 +110,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
     const disposals: Promise<void>[] = [];
     const remove = (key: string, entry: RuntimeEntry) => {
       instances.delete(key);
-      disposals.push(entry.dispose());
+      disposals.push(retire(entry));
     };
     const now = Date.now();
     for (const [key, entry] of instances) {
@@ -97,13 +125,15 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
       if (instances.size <= targetSize) break;
       remove(key, entry);
     }
-    await Promise.all(disposals);
+    await settle(disposals);
   };
 
   const handleWebSocketUpgrade = async (context: Context, upgrade: RuntimeWebSocketUpgrade): Promise<Response> => {
+    if (stopped) return new Response('Runtime unavailable', { status: 503 });
     let entryPromise: Promise<RuntimeEntry> | undefined;
     let closed = false;
     const getEntry = (): Promise<RuntimeEntry> => {
+      if (stopped) return Promise.reject(new Error('Deno runtime is disposed'));
       const key = JSON.stringify([upgrade.componentId, upgrade.provider, upgrade.target]);
       const existing = instances.get(key);
       if (existing) {
@@ -119,14 +149,30 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         return cleanup.then(() => { throw new Error('Deno WebSocket instance limit reached'); });
       }
       const creation = cleanup.then(async () => {
+        if (stopped) throw new Error('Deno runtime is disposed');
         const component = await upgrade.createComponent();
         try {
+          let cleanup: Promise<void> | undefined;
           const entry: RuntimeEntry = {
             runtime: new InMemoryWebSocketRuntime<DenoSocket>(component, {
               onError: (error) => console.error('[Cossack] Ignoring malformed WebSocket message:', error),
             }),
             lastActive: Date.now(),
-            dispose: () => component.destroyAsync(),
+            clients: new Set(),
+            actions: new Set(),
+            dispose: () => cleanup ??= (async () => {
+              const errors: unknown[] = [];
+              for (const client of entry.clients) {
+                entry.runtime.removeClient(client);
+                try { client.close(1001, 'Runtime shutting down'); }
+                catch (error) { errors.push(error); }
+              }
+              entry.clients.clear();
+              await Promise.allSettled([...entry.actions]);
+              try { await component.destroyAsync(); }
+              catch (error) { errors.push(error); }
+              if (errors.length) throw new AggregateError(errors, 'Deno component cleanup failed');
+            })(),
           };
           instances.set(key, entry);
           return entry;
@@ -146,8 +192,12 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         try {
           entryPromise ??= getEntry();
           const entry = await entryPromise;
-          if (closed) return;
+          if (closed || stopped) {
+            if (stopped) client.close(1001, 'Runtime shutting down');
+            return;
+          }
           entry.runtime.addClient(client, upgrade.user);
+          entry.clients.add(client);
           const state = entry.runtime.getInitialState();
           client.send(JSON.stringify({ type: 'state-update', state }));
         } catch (error) {
@@ -161,9 +211,15 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         try {
           entryPromise ??= getEntry();
           const entry = await entryPromise;
-          if (closed) return;
+          if (closed || stopped) {
+            if (stopped) client.close(1001, 'Runtime shutting down');
+            return;
+          }
           entry.lastActive = Date.now();
-          await entry.runtime.onClientMessage(client, String(event.data));
+          const action = entry.runtime.onClientMessage(client, String(event.data));
+          entry.actions.add(action);
+          try { await action; }
+          finally { entry.actions.delete(action); }
         } catch (error) {
           console.error('[Cossack] Deno WebSocket message failed:', error);
           client.close(1013, 'Runtime unavailable');
@@ -175,6 +231,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         const entry = await entryPromise.catch(() => undefined);
         if (entry) {
           entry.runtime.removeClient(socket as unknown as DenoSocket);
+          entry.clients.delete(socket as unknown as DenoSocket);
           entry.lastActive = Date.now();
         }
         try { await prune(); }
@@ -187,6 +244,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
 
   return {
     name: 'deno',
+    dispose,
     get instanceCount() { return instances.size; },
     getClientMetadata: () => ({ platform: 'web' }),
     handleWebSocketUpgrade,
@@ -194,13 +252,31 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
       return getFetchHandler(app)(request, env);
     },
     serve(app) {
+      if (stopped) throw new Error('Deno runtime is disposed');
       const deno = denoGlobal();
       if (!deno?.serve) throw new Error('createDenoAdapter().serve() requires Deno 2.9 or newer.');
       const serveOptions = {
         ...(options.hostname ? { hostname: options.hostname } : {}),
         ...(options.port !== undefined ? { port: options.port } : {}),
       };
-      return deno.serve(serveOptions, (request: Request) => getFetchHandler(app)(request));
+      const server = deno.serve(serveOptions, (request: Request) => getFetchHandler(app)(request));
+      let shutdown: Promise<void> | undefined;
+      const finished = server.finished?.then(
+        () => dispose(),
+        (error: unknown) => settle([Promise.reject(error), dispose()]),
+      );
+      // Keep background failures observed even if the caller only awaits shutdown.
+      void finished?.catch((error: unknown) => console.error('[Cossack] Deno server cleanup failed:', error));
+      return new Proxy(server, {
+        get(target, property) {
+          if (property === 'finished') return finished;
+          if (property === 'shutdown') return () => shutdown ??= settle([
+            dispose(), Promise.resolve().then(() => target.shutdown?.()),
+          ]);
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
     },
   };
 }

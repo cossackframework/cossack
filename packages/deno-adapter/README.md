@@ -27,8 +27,16 @@ database.
 WebSocket connections to the same component/provider/scope share one pending
 initialization and one runtime instance. `maxInstances` includes pending creation.
 When socket activity triggers idle eviction, the adapter awaits component cleanup;
-`idleTimeoutMs` does not install a periodic eviction timer. Server shutdown cleanup
-is not yet managed by the adapter.
+`idleTimeoutMs` does not install a periodic eviction timer. Cleanup waits for
+active actions before destroying their component and services.
+
+Call `await runtime.dispose()` when an embedded host stops using the adapter.
+This closes its WebSocket clients, waits for pending initialization/actions, and
+destroys cached components. Disposal is idempotent and rejects new upgrades;
+HTTP fetch remains usable. Actions must eventually settle for cleanup to finish.
+The server returned by `runtime.serve(app)` runs this cleanup when you await
+`server.shutdown()` or when its native `finished` promise settles. Await
+`server.finished` to observe completion and cleanup errors.
 
 - [Introduction](./docs/introduction.md)
 - [Installation](./docs/installation.md)

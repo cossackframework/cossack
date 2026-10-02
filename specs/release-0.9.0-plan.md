@@ -958,8 +958,12 @@ creation for the same runtime key and real authenticated connections from a
 generated app. Factory tests alone do not prove transport lifecycle behavior.
 Deno now deduplicates pending scope creation, reserves capacity, and awaits idle
 entry disposal. Socket-event tests cover early close and retry after failure.
-Finish explicit shutdown and in-flight action lifetimes, then validate with real
-Deno sockets. Idle pruning currently occurs on activity rather than a timer.
+Explicit `dispose()` and server shutdown/completion now drain pending creation,
+active actions, and retired entries before destroying components. These paths
+have adapter tests; validate with real Deno sockets when Deno is available.
+Actions must settle for cleanup to finish. Idle pruning currently occurs on
+activity rather than a timer. Continue Node guarded integration in parallel with
+this outstanding runtime acceptance.
 
 
 

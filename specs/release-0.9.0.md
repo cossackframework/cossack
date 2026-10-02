@@ -86,6 +86,33 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-deno-shutdown-2026-10-03"></a>
+### Codex continuation: Deno shutdown and action lifetime (2026-10-03)
+
+**Author: Codex.** Added idempotent adapter `dispose()` and native server lifecycle
+integration. Disposal blocks new upgrades, drains pending initialization, closes
+clients, waits for in-flight actions and already-retiring entries, and destroys
+all cached components. One failed component cleanup does not skip the others;
+errors are aggregated. Eviction also waits for active actions, so disconnecting
+during a mutation does not destroy its service scope underneath it.
+
+The server wrapper preserves native receivers/properties and coordinates native
+`shutdown()` with adapter disposal. Its `finished` promise includes cleanup even
+when the native server stops independently. Embedded users may call `dispose()`
+directly; HTTP fetching remains usable. Cleanup has no forced timeout: an action
+that never settles can keep cleanup pending.
+
+Verification: adapter suite passed (15 tests), adapter build passed, root
+`pnpm tsc --noEmit` and all 11 package configurations via `pnpm typecheck` passed.
+Six added tests cover pending initialization, active actions, repeated disposal,
+late events, rejection of new upgrades, cleanup failure isolation, native shutdown,
+and independent native completion. The live smoke fixtures now provide component
+cleanup methods. **Deno is not installed here; those live tests were not run.**
+
+**12/58 tasks remain checked.** Keep RT-12/RT-25 open until real runtime acceptance
+and the remaining Node integration/capability work are complete. Next wire Node
+through the framework's guarded upgrade factory and verify generated applications.
+
 <a id="codex-deno-runtime-eviction-2026-10-03"></a>
 ### Codex continuation: Deno runtime eviction (2026-10-03)
 

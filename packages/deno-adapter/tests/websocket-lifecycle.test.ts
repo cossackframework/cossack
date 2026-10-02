@@ -115,3 +115,95 @@ it('reports cleanup failures without rejecting the socket close callback', async
     expect(log).toHaveBeenCalledWith('[Cossack] Deno WebSocket cleanup failed:', expect.any(Error));
   } finally { log.mockRestore(); }
 });
+it('waits for an in-flight action before disposing an evicted component', async () => {
+  const adapter = createDenoAdapter({ idleTimeoutMs: 0 });
+  const gate = deferred();
+  const page = { ...component(), executeAction: vi.fn(() => gate.promise) };
+  const a = await connect(adapter, async () => page);
+  await a.open();
+  const message = a.events.onMessage({ data: JSON.stringify({ type: 'action', action: 'save', payload: [] }) }, a.socket);
+  await vi.waitFor(() => expect(page.executeAction).toHaveBeenCalledTimes(1));
+  const closing = a.close();
+  await Promise.resolve();
+  expect(page.destroyAsync).not.toHaveBeenCalled();
+  const shutdown = adapter.dispose();
+  gate.resolve();
+  await Promise.all([message, closing, shutdown]);
+  expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+});
+it('closes clients and disposes exactly once, then rejects new upgrades', async () => {
+  const adapter = createDenoAdapter();
+  const page = component();
+  const a = await connect(adapter, async () => page);
+  await a.open();
+  const first = adapter.dispose();
+  expect(adapter.dispose()).toBe(first);
+  await first;
+  expect(a.socket.close).toHaveBeenCalledWith(1001, 'Runtime shutting down');
+  expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+  expect(adapter.instanceCount).toBe(0);
+  const response = await adapter.handleWebSocketUpgrade!({} as any, {} as any);
+  expect(response.status).toBe(503);
+  await a.events.onMessage({ data: 'ping' }, a.socket);
+  expect(a.socket.send).toHaveBeenCalledTimes(1);
+  await a.close();
+  expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+});
+it('waits for pending creation during disposal and never registers its socket', async () => {
+  const adapter = createDenoAdapter();
+  const gate = deferred();
+  const page = component();
+  const factory = vi.fn(async () => { await gate.promise; return page; });
+  const a = await connect(adapter, factory);
+  const opening = a.open();
+  await vi.waitFor(() => expect(factory).toHaveBeenCalledTimes(1));
+  const shutdown = adapter.dispose();
+  gate.resolve();
+  await Promise.all([opening, shutdown]);
+  expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+  expect(a.socket.send).not.toHaveBeenCalled();
+  expect(adapter.instanceCount).toBe(0);
+});
+it('cleans every component even when one disposal fails', async () => {
+  const adapter = createDenoAdapter();
+  const one = component();
+  const two = component();
+  one.destroyAsync.mockRejectedValue(new Error('failure'));
+  await (await connect(adapter, async () => one)).open();
+  await (await connect(adapter, async () => two, 'two')).open();
+  await expect(adapter.dispose()).rejects.toThrow('Deno runtime cleanup failed');
+  expect(two.destroyAsync).toHaveBeenCalledTimes(1);
+  expect(adapter.instanceCount).toBe(0);
+});
+it('ties native server shutdown and completion to adapter disposal and preserves native receivers', async () => {
+  const completion = deferred();
+  const server = {
+    addr: { port: 1234 },
+    finished: completion.promise,
+    shutdown: vi.fn(async function(this: unknown) { expect(this).toBe(server); completion.resolve(); }),
+  };
+  vi.stubGlobal('Deno', { serve: () => server });
+  try {
+    const adapter = createDenoAdapter();
+    const page = component();
+    await (await connect(adapter, async () => page)).open();
+    const managed = adapter.serve({ fetch: () => new Response() });
+    expect((managed as any).addr.port).toBe(1234);
+    await Promise.all([managed.shutdown!(), managed.shutdown!(), managed.finished]);
+    expect(server.shutdown).toHaveBeenCalledTimes(1);
+    expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+  } finally { vi.unstubAllGlobals(); }
+});
+it('disposes when the native server finishes without explicit shutdown', async () => {
+  const completion = deferred();
+  vi.stubGlobal('Deno', { serve: () => ({ finished: completion.promise }) });
+  try {
+    const adapter = createDenoAdapter();
+    const page = component();
+    await (await connect(adapter, async () => page)).open();
+    const server = adapter.serve({ fetch: () => new Response() });
+    completion.resolve();
+    await server.finished;
+    expect(page.destroyAsync).toHaveBeenCalledTimes(1);
+  } finally { vi.unstubAllGlobals(); }
+});

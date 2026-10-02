@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex Deno runtime eviction (2026-10-03):** read
+> **Latest checkpoint — Codex Deno shutdown (2026-10-03):** read
+> [shutdown and action lifetime verification](./release-0.9.0.md#codex-deno-shutdown-2026-10-03).
+> **Author: Codex.** Deno exposes idempotent `dispose()`, integrates cleanup with
+> native server shutdown/completion, and waits for active actions before component
+> disposal. Shutdown also drains pending creation and retired entries.
+> **12/58 tasks remain checked.** Fifteen adapter tests, build, and root/package
+> types passed. Deno is absent on this host: live socket acceptance remains open.
+> Next work: guarded Node WebSocket integration and generated-app acceptance.
+> Deno cleanup waits for user actions to settle; no forced timeout is implemented.
+
+> **Previous checkpoint — Codex Deno runtime eviction (2026-10-03):** read
 > [concurrent creation and disposal](./release-0.9.0.md#codex-deno-runtime-eviction-2026-10-03).
 > **Author: Codex.** Deno now shares pending component creation by scope, counts
 > reservations against capacity, awaits eviction disposal, and ignores callbacks

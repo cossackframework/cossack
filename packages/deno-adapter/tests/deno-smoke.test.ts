@@ -15,6 +15,7 @@ Deno.test('serves HTTP and upgrades a real WebSocket', async () => {
   const actionReceived = new Promise<void>((resolve) => { resolveAction = resolve; });
   const component = {
     _id: 'root',
+    destroyAsync: async () => {},
     activeComponents: new Map(),
     getInitialState: () => ({ public: { count: 0 } }),
     executeAction: async (name: string, payload: unknown[], user: unknown) => {
@@ -61,6 +62,7 @@ Deno.test('serves HTTP and upgrades a real WebSocket', async () => {
 Deno.test('closes the socket when a WebSocket action fails', async () => {
   const component = {
     _id: 'root',
+    destroyAsync: async () => {},
     activeComponents: new Map(),
     getInitialState: () => ({ public: {} }),
     executeAction: async () => { throw new Error('action failed'); },
