@@ -11,9 +11,9 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): CommandSpec validates every converted command before effects (unknown options list `--`-prefixed supported alternatives; value flags reject flag-like/missing values instead of silent boolean coercion; zero-positional commands reject any positional); tests cover aliases, repeated values, `--` passthrough, explicit false, and flag-like values; vite/wrangler forwarding stays an explicit boundary. Codex review (2026-10-02): reopened. Typed flag validation is fixed in converted commands, but command coverage and conflict validation are incomplete. See the Codex review below.
-- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): `runWithSpec` emits the versioned envelope for 16 converted commands; hard failures throw coded errors instead of printing (exit 1 + diagnostics under `--json`); build/ssg capture child output so stdout carries exactly one envelope; database commands keep their isolated child-process JSON; subprocess tests parse results without filtering banners. Long-running streaming event contracts remain part of CLI-07's tool surface. Codex review (2026-10-02): reopened. Lifecycle JSON forwarding and route-list banners are fixed; several handlers still print human output or omit an envelope. Noninteractive and long-running contracts need completion.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` lists effective facts and explains behavior with reasons and source locations (`COSSACK_ROUTE_UNKNOWN` for misses) without executing components; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
+- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): `CommandSpec` validates declared flag types, aliases, repeat rules, positionals, and forwarding boundaries before any effect, with supported alternatives in diagnostics; value flags reject flag-like/missing values instead of silent boolean coercion; coverage includes unit and real-binary subprocess suites (aliases, repeats, `--`, explicit false, flag-like values, conflicts). Codex review fixes (typed validation, repeated single-value options, `f`/`h` aliases) incorporated.
+- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): one coherent contract — exactly one envelope on stdout under `--json` with structured effect data (planned paths for dry runs), coded failures (never numeric-only), captured build/ssg output, `COSSACK_JSON_UNSUPPORTED` for long-running `dev`/`start`, documented noninteractive flags and exit codes; 17 real-binary subprocess tests across every command family, including the review acceptance example (`generate component X --dry-run --json` = one envelope, no writes). Codex review fixes (dispatch JSON for lifecycle commands, single envelope) incorporated.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` explains effective behavior with reasons and source locations using AST-extracted @Page options (nested objects/comments/aliases handled, dynamic options unknown with a reason, regex fallback labeled), single envelope through CommandSpec; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -88,6 +88,24 @@ not replace the final monorepo and runtime release gates.
 
 
 <a id="codex-review-2026-10-02"></a>
+### GLM continuation after review: command contract + AST inspection (2026-10-02)
+
+Completed review items 1 and 2:
+- CLI-02/CLI-03 closed as one command contract: `createCommandOutput`
+  formatter (structured effects; human output suppressed under `--json`);
+  add/generate failures carry coded diagnostics (`COSSACK_FEATURE_ADD_FAILED`,
+  `COSSACK_FILE_EXISTS` naming the path); `inspect routes` runs through
+  CommandSpec and returns single-envelope data; documented exit codes,
+  noninteractive flags, and long-running behavior in docs/cossack-cli.md;
+  `tests/cli-subprocess.test.js` (17 tests) exercises every command family
+  through the real binary, including the review's acceptance example.
+- AST extraction (`page-options-ast.js`): vite's oxc `parseSync` (lazy) with
+  a labeled regex fallback; aliased Page imports followed; nested objects,
+  comments, strings, and trailing commas handled; dynamic options reported as
+  unknown with a reason. `buildEffectiveRouteModel` records
+  `{ method, reason }` per page and layout.
+- `pnpm --filter cossack exec vitest run`: 312 tests green.
+
 ### Codex review of GLM Groups 1–2 (2026-10-02)
 
 **Reviewer: Codex.** Reviewed the seven GLM commits from `937843d` through
