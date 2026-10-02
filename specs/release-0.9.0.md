@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire result/yield types, ordinary completion, native response timing/body consumption, and one 178-test matrix (172 shared transport + six multipart cases) are verified. Native HTTP bodies resolve to a bounded local Response; real HTTP/SSE/upload browsers verify binary bodies and metadata. Remaining: multipart stream/file/ownership parity and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-native-response-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 242-case conformance matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Production workerd/Chromium exercises multipart/native bodies, auth/D1 ownership and cookies. Remaining: child/action isolation and rate-limit boundaries, file/schema/resource policies with RT-02/RT-14 and session criteria with RT-11. See the [latest checkpoint](#codex-rpc-protocol-boundaries-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,61 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-protocol-boundaries-2026-10-03"></a>
+### Codex review: RPC correlation and terminal response validation (2026-10-03)
+
+**Author: Codex.** Continued RT-01 after `a7da267`. Ten new regressions failed
+before the reader fix. Malformed later JSON/UTF-8/frame shapes lost the already
+known ID, first frames could disagree with the HTTP response header, and public
+clients returned on done before the reader checked trailing frames. This allowed
+false success and terminal state hydration despite a malformed response ending.
+
+`readRpcStream()` now seeds correlation from `X-Cossack-Request-Id`, retains the
+header/learned ID on parse and reader failures, and holds done/error until EOF.
+Trailing bytes/frames reject with `COSSACK_RPC_STREAM_INVALID`; a body failure
+reports sanitized `COSSACK_RPC_NETWORK_FAILED` and the unknown server outcome.
+Clients keep earlier accepted progress and withhold terminal state. Yields stay
+incremental. Regressions also prove cancellation during the EOF wait and body
+failures after both done and error. Frame validation requires an object envelope
+and non-whitespace request IDs/error codes.
+
+Expanded the real proxy/router/runtime matrix to **242** cases: **52 shared x
+four paths = 208**, six HTTP/SSE/service response-local cases, 13 raw multipart
+and 15 multipart client/router cases. Fault injection rewrites only correlated
+WebSocket action frames; initialization/broadcasts are untouched. Malformed
+known-ID frames reject their pending call and release loading; unknown IDs are
+ignored without hydrating foreign state. A valid socket terminal frame closes
+its own call without waiting for the multiplexed connection to close. HTTP
+faults prove rejection before false state, retained earlier progress, one
+dispatch and eventual request cleanup. Cancellation is not mutation rollback.
+
+Verified: sequential core build/framework declarations; full core **739** tests
+across **52** files, framework **896**/49, CLI **559**/39 including both workerd
+fixtures and all **14** generated runtime cases; root TypeScript and all **11**
+package checks. Updated RPC guide, architecture, draft migration, RT-01 plan,
+checklist status and latest Codex handoff.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts tests/sse-coordinator-transport.test.ts
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+git diff --check -- . ':!reports.md'
+```
+
+**14/58 tasks checked; no new task closes. All 44 unchecked tasks remain in
+scope.** GLM should continue RT-01 with child/action target isolation and rate
+limits through actual proxy/handler fixtures, then RT-02/RT-14 input/file/resource
+policies and RT-11 secret exclusion/session recipes/rotation/concurrency.
+Published-entry workspace fixtures are not tarball installation or live
+deployment evidence. Deno execution and Electron packaging remain REL-03 gates.
+Keep versions 0.8.3 until REL-04; preserve `reports.md`/`.zcodeignore` and build
+declarations before dependent checks without simultaneous regeneration.
 
 <a id="codex-workers-rpc-acceptance-2026-10-03"></a>
 ### Codex review: built Workers multipart and native RPC acceptance (2026-10-03)

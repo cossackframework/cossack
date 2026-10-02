@@ -38,10 +38,11 @@ function parseFrame(bytes: Uint8Array): RpcStreamFrame {
 
 /** Validate the same correlated protocol on HTTP and WebSocket transports. */
 export function validateRpcFrame(frame: any): RpcStreamFrame {
-    if (!frame || frame.v !== 1 || typeof frame.requestId !== 'string' || !frame.requestId ||
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame) || frame.v !== 1 ||
+        typeof frame.requestId !== 'string' || !frame.requestId.trim() ||
         !['yield', 'done', 'error'].includes(frame.type) ||
         (frame.type === 'error'
-            ? typeof frame.code !== 'string' || typeof frame.message !== 'string' ||
+            ? typeof frame.code !== 'string' || !frame.code.trim() || typeof frame.message !== 'string' ||
                 (frame.fieldErrors !== undefined && (!frame.fieldErrors || typeof frame.fieldErrors !== 'object' || Array.isArray(frame.fieldErrors)))
             : !frame.state || typeof frame.state !== 'object' || Array.isArray(frame.state) ||
                 (frame.scopeState !== undefined && (!frame.scopeState ||
@@ -56,16 +57,19 @@ export async function* readRpcStream(
     response: Response,
     signal?: AbortSignal,
 ): AsyncGenerator<RpcStreamFrame> {
-    if (!response.body) throw new RpcError('COSSACK_RPC_STREAM_INVALID', 'RPC stream has no response body.');
+    let requestId = response.headers.get('X-Cossack-Request-Id') || undefined;
+    if (!response.body) throw new RpcError('COSSACK_RPC_STREAM_INVALID', 'RPC stream has no response body.', { requestId });
     const reader = response.body.getReader();
     let buffer = new Uint8Array(4096);
     let size = 0;
     let terminal = false;
-    let requestId: string | undefined;
+    let completion: RpcStreamFrame | undefined;
     const abortError = () => new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
     const cancelReader = () => { void reader.cancel(signal?.reason).catch(() => {}); };
     signal?.addEventListener('abort', cancelReader, { once: true });
     const append = (part: Uint8Array) => {
+        if (terminal && part.byteLength) throw new RpcError('COSSACK_RPC_STREAM_INVALID',
+            'RPC stream contains data after its result.', { requestId });
         const nextSize = size + part.byteLength;
         if (nextSize > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC stream frame exceeds the byte limit.', { requestId });
@@ -80,6 +84,7 @@ export async function* readRpcStream(
         size = nextSize;
     };
     const decode = () => {
+        if (terminal) throw new RpcError('COSSACK_RPC_STREAM_INVALID', 'RPC stream contains frames after its result.', { requestId });
         const frame = parseFrame(buffer.subarray(0, size));
         size = 0;
         if (terminal || (requestId && frame.requestId !== requestId)) {
@@ -99,13 +104,23 @@ export async function* readRpcStream(
             for (let i = 0; i < value.length; i++) {
                 if (value[i] !== 10) continue;
                 append(value.subarray(start, i));
-                yield decode();
+                const frame = decode();
+                if (frame.type === 'yield') yield frame;
+                else completion = frame;
                 start = i + 1;
             }
             append(value.subarray(start));
         }
         if (size) throw new RpcError('COSSACK_RPC_STREAM_TRUNCATED', 'RPC stream ended inside a frame.', { requestId });
         if (!terminal) throw new RpcError('COSSACK_RPC_STREAM_TRUNCATED', 'RPC stream ended without a result.', { requestId });
+        // Consumers return on done/error. Withhold that frame until EOF so
+        // trailing data or a body failure cannot masquerade as completion.
+        yield completion!;
+    } catch (cause) {
+        if (cause instanceof RpcError) throw new RpcError(cause.code, cause.message,
+            { cause, requestId: requestId ?? cause.requestId, status: cause.status, fieldErrors: cause.fieldErrors });
+        throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
+            'RPC stream failed. The server outcome is unknown and is never retried.', { cause, requestId });
     } finally {
         signal?.removeEventListener('abort', cancelReader);
         await reader.cancel().catch(() => {});

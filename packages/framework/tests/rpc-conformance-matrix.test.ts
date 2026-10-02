@@ -164,6 +164,14 @@ async function harness(transport: Transport, uploadMode = false) {
     let scope: ServiceScope | undefined;
     let off: (() => void) | undefined;
     let socket: any;
+    let damage: ((frame: any) => any) | undefined;
+    let damageAt = 0;
+    const rewrite = (frame: any) => {
+        // WebSocket initialization/broadcasts share the socket. Only alter the
+        // correlated action protocol, never an unrelated state snapshot.
+        if (!damage || typeof frame.requestId !== 'string' || damageAt-- > 0) return frame;
+        const change = damage; damage = undefined; return change(frame);
+    };
     const browserWindow = { location: { search: '', href: '' } };
     const client = clientSurface(HttpPage, transport);
     let target = client;
@@ -175,7 +183,7 @@ async function harness(transport: Transport, uploadMode = false) {
         server.connectedCallback();
         const runtime = new InMemoryWebSocketRuntime(server);
         const peer = { readyState: 1, send(data: string) {
-            if (!disconnected) routeSocketFrame(socket, JSON.parse(data));
+            if (!disconnected) routeSocketFrame(socket, rewrite(JSON.parse(data)));
         } };
         socket = { readyState: 1, send(data: string) {
             const frame = JSON.parse(data);
@@ -214,7 +222,15 @@ async function harness(transport: Transport, uploadMode = false) {
                     }; },
                     async pull(controller) {
                         const next = await reader.read();
-                        if (!disconnected) { if (next.done) controller.close(); else controller.enqueue(next.value); }
+                        if (!disconnected) {
+                            if (next.done) controller.close();
+                            else {
+                                // The real handler emits one encoded frame per
+                                // chunk. Corrupt only the network boundary.
+                                const value = damage ? new TextEncoder().encode(JSON.stringify(rewrite(JSON.parse(new TextDecoder().decode(next.value)))) + '\n') : next.value;
+                                controller.enqueue(value);
+                            }
+                        }
                     },
                     async cancel() { await reader.cancel(); reader.releaseLock(); },
                 }, { highWaterMark: 0 });
@@ -267,6 +283,7 @@ async function harness(transport: Transport, uploadMode = false) {
     }
     return {
         client, target, requests,
+        corruptFrame(change: (frame: any) => any, after = 0) { damage = change; damageAt = after; },
         pendingCalls: () => socket ? wsPendingCalls(socket).size : 0,
         disconnect() {
             disconnected = true;
@@ -294,6 +311,35 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
     });
     afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
     const settled = () => { expect(wire.client.loading).toEqual({}); expect(wire.pendingCalls()).toBe(0); };
+
+    it.each([
+        ['unsupported version', (frame: any) => ({ ...frame, v: 2 })],
+        ['unknown frame type', (frame: any) => ({ ...frame, type: 'unexpected' })],
+        ['array state', (frame: any) => ({ ...frame, state: [] })],
+        ['array scope state', (frame: any) => ({ ...frame, scopeState: [] })],
+        ['array field errors', (frame: any) => ({ ...frame, type: 'error', code: 'COSSACK_VALIDATION_FAILED', message: 'Invalid', fieldErrors: [] })],
+        ['non-string error message', (frame: any) => ({ ...frame, type: 'error', code: 'COSSACK_FAILURE', message: 7 })],
+        ['empty error code', (frame: any) => ({ ...frame, type: 'error', code: '', message: 'Invalid' })],
+    ] as const)('rejects %s at the wire boundary before hydrating state', async (_name, change) => {
+        wire.corruptFrame(change);
+        await expect(rpc$(wire.target.stream())).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });
+        expect(wire.target.count).toBe(0); expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1); settled();
+        await vi.waitFor(() => expect(effects.current.streamsClosed).toBe(1));
+    });
+    it('isolates a foreign response ID instead of applying its state', async () => {
+        wire.corruptFrame(frame => ({ ...frame, requestId: 'foreign-request', state: { count: 999 } }));
+        const call = rpc$(wire.target.stream());
+        if (transport === 'websocket') {
+            // Socket calls share a persistent connection; unknown IDs must not
+            // poison a different pending call. Its own subsequent frames work.
+            expect(await call).toEqual({ total: 2 }); expect(wire.target.count).toBe(2);
+        } else {
+            await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });
+            await expect(call).rejects.not.toMatchObject({ requestId: 'foreign-request' });
+            expect(wire.target.count).toBe(0);
+        }
+        expect(wire.requests).toHaveLength(1); settled();
+    });
 
     it.each([0, 1, 2, 3, 4])('completes native response %s without confusing its body with state or protocol', async index => {
         const call = rpc$(wire.target.native(index));
@@ -499,6 +545,30 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         wire.disconnect();
         await expect(iterator.next()).rejects.toMatchObject({ code: transport === 'websocket' ? 'COSSACK_RPC_TRANSPORT_CLOSED' : 'COSSACK_RPC_NETWORK_FAILED', message: expect.stringContaining('unknown'), requestId: expect.any(String) });
         await expect(call).rejects.toBeDefined(); expect(wire.requests).toHaveLength(1); settled();
+    });
+});
+
+describe.each(['http', 'sse', 'service'] as const)('%s response-local protocol boundaries', transport => {
+    let wire: Awaited<ReturnType<typeof harness>>;
+    beforeEach(async () => {
+        effects.current = { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0, fileContinue: undefined };
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        wire = await harness(transport);
+    });
+    afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+    it('rejects terminal-following data before applying a false final state', async () => {
+        wire.corruptFrame(frame => ({ ...frame, type: 'done', value: 'premature', state: { count: 999 } }));
+        await expect(rpc$(wire.target.stream())).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });
+        expect(wire.target.count).toBe(0); expect(wire.requests).toHaveLength(1); expect(wire.client.loading).toEqual({});
+        await vi.waitFor(() => expect(effects.current.streamsClosed).toBe(1));
+    });
+    it('retains correlation and accepted progress when a later frame is malformed', async () => {
+        wire.corruptFrame(frame => ({ ...frame, v: 2, state: { count: 999 } }), 1);
+        const call = rpc$(wire.target.stream()); const iterator = call[Symbol.asyncIterator]();
+        expect(await iterator.next()).toEqual({ done: false, value: { count: 1 } });
+        await expect(iterator.next()).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });
+        await expect(call).rejects.toBeDefined(); expect(wire.target.count).toBe(1);
+        expect(wire.requests).toHaveLength(1); expect(wire.client.loading).toEqual({});
     });
 });
 

@@ -285,6 +285,14 @@ calls drain automatically. Iteration has one consumer and cancels on early retur
 Frames include a version, type, request ID, public state, and yield/final value
 or structured error. UTF-8 frames are bounded to 1 MiB on both sides.
 
+The response-local reader correlates frames against the HTTP response ID, or
+learns the first valid frame's ID when no header is available. Parser and reader
+failures retain that ID. Yields remain incremental; done/error frames are held
+until EOF validates that no data follows. Final state is applied only after that
+validation. Abort/deadline ownership continues through EOF. WebSocket terminal
+frames complete their individual pending call; the multiplexed socket remains
+open and ignores foreign or completed request IDs.
+
 Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they

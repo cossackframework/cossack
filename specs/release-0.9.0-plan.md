@@ -12,7 +12,11 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex built Workers checkpoint](./release-0.9.0.md#codex-workers-rpc-acceptance-2026-10-03)
+The latest [Codex protocol-boundary checkpoint](./release-0.9.0.md#codex-rpc-protocol-boundaries-2026-10-03)
+records known-ID preservation, response-header correlation and EOF validation
+before final state hydration, plus a 242-case shared transport matrix. RT-01
+remains open for child-target and rate-limit coverage and policy criteria.
+The preceding [Codex built Workers checkpoint](./release-0.9.0.md#codex-workers-rpc-acceptance-2026-10-03)
 records real production workerd/Chromium acceptance for multipart generators,
 native response bodies, auth/D1 request ownership, cookies and one-time flash,
 and fixes native NDJSON being parsed as protocol by the coordinator.
@@ -623,6 +627,30 @@ or protocol boundary. RT-11 still requires secret exclusion, complete session
 recipes, rotation and concurrency criteria. Physical upgrades, distributed
 coordination, Deno execution, Electron packaging and full release gates retain
 separate evidence requirements. RT-01 stays open; no additional checkbox closes.
+
+Codex protocol-boundary checkpoint (2026-10-03): malformed JSON/UTF-8/frame
+shapes now retain the header/learned request ID. The first HTTP frame must match
+the response header; nonempty IDs/error codes are required. The reader holds
+done/error until EOF, rejecting trailing bytes or body failure before clients
+hydrate terminal state. Yields remain immediate and already accepted state is
+retained. Deadline/cancellation ownership remains active through EOF; there is
+no retry or mutation rollback. The four-path matrix now has 52 shared cases
+(208), six response-local protocol cases, 13 raw multipart and 15 multipart
+client/router cases: 242 total. WebSocket faults only rewrite correlated frames;
+initial snapshots/broadcasts remain untouched. Unknown socket IDs are ignored,
+malformed known-ID frames reject the pending call, and its terminal frame closes
+the call without waiting for the shared socket to end.
+
+Next, extend these real proxy/handler fixtures with child dispatch and rate-limit
+boundaries. Prove valid children receive only their own scope state and invalid
+child/action IDs cannot execute or hydrate another target. Test allowed and
+denied action calls with stable codes/request IDs, one dispatch, loading/pending
+cleanup and correct limit ownership across component/service and HTTP/SSE/WS.
+Audit constructor/disposal ordering and scoped metadata rather than adding
+isolated mocks of the permission check. Then settle file/unknown-key/schema
+policy with RT-02/RT-14 and session criteria with RT-11. Existing protocol and
+production-runtime evidence does not close these requirements. RT-01 stays open;
+the release still has 14/58 checked and all 44 unchecked tasks remain in scope.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

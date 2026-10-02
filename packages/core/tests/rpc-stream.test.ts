@@ -90,6 +90,69 @@ describe('RPC frame parsing', () => {
         await expect(collect(response([encode(frame('done')), encode(frame())])))
             .rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID' });
     });
+    it('matches the first frame to the known HTTP response ID before exposing state', async () => {
+        const reply = response([encode(frame('done'))]);
+        reply.headers.set('X-Cossack-Request-Id', 'expected');
+        await expect(collect(reply)).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'expected' });
+    });
+    it.each([
+        encode({ ...frame(), state: [] }),
+        Uint8Array.of(255, 10),
+        new TextEncoder().encode('{invalid}\n'),
+    ])('retains a learned ID when a later frame is malformed', async bytes => {
+        await expect(collect(response([encode(frame()), bytes]))).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'request-1' });
+    });
+    it.each(['', ' '])('rejects empty error code %j', async code => {
+        const reply = response([encode({ v: 1, type: 'error', requestId: 'request-1', code, message: 'Failure' })]);
+        reply.headers.set('X-Cossack-Request-Id', 'request-1');
+        await expect(collect(reply)).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'request-1' });
+    });
+    it('withholds the terminal frame until EOF proves that no data follows it', async () => {
+        let finish: (() => void) | undefined;
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(encode(frame('done'))); },
+            pull(controller) { finish = () => controller.close(); },
+        }, { highWaterMark: 0 });
+        const iterator = readRpcStream(new Response(body));
+        const delivered = vi.fn(); const pending = iterator.next().then(value => { delivered(); return value; });
+        await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+        expect(delivered).not.toHaveBeenCalled(); finish!();
+        expect(await pending).toEqual({ done: false, value: frame('done') });
+        await iterator.next(); expect(body.locked).toBe(false);
+    });
+    it('reports a post-yield reader failure with correlation and releases the reader', async () => {
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(encode(frame())); },
+            pull(controller) { controller.error(new TypeError('private producer details')); },
+        }, { highWaterMark: 0 });
+        await expect(collect(new Response(body))).rejects.toMatchObject({ code: 'COSSACK_RPC_NETWORK_FAILED', requestId: 'request-1', message: expect.stringContaining('unknown') });
+        expect(body.locked).toBe(false);
+    });
+    it.each(['done', 'error'] as const)('rejects a body failure after %s rather than exposing its terminal frame', async type => {
+        const terminal = type === 'done' ? frame('done') :
+            { v: 1, type, requestId: 'request-1', code: 'COSSACK_VALIDATION_FAILED', message: 'Invalid' };
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(encode(terminal)); },
+            pull(controller) { controller.error(new TypeError('private producer details')); },
+        }, { highWaterMark: 0 });
+        await expect(collect(new Response(body))).rejects.toMatchObject({
+            code: 'COSSACK_RPC_NETWORK_FAILED', requestId: 'request-1', message: expect.stringContaining('unknown'),
+        });
+        expect(body.locked).toBe(false);
+    });
+    it('keeps cancellation active while a terminal frame waits for EOF', async () => {
+        let waiting = false;
+        const cancelled = vi.fn();
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(encode(frame('done'))); },
+            pull() { waiting = true; }, cancel: cancelled,
+        }, { highWaterMark: 0 });
+        const controller = new AbortController();
+        const pending = readRpcStream(new Response(body), controller.signal).next();
+        await vi.waitFor(() => expect(waiting).toBe(true)); controller.abort();
+        await expect(pending).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED', requestId: 'request-1' });
+        expect(cancelled).toHaveBeenCalledOnce(); expect(body.locked).toBe(false);
+    });
     it('cancels a pending reader and releases its lock on abort', async () => {
         const cancelled = vi.fn();
         const stream = new ReadableStream<Uint8Array>({ cancel: cancelled });
@@ -119,6 +182,14 @@ function component(transport: 'http' | 'sse' = 'sse') {
 }
 
 describe('single-dispatch RPC calls', () => {
+    it.each(['http', 'sse'] as const)('rejects %s terminal-following data before applying final state or reporting success', async transport => {
+        const reply = response([encode(frame('done', 'premature', { count: 999 })), encode(frame())]);
+        reply.headers.set('X-Cossack-Request-Id', 'request-1');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply));
+        const target = component(transport);
+        await expect(target.run()).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'request-1' });
+        expect(target.count).toBe(0); expect(target.loading).toEqual({}); expect(fetch).toHaveBeenCalledOnce();
+    });
     it.each(['http', 'sse'] as const)('compares %s custom state using its property JSON key before applying updates', async transport => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ count: { key: 'count', value: 2 }, _cossack_return: 'saved' }),
             { headers: { 'Content-Type': 'application/json' } })));

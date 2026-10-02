@@ -2,7 +2,41 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex built Workers RPC acceptance (2026-10-03):** read
+> **Latest checkpoint — Codex RPC protocol boundaries (2026-10-03):** read
+> [review and verification](./release-0.9.0.md#codex-rpc-protocol-boundaries-2026-10-03),
+> [RT-01 next steps](./release-0.9.0-plan.md#rt-01), and
+> [RPC contract](../docs/rpc.md). **Author: Codex.** Regressions reproduced lost
+> known request IDs, a first frame disagreeing with the response ID, and success
+> being exposed before trailing data was checked. The shared reader now retains
+> correlation and holds done/error until response EOF. Invalid trailing data or
+> body failures reject before terminal state hydration; earlier yield state stays
+> visible. Cancellation remains active while waiting for EOF. No mutation retries
+> or rollback were added. Non-whitespace IDs/error codes and frame shapes are
+> validated across HTTP and WebSocket boundaries.
+>
+> The matrix now has **242** cases: 52 shared cases across four paths (208), six
+> response-local boundary cases, 13 raw multipart and 15 multipart client/router
+> cases. WebSocket fault injection targets correlated frames, preserving socket
+> initialization/broadcasts. Unknown IDs cannot hydrate another call; malformed
+> known-ID frames reject only their pending call. Socket terminal frames complete
+> the individual call without waiting for the persistent connection to close.
+>
+> Verified: core build and framework declarations; core **739**/52 files,
+> framework **896**/49, CLI **559**/39 including both real-workerd fixtures and
+> all **14** generated runtime cases; root TypeScript and all **11** package
+> checks. Protocol docs, architecture and migration notes describe EOF timing.
+>
+> **14/58 tasks checked; all 44 unchecked items remain in scope.** No checkbox
+> closes in this checkpoint. Continue RT-01 with child/action target isolation
+> and rate-limit ownership using real public proxy/handler fixtures; the detailed
+> plan explains the goal and acceptance evidence. Then finish schema/file/
+> unknown-key/resource policy with RT-02/RT-14 and sensitive old-input/session
+> rotation/concurrency with RT-11. Deno execution, Electron packaging, published
+> tarball installation and live deployment retain their separate evidence gates.
+> Keep versions 0.8.3 until REL-04; preserve unrelated `reports.md` and
+> `.zcodeignore`. Rebuild declarations sequentially before dependent verification.
+
+> **Previous checkpoint — Codex built Workers RPC acceptance (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-workers-rpc-acceptance-2026-10-03),
 > [RT-01](./release-0.9.0-plan.md#rt-01), [RT-11](./release-0.9.0-plan.md#rt-11),
 > and [SSE response contract](./sse.md). **Author: Codex.** Real workerd exposed

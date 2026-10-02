@@ -95,9 +95,22 @@ Non-finite numbers, invalid Dates, binary and opaque native values now reject
 instead of silently becoming null, empty objects, or numeric-keyed records.
 Custom JSON output is evaluated once and validated before encoding. WebSocket
 File/Blob arguments reject before dispatch; they are no longer silently removed.
-HTTP component file uploads retain their separate multipart path. Ordinary
+HTTP component file uploads use multipart arguments through the shared action dispatcher. Ordinary
 multipart result serialization and private-error redaction match JSON RPC.
 Root result JSON hooks receive the empty key consistently across transports.
+
+## HTTP generator completion validates the response ending
+
+HTTP/SSE component and service calls now wait for response EOF before exposing
+the terminal result/error. A terminal frame followed by data or a body failure
+rejects instead of reporting success and hydrating final state. Yields remain
+incremental; previously applied progress is retained. Custom response producers
+must close after the terminal frame. Deadlines and cancellation remain active
+while awaiting EOF. Frame IDs must match the response's request-ID header when
+present. Malformed data retains the known ID for diagnostics.
+
+WebSocket calls complete at their correlated terminal frame; their shared
+connection stays open. Unknown IDs do not affect a different pending call.
 
 ## Native HTTP RPC responses have an explicit client result
 

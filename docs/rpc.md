@@ -227,6 +227,21 @@ disconnects. Before response headers arrive, the server-generated HTTP request I
 may be unavailable; local pre-dispatch failures and cancellation also need not
 have one. `status` describes an HTTP failure and is absent on WebSocket failures.
 
+HTTP/SSE generator frames must use the response's `X-Cossack-Request-Id` when
+present, or the first accepted frame's ID otherwise. Invalid JSON, UTF-8, frame
+shapes and later ID mismatches reject with `COSSACK_RPC_STREAM_INVALID` and the
+known ID. Error codes and request IDs must contain a non-whitespace character.
+Yields arrive incrementally. The final result or error waits until the response
+body ends: trailing data or a body failure rejects before final state is applied.
+Cancellation and deadlines remain active during that wait. Already accepted
+yield state remains visible; failure does not undo it or the server's mutation.
+
+WebSocket calls share a persistent connection. Their correlated terminal frame
+completes the call without waiting for the socket to close. Unknown or completed
+request IDs are ignored, so a foreign frame cannot hydrate another call's state.
+A malformed frame with a pending call's ID rejects that call and releases its
+pending entry.
+
 The shared [transport conformance matrix](../packages/framework/tests/rpc-conformance-matrix.test.ts)
 runs the same assertions against HTTP and SSE component actions, explicit service
 actions, and the WebSocket runtime dispatcher. It exercises real server handlers
@@ -243,4 +258,6 @@ production builds and navigation.
 | Cancel / iterator return | Consumption ends and remote cleanup follows when application I/O yields control. |
 | Second iterator | It rejects without interfering with the first consumer or dispatching again. |
 | Unsupported payload / state / result | The diagnostic names the offending value path; invalid input does not dispatch. |
+| Malformed protocol / foreign ID | Invalid correlated frames reject before state hydration; unknown socket IDs are isolated. |
+| HTTP result followed by data | Rejects before final state hydration; accepted earlier yields remain visible. |
 | Ownership | HTTP request scopes close with the response; WebSocket component ownership lasts until runtime teardown. |
