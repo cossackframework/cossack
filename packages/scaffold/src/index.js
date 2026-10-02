@@ -4,6 +4,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
+import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
+export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import {
   ADAPTERS,
   FEATURES,
@@ -1978,6 +1980,17 @@ async function mergePackage(
   const previous = previousEntry
     ? JSON.parse(previousEntry.content.toString('utf8'))
     : {};
+  const recorded = await readManifest(projectDir);
+  let ownedDependencies = recorded?.dependencyBaseline ?? previous;
+  if (recorded && !recorded.dependencyBaseline) {
+    if (recorded.templateVersion !== templateVersion) throw Object.assign(new Error(
+      'Run cossack upgrade to record dependency ownership before composing this older scaffold.'),
+    { code: 'COSSACK_SCAFFOLD_DEPENDENCY_BASELINE_MISSING' });
+    // Current-version manifests can be reconstructed locally. Rendering an old
+    // recipe with a different release would silently invent ownership values.
+    ownedDependencies = JSON.parse(packageJson(await inferRecipe(projectDir, recorded), path.basename(projectDir)));
+  }
+  const dependencies = planDependencyChanges(current, desired, ownedDependencies, { force: forceManaged });
   const previouslyManagedBuilds = new Set([
     ...PNPM_MANAGED_BUILDS,
     ...(previous.pnpm?.onlyBuiltDependencies ?? []),
@@ -1994,18 +2007,7 @@ async function mergePackage(
       previous.scripts,
       forceManaged,
     ),
-    dependencies: mergePackageSection(
-      current.dependencies,
-      desired.dependencies,
-      previous.dependencies,
-      forceManaged,
-    ),
-    devDependencies: mergePackageSection(
-      current.devDependencies,
-      desired.devDependencies,
-      previous.devDependencies,
-      forceManaged,
-    ),
+    ...dependencies.next,
   };
   if (current.pnpm) {
     const pnpm = { ...current.pnpm };
@@ -2014,6 +2016,7 @@ async function mergePackage(
     else delete merged.pnpm;
   }
   entry.content = text(JSON.stringify(merged, null, 2) + '\n');
+  entry.dependencyBaseline = dependencies.baseline;
   await mergePnpmWorkspace(
     projectDir,
     rendered,
@@ -2179,6 +2182,10 @@ export async function writeManifest(
     resolvedFeatures: recipe.resolvedFeatures,
     dashboardModules: recipe.dashboardModules,
     config: publicRecipe(recipe).config,
+    dependencyBaseline: rendered.get('package.json')?.dependencyBaseline ??
+      (!written || written.has('package.json')
+        ? dependencyBaseline(JSON.parse(packageJson(recipe, path.basename(projectDir))))
+        : previousManifest?.dependencyBaseline ?? dependencyBaseline({})),
     files,
   };
   const manifestDir = path.join(projectDir, '.cossack');

@@ -10,8 +10,9 @@ Read this document with [the handoff](./handoff-0.9.0.md),
 The checklist records scope and completion. This plan explains the work.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex machine-contract checkpoint](./release-0.9.0.md#codex-cli-json-2026-10-02)
-records CLI-03 completion and remaining acceptance work. The earlier continuation
+The latest [Codex upgrade checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02)
+records CLI-06 completion and remaining acceptance work. The preceding machine
+contract checkpoint records CLI-03 completion. The earlier continuation
 records the development WebSocket fix and upgrade planning. The Group 3 review records corrections
 to GLM's implementations. This plan preserves the original task intent; use
 those logs and task checkboxes for current completion status.
@@ -241,11 +242,18 @@ RT-03, RT-12, RT-14, RT-25, and RT-29.
 <a id="cli-06"></a>
 ### CLI-06: Structured upgrades
 
+Status: **Complete (Codex, 2026-10-02).** See the
+[upgrade acceptance checkpoint](./release-0.9.0.md#codex-cli-upgrades-2026-10-02).
+Plans now combine recorded dependency ownership with templates from the resolved
+target release. Subprocess tests prove read-only application previews, preservation,
+owned updates/removals, repeat behavior, and partial failure. A real pnpm/local
+registry test exercises release tarball loading. The broader REL-02 matrix remains open.
+
 Purpose: Upgrades must show dependency changes and template conflicts before
 overwriting application work. Agents need to distinguish safe generated updates
 from files that require a decision.
 
-Baseline: `upgrade.js` resolves versions and compares template drift. It still
+Original baseline: `upgrade.js` resolves versions and compares template drift. It still
 uses a largely human-oriented sequence of updates, installation, and reporting.
 
 Approach: Build a complete upgrade plan first. Include old/new versions,

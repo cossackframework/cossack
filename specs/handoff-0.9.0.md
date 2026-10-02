@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex JSON contracts (2026-10-02):** read
+> **Latest checkpoint — Codex structured upgrades (2026-10-02):** read
+> [Codex's CLI-06 completion and continuation instructions](./release-0.9.0.md#codex-cli-upgrades-2026-10-02).
+> **CLI-06 is complete; 11/58 tasks are checked.** Upgrade plans use the requested
+> scaffold release and recorded dependency ownership. They preserve local edits,
+> apply owned additions/removals, track file/manifest effects, and report partial
+> failures. Subprocess fixtures and a real pnpm/local-registry tarball test pass.
+> Continue CLI-04's compiler-backed inspection, then CLI-05/RT-25 recipes and
+> capabilities. All 47 unchecked tasks remain in scope; versions remain 0.8.3.
+> This supersedes CLI-06's partial status in the historical checkpoints below.
+
+> **Previous checkpoint — Codex JSON contracts (2026-10-02):** read
 > [Codex's CLI-03 completion and GLM instructions](./release-0.9.0.md#codex-cli-json-2026-10-02).
 > **CLI-03 is complete; 10/58 tasks are checked.** All JSON commands run behind
 > a CLI-owned process boundary. Finite commands emit one result; dev/start/Studio

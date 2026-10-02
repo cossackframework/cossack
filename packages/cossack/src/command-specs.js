@@ -141,7 +141,7 @@ export const commandSpecs = {
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {
     force: bool('Apply safe template updates and restore deleted owned files; preserve edits.', { aliases: ['f'] }),
-    yes, tag: str('Dependency release tag (default: latest).'),
+    yes, tag: str('Scaffold/dependency release tag or exact version (default: latest).'),
     'force-file': str('Owned file to replace; repeat for multiple files.', { repeated: true }),
     'apply-template': bool('Apply template changes while preserving edited files.'),
   } }),

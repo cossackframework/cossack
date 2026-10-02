@@ -15,7 +15,7 @@ below link directly to those explanations.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
-- [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex continuation (2026-10-02): computes dependency/file/migration/install decisions before effects, preserves edited files, rejects unknown force targets and stale plans, and records partial installation failures with recovery actions. Remaining: owned dependency additions/removals and target-version template alignment; current rendering uses the installed CLI's reported templateVersion.
+- [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
 
@@ -85,6 +85,97 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli-upgrades-2026-10-02"></a>
+### Codex continuation: complete release-aligned upgrade plans (2026-10-02)
+
+**Author: Codex.** Continues the unfinished release after `eea3dad`.
+**CLI-06 is complete: 11/58 tasks checked.** The other 47 tasks remain in scope;
+package versions remain 0.8.3 until the release gates pass.
+
+**Problems fixed and acceptance evidence:**
+
+- Upgrade previously emitted empty dependency addition/removal lists and used
+  the installed CLI's templates even when another release was requested.
+  `upgrade-scaffold.js` resolves the target scaffold version, reuses the installed
+  package only for that same version, or installs the exact foreign version into
+  temporary storage with pnpm lifecycle scripts disabled. It validates package
+  identity and the ESM import entry, then removes temporary storage on completion
+  or load failure. It never falls back to current templates for an unavailable
+  release. Application files stay unchanged during planning/dry runs; pnpm can
+  populate its cache.
+- Scaffold manifests now record `dependencyBaseline` independently of merged
+  application package contents. `planDependencyChanges()` compares recorded,
+  current, and desired values across dependency sections. It updates/removes
+  unchanged owned entries and adds new target entries, including section moves.
+  Local pins, intentional deletions/moves, and user-added dependencies remain
+  preserved conflicts where applicable. A matching pre-existing dependency does
+  not become owned merely by matching a recipe. Adapter force remains explicit.
+- Creation, composition, removal, and adapter switching retain this ownership.
+  Source-only composition keeps the baseline even when package.json is unchanged.
+  Current-version legacy manifests can reconstruct it locally. For a different
+  legacy version, composition requires `cossack upgrade` first; upgrade loads the
+  recorded exact release to reconstruct ownership and labels its source in JSON.
+  Missing/invalid ownership metadata never silently becomes an unmanaged upgrade.
+- Plans expose old/new dependency values, additions/removals, preserved edits,
+  conflicts, file writes/deletions, manifest effects, build-setting migration,
+  installation requirements, and next actions. Follow-up template commands pin
+  the resolved version. Human dry runs show dependency decisions as well as files.
+  Custom URL/path dependency specifiers are redacted from machine plans.
+- Applying templates removes obsolete unchanged owned files. Edited auth modules
+  and edited obsolete files remain intact. Package/runtime configuration and local
+  secret files cannot be overwritten by `--force-file`. Invalid paths and symbolic
+  links in owned paths fail before effects. Owned files and the ownership manifest
+  are checked again after package resolution to reject stale plans.
+- Installation failure retains the applied dependency/file/manifest changes in
+  the result with a retry action. JSON hides package-manager output; human mode
+  exposes underlying download/install diagnostics. Successful repeat upgrades
+  produce no new filesystem effects or unnecessary installation.
+
+**Acceptance tests:** `upgrade-release.test.js` contains ten subprocess cases,
+including dry-run snapshots, requested-version files/dependencies, additions and
+removals, edited authentication, obsolete files, repeat snapshots, legacy ownership,
+missing releases, stale manifests, unsafe force paths, malformed JSON, symbolic
+links, private specifiers, and installation failure. Its local-registry case uses
+**real pnpm** to download an ESM-only tarball with integrity metadata; other cases
+control package installation to test its failure/results deterministically.
+The fixture uses `pnpm_config_registry`, as required by pnpm 11. Seven new scaffold
+ownership tests cover merge behavior and composition. Existing upgrade/subprocess
+tests continue to exercise explicit file replacement and stale source plans.
+
+**Verification:**
+
+- `pnpm build`, `pnpm tsc --noEmit`, and `pnpm typecheck` pass; package type
+  checks cover all 11 configurations.
+- `pnpm test:unit`: **2,455 passing tests in 13 packages**, including CLI
+  **474 tests in 32 files**, scaffold 86, auth 118, database 84, renderer 256,
+  core 669, node-adapter 10, test-utils 8, UI 112, framework 564,
+  deno-adapter 3, desktop 16, and Studio 55.
+- The final scaffold run passes **89 tests**, including three ownership edge
+  cases added after its portion of the root run. The focused CLI matrix passes
+  **67 tests in three files**, including the real package-download case and
+  human/JSON failure diagnostics. The last stale-plan guard check passes both
+  source/manifest regressions; it retains the first package/workspace baselines
+  when collecting owned paths. Root `pnpm tsc --noEmit` was repeated afterward
+  and passes. Together the final suites cover **2,458 distinct tests**.
+- `git diff --check -- docs packages specs`: passes.
+
+Logs use the `/tmp/cossack-upgrade-` prefix: `workspace-build.log`,
+`root-types.log`, `package-types.log`, `workspace-unit.log`, `scaffold-final.log`,
+`cli-final.log`, `stale-final.log`, and `root-types-final.log`. No browser suite, complete platform
+matrix, or full published application tarball matrix was repeated. The local
+registry tarball test verifies the upgrade loader, not REL-02's entire matrix.
+REL-02/03/05 remain open. No deployment, push, or publication occurred. Preserve
+the user's `reports.md` and `.zcodeignore`.
+
+**GLM continuation:** next finish **CLI-04**. Replace the separate syntax-only
+inspection decisions with compiler-owned classification and scaffold recipe
+metadata. Prove that inspection matches emitted server proxies, transitive client
+preservation, inherited declarations, effective layout ownership, and unknown
+dynamic declarations. Return source locations and reasons without executing
+application constructors. Then complete **CLI-05/RT-25** recipes/capabilities
+against generated applications. Keep the existing Group 3 runtime acceptance
+gaps and all 47 unchecked tasks in scope; this checkpoint is not the release.
 
 <a id="codex-cli-json-2026-10-02"></a>
 ### Codex continuation: complete JSON command contracts (2026-10-02)

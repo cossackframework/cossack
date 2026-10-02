@@ -126,6 +126,18 @@ export declare function renderRecipe(recipe: ScaffoldRecipe, options?: { project
   content: Buffer;
   capability: string;
 }>>;
+export type DependencyBaseline = Partial<Record<'dependencies' | 'devDependencies' | 'optionalDependencies' | 'peerDependencies', Record<string, string>>>;
+export declare function dependencyBaseline(pkg: DependencyBaseline): DependencyBaseline;
+export declare function planDependencyChanges(current: DependencyBaseline, desired: DependencyBaseline,
+  previous?: DependencyBaseline, options?: { force?: boolean }): {
+  next: DependencyBaseline;
+  baseline: DependencyBaseline;
+  updates: Array<{ name: string; section: string; from: string; to: string; changed: true }>;
+  additions: Array<{ name: string; section: string; to: string }>;
+  removals: Array<{ name: string; section: string; from: string }>;
+  preserved: Array<{ name: string; reason: string; sections: string[] }>;
+  conflicts: Array<{ name: string; reason: string; resolution: 'preserve' }>;
+};
 export declare function migratePnpmBuildSettings(
   projectDir: string,
   recipe: ScaffoldRecipe,

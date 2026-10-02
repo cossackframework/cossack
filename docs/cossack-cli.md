@@ -533,17 +533,34 @@ cossack upgrade --force-file <path>   # surgically overwrite one file, even if e
 | `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
 | `--dry-run` | Show planned changes without writing them. |
 
-Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
+Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
 
 Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
-It includes dependency versions, selected file writes, preserved edits, conflicts,
-build-setting migration, installation requirements, and follow-up actions. Planning
-uses the recipe templates installed with this CLI; `templateVersion` identifies
-that version. It updates existing Cossack dependencies; automatic dependency
-additions and removals are not implemented yet. No files change during a dry run.
+It includes dependency updates, additions and removals, selected file writes and
+deletions, preserved edits, conflicts, manifest changes, build-setting migration,
+installation requirements, and follow-up actions. `--tag` resolves the scaffold
+release used for both templates and recipe dependencies; `templateVersion` is
+that exact version. Foreign releases are installed into temporary storage with
+pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application
+files unchanged; pnpm may populate its package cache.
+
+The manifest records `dependencyBaseline` separately from the merged package.
+Unchanged owned versions follow the target recipe, including additions, removals,
+and moves between dependency sections. Local pins, intentionally deleted
+dependencies, and user-added packages remain intact. Existing schema-v3 manifests
+without this field reconstruct it from their recorded exact scaffold release;
+the plan labels this ownership source as `reconstructed`. An unavailable baseline
+or target release fails before project writes. Custom URL/path specifiers are
+redacted from JSON plans.
+
+`--apply-template` also deletes unchanged owned files removed by the target
+recipe. Edited obsolete files remain preserved conflicts. `--force-file` cannot
+replace package/runtime configuration or local secret files. Symbolic links in
+owned paths are rejected before effects.
 
 An unknown `--force-file` or an unresolved package version fails before writes.
-If a selected file changes during registry resolution, the plan fails as stale.
+If an owned file, package, workspace configuration, or ownership manifest changes
+during target resolution, the plan fails as stale.
 An installation failure returns `status: "partial-failure"`, the changes already
 applied, and a retry command. It does not report a successful upgrade. Raw package
 manager output stays outside the machine-readable protocol.

@@ -19,6 +19,7 @@ import {
 import { parseFlags } from '../src/flags.js';
 
 let temporaryParent;
+const installedVersion = JSON.parse(await fs.readFile(new URL('../../scaffold/package.json', import.meta.url), 'utf8')).version;
 
 function sha(content) {
   return createHash('sha256').update(content, 'utf8').digest('hex');
@@ -48,7 +49,7 @@ async function seedProject(options = {}) {
 }
 
 function makeContext(root, flags) {
-  const { args, flags: parsed } = parseFlags(flags);
+  const { args, flags: parsed } = parseFlags([`--tag=${installedVersion}`, ...flags]);
   return {
     args,
     context: {
@@ -126,7 +127,8 @@ describe('classifyFile', () => {
   it.each([
     [{ baseline, current: modified, newHash: upstream, excluded: true }, 'excluded'],
     [{ baseline, current: null, newHash: upstream }, 'missing'],
-    [{ baseline, current: modified, newHash: null }, 'excluded'],
+    [{ baseline, current: modified, newHash: null }, 'modified'],
+    [{ baseline, current: baseline, newHash: null }, 'canDelete'],
     [{ baseline, current: baseline, newHash: upstream }, 'canUpdate'],
     [{ baseline, current: modified, newHash: upstream }, 'modified'],
     [{ baseline, current: upstream, newHash: upstream }, 'upToDate'],

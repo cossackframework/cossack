@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from '@cossackframework/scaffold';
 
 const bin = fileURLToPath(new URL('../bin/cossack.js', import.meta.url));
+const installedVersion = JSON.parse(await fs.readFile(new URL('../../scaffold/package.json', import.meta.url), 'utf8')).version;
 
 /**
  * CLI-03 regressions for selected command families — exactly
@@ -20,7 +21,7 @@ let liveChildren;
 
 function runCli(argv, options = {}) {
   return new Promise(resolve => {
-    const child = spawn(process.execPath, [bin, ...argv], {
+    const child = spawn(process.execPath, [bin, ...argv, ...(argv[0] === 'upgrade' && !argv.some(arg => arg.startsWith('--tag')) ? [`--tag=${installedVersion}`] : [])], {
       cwd: options.cwd ?? tmp,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: options.env ?? process.env,
@@ -165,11 +166,15 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
   it('upgrade reports installation failure with its applied dependency changes and recovery', async () => {
     const cwd = await project();
     await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'app', type: 'module',
-      dependencies: { '@cossackframework/core': '^0.8.3' }, packageManager: 'pnpm@11.19.0' }));
+      dependencies: { '@cossackframework/core': '^0.8.2' }, packageManager: 'pnpm@11.19.0' }));
+    const manifestPath = path.join(cwd, '.cossack/scaffold.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    manifest.dependencyBaseline.dependencies['@cossackframework/core'] = '^0.8.2';
+    await fs.writeFile(manifestPath, JSON.stringify(manifest));
     const toolDir = path.join(tmp, 'tools');
     await fs.mkdir(toolDir);
     await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
-      'if (process.argv[2] === "view") console.log(JSON.stringify("0.9.0"));\n' +
+      `if (process.argv[2] === "view") console.log(JSON.stringify(${JSON.stringify(installedVersion)}));\n` +
       'else { console.error("installer-private-value"); process.exit(1); }\n', { mode: 0o755 });
     const result = await runCli(['upgrade', '--json'], { cwd,
       env: { ...process.env, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
@@ -180,7 +185,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(envelope.diagnostics[0].code).toBe('COSSACK_UPGRADE_INSTALL_FAILED');
     expect(envelope.data).toMatchObject({ status: 'partial-failure', applied: { dependencies: true, installed: false } });
     expect(envelope.data.nextActions).toContain('pnpm install');
-    expect(JSON.parse(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).dependencies['@cossackframework/core']).toBe('^0.9.0');
+    expect(JSON.parse(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')).dependencies['@cossackframework/core']).toBe(`^${installedVersion}`);
   });
 
   it('upgrade rejects a stale plan if files change during registry resolution', async () => {
@@ -201,8 +206,8 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     await fs.mkdir(toolDir);
     await fs.writeFile(path.join(toolDir, 'pnpm'), '#!/usr/bin/env node\n' +
       'require("node:fs").writeFileSync(process.env.FIXTURE_EDIT_PATH, "// edit during planning\\n");\n' +
-      'console.log(JSON.stringify("0.9.0"));\n', { mode: 0o755 });
-    const result = await runCli(['upgrade', '--apply-template', '--json'], { cwd,
+      `console.log(JSON.stringify(${JSON.stringify(installedVersion)}));\n`, { mode: 0o755 });
+    const result = await runCli(['upgrade', '--tag=latest', '--apply-template', '--json'], { cwd,
       env: { ...process.env, FIXTURE_EDIT_PATH: file, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
     expect(result.code).toBe(1);
     expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_UPGRADE_PLAN_STALE');

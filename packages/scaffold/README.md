@@ -10,6 +10,18 @@ Versions for third-party packages written to generated applications are
 configured in `package.json` under `scaffold.dependencyVersions`. Workspace
 Cossack packages use the scaffold package's own version.
 
+Schema-v3 manifests also record `dependencyBaseline`, grouped by package
+dependency section. These are the recipe-owned values before user edits, not
+the full merged application package. Creation, feature composition, removal,
+and adapter switching maintain this baseline. Existing user dependencies are
+not adopted merely because they match a recipe value. Upgrade planning compares
+the baseline, current package, and requested release; it preserves local pins
+and deletions while updating unchanged owned entries.
+For older manifests without dependency ownership, composition can reconstruct
+the baseline locally only when the recorded template version matches this
+scaffold package. Otherwise run `cossack upgrade` first so it can load the
+recorded release and establish the baseline.
+
 Node recipes generate a gitignored `.env` with safe local defaults and random
 application/OAuth secrets, plus a tracked `.env.example` containing documented
 placeholder values. Their generated pnpm configuration allows the trusted
