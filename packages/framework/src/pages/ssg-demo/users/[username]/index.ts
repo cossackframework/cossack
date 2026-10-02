@@ -33,7 +33,7 @@ import { html, component } from '@cossackframework/renderer';
   },
   transport: 'http'
 })
-export class UserProfile extends Cossack {
+export default class UserProfile extends Cossack {
   @State() username: string = '';
 
   head() {

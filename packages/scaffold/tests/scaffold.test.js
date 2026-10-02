@@ -614,7 +614,7 @@ describe('composition', () => {
       devEntry.indexOf('env.EMAIL = createNodeEmailSender'),
     );
     expect(productionEntry).toContain('...process.env');
-    expect(productionEntry).toContain("import { serveStatic } from '@cossackframework/node-adapter'");
+    expect(productionEntry).toContain("import { createNodeAdapter, serveStatic } from '@cossackframework/node-adapter'");
     expect(productionEntry).toContain("new URL('../client', import.meta.url)");
     expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
     expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");

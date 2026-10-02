@@ -948,12 +948,16 @@ requirements fail builds. Do not mark this capability available until a real
 scheduling integration is configured and verified. Generated minimal Node/Deno and Node+Desktop builds now run through actual
 recipe configuration. Node HTTP SSR executes from the built app; Desktop rejects
 SSE. Deno runtime and Electron launch are not covered by these build tests.
-Generated Node entries still lack WebSocket adapter attachment; reconcile that
-with the capability profile and security/lifecycle requirements before completion.
+Generated Node production entries now use `createNodeAdapter()` and attach its
+guarded upgrade path. Live generated-app tests cover SSR, initial snapshots,
+origin rejection, and scope rejection. Development attachment remains missing;
+wire the exported runtime into the Vite dev server and dispose replaced runtimes
+on reload without disrupting HMR. Reconcile that with capability claims before
+completion.
 The guarded framework WebSocket factory now creates nested layout service scopes,
 uses original page params during bootstrap, and assigns scope-tree cleanup to the
-page without changing service-state ownership. Next wire Node through this hook,
-then make adapter eviction/shutdown await component destruction. Test concurrent
+page without changing service-state ownership. Node now uses this hook, and both new process adapters await destruction during
+eviction/shutdown. Test concurrent
 creation for the same runtime key and real authenticated connections from a
 generated app. Factory tests alone do not prove transport lifecycle behavior.
 Deno now deduplicates pending scope creation, reserves capacity, and awaits idle

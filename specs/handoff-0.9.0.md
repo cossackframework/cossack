@@ -2,7 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex Deno shutdown (2026-10-03):** read
+> **Latest checkpoint — Codex guarded Node runtime (2026-10-03):** read
+> [Node integration and portable targets](./release-0.9.0.md#codex-node-guarded-runtime-2026-10-03).
+> **Author: Codex.** New `createNodeAdapter()` sends upgrades through the full
+> application before handshaking, preserving router guards and layout scopes.
+> Generated production entries attach it. Real socket tests verify middleware,
+> auth, shared initialization, disposal, and built-app origin/scope guards.
+> Bootstrap now accepts router-resolved provider targets, avoiding Cloudflare
+> binding access on Node/Deno. **12/58 tasks remain checked.**
+> Next: attach the runtime in the generated Node dev server, dispose it on reload,
+> preserve Vite HMR, and exercise development connections. Audit remaining bundled
+> examples for default-export compliance; two SSG demos were corrected here.
+
+> **Previous checkpoint — Codex Deno shutdown (2026-10-03):** read
 > [shutdown and action lifetime verification](./release-0.9.0.md#codex-deno-shutdown-2026-10-03).
 > **Author: Codex.** Deno exposes idempotent `dispose()`, integrates cleanup with
 > native server shutdown/completion, and waits for active actions before component

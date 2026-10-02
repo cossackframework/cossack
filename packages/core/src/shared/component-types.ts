@@ -108,6 +108,8 @@ export interface BootstrapOptions {
   page?: string;
   /** WebSocket provider name (server only). */
   providerName?: string;
+  /** Server-resolved transport targets, supplied by the runtime router. */
+  providerTargets?: Record<string, string>;
   /** Skip calling `init()` after bootstrap. */
   skipInit?: boolean;
   /** Defer `onMount()`/`clientInit()` to a later manual call. */

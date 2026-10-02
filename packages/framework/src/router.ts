@@ -519,6 +519,7 @@ export function createApp(options: CreateAppOptions = {}) {
           env: c.env,
           runtime: runtimeInfo,
           page: c.req.path,
+          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: scopeKey } : undefined,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
         });
@@ -724,7 +725,7 @@ export function createApp(options: CreateAppOptions = {}) {
             }
             instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
             instance._ownServiceScopeLifetime(rootScope);
-            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
+            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider, providerTargets: { page: expectedTarget, [provider]: expectedTarget } });
             instance._render();
             return instance;
           } catch (error) {

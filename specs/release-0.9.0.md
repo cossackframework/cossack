@@ -86,6 +86,48 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-node-guarded-runtime-2026-10-03"></a>
+### Codex continuation: guarded Node runtime (2026-10-03)
+
+**Author: Codex.** Added `createNodeAdapter()` with a structural router contract
+(no framework runtime dependency). `attach(server, fetch)` routes `/ws/` upgrades
+through the complete app and only handshakes after its guarded handler succeeds.
+Middleware may reject before or after routing. Handshake headers retain cookies.
+The adapter shares pending initialization by route/provider/scope, reserves
+capacity, evicts idle components with awaited cleanup, and drains initialization,
+active actions, sockets, and services during idempotent disposal. Generated Node
+production entries pass this adapter to `createApp` and attach it to their server.
+The old registry adapter remains exported but is not used by generated entries.
+
+Real generated-app acceptance exposed compiled page providers still attempting
+to resolve Cloudflare bindings during snapshot serialization. Bootstrap now
+accepts router-resolved `providerTargets`, which take precedence over provider
+binding lookup. SSR and runtime factories pass the authorized process-local scope.
+Providers without an explicit target retain their normal resolution behavior.
+
+A full framework build exposed two SSG demos that only exported named classes,
+contrary to the default-export route contract established earlier. Both now
+export their page as default; the expected SSG artifacts are generated again.
+Audit remaining bundled examples separately rather than restoring first-export
+selection or hiding missing artifacts.
+
+Validation covers 675 core tests, 15 Node adapter tests over actual sockets,
+92 scaffold tests, 608 framework tests, and three generated runtime build cases.
+The Node generated case executes HTTP SSR and a WebSocket page's SSR, rejects
+untrusted origins and another user's target, and receives a real state snapshot
+from the built app. Core/Node/framework builds and root/all package types pass.
+Commands: package `build` scripts; core/framework `vitest run`; Node adapter
+`test`; scaffold `vitest run`; CLI `vitest run tests/generated-runtime-build.test.js`;
+`pnpm tsc --noEmit`; `pnpm typecheck`.
+
+**12/58 tasks remain checked.** RT-25 still needs generated development-server
+attachment/reload cleanup (the current dev script rejects Cossack upgrades),
+remaining selected recipe requirements, and broader runtime capability acceptance.
+Node shutdown must be initiated with `runtime.dispose()` before waiting for an
+embedded HTTP server to close. Actions must settle; no forced action timeout is
+implemented. Request scheme follows the actual socket, not forwarded headers.
+Deno live execution and Electron launch/packaging remain unverified here.
+
 <a id="codex-deno-shutdown-2026-10-03"></a>
 ### Codex continuation: Deno shutdown and action lifetime (2026-10-03)
 

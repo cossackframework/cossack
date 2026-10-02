@@ -249,3 +249,5 @@ export class CossackNodeAdapter {
         }
     }
 }
+
+export { createNodeAdapter, type NodeAdapterOptions, type NodeWebSocketUpgrade } from "./adapter";

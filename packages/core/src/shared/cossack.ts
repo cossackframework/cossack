@@ -342,6 +342,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
 
     protected providers!: Map<string, StateProvider>;
+    private _providerTargets?: Record<string, string>;
     public props: Record<string, any> = {};
 
     // Component Registry (Server-Side mostly)
@@ -844,7 +845,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, skipInit, deferMount }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount }: BootstrapOptions = {}) {
+        this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -2428,10 +2430,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         // Add provider targets for WebSocket connections
-        const providerTargets: Record<string, string> = {};
+        const providerTargets: Record<string, string> = { ...this._providerTargets };
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {
-                const target = provider.getConnectionTarget();
+                const target = this._providerTargets?.[name] ?? provider.getConnectionTarget();
                 if (target) {
                     providerTargets[name] = (target as any).toString();
                 }

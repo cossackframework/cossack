@@ -896,12 +896,13 @@ function nodeEntry(providers = []) {
 import { Hono } from 'hono';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createApp } from '@cossackframework/framework/router';
-import { serveStatic } from '@cossackframework/node-adapter';
+import { createNodeAdapter, serveStatic } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
 
-const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template });
+export const runtime = createNodeAdapter();
+const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
 ${routes}
 export const app = new Hono();
 app.use('*', serveStatic({
@@ -919,7 +920,9 @@ export const env: Record<string, unknown> = {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  serve({ fetch: (request) => app.fetch(request, env), port: Number(process.env.PORT) || 3000 });
+  const fetch = (request: Request) => app.fetch(request, env);
+  const server = serve({ fetch, port: Number(process.env.PORT) || 3000 });
+  runtime.attach(server, fetch);
 }
 `;
 }

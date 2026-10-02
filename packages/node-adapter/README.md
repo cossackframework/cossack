@@ -10,8 +10,8 @@ Cossack and its packages.
 
 ## Exports
 
-- `CossackNodeAdapter` : handles WebSocket upgrades and component bootstrapping on a Node `http.Server`.
-- `nodeRuntimeAdapter` : pass to `createApp()` so SSR emits Node process-local WebSocket targets.
+- `createNodeAdapter` : connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
+- `CossackNodeAdapter` and `nodeRuntimeAdapter` : legacy registry adapter and metadata-only adapter; generated apps use `createNodeAdapter`.
 - `serveStatic` : Node `fs`-based Hono middleware for serving static assets.
 - `NodeWebSocketRuntime` : the WebSocket runtime used by the adapter.
 - `createNodeEmailSender` : Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
@@ -29,23 +29,23 @@ Cloudflare Workers expose `env.EMAIL.send({ to, from, subject, html, text })` wh
 Then `await env.EMAIL.send({ to, from, subject, html, text })` works directly.
 
 ### Node.js
-Build the sender from SMTP env vars and inject it into `env`, then pass `env` both to `app.fetch` (HTTP transport) and to `CossackNodeAdapter` (WebSocket transport):
+Build the sender from SMTP env vars and inject it into `env`, then pass `env` `app.fetch` for both HTTP requests and WebSocket authorization:
 
 ```ts
 import { serve } from '@hono/node-server';
 import { createApp } from '@cossackframework/framework/router';
 import {
-  CossackNodeAdapter,
+  createNodeAdapter,
   createNodeEmailSender,
-  nodeRuntimeAdapter,
 } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 
+const runtime = createNodeAdapter();
 const app = createApp({
   AppComponent: App,
   htmlTemplate: template,
-  runtimeAdapter: nodeRuntimeAdapter,
+  runtimeAdapter: runtime,
 });
 
 const env = {
@@ -64,14 +64,8 @@ const server = serve(
   (info) => console.log(`Listening on http://localhost:${info.port}`),
 );
 
-// WebSocket: pass the same env so `@Server` methods over WS see `this.env.EMAIL`.
-new CossackNodeAdapter({
-  server,
-  // Keys match the routePath metadata emitted by Cossack, for example
-  // new Map([['/account/:id', AccountPage]]).
-  componentRegistry,
-  env,
-});
+// Run upgrades through the same middleware, bindings, scope checks, and services.
+runtime.attach(server, (request) => app.fetch(request, env));
 ```
 
 ### Environment variables
@@ -87,3 +81,24 @@ Configure via `.dev.vars` (Cloudflare dev) or your shell/`.env` (Node):
 | `MAIL_FROM` | Default `from` address when omitted | `no-reply@example.com` |
 
 Now `await this.env.EMAIL.send(...)` works identically in `@Server` methods on both Cloudflare Workers and Node.js.
+
+## WebSocket lifetime
+
+`runtime.attach(server, fetch)` handles `/ws/` upgrade requests. Other upgrade
+paths remain available to the host. Authentication, origin checks, route lookup,
+and scope authorization run through the framework before the handshake. Response
+cookies and application headers reach the handshake. Components for the same
+route/provider/scope share one initialization and process-local state.
+
+`maxInstances` defaults to 512 and includes pending initialization.
+`idleTimeoutMs` defaults to 15 minutes; pruning runs on socket activity.
+Call `await runtime.dispose()` before closing an embedded server. It detaches
+upgrade listeners, ends sockets, waits for pending initialization and active
+actions, and destroys components/services. Repeated calls share the same result.
+A native server `close` event also triggers disposal. Actions must settle for
+cleanup to finish. Disposed adapters cannot be attached again.
+
+The request scheme follows the actual Node socket (HTTP or TLS); the adapter does
+not trust forwarded scheme headers. Configure origin policy for a trusted proxy
+in the application. Generated production entries attach the adapter automatically;
+development-server attachment is still pending.
