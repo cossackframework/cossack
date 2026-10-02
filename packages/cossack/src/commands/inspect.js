@@ -1,7 +1,7 @@
 import { commandSpecs, inspectRoutesSpec } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { inspectDeployment } from '../deployment.js';
-import { commandFailure, writeResult } from '../output.js';
+import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
 import { showCommandHelp, validateCommand, runWithSpec } from '../command-spec.js';
 
@@ -107,7 +107,9 @@ async function inspectCloudflare(args, ctx, command) {
     }
     return ok ? 0 : 1;
   } catch (error) {
-    return commandFailure(ctx, command, error.code ?? 'COSSACK_INSPECTION_FAILED', error.message);
+    const code = diagnosticCode(error, 'COSSACK_INSPECTION_FAILED');
+    return commandFailure(ctx, command, code,
+      ctx.flags.json === true ? diagnosticMessage(error, code) : error.message);
   }
 }
 

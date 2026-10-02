@@ -62,7 +62,8 @@ async function removeCommandInner(args, ctx) {
       ctx.out.line('\nNext: run `pnpm install` to reconcile dependencies.');
     }
     return ctx.out.data({ feature, status: result.status,
-      resolvedFeatures: result.recipe.resolvedFeatures });
+      resolvedFeatures: result.recipe.resolvedFeatures,
+      nextActions: result.status === 'dry-run' ? [] : ['pnpm install'] });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
     throw Object.assign(error, { code: error.code ?? 'COSSACK_FEATURE_REMOVE_FAILED' });

@@ -457,12 +457,12 @@ describe('lifecycle commands', () => {
     expect(code).not.toBe(0);
   }, 30_000);
 
-  it('dev/start --json fail fast with COSSACK_JSON_UNSUPPORTED', async () => {
-    for (const command of ['dev', 'start']) {
-      const result = await runCli([command, '--json']);
+  it('dev/start --json report unavailable tools or build artifacts without logs', async () => {
+    for (const [command, code] of [['dev', 'COSSACK_DEV_FAILED'], ['start', 'COSSACK_SERVER_ENTRY_MISSING']]) {
+      const result = await runCli([command, '--json'], { env: { ...process.env, PATH: '/nonexistent' } });
       expect(result.code, command).toBe(1);
       const envelope = parseEnvelope(result.stdout);
-      expect(envelope.diagnostics[0].code).toBe('COSSACK_JSON_UNSUPPORTED');
+      expect(envelope.diagnostics[0].code).toBe(code);
     }
   });
 });

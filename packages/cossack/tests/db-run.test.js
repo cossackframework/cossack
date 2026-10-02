@@ -66,12 +66,12 @@ describe('application ORM tooling loading', () => {
   });
 
   it('preserves false values and repeated options while forwarding canonical aliases', async () => {
-    const root = await createProject('export async function runORMCommand(argv, options) { options.stdout(JSON.stringify(argv)); return 0; }');
+    const root = await createProject('export async function runORMCommand(argv, options) { options.stdout(JSON.stringify({ schemaVersion: 1, command: argv[0], ok: true, data: { argv }, diagnostics: [] })); return 0; }');
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await runORMToolingCommand(['migration', 'snapshot'], { cwd: root,
       flags: { f: false, force: false, 'dry-run': true, env: ['staging', 'production'], json: true },
     })).toBe(0);
-    expect(JSON.parse(log.mock.calls[0][0])).toEqual([
+    expect(JSON.parse(log.mock.calls[0][0]).data.argv).toEqual([
       'migration', 'snapshot', '--force=false', '--dry-run', '--env=staging', '--env=production', '--json',
     ]);
   });

@@ -100,6 +100,8 @@ export async function addCommand(args, ctx) {
       status: result.status,
       resolvedFeatures: result.recipe.resolvedFeatures,
       prerequisites: automaticallyAdded,
+      nextActions: result.status === 'dry-run' ? [] : ['pnpm install',
+        ...(result.recipe.resolvedFeatures.includes('database') ? ['cossack migration up'] : [])],
     });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;

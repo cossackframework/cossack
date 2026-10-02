@@ -10,9 +10,9 @@ Read this document with [the handoff](./handoff-0.9.0.md),
 The checklist records scope and completion. This plan explains the work.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex continuation](./release-0.9.0.md#codex-continuation-2026-10-02)
-records the development WebSocket fix, machine contracts, upgrade planning,
-and remaining acceptance work. The preceding Group 3 review records corrections
+The latest [Codex machine-contract checkpoint](./release-0.9.0.md#codex-cli-json-2026-10-02)
+records CLI-03 completion and remaining acceptance work. The earlier continuation
+records the development WebSocket fix and upgrade planning. The Group 3 review records corrections
 to GLM's implementations. This plan preserves the original task intent; use
 those logs and task checkboxes for current completion status.
 
@@ -137,7 +137,7 @@ Status: **Complete (Codex, 2026-10-02).** See the
 [metadata acceptance checkpoint](./release-0.9.0.md#codex-cli-metadata-2026-10-02).
 The baseline/approach below records the original plan. Extend command contracts
 in `packages/cossack/src/command-specs.js` when adding future commands; parser,
-help, and preflight validation consume the same definitions. CLI-03 remains open.
+help, and preflight validation consume the same definitions. CLI-03 is now complete.
 
 Purpose: A misspelled flag or ambiguous target must fail before a command changes
 files or connects to a database. Silent flag acceptance makes agent mistakes
@@ -162,10 +162,18 @@ CLI-03 defines the machine-readable failure format.
 <a id="cli-03"></a>
 ### CLI-03: JSON diagnostics and noninteractive execution
 
+Status: **Complete (Codex, 2026-10-02).** See the
+[machine-contract acceptance checkpoint](./release-0.9.0.md#codex-cli-json-2026-10-02).
+Every built-in command has subprocess coverage for its machine protocol.
+Finite commands emit one validated envelope; dev/start/Studio emit documented
+lifecycle events. JSON executions isolate project imports and subprocess logs,
+bound execution/startup/shutdown, and preserve human diagnostic output.
+The broader release platform, tarball, and runtime gates remain open.
+
 Purpose: An agent needs a stable result schema and exit code. It must not guess
 success from colored output or wait forever for an interactive prompt.
 
-Baseline: Partial. Creation, deployment, inspection, and database tools have
+Original baseline: Partial. Creation, deployment, inspection, and database tools have
 structured output. Database tools isolate application logs in a child process.
 
 Approach: Apply the existing versioned envelope to every command. Define stable

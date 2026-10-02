@@ -12,7 +12,7 @@ below link directly to those explanations.
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
-- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex continuation (2026-10-02): adapter, image, upgrade, and Studio machine paths are implemented; Studio has isolated ready/stopped/failed NDJSON and a startup deadline. Build/SSG omit raw project logs and provide coded failures. Remaining: full subprocess success/failure/dry-run coverage for every command family, with shared command metadata from CLI-02. See the latest Codex continuation below.
+- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
 - [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex continuation (2026-10-02): computes dependency/file/migration/install decisions before effects, preserves edited files, rejects unknown force targets and stale plans, and records partial installation failures with recovery actions. Remaining: owned dependency additions/removals and target-version template alignment; current rendering uses the installed CLI's reported templateVersion.
@@ -85,6 +85,86 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli-json-2026-10-02"></a>
+### Codex continuation: complete JSON command contracts (2026-10-02)
+
+**Author: Codex.** Continues the review of GLM's implementation and the CLI-02
+checkpoint `f30a5a7`. **CLI-03 is complete: 10/58 tasks checked.** The other 48
+tasks remain in scope; package versions remain 0.8.3.
+
+**Problems fixed and acceptance evidence:**
+
+- ORM package imports could print before the database tooling's own isolation
+  began. Generic scaffold/parser and ORM exception messages could expose project
+  values. Every JSON CLI execution now runs in `json-runner.js`, supervised by
+  `json-process.js`; raw stdin/stdout/stderr are detached from the protocol.
+  Validated framework envelopes cross IPC. Finite results are published only
+  after validating both the terminal envelope and process exit.
+- Premature exit, missing/duplicate/malformed ORM results, mismatched exit
+  codes, and hung project imports now produce one coded failure instead of
+  silent success or contaminated output. Canonical command names also cover
+  aliases, top-level help/version, and unknown colon-form commands.
+- `dev` and `start` now support JSON execution. Their `started` event confirms
+  process creation and supplies a PID/tool, without claiming HTTP readiness.
+  Clean exits and requested graceful stops emit `stopped`; spawn/runtime/forced
+  shutdown errors emit `failed`. Studio retains its ready/stopped/failed contract
+  with an explicit tsx loader in its isolated child.
+- Finite commands default to a five-minute wall deadline, configurable with
+  `COSSACK_COMMAND_TIMEOUT_MS`. Dev/start have a 30-second startup bound; Studio
+  retains its configurable readiness timer. Once started/ready, servers run until
+  stopped. Signal handling bounds shutdown and reclaims the POSIX process group;
+  Windows uses taskkill. Native Windows execution was not tested on this Linux host.
+- ORM results retain public target identity and canonical `seeder`/`data.action`.
+  Only documented identity fields enter `resolvedTarget`; extra factory fields
+  are excluded. Error codes retain known ORM error classes, while messages omit
+  application exceptions, connection values, SQL details, and parser excerpts.
+  `data.phase` distinguishes configuration, connection, operation, and cleanup;
+  human output retains full diagnostic chains.
+- Results include affected paths/targets and follow-up actions where available.
+  Create/add/remove expose next actions; partial command failures retain recorded
+  effects. Noninteractive defaults and explicit choices are documented. Info
+  accepts only version-shaped package-manager output.
+- The new 43-test subprocess matrix complements existing command-contract,
+  subprocess, database integration, and generated-app tests. It checks actual
+  filesystem effects and unchanged snapshots for file dry runs, successful and
+  failing configuration/ORM paths, top-level import logs, malformed protocols,
+  noisy package managers, deadline validation, and servers that ignore termination.
+  Lifecycle fixtures prove the server body ran before requesting cancellation.
+  The deploy fixture uses actual Wrangler type generation and local deployment
+  dry-run with a controlled Vite build fixture; the existing generated-app tests
+  exercise real Vite/workerd. The image fixture uses a controlled converter.
+
+**GLM continuation:** next finish **CLI-06**. Track owned dependency additions
+and removals in the scaffold manifest; render against the requested target
+version rather than the installed CLI's templates. Prove add/remove/preserve
+decisions, edited and user-added dependencies, stale plans, and partial install
+failure recovery in generated applications. Then finish **CLI-04** from compiler
+classification and **CLI-05/RT-25** from shared recipe/capability metadata. Reuse
+the JSON process boundary; handlers must return only intentional public metadata.
+Do not mark any runtime or release gate complete from this CLI checkpoint.
+
+**Verification:**
+
+- `pnpm build`: passes.
+- `pnpm tsc --noEmit`: passes.
+- `pnpm typecheck`: passes, all 11 package configurations.
+- `pnpm test:unit`: **2,440 passing tests in 13 packages** — auth 118,
+  database 84, renderer 256, scaffold 82, core 669, node-adapter 10,
+  test-utils 8, UI 112, CLI 463, framework 564, deno-adapter 3, desktop 16,
+  Studio 55. The CLI result includes the final **43** machine-matrix tests
+  and existing local generated-app Vite/workerd integration tests.
+- Earlier focused ORM tooling run: **25 passing tests**. The focused native
+  local deployment/image run passed before the final matrix additions.
+- `git diff --check -- docs packages specs`: passes.
+
+Logs: `/tmp/cossack-cli-json-workspace-build.log`,
+`/tmp/cossack-cli-json-root-types.log`, `/tmp/cossack-cli-json-package-types.log`,
+and `/tmp/cossack-cli-json-workspace-unit.log`. No browser suite or complete
+published-tarball/platform matrix was repeated. REL-02/03/05 remain open for
+the full release. The local Wrangler dry-run performed no remote upload or
+provisioning. No push or publication occurred. Preserve the user's `reports.md`
+and `.zcodeignore`.
 
 <a id="codex-cli-metadata-2026-10-02"></a>
 ### Codex continuation: complete CLI validation metadata (2026-10-02)

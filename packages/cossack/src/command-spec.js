@@ -12,7 +12,7 @@
  *   COSSACK_ARGUMENT_MISSING      Required positional argument absent.
  */
 import path from 'node:path';
-import { writeResult } from './output.js';
+import { diagnosticCode, diagnosticMessage, writeResult } from './output.js';
 
 export const GLOBAL_FLAGS = {
   force: { type: 'boolean', aliases: ['f'], repeated: 'last', description: 'Overwrite owned files / skip confirmation.' },
@@ -190,7 +190,8 @@ export async function runWithSpec(spec, args, ctx, handler, help) {
     if (ctx.flags?.json === true) {
       writeResult(spec.name, {
         ok: false,
-        diagnostics: [{ code: error.code ?? 'COSSACK_COMMAND_FAILED', severity: 'error', message: error.message }],
+        data: ctx.out?.data({ exitCode: 1 }) ?? null,
+        diagnostics: [{ code: diagnosticCode(error), severity: 'error', message: diagnosticMessage(error) }],
       });
     } else {
       console.error(error.message);

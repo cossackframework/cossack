@@ -1,7 +1,7 @@
 import { showCommandHelp, validateCommand } from '../command-spec.js';
 import { commandSpecs } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
-import { commandFailure, writeResult } from '../output.js';
+import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../deployment.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
@@ -55,8 +55,9 @@ export async function deployCommand(args, ctx) {
       severity: 'error', message: 'Wrangler deployment failed. Run without --json for tool diagnostics.' }]);
   } catch (error) {
     if (ctx.flags.json === true) {
-      writeResult('deploy', { ok: false, data, diagnostics: [{ code: error.code ?? 'COSSACK_DEPLOY_FAILED',
-        severity: 'error', message: error.message }] });
+      const code = diagnosticCode(error, 'COSSACK_DEPLOY_FAILED');
+      writeResult('deploy', { ok: false, data, diagnostics: [{ code,
+        severity: 'error', message: diagnosticMessage(error, code) }] });
       return 1;
     }
     return commandFailure(ctx, 'deploy', error.code ?? 'COSSACK_DEPLOY_FAILED', error.message);

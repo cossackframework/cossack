@@ -14,7 +14,7 @@ import {
 import type { OrmSchema } from "../schema/types.js";
 import { generateMigration, generateModels } from "./generate.js";
 import { formatError } from "./format-error.js";
-import { ConfigurationError, MigrationError } from "../errors.js";
+import { ConfigurationError, MigrationError, ORMError } from "../errors.js";
 import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import { runJSONORMCommand } from "./process-json.js";
@@ -129,6 +129,7 @@ export async function runORMCommandInProcess(
   const error = options.stderr ?? console.error;
   let args: Arguments | undefined;
   let context: ORMToolingContext | undefined;
+  let phase: "arguments" | "configuration" | "connection" | "operation" | "cleanup" = "arguments";
   const requestedJSON = requestsJSON(argv);
   const report = (ok: boolean, data: Record<string, unknown> | null, diagnostics: readonly Record<string, unknown>[] = []) => {
     out(JSON.stringify({ schemaVersion: 1, command: args?.command ?? "orm", action: args?.action ?? null,
@@ -179,6 +180,7 @@ export async function runORMCommandInProcess(
     context = { cwd, configPath, target: options.target ?? alias ?? targetFlag ?? "local",
       ...(typeof environment === "string" && environment ? { environment } : {}),
       readOnly: enabled(args, "dry-run") || ["plan", "status", "check", "diff", "list"].includes(args.action ?? "") };
+    phase = "configuration";
     const config = await loadORMConfig(configPath);
     if (args.command === "seed" && args.action === "list") {
       const seeders = SeederRunner.inspect(config.seeds ?? []);
@@ -187,22 +189,39 @@ export async function runORMCommandInProcess(
       if (json) report(true, { seeders });
       return 0;
     }
+    phase = "connection";
     const orm = await createORMFromConfig(config, context);
     let data: Record<string, unknown>;
     try {
+      phase = "operation";
       data = await orm.run(async () => {
         if (args!.command === "migration") return migrationCommand(orm, config, args!, cwd, print);
         if (args!.command === "schema") return schemaCommand(orm, args!, cwd, print);
         return seedCommand(orm, config, args!, print);
       });
-    } finally { await orm.close(); }
-    if (json) report(true, { dialect: orm.driver.dialect, resolvedTarget: orm.tooling ?? null, ...data });
+    } finally {
+      const previousPhase = phase;
+      phase = "cleanup";
+      await orm.close();
+      phase = previousPhase;
+    }
+    // Application factories may return extra connection fields at runtime.
+    // Only documented public identity fields enter the machine result.
+    const resolvedTarget = orm.tooling ? Object.fromEntries(
+      ["provider", "target", "environment", "binding", "databaseName", "databaseId"]
+        .filter(key => typeof orm.tooling?.[key as keyof NonNullable<ORM["tooling"]>] === "string")
+        .map(key => [key, orm.tooling![key as keyof NonNullable<ORM["tooling"]>]]),
+    ) : null;
+    if (json) report(true, { dialect: orm.driver.dialect, resolvedTarget, ...data });
     return 0;
   } catch (cause) {
     if (requestedJSON) {
-      const name = cause instanceof Error ? cause.name : "Error";
-      report(false, null, [{ code: `COSSACK_ORM_${name.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase()}`,
-        severity: "error", message: formatError(cause) }]);
+      const name = cause instanceof ORMError ? cause.name : "Error";
+      const code = ["ConfigurationError", "MigrationError", "MetadataError", "ScopeError", "QueryError",
+        "UnsupportedCapabilityError", "DestructiveSchemaChangeError", "SeederError", "ORMError"].includes(name)
+        ? `COSSACK_ORM_${name.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase()}` : "COSSACK_ORM_ERROR";
+      report(false, { phase, nextActions: ["Run the same command without --json for detailed diagnostics."] }, [{ code,
+        severity: "error", message: `Database tooling failed during ${phase}. Check the configuration and adapter factory; run without --json for diagnostics.` }]);
     } else error(formatError(cause));
     return 1;
   }

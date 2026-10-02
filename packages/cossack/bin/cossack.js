@@ -13,6 +13,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { dispatch } from '../src/dispatch.js';
+import { requestsJSON } from '../src/flags.js';
+import { runJSONCommand } from '../src/json-process.js';
 
 const RESPAWN_FLAG = '__COSSACK_STUDIO_RESPAWNED';
 
@@ -21,7 +23,9 @@ const argv = process.argv.slice(2);
 const [command] = argv;
 const needsTsx = command === 'studio';
 
-if (needsTsx && !process.env[RESPAWN_FLAG]) {
+if (requestsJSON(argv)) {
+  runJSONCommand(argv).then(code => { process.exitCode = code; });
+} else if (needsTsx && !process.env[RESPAWN_FLAG]) {
   // Resolve tsx from this package's own deps so it is found regardless of cwd.
   const requireFromHere = createRequire(import.meta.url);
   let tsxImportUrl;

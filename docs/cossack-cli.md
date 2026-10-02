@@ -47,15 +47,16 @@ their underlying tool. Command help is handled before starting that tool.
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
 | `--dry-run` | Show planned changes without writing them. |
-| `--json` | Emit a machine-readable result envelope; Studio emits lifecycle events (see below). |
+| `--json` | Emit a machine-readable result envelope; dev/start/Studio emit lifecycle events (see below). |
 | `--yes`, `-y` | Apply changes without confirmation (noninteractive mode). |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
 
-### Machine-readable output contract (GLM, 2026-10-02)
+### Machine-readable output contract (Codex, 2026-10-02)
 
 Under `--json`, a finite command prints **exactly one** result envelope on
-stdout and nothing else. Studio uses the same envelope for its lifecycle events:
+stdout and nothing else. Dev, start, and Studio use the same envelope for their
+lifecycle events:
 
 ```json
 { "schemaVersion": 1, "command": "generate", "ok": true,
@@ -72,12 +73,17 @@ stdout and nothing else. Studio uses the same envelope for its lifecycle events:
   `COSSACK_FILE_EXISTS`, and command-specific failure codes. Human-oriented
   notes go to stderr or are suppressed; they never mix into stdout.
 - Exit codes: `0` success, `1` failure, `130` an interactive prompt was
-  declined. Prompts are skipped entirely with `--yes`, `--dry-run`, or when
-  required choices are provided as arguments (noninteractive callers should
-  always pass one of these).
-- Long-running interactive commands (`dev`, `start`) reject `--json` up front
-  with `COSSACK_JSON_UNSUPPORTED`; a streaming event contract for them is
-  future work. `build` and `ssg` isolate tool output and emit one envelope
+  canceled, or a supervised command was interrupted before completion.
+  JSON/non-TTY execution never prompts. Supply required choices or use documented
+  defaults. Scaffold creation defaults to Cloudflare/full-stack; adding a feature
+  to an unrecognized legacy project requires an explicit runtime.
+- `dev --json` and `start --json` emit newline-delimited JSON. `data.event:
+  "started"` confirms child process creation and includes its PID and tool;
+  it does **not** claim HTTP readiness. A clean exit or requested graceful stop
+  emits `"stopped"`. Spawn/runtime/shutdown failures emit `"failed"` with
+  coded diagnostics and a nonzero exit. SIGINT/SIGTERM requests cleanup;
+  unresponsive children are force-stopped after a bounded grace period.
+  Tool argv, URLs, and raw logs do not enter events. `build` and `ssg` emit one envelope
   with `exitCode` and coded failures. Raw project/tool logs are omitted because
   they can contain credentials. Run human mode to inspect those logs locally.
 - `studio --json` emits newline-delimited JSON: a `data.event: "ready"`
@@ -88,8 +94,23 @@ stdout and nothing else. Studio uses the same envelope for its lifecycle events:
   Studio stays running after readiness; send SIGINT or SIGTERM to stop it.
   `--timeout <milliseconds>` bounds startup (default 30000, maximum 300000).
   JSON mode never opens a browser. Use human mode to open its authenticated UI.
-- Dry runs perform no writes: `generate component X --dry-run --json` emits
-  the planned paths and leaves the filesystem untouched.
+- JSON execution uses an isolated process with ignored stdin/stdout/stderr.
+  Only validated framework envelopes cross IPC; project imports, inherited
+  subprocess logs, thrown connection values, and parser excerpts are excluded.
+  Database results use the public command `seeder` for both `seed` and `seeder`,
+  with the ORM action in `data.action`. Database failures identify
+  `data.phase` and provide a follow-up action; detailed SQL/cause chains remain
+  available in human mode. Public target metadata excludes extra factory fields.
+- Finite commands have a default 300000 ms execution deadline. Set
+  `COSSACK_COMMAND_TIMEOUT_MS` to an integer from 1 to 86400000 to change it.
+  Dev/start have a startup deadline of at most 30000 ms, then run until stopped.
+  Studio uses its `--timeout` readiness deadline, also bounded by the execution
+  deadline. Deadline failures use `COSSACK_COMMAND_TIMEOUT`; unexpected process
+  exits use `COSSACK_COMMAND_PROCESS_FAILED`. Cancellation reclaims process
+  descendants (POSIX process groups; Windows taskkill).
+- File-changing dry runs perform no writes: `generate component X --dry-run
+  --json` emits planned paths and leaves the filesystem untouched. Deployment
+  dry runs write generated types and build artifacts while preventing uploads.
 
 ---
 

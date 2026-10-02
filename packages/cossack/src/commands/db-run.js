@@ -8,7 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findProjectRoot } from '../fs-utils.js';
-import { commandFailure } from '../output.js';
+import { commandFailure, diagnosticMessage, writeResult } from '../output.js';
 
 export async function loadORMTooling(root) {
   const requireFromProject = createRequire(path.join(root, 'package.json'));
@@ -56,15 +56,37 @@ function flagArgv(flags = {}) {
 }
 
 export async function runORMToolingCommand(argv, ctx) {
+  const command = argv[0] === 'seed' ? 'seeder' : argv[0] ?? 'orm';
   try {
     const root = await findProjectRoot(ctx.cwd);
     const { runORMCommand } = await loadORMTooling(root);
-    return await runORMCommand([...argv, ...flagArgv(ctx.flags)], {
+    const results = [];
+    const json = ctx.flags?.json === true;
+    const exitCode = await runORMCommand([...argv, ...flagArgv(ctx.flags)], {
       cwd: root,
-      stdout: (message) => console.log(message),
-      stderr: (message) => console.error(message),
+      stdout: message => {
+        if (!json) { console.log(message); return; }
+        try {
+          const result = JSON.parse(message);
+          if (result?.schemaVersion === 1 && result.command === argv[0] &&
+              typeof result.ok === 'boolean' && Array.isArray(result.diagnostics) &&
+              result.diagnostics.every(d => typeof d?.code === 'string' &&
+                ['error', 'warning', 'info'].includes(d.severity) && typeof d.message === 'string')) results.push(result);
+        } catch { /* Arbitrary project output is not a result. */ }
+      },
+      stderr: message => { if (!json) console.error(message); },
     });
+    if (!json) return exitCode;
+    const result = results[0];
+    if (results.length !== 1 || ![0, 1].includes(exitCode) || result.ok !== (exitCode === 0)) {
+      return commandFailure(ctx, command, 'COSSACK_ORM_RESULT_INVALID',
+        'Database tooling returned no valid result. Check the installed ORM version; run without --json for diagnostics.');
+    }
+    writeResult(command, { ok: result.ok,
+      data: { action: result.action ?? argv[1] ?? null, ...(result.data ?? {}) }, diagnostics: result.diagnostics });
+    return exitCode;
   } catch (error) {
-    return commandFailure(ctx, argv[0] ?? 'orm', 'COSSACK_ORM_UNAVAILABLE', error.message);
+    return commandFailure(ctx, command, 'COSSACK_ORM_UNAVAILABLE',
+      ctx.flags?.json === true ? diagnosticMessage(error, 'COSSACK_ORM_UNAVAILABLE') : error.message);
   }
 }

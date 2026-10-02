@@ -76,8 +76,9 @@ async function detectLockfile(root) {
 
 async function spawnVersion(bin) {
   try {
-    const { stdout } = await execFileP(bin, ['--version']);
-    return stdout.trim();
+    const { stdout } = await execFileP(bin, ['--version'], { timeout: 5000 });
+    const version = stdout.trim();
+    return /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version) ? version : '(unavailable)';
   } catch {
     return '(not installed)';
   }

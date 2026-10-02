@@ -11,7 +11,7 @@ import {
   packageManagerCommands,
 } from '../package-manager.js';
 import { checkForCossackUpdate } from '../update-notice.js';
-import { commandFailure, writeResult } from '../output.js';
+import { commandFailure, diagnosticMessage, writeResult } from '../output.js';
 
 export async function createCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.create, args, ctx, createHelp)) return 0;
@@ -45,7 +45,10 @@ export async function createCommand(args, ctx) {
       force: ctx.force,
     });
     if (json) {
-      writeResult('create', { data: result });
+      writeResult('create', { data: { ...result,
+        nextActions: result.status === 'created' ? [commands.install, commands.dev] : [],
+        nextActionCwd: result.projectDir,
+      } });
       return 0;
     }
     const { projectDir, adapter: used, recipe, status, changes } = result;
@@ -76,7 +79,7 @@ export async function createCommand(args, ctx) {
   } catch (error) {
     return commandFailure(ctx, 'create', error?.code === 'COSSACK_PROMPT_ABORTED'
       ? error.code : 'COSSACK_CREATE_FAILED',
-      `Error creating Cossack app: ${error.message}`,
+      ctx.flags.json === true ? diagnosticMessage(error, 'COSSACK_CREATE_FAILED') : `Error creating Cossack app: ${error.message}`,
       error?.code === 'COSSACK_PROMPT_ABORTED' ? 130 : 1);
   }
 }

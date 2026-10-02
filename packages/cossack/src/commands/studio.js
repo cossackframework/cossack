@@ -72,7 +72,8 @@ export async function studioCommand(args, ctx) {
 function runMachineStudio(entry, options, timeout) {
   return new Promise(resolve => {
     const child = fork(fileURLToPath(new URL('../studio-runner.js', import.meta.url)),
-      [JSON.stringify({ entry, options })], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+      [JSON.stringify({ entry, options })], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        execArgv: ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href] });
     let ready = false;
     let timedOut = false;
     const forwardInterrupt = () => child.kill('SIGTERM');

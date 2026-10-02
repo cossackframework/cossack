@@ -2,7 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex CLI metadata (2026-10-02):** read
+> **Latest checkpoint — Codex JSON contracts (2026-10-02):** read
+> [Codex's CLI-03 completion and GLM instructions](./release-0.9.0.md#codex-cli-json-2026-10-02).
+> **CLI-03 is complete; 10/58 tasks are checked.** All JSON commands run behind
+> a CLI-owned process boundary. Finite commands emit one result; dev/start/Studio
+> expose documented lifecycle events with bounded startup and shutdown. ORM
+> errors hide connection values and identify the failing phase. Subprocess tests
+> cover real effects, dry runs, project logs, malformed results, and cancellation.
+> Continue CLI-06's dependency ownership/target-version templates, then CLI-04's
+> compiler classification and CLI-05/RT-25 recipes/capabilities. Versions remain
+> 0.8.3. The 48 unchecked tasks and final release gates remain in scope.
+> This supersedes CLI-03's partial status in the historical checkpoints below.
+
+> **Previous checkpoint — Codex CLI metadata (2026-10-02):** read
 > [Codex's validation completion and GLM instructions](./release-0.9.0.md#codex-cli-metadata-2026-10-02).
 > **CLI-02 is complete; 9/58 tasks are checked.** Parser, help, aliases,
 > scoped options, arity, repetition, and target conflicts share command metadata.

@@ -28,7 +28,7 @@ import { imageCommand, imageHelp } from './commands/image.js';
 import { adapterCommand, adapterHelp } from './commands/adapter.js';
 import { studioCommand, studioHelp } from './commands/studio.js';
 import { parseFlags, requestsJSON, requestsHelp } from './flags.js';
-import { commandFailure, writeResult } from './output.js';
+import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from './output.js';
 import { deployCommand, deployHelp } from './commands/deploy.js';
 import { inspectCommand, inspectHelp, checkCommand, checkHelp } from './commands/inspect.js';
 
@@ -79,11 +79,12 @@ export async function dispatch(argv) {
   let [raw, ...rest] = argv;
 
   if (raw === '--help' || raw === '-h' || raw === 'help' || raw === 'h') {
-    printHelp();
+    if (requestsJSON(rest)) writeResult('cossack', { data: { help: printHelp(true) } });
+    else printHelp();
     return 0;
   }
   if (raw === '--version' || raw === '-V') {
-    return versionCommand([], await buildCtx([]));
+    return dispatch(['version', ...rest]);
   }
 
   // Support colon-joined form for namespaced commands: `cossack image:optimize`
@@ -146,7 +147,8 @@ export async function dispatch(argv) {
   const { args, flags } = parsed;
   const ctx = await buildCtx(flags);
   try { return await def.run(args, ctx); }
-  catch (error) { return commandFailure(ctx, command, error.code ?? 'COSSACK_COMMAND_FAILED', error.message); }
+  catch (error) { return commandFailure(ctx, command, diagnosticCode(error),
+    ctx.flags.json === true ? diagnosticMessage(error) : error.message); }
 }
 
 async function buildCtx(flags) {
@@ -158,8 +160,8 @@ async function buildCtx(flags) {
   };
 }
 
-function printHelp() {
-  console.log(`${renderBanner()}
+function printHelp(asText = false) {
+  const help = `${renderBanner()}
 
 cossack <command> [args] [options]
 
@@ -198,7 +200,9 @@ Options:
   --help, -h           Show this help.
   --version, -V        Print the CLI version.
 
-Run \`cossack <command> --help\` for command-specific options.`);
+Run \`cossack <command> --help\` for command-specific options.`;
+  if (asText) return help;
+  console.log(help);
 }
 
 export { COMMANDS, printHelp };
