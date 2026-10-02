@@ -12,7 +12,7 @@ Cossack applications deploy to Cloudflare Workers using Wrangler.
 ### Prerequisites
 
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up)
-- Wrangler CLI installed (`npm install -g wrangler`)
+- Project dependencies installed with `pnpm install`, including Wrangler and Vite.
 
 ### Configure
 
@@ -33,21 +33,111 @@ Your project includes a `wrangler.jsonc` with the required bindings:
 }
 ```
 
-If using pages with `transport: 'sse'`, no Durable Object binding is required : SSE runs on plain Workers.
+### Static assets and authentication
+
+Generated applications configure assets as follows:
+
+```jsonc
+"assets": {
+  "binding": "ASSETS",
+  "run_worker_first": true
+}
+```
+
+Every request enters the Worker middleware pipeline. The framework returns
+matching assets after global and owning page/layout policies run. Missing
+assets continue to SSR or API handlers. Client JavaScript and CSS still use
+the asset binding; the framework streams those responses.
+
+Page policies also protect files inside that page's URL namespace. Known
+`index.html` and `.html` page aliases pass through those policies and redirect
+to the canonical route. Source route groups and dynamic parameters retain
+their enclosing layout policies. Global middleware can protect asset paths
+that have no page component; match the entire protected path namespace.
+
+Global middleware now runs for asset requests too. Put work needed only by a
+page in its route or layout middleware. `cossack check cloudflare` and deploy
+preflight reject asset configurations that bypass the Worker or rename the
+framework's `ASSETS` binding.
+
+SSG only publishes anonymous, public HTML. A route that requires login or
+sets visitor cookies must use SSR. See [Static Site Generation](./static-site-generation.md).
+
+The current SSE implementation stores shared state in a Worker instance.
+Do not rely on cross-request synchronization across Worker instances until
+the distributed SSE backend is available. Durable Object transport provides
+coordination for stateful pages.
+
+### Inspect configuration
+
+Inspect and check local configuration without writing build files:
+
+```sh
+pnpm exec cossack inspect cloudflare --env staging --json
+pnpm exec cossack check cloudflare --env staging --json
+```
+
+Both commands report the resolved Worker, environment, bindings, required
+secret names, and diagnostics. Inspection succeeds when configuration can be
+read; `check` fails if it contains deployment errors. Their results explicitly
+mark build and remote readiness as `not-checked`. They do not provision
+resources, fetch secrets, or verify permissions.
 
 ### Deploy
 
 ```sh
-npx wrangler deploy
+pnpm exec cossack deploy --dry-run
+pnpm exec cossack deploy
 ```
+
+`cossack deploy` checks local configuration, generates binding types, builds
+with Vite, checks the built configuration against the selected environment,
+and deploys that artifact with the project's installed Wrangler. Invalid
+environments, secrets in `vars`, placeholder resources, and a placeholder
+`APP_URL` stop deployment. Set the application's URL before deploying.
+
+`--dry-run` writes generated types and build artifacts and runs Wrangler's
+local deployment validation. It does not upload or provision resources.
+It does not prove that remote secrets, permissions, or resources are ready.
+Wrangler validates required remote secrets during a real deployment.
+
+### Environments and CI
+
+```sh
+pnpm exec cossack deploy --env staging --dry-run --json
+pnpm exec cossack deploy --env staging
+```
+
+Define `env.staging` in Wrangler first. Declare its variables and bindings
+explicitly because these settings do not inherit from the top-level config.
+Cossack sets `CLOUDFLARE_ENV` before the Vite build, so SSG and bindings select
+the same environment. `--mode` optionally selects a separate Vite mode.
+
+JSON mode emits one versioned result containing the Worker name, environment,
+binding resources, required secret names, step exit codes and timings, artifact
+path, and diagnostics. Raw tool output is suppressed because it may contain
+configuration values. Run without `--json` for tool-specific error details.
+
+Use distinct resources for previews. A preview URL alone does not isolate a
+database or bucket. Apply migrations explicitly to the intended database;
+this command does not apply migrations. Rolling back Worker code does not
+restore database, bucket, or Durable Object state.
 
 ### Environment Variables and Secrets
 
 Set secrets via the Wrangler CLI (never commit them to `wrangler.jsonc`):
 
 ```sh
-npx wrangler secret put DATABASE_URL
+pnpm exec wrangler secret put APP_SECRET
+# For a named environment:
+pnpm exec wrangler secret put APP_SECRET --env staging
 ```
+
+Generated apps declare required names in `secrets.required` and generate an
+ignored `.dev.vars` with a random local `APP_SECRET`. Keep production secrets
+separate. `.dev.vars.staging` replaces `.dev.vars` for staging, so include all
+required values in that file. The scaffold ignores `.dev.vars*` and `.env*`
+while retaining example files. Never commit real secrets in examples.
 
 Non-sensitive variables can go in `wrangler.jsonc` under `"vars"`:
 
@@ -76,13 +166,17 @@ Add bindings to `wrangler.jsonc`:
 ```jsonc
 {
   "d1_databases": [
-    { "binding": "DB", "database_name": "my-db", "database_id": "xxx" }
+    { "binding": "DB", "database_name": "my-db" }
   ],
   "r2_buckets": [
     { "binding": "MY_BUCKET", "bucket_name": "my-bucket" }
   ]
 }
 ```
+
+Wrangler can provision D1 when `database_id` is omitted. Set the real ID when
+binding an existing database. Hyperdrive requires an existing configuration
+ID; replace its scaffold placeholder before deployment.
 
 ### Custom Domains
 
@@ -91,7 +185,7 @@ Add a custom domain to your Worker in the Cloudflare dashboard under **Workers &
 ```jsonc
 {
   "routes": [
-    { "pattern": "www.example.com/*", "custom_domain": true }
+    { "pattern": "www.example.com", "custom_domain": true }
   ]
 }
 ```
@@ -107,7 +201,7 @@ For Node.js deployments, see the [Adapters guide](./adapters.md).
 pnpm build
 
 # Start the server
-node dist/server.js
+node dist/server/index.js
 ```
 
 State is memory-only in Node.js mode : use an external database for persistence.

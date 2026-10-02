@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createRemoteD1Connection,
@@ -13,6 +14,10 @@ const directories: string[] = [];
 async function fixture(config: string, filename = 'wrangler.jsonc') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-studio-remote-'));
   directories.push(root);
+  const require = createRequire(import.meta.url);
+  await fs.mkdir(path.join(root, 'node_modules'));
+  await fs.symlink(path.dirname(require.resolve('wrangler/package.json')), path.join(root, 'node_modules/wrangler'), 'junction');
+  await fs.writeFile(path.join(root, 'package.json'), '{}');
   await fs.writeFile(path.join(root, filename), config);
   return root;
 }
@@ -33,10 +38,31 @@ describe('remote D1', () => {
       }}
     }`);
     expect(await readD1Bindings(root)).toEqual([
-      { binding: 'DB', databaseName: 'local', databaseId: undefined },
+      { binding: 'DB', databaseName: 'local' },
     ]);
     expect(await readD1Bindings(root, 'production')).toEqual([
-      { binding: 'PROD', databaseName: undefined, databaseId: '123' },
+      { binding: 'PROD', databaseId: '123' },
+    ]);
+  });
+
+  it('never falls back to top-level bindings for named environments', async () => {
+    const root = await fixture('{"d1_databases":[{"binding":"PRODUCTION"}],"env":{"staging":{}}}');
+    expect(await readD1Bindings(root, 'staging')).toEqual([]);
+    await expect(readD1Bindings(root, 'typo')).rejects.toThrow('not configured');
+  });
+
+  it('reads quoted TOML environment names with the project Wrangler parser', async () => {
+    const root = await fixture(`
+[[d1_databases]]
+binding = "PRODUCTION"
+database_name = "production-db"
+[env."preview.branch"]
+[[env."preview.branch".d1_databases]]
+binding = "PREVIEW"
+database_name = "preview-db"
+`, 'wrangler.toml');
+    expect(await readD1Bindings(root, 'preview.branch')).toEqual([
+      { binding: 'PREVIEW', databaseName: 'preview-db' },
     ]);
   });
 
@@ -53,7 +79,7 @@ describe('remote D1', () => {
 
   it('spawns Wrangler with argument arrays and parses results', async () => {
     const root = await fixture(`{
-      "d1_databases": [{ "binding": "DB", "database_name": "production" }]
+      "env": { "production": { "d1_databases": [{ "binding": "DB", "database_name": "production" }] } }
     }`);
     const execute = vi.fn().mockResolvedValue({
       stdout: JSON.stringify([{

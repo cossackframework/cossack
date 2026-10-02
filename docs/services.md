@@ -137,8 +137,12 @@ service's `@State` fields or nested `@Store` values changes.
 
 - Each SSR request gets a fresh root scope, so requests cannot share service
  state or user data.
+- Each SSG render gets its own anonymous request scope. Layout services,
+ constructor injection, and service hydration use the same hierarchy as SSR.
 - Each service RPC request reconstructs the applicable layout hierarchy in a
  fresh request scope.
+- Component RPC also resolves services from a fresh layout hierarchy. A streamed
+ action keeps its components and services alive until completion or cancellation.
 - In the browser, a reused layout keeps its scope across navigation between
  pages in the same subtree.
 - Leaving the subtree disposes the scope. Returning later creates a new service
@@ -157,9 +161,22 @@ export class SearchService {
 }
 ```
 
-`onDispose()` runs once when the owning scope is destroyed. Cleanup that must
-finish before navigation continues must be synchronous: Promise-returning
-hooks are started and rejection-logged, but are not awaited.
+`onDispose()` runs once when the owning scope is destroyed. `dispose()` starts
+cleanup without waiting; `await scope.disposeAsync()` waits for child scopes
+and Promise-returning hooks, and rejects with an `AggregateError` if any fail.
+It also waits for cleanup already started by `dispose()`.
+
+Components have the equivalent `destroy()` and `destroyAsync()` methods.
+Destruction releases renderer-created descendants, subscriptions, and owned
+services even when `onCleanup()` fails. Async component hooks finish before
+their owned services are disposed. Use `await component.destroyAsync()` when
+the caller needs to wait for cleanup.
+
+SSG waits for component and scoped-service cleanup before publishing a render.
+Cleanup failures fail generation; a preceding render failure is retained as
+the error's `cause`. Browser navigation and current SSR/RPC scope disposal do
+not wait for asynchronous hooks. Cleanup required before those operations
+continue must still be synchronous.
 
 ## Nested Layouts and Shadowing
 

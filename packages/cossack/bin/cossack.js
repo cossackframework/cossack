@@ -5,9 +5,8 @@
  * Most commands (generate, delete, routes, add, create, dev, build, ...)
  * are plain filesystem/string work and run directly under node.
  *
- * The `ssg` command must import the compiled framework engine *and* the
- * user's `.ts` App/pages, so it re-spawns itself once under `node --import tsx`
- * to activate the loader globally (same approach as the former framework bin).
+ * Database commands load TypeScript through the application's ORM tooling.
+ * Studio re-spawns under tsx to import its application/server modules.
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -15,16 +14,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { dispatch } from '../src/dispatch.js';
 
-const RESPAWN_FLAG = '__COSSACK_SSG_RESPAWNED';
+const RESPAWN_FLAG = '__COSSACK_STUDIO_RESPAWNED';
 
 const argv = process.argv.slice(2);
 
-// `migration` and `seeder` import the user's `.ts` App/config and the
-// framework/database engine, so they need the tsx loader. (`ssg` now runs
-// inside `vite build` via the cossackSsg plugin — no tsx respawn needed.)
 const [command] = argv;
-const needsTsx = command === 'migration' || command === 'migrate' ||
-  command === 'seeder' || command === 'seed' || command === 'studio';
+const needsTsx = command === 'studio';
 
 if (needsTsx && !process.env[RESPAWN_FLAG]) {
   // Resolve tsx from this package's own deps so it is found regardless of cwd.
@@ -49,7 +44,7 @@ if (needsTsx && !process.env[RESPAWN_FLAG]) {
   );
   child.on('exit', (code) => process.exit(code ?? 1));
 } else {
-  // Plain path (all non-ssg commands, or ssg already respawned under tsx).
+  // Plain path, or Studio after activating its loader.
   dispatch(argv).then(
     (code) => process.exit(code ?? 0),
     (err) => {

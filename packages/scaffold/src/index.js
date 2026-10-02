@@ -409,7 +409,7 @@ function middlewareRegistry(recipe) {
 function wranglerConfig(recipe, projectName) {
   let database = '';
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    database = `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "00000000-0000-0000-0000-000000000000",\n    "preview_database_id": "${projectName}-local"\n  }]`;
+    database = `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "preview_database_id": "${projectName}-local"\n  }]`;
   } else if (recipe.resolvedFeatures.includes('database') &&
       recipe.config.database.startsWith('hyperdrive-')) {
     database = `,\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
@@ -427,11 +427,11 @@ function wranglerConfig(recipe, projectName) {
   "compatibility_flags": ["${compatibilityFlag}"],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
-  "assets": { "binding": "ASSETS" },
+  "assets": { "binding": "ASSETS", "run_worker_first": true },
+  "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
-    "APP_LOCALE": "en",
-    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET"
+    "APP_LOCALE": "en"
   }${database}${email}
 }
 `;
@@ -556,7 +556,7 @@ function packageJson(recipe, projectName) {
         build: 'vite build',
         'build:ssg': 'vite build',
         'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
-        deploy: 'vite build && wrangler deploy',
+        deploy: 'cossack deploy',
       };
   if (recipe.resolvedFeatures.includes('desktop')) {
     scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
@@ -716,8 +716,10 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
     : provider === 'turso'
       ? 'TURSO_DATABASE_URL?: string;\n  TURSO_AUTH_TOKEN?: string;'
       : 'HYPERDRIVE: Hyperdrive;';
-  return `import { createORM } from '@cossackframework/database';
+  return `import { AsyncLocalStorage } from 'node:async_hooks';
+import { createORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
+import { createAsyncLocalScope } from '@cossackframework/database/adapter';
 import { ${runtimeImport} } from '@cossackframework/database/cloudflare';
 import { models } from '../models';
 
@@ -735,21 +737,37 @@ export async function createRuntimeAdapter(env: ORMEnvironment): Promise<Adapter
 }
 
 export async function createRequestORM(env: ORMEnvironment) {
-  return createORM({ adapter: await createRuntimeAdapter(env), entities: models });
+  const adapter = await createRuntimeAdapter(env);
+  return createORM({
+    adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
+    entities: models,
+  });
 }
 `;
 }
 
-function ormTooling() {
-  return `import type { Adapter } from '@cossackframework/database';
+function ormTooling(recipe) {
+  if (recipe.config.database === 'd1') {
+    return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
+import { createD1ToolingAdapter } from '@cossackframework/database/tooling';
+
+export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
+  return createD1ToolingAdapter(context, { binding: 'DB' });
+}
+`;
+  }
+  return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
 import { getPlatformProxy } from 'wrangler';
 import {
   createRuntimeAdapter,
   type ORMEnvironment,
 } from './factory';
 
-export async function createToolingAdapter(): Promise<Adapter> {
-  const platform = await getPlatformProxy<ORMEnvironment>({ remoteBindings: false });
+export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
+  const platform = await getPlatformProxy<ORMEnvironment>({
+    environment: context.environment,
+    remoteBindings: context.target === 'remote',
+  });
   const adapter = await createRuntimeAdapter(platform.env);
   const close = adapter.driver.close.bind(adapter.driver);
   adapter.driver.close = async () => {
@@ -1369,18 +1387,13 @@ function generateAuthSecret() {
 function ensureEnvironmentSecrets(recipe, existingSecrets) {
   const needsOAuthSecret = recipe.resolvedFeatures.includes('auth') &&
     recipe.config.authMethods.includes('oauth');
-  const needsAppSecret = recipe.adapter === 'node';
   return {
     ...recipe,
     config: {
       ...recipe.config,
-      ...(needsAppSecret
-        ? {
-            appSecret: existingSecrets?.appSecret ??
-              recipe.config.appSecret ??
-              generateAuthSecret(),
-          }
-        : {}),
+      appSecret: existingSecrets?.appSecret ??
+        recipe.config.appSecret ??
+        generateAuthSecret(),
       ...(needsOAuthSecret
         ? {
             authSecret: existingSecrets?.authSecret ??
@@ -1473,7 +1486,9 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
 }
 
 function cloudflareEnvironmentValues(recipe, example = false) {
-  const values = [];
+  const values = [['APP_SECRET', example
+    ? 'replace-with-a-random-32-byte-secret'
+    : (recipe.config.appSecret ?? generateAuthSecret())]];
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'turso') {
     values.push(
       ['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : ''],
@@ -1651,7 +1666,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.env\n.dev.vars\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n'),
     capability: 'base',
   });
 
@@ -1674,7 +1689,7 @@ export async function renderRecipe(recipe, options = {}) {
     });
     if (recipe.adapter === 'cloudflare') {
       files.set('src/orm/tooling.ts', {
-        content: text(ormTooling()),
+        content: text(ormTooling(recipe)),
         capability: 'database',
       });
     }
@@ -2305,6 +2320,7 @@ async function confirmPlan(plan, options, summary = undefined) {
 
 export async function createApp(projectName, options = {}) {
   if (!projectName) throw new Error('Please provide a project name');
+  if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;
   while (true) {
@@ -2320,6 +2336,13 @@ export async function createApp(projectName, options = {}) {
     });
     const plan = await buildPlan(projectDir, rendered, null, prompted.force);
     if (plan.conflicts.length) throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}`);
+    if (prompted.dryRun) {
+      return {
+        status: 'dry-run', projectDir, adapter: recipe.adapter,
+        manifestPath: path.join(projectDir, '.cossack/scaffold.json'),
+        recipe: publicRecipe(recipe), changes: plan,
+      };
+    }
     const confirmation = await confirmPlan(plan, prompted, {
       requested: `preset:${recipe.preset}`,
       prerequisites: recipe.resolvedFeatures,
@@ -2331,12 +2354,13 @@ export async function createApp(projectName, options = {}) {
       continue;
     }
     if (!confirmation) {
-      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe, status: 'cancelled' };
+      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe: publicRecipe(recipe), status: 'cancelled' };
     }
     await applyPlan(projectDir, rendered, plan);
     const manifestPath = await writeManifest(projectDir, recipe, rendered, undefined, plan);
     return {
       status: 'created',
+      changes: plan,
       projectDir,
       adapter: recipe.adapter,
       manifestPath,
@@ -2880,6 +2904,7 @@ export async function addFeature(projectDir, feature, options = {}) {
   const root = path.resolve(projectDir);
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
+  if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;
   while (true) {

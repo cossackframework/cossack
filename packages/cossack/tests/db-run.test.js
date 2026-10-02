@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { loadORMTooling } from '../src/commands/db-run.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadORMTooling, runORMToolingCommand } from '../src/commands/db-run.js';
 
 const temporaryDirectories = [];
 
@@ -15,14 +15,14 @@ async function createProject(toolingSource) {
     path.join(root, 'package.json'),
     JSON.stringify({
       type: 'module',
-      dependencies: { '@cossackframework/database': '^1.0.0' },
+      dependencies: { '@cossackframework/database': '^0.9.0' },
     }),
   );
   await fs.writeFile(
     path.join(packageRoot, 'package.json'),
     JSON.stringify({
       name: '@cossackframework/database',
-      version: '1.0.0',
+      version: '0.9.0',
       type: 'module',
       exports: { './package.json': './package.json' },
     }),
@@ -34,6 +34,7 @@ async function createProject(toolingSource) {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(temporaryDirectories.splice(0).map((directory) =>
     fs.rm(directory, { recursive: true, force: true }),
   ));
@@ -57,10 +58,21 @@ describe('application ORM tooling loading', () => {
     );
   });
 
-  it('requires database 1.0 tooling to export runORMCommand', async () => {
+  it('requires database 0.9 tooling to export runORMCommand', async () => {
     const root = await createProject('export const unsupported = true;\n');
     await expect(loadORMTooling(root)).rejects.toThrow(
       'does not export tooling support',
     );
+  });
+
+  it('preserves false values and repeated options while forwarding canonical aliases', async () => {
+    const root = await createProject('export async function runORMCommand(argv, options) { options.stdout(JSON.stringify(argv)); return 0; }');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await runORMToolingCommand(['migration', 'snapshot'], { cwd: root,
+      flags: { f: false, force: false, 'dry-run': true, env: ['staging', 'production'], json: true },
+    })).toBe(0);
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual([
+      'migration', 'snapshot', '--force=false', '--dry-run', '--env=staging', '--env=production', '--json',
+    ]);
   });
 });

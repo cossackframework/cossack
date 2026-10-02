@@ -65,6 +65,7 @@ it('rejects service-name collisions with internal component methods', async () =
     bootstrap = bootstrap;
     _render() {}
     getPublicState() { return {}; }
+    async destroyAsync() {}
   }
   Reflect.defineMetadata('design:paramtypes', [CollisionService], CollisionPage);
   registry.pages[pagePath] = { default: CollisionPage };

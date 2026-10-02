@@ -312,6 +312,14 @@ export class App extends Cossack {
 
 Runs immediately before the component is destroyed. Use it to release resources, close connections, or cancel timers. Any listeners attached via `@On`/`@OnDocument`/`@OnWindow` are removed automatically by the framework : you do not need to clean those up here.
 
+`destroy()` starts cleanup synchronously. `await destroyAsync()` also waits for
+Promise-returning `onCleanup()` hooks, descendant cleanup, registered task
+cleanup, and owned service disposal. Both methods run hooks once. If a hook
+fails, the framework still releases the other resources; the awaitable method
+reports component or service failures with an `AggregateError`. Task cleanup
+failures retain their logged-error behavior. SSG waits for cleanup before
+accepting generated HTML.
+
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';
 

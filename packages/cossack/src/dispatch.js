@@ -5,54 +5,60 @@
  * where `args` is the remaining argv after the command/subcommand and `ctx`
  * holds shared flags. Returns a process exit code.
  */
-import { versionCommand } from './commands/version.js';
-import { routesCommand } from './commands/routes.js';
-import { generateCommand } from './commands/generate.js';
+import { versionCommand, versionHelp } from './commands/version.js';
+import { routesCommand, routesHelp } from './commands/routes.js';
+import { generateCommand, generateHelp } from './commands/generate.js';
 import { renderBanner } from './banner.js';
-import { deleteCommand } from './commands/delete.js';
-import { createCommand } from './commands/create.js';
-import { ssgCommand } from './commands/ssg.js';
-import { addCommand } from './commands/add.js';
-import { removeCommand } from './commands/remove.js';
-import { langCommand } from './commands/lang.js';
-import { migrationCommand } from './commands/migration.js';
-import { seederCommand } from './commands/seeder.js';
-import { schemaCommand } from './commands/schema.js';
-import { devCommand } from './commands/dev.js';
-import { buildCommand } from './commands/build.js';
-import { startCommand } from './commands/start.js';
-import { infoCommand } from './commands/info.js';
-import { upgradeCommand } from './commands/upgrade.js';
-import { imageCommand } from './commands/image.js';
-import { adapterCommand } from './commands/adapter.js';
-import { studioCommand } from './commands/studio.js';
-import { parseFlags } from './flags.js';
+import { deleteCommand, deleteHelp } from './commands/delete.js';
+import { createCommand, createHelp } from './commands/create.js';
+import { ssgCommand, ssgHelp } from './commands/ssg.js';
+import { addCommand, addHelp } from './commands/add.js';
+import { removeCommand, removeHelp } from './commands/remove.js';
+import { langCommand, langHelp } from './commands/lang.js';
+import { migrationCommand, migrationHelp } from './commands/migration.js';
+import { seederCommand, seederHelp } from './commands/seeder.js';
+import { schemaCommand, schemaHelp } from './commands/schema.js';
+import { devCommand, devHelp } from './commands/dev.js';
+import { buildCommand, buildHelp } from './commands/build.js';
+import { startCommand, startHelp } from './commands/start.js';
+import { infoCommand, infoHelp } from './commands/info.js';
+import { upgradeCommand, upgradeHelp } from './commands/upgrade.js';
+import { imageCommand, imageHelp } from './commands/image.js';
+import { adapterCommand, adapterHelp } from './commands/adapter.js';
+import { studioCommand, studioHelp } from './commands/studio.js';
+import { parseFlags, requestsJSON } from './flags.js';
+import { commandFailure, writeResult } from './output.js';
+import { deployCommand, deployHelp } from './commands/deploy.js';
+import { inspectCommand, inspectHelp, checkCommand, checkHelp } from './commands/inspect.js';
 
 const COMMANDS = {
   // lifecycle
-  dev: { run: devCommand, aliases: [] },
-  build: { run: buildCommand, aliases: [] },
-  start: { run: startCommand, aliases: [] },
+  dev: { run: devCommand, help: devHelp, aliases: [] },
+  build: { run: buildCommand, help: buildHelp, aliases: [] },
+  start: { run: startCommand, help: startHelp, aliases: [] },
+  deploy: { run: deployCommand, help: deployHelp, aliases: [] },
   // scaffolding
-  create: { run: createCommand, aliases: [] },
-  generate: { run: generateCommand, aliases: ['g'] },
-  delete: { run: deleteCommand, aliases: ['d'] },
-  add: { run: addCommand, aliases: [] },
-  remove: { run: removeCommand, aliases: [] },
-  adapter: { run: adapterCommand, aliases: [] },
-  lang: { run: langCommand, aliases: [] },
-  migration: { run: migrationCommand, aliases: ['migrate'] },
-  seeder: { run: seederCommand, aliases: ['seed'] },
-  schema: { run: schemaCommand, aliases: [] },
-  studio: { run: studioCommand, aliases: [] },
+  create: { run: createCommand, help: createHelp, aliases: [] },
+  generate: { run: generateCommand, help: generateHelp, aliases: ['g'] },
+  delete: { run: deleteCommand, help: deleteHelp, aliases: ['d'] },
+  add: { run: addCommand, help: addHelp, aliases: [] },
+  remove: { run: removeCommand, help: removeHelp, aliases: [] },
+  adapter: { run: adapterCommand, help: adapterHelp, aliases: [] },
+  lang: { run: langCommand, help: langHelp, aliases: [] },
+  migration: { run: migrationCommand, help: migrationHelp, aliases: ['migrate'] },
+  seeder: { run: seederCommand, help: seederHelp, aliases: ['seed'] },
+  schema: { run: schemaCommand, help: schemaHelp, aliases: [] },
+  studio: { run: studioCommand, help: studioHelp, aliases: [] },
   // introspection
-  routes: { run: routesCommand, aliases: [] },
-  info: { run: infoCommand, aliases: [] },
-  version: { run: versionCommand, aliases: ['v'] },
+  inspect: { run: inspectCommand, help: inspectHelp, aliases: [] },
+  check: { run: checkCommand, help: checkHelp, aliases: [] },
+  routes: { run: routesCommand, help: routesHelp, aliases: [] },
+  info: { run: infoCommand, help: infoHelp, aliases: [] },
+  version: { run: versionCommand, help: versionHelp, aliases: ['v'] },
   // engine / maintenance
-  ssg: { run: ssgCommand, aliases: [] },
-  upgrade: { run: upgradeCommand, aliases: [] },
-  image: { run: imageCommand, aliases: [] },
+  ssg: { run: ssgCommand, help: ssgHelp, aliases: [] },
+  upgrade: { run: upgradeCommand, help: upgradeHelp, aliases: [] },
+  image: { run: imageCommand, help: imageHelp, aliases: [] },
 };
 
 function resolveCommand(name) {
@@ -87,22 +93,44 @@ export async function dispatch(argv) {
 
   const command = resolveCommand(raw);
   if (!command) {
+    if (requestsJSON(rest)) {
+      return commandFailure({ flags: { json: true } }, raw ?? 'cossack', 'COSSACK_COMMAND_UNKNOWN',
+        `Unknown command: ${raw || '(none)'}. Run cossack --help.`);
+    }
     console.error(`Unknown command: ${raw || '(none)'}`);
     printHelp();
     return 1;
   }
 
-  const { args, flags } = parseFlags(rest);
-  const ctx = await buildCtx(flags);
   const def = COMMANDS[command];
-  return def.run(args, ctx);
+  const optionEnd = rest.indexOf('--');
+  const options = optionEnd === -1 ? rest : rest.slice(0, optionEnd);
+  if (options.includes('--help') || options.includes('-h')) {
+    if (requestsJSON(rest)) writeResult(command, { data: { help: def.help() } });
+    else console.log(def.help());
+    return 0;
+  }
+  // Preserve the downstream tool's argument syntax and ordering verbatim.
+  // Framework parsing otherwise consumes values such as --mode and --port.
+  if (['dev', 'build', 'start', 'ssg'].includes(command)) {
+    return def.run(rest, await buildCtx({}));
+  }
+  let parsed;
+  try { parsed = parseFlags(rest); }
+  catch (error) {
+    return commandFailure({ flags: { json: requestsJSON(rest) } }, command, 'COSSACK_OPTION_INVALID', error.message);
+  }
+  const { args, flags } = parsed;
+  const ctx = await buildCtx(flags);
+  try { return await def.run(args, ctx); }
+  catch (error) { return commandFailure(ctx, command, error.code ?? 'COSSACK_COMMAND_FAILED', error.message); }
 }
 
 async function buildCtx(flags) {
   return {
     flags,
     cwd: process.cwd(),
-    force: flags.force === true || flags.f === true,
+    force: flags.force === true,
     dryRun: flags['dry-run'] === true,
   };
 }
@@ -115,8 +143,11 @@ cossack <command> [args] [options]
 Commands:
   create <name>                Scaffold a new Cossack project.
   dev                          Start the dev server (vite dev).
-  build                        Production build (vite build && cossack ssg).
+  build                        Production build, including SSG (vite build).
   start                        Start the production server.
+  deploy                       Build and deploy to Cloudflare (--env, --dry-run, --json).
+  inspect cloudflare           Show resolved Cloudflare configuration (--env, --json).
+  check cloudflare             Validate local Cloudflare configuration without writes.
   generate <type> <name> (g)   Generate page/component/layout/middleware/service/model/migration/seeder.
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
@@ -127,7 +158,7 @@ Commands:
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
-                               squash, up, down, status, check, baseline.
+                               squash, up, down, status, check, baseline, plan.
   schema <sub>                 ORM schema commands: pull, diff, check.
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.
@@ -140,7 +171,7 @@ Commands:
 
 Options:
   --force, -f          Overwrite existing files / skip confirmation.
-  --dry-run            Show what would happen without writing.
+  --dry-run            Preview command effects (see command-specific help).
   --help, -h           Show this help.
   --version, -V        Print the CLI version.
 

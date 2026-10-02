@@ -6,7 +6,7 @@ import type { SeederInput } from "./seeding/types.js";
 
 export interface ORMConfig {
   readonly entities: readonly EntityTarget[];
-  readonly adapter: Adapter | (() => Adapter | Promise<Adapter>);
+  readonly adapter: Adapter | ((context: ORMToolingContext) => Adapter | Promise<Adapter>);
   readonly migrations?: readonly Migration[];
   /** Directory used by model-first migration generation. Defaults to `migrations`. */
   readonly migrationDirectory?: string;
@@ -15,6 +15,16 @@ export interface ORMConfig {
   readonly seeds?: readonly SeederInput[];
   readonly namingStrategy?: NamingStrategy;
   readonly logger?: ORMLogger;
+}
+
+/** Node-only tooling passes this context to the application's adapter factory. */
+export interface ORMToolingContext {
+  readonly cwd: string;
+  readonly configPath: string;
+  readonly environment?: string;
+  readonly target: "local" | "remote";
+  /** The command inspects metadata/state and must not apply changes. */
+  readonly readOnly: boolean;
 }
 
 export function defineConfig<const T extends ORMConfig>(config: T): T {

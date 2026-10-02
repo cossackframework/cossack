@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { ORM, ORMConfig } from '@cossackframework/database';
+import type { ORM, ORMConfig, ORMToolingContext } from '@cossackframework/database';
 import { createLocalConnection } from './lib/local-connection.js';
 import {
   databaseLabelFromEnvironment,
@@ -35,7 +35,7 @@ export interface StudioRunOptions {
   provider?: StudioProvider;
 }
 
-async function loadProjectORM(projectRoot: string): Promise<ORM> {
+async function loadProjectORM(projectRoot: string, options: StudioRunOptions): Promise<ORM> {
   const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
   let packageJsonPath: string;
   try {
@@ -54,15 +54,18 @@ async function loadProjectORM(projectRoot: string): Promise<ORM> {
   );
   const tooling = await import(pathToFileURL(toolingPath).href) as {
     loadORMConfig?: (path: string) => Promise<ORMConfig>;
-    createORMFromConfig?: (config: ORMConfig) => Promise<ORM>;
+    createORMFromConfig?: (config: ORMConfig, context: ORMToolingContext) => Promise<ORM>;
   };
   if (!tooling.loadORMConfig || !tooling.createORMFromConfig) {
     throw new Error(
-      'Studio requires @cossackframework/database 1.0.0 or newer with tooling exports.',
+      'Studio requires @cossackframework/database 0.9.0 or newer with tooling exports.',
     );
   }
   const config = await tooling.loadORMConfig(path.join(projectRoot, 'orm.config.ts'));
-  return tooling.createORMFromConfig(config);
+  return tooling.createORMFromConfig(config, { cwd: projectRoot,
+    configPath: path.join(projectRoot, 'orm.config.ts'), target: 'local', readOnly: false,
+    ...(options.env ? { environment: options.env } : {}),
+  });
 }
 
 async function loadProjectEnvironment(projectRoot: string): Promise<void> {
@@ -122,7 +125,7 @@ async function createProjectConnection(
   options: StudioRunOptions,
 ): Promise<StudioConnection> {
   await loadProjectEnvironment(projectRoot);
-  const orm = await loadProjectORM(projectRoot);
+  const orm = await loadProjectORM(projectRoot, options);
   const provider = options.provider
     ? normalizeStudioProvider(options.provider)
     : await detectStudioProvider(orm);

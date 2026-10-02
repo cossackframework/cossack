@@ -27,3 +27,21 @@ export interface MigrationStatus {
   readonly applied?: AppliedMigration;
   readonly state: "pending" | "applied" | "changed";
 }
+
+export interface MigrationPlanStatement {
+  readonly text: string;
+  /** Parameter values are intentionally excluded from inspection output. */
+  readonly parameterCount: number;
+  readonly risk: "safe" | "destructive" | "unknown";
+}
+
+export interface MigrationPlanEntry {
+  readonly name: string;
+  readonly direction: "up" | "down";
+  readonly mode: "apply" | "revert" | "consolidate";
+  readonly replaces?: readonly string[];
+  readonly checksum: string;
+  readonly statements: readonly MigrationPlanStatement[];
+  readonly complete: boolean;
+  readonly reason?: string;
+}

@@ -7,9 +7,9 @@
  *
  * Resolution order (first match wins):
  *   1. process.env.APP_URL                     — explicit shell/CI override
- *   2. wrangler.jsonc -> vars.APP_URL
- *   3. wrangler.toml  -> [vars] APP_URL
- *   4. .env            -> APP_URL
+ *   2. wrangler.jsonc/json -> selected environment vars.APP_URL
+ *   3. wrangler.toml -> selected environment [vars] APP_URL
+ *   4. .env files     -> APP_URL (environment/local overrides)
  *   5. DEFAULT_SITE_URL                        — final fallback
  */
 
@@ -31,6 +31,8 @@ export const DEFAULT_SITE_URL = 'https://example.com';
 export interface GetSiteUrlOptions {
   /** Project root to resolve config files from. Defaults to process.cwd(). */
   projectRoot?: string;
+  /** Cloudflare environment selected at build time. Defaults to CLOUDFLARE_ENV. */
+  environment?: string;
 }
 
 /**
@@ -39,6 +41,7 @@ export interface GetSiteUrlOptions {
  */
 export function getSiteUrl(options?: GetSiteUrlOptions): string {
   const root = options?.projectRoot ?? process.cwd();
+  const environment = options?.environment ?? process.env.CLOUDFLARE_ENV;
 
   // 1. Explicit shell/CI override (highest precedence).
   if (process.env.APP_URL) {
@@ -46,15 +49,15 @@ export function getSiteUrl(options?: GetSiteUrlOptions): string {
   }
 
   // 2. wrangler.jsonc
-  const fromJsonc = readWranglerJsonc(root);
+  const fromJsonc = readWranglerJsonc(root, environment);
   if (fromJsonc) return fromJsonc;
 
   // 3. wrangler.toml
-  const fromToml = readWranglerToml(root);
+  const fromToml = readWranglerToml(root, environment);
   if (fromToml) return fromToml;
 
   // 4. .env -> APP_URL
-  const dotEnv = readDotEnv(root);
+  const dotEnv = readDotEnv(root, environment);
   if (dotEnv.APP_URL) {
     return dotEnv.APP_URL;
   }
@@ -146,8 +149,9 @@ function stripJsonComments(str: string): string {
  * Read `vars.APP_URL` from `wrangler.jsonc` at the given root.
  * Returns the value or `undefined` if not present / file missing / parse error.
  */
-function readWranglerJsonc(root: string): string | undefined {
-  const filePath = path.join(root, 'wrangler.jsonc');
+function readWranglerJsonc(root: string, environment?: string): string | undefined {
+  const filePath = path.join(root, fs.existsSync(path.join(root, 'wrangler.jsonc'))
+    ? 'wrangler.jsonc' : 'wrangler.json');
   let content: string;
   try {
     content = fs.readFileSync(filePath, 'utf-8');
@@ -163,7 +167,10 @@ function readWranglerJsonc(root: string): string | undefined {
   }
 
   if (parsed && typeof parsed === 'object') {
-    const vars = (parsed as { vars?: unknown }).vars;
+    const config = parsed as { vars?: unknown; env?: Record<string, { vars?: unknown }> };
+    // Wrangler vars are non-inheritable: an environment must not pick up the
+    // top-level production URL when its own APP_URL is absent.
+    const vars = environment ? config.env?.[environment]?.vars : config.vars;
     if (vars && typeof vars === 'object') {
       const value = (vars as Record<string, unknown>).APP_URL;
       if (typeof value === 'string' && value.length > 0) {
@@ -180,7 +187,7 @@ function readWranglerJsonc(root: string): string | undefined {
  * scalar values, which is all we need for this config. Returns the value or
  * `undefined` if not present / file missing.
  */
-function readWranglerToml(root: string): string | undefined {
+function readWranglerToml(root: string, environment?: string): string | undefined {
   const filePath = path.join(root, 'wrangler.toml');
   let content: string;
   try {
@@ -189,7 +196,7 @@ function readWranglerToml(root: string): string | undefined {
     return undefined;
   }
 
-  const value = parseTomlVars(content);
+  const value = parseTomlVars(content, environment);
   if (typeof value === 'string' && value.length > 0) {
     return value;
   }
@@ -201,7 +208,7 @@ function readWranglerToml(root: string): string | undefined {
  * Strips `#` line comments and supports quoted (`"..."`/`'...'`) and bare
  * scalar values.
  */
-function parseTomlVars(content: string): string | undefined {
+function parseTomlVars(content: string, environment?: string): string | undefined {
   const lines = content.split(/\r?\n/);
   let inVarsTable = false;
 
@@ -212,7 +219,10 @@ function parseTomlVars(content: string): string | undefined {
     // Table header — track whether we're inside [vars].
     if (line.startsWith('[') && line.endsWith(']')) {
       const header = line.slice(1, -1).trim();
-      inVarsTable = header === 'vars';
+      inVarsTable = environment
+        ? [`env.${environment}.vars`, `env.${JSON.stringify(environment)}.vars`,
+          `env.'${environment}'.vars`].includes(header)
+        : header === 'vars';
       continue;
     }
 
@@ -302,13 +312,17 @@ function parseDotEnvFile(content: string): Record<string, string> {
  * Read `.env` from the given root and return its key/value map.
  * Returns an empty object if the file is missing or unreadable.
  */
-function readDotEnv(root: string): Record<string, string> {
-  const filePath = path.join(root, '.env');
-  let content: string;
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return {};
+function readDotEnv(root: string, environment?: string): Record<string, string> {
+  const files = environment
+    ? ['.env', `.env.${environment}`, '.env.local', `.env.${environment}.local`]
+    : ['.env', '.env.local'];
+  const values: Record<string, string> = {};
+  for (const file of files) {
+    try {
+      Object.assign(values, parseDotEnvFile(fs.readFileSync(path.join(root, file), 'utf-8')));
+    } catch {
+      // Optional local files need not exist.
+    }
   }
-  return parseDotEnvFile(content);
+  return values;
 }

@@ -22,6 +22,7 @@ export interface ScaffoldRecipe {
 }
 
 export interface CreateAppOptions {
+  dryRun?: boolean;
   adapter?: Adapter;
   preset?: Preset;
   features?: Feature[] | string;
@@ -68,7 +69,8 @@ export declare function removeFeature(features: Feature[] | string, feature: Fea
 export declare function resolveDashboardModules(value: DashboardModule[] | string | undefined, dashboardSelected: boolean): DashboardModule[];
 export declare function resolveRecipe(options?: CreateAppOptions): ScaffoldRecipe;
 export declare function createApp(projectName: string, options?: CreateAppOptions): Promise<{
-  status: 'created' | 'cancelled';
+  status: 'created' | 'cancelled' | 'dry-run';
+  changes?: ChangeSet;
   projectDir: string;
   adapter: Adapter;
   manifestPath: string;

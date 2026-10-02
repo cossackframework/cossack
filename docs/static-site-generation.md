@@ -5,6 +5,14 @@ description: 'Pre-render pages at build time for faster page loads, better SEO, 
 
 # Static Site Generation (SSG)
 
+Static rendering uses the same layout service hierarchy as SSR. Each generated
+URL gets an isolated anonymous request scope. Constructor injection works in
+App, layouts, and pages; nested components inherit `@Inject()` services from
+their renderer parent. Service state is
+serialized on the owning layout for hydration. The build waits for component
+`onCleanup()` and scoped-service `onDispose()` hooks before accepting the HTML.
+A render or cleanup failure fails generation.
+
 Cossack Framework supports Static Site Generation (SSG) to pre-render pages at build time. This enables faster page loads, better SEO, and the ability to host your application on any static hosting service.
 
 ## Overview
@@ -33,7 +41,29 @@ export class About extends Cossack {
 }
 ```
 
-This will generate `dist/ssg/about/index.html` at build time.
+This will generate `dist/client/about/index.html` at build time.
+
+### Public pages only
+
+Static HTML is shared by every visitor. SSG sends an anonymous GET request
+through your global middleware, then the enclosing layout and page middleware.
+It does not supply a user, session cookie, or authorization header. Layouts
+follow the source directories, including route groups and dynamic segments.
+
+A redirect, denied request, authenticated identity, outgoing cookie, private
+cache policy, or response that varies by visitor credentials fails the build.
+Use SSR for those pages. The SSG plugin validates all rendered routes before
+writing generated HTML or the sitemap. Duplicate output paths and paths that
+escape the output directory also fail before publication.
+
+Build-time context exposes the resolved `APP_URL`. It does not provide live
+Worker bindings. Middleware that requires a request database or another live
+binding must support the build context, or the page must use SSR. Middleware
+errors fail the build; SSG does not bypass a guard to finish rendering.
+
+Set `ssg: { enabled: false }` to disable generation for a page. Dynamic SSG
+routes must supply every ordinary or catch-all parameter through
+`generateStaticParams`.
 
 ### Dynamic Routes with Static Params
 
@@ -64,68 +94,56 @@ export class UserProfile extends Cossack {
 
 This will generate:
 
-- `dist/ssg/users/alice/index.html`
-- `dist/ssg/users/bob/index.html`
-- `dist/ssg/users/charlie/index.html`
+- `dist/client/users/alice/index.html`
+- `dist/client/users/bob/index.html`
+- `dist/client/users/charlie/index.html`
 
 ## Build Commands
 
-SSG is driven by the `cossack` CLI (`cossack ssg`), which ships in the
-standalone [`cossack`](https://www.npmjs.com/package/cossack) package (a
-dependency of projects created by `cossack create`). It reads the `cossack-routes.json`
-manifest emitted by the Cossack Vite plugin during `vite build`, and renders
-your pages using **your own `App` and html template** (the same values you pass
-to `createApp()` in `src/index.ts`) : so global `<head>` tags, branding, and
-your html shell are applied identically in SSR and SSG. There is no per-project
-build script to maintain.
+SSG runs inside `vite build` through the `cossackSsg()` plugin. It reads the
+route manifest and renders pages with the application's `App` and HTML template.
+A standard build includes static HTML generation when this plugin is enabled.
 
-### Standard Build
-
-```bash
+```sh
 pnpm run build
+# Or use the CLI wrapper, which also runs vite build:
+pnpm exec cossack ssg
 ```
 
-Builds client assets and SSR bundle (no static HTML generation).
+Vite options such as `--mode staging` are forwarded by `cossack build` and
+`cossack ssg`. Configure SSG-specific options on the existing plugin entry in
+`vite.config.ts`:
 
-### SSG Build
-
-```bash
-pnpm run build:ssg
+```typescript
+cossackSsg({
+  baseUrl: 'https://example.com',
+  outDir: 'dist/client',
+  enabled: true,
+})
 ```
 
-Runs `vite build` (which emits `cossack-routes.json`) followed by `cossack ssg`
-to generate static HTML files.
-
-### Build All
-
-```bash
-pnpm run build:all
-```
-
-Runs both standard build and SSG build.
-
-### CLI flags
-
-```bash
-cossack ssg \
-  --project-root ./ \       # project root (default: cwd)
-  --out-dir dist/client \   # output dir (default: <root>/dist/client)
-  --base-url https://… \    # override the sitemap/canonical base URL
-  --app src/App.ts \        # override the App module
-  --template src/root.ts    # override the html-template module
-```
+The old `--base-url`, `--out-dir`, `--app`, `--template`, and `--project-root`
+flags are unsupported. The CLI warns when they are supplied.
 
 ### Custom Base URL
 
-The base URL used for sitemap and canonical URLs is read automatically from
-your project config (`wrangler.jsonc` `vars.APP_URL`, `.env`, or the `APP_URL`
-shell env). See [Sitemap → Base URL](./sitemap.md#base-url) for the full
-resolution order. You can also override it per-build with
-`cossack ssg --base-url …`.
+An explicit plugin `baseUrl` takes precedence. Otherwise, Cossack reads
+`APP_URL` from the shell, Wrangler config, or dotenv files. See
+[Sitemap → Base URL](./sitemap.md#base-url) for the resolution order.
+
+Select a Cloudflare environment before building:
+
+```sh
+CLOUDFLARE_ENV=staging pnpm run build
+```
+
+SSG uses `env.staging.vars.APP_URL` for that build. Wrangler variables do not
+inherit from the top level into named environments. Setting the environment
+only when deploying cannot change the URLs already generated by the build.
 
 ## How SSG resolves your App + html template
 
-The CLI imports these by convention from your project root:
+The SSG plugin imports these by convention from your project root:
 
 | What                   | Default path  | Export                  |
 | ---------------------- | ------------- | ----------------------- |
@@ -133,8 +151,8 @@ The CLI imports these by convention from your project root:
 | Html shell template    | `src/root.ts` | `template` (or default) |
 
 These match what a scaffolded app passes to `createApp({ AppComponent, htmlTemplate })`,
-so SSR and SSG stay in sync automatically. Override the paths with `--app` /
-`--template` if your project layout differs.
+so SSR and SSG use the same application shell. Keep these conventional modules
+in your project.
 
 ## Output Structure
 

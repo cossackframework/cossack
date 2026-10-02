@@ -155,6 +155,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _serviceScope?: ServiceScope;
     private _ownsServiceScope = false;
     private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
+    private _cleanupCompletion?: Promise<unknown[]>;
     private _serverResources = new Map<string, {
         argsKey: string;
         value: unknown;
@@ -1121,7 +1122,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 }
                 if (this.hasMethod(task)) {
                     // Run the previous cleanup before re-invoking (React style).
-                    this._runTaskCleanup(task);
+                    const previousCleanup = this._runTaskCleanup(task);
+                    if (previousCleanup) await previousCleanup;
                     try {
                         const taskMethod = this.getMethod(task);
                         const result = (taskMethod as any)();
@@ -1151,7 +1153,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         try {
             const result = cleanup();
             if (result instanceof Promise) {
-                result.catch(e =>
+                return result.catch(e =>
                     console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e),
                 );
             }
@@ -2206,6 +2208,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public destroy() {
+        if (this._phase === LifecyclePhase.Destroyed) return;
         // Transition to Destroyed phase from any phase except already Destroyed
         this._transitionToPhase(LifecyclePhase.Destroyed, [
             LifecyclePhase.Creating,
@@ -2214,48 +2217,81 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             LifecyclePhase.Updating
         ]);
 
-        try {
-            this.onCleanup();
-            for (const cleanup of this._serviceInjectionCleanups.values()) cleanup();
-            this._serviceInjectionCleanups.clear();
-            // Drain task cleanup functions (React `useEffect` style). Runs on
-            // both server and client since tasks themselves run on both.
-            for (const taskKey of [...this._taskCleanups.keys()]) {
-                this._runTaskCleanup(taskKey);
-            }
-            this._taskCleanups.clear();
-            if (!this.isServer) {
-                this.websockets.forEach(ws => {
-                    ws.close();
-                });
-                this.websockets.clear();
-
-                if (this._sseConnection) {
-                    this._sseConnection.close();
-                    this._sseConnection = undefined;
+        const errors: unknown[] = [];
+        const pending: Promise<void>[] = [];
+        const release = (cleanup: () => unknown) => {
+            try {
+                const result = cleanup();
+                if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+                    pending.push(Promise.resolve(result).then(() => {}, error => { errors.push(error); }));
                 }
-
-                // Disconnect @VisibleTask IntersectionObservers — otherwise they
-                // retain references to the destroyed component and keep firing
-                // callbacks that mutate destroyed state.
-                this._visibleTaskObservers.forEach(({ observer }) => observer.disconnect());
-                this._visibleTaskObservers.clear();
-
-                // Clean up event listeners
-                this.eventCleanupFns.forEach(cleanup => cleanup());
-                this.eventCleanupFns = [];
-
-                // Drop cached store proxies so their raw targets (and the
-                // component's state) can be GC'd once the component is gone.
-                this._storeProxies.clear();
-            }
-            if (this._ownsServiceScope) {
-                this._serviceScope?.dispose();
-                this._ownsServiceScope = false;
-            }
-        } finally {
-            // Don't restore phase after destroy - the component is destroyed
-            // This ensures any subsequent operations will throw an error
+            } catch (error) { errors.push(error); }
+        };
+        // Drain descendants and each independent cleanup even when a user
+        // hook fails. Publish the completion so server renders can await it.
+        for (const child of this.activeComponents.values()) release(() => child.destroyAsync());
+        this.activeComponents.clear();
+        release(() => this.onCleanup());
+        for (const cleanup of this._serviceInjectionCleanups.values()) release(cleanup);
+        this._serviceInjectionCleanups.clear();
+        // Drain task cleanup functions (React `useEffect` style). Runs on
+        // both server and client since tasks themselves run on both.
+        for (const taskKey of [...this._taskCleanups.keys()]) {
+            release(() => this._runTaskCleanup(taskKey));
         }
+        this._taskCleanups.clear();
+        if (!this.isServer) {
+            this.websockets.forEach(ws => {
+                release(() => ws.close());
+            });
+            this.websockets.clear();
+
+            if (this._sseConnection) {
+                release(() => this._sseConnection!.close());
+                this._sseConnection = undefined;
+            }
+
+            // Disconnect @VisibleTask IntersectionObservers — otherwise they
+            // retain references to the destroyed component and keep firing
+            // callbacks that mutate destroyed state.
+            this._visibleTaskObservers.forEach(({ observer }) => release(() => observer.disconnect()));
+            this._visibleTaskObservers.clear();
+
+            // Clean up event listeners
+            this.eventCleanupFns.forEach(cleanup => release(cleanup));
+            this.eventCleanupFns = [];
+
+            // Drop cached store proxies so their raw targets (and the
+            // component's state) can be GC'd once the component is gone.
+            this._storeProxies.clear();
+        }
+        if (this._ownsServiceScope) {
+            const scope = this._serviceScope;
+            // Keep request facilities available until asynchronous
+            // component/descendant hooks have finished using services.
+            release(() => pending.length
+                ? Promise.all(pending).then(() => scope?.disposeAsync())
+                : scope?.disposeAsync());
+            this._ownsServiceScope = false;
+        }
+        this._serverResources.clear();
+        const syncErrors = errors.slice();
+        this._cleanupCompletion = Promise.all(pending).then(() => errors);
+        // Synchronous callers cannot await hooks; observe rejected hooks here.
+        void this._cleanupCompletion.then(allErrors => {
+            for (const error of allErrors.slice(syncErrors.length)) {
+                console.error(`[Cossack] Error cleaning up ${this.constructor.name}:`, error);
+            }
+        });
+        if (syncErrors.length) throw new AggregateError(syncErrors, `[Cossack] Failed to clean up ${this.constructor.name}.`);
+    }
+
+    /** Destroy once and wait for component, descendant, and scoped-service hooks. */
+    public async destroyAsync(): Promise<void> {
+        try { this.destroy(); } catch (error) {
+            if (!this._cleanupCompletion) throw error;
+        }
+        const errors = await this._cleanupCompletion;
+        if (errors?.length) throw new AggregateError(errors, `[Cossack] Failed to clean up ${this.constructor.name}.`);
     }
 }

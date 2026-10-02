@@ -4,6 +4,16 @@ import type { SQLFragment } from "../sql/fragment.js";
 
 export interface MiddlewareContext {
   set?(key: string, value: unknown): void;
+  get?(key: string): unknown;
+}
+
+interface ResponseLifetime {
+  deferCleanup(cleanup: () => Promise<void>): boolean;
+}
+
+function responseLifetime(value: unknown): value is ResponseLifetime {
+  return value !== null && typeof value === "object" && "deferCleanup" in value &&
+    typeof value.deferCleanup === "function";
 }
 
 export type MiddlewareNext = () => Promise<void>;
@@ -15,7 +25,8 @@ export type ORMFactory<Context extends MiddlewareContext = MiddlewareContext> =
  *
  * An ORM instance is caller-owned and is never closed by middleware. An ORM
  * created by a request factory is owned by middleware and is always closed,
- * including when downstream throws.
+ * including when downstream throws. A framework streaming response can retain
+ * cleanup until its body completes or is cancelled.
  */
 export function ormMiddleware<Context extends MiddlewareContext>(
   source: ORM | ORMFactory<Context>,
@@ -30,7 +41,12 @@ export function ormMiddleware<Context extends MiddlewareContext>(
         await next();
       });
     } finally {
-      if (ownsORM) await orm.close();
+      if (ownsORM) {
+        const lifetime = context.get?.("cossack:response-lifetime");
+        if (!responseLifetime(lifetime) || !lifetime.deferCleanup(() => orm.close())) {
+          await orm.close();
+        }
+      }
     }
   };
 }

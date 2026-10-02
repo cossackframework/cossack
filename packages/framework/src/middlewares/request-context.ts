@@ -11,10 +11,12 @@
 
 import type { MiddlewareHandler } from 'hono';
 import { ensureRequestContextAlsWired, runWithContext } from '../request-context-als.js';
+import { RESPONSE_LIFETIME_KEY, ResponseLifetime } from '../response-lifetime.js';
 
 export function createRequestContextMiddleware(): MiddlewareHandler {
     return async (c, next) => {
         ensureRequestContextAlsWired();
+        c.set(RESPONSE_LIFETIME_KEY, new ResponseLifetime());
         return runWithContext(c, () => next());
     };
 }

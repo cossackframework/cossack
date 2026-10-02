@@ -1,12 +1,12 @@
 import { MigrationError } from "../errors.js";
 import type { ORM } from "../orm.js";
 import { SchemaBuilder } from "../schema/builder.js";
-import type { AppliedMigration, Migration, MigrationStatus } from "./types.js";
+import type { AppliedMigration, Migration, MigrationStatus, MigrationPlanEntry } from "./types.js";
 import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import type { SchemaOperation } from "../schema/operations.js";
 import { compileSQL, SQLFragment } from "../sql/fragment.js";
-import type { BatchStatement } from "../adapter/types.js";
+import type { BatchStatement, Driver } from "../adapter/types.js";
 
 async function checksum(migration: Migration): Promise<string> {
   const bytes = new TextEncoder().encode(
@@ -36,8 +36,18 @@ export class MigrationRunner {
     `, "ddl");
   }
 
-  async applied(): Promise<readonly AppliedMigration[]> {
-    await this.ensureTable();
+  async applied(options: { readonly readOnly?: boolean } = {}): Promise<readonly AppliedMigration[]> {
+    if (options.readOnly) {
+      // Schema introspection deliberately hides migration bookkeeping. Query
+      // the catalog directly, without creating a history table on fresh targets.
+      const sql = this.orm.sql;
+      const query = this.orm.driver.dialect === "sqlite"
+        ? sql.fragment`PRAGMA table_info(${sql.id(this.tableName)})`
+        : this.orm.driver.dialect === "postgres"
+          ? sql.fragment`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ${this.tableName}`
+          : sql.fragment`SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ${this.tableName}`;
+      if (!(await this.orm.executeFragment(query, "select")).rows.length) return [];
+    } else await this.ensureTable();
     const result = await this.orm.executeFragment<Record<string, unknown>>(
       this.orm.sql.fragment`SELECT ${this.orm.sql.id("name")}, ${this.orm.sql.id("checksum")}, ${this.orm.sql.id("batch")}, ${this.orm.sql.id("applied_at")} FROM ${this.orm.sql.id(this.tableName)} ORDER BY ${this.orm.sql.id("batch")}, ${this.orm.sql.id("name")}`,
       "select",
@@ -50,8 +60,8 @@ export class MigrationRunner {
     }));
   }
 
-  async status(): Promise<readonly MigrationStatus[]> {
-    const applied = new Map((await this.applied()).map((item) => [item.name, item]));
+  async status(options: { readonly readOnly?: boolean } = {}): Promise<readonly MigrationStatus[]> {
+    const applied = new Map((await this.applied(options)).map((item) => [item.name, item]));
     const result: MigrationStatus[] = [];
     for (const migration of this.sorted()) {
       const value = applied.get(migration.name);
@@ -64,6 +74,62 @@ export class MigrationRunner {
       });
     }
     return result;
+  }
+
+  /** Preview queued schema SQL with a disconnected ORM that rejects live queries. */
+  async plan(direction: "up" | "down" = "up"): Promise<readonly MigrationPlanEntry[]> {
+    const history = new Set((await this.applied({ readOnly: true })).map(item => item.name));
+    const statuses = await this.status({ readOnly: true });
+    const changed = statuses.find(item => item.state === "changed");
+    if (changed) throw new MigrationError(`Applied migration ${changed.migration.name} has a changed checksum.`);
+    const selected = direction === "up"
+      ? statuses.filter(item => item.state === "pending")
+      : statuses.filter(item => item.applied).sort((left, right) =>
+        right.applied!.batch - left.applied!.batch || right.migration.name.localeCompare(left.migration.name)).slice(0, 1);
+    const dialect = dialectFor(this.orm.driver.dialect);
+    const block = async (): Promise<never> => {
+      throw new MigrationError("This migration needs live database queries and cannot be fully previewed.");
+    };
+    const driver: Driver = {
+      dialect: this.orm.driver.dialect,
+      capabilities: this.orm.driver.capabilities,
+      execute: block, batch: block, transaction: block, reserve: block,
+      introspect: block, close: async () => {},
+    };
+    const entries: MigrationPlanEntry[] = [];
+    for (const status of selected) {
+      const schema = new SchemaBuilder();
+      let reason: string | undefined;
+      const replacements = status.migration.replaces ?? [];
+      const appliedReplacements = replacements.filter(name => history.has(name));
+      if (direction === "up" && appliedReplacements.length && appliedReplacements.length !== replacements.length) {
+        throw new MigrationError(`Cannot apply squashed migration ${status.migration.name}: only some replaced migrations are applied.`);
+      }
+      const consolidate = direction === "up" && replacements.length > 0 && appliedReplacements.length === replacements.length;
+      try {
+        if (!consolidate) await this.orm.runWithDriver(driver, preview => status.migration[direction]({ orm: preview, schema }));
+      } catch {
+        reason = "Migration code cannot be fully previewed without executing live queries, or its callback failed.";
+      }
+      const statements = schema.operations().flatMap(item => {
+        if (item instanceof SQLFragment) {
+          const query = compileSQL(item, dialect);
+          const risk = /\b(DROP|TRUNCATE|DELETE)\b/i.test(query.text) ? "destructive" as const
+            : /^\s*CREATE\s+(TABLE|(?:UNIQUE\s+)?INDEX)\b/i.test(query.text) ? "safe" as const
+            : "unknown" as const;
+          return [{ text: query.text, parameterCount: query.parameters.length, risk }];
+        }
+        const operation = item as SchemaOperation;
+        const risk = ["drop-table", "drop-column", "alter-column"].includes(operation.kind)
+          ? "destructive" as const : "safe" as const;
+        return renderOperation(operation, dialect).map(text => ({ text, parameterCount: 0, risk }));
+      });
+      entries.push({ name: status.migration.name, direction, checksum: status.checksum,
+        mode: consolidate ? "consolidate" : direction === "up" ? "apply" : "revert",
+        ...(replacements.length ? { replaces: replacements } : {}),
+        statements, complete: reason === undefined, ...(reason ? { reason } : {}) });
+    }
+    return entries;
   }
 
   async up(options: { readonly count?: number } = {}): Promise<readonly string[]> {
@@ -150,7 +216,7 @@ export class MigrationRunner {
   }
 
   async check(): Promise<void> {
-    const statuses = await this.status();
+    const statuses = await this.status({ readOnly: true });
     const invalid = statuses.filter((item) => item.state !== "applied");
     if (invalid.length) {
       throw new MigrationError(

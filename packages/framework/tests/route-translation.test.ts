@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { Hono } from 'hono';
 import {
   APP_ROUTE_ID,
   buildRoutesManifest,
@@ -14,17 +15,17 @@ describe('filePathToHttpRoute', () => {
     expect(filePathToHttpRoute('/src/pages/hello/[name]/index.ts')).toBe('/hello/:name');
   });
 
-  it('converts a catch-all segment to :name* (Hono wildcard)', () => {
-    expect(filePathToHttpRoute('/src/pages/docs/[...slug]/index.ts')).toBe('/docs/:slug*');
+  it('converts a catch-all segment to a parameter that includes path separators', () => {
+    expect(filePathToHttpRoute('/src/pages/docs/[...slug]/index.ts')).toBe('/docs/:slug{.+}');
   });
 
   it('handles a catch-all at the root', () => {
-    expect(filePathToHttpRoute('/src/pages/[...all]/index.ts')).toBe('/:all*');
+    expect(filePathToHttpRoute('/src/pages/[...all]/index.ts')).toBe('/:all{.+}');
   });
 
   it('mixes dynamic and catch-all segments', () => {
     expect(filePathToHttpRoute('/src/pages/users/[id]/files/[...rest]/index.ts'))
-      .toBe('/users/:id/files/:rest*');
+      .toBe('/users/:id/files/:rest{.+}');
   });
 
   it('removes route groups', () => {
@@ -39,7 +40,17 @@ describe('filePathToHttpRoute', () => {
   it('does NOT leave the invalid :...slug token', () => {
     const route = filePathToHttpRoute('/src/pages/catch/[...path]/index.ts');
     expect(route).not.toContain('...');
-    expect(route).toContain(':path*');
+    expect(route).toContain(':path{.+}');
+  });
+
+  it('matches a real request with multiple catch-all segments and preserves specificity', async () => {
+    const app = new Hono();
+    const paths = ['/src/pages/docs/[...slug]/index.ts', '/src/pages/docs/new/index.ts'];
+    for (const file of paths.sort((a, b) => compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)))) {
+      app.get(filePathToHttpRoute(file), c => c.json({ file, params: c.req.param() }));
+    }
+    expect(await (await app.request('/docs/new')).json()).toMatchObject({ file: '/src/pages/docs/new/index.ts' });
+    expect(await (await app.request('/docs/one/two')).json()).toMatchObject({ params: { slug: 'one/two' } });
   });
 });
 
@@ -69,8 +80,8 @@ describe('compareHttpRoutes (registration specificity)', () => {
   });
 
   it('ranks catch-all last', () => {
-    expect(compareHttpRoutes('/dashboard/users/new', '/dashboard/users/:rest*')).toBeLessThan(0);
-    expect(compareHttpRoutes('/dashboard/users/:id', '/dashboard/users/:rest*')).toBeLessThan(0);
+    expect(compareHttpRoutes('/dashboard/users/new', '/dashboard/users/:rest{.+}')).toBeLessThan(0);
+    expect(compareHttpRoutes('/dashboard/users/:id', '/dashboard/users/:rest{.+}')).toBeLessThan(0);
   });
 
   it('ranks a shallower route before a deeper one sharing a prefix', () => {

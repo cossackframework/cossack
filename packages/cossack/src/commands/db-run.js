@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findProjectRoot } from '../fs-utils.js';
+import { commandFailure } from '../output.js';
 
 export async function loadORMTooling(root) {
   const requireFromProject = createRequire(path.join(root, 'package.json'));
@@ -37,7 +38,7 @@ export async function loadORMTooling(root) {
   if (typeof tooling.runORMCommand !== 'function') {
     throw new Error(
       'The installed @cossackframework/database does not export tooling support. ' +
-      'Upgrade it to version 1.0.0 or newer.',
+      'Upgrade it to version 0.9.0 or newer.',
     );
   }
   return tooling;
@@ -46,18 +47,24 @@ export async function loadORMTooling(root) {
 function flagArgv(flags = {}) {
   const argv = [];
   for (const [name, value] of Object.entries(flags)) {
-    if (value === false || value === undefined) continue;
-    argv.push(value === true ? `--${name}` : `--${name}=${value}`);
+    if (name === 'f' && flags.force !== undefined) continue;
+    if (value === undefined) continue;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) argv.push(item === true ? `--${name}` : `--${name}=${item}`);
   }
   return argv;
 }
 
 export async function runORMToolingCommand(argv, ctx) {
-  const root = await findProjectRoot(ctx.cwd);
-  const { runORMCommand } = await loadORMTooling(root);
-  return runORMCommand([...argv, ...flagArgv(ctx.flags)], {
-    cwd: root,
-    stdout: (message) => console.log(message),
-    stderr: (message) => console.error(message),
-  });
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const { runORMCommand } = await loadORMTooling(root);
+    return await runORMCommand([...argv, ...flagArgv(ctx.flags)], {
+      cwd: root,
+      stdout: (message) => console.log(message),
+      stderr: (message) => console.error(message),
+    });
+  } catch (error) {
+    return commandFailure(ctx, argv[0] ?? 'orm', 'COSSACK_ORM_UNAVAILABLE', error.message);
+  }
 }

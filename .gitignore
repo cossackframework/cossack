@@ -13,6 +13,7 @@ packages/*/pnpm-lock.yaml
 
 # TypeScript incremental build cache
 **/*.tsbuildinfo
+/packages/framework/.cossack/library-worker-configuration.d.ts
 
 # Cloudflare Wrangler
 .wrangler/

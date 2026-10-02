@@ -48,6 +48,8 @@ export class ServiceScope {
     private readonly resolving = new Set<ServiceClass>();
     private requestContext: ServiceScopeRequestContext = {};
     private disposed = false;
+    private disposal?: Promise<unknown[]>;
+    private readonly childDisposals = new Set<Promise<unknown[]>>();
     private clientProxyInstalled = new WeakSet<object>();
 
     public readonly ownerRouteId?: string;
@@ -186,29 +188,64 @@ export class ServiceScope {
 
     dispose(): void {
         if (this.disposed) return;
+        void this.beginDisposal().then(errors => {
+            for (const error of errors) console.error('[Cossack] Service disposal failed:', error);
+        });
+    }
+
+    /** Wait for every owned hook, including child scopes disposed earlier. */
+    async disposeAsync(): Promise<void> {
+        const errors = await this.beginDisposal();
+        if (errors.length) {
+            throw new AggregateError(errors, `[Cossack] Failed to dispose service scope ${this.ownerRoutePath || this.ownerRouteId || 'root'}.`);
+        }
+    }
+
+    private beginDisposal(): Promise<unknown[]> {
+        if (this.disposal) return this.disposal;
         this.disposed = true;
-        for (const child of [...this.children]) child.dispose();
+        // Publish the completion before invoking user hooks, which can dispose
+        // the same scope reentrantly. This promise always fulfills with errors;
+        // synchronous navigation can observe them without unhandled rejection.
+        let complete!: (errors: unknown[]) => void;
+        this.disposal = new Promise(resolve => { complete = resolve; });
+        this.parent?.childDisposals.add(this.disposal);
+        const errors: unknown[] = [];
+        const hooks: Promise<void>[] = [];
+        for (const child of [...this.children]) child.beginDisposal();
         this.children.clear();
-        for (const subscription of [...this.subscribers]) subscription.unsubscribe();
+        for (const subscription of [...this.subscribers]) {
+            try { subscription.unsubscribe(); } catch (error) { errors.push(error); }
+        }
         this.subscribers.clear();
         for (const entry of this.owned.values()) {
             const hook = entry.instance?.onDispose;
             if (typeof hook === 'function') {
+                const failed = (cause: unknown) => {
+                    errors.push(new Error(`[Cossack] Error disposing service ${entry.serviceClass.name}:`, { cause }));
+                };
                 try {
                     const result = hook.call(entry.instance);
                     if (result && typeof result.then === 'function') {
-                        void result.catch((error: unknown) => {
-                            console.error(`[Cossack] Error disposing service ${entry.serviceClass.name}:`, error);
-                        });
+                        hooks.push(Promise.resolve(result).then(() => {}, failed));
                     }
                 } catch (error) {
-                    console.error(`[Cossack] Error disposing service ${entry.serviceClass.name}:`, error);
+                    failed(error);
                 }
             }
         }
         this.owned.clear();
         this.ownedBySlot.clear();
         this.parent?.children.delete(this);
+        void Promise.all([...this.childDisposals, ...hooks]).then(results => {
+            for (const result of results) if (Array.isArray(result)) errors.push(...result);
+            this.childDisposals.clear();
+            complete(errors);
+            // Browser root scopes can outlive thousands of layout changes.
+            // Completed successful child hooks need no retained completion.
+            if (!errors.length) this.parent?.childDisposals.delete(this.disposal!);
+        });
+        return this.disposal;
     }
 
     private findDeclaration(serviceClass: ServiceClass): OwnedService | undefined {

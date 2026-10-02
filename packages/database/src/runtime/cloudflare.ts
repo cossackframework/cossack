@@ -89,7 +89,9 @@ class D1Driver implements Driver {
   }
 
   introspect() {
-    return introspectSQLite((text, parameters = []) => this.execute({ text, parameters }, "select"));
+    return introspectSQLite((text, parameters = []) => this.execute({ text, parameters }, "select"), {
+      excludedTablePrefixes: ["_cf_"],
+    });
   }
 
   async close(): Promise<void> {}

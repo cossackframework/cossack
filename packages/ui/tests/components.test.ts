@@ -435,7 +435,7 @@ describe("Tabs", () => {
         expect(out).toContain('aria-selected="false"');
     });
 
-    it("gives the selected underline trigger an SSR-visible active border", () => {
+    it("renders one sliding underline without static trigger borders", () => {
         const out = renderComp(Tabs, {
             variant: "underline",
             items: [
@@ -443,9 +443,12 @@ describe("Tabs", () => {
                 { value: "b", label: "B" },
             ],
         });
-        expect(out).toContain("border-b-2 border-primary");
-        expect(out).toContain("border-b-2 border-transparent");
+        expect(out.match(/cs-tabs__indicator/g)).toHaveLength(1);
+        expect(out).not.toContain("border-b-2");
+        expect(out).not.toContain("border-primary");
+        expect(out).not.toContain("border-transparent");
     });
+
 });
 
 describe("Tooltip", () => {

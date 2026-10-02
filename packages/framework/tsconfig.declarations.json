@@ -10,6 +10,7 @@
     // Consumer applications keep emitDecoratorMetadata enabled for constructor
     // injection into their own pages and services.
     "emitDecoratorMetadata": false,
+    "types": ["reflect-metadata", "./.cossack/library-worker-configuration.d.ts"],
     "outDir": "dist/esm",
     "rootDir": "src"
   },
@@ -34,7 +35,7 @@
     "src/vite-security-plugin.ts",
     "src/vite-ssg-plugin.ts",
     "src/vite-env.d.ts",
-    "worker-configuration.d.ts"
+    ".cossack/library-worker-configuration.d.ts"
   ],
   "exclude": [
     "src/App.ts",

@@ -182,6 +182,19 @@ Avoid random identifiers for records that must not be duplicated. Keep
 production-only or destructive data policies in the application/framework CLI,
 where environment and confirmation information is available.
 
+## Preview seeders
+
+Preview selected seeders without executing their callbacks:
+
+```sh
+pnpm exec cossack seeder run --only users --env staging --target remote --dry-run --json
+```
+
+The result lists selected seeders and their transaction policies. It reports
+`complete: false` because application callbacks determine the actual SQL.
+This preview does not execute those callbacks or claim to predict their writes.
+`seed list` reads registration metadata without constructing an adapter.
+
 ## Framework integration
 
 A framework should:

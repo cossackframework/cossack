@@ -48,7 +48,8 @@ priority over an outer declaration.
 The framework creates:
 
 - a fresh root scope for every SSR request;
-- a fresh root scope for every service RPC request;
+- a fresh anonymous root scope for every SSG render;
+- a fresh root scope for every component and service RPC request;
 - one browser root scope, with child scopes retained alongside reused layouts.
 
 The page receives the innermost layout scope. A nested component inherits the
@@ -57,11 +58,23 @@ context API is required.
 
 When a layout leaves the client route stack, `destroy()` disposes its owned
 scope. Disposal removes service subscriptions, recursively disposes child
-scopes, and invokes each optional `onDispose()` hook once. SSR/RPC root scopes
-are disposed in request-handler `finally` blocks. `dispose()` is synchronous;
+scopes, and invokes each optional `onDispose()` hook once. SSR and service RPC
+root scopes use synchronous disposal in request-handler `finally` blocks.
+Component RPC waits for component and scope cleanup; a streamed result retains
+the scope until completion, failure, or cancellation. `dispose()` is synchronous;
 an async `onDispose()` hook is started and rejection-logged, but navigation and
-request completion do not wait for it. Use synchronous cleanup when ordering is
-required.
+request completion do not wait for it. `disposeAsync()` waits for all child and
+service hooks, including cleanup started earlier by `dispose()`, and reports
+failures with an `AggregateError`. Successful completed child disposals are not
+retained by a long-lived browser root.
+
+`destroyAsync()` waits for component and descendant cleanup, then releases an
+owned scope. Independent cleanup still runs if a hook throws. Repeated destroy
+and dispose calls do not repeat hooks. SSG uses these awaitable operations before
+returning HTML; failed cleanup fails generation and retains a preceding render
+error as the cause. Current browser navigation, SSR, and explicit service RPC
+disposal remain nonblocking; use synchronous cleanup when those callers require
+ordering. Component RPC uses awaitable cleanup.
 
 Duplicate entries in one `services` array and entries lacking `@Service()` are
 configuration errors. Service ownership is never inferred from the first

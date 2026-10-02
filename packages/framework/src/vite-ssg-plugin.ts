@@ -139,11 +139,28 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
 
       // --- Drain rendered HTML and write files (the entry defers writes here). ---
       const renderedPages = entry.drainRenderedHtml();
+      if (result.failed.length > 0) {
+        // Validate the entire render before publishing any route. In
+        // particular, never write middleware redirects or protected output
+        // from a partially successful SSG build.
+        throw new Error(
+          `[cossack/ssg] ${result.failed.length} route(s) failed:\n` +
+            result.failed.map((r) => `  - ${r.routePath}: ${r.error}`).join('\n'),
+        );
+      }
+      const plannedPages = renderedPages.map(page => ({ ...page,
+        outputFilePath: getOutputFilePath(page.routePath, outDir, path) }));
+      const outputFiles = new Set<string>();
+      for (const page of plannedPages) {
+        if (outputFiles.has(page.outputFilePath)) {
+          throw new Error(`[cossack/ssg] Multiple routes write ${page.outputFilePath}. Check static parameters and route groups.`);
+        }
+        outputFiles.add(page.outputFilePath);
+      }
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
       const renderedRoutes: string[] = [];
-      for (const { routePath, html } of renderedPages) {
-        const outputFilePath = getOutputFilePath(routePath, outDir, path);
+      for (const { routePath, html, outputFilePath } of plannedPages) {
         const outputDir = path.dirname(outputFilePath);
         if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
         fs.writeFileSync(outputFilePath, html, 'utf-8');
@@ -171,14 +188,6 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       console.log('\n[cossack/ssg] Generated SSG files:');
       listFiles(outDir, '', fs, path);
 
-      if (result.failed.length > 0) {
-        // Throwing (rather than process.exitCode) is the correct signal inside
-        // `vite build`; Vite surfaces it as a non-zero exit so CI catches it.
-        throw new Error(
-          `[cossack/ssg] ${result.failed.length} route(s) failed:\n` +
-            result.failed.map((r) => `  - ${r.routePath}: ${r.error}`).join('\n'),
-        );
-      }
       console.log('\n[cossack/ssg] SSG build complete!');
     },
   };
@@ -243,6 +252,17 @@ async function loadEntry(
   const inlineConfig: InlineConfig = {
     root: projectRoot,
     mode,
+    environments: {
+      inline: {
+        resolve: {
+          // runnerImport externalizes dependencies to Node by default. Keep
+          // UI's transitive TypeScript icon imports in Vite's module graph;
+          // Node cannot strip types inside node_modules. SSR config alone
+          // does not apply to runnerImport's separate inline environment.
+          noExternal: ['@cossackframework/ui', '@cossackframework/solar-icons'],
+        },
+      },
+    },
     // The project's vite.config.ts sets these aliases (`@` → src, `~` →
     // dist/client). `runnerImport` forces `configFile: false`, so re-declare
     // them here or page imports like `@/components/...` won't resolve.

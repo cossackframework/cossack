@@ -22,9 +22,10 @@
 
 import registry from 'virtual:cossack-pages';
 import configFactories from 'virtual:cossack-config';
+import requestMiddlewares from 'virtual:cossack-middlewares';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } from './ssg-renderer.js';
-import type { RoutesManifest } from './route-ids.js';
+import { resolveStaticRoutePath, type RoutesManifest } from './route-ids.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -77,6 +78,7 @@ const htmlTemplate = await loadHtmlTemplate();
  * the plugin to write to disk.
  */
 export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
+  _renderedHtml.length = 0;
   const baseUrl = args.baseUrl;
   // The registry is imported from the SSR build, where layouts are eagerly
   // loaded (see vite-plugin.ts: `{ eager: true }` for SSR). The union type
@@ -97,12 +99,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
     try {
       const staticParamsList = await getStaticParams(route.pageOptions!);
       for (const staticParams of staticParamsList) {
-        let routePath = route.routePath;
-        if (staticParams && Object.keys(staticParams).length > 0) {
-          for (const [key, value] of Object.entries(staticParams)) {
-            routePath = routePath.replace(`:${key}`, value).replace(`[${key}]`, value);
-          }
-        }
+        const routePath = resolveStaticRoutePath(route.routePath, staticParams);
 
         const html = await renderSsgPage(
           route.component,
@@ -117,6 +114,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
           configFactories,
           locale,
           args.manifest.filePathToId,
+          requestMiddlewares,
         );
 
         rendered.push(routePath);

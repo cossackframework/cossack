@@ -113,6 +113,9 @@ describe("Node SQLite integration", () => {
       },
     }]);
     await orm.run(() => original.up());
+    expect((await orm.run(() => original.status({ readOnly: true }))).map(item => item.state))
+      .toEqual(["applied", "applied"]);
+    expect(await orm.run(() => original.plan())).toEqual([]);
 
     const squashed = new MigrationRunner(orm, [{
       name: "001_schema",
@@ -123,6 +126,10 @@ describe("Node SQLite integration", () => {
       down() {
         throw new Error("baseline");
       },
+    }]);
+    expect(await orm.run(() => squashed.plan())).toMatchObject([{
+      name: "001_schema", mode: "consolidate", complete: true, statements: [],
+      replaces: ["001_create_items", "002_add_name"],
     }]);
     expect(await orm.run(() => squashed.up())).toEqual(["001_schema"]);
     expect((await orm.run(() => squashed.applied())).map((item) => item.name))

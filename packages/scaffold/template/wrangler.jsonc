@@ -14,14 +14,12 @@
       "name": "EMAIL"
     }
   ],
-  // Cloudflare D1 binding. Local development uses preview_database_id and
-  // `pnpm dev` applies pending migrations before Vite starts. Replace the
-  // production database_id with `pnpm exec wrangler d1 create <name>` output.
+  // Wrangler provisions D1 on deployment when database_id is omitted.
+  // Local development uses a local database. Apply migrations explicitly.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "app-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "preview_database_id": "app-local"
     }
   ],
@@ -42,18 +40,19 @@
   //   }
   // ],
   "assets": {
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": true
   },
   // Replace with your production domain. Used for sitemap generation, canonical
   // URLs, and OG tags. Also exposed to the Worker at runtime as env.APP_URL
   // (read via config('app.url')).
   //
   // APP_LOCALE sets the default locale for `__()`. See `cossack lang publish`.
-  // APP_SECRET signs flash-data cookies (min 16 chars); set a real secret.
+  // APP_SECRET signs flash-data cookies. Set it with wrangler secret put.
+  "secrets": { "required": ["APP_SECRET"] },
   "vars": {
     "APP_URL": "https://example.com",
     "APP_LOCALE": "en",
-    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET",
     "CORS_ENABLED": "true",
     "CORS_ORIGINS": "",
     "CORS_METHODS": "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS",

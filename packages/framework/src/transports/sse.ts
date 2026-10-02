@@ -4,22 +4,9 @@ import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
 
-/** Active async generator being iterated by the SSE endpoint. */
-interface PendingGenerator {
-    iterator: AsyncIterator<any>;
-    streamId: string;
-    done: boolean;
-    /** The component instance that owns the generator — used to sync state after each pull. */
-    sourceInstance: any;
-    /** True while an iterator.next() is in flight — prevents concurrent pulls from multiple SSE drivers. */
-    pulling: boolean;
-}
-
 interface SseStoreEntry {
     componentInstance: any;
     runtime: SseRuntime;
-    /** Active async generator being iterated by the SSE endpoint. */
-    pendingGenerator: PendingGenerator | null;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
     /** Number of open SSE connections subscribed to this entry. */
@@ -91,7 +78,6 @@ export function registerSseStoreEntry(
         sseStateStore.set(storeKey, {
             componentInstance: pageInstance,
             runtime,
-            pendingGenerator: null,
             stateVersion: 0,
             connectionCount: 0,
             lastActive: Date.now(),
@@ -162,7 +148,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
+            entry = { componentInstance, runtime, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
             enforceSseStoreBound();
         }
@@ -196,14 +182,13 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         // Main driver: polls shared state for changes and writes to this stream.
         // - stateVersion bumps from /crpc → push state-update to this client
-        // - pendingGenerator from /crpc → pull one value per tick and push as SSE yield event
         //
         // IMPORTANT: look up the entry from the Map on each tick rather than using a
         // captured reference. This ensures the driver always uses the current entry
         // even if another request replaced it in the Map.
         let lastVersion = entry.stateVersion;
 
-        const driver = setInterval(async () => {
+        const driver = setInterval(() => {
             const currentEntry = sseStateStore.get(storeKey);
             if (!currentEntry) return;
 
@@ -213,38 +198,6 @@ export function handleSseEndpoint(ctx: RouterContext) {
                 send('state-update', currentEntry.componentInstance.getPublicState());
             }
 
-            // 2. Pull next value from active generator (only one driver pulls at a time)
-            if (currentEntry.pendingGenerator && !currentEntry.pendingGenerator.done && !currentEntry.pendingGenerator.pulling) {
-                const gen = currentEntry.pendingGenerator;
-                gen.pulling = true;
-                try {
-                    const { value, done } = await gen.iterator.next();
-                    gen.pulling = false;
-                    // Sync state changes from the generator's source instance to the SSE entry
-                    const sourceState = gen.sourceInstance.getPublicState();
-                    for (const k in sourceState) {
-                        currentEntry.componentInstance[k] = sourceState[k];
-                    }
-                    // Bump version — do NOT update lastVersion here.
-                    // Each driver detects the bump on its next tick and sends
-                    // state-update to its own connection (including this one).
-                    currentEntry.stateVersion++;
-
-                    if (done) {
-                        gen.done = true;
-                        send('stream-done', { streamId: gen.streamId });
-                        currentEntry.pendingGenerator = null;
-                    } else {
-                        send('yield', { streamId: gen.streamId, value });
-                    }
-                } catch (err) {
-                    gen.pulling = false;
-                    gen.done = true;
-                    send('stream-error', { streamId: gen.streamId, error: String(err) });
-                    currentEntry.stateVersion++;
-                    currentEntry.pendingGenerator = null;
-                }
-            }
         }, 200);
 
         const cleanup = () => {
@@ -266,60 +219,6 @@ export function handleSseEndpoint(ctx: RouterContext) {
             },
         });
     };
-}
-
-/**
- * Handle SSE-specific logic in the /crpc handler — streaming detection and state sync.
- * Uses the pre-computed scopeKey for targeted store entry lookup.
- */
-export function handleSseCrpc(
-    componentRouteId: string,
-    scopeKey: string,
-    actionResult: any,
-    responseData: Record<string, any>,
-    targetInstance: any,
-): { handled: boolean; response?: any } {
-    function isAsyncIterable(obj: any): boolean {
-        return obj != null && typeof obj[Symbol.asyncIterator] === 'function';
-    }
-
-    const storeKey = sseStoreKey(componentRouteId, scopeKey);
-
-    // If the action returned an async iterable, set up streaming
-    if (isAsyncIterable(actionResult)) {
-        const streamId = `stream_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const entry = sseStateStore.get(storeKey);
-
-        if (entry) {
-            // Signal SSE client that state changed so far (e.g. isStreaming = true)
-            for (const k in responseData) {
-                entry.componentInstance[k] = responseData[k];
-            }
-            entry.stateVersion++;
-
-            // Register the generator on the SSE store entry.
-            entry.pendingGenerator = {
-                iterator: actionResult[Symbol.asyncIterator](),
-                streamId,
-                done: false,
-                sourceInstance: targetInstance,
-                pulling: false,
-            };
-        }
-
-        return {
-            handled: true,
-            response: {
-                ...responseData,
-                _cossack_stream_id: streamId,
-            },
-        };
-    }
-
-    // Non-streaming: sync SSE state
-    syncSseState(storeKey, responseData);
-
-    return { handled: false };
 }
 
 /** Sync state changes to the SSE store entry identified by storeKey. */

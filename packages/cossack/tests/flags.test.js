@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { parseFlags } from '../src/flags.js';
 
 describe('parseFlags', () => {
+  it('preserves explicit false and lets the last boolean value win', () => {
+    expect(parseFlags(['--force=false', '--dry-run=false']).flags).toEqual({
+      force: false, 'dry-run': false,
+    });
+    expect(parseFlags(['--force', '--force=false']).flags.force).toBe(false);
+    expect(parseFlags(['--force=false', '--force']).flags.force).toBe(true);
+  });
+
+  it('rejects ambiguous boolean values', () => {
+    expect(() => parseFlags(['--force=maybe'])).toThrow('--force expects true or false');
+  });
   it('treats --no-index and --ni as boolean flags', () => {
     const long = parseFlags(['--no-index', 'hello']);
     expect(long.flags['no-index']).toBe(true);

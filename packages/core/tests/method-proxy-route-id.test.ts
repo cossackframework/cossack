@@ -84,7 +84,7 @@ describe('HTTP component RPC targeting', () => {
         const component = makeComponent();
 
         proxyHttpMethods(component, [{ name: 'save' }]);
-        await component.__cossack_proxies.get('save')?.();
+        await expect(component.__cossack_proxies.get('save')?.()).rejects.toThrow('save failed');
         expect(invalidate).not.toHaveBeenCalled();
     });
 
@@ -171,9 +171,9 @@ describe('HTTP component RPC targeting', () => {
 
         FakeXhr.status = 500;
         vi.spyOn(console, 'error').mockImplementation(() => {});
-        await component.__cossack_proxies.get('upload')?.(
+        await expect(component.__cossack_proxies.get('upload')?.(
             new File(['data'], 'failed.txt'),
-        );
+        )).rejects.toThrow('HTTP error! status: 500');
         expect(invalidate).toHaveBeenCalledOnce();
     });
 

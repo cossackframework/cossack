@@ -7,7 +7,7 @@ description: "Lightweight real-time transport using SSE for server-to-client sta
 
 SSE sends real-time state updates from the server to connected clients on **plain Cloudflare Workers**. It does not require a Durable Object or WebSocket. The client sends actions with HTTP POST (`/crpc`). The server sends state updates through a long-lived SSE connection.
 
-This is ideal for pages that need real-time updates (live counters, chat, streaming text) but do not require full bidirectional communication or persistent state.
+Use SSE to subscribe to state updates. Async generator action results stream through their own HTTP response and also work on HTTP pages. Shared SSE state currently lives in one Worker instance; cross-instance broadcasts require the distributed backend, which is still pending.
 
 ## Usage
 
@@ -71,7 +71,7 @@ The `scope` option controls which users share the same state. It receives the Ho
 })
 ```
 
-All users with the same `teamId` share the same SSE state. When any team member triggers an action, all team members see the update.
+Connected users with the same `teamId` can receive the same state updates when their requests reach the same Worker instance.
 
 ### Per-Room
 
@@ -95,7 +95,7 @@ Every user on this page shares the same state. This matches the behavior before 
 
 ### How scope works
 
-The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the `/sse` endpoint and `/crpc` handler. This makes sure that all three contexts use the same scope : even when scope depends on query params that are not present in `/sse` or `/crpc` requests.
+The scope function runs during SSR and is recomputed for each subscription and action using the authenticated request and forwarded page parameters. The browser receives the SSR scope key, but cannot use it to authorize another scope.
 
 1. **SSR** : evaluates `scope(c)`, registers the SSE store entry with the scoped key, includes `scopeKey` in the initial state sent to the client
 2. **`/sse` endpoint** : receives `scopeKey` as a query param from the client, looks up the store entry
@@ -105,7 +105,7 @@ The scope function is evaluated **once during SSR** with the full page request c
 
 ## Async Generator Streaming
 
-SSE transport supports streaming responses using `async *` generator methods. This is useful for chat, AI responses, or any scenario where the server produces output incrementally.
+HTTP and SSE pages support streaming action responses using `async *` generator methods. This is useful for chat, AI responses, or other incremental results.
 
 ### Example: Streaming Chat
 
@@ -180,65 +180,71 @@ export class SseChat extends Cossack {
 
 ### How streaming works
 
-1. The client calls the `@Server` async generator method via `/crpc`.
-2. The server detects the method returns an `AsyncIterable` and registers it in the SSE store.
-3. The SSE endpoint's polling loop pulls one value from the generator on each tick (~200ms).
-4. Each yielded value is sent as a `yield` SSE event to the client.
-5. After each pull, the server syncs state changes (e.g., `streamingText`, `isStreaming`) from the generator's source instance to the SSE store entry.
-6. When the generator completes, a `stream-done` event is sent to the client.
+1. Calling the method starts one HTTP POST to `/crpc`.
+2. The server awaits ordinary promises and detects async iterable results.
+3. Each reader pull advances the generator and returns a versioned `yield` frame with its value and public state.
+4. A `done` frame contains the final return value and public state. An `error` frame contains a stable error code, a request ID, and a message. Internal exceptions are logged on the server and redacted in the response.
+5. Completion, failure, or cancellation closes the generator and releases the request's components and services.
 
----
+Use `for await` to consume yielded values. Breaking the loop cancels the response:
+
+```typescript
+@Client()
+async displayWords(text: string) {
+    try {
+        for await (const word of this.sendMessage(text)) {
+            console.log(word);
+        }
+    } catch (error) {
+        console.error('Streaming failed', error);
+    }
+}
+```
+
+At runtime, awaiting a streaming call drains its yields, applies state updates,
+and returns the generator's final result. Calls ignored by event handlers drain
+automatically. The first consumer chooses iteration or promise consumption;
+a second iterator fails instead of executing the action again. Awaiting a call
+after iteration observes the same completion.
+
+Frames use `application/x-cossack-rpc+ndjson` and have a maximum size of 1 MiB.
+Both ends parse or produce frames incrementally. State edits made by the client
+while a call is pending remain protected from stale responses.
+
+Cancellation requests generator closure. A generator must finish its current
+pending operation before JavaScript can run its `finally` block. Pass the
+request's abort signal to cancellable external operations. There is no automatic
+mutation retry.
+
+HTTP and SSE component action failures now reject their calls. Catch failures
+in client handlers when the application should show an error. `RpcError` exposes
+`code`, an optional HTTP `status`, and a server `requestId` when available.
+This replaces the previous behavior that logged failures and resolved with
+`undefined`. WebSocket and explicit service RPC parity remain separate work.
+
+Cookie, session, and redirect headers must be decided before returning a stream;
+HTTP headers cannot change after streaming starts.
 
 ## Multi-Tab Support
 
-All browser tabs open on the same URL share the **same SSE state store entry**. When any tab triggers an action:
+The current SSE subscription backend polls an in-memory store keyed by
+`componentRouteId:scopeKey`. Other subscribers in the same Worker instance can
+receive public state updates after action frames. Generator values belong only
+to the response that invoked the action.
 
-1. The server processes the action and updates the shared component instance.
-2. The version counter is bumped.
-3. **Every** connected SSE client (all tabs) receives the state update and re-renders.
-
-The first tab to load the page creates the SSE store entry during SSR. Subsequent tabs reuse it : they do not create new component instances or overwrite existing state.
-
----
-
-## Architecture
-
-```
-Client (Browser)                    Server (Cloudflare Worker)
-┌─────────────┐                    ┌──────────────────────────┐
-│             │ ──── GET /sse ───► │ SSE Endpoint             │
-│  SSE        │ ◄── state-update ── │  (TransformStream)       │
-│  Connection │ ◄── yield ────────  │  Polls shared store      │
-│             │ ◄── stream-done ──  │  every 200ms             │
-│             │                    │                          │
-│             │ ── POST /crpc ───► │ CRPC Handler             │
-│             │                    │  Resolves component       │
-│             │                    │  Applies state            │
-│             │                    │  Calls action             │
-│             │ ◄── JSON resp ──── │  Bumps version counter   │
-└─────────────┘                    └──────────────────────────┘
-```
-
-- **Actions**: Sent via HTTP POST to `/crpc`. The server creates a fresh component instance per request, applies the client's state, calls the method, and syncs the result back to the shared SSE store entry.
-- **State sync**: The SSE endpoint polls a shared `Map` (`sseStateStore`). When `/crpc` bumps the `stateVersion` counter, the SSE driver detects the change on its next tick and pushes a `state-update` event.
-- **Heartbeat**: A heartbeat comment (`: heartbeat\n\n`) is sent every 15 seconds to prevent Cloudflare Workers from closing idle connections (~30s timeout).
-
----
+This is not durable or distributed coordination. SSR replaces the stored
+component for its scope, and updates can be lost across Worker instances or
+restarts. Use Durable Object transport when shared state must be coordinated.
 
 ## SSE Event Types
 
-The SSE connection uses the following event types:
+| Event | Description |
+|-------|-------------|
+| `state-update` | Public state on initial connection and after an action changes the stored version. |
+| `connected` | Confirms that the subscription is active. |
+| `: heartbeat` | Periodic SSE comment. |
 
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `state-update` | Server → Client | Full public state object. Sent on initial connect and after each action. |
-| `connected` | Server → Client | Sent once after initial state. Confirms the connection is active. |
-| `yield` | Server → Client | A single yielded value from an async generator (`{ streamId, value }`). |
-| `stream-done` | Server → Client | Generator completed (`{ streamId }`). |
-| `stream-error` | Server → Client | Generator threw an error (`{ streamId, error }`). |
-| `: heartbeat` | Server → Client | SSE comment to keep the connection alive. |
-
----
+Action yields, completion, and failures are response frames, not SSE events.
 
 ## Constraints
 
@@ -246,7 +252,7 @@ The SSE connection uses the following event types:
 - **Plain Workers**: No Durable Object binding required. State lives in-memory within the Worker's global scope. State is **not persisted** across Worker restarts.
 - **Per-scope state**: The SSE store is keyed by `componentRouteId:scopeKey`. Default scope is per-user. Use `scope` to customize (per-team, per-room, shared, etc.).
 - **Cold starts**: If the SSE endpoint receives a connection before SSR has registered the store entry (e.g., direct navigation), it creates a component instance on demand with `skipInit: true`.
-- **Not for Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication, persistent state, or multi-user coordination beyond simple broadcast.
+- **Separate from Durable Object pages**: Use `transport: 'durable-object'` for pages that need bidirectional WebSocket communication, persistent state, or multi-user coordination beyond simple broadcast.
 
 ## Scope access
 

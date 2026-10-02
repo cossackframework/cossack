@@ -258,3 +258,27 @@ action. Applications still check resource permissions inside server actions.
 
 Client code stripping fails on parse errors. Base aliases, local inheritance,
 and component/service decorators participate in class discovery.
+
+## Streaming component actions
+
+HTTP and SSE component RPC share a response-local async iterable protocol.
+Each action executes once. The client call can be iterated for yields or awaited
+for the final result. Promise consumption drains yields; unobserved event-handler
+calls drain automatically. Iteration has one consumer and cancels on early return.
+Frames include a version, type, request ID, public state, and yield/final value
+or structured error. UTF-8 frames are bounded to 1 MiB on both sides.
+
+Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
+from the action request. Components, their descendants, and layout scopes remain
+alive through the stream. SSE subscriptions only receive state updates; they
+never retain or pull an action generator. Distributed SSE state coordination
+remains a separate, incomplete requirement.
+
+Request-context middleware exposes a structural response lifetime under
+`cossack:response-lifetime`. A middleware can call
+`deferCleanup(() => Promise<void>)`; a true result transfers cleanup to the
+retained streaming response. A false result leaves cleanup with that middleware.
+The response releases components and services before retained middleware
+resources, and closes every registered resource even if another close fails.
+Database factories use this contract without importing the framework. Ordinary
+responses retain their existing middleware cleanup behavior.

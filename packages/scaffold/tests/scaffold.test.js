@@ -38,6 +38,42 @@ afterEach(async () => {
 });
 
 describe('recipe resolution', () => {
+  it('keeps Cloudflare secrets local and declares their names without fake D1 IDs', async () => {
+    const cwd = await temporaryDirectory();
+    const result = await createApp('secure', {
+      cwd, adapter: 'cloudflare', preset: 'auth', interactive: false,
+      authMethods: 'oauth', oauth: 'github',
+    });
+    const root = result.projectDir;
+    const config = JSON.parse(await fs.readFile(path.join(root, 'wrangler.jsonc'), 'utf8'));
+    const local = await fs.readFile(path.join(root, '.dev.vars'), 'utf8');
+    const example = await fs.readFile(path.join(root, '.dev.vars.example'), 'utf8');
+    const ignored = await fs.readFile(path.join(root, '.gitignore'), 'utf8');
+    const manifest = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8');
+    const secret = local.match(/^APP_SECRET=(.+)$/m)?.[1];
+    expect(secret).toMatch(/^[\w-]{43}$/);
+    expect(config.vars).not.toHaveProperty('APP_SECRET');
+    expect(config.secrets.required).toEqual(expect.arrayContaining(['APP_SECRET', 'OAUTH_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']));
+    expect(config.d1_databases[0]).not.toHaveProperty('database_id');
+    expect(ignored).toContain('.dev.vars*\n');
+    expect(ignored).toContain('.env*\n');
+    expect(ignored).toContain('!.dev.vars.example');
+    for (const content of [JSON.stringify(config), example, manifest, JSON.stringify(result)]) {
+      expect(content).not.toContain(secret);
+    }
+    await addFeature(root, 'markdown', { interactive: false });
+    expect(await fs.readFile(path.join(root, '.dev.vars'), 'utf8')).toContain(`APP_SECRET=${secret}`);
+  });
+  it('previews creation without writing or exposing generated secrets', async () => {
+    const cwd = await temporaryDirectory();
+    const result = await createApp('preview', {
+      cwd, adapter: 'node', preset: 'auth', dryRun: true,
+    });
+    expect(result.status).toBe('dry-run');
+    expect(result.changes.writes).toContainEqual(expect.objectContaining({ path: 'package.json' }));
+    expect(result.recipe.config).not.toHaveProperty('authSecret');
+    expect(await fs.readdir(cwd)).toEqual([]);
+  });
   it('keeps Full Stack as the default and resolves all dashboard modules', () => {
     const recipe = resolveRecipe({ adapter: 'cloudflare' });
     expect(recipe.preset).toBe('full-stack');
@@ -128,7 +164,7 @@ describe('recipe resolution', () => {
       expect(pkg.scripts['cf-typegen']).toBe(
         'wrangler types --env-interface CloudflareBindings',
       );
-      expect(pkg.scripts.deploy).toBe('vite build && wrangler deploy');
+      expect(pkg.scripts.deploy).toBe('cossack deploy');
       const tsconfig = JSON.parse(files.get('tsconfig.json').content.toString());
       expect(tsconfig.compilerOptions.types).not.toContain('./worker-configuration.d.ts');
       expect(tsconfig.include).toContain('worker-configuration.d.ts');
@@ -507,7 +543,7 @@ describe('composition', () => {
     }));
     expect(credentials.has('src/pages/auth/register/index.ts')).toBe(true);
     expect(credentials.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(true);
-    expect(credentials.has('.dev.vars')).toBe(false);
+    expect(credentials.has('.dev.vars')).toBe(true);
 
     const oauth = await renderRecipe(resolveRecipe({
       preset: 'auth',
@@ -664,12 +700,12 @@ describe('composition', () => {
     const cliConfig = files.get('orm.config.ts').content.toString();
     expect(runtimeConfig).toContain("from '@cossackframework/database/cloudflare'");
     expect(runtimeConfig).not.toContain('wrangler');
-    expect(toolingConfig).toContain("from 'wrangler'");
-    expect(toolingConfig).toContain('getPlatformProxy');
+    expect(toolingConfig).toContain("from '@cossackframework/database/tooling'");
+    expect(toolingConfig).toContain('createD1ToolingAdapter(context');
     expect(cliConfig).toContain('createToolingAdapter');
     expect(cliConfig).toContain("migrationDirectory: './src/migrations'");
     const wrangler = files.get('wrangler.jsonc').content.toString();
-    expect(wrangler).toContain('"database_id": "00000000-0000-0000-0000-000000000000"');
+    expect(wrangler).not.toContain('database_id": "00000000');
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
   });
 

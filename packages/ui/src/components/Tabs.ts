@@ -60,7 +60,7 @@ export class Tabs extends Cossack {
     tablistRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
     render() {
-        const { items = [], orientation = "horizontal", variant = "pill", ...rest } = this.props;
+        const { items = [], orientation = "horizontal", variant: _variant, ...rest } = this.props;
         const current = this.active || this.props.value || items[0]?.value || "";
         const isVertical = orientation === "vertical";
 
@@ -104,8 +104,6 @@ export class Tabs extends Cossack {
                                     "px-3 py-2 rounded-sm w-full text-left": isVertical,
                                     "text-foreground": current === item.value,
                                     "text-muted-foreground hover:text-foreground": current !== item.value,
-                                    "border-b-2 border-primary": variant === "underline" && current === item.value,
-                                    "border-b-2 border-transparent": variant === "underline" && current !== item.value,
                                 })}
                                 @click=${() => { this.selectTab(item.value); }}
                             >

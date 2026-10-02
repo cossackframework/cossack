@@ -16,6 +16,33 @@ export const APP_ROUTE_ID = 'cossack_app';
 /** File path the global `App` component is expected at. */
 export const APP_FILE_PATH = '/src/App';
 
+/** Layout ancestry follows source directories, including groups and parameters. */
+export function resolveLayoutPaths(pageFilePath: string, availableLayouts: readonly string[]): string[] {
+  const available = new Set(availableLayouts);
+  const parts = pageFilePath.replace('/src/pages/', '').split('/');
+  const stack: string[] = [];
+  let directory = '/src/pages';
+  if (available.has(`${directory}/layout.ts`)) stack.push(`${directory}/layout.ts`);
+  for (const part of parts.slice(0, -1)) {
+    directory += `/${part}`;
+    const layout = `${directory}/layout.ts`;
+    if (available.has(layout)) stack.push(layout);
+  }
+  return stack;
+}
+
+/** Substitute both ordinary and catch-all static parameters without replacement-string expansion. */
+export function resolveStaticRoutePath(pattern: string, params: Record<string, string>): string {
+  return pattern.replace(/\[(?:\.\.\.)?([^\]]+)\]|:([A-Za-z0-9_]+)/g, (_token, bracket: string | undefined, colon: string | undefined) => {
+    const key = (bracket ?? colon)!;
+    const value = params[key];
+    if (typeof value !== 'string' || !value) {
+      throw new Error(`[cossack/ssg] Missing static parameter ${key} for ${pattern}. Configure generateStaticParams.`);
+    }
+    return value;
+  });
+}
+
 /**
  * Convert a file path to a simplified route path.
  * `/src/pages/hello/[name]/index.ts` -> `/hello/[name]`
@@ -41,12 +68,12 @@ export function filePathToRoutePath(filePath: string): string {
 /**
  * Convert a file path to an HTTP route pattern (the shape Hono registers).
  * Translates dynamic segments and catch-alls:
- *   `/src/pages/docs/[...slug]/index.ts` -> `/docs/:slug*`
+ *   `/src/pages/docs/[...slug]/index.ts` -> `/docs/:slug{.+}`
  *   `/src/pages/hello/[name]/index.ts`   -> `/hello/:name`
  * Route groups `(group)` are removed, and `/index` collapses to `/`.
  *
  * Catch-all handling MUST run before single-segment handling so `[...slug]`
- * becomes `:slug*` (valid Hono) rather than `:...slug` (invalid).
+ * becomes `:slug{.+}` (a parameter spanning path segments).
  */
 export function filePathToHttpRoute(filePath: string): string {
   const route = filePath
@@ -54,7 +81,7 @@ export function filePathToHttpRoute(filePath: string): string {
     .replace(/\.(ts|js|md|mdx)$/, '')
     .replace(/\/index$/, '')
     .replace(/\/\([^)]+\)/g, '') // route groups, e.g. /(auth)/login -> /login
-    .replace(/\[\.\.\.([^\]]+)\]/g, ':$1*') // catch-all [...slug] -> :slug*
+    .replace(/\[\.\.\.([^\]]+)\]/g, ':$1{.+}') // catch-all includes slashes
     .replace(/\[([^\]]+)\]/g, ':$1'); // dynamic [name] -> :name
   if (route === '/index') return '/';
   return route || '/';
@@ -65,7 +92,7 @@ export function filePathToHttpRoute(filePath: string): string {
  * Lower = more specific (registered first so it wins during matching).
  *   - literal segment (e.g. `users`):  0
  *   - param segment    (e.g. `:id`):   1
- *   - catch-all        (e.g. `:x*`):   2
+ *   - catch-all        (e.g. `:x{.+}`): 2
  *
  * Hono's RegExpRouter lets an earlier-registered param route shadow a later
  * static sibling at the same path position — so `/dashboard/users/:id`
@@ -76,7 +103,7 @@ export function filePathToHttpRoute(filePath: string): string {
  */
 function segmentSpecificity(segment: string): number {
   if (!segment) return 0;
-  if (segment.endsWith('*')) return 2; // catch-all :slug*
+  if (segment.endsWith('*') || segment.endsWith('{.+}')) return 2;
   if (segment.startsWith(':')) return 1; // param :name
   return 0; // literal
 }

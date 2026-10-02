@@ -39,7 +39,9 @@ cossack <command> [args] [options]
 
 ### Global options
 
-These work across every command:
+File-changing commands support `--force` and `--dry-run` where documented.
+Lifecycle commands (`dev`, `build`, `start`, and `ssg`) forward options to
+their underlying tool. Command help is handled before starting that tool.
 
 | Option | Description |
 | --- | --- |
@@ -65,12 +67,59 @@ cossack create my-app --adapter cloudflare --preset minimal --features desktop
 `cossack create` writes a `.cossack/scaffold.json` manifest used by
 `cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
 
+Use `--dry-run` to inspect planned files without creating the project or its
+manifest. It does not prompt or check for CLI updates. Use `--json` for scripts
+and coding agents:
+
+```sh
+cossack create my-app --adapter node --preset minimal --dry-run --json
+```
+
+JSON mode writes one object to stdout with `schemaVersion: 1`, `command`,
+`ok`, `data`, and `diagnostics`. Creation data includes the status, public
+recipe, project directory, manifest path, and planned file changes. It excludes
+generated secret values. Errors use stable diagnostic codes and a nonzero exit
+code. JSON mode does not prompt; specify the desired recipe through flags.
+Without a terminal, creation also uses flag values and defaults without prompts.
+
 ### `cossack add desktop`
 
 Add the independent Electron target without changing the web adapter. The
 command writes `src/desktop/index.ts`, `forge.config.ts`, platform icons,
 Electron/Forge dependencies, and `desktop:dev`, `desktop:package`, and
 `desktop:make` scripts. Electron installers are built on their native host.
+
+### `cossack inspect cloudflare` and `cossack check cloudflare`
+
+```sh
+cossack inspect cloudflare --env staging --json
+cossack check cloudflare --env staging --json
+```
+
+These commands use the application's Wrangler to resolve the selected
+environment. They report Worker and binding identities, required secret names,
+and local configuration diagnostics without building or deploying.
+`inspect` returns success when configuration can be read; `check` returns a
+nonzero exit code for deployment errors. JSON output marks build and remote
+readiness as `not-checked` and omits variable and secret values.
+
+### `cossack deploy`
+
+Build and deploy a Cloudflare application with the project's installed tools:
+
+```sh
+cossack deploy --env staging --dry-run --json
+```
+
+The environment is selected before Vite builds the application. The CLI checks
+configuration, generates binding types, builds, verifies the built environment,
+and calls Wrangler on that artifact. `--mode` selects a Vite mode independently.
+Unlike creation dry runs, deployment dry runs write local build artifacts and
+generated types. They validate deployment without uploading or provisioning.
+
+`--json` emits one versioned result with diagnostics and step results. Raw tool
+output is suppressed. Required remote secrets are not checked during a local
+dry run. See [Deployment](./deployment.md) for environment and secret setup.
 
 ### `cossack adapter <node|cloudflare|deno>`
 
@@ -292,9 +341,20 @@ Run deterministic ORM migrations registered by `orm.config.ts`.
 cossack migration up        # Apply all pending migrations
 cossack migration down      # Roll back the most recent migration
 cossack migration status    # Show applied/pending migrations
+cossack migration plan --env staging --target remote --json
 ```
 
-> The migration commands import your TypeScript files, so the CLI respawns itself under `tsx` automatically.
+The database tooling loads TypeScript configuration through `tsx`. Use
+`--env` and `--target local|remote` to select the database. `--dry-run` previews
+queued migration SQL or generated files without applying them. Incomplete
+plans are marked explicitly. See [Migrations](./migrations.md).
+
+JSON database commands run configuration, adapters, and callbacks in a child
+process with isolated output. Connection logs, console calls, and subprocess
+output cannot mix with the single result on stdout. If the child exits before
+returning a result, the command emits `COSSACK_ORM_PROCESS_FAILED`. Run without
+`--json` to see raw tool diagnostics. This isolates output and process state;
+application callbacks remain trusted code.
 
 ### `cossack seeder` (alias: `seed`)
 

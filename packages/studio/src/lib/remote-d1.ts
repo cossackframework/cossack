@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
+import { readD1ToolingBindings } from '@cossackframework/database/tooling';
 import path from 'node:path';
 import prompts from 'prompts';
 import { OperationQueue } from './queue.js';
@@ -34,102 +34,11 @@ export interface RemoteD1Options {
   prompt?: BindingPrompt;
 }
 
-function stripJsonComments(input: string): string {
-  let output = '';
-  let inString = false;
-  for (let index = 0; index < input.length; index++) {
-    const char = input[index];
-    const next = input[index + 1];
-    if (inString) {
-      output += char;
-      if (char === '\\') output += input[++index] ?? '';
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      output += char;
-    } else if (char === '/' && next === '/') {
-      while (index < input.length && input[index] !== '\n') index++;
-      output += '\n';
-    } else if (char === '/' && next === '*') {
-      index += 2;
-      while (index < input.length && !(input[index] === '*' && input[index + 1] === '/')) index++;
-      index++;
-    } else {
-      output += char;
-    }
-  }
-  return output.replace(/,\s*([}\]])/g, '$1');
-}
-
-function bindingsFromObject(config: any, environment?: string): D1Binding[] {
-  const environmentConfig = environment ? config?.env?.[environment] : undefined;
-  const configured = environmentConfig?.d1_databases ?? config?.d1_databases ?? [];
-  if (!Array.isArray(configured)) return [];
-  return configured
-    .filter((item) => item && typeof item.binding === 'string')
-    .map((item) => ({
-      binding: item.binding,
-      databaseName: typeof item.database_name === 'string' ? item.database_name : undefined,
-      databaseId: typeof item.database_id === 'string' ? item.database_id : undefined,
-    }));
-}
-
-function parseTomlBindings(input: string, environment?: string): D1Binding[] {
-  const targetSection = environment ? `env.${environment}.d1_databases` : 'd1_databases';
-  const bindings: D1Binding[] = [];
-  let current: Record<string, string> | null = null;
-  let active = false;
-  const finish = () => {
-    if (active && current?.binding) {
-      bindings.push({
-        binding: current.binding,
-        databaseName: current.database_name,
-        databaseId: current.database_id,
-      });
-    }
-    current = null;
-  };
-  for (const line of input.split(/\r?\n/)) {
-    const section = line.match(/^\s*\[\[([^\]]+)]]\s*(?:#.*)?$/);
-    if (section) {
-      finish();
-      active = section[1] === targetSection;
-      current = active ? {} : null;
-      continue;
-    }
-    if (!active || !current) continue;
-    const property = line.match(/^\s*([A-Za-z_][\w-]*)\s*=\s*["']([^"']*)["']/);
-    if (property) current[property[1]] = property[2];
-  }
-  finish();
-  return bindings;
-}
-
 export async function readD1Bindings(
   projectRoot: string,
   environment?: string,
 ): Promise<D1Binding[]> {
-  for (const filename of ['wrangler.jsonc', 'wrangler.json']) {
-    try {
-      const source = await fs.readFile(path.join(projectRoot, filename), 'utf8');
-      return bindingsFromObject(JSON.parse(stripJsonComments(source)), environment);
-    } catch (error: any) {
-      if (error?.code !== 'ENOENT') {
-        throw new Error(`Could not read ${filename}: ${error.message}`);
-      }
-    }
-  }
-  try {
-    const source = await fs.readFile(path.join(projectRoot, 'wrangler.toml'), 'utf8');
-    return parseTomlBindings(source, environment);
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') {
-      throw new Error('No wrangler.jsonc, wrangler.json, or wrangler.toml was found.');
-    }
-    throw new Error(`Could not read wrangler.toml: ${error.message}`);
-  }
+  return [...await readD1ToolingBindings({ cwd: projectRoot, environment })];
 }
 
 export async function selectD1Binding(

@@ -143,6 +143,52 @@ Applied migrations are recorded in `_cossack_migrations` with their name,
 SHA-256 checksum, batch, and application timestamp. Editing an applied migration
 causes checksum validation to fail; create a new migration instead.
 
+## Targets and plans
+
+Select the environment and database target explicitly:
+
+```sh
+pnpm exec cossack migration plan --env staging --target remote --json
+pnpm exec cossack migration up --env staging --target remote --dry-run --json
+pnpm exec cossack migration up --env staging --target remote
+```
+
+`--local` and `--remote` are aliases for `--target`. The default is local.
+The selected environment also accepts `CLOUDFLARE_ENV`. Adapter factories
+receive an `ORMToolingContext` with the project root, config path, environment,
+target, and `readOnly` flag. A remote command requires a factory so the adapter
+can honor that selection. See [D1 tooling](./runtimes.md#d1-tooling) for generated
+Cloudflare projects.
+
+`plan` reads migration history without creating its table. It renders queued
+schema operations through a disconnected ORM that rejects live queries. Each
+entry includes its direction, checksum, mode, SQL, parameter count, risk, and
+whether the preview is complete. Parameter values are omitted. Raw SQL risk
+classification is conservative and does not replace reviewing the SQL.
+Use `--direction down` to preview the most recent reversal. A squash that
+replaces fully applied migrations reports `mode: "consolidate"` without
+replaying application SQL.
+
+Migration callbacks are trusted application code. Keep writes on the provided
+`schema` and use the provided `orm`; planning cannot isolate external services
+or a separately captured database connection. Callbacks that need live queries
+produce an incomplete plan. Do not treat that result as a complete preview.
+
+`--dry-run` also previews snapshot, generate, squash, and schema pull file
+changes without writing them. `status` and `check` read history without
+initializing bookkeeping. JSON commands emit one `schemaVersion: 1` envelope
+with `ok`, target context, resolved adapter identity when available, results,
+and diagnostics. Invalid flags, conflicting targets, and extra arguments fail
+before opening the adapter.
+
+JSON commands execute configuration and adapters in a child process. Console
+messages, direct stdout/stderr writes, and inherited subprocess output are
+suppressed; the structured result returns over IPC. This keeps Wrangler
+connection logs out of JSON and prevents configuration code from changing the
+calling process's environment. It is output isolation, not a sandbox for
+application code. Unexpected child termination produces
+`COSSACK_ORM_PROCESS_FAILED`; text mode retains raw diagnostics.
+
 ## Destructive changes
 
 Dropping tables or columns and potentially narrowing column changes fail

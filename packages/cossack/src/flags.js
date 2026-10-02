@@ -25,6 +25,9 @@ const KNOWN_BOOL = new Set([
   'yes',
   'y',
   'remote',
+  'local',
+  'allow-destructive',
+  'prune',
   'no-open',
   'help',
   'h',
@@ -52,7 +55,13 @@ export function parseFlags(argv) {
       const eq = tok.indexOf('=');
       if (eq !== -1) {
         const name = tok.slice(2, eq);
-        const value = tok.slice(eq + 1);
+        let value = tok.slice(eq + 1);
+        if (KNOWN_BOOL.has(name)) {
+          if (value !== 'true' && value !== 'false') {
+            throw new Error(`--${name} expects true or false.`);
+          }
+          value = value === 'true';
+        }
         setFlag(flags, name, value);
       } else {
         const name = tok.slice(2);
@@ -93,12 +102,27 @@ export function parseFlags(argv) {
 
   // Convenience aliases mapped to canonical names.
   if (flags.f !== undefined && flags.force === undefined) flags.force = flags.f;
-  if (flags.force !== undefined) flags.force = flags.force !== false;
+
 
   return { args, flags };
 }
 
+/** Determine JSON intent even when another option fails parsing. */
+export function requestsJSON(argv) {
+  let requested = false;
+  for (const value of argv) {
+    if (value === '--') break;
+    if (value === '--json' || value === '--json=true') requested = true;
+    else if (value === '--json=false') requested = false;
+  }
+  return requested;
+}
+
 function setFlag(flags, name, value) {
+  if (KNOWN_BOOL.has(name)) {
+    flags[name] = value;
+    return;
+  }
   if (flags[name] === undefined) {
     flags[name] = value;
     return;

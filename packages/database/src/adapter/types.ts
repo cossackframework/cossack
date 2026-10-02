@@ -57,6 +57,15 @@ export interface ScopeStorage<T> {
 export interface Adapter {
   readonly driver: Driver;
   readonly scope?: ScopeStorage<unknown>;
+  /** Public connection identity for tooling. Never include URLs with credentials or secret values. */
+  readonly tooling?: {
+    readonly provider: string;
+    readonly target: "local" | "remote";
+    readonly environment?: string;
+    readonly binding?: string;
+    readonly databaseName?: string;
+    readonly databaseId?: string;
+  };
 }
 
 export interface DialectCapabilities {

@@ -135,16 +135,19 @@ by that client.
 Create the adapter from a D1 binding:
 
 ```ts
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createORM } from "@cossackframework/database";
 import { d1 } from "@cossackframework/database/cloudflare";
+import { createAsyncLocalScope } from "@cossackframework/database/adapter";
 
 interface Env {
   DB: D1Database;
 }
 
 export async function createRequestORM(env: Env) {
+  const adapter = await d1(env.DB);
   return createORM({
-    adapter: await d1(env.DB),
+    adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
     entities,
   });
 }
@@ -158,10 +161,42 @@ does not emulate them unsafely.
 Migration schema operations and migration bookkeeping are submitted in one D1
 batch. General callback-based transactions remain unsupported.
 
-The adapter uses async-local request scoping through `node:async_hooks`. Enable
+The application factory adds async-local request scoping through `node:async_hooks`.
+Generated Cloudflare applications include this scope. Enable
 the Workers compatibility support required by the deployment's compatibility
 date, such as
 [`nodejs_als`](https://developers.cloudflare.com/workers/runtime-apis/nodejs/asynclocalstorage/).
+
+`ormMiddleware()` owns databases created by its request factory. Component RPC
+streams retain these databases until completion, failure, or cancellation. The
+framework captures the SQL scope when it creates the response, so Active Record
+and global `sql` calls can run between yielded values. Ordinary responses close
+their owned ORM when middleware finishes. Caller-owned ORM instances remain
+the caller's responsibility.
+
+### D1 tooling
+
+Keep tooling separate from the request adapter. Generated D1 applications use:
+
+```ts
+import type { ORMToolingContext } from "@cossackframework/database";
+import { createD1ToolingAdapter } from "@cossackframework/database/tooling";
+
+export function createToolingAdapter(context: ORMToolingContext) {
+  return createD1ToolingAdapter(context, { binding: "DB" });
+}
+```
+
+The helper resolves Wrangler from the application and uses its configuration
+parser. Local tooling disables remote bindings and shares the application's
+`.wrangler/state/v3` storage. Remote tooling forces the selected D1 binding to
+use the remote resource, requires a real `database_id`, and closes the proxy
+when the ORM closes. The helper does not provision a remote database.
+
+Named environments use their own binding declarations. Missing environments
+fail instead of falling back to production. CLI and Studio share this binding
+discovery through `readD1ToolingBindings()`. These exports are Node tooling;
+Worker request code continues to import `d1()` from the Cloudflare entry.
 
 ## Cloudflare Hyperdrive
 

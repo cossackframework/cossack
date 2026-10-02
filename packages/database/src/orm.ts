@@ -70,6 +70,7 @@ function inferOperation(text: string): QueryOperation {
 
 export class ORM {
   readonly driver: Driver;
+  readonly tooling: Adapter["tooling"];
   readonly metadata: readonly EntityMetadata[];
   readonly sql: SQLTag;
   private readonly metadataByTarget = new Map<EntityTarget, EntityMetadata>();
@@ -84,6 +85,7 @@ export class ORM {
   constructor(options: ORMOptions) {
     if (!options.adapter?.driver) throw new ConfigurationError("createORM() requires an adapter.");
     this.driver = options.adapter.driver;
+    this.tooling = options.adapter.tooling;
     this.scope = options.adapter.scope as ScopeStorage<ScopeContext> | undefined;
     this.logger = options.logger;
     this.metadata = finalizeMetadata(options.entities, options.namingStrategy ?? defaultNamingStrategy);
@@ -147,6 +149,15 @@ export class ORM {
       const context: ScopeContext = { root: this, orm: transactionORM, driver: transactionDriver, transactionDepth: 1 };
       return this.runContext(context, callback);
     });
+  }
+
+  /** @internal Substitute a driver in this ORM's scope for disconnected tooling. */
+  runWithDriver<T>(driver: Driver, callback: (orm: ORM) => T): T {
+    this.assertOpen();
+    const orm = this.scopedClone(driver);
+    Object.defineProperty(orm, "managers", { value: new Map() });
+    Object.defineProperty(orm, "states", { value: new WeakMap() });
+    return this.runContext({ root: this, orm, driver, transactionDepth: 0 }, () => callback(orm));
   }
 
   async reserve<T>(callback: () => Promise<T>): Promise<T> {

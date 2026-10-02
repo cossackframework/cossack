@@ -38,6 +38,24 @@ describe("Cossack integration", () => {
     expect(() => instances[0]!.run(() => undefined)).toThrow(/closed/i);
   });
 
+  it("defers owned ORM cleanup only when a response lifetime retains it", async () => {
+    const orm = memoryORM();
+    const close = vi.spyOn(orm, "close");
+    const callbacks: Array<() => Promise<void>> = [];
+    await ormMiddleware(() => orm)({
+      get: key => key === "cossack:response-lifetime" ? {
+        deferCleanup: (cleanup: () => Promise<void>) => { callbacks.push(cleanup); return true; },
+      } : undefined,
+    }, async () => {});
+    expect(close).not.toHaveBeenCalled();
+    await callbacks[0]!();
+    expect(close).toHaveBeenCalledOnce();
+    const ordinary = memoryORM();
+    const closeOrdinary = vi.spyOn(ordinary, "close");
+    await ormMiddleware(() => ordinary)({ get: () => ({ deferCleanup: () => false }) }, async () => {});
+    expect(closeOrdinary).toHaveBeenCalledOnce();
+  });
+
   it("provides complete lazy cache and session store contracts", async () => {
     const orm = createORM({ adapter: await nodeSQLite(), entities: [] });
     try {

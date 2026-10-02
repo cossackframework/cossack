@@ -3,6 +3,7 @@ import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
+import { createRpcCall, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 interface ServerMethodBase {
     name: string;
@@ -185,559 +186,169 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
-/**
- * Create HTTP fetch proxies for @Server methods (client-side only).
- *
- * Two variants:
- * - SSE transport: returns a hybrid object that is BOTH thenable and async-iterable,
- *   so callers can `await proxy()` OR `for await (const x of proxy())`.
- * - HTTP transport: standard async proxy.
- *
- * Both variants support optimistic UI handlers and file uploads.
- */
+/** HTTP and SSE actions share a single response-local promise/iterator call. */
 export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
     const initialState = component.getInitialStateFromWindow();
-
-    // For App component (global component), use appRouteId
-    // Check constructor name - App component will have name 'App'
-    const isAppComponent = component.constructor.name === 'App';
-    const componentRouteId = isAppComponent
+    const componentRouteId = component.constructor.name === 'App'
         ? initialState?.appRouteId
         : component.__cossack_componentRouteId || initialState?.componentRouteId;
-
     if (!componentRouteId) {
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
         return;
     }
-
-    const scopeKey = initialState?.scopeKey;
     const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
     const stateKeys = getAllReactiveStateKeys(component.constructor);
-
-    // SSE transport: server methods may be async generators, so the proxy must
-    // support both `await` (thenable) and `for await...of` (async iterable).
-    const isSse = initialState?.transport === 'sse';
-
-    for (const method of serverMethods) {
-        const { name } = method;
+    for (const { name } of serverMethods) {
         if (isSharedMethod(component.constructor, name)) continue;
-
-        if (isSse) {
-            // SSE hybrid proxy — works with both `await` and `for await...of`
-            const self = component;
-            const sseProxy = (...args: any[]) => {
-                // === Optimistic handler (sync) ===
-                // Optimistic UI Handler
-                runOptimisticHandler(self, name, args, optimisticHandlers[name], stateKeys);
-
-                self.loading[name] = (self.loading[name] || 0) + 1;
-                self.requestUpdate();
-
-                // === Shared cleanup ===
-                const cleanup = () => {
-                    if (self.loading[name] > 0) {
-                        self.loading[name]--;
-                    }
-                    if (!self.loading[name] || self.loading[name] <= 0) {
-                        delete self.loading[name];
-                        const lockedKeys = self._optimisticLockedKeys[name];
-                        if (lockedKeys) {
-                            for (const key of lockedKeys) delete self._optimisticPendingState[key];
-                            delete self._optimisticLockedKeys[name];
-                        }
-                    }
-                    self.requestUpdate();
-                };
-
-                // === File extraction (shared) ===
-                const files = new Map<string, File>();
-                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
-                // Must be captured after the optimistic handler: the stale-response
-                // guard compares live state with this post-optimistic snapshot.
-                const requestState = snapshotTransportState(self.getPublicState());
-
-                // === Shared apply-state helper ===
-                const applyState = (data: Record<string, any>) => {
-                    applyStateToComponent(self, data, requestState);
-                    self.requestUpdate();
-                };
-
-                // === Path A: thenable (for `await proxy()`) ===
-                // Makes the fetch, handles both streaming and non-streaming responses.
-                const promiseOperation = async (): Promise<any> => {
-                    try {
-                        if (files.size > 0) {
-                            // File upload via XHR — no streaming
-                            const formData = new FormData();
-                            formData.append('componentRouteId', componentRouteId);
-                            if (self._id) formData.append('target', self._id);
-                            formData.append('action', name);
-                            formData.append('state', JSON.stringify(requestState));
-                            formData.append('payload', JSON.stringify(processedArgs));
-                            files.forEach((file, id) => { formData.append(id, file); });
-
-                            return await new Promise<any>((resolve, reject) => {
-                                const xhr = new XMLHttpRequest();
-                                xhr.open('POST', `/upload${window.location.search}`, true);
-                                xhr.upload.onprogress = (e) => {
-                                    if (e.lengthComputable) {
-                                        const percentComplete = (e.loaded / e.total) * 100;
-                                        const progressProp = `${name}Progress`;
-                                        const progressValue = self.getProperty(progressProp);
-                                        if (typeof progressValue === 'number') {
-                                            self.setProperty(progressProp, percentComplete);
-                                            self.requestUpdate();
-                                        }
-                                    }
-                                };
-                                xhr.onload = () => {
-                                    if (xhr.status >= 200 && xhr.status < 300) {
-                                        try {
-                                            const data = JSON.parse(xhr.responseText);
-                                            invalidateClientPageCache();
-                                            if (data._cossack_redirect) {
-                                                window.location.href = data._cossack_redirect;
-                                                resolve(undefined);
-                                                return;
-                                            }
-                                            let returnValue;
-                                            if ('_cossack_return' in data) {
-                                                returnValue = data._cossack_return;
-                                                delete data._cossack_return;
-                                            }
-                                            applyState(data);
-                                            resolve(returnValue);
-                                        } catch (e) { reject(e); }
-                                    } else {
-                                        reject(new Error(`HTTP error! status: ${xhr.status}`));
-                                    }
-                                };
-                                xhr.onerror = () => reject(new Error('Network error'));
-                                xhr.send(formData);
-                            });
-                        }
-
-                        const response = await fetch(`/crpc${window.location.search}`,  {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                componentRouteId,
-                                target: self._id,
-                                action: name,
-                                state: requestState,
-                                payload: processedArgs,
-                                _cossack_stream: true,
-                                scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
-                            }),
-                        });
-
-                        if (!response.ok) {
-                            // The server returns { error: <message> } for thrown
-                            // @Server errors — surface that message so form
-                            // handlers can display it instead of a generic status.
-                            let msg = `HTTP error! status: ${response.status}`;
-                            try {
-                                const errBody = await response.json() as Record<string, any>;
-                                if (errBody?.error) msg = String(errBody.error);
-                            } catch { /* body wasn't JSON; keep the status message */ }
-                            throw new Error(msg);
-                        }
-
-                        const data = await response.json() as Record<string, any>;
-                        invalidateClientPageCache();
-
-                        if (data._cossack_redirect) {
-                            window.location.href = data._cossack_redirect;
-                            return;
-                        }
-
-                        // Apply initial state from response
-                        applyState(data);
-
-                        // If server started a stream, wait for it to complete
-                        if (data._cossack_stream_id) {
-                            // Streaming: don't wait for completion here.
-                            // SSE state sync drives the UI — when isStreaming flips
-                            // to false via SSE, the client recovers automatically.
-                            return undefined;
-                        }
-
-                        // Non-streaming return
-                        let returnValue;
-                        if ('_cossack_return' in data) {
-                            returnValue = data._cossack_return;
-                        }
-                        return returnValue;
-                    } catch (error) {
-                        console.error(`Error calling server action '${name}':`, error);
-                    } finally {
-                        cleanup();
-                    }
-                };
-
-                const promise = promiseOperation();
-
-                // === Path B: async iterator (for `for await...of proxy()`) ===
-                // Makes its own fetch so it can consume SSE yield events independently.
-                const createStreamIterator = () => {
-                    const fetchPromise = fetch(`/crpc${window.location.search}`,  {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            componentRouteId,
-                            target: self._id,
-                            action: name,
-                            state: requestState,
-                            payload: processedArgs,
-                            _cossack_stream: true,
-                            scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
-                        }),
-                    });
-
-                    let resolveYield: ((result: IteratorResult<any>) => void) | null = null;
-                    // Reject fn for the pending `next()` promise. A `stream-error` SSE
-                    // event calls this to surface server-side errors (e.g. a thrown
-                    // ClientVisibleError) into the consumer's `for await...of` loop,
-                    // instead of silently ending the iterator as a successful completion.
-                    let rejectYield: ((reason: any) => void) | null = null;
-                    // A stream error that arrived while next() was NOT awaiting is stashed
-                    // here and thrown by the next next() call, so the consumer's loop still
-                    // sees it regardless of timing.
-                    let pendingStreamError: Error | null = null;
-                    let streamId: string | null = null;
-                    let pendingValues: any[] = [];
-                    let streamDone = false;
-                    let initComplete = false;
-
-                    const yieldHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            if (!initComplete) return;
-
-                            if (resolveYield) {
-                                resolveYield({ value: data.value, done: false });
-                                resolveYield = null;
-                                rejectYield = null;
-                            } else {
-                                pendingValues.push(data.value);
-                            }
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE yield event:', e);
-                        }
-                    };
-
-                    const doneHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            streamDone = true;
-                            if (resolveYield) {
-                                resolveYield({ value: undefined, done: true });
-                                resolveYield = null;
-                                rejectYield = null;
-                            }
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE stream-done event:', e);
-                        }
-                    };
-
-                    const errorEventHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            streamDone = true;
-                            // Surface the server-side error to the consumer's
-                            // `for await...of` loop by rejecting the pending
-                            // next() promise (throws inside the loop, the usual
-                            // place to try/catch streaming errors), or stashing
-                            // it for the next next() call if none is awaiting.
-                            const err = new Error(
-                                typeof data.error === 'string' && data.error
-                                    ? data.error
-                                    : 'Stream error',
-                            );
-                            if (rejectYield) {
-                                rejectYield(err);
-                                rejectYield = null;
-                                resolveYield = null;
-                            } else {
-                                pendingStreamError = err;
-                            }
-                            console.error('[Cossack] Stream error:', data.error);
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE stream-error event:', e);
-                        }
-                    };
-
-                    const sse = self._sseConnection;
-                    if (sse) {
-                        sse.addEventListener('yield', yieldHandler as any);
-                        sse.addEventListener('stream-done', doneHandler as any);
-                        sse.addEventListener('stream-error', errorEventHandler as any);
-                    }
-
-                    const iterator: AsyncIterator<any> & { [Symbol.asyncIterator](): AsyncIterator<any> } = {
-                        async next() {
-                            // A stream-error that arrived while next() wasn't awaiting
-                            // is stashed; throw it now so the consumer's for-await loop
-                            // sees it instead of completing silently.
-                            if (pendingStreamError) {
-                                const e = pendingStreamError;
-                                pendingStreamError = null;
-                                throw e;
-                            }
-                            if (!initComplete) {
-                                const response = await fetchPromise;
-                                if (!response.ok) {
-                                    let msg = `HTTP error! status: ${response.status}`;
-                                    try {
-                                        const errBody = await response.json() as Record<string, any>;
-                                        if (errBody?.error) msg = String(errBody.error);
-                                    } catch { /* not JSON */ }
-                                    throw new Error(msg);
-                                }
-                                const data = await response.json() as Record<string, any>;
-                                invalidateClientPageCache();
-
-                                if (data._cossack_redirect) {
-                                    window.location.href = data._cossack_redirect;
-                                    return { value: undefined, done: true };
-                                }
-
-                                streamId = data._cossack_stream_id;
-                                initComplete = true;
-
-                                // Apply initial state from the response
-                                applyState(data);
-
-                                // Check if there are already queued values
-                                if (pendingValues.length > 0) {
-                                    return { value: pendingValues.shift(), done: false };
-                                }
-
-                                // Stream may already be done (fast completion)
-                                if (streamDone) {
-                                    return { value: undefined, done: true };
-                                }
-
-                                // If server didn't start a stream, this is a non-streaming method
-                                // called with for-await-of. Yield the return value once, then done.
-                                if (!data._cossack_stream_id) {
-                                    let returnValue;
-                                    if ('_cossack_return' in data) {
-                                        returnValue = data._cossack_return;
-                                    }
-                                    if (returnValue !== undefined) {
-                                        return { value: returnValue, done: false };
-                                    }
-                                    return { value: undefined, done: true };
-                                }
-                            }
-
-                            if (streamDone && pendingValues.length === 0) {
-                                return { value: undefined, done: true };
-                            }
-
-                            if (pendingValues.length > 0) {
-                                return { value: pendingValues.shift(), done: false };
-                            }
-
-                            // Wait for next SSE event. Capture both resolve and
-                            // reject so a `stream-error` event can reject (throw
-                            // into the consumer's for-await loop) rather than
-                            // resolve-as-done (silent success).
-                            return new Promise<IteratorResult<any>>((resolve, reject) => {
-                                resolveYield = resolve;
-                                rejectYield = reject;
-                            });
-                        },
-
-                        return() {
-                            const sse = self._sseConnection;
-                            if (sse) {
-                                sse.removeEventListener('yield', yieldHandler as any);
-                                sse.removeEventListener('stream-done', doneHandler as any);
-                                sse.removeEventListener('stream-error', errorEventHandler as any);
-                            }
-                            return Promise.resolve({ value: undefined, done: true });
-                        },
-
-                        [Symbol.asyncIterator]() { return this; },
-                    };
-
-                    return iterator;
-                };
-
-                // === Return hybrid object ===
-                return {
-                    then(onFulfilled: any, onRejected: any) {
-                        return promise.then(onFulfilled, onRejected);
-                    },
-                    catch(onRejected: any) {
-                        return promise.catch(onRejected);
-                    },
-                    [Symbol.asyncIterator]() {
-                        return createStreamIterator();
-                    },
-                };
-            };
-
-            component.__cossack_proxies.set(name, sseProxy);
-            component.setProperty(name, sseProxy);
-            continue;
-        }
-
-        // HTTP transport: standard async proxy
-        const proxy = async (...args: any[]) => {
-            // Optimistic UI Handler
+        const proxy = (...args: any[]) => {
             runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
-
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
-
+            const controller = new AbortController();
+            let upload: XMLHttpRequest | undefined;
+            let cleaned = false;
+            let success = false;
+            const cleanup = () => {
+                if (cleaned) return;
+                cleaned = true;
+                if (component.loading[name] > 0) component.loading[name]--;
+                if (!component.loading[name]) {
+                    delete component.loading[name];
+                    const lockedKeys = component._optimisticLockedKeys[name];
+                    delete component._optimisticLockedKeys[name];
+                    if (lockedKeys) {
+                        for (const key of lockedKeys) {
+                            if (component._isOptimisticLocked(key)) continue;
+                            if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
+                                component.setProperty(key, component._optimisticPendingState[key]);
+                            }
+                            delete component._optimisticPendingState[key];
+                        }
+                    }
+                }
+                component.requestUpdate();
+            };
+            let requestState: Record<string, any>;
+            let request: Promise<Response>;
             try {
-                // Check for files in arguments
                 const files = new Map<string, File>();
-
-                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
-                // Must be captured after the optimistic handler: the stale-response
-                // guard compares live state with this post-optimistic snapshot.
-                const requestState = snapshotTransportState(component.getPublicState());
-
-                if (files.size > 0) {
+                const payload = args.map(arg => extractFilesFromArg(arg, files));
+                requestState = snapshotTransportState(component.getPublicState());
+                if (files.size) {
                     const formData = new FormData();
                     formData.append('componentRouteId', componentRouteId);
                     if (component._id) formData.append('target', component._id);
                     formData.append('action', name);
                     formData.append('state', JSON.stringify(requestState));
-                    formData.append('payload', JSON.stringify(processedArgs));
-
-                    files.forEach((file, id) => {
-                        formData.append(id, file);
-                    });
-
-                    return await new Promise<any>((resolve, reject) => {
-                        const xhr = new XMLHttpRequest();
+                    formData.append('payload', JSON.stringify(payload));
+                    files.forEach((file, id) => formData.append(id, file));
+                    request = new Promise<Response>((resolve, reject) => {
+                        const xhr = upload = new XMLHttpRequest();
                         xhr.open('POST', `/upload${window.location.search}`, true);
-
-                        // Upload Progress
-                        xhr.upload.onprogress = (e) => {
-                            if (e.lengthComputable) {
-                                const percentComplete = (e.loaded / e.total) * 100;
-                                const progressProp = `${name}Progress`;
-                                const progressValue = component.getProperty(progressProp);
-                                if (typeof progressValue === 'number') {
-                                    component.setProperty(progressProp, percentComplete);
-                                    component.requestUpdate();
-                                }
+                        xhr.upload.onprogress = (event) => {
+                            const property = `${name}Progress`;
+                            if (event.lengthComputable && typeof component.getProperty(property) === 'number') {
+                                component.setProperty(property, event.loaded / event.total * 100);
+                                component.requestUpdate();
                             }
                         };
-
                         xhr.onload = () => {
-                            if (xhr.status >= 200 && xhr.status < 300) {
-                                try {
-                                    const data = JSON.parse(xhr.responseText);
-                                    invalidateClientPageCache();
-                                    if (data._cossack_redirect) {
-                                        window.location.href = data._cossack_redirect;
-                                        resolve(undefined);
-                                        return;
-                                    }
-
-                                    let returnValue;
-                                    if ('_cossack_return' in data) {
-                                        returnValue = data._cossack_return;
-                                        delete data._cossack_return;
-                                    }
-
-                                    applyStateToComponent(component, data, requestState);
-                                    resolve(returnValue);
-                                } catch (e) {
-                                    reject(e);
-                                }
-                            } else {
-                                reject(new Error(`HTTP error! status: ${xhr.status}`));
+                            try {
+                                resolve(new Response(xhr.responseText, {
+                                    status: xhr.status, headers: { 'Content-Type': 'application/json' },
+                                }));
+                            } catch (cause) {
+                                reject(new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Upload failed.', { cause }));
                             }
                         };
-
-                        xhr.onerror = () => reject(new Error('Network error'));
+                        xhr.onerror = () => reject(new RpcError('COSSACK_RPC_NETWORK_FAILED', 'Upload failed.'));
+                        xhr.onabort = () => reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
                         xhr.send(formData);
                     });
-
                 } else {
-                    const response = await fetch(`/crpc${window.location.search}`,  {
+                    request = fetch(`/crpc${window.location.search}`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+                        headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        signal: controller.signal,
                         body: JSON.stringify({
-                            componentRouteId,
-                            target: component._id,
-                            action: name,
-                            state: requestState,
-                            payload: processedArgs,
-                            scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
+                            componentRouteId, target: component._id, action: name,
+                            state: requestState, payload, scopeKey: initialState?.scopeKey,
+                            pageParams: initialState?.metadata?.params || {},
                         }),
                     });
-
-                    if (!response.ok) {
-                        let msg = `HTTP error! status: ${response.status}`;
-                        try {
-                            const errBody = await response.json() as Record<string, any>;
-                            if (errBody?.error) msg = String(errBody.error);
-                        } catch { /* not JSON */ }
-                        throw new Error(msg);
-                    }
-
-                    const data = await response.json() as Record<string, any>;
-                    invalidateClientPageCache();
-
-                    if (data._cossack_redirect) {
-                        window.location.href = data._cossack_redirect;
-                        return;
-                    }
-
-                    let returnValue;
-                    if ('_cossack_return' in data) {
-                        returnValue = data._cossack_return;
-                        delete data._cossack_return;
-                    }
-
-                    applyStateToComponent(component, data, requestState);
-                    return returnValue;
                 }
-            } catch (error) {
-                console.error(`Error calling server action '${name}':`, error);
-            } finally {
-                // Decrement loading counter (don't wipe — other calls may be pending)
-                if (component.loading[name] > 0) {
-                    component.loading[name]--;
-                }
-                if (!component.loading[name] || component.loading[name] <= 0) {
-                    delete component.loading[name];
-                    // Release the lock and discard stale buffered state.
-                    // The HTTP response already contains the final server state
-                    // (processed above in the try block), so no flush is needed.
-                    const lockedKeys = component._optimisticLockedKeys[name];
-                    if (lockedKeys) {
-                        for (const key of lockedKeys) {
-                            delete component._optimisticPendingState[key];
-                        }
-                        delete component._optimisticLockedKeys[name];
+            } catch (cause) {
+                request = Promise.reject(new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize arguments or state for '${name}'.`, { cause }));
+            }
+            // The request starts immediately; selecting a result consumer never dispatches it again.
+            void request.catch(() => {});
+            const apply = (state: Record<string, unknown>) => {
+                // Advance the snapshot only for fields this response can apply. This
+                // lets later stream frames update the same field without clobbering
+                // edits made locally while the request was in flight.
+                const applicable = Object.keys(state).filter(key => !Object.prototype.hasOwnProperty.call(requestState, key)
+                    || transportValuesEqual(component[key], requestState[key]));
+                applyStateToComponent(component, state, requestState);
+                for (const key of applicable) {
+                    if (!key.startsWith('_cossack_') && !RESERVED_STATE_KEYS.has(key)) {
+                        requestState[key] = snapshotTransportState({ value: component[key] }).value;
                     }
                 }
                 component.requestUpdate();
-            }
+            };
+            const operation = async function* (): AsyncGenerator<unknown, unknown> {
+                try {
+                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+                    const response = await request;
+                    if (!response.ok) {
+                        let body: any;
+                        try { body = await response.json(); } catch { /* preserve HTTP status */ }
+                        throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
+                            typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
+                            { status: response.status, requestId: response.headers?.get('X-Cossack-Request-Id') ?? undefined });
+                    }
+                    if (response.headers?.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
+                        let invalidated = false;
+                        for await (const frame of readRpcStream(response, controller.signal)) {
+                            if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId: frame.requestId });
+                            if (!invalidated) { invalidateClientPageCache(); invalidated = true; }
+                            apply(frame.state);
+                            if (frame.type === 'done') { success = true; return frame.value; }
+                            yield frame.value;
+                        }
+                    } else {
+                        let data: Record<string, unknown>;
+                        try {
+                            data = await response.json() as Record<string, unknown>;
+                            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a state object.');
+                        } catch (cause) {
+                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid RPC response.', { cause });
+                        }
+                        invalidateClientPageCache();
+                        if (typeof data._cossack_redirect === 'string') {
+                            success = true;
+                            window.location.href = data._cossack_redirect;
+                            return;
+                        }
+                        apply(data);
+                        success = true;
+                        if (data._cossack_return !== undefined) yield data._cossack_return;
+                        return data._cossack_return;
+                    }
+                } catch (cause) {
+                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause });
+                    if (cause instanceof RpcError) throw cause;
+                    throw new RpcError('COSSACK_RPC_NETWORK_FAILED', 'RPC request failed.', { cause });
+                } finally { cleanup(); }
+            };
+            return createRpcCall(operation(), () => {
+                controller.abort();
+                upload?.abort();
+                cleanup();
+            }, error => console.error(`Error calling server action '${name}':`, error));
         };
-
-        // Store proxy in the map so stubbed methods can find it
         component.__cossack_proxies.set(name, proxy);
-
-        // Set the method on the instance
         component.setProperty(name, proxy);
     }
 }
