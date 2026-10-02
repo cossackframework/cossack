@@ -6,7 +6,7 @@ import { CommandSpec, runWithSpec } from '../command-spec.js';
 
 const routesSpec = new CommandSpec({
   name: 'inspect',
-  positionals: ['scope', 'route'],
+  positionals: ['route'],
   flags: { verbose: { type: 'boolean' } },
 });
 
@@ -15,8 +15,10 @@ function explainRoute(effective, route) {
   const page = effective.pages.find(candidate => candidate.route === route);
   if (!page) return null;
   const reasons = [];
-  reasons.push(`Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`
-    + (page.transport ? '' : ' (no explicit transport; http is the default)'));
+  reasons.push(page.extraction.method === 'unknown'
+    ? `Transport and options are unknown: ${page.extraction.reason} (${page.source})`
+    : `Transport "${page.transport ?? 'http'}": set by the @Page decorator at ${page.source}`
+      + (page.transport ? '' : ' (no explicit transport; http is the default)'));
   if (page.layouts.length) {
     reasons.push(`Layout ancestry (${page.layouts.length}): ${page.layouts.join(' -> ')}`);
   } else {
@@ -32,6 +34,10 @@ function explainRoute(effective, route) {
   const ownedServices = page.layouts
     .map(filePath => effective.layouts.find(layout => layout.filePath === filePath))
     .filter(layout => layout && layout.services.length);
+  for (const filePath of page.layouts) {
+    const layout = effective.layouts.find(candidate => candidate.filePath === filePath);
+    if (layout?.extraction.method === 'unknown') reasons.push(`Service ownership is unknown at ${filePath}: ${layout.extraction.reason}`);
+  }
   if (ownedServices.length) {
     reasons.push(`Injectable services (owned by ancestry): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
   }
@@ -44,6 +50,7 @@ function explainRoute(effective, route) {
   if (page.clientMethods?.length) {
     reasons.push(`Client/shared methods (no transport): ${page.clientMethods.map(entry => entry.name).join(', ')}`);
   }
+  if (page.methodExtraction?.reason) reasons.push(`Method classification: ${page.methodExtraction.reason}`);
   if (page.notFoundBoundary) reasons.push(`Nearest 404 boundary: ${page.notFoundBoundary}`);
   if (page.errorBoundary) reasons.push(`Nearest error boundary: ${page.errorBoundary}`);
   return { route: page.route, routeId: page.routeId, kind: page.kind, source: page.source, reasons };
@@ -72,8 +79,8 @@ async function inspectRoutes(args, ctx, command) {
   const effective = await buildEffectiveRouteModel(root);
   const explanation = explainRoute(effective, target);
   if (!explanation) {
-    return commandFailure(ctx, command, 'COSSACK_ROUTE_UNKNOWN',
-      `No route matches '${target}'. Run cossack inspect routes to list routes.`);
+    throw Object.assign(new Error(`No route matches '${target}'. Run cossack inspect routes to list routes.`),
+      { code: 'COSSACK_ROUTE_UNKNOWN' });
   }
   if (ctx.flags.json === true) {
     return { scope: 'routes', ...explanation };

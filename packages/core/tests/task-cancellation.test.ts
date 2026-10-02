@@ -14,6 +14,43 @@ function flush(times = 6) {
 }
 
 describe('task cancellation and staleness (RT-05)', () => {
+    it('cleans up setup that resolves after disposal', async () => {
+        let finish!: (cleanup: () => void) => void;
+        const pending = new Promise<() => void>(resolve => { finish = resolve; });
+        const cleanup = vi.fn();
+        class Late extends Cossack {
+            @Task() work() { return pending; }
+        }
+        const page = new Late();
+        await page.bootstrap({ skipInit: true });
+        await page.destroyAsync();
+        finish(cleanup);
+        await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1));
+    });
+
+    it('waits for cleanup across rapid changes and skips an already canceled run', async () => {
+        let release!: () => void;
+        const cleanup = new Promise<void>(resolve => { release = resolve; });
+        const runs: number[] = [];
+        class Ordered extends Cossack {
+            @State() value = 0;
+            @Task({ track: ['value'] }) work() {
+                runs.push(this.value);
+                return () => cleanup;
+            }
+        }
+        const page = new Ordered();
+        await page.bootstrap({ skipInit: true });
+        await vi.waitFor(() => expect(runs).toEqual([0]));
+        page.value = 1;
+        await flush();
+        page.value = 2;
+        await flush();
+        expect(runs).toEqual([0]);
+        release();
+        await vi.waitFor(() => expect(runs).toEqual([0, 2]));
+        await page.destroyAsync();
+    });
     it('a slow stale task cannot overwrite a newer result', async () => {
         const applied: string[] = [];
         class SearchPage extends Cossack {

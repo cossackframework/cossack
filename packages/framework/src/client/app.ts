@@ -89,7 +89,7 @@ export interface CreateClientAppOptions {
  * a page whose state was mutated server-side never serves stale content.
  */
 const PAGE_CACHE_MAX = 20;
-type CachedPage = { html: string; state: any };
+type CachedPage = { html: string; state: any; url: string };
 const pageCache = new Map<string, CachedPage>();
 let pageCacheEpoch = 0;
 
@@ -215,7 +215,7 @@ async function fetchPage(url: string) {
     const parsed = parseStateFromHTML(html);
 
     if (parsed) {
-      const data = { html, state: parsed.state };
+      const data = { html, state: parsed.state, url: response.url || new URL(key, window.location.href).href };
       preloadPageModules(parsed.modulePreloads);
       // An RPC may have invalidated the cache while this prefetch was in
       // flight. Return its result to the original caller, but never let that
@@ -283,6 +283,7 @@ export async function createClientApp({
   pageCache.set(pageCacheKey(window.location.href), {
     html: document.documentElement.outerHTML,
     state: window.__INITIAL_STATE__,
+    url: new URL(pageCacheKey(window.location.href), window.location.href).href,
   });
 
   // Hydrate localization runtime from the build-time manifest and the
@@ -434,8 +435,7 @@ export async function createClientApp({
     const pathname = initialState?.pathname || window.location.pathname;
 
     if (!routePath) {
-      console.error('Could not find routePath or componentPath in initial state');
-      return;
+      throw new Error('Could not find routePath or componentPath in initial state');
     }
 
     // Convert route path to file path for module lookup
@@ -516,16 +516,14 @@ export async function createClientApp({
       // Dynamic import for page module (code splitting)
       const pageModuleLoader = pages[componentPath];
       if (!pageModuleLoader) {
-        console.error(`Component module loader not found for path: ${componentPath}`);
-        return;
+        throw new Error(`Component module loader not found for path: ${componentPath}`);
       }
 
       // Load the page module asynchronously (cast to function type since import.meta.glob returns a loader for lazy builds)
       const loader = pageModuleLoader as () => Promise<any>;
       const module = await loader();
       if (!module) {
-        console.error(`Failed to load module for path: ${componentPath}`);
-        return;
+        throw new Error(`Failed to load module for path: ${componentPath}`);
       }
 
       const PageComponent = Object.values(module)[0] as new () => Cossack;
@@ -595,6 +593,7 @@ export async function createClientApp({
   // Navigation sequence: a newer navigation supersedes any in-flight one;
   // its commit is skipped and its result resolves as 'superseded' (RT-09).
   let navigationSequence = 0;
+  let commitQueue: Promise<void> = Promise.resolve();
   const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<NavigateResult> => {
     const seq = ++navigationSequence;
     const navigationType = options?.navigationType ?? 'push';
@@ -605,19 +604,20 @@ export async function createClientApp({
       scrollSaveFrame = undefined;
     }
 
-    if (!force && currentPage && !isDisplayingLoadingState) {
-        const prevented = await currentPage._checkPreventNavigation();
-        if (prevented) {
-            currentPage._pendingNavigation = async () => {
-                await navigate(url, true, options);
-            };
-            // Force re-render to show prevention UI if any
-            await currentPage.requestUpdate();
-            return { outcome: 'canceled', url };
-        }
-    }
-
     try {
+      if (!force && currentPage && !isDisplayingLoadingState) {
+          const prevented = await currentPage._checkPreventNavigation();
+          if (seq !== navigationSequence) return { outcome: 'superseded', url };
+          if (prevented) {
+              currentPage._pendingNavigation = async () => {
+                  await navigate(url, true, options);
+              };
+              // Force re-render to show prevention UI if any
+              await currentPage.requestUpdate();
+              return { outcome: 'canceled', url };
+          }
+      }
+
       if (navigationType === 'push') {
         saveCurrentScrollPosition();
       }
@@ -663,10 +663,11 @@ export async function createClientApp({
           };
 
           await loadingInstance.bootstrap({ skipInit: true });
+          if (seq !== navigationSequence) return { outcome: 'superseded', url };
           await triggerAppUpdate();
       }
 
-      const { state } = await fetchPage(url);
+      const { state, url: responseUrl } = await fetchPage(url);
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
@@ -680,14 +681,23 @@ export async function createClientApp({
       // The loading.ts swap (if any) happened above, BEFORE fetchPage — its DOM
       // mutation is already committed by the time startViewTransition snapshots,
       // so the transition animates from loading.ts → real content.
+      const requestedUrl = new URL(url, window.location.href);
+      const destination = new URL(responseUrl, window.location.href);
+      if (!destination.hash) destination.hash = requestedUrl.hash;
+      const destinationUrl = destination.pathname + destination.search + destination.hash;
+      const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
       const commit = async () => {
+        if (seq !== navigationSequence) return;
         window.__INITIAL_STATE__ = state;
         await loadComponent(state);
+        if (seq !== navigationSequence) return;
         if (navigationType === 'push') {
-          window.history.pushState(createNavigationHistoryState(), '', url);
+          window.history.pushState(createNavigationHistoryState(), '', destinationUrl);
+        } else if (redirected) {
+          window.history.replaceState(window.history.state, '', destinationUrl);
         }
         applyNavigationScroll(
-          url,
+          destinationUrl,
           options?.scroll ?? defaultScrollBehavior,
           navigationType,
         );
@@ -695,30 +705,35 @@ export async function createClientApp({
         notifyNavigationComplete(state.pathname);
       };
 
-      if (viewTransitionsEnabled && supportsViewTransitions()) {
-        // Only use the object-form ({ update, types }) when the browser
-        // supports VT types (Chrome 125+); otherwise fall back to the
-        // single-callback form so older browsers don't throw inside the
-        // transition (which would surface as a navigation failure).
-        const useTypes = !!(options?.types?.length) && supportsViewTransitionTypes();
-        const transition = useTypes
-          ? (document as any).startViewTransition({ update: commit, types: options.types })
-          : (document as any).startViewTransition(commit);
-        // `ready` rejects when a newer transition supersedes this one, but the
-        // DOM update still runs. Handle that animation-only rejection so it
-        // never becomes an unhandled promise rejection. Navigation readiness
-        // follows `updateCallbackDone`, which is the standard promise that
-        // resolves after the async commit callback has actually completed.
-        void transition.ready.catch(() => {});
-        void transition.finished.catch(() => {});
-        await transition.updateCallbackDone;
-      } else {
-        await commit();
-      }
-
-      // Redirected: the framework followed a redirect while fetching.
-      const requested = new URL(url, window.location.href).pathname;
-      const redirected = state.pathname && state.pathname !== requested;
+      const performCommit = async () => {
+        if (seq !== navigationSequence) return;
+        if (viewTransitionsEnabled && supportsViewTransitions()) {
+          // Only use the object-form ({ update, types }) when the browser
+          // supports VT types (Chrome 125+); otherwise fall back to the
+          // single-callback form so older browsers don't throw inside the
+          // transition (which would surface as a navigation failure).
+          const useTypes = !!(options?.types?.length) && supportsViewTransitionTypes();
+          const transition = useTypes
+            ? (document as any).startViewTransition({ update: commit, types: options.types })
+            : (document as any).startViewTransition(commit);
+          // `ready` rejects when a newer transition supersedes this one, but the
+          // DOM update still runs. Handle that animation-only rejection so it
+          // never becomes an unhandled promise rejection. Navigation readiness
+          // follows `updateCallbackDone`, which is the standard promise that
+          // resolves after the async commit callback has actually completed.
+          void transition.ready.catch(() => {});
+          void transition.finished.catch(() => {});
+          await transition.updateCallbackDone;
+        } else {
+          await commit();
+        }
+      };
+      // Bootstrap/render can await user code. Serialize DOM commits so an
+      // older navigation cannot finish applying its tree after a newer one.
+      const committed = commitQueue.then(performCommit);
+      commitQueue = committed.catch(() => {});
+      await committed;
+      if (seq !== navigationSequence) return { outcome: 'superseded', url };
 
       (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
@@ -730,8 +745,9 @@ export async function createClientApp({
           scroll: options?.scroll ?? defaultScrollBehavior,
         }
       }));
-      return { outcome: redirected ? 'redirected' : 'completed', url: state.pathname ?? url };
+      return { outcome: redirected ? 'redirected' : 'completed', url: destinationUrl };
     } catch (error) {
+      if (seq !== navigationSequence) return { outcome: 'superseded', url };
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,
       // or fall back to a cached view) instead of forcing a full reload that
@@ -750,9 +766,7 @@ export async function createClientApp({
     }
   };
 
-  Cossack._onNavigate = async (url, options) => {
-      await navigate(url, false, options);
-  };
+  Cossack._onNavigate = (url, options) => navigate(url, false, options);
 
   enableClientNavigation(
     (url, options) => navigate(url, false, options),
@@ -762,4 +776,5 @@ export async function createClientApp({
       }
     }
   );
+  return { navigate: (url: string, options?: NavigateOptions) => navigate(url, false, options) };
 }

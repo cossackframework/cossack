@@ -2217,6 +2217,39 @@ describe('client result typing (RT-01)', () => {
   }
   const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafe, BUILTIN_METHODS, false);
 
+  it('parses nested generic arguments and removes async generator modifiers', () => {
+    const result = transform(`import { Cossack, Server } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Server() /* async * annotation comment */ async *stream(): AsyncGenerator<Record<string, number>, { ok: boolean }, void> { yield {}; return { ok: true }; }
+      }`);
+    expect(result).toContain('stream(): RpcCall<{ ok: boolean }, Record<string, number>>');
+    expect(result).not.toContain('async *stream');
+    expect(result).toContain('/* async * annotation comment */');
+  });
+
+  it('reuses an aliased RpcCall import and leaves function fields syntactically intact', () => {
+    const result = transform(`import { Cossack, Server, type RpcCall as Call } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Server() async value(): Promise<number> { return 1; }
+        @Server() load = async (): Promise<number> => 1;
+      }`);
+    expect(result).toContain('value(): Call<number, never>');
+    expect(result).not.toContain('import type { RpcCall }');
+    expect(result).toContain('load = async (...args) =>');
+    expect(result).not.toContain('=> 1');
+  });
+
+  it('removes server-only validation closures from client decorators', () => {
+    const result = transform(`import { Cossack, Server as Action } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Action({ timeout: 30, input: { title: { validate: () => "SECRET_VALIDATOR" } } })
+        async value(): Promise<number> { return 1; }
+      }`);
+    expect(result).not.toContain('SECRET_VALIDATOR');
+    expect(result).toContain('timeout: 30');
+    expect(result).toContain('input: undefined');
+  });
+
   it('rewrites generator signatures to RpcCall<Return, Yield>', () => {
     const result = transform(`
       import { Cossack, Server } from '@cossackframework/core';

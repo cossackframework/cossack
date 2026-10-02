@@ -3,8 +3,8 @@
  * navigation through to the framework's navigate() implementation.
  */
 /**
- * Typed navigation outcome (RT-09): navigation promises always settle with
- * exactly one of these — never hang, never resolve ambiguously.
+ * Typed navigation outcome (RT-09). Fetch, guards, and component bootstrap
+ * must settle for the navigation promise to complete.
  */
 export type NavigateOutcome = 'completed' | 'superseded' | 'canceled' | 'redirected' | 'failed';
 

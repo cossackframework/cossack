@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Cossack, CossackService, ClientVisibleError, getRequestContext, Inject, Page, readRpcStream, Server, Service, State } from '@cossackframework/core';
+import { Cossack, CossackService, ClientVisibleError, forwardServiceMethods, getRequestContext, Inject, Page, readRpcStream, Server, Service, State } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 import { config } from '../src/config';
@@ -40,6 +40,8 @@ class Counter extends CossackService {
     }
     @Server()
     async serviceRegular() { this.count += 10; return this.count; }
+    @Server({ input: { title: { required: true } } })
+    async guardedService(input: { title: string }) { this.count++; return input.title; }
     @Server()
     async *serviceQuery() {
         yield (await sql`SELECT ${1} AS value`).rows;
@@ -248,6 +250,22 @@ describe('router RPC streaming lifecycle', () => {
         const body = await coerced.json() as Record<string, unknown>;
         expect(body._cossack_return).toBe('hello');
         expect(body.count).toBe(3);
+    });
+
+    it('enforces forwarded and explicit service contracts before executing mutations', async () => {
+        // Explicit DI uses service slots by default. Also exercise the legacy,
+        // framework-installed component forwarder without fabricating metadata.
+        const bootstrap = StreamPage.prototype.bootstrap;
+        vi.spyOn(StreamPage.prototype, 'bootstrap').mockImplementation(async function (this: StreamPage, options) {
+            await bootstrap.call(this, options);
+            forwardServiceMethods(this, this.counter);
+        });
+        for (const response of [await request('guardedService', { payload: [{}] }),
+            await serviceRequest('guardedService', { payload: [{}] })]) {
+            expect(response.status).toBe(400);
+            expect(await response.json()).toMatchObject({ code: 'COSSACK_VALIDATION_FAILED',
+                fieldErrors: { title: expect.any(String) } });
+        }
     });
 
     it('awaits ordinary async methods even if an old client requests streaming', async () => {

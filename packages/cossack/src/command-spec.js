@@ -127,18 +127,22 @@ export async function runWithSpec(spec, args, ctx, handler, help) {
     const result = await handler(args, ctx);
     if (typeof result === 'number') {
       if (ctx.flags?.json === true) {
-        writeResult(spec.name, { ok: result === 0, data: { exitCode: result } });
+        writeResult(spec.name, { ok: result === 0, data: ctx.out?.data({ exitCode: result }) ?? { exitCode: result },
+          diagnostics: result === 0 ? [] : [{ code: result === 130 ? 'COSSACK_COMMAND_ABORTED' : 'COSSACK_COMMAND_FAILED',
+            severity: 'error', message: `Command '${spec.name}' exited with code ${result}.` }] });
       }
       return result;
     }
     if (result && typeof result === 'object' && typeof result.exitCode === 'number') {
       if (ctx.flags?.json === true) {
-        writeResult(spec.name, { ok: result.exitCode === 0, data: result.data ?? { exitCode: result.exitCode } });
+        writeResult(spec.name, { ok: result.exitCode === 0, data: result.data ?? { exitCode: result.exitCode },
+          diagnostics: result.diagnostics ?? (result.exitCode === 0 ? [] : [{ code: 'COSSACK_COMMAND_FAILED',
+            severity: 'error', message: `Command '${spec.name}' exited with code ${result.exitCode}.` }]) });
       }
       return result.exitCode;
     }
-    if (ctx.flags?.json === true && result !== undefined && result !== null) {
-      writeResult(spec.name, { ok: true, data: result });
+    if (ctx.flags?.json === true) {
+      writeResult(spec.name, { ok: true, data: result ?? null });
     }
     return 0;
   } catch (error) {
@@ -164,7 +168,7 @@ export function createCommandOutput(ctx) {
   const effects = [];
   return {
     effects,
-    /** Record a file effect (`created|overwritten|planned|skipped|preserved|deleted`). */
+    /** Record a file effect (`created|overwritten|planned|planned-delete|skipped|preserved|deleted`). */
     file(action, target) {
       const relative = path.relative(process.cwd(), target);
       effects.push({ action, path: relative });

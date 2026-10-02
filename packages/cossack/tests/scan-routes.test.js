@@ -196,6 +196,30 @@ describe('effective route metadata (RT-07)', () => {
 });
 
 describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
+  it('does not invent static facts for spreads, dynamic properties, or invalid syntax', async () => {
+    mk('src/pages/spread/index.ts', "@Page({ ...options, transport: 'sse' }) export default class P {}");
+    mk('src/pages/property/index.ts', '@Page({ transport: selected }) export default class P {}');
+    mk('src/pages/invalid/index.ts', "@Page({ transport: 'sse' }) export default 1;");
+    const model = await buildEffectiveRouteModel(tmp);
+    for (const page of model.pages) {
+      expect(page.extraction.method).toBe('unknown');
+      expect(page.transport).toBeNull();
+    }
+  });
+
+  it('inspects the exported page, quoted keys, and only that page’s methods', async () => {
+    mk('src/pages/scoped/index.ts', `
+      @Page({ transport: 'http' }) class Helper { @Server() hidden() {} }
+      @Page({ 'transport': 'sse', ssg: { enabled: true }, services: [Services.Users] })
+      export default class P {
+        @Server() @Shared() local() {}
+        @Server() remote() {}
+      }`);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page).toMatchObject({ transport: 'sse', ssg: true, services: ['Services.Users'] });
+    expect(page.serverMethods.map(m => m.name)).toEqual(['remote']);
+    expect(page.clientMethods.map(m => m.name)).toEqual(['local']);
+  });
   function write(relative, content) {
     const target = path.join(tmp, 'proj2', relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -240,7 +264,8 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     ].join('\n'));
     const model = await buildEffectiveRouteModel(project());
     const dynamic = model.pages.find(page => page.route === '/dynamic');
-    expect(dynamic.extraction.method).toBe('regex');
+    expect(dynamic.extraction.method).toBe('unknown');
+    expect(dynamic.transport).toBeNull();
     expect(dynamic.extraction.reason).toContain('identifier options');
     expect(dynamic.extraction.reason).toContain('cannot be resolved statically');
   });

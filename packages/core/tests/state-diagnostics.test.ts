@@ -14,6 +14,20 @@ class Panel extends Cossack {
 }
 
 describe('shallow mutation diagnostics (RT-04)', () => {
+    it('keeps identity stable before and after warning, including nested reads', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const panel = new Panel();
+        panel.connectedCallback();
+        const config = panel.config;
+        const nested = config.nested;
+        expect(panel.config).toBe(config);
+        expect(panel.config.nested).toBe(nested);
+        nested.depth = 2;
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(panel.config).toBe(config);
+        expect(panel.config.nested).toBe(nested);
+        warn.mockRestore();
+    });
     it('warns once with the component, field, and fix for plain @State', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const panel = new Panel();

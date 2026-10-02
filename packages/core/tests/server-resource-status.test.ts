@@ -40,6 +40,40 @@ class Host extends Cossack {
 }
 
 describe('resourceStatus$ (RT-03)', () => {
+    it('refresh preserves dependency arguments and ignores older refreshes', async () => {
+        const host = new Host();
+        const first = deferred<number>();
+        const second = deferred<number>();
+        const loader = vi.fn((id: number) => loader.mock.calls.length === 1 ? id :
+            loader.mock.calls.length === 2 ? first.promise : second.promise);
+        host.__serverResource('item', loader, { deps: () => [7] as const });
+        await Promise.all(host.__serverResourcePending());
+        const older = host.refresh$('item');
+        const newer = host.refresh$('item');
+        second.resolve(20);
+        await newer;
+        first.resolve(10);
+        await older;
+        expect(loader.mock.calls).toEqual([[7], [7], [7]]);
+        expect(host.status('item')).toMatchObject({ state: 'ready', value: 20 });
+    });
+
+    it('refresh applies the same serialization checks as the initial load', async () => {
+        const host = new Host();
+        let fail = false;
+        host.__serverResource('unsafe', () => fail ? (() => {}) : 1);
+        await Promise.all(host.__serverResourcePending());
+        fail = true;
+        await host.refresh$('unsafe');
+        expect(host.status('unsafe')).toMatchObject({ state: 'error', value: 1 });
+    });
+
+    it('records synchronous loader failures as resource errors', async () => {
+        const host = new Host();
+        expect(() => host.__serverResource('sync', () => { throw new Error('sync failure'); })).not.toThrow();
+        await Promise.all(host.__serverResourcePending());
+        expect(host.status('sync')).toMatchObject({ state: 'error' });
+    });
     it('tracks pending → ready with initial values', async () => {
         const host = new Host();
         host.loadUsers(7);

@@ -450,12 +450,14 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         try { body = await response.json(); } catch { /* preserve HTTP status */ }
                         throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
                             typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
-                            { status: response.status, requestId: response.headers?.get('X-Cossack-Request-Id') ?? undefined });
+                            { status: response.status, requestId: response.headers?.get('X-Cossack-Request-Id') ?? undefined,
+                                fieldErrors: body?.fieldErrors });
                     }
                     if (response.headers?.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                         let invalidated = false;
                         for await (const frame of readRpcStream(response, controller.signal)) {
-                            if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId: frame.requestId });
+                            if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
+                                { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                             if (!invalidated) { invalidateClientPageCache(); invalidated = true; }
                             apply(frame.state);
                             if (frame.type === 'done') { succeed(); return frame.value; }
@@ -580,7 +582,8 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     while (true) {
                         const next = await nextFrameWithDeadline(queue, deadline, requestId, timeoutMs);
                         const frame = next.value;
-                        if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId });
+                        if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
+                            { requestId, fieldErrors: frame.fieldErrors });
                         apply(frame.state);
                         if (frame.type === 'done') { succeed(); return frame.value; }
                         yield frame.value;

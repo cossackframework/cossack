@@ -88,7 +88,7 @@ export default class RootLayout extends Cossack {
   }
 
   @Client()
-  navigate(item: SidebarItem) {
+  navigateSidebar(item: SidebarItem) {
     if (!item.href) return;
     this.currentPath = item.href;
     this.mobileNavigationOpen = false;
@@ -115,7 +115,7 @@ export default class RootLayout extends Cossack {
       collapsed: collapsible === 'icon' ? this.sidebarCollapsed : false,
       collapsible,
       onToggle: collapsible === 'icon' ? this.toggleSidebar : this.closeMobileNavigation,
-      onNavigate: this.navigate,
+      onNavigate: this.navigateSidebar,
       footer: html`<p class="px-2 text-xs text-muted-foreground group-[.is-collapsed]:hidden">Built with Cossack</p>`,
       'data-testid': collapsible === 'icon' ? 'desktop-sidebar' : 'mobile-sidebar',
     });

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { describeUnsupportedValue, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
+import { describeUnsupportedValue, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
 
 interface RpcStreamOptions {
     result: AsyncIterable<unknown>;
@@ -135,8 +135,9 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     if (closed) return;
                     closed = true;
                     controller.enqueue(encode({ v: 1, type: 'error', requestId: options.requestId,
-                        code: isClientVisibleError(error) ? 'COSSACK_RPC_CLIENT_ERROR'
+                        code: isActionValidationError(error) ? error.validationCode : isClientVisibleError(error) ? 'COSSACK_RPC_CLIENT_ERROR'
                             : error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR',
+                        fieldErrors: isActionValidationError(error) || error instanceof RpcError ? error.fieldErrors : undefined,
                         message: isClientVisibleError(error) || error instanceof RpcError
                             ? error.message : 'Internal Server Error' }));
                     controller.close();

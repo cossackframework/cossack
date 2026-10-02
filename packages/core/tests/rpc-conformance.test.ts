@@ -9,6 +9,7 @@ import { InMemoryWebSocketRuntime } from '../src/shared/runtime';
 import { createInstance } from '../src/shared/container';
 import { ServiceScope } from '../src/shared/service-scope';
 import { Service } from '../src/shared/decorators';
+import { forwardServiceMethods } from '../src/shared/service-bootstrap';
 import { describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from '../src/shared/rpc-stream';
 
 // The realtime server component must take the server lifecycle (no client
@@ -177,9 +178,24 @@ describe('realtime (WebSocket) RPC conformance', () => {
 
     it('enforces @Server({ input }) with stable field errors', async () => {
         await expect(Promise.resolve(client.guarded({ title: 'x' })))
-            .rejects.toMatchObject({ code: 'COSSACK_RPC_CLIENT_ERROR', message: 'Validation failed.' });
+            .rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED', message: 'Validation failed.',
+                fieldErrors: { title: expect.any(String) } });
         await expect(Promise.resolve(client.guarded({ title: 'ok title' }))).resolves.toBe('saved:ok title');
         expect(client.loading.guarded).toBeUndefined();
+    });
+
+    it('validates forwarded service actions with their declaring class metadata', async () => {
+        @Service()
+        class ValidatedService {
+            @Server({ input: { title: { required: true, minLength: 2 } } })
+            async forwarded(input: { title: string }) { return input.title; }
+        }
+        forwardServiceMethods(server, new ValidatedService());
+        proxyServerMethods(client, [{ name: 'forwarded', provider: 'page', channel: 'global' }]);
+        await expect(Promise.resolve(client.forwarded({ title: '' }))).rejects.toMatchObject({
+            code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) },
+        });
+        await expect(Promise.resolve(client.forwarded({ title: 'valid' }))).resolves.toBe('valid');
     });
 
     it('rejects client-visible failures with stable codes', async () => {
@@ -394,6 +410,21 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
         await expect(Promise.resolve((instance as any).fail()))
             .rejects.toMatchObject({ code: 'COSSACK_RPC_CLIENT_ERROR', status: 400 });
+    });
+
+    it('preserves structured validation errors on component and explicit service HTTP calls', async () => {
+        (globalThis as any).window = { location: { search: '' } };
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            error: 'Validation failed.', code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: 'Required' },
+        }), { status: 400, headers: { 'X-Cossack-Request-Id': 'validated' } })));
+        const component = makeClientComponent();
+        component.getInitialStateFromWindow = () => ({ componentRouteId: 'validated-page' });
+        proxyHttpMethods(component, [{ name: 'save' }]);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        for (const call of [component.save({}), (instance as any).fail({})]) {
+            await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED',
+                status: 400, requestId: 'validated', fieldErrors: { title: 'Required' } });
+        }
     });
 
     it('supports cancellation through the request signal', async () => {

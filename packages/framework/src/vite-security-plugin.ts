@@ -890,6 +890,8 @@ interface AstMethod {
   returnTypeStart?: number;
   returnTypeEnd?: number;
   isGenerator?: boolean;
+  modifierStart?: number;
+  modifierEnd?: number;
 }
 
 /**
@@ -940,6 +942,8 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         returnTypeStart: fn.returnType?.start,
         returnTypeEnd: fn.returnType?.end,
         isGenerator: !!fn.generator,
+        modifierStart: member.decorators?.at(-1)?.end ?? member.start,
+        modifierEnd: member.key.start,
       });
     } else if (member.type === 'PropertyDefinition') {
       const name = memberKeyName(member.key);
@@ -1416,20 +1420,56 @@ export function clientCallType(method: {
 }): string | undefined {
   const text = method.returnTypeText?.trim();
   if (!text) return undefined;
-  const generator = text.match(/^AsyncGenerator\s*<([\s\S]*),([\s\S]*)(?:,[\s\S]*)?>$/);
-  if (generator) {
-    return `RpcCall<${generator[2].trim()}, ${generator[1].trim()}>`;
+  const source = `type __Result = ${text};`;
+  const type = parseProgram(source)?.body[0]?.typeAnnotation;
+  if (type?.type !== 'TSTypeReference' || type.typeName?.type !== 'Identifier') return undefined;
+  const args = (type.typeArguments?.params ?? []).map((node: any) => sourceSlice(source, node));
+  if (type.typeName.name === 'AsyncGenerator' && args.length >= 1 && args.length <= 3) {
+    return `RpcCall<${args[1] ?? 'any'}, ${args[0]}>`;
   }
-  const oneArgGenerator = text.match(/^AsyncGenerator\s*<([\s\S]+)>$/);
-  if (oneArgGenerator) {
-    // AsyncGenerator<Y> — TReturn defaults to `any` in TypeScript.
-    return `RpcCall<any, ${oneArgGenerator[1].trim()}>`;
-  }
-  const iterable = text.match(/^AsyncIterableIterator\s*<([\s\S]+)>$/);
-  if (iterable) return `RpcCall<any, ${iterable[1].trim()}>`;
-  const promise = text.match(/^Promise\s*<([\s\S]+)>$/);
-  if (promise) return `RpcCall<${promise[1].trim()}, never>`;
+  if (type.typeName.name === 'AsyncIterableIterator' && args.length === 1) return `RpcCall<any, ${args[0]}>`;
+  if (type.typeName.name === 'Promise' && args.length === 1) return `RpcCall<${args[0]}, never>`;
   return undefined;
+}
+
+/** Remove server validation closures before analyzing client dependencies. */
+function stripServerActionInput(code: string): string {
+  const program = parseProgram(code);
+  if (!program) return code;
+  const aliases = new Set(['Server']);
+  const namespaces = new Set<string>();
+  for (const statement of program.body) {
+    if (statement.type !== 'ImportDeclaration' || statement.source?.value !== '@cossackframework/core') continue;
+    for (const specifier of statement.specifiers) {
+      if (specifier.imported?.name === 'Server') aliases.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+    }
+  }
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+  for (const cls of frameworkClasses(program)) {
+    for (const member of cls.body.body) {
+      for (const decorator of member.decorators ?? []) {
+        const call = decorator.expression;
+        if (call?.type !== 'CallExpression') continue;
+        const callee = call.callee;
+        if (!(callee.type === 'Identifier' && aliases.has(callee.name)) &&
+            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && callee.property?.name === 'Server')) continue;
+        const argument = call.arguments[0];
+        if (!argument) continue;
+        if (argument.type !== 'ObjectExpression' || argument.properties.some((p: any) => p.type !== 'Property' || p.computed)) {
+          throw new Error('[Cossack Security] @Server options must be a static object literal so input validators can be removed from the client.');
+        }
+        for (const property of argument.properties) {
+          if (memberKeyName(property.key) === 'input') replacements.push({ start: property.start,
+            end: property.end, replacement: 'input: undefined' });
+        }
+      }
+    }
+  }
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+    code = code.slice(0, replacement.start) + replacement.replacement + code.slice(replacement.end);
+  }
+  return code;
 }
 
 export function transformCossackClass(
@@ -1442,6 +1482,7 @@ export function transformCossackClass(
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
   code = stripSsgGenerateStaticParams(code);
+  code = stripServerActionInput(code);
 
   const program = parseProgram(code);
   if (!program) {
@@ -1452,6 +1493,17 @@ export function transformCossackClass(
   // file-relative offsets and apply them in reverse order at the end.
   type Replacement = { start: number; end: number; replacement: string };
   const replacements: Replacement[] = [];
+  let rpcTypeName = 'RpcCall';
+  const existingRpcImport = program.body.flatMap((s: any) => s.type === 'ImportDeclaration' &&
+    s.source?.value === '@cossackframework/core' ? s.specifiers : [])
+    .find((s: any) => s.imported?.name === 'RpcCall');
+  if (existingRpcImport) rpcTypeName = existingRpcImport.local.name;
+  else {
+    // Pick an unused identifier even when an application declares its own RpcCall.
+    let suffix = 0;
+    while (new RegExp(`\\b${rpcTypeName}\\b`).test(code)) rpcTypeName = `__CossackRpcCall${++suffix}`;
+  }
+  let needsRpcType = false;
 
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
@@ -1473,9 +1525,17 @@ export function transformCossackClass(
       // becomes `RpcCall<R, never>`, so client code awaits/iterates the
       // proxy with precise result types. Methods without an explicit,
       // recognized annotation keep their original signature.
-      const callType = m.hasServerDecorator ? clientCallType(m) : undefined;
+      const callType = m.hasServerDecorator && m.fieldValueStart === undefined
+        ? clientCallType(m)?.replace(/^RpcCall/, rpcTypeName) : undefined;
       if (callType && m.returnTypeStart !== undefined && m.returnTypeEnd !== undefined) {
+        needsRpcType = true;
         replacements.push({ start: m.returnTypeStart, end: m.returnTypeEnd, replacement: `: ${callType}` });
+        // A proxy returns RpcCall directly; retaining async/* would wrap it or
+        // yield nothing, as well as making the TypeScript annotation invalid.
+        const prefix = code.slice(m.modifierStart, m.modifierEnd);
+        replacements.push({ start: m.modifierStart!, end: m.modifierEnd!,
+          replacement: prefix.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\basync\b|\*/g,
+            token => token.startsWith('/') ? token : '') });
       }
 
       if (m.fieldValueStart !== undefined) {
@@ -1515,10 +1575,10 @@ export function transformCossackClass(
 
   // The rewritten signatures reference RpcCall; ensure the emitted module has
   // a type-only import available (the bundler erases it in production).
-  if (replacements.some(r => r.replacement.startsWith(': RpcCall'))) {
+  if (needsRpcType && !existingRpcImport) {
     const firstImport = program.body.find((s: any) => s.type === 'ImportDeclaration');
     const anchor = firstImport ? firstImport.end : 0;
-    const importText = `import type { RpcCall } from '@cossackframework/core';\n`;
+    const importText = `\nimport type { RpcCall${rpcTypeName === 'RpcCall' ? '' : ` as ${rpcTypeName}`} } from '@cossackframework/core';\n`;
     replacements.push({ start: anchor, end: anchor, replacement: importText });
   }
 
@@ -1584,14 +1644,6 @@ export function stripSsgGenerateStaticParams(code: string): string {
 
   if (replacements.length === 0) return code;
 
-  // The rewritten signatures reference RpcCall; ensure the emitted module has
-  // a type-only import available (the bundler erases it in production).
-  if (replacements.some(r => r.replacement.startsWith(': RpcCall'))) {
-    const firstImport = program.body.find((s: any) => s.type === 'ImportDeclaration');
-    const anchor = firstImport ? firstImport.end : 0;
-    const importText = `import type { RpcCall } from '@cossackframework/core';\n`;
-    replacements.push({ start: anchor, end: anchor, replacement: importText });
-  }
   let result = code;
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);

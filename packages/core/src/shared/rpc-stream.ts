@@ -4,20 +4,22 @@ export const RPC_STREAM_MAX_FRAME_BYTES = 1024 * 1024;
 
 export type RpcStreamFrame =
     | { v: 1; type: 'yield' | 'done'; requestId: string; state: Record<string, unknown>; value?: unknown; scopeState?: Record<string, unknown> }
-    | { v: 1; type: 'error'; requestId: string; code: string; message: string };
+    | { v: 1; type: 'error'; requestId: string; code: string; message: string; fieldErrors?: Record<string, unknown> };
 
 /** Stable transport diagnostics. Application failures reject the RPC call. */
 export class RpcError extends Error {
     readonly code: string;
     readonly requestId?: string;
     readonly status?: number;
+    readonly fieldErrors?: Record<string, unknown>;
 
-    constructor(code: string, message: string, details: { requestId?: string; status?: number; cause?: unknown } = {}) {
+    constructor(code: string, message: string, details: { requestId?: string; status?: number; cause?: unknown; fieldErrors?: Record<string, unknown> } = {}) {
         super(message, details.cause === undefined ? undefined : { cause: details.cause });
         this.name = 'RpcError';
         this.code = code;
         this.requestId = details.requestId;
         this.status = details.status;
+        this.fieldErrors = details.fieldErrors;
     }
 }
 
@@ -36,7 +38,8 @@ export function validateRpcFrame(frame: any): RpcStreamFrame {
     if (!frame || frame.v !== 1 || typeof frame.requestId !== 'string' || !frame.requestId ||
         !['yield', 'done', 'error'].includes(frame.type) ||
         (frame.type === 'error'
-            ? typeof frame.code !== 'string' || typeof frame.message !== 'string'
+            ? typeof frame.code !== 'string' || typeof frame.message !== 'string' ||
+                (frame.fieldErrors !== undefined && (!frame.fieldErrors || typeof frame.fieldErrors !== 'object' || Array.isArray(frame.fieldErrors)))
             : !frame.state || typeof frame.state !== 'object' || Array.isArray(frame.state) ||
                 (frame.scopeState !== undefined && (!frame.scopeState ||
                     typeof frame.scopeState !== 'object' || Array.isArray(frame.scopeState))))) {

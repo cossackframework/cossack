@@ -37,11 +37,8 @@ export async function addCommand(args, ctx) {
   }
   const uiComponent = componentName ? UI_COMPONENTS[componentName] : undefined;
   if (componentName && !uiComponent) {
-    console.error(
-      `Unknown UI component: ${componentName}.\n` +
-      `Available components: ${Object.keys(UI_COMPONENTS).join(', ')}`,
-    );
-    return 1;
+    throw Object.assign(new Error(`Unknown UI component: ${componentName}. Available components: ${Object.keys(UI_COMPONENTS).join(', ')}`),
+      { code: 'COSSACK_UI_COMPONENT_UNKNOWN' });
   }
 
   try {
@@ -58,7 +55,8 @@ export async function addCommand(args, ctx) {
       force: ctx.force,
       dryRun: ctx.dryRun,
       yes: ctx.flags.yes === true || ctx.flags.y === true,
-      interactive: ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
+      interactive: ctx.flags.json !== true && Boolean(process.stdin.isTTY) &&
+        ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
     });
 
     if (result.status === 'present') {
@@ -66,7 +64,7 @@ export async function addCommand(args, ctx) {
     }
     if (result.status === 'cancelled') {
       ctx.out.line('Cancelled. No files were changed.');
-      return 0;
+      return ctx.out.data({ feature, status: result.status });
     }
     if (uiComponent) {
       const target = path.join(
@@ -75,10 +73,11 @@ export async function addCommand(args, ctx) {
         `${uiComponent.className}.ts`,
       );
       const status = await writeFile(target, uiComponent.template(), ctx);
-      if (status === 'skipped') return ctx.out.file('skipped', target);
+      if (status === 'skipped') throw Object.assign(new Error(`File already exists: ${target}. Use --force to overwrite.`),
+        { code: 'COSSACK_FILE_EXISTS' });
       ctx.out.file(status === 'dry-run' ? 'planned' : 'created', target);
     }
-    if (result.status === 'present') return 0;
+    if (result.status === 'present') return ctx.out.data({ feature, status: result.status });
 
     const automaticallyAdded = result.addedFeatures.filter(
       (item) => item !== feature,
@@ -88,7 +87,7 @@ export async function addCommand(args, ctx) {
         path.join(root, change.path));
     }
     for (const change of result.changes.deletes) {
-      ctx.out.file('deleted', path.join(root, change.path));
+      ctx.out.file(result.status === 'dry-run' ? 'planned-delete' : 'deleted', path.join(root, change.path));
     }
     ctx.out.line(
       `${result.status === 'dry-run' ? 'Would apply' : 'Applied'} ${result.changes.writes.length} write(s)` +

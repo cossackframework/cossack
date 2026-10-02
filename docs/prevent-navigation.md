@@ -63,18 +63,24 @@ export default class UnsavedForm extends Cossack {
 
 ## Navigation completion contract (GLM, 2026-10-02)
 
-`navigate()` settles with a typed outcome — never hangs, never resolves
-ambiguously:
+On the client, `await this.navigate(url, options)` returns a typed outcome after
+the page render, history change, and scroll update. Applications that call
+`createClientApp()` directly can also use its returned `navigate` function.
 
 | Outcome | Meaning |
 | --- | --- |
 | `completed` | The page rendered, history updated, scroll policy applied. |
-| `redirected` | The server redirected during the fetch; `url` is the final path. |
+| `redirected` | The server redirected during the fetch; `url` includes the final path, query, and fragment. |
 | `superseded` | A newer navigation began while this page loaded; the late response was discarded and never committed. |
 | `canceled` | A `preventNavigation` handler stopped this navigation. |
 | `failed` | The fetch or render threw after the error event; `error` carries the cause. |
 
 ```ts
-const result = await this.navigate!('/dashboard');
+const result = await this.navigate('/dashboard');
 if (result.outcome === 'superseded') return; // a newer navigation owns the UI
 ```
+
+Guards that throw produce `failed`. A superseded request cannot update history
+or emit completion events. Component commits run in order. A component bootstrap
+that never settles can still block a later commit; cancellation and bounded
+completion for that case remain part of RT-09. Use `redirect()` in server methods.

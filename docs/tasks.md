@@ -19,6 +19,23 @@ The `@Task` decorator marks a method to run on component mount and every time th
 
 `@Task` accepts an optional options object: pass `{ track: [...] }` to run the task only when specific state fields change, and `return` a cleanup function for automatic teardown. See [Tracking Dependencies](#tracking-dependencies-the-track-option) and [Automatic Cleanup](#automatic-cleanup-react-useeffect-style) below.
 
+Async tasks receive an `AbortSignal`. Dependency changes and disposal abort the
+previous execution. Check `signal.aborted` after each awaited operation and
+before writing state; cancellation cannot undo arbitrary application writes.
+Pass the signal to APIs that support cancellation, such as `fetch`. A cleanup
+returned after cancellation still runs. Repeated executions wait for that task's
+registered cleanup, while unrelated tasks can proceed.
+
+```ts
+@Task({ track: ['query'] })
+async load(signal: AbortSignal) {
+    const response = await fetch(`/search?q=${encodeURIComponent(this.query)}`, { signal });
+    const results = await response.json();
+    if (signal.aborted) return;
+    this.results = results;
+}
+```
+
 ### Usage
 
 Use `@Task` for logic that needs to run initially or react to state changes, such as logging, derived state calculations, or side effects that are safe to run in both environments.

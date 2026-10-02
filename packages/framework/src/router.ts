@@ -966,7 +966,8 @@ export function createApp(options: CreateAppOptions = {}) {
         // values replace the raw payload; failures return stable field errors.
         let validatedPayload: unknown[] = payload as any[];
         try {
-          validatedPayload = await enforceActionInput(targetInstance.constructor, action, payload || []);
+          validatedPayload = await enforceActionInput(
+            getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action, payload || []);
         } catch (validation) {
           if (isActionValidationError(validation)) {
             return c.json({ error: validation.message, code: 'COSSACK_VALIDATION_FAILED',

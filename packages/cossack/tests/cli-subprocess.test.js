@@ -8,14 +8,14 @@ import { fileURLToPath } from 'node:url';
 const bin = fileURLToPath(new URL('../bin/cossack.js', import.meta.url));
 
 /**
- * CLI-03 acceptance: every command speaks one subprocess contract — exactly
+ * CLI-03 regressions for selected command families — exactly
  * one parseable JSON envelope on stdout under `--json` (no banners, no
  * interleaved tool output), structured diagnostics with stable codes and
  * nonzero exits on failure, and no writes for dry runs.
  */
 
 let tmp;
-let runLog;
+let liveChildren;
 
 function runCli(argv, options = {}) {
   return new Promise(resolve => {
@@ -23,12 +23,16 @@ function runCli(argv, options = {}) {
       cwd: options.cwd ?? tmp,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    liveChildren.add(child);
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('exit', code => resolve({ code: code ?? 1, stdout, stderr }));
-    child.on('error', error => resolve({ code: 1, stdout, stderr: `${stderr}${error}` }));
+    child.on('close', code => {
+      liveChildren.delete(child);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+    child.on('error', error => { stderr += String(error); });
   });
 }
 
@@ -41,12 +45,14 @@ function parseEnvelope(stdout) {
 
 beforeEach(async () => {
   tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-subprocess-'));
-  runLog = [];
+  liveChildren = new Set();
   await fs.writeFile(path.join(tmp, 'package.json'), '{}');
 });
 afterEach(async () => {
+  const running = liveChildren.size;
+  for (const child of liveChildren) child.kill();
   await fs.rm(tmp, { recursive: true, force: true });
-  expect(runLog, 'no subprocess should remain running').toEqual([]);
+  expect(running, 'no subprocess should remain running').toBe(0);
 });
 
 describe('version and info', () => {
@@ -83,11 +89,23 @@ describe('version and info', () => {
 });
 
 describe('routes and inspection', () => {
+  it('unknown routes emit exactly one coded failure envelope', async () => {
+    const result = await runCli(['inspect', 'routes', '/missing', '--json']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_ROUTE_UNKNOWN');
+  });
+
+  it('rejects a second route positional before inspection', async () => {
+    const result = await runCli(['inspect', 'routes', '/a', '/b', '--json']);
+    expect(result.code).toBe(1);
+    expect(parseEnvelope(result.stdout).diagnostics[0].code).toBe('COSSACK_ARGUMENT_UNEXPECTED');
+  });
   it('routes --json lists the fixture route with its layout', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages/dashboard/users/[id]'), { recursive: true });
     await fs.writeFile(path.join(tmp, 'src/pages/layout.ts'), 'export default 1;');
-    await fs.writeFile(path.join(tmp, 'src/pages/dashboard/layout.ts'), "@Page({ services: [Users] })\nexport default 2;");
-    await fs.writeFile(path.join(tmp, 'src/pages/dashboard/users/[id]/index.ts'), "@Page({ transport: 'sse' })\nexport default 3;");
+    await fs.writeFile(path.join(tmp, 'src/pages/dashboard/layout.ts'), "@Page({ services: [Users] })\nexport default class Layout {}");
+    await fs.writeFile(path.join(tmp, 'src/pages/dashboard/users/[id]/index.ts'), "@Page({ transport: 'sse' })\nexport default class Users {}");
     const { code, stdout, stderr } = await runCli(['routes', '--json']);
     expect(code).toBe(0);
     expect(stderr).toBe('');
@@ -103,7 +121,7 @@ describe('routes and inspection', () => {
 
   it('inspect routes <route> explains behavior with reasons', async () => {
     await fs.mkdir(path.join(tmp, 'src/pages/team'), { recursive: true });
-    await fs.writeFile(path.join(tmp, 'src/pages/team/index.ts'), "@Page({ transport: 'http', middlewares: [async (c, next) => { await next(); }] })\nexport default 1;");
+    await fs.writeFile(path.join(tmp, 'src/pages/team/index.ts'), "@Page({ transport: 'http', middlewares: [async (c, next) => { await next(); }] })\nexport default class Team {}");
     const { code, stdout } = await runCli(['inspect', 'routes', '/team', '--json']);
     expect(code).toBe(0);
     const result = parseEnvelope(stdout);
@@ -119,6 +137,20 @@ describe('routes and inspection', () => {
 });
 
 describe('generate', () => {
+  it('delete plans effects without removing files and reports missing files with a code', async () => {
+    await runCli(['generate', 'component', 'KeepMe']);
+    const planned = await runCli(['delete', 'component', 'KeepMe', '--dry-run', '--json']);
+    expect(planned.code).toBe(0);
+    expect(planned.stderr).toBe('');
+    expect(parseEnvelope(planned.stdout).data.effects).toEqual([
+      { action: 'planned-delete', path: 'src/components/KeepMe.ts' },
+    ]);
+    expect(await fs.readFile(path.join(tmp, 'src/components/KeepMe.ts'), 'utf8')).toContain('KeepMe');
+    const missing = await runCli(['delete', 'component', 'Missing', '--json']);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toBe('');
+    expect(parseEnvelope(missing.stdout).diagnostics[0].code).toBe('COSSACK_FILE_NOT_FOUND');
+  });
   it('dry run plans the file without writing and emits one envelope', async () => {
     const { code, stdout, stderr } = await runCli(['generate', 'component', 'ReviewProbe', '--dry-run', '--json']);
     expect(code).toBe(0);

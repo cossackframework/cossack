@@ -982,11 +982,14 @@ export async function enforceActionInput(
     action: string,
     payload: unknown[],
 ): Promise<unknown[]> {
+    if (!Array.isArray(payload)) {
+        throw new ActionValidationError({ _: 'RPC payload must be an array of arguments.' });
+    }
     const registration = findServerMethodRegistration(constructor, action);
     const rules = registration?.input as StoreRuleMap<unknown> | undefined;
     if (!rules) return payload;
     const input = payload?.[0];
-    if (input === null || typeof input !== 'object') {
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
         throw new ActionValidationError({ _: 'This action requires an object input.' },
             'Validation failed.');
     }

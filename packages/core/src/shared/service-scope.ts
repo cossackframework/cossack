@@ -366,11 +366,13 @@ export class ServiceScope {
                             try { body = await response.json(); } catch { /* preserve HTTP status */ }
                             throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
                                 typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
-                                { status: response.status });
+                                { status: response.status, requestId: response.headers.get('X-Cossack-Request-Id') ?? undefined,
+                                    fieldErrors: body?.fieldErrors });
                         }
                         if (response.headers.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                             for await (const frame of readRpcStream(response, controller.signal)) {
-                                if (frame.type === 'error') throw new RpcError(frame.code, frame.message, { requestId: frame.requestId });
+                                if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
+                                    { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                                 if (frame.state && typeof frame.state === 'object') {
                                     hydrateServiceState(entry.instance, frame.state as Record<string, unknown>);
                                 }

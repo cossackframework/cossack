@@ -12,7 +12,7 @@ import {
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
-import { isClientVisibleError } from './errors';
+import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, rpcCancellations, sendRpcFrame } from './rpc-stream';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
@@ -58,12 +58,13 @@ import {
     proxyServiceMethods as proxyServiceMethodsFn,
     findServiceInstance as findServiceInstanceFn,
     getConstructorParamNames as getConstructorParamNamesFn,
+    getForwardedServerMethodClass,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
-import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
+import { supportsViewTransitions, type NavigateOptions, type NavigateResult } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -93,6 +94,17 @@ export type {
 };
 
 export const RootContext = createContext<Cossack | null>(null);
+
+interface ServerResourceEntry {
+    argsKey: string;
+    value: unknown;
+    hasValue: boolean;
+    resolved: boolean;
+    pending?: Promise<unknown>;
+    error?: unknown;
+    failed?: boolean;
+    loader?: () => unknown;
+}
 
 /**
  * Wraps `fn` in a trailing-edge debounce: each call resets the timer, so `fn`
@@ -161,15 +173,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _ownsServiceScope = false;
     private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
     private _cleanupCompletion?: Promise<unknown[]>;
-    private _serverResources = new Map<string, {
-        argsKey: string;
-        value: unknown;
-        hasValue: boolean;
-        resolved: boolean;
-        pending?: Promise<unknown>;
-        error?: unknown;
-        loader?: (...args: unknown[]) => Promise<unknown> | unknown;
-    }>();
+    private _serverResources = new Map<string, ServerResourceEntry>();
 
     private _serverResourceKey(
         name: string,
@@ -213,29 +217,38 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             entry = { argsKey, value: entry?.hasValue ? entry.value : options.initial, hasValue: entry?.hasValue || 'initial' in options, resolved: false };
             this._serverResources.set(name, entry);
         }
-        entry.loader = loader as unknown as (...args: unknown[]) => Promise<unknown> | unknown;
-        if (!entry.resolved && !entry.pending && !entry.error) {
-            entry.pending = Promise.resolve(loader(...args)).then((value) => {
+        entry.loader = () => loader(...args);
+        if (!entry.resolved && !entry.pending && !entry.failed) {
+            this._loadServerResource(name, entry);
+        }
+        return entry.value as TValue | undefined;
+    }
+
+    private _loadServerResource(name: string, entry: ServerResourceEntry): Promise<unknown> {
+        // Scheduling the invocation also captures synchronous exceptions.
+        const loader = entry.loader!;
+        entry.pending = Promise.resolve().then(loader).then((value) => {
                 // Results use the same JSON-safe contract as hydration/RPC.
                 this._serverResourceKey(name, [value], 'result');
                 if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return value;
-                entry!.value = value;
-                entry!.hasValue = true;
-                entry!.resolved = true;
-                entry!.error = undefined;
-                entry!.pending = undefined;
+                entry.value = value;
+                entry.hasValue = true;
+                entry.resolved = true;
+                entry.error = undefined;
+                entry.failed = false;
+                entry.pending = undefined;
                 if (!this.isServer) void this.requestUpdate();
                 return value;
             }).catch((error) => {
-                if (this._serverResources.get(name) === entry) {
-                    entry!.pending = undefined;
-                    entry!.error = error;
+                if (this._serverResources.get(name) === entry && this._phase !== LifecyclePhase.Destroyed) {
+                    entry.pending = undefined;
+                    entry.error = error;
+                    entry.failed = true;
                     if (!this.isServer) console.error(`[Cossack server$:${name}]`, error);
                 }
                 if (this.isServer) throw error;
             });
-        }
-        return entry.value as TValue | undefined;
+        return entry.pending;
     }
 
     /**
@@ -258,7 +271,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (entry.pending) {
             return { state: 'pending', hasValue: entry.hasValue, value: entry.value, stale: entry.hasValue };
         }
-        if (entry.error !== undefined) {
+        if (entry.failed) {
             return { state: 'error', hasValue: entry.hasValue, value: entry.value, error: entry.error, stale: false };
         }
         // Not resolved and not failed: either a cold first load or the window
@@ -269,34 +282,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async refresh$(name: string): Promise<void> {
-        const entry = this._serverResources.get(name);
-        if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
-        entry.error = undefined;
-        entry.pending = undefined;
-        entry.resolved = false;
-        // Retry directly (RT-03): a re-render is not required to re-run the
-        // loader — status observers see pending-over-stale-data immediately.
-        if (entry.loader) {
-            const loader = entry.loader;
-            entry.pending = Promise.resolve(loader()).then((value) => {
-                if (this._serverResources.get(name) !== entry) return value;
-                entry.value = value;
-                entry.hasValue = true;
-                entry.resolved = true;
-                entry.error = undefined;
-                entry.pending = undefined;
-                if (!this.isServer) void this.requestUpdate();
-                return value;
-            }).catch((error) => {
-                if (this._serverResources.get(name) === entry) {
-                    entry.pending = undefined;
-                    entry.error = error;
-                }
-                if (this.isServer) throw error;
-            });
-        }
+        const previous = this._serverResources.get(name);
+        if (!previous) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
+        // Each refresh owns a new entry, so older loads cannot publish into it.
+        const entry: ServerResourceEntry = { ...previous, error: undefined, failed: false,
+            pending: undefined, resolved: false };
+        this._serverResources.set(name, entry);
+        const pending = entry.loader ? this._loadServerResource(name, entry) : undefined;
         void this.requestUpdate();
-        await entry.pending;
+        await pending;
     }
 
     public invalidate$(name: string): void {
@@ -445,6 +439,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isRunningTasks: boolean = false;
     /** Cancellation controllers for in-flight task executions (RT-05). */
     private _taskExecutions = new Map<string | symbol, AbortController>();
+    private _taskCleanupPending = new Map<string | symbol, Promise<void>>();
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
     /**
@@ -1069,7 +1064,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
         // crafted WebSocket message, bypassing the client-side stripping.
-        if (!isRpcCallableAction(this.constructor, action)) {
+        if (!isRpcCallableAction(getForwardedServerMethodClass(this, action) ?? this.constructor, action)) {
             if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
                 code: 'COSSACK_RPC_FORBIDDEN', message: `Action '${action}' is not a callable server method.` });
             return Promise.resolve();
@@ -1123,7 +1118,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         try {
             // RT-02: enforce @Server({ input }) before the method runs; a
             // failed contract rejects with client-visible field errors.
-            const validatedPayload = await enforceActionInput(this.constructor, action, payload || []);
+            const validatedPayload = await enforceActionInput(
+                getForwardedServerMethodClass(this, action) ?? this.constructor, action, payload || []);
+            if (cancellation.cancelled) return;
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that
             // a longer client payload could displace.
@@ -1151,8 +1148,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // unhandled rejection and so `loading[action]` is always released.
             if (requestId !== undefined) {
                 sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
-                    code: isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
+                    code: isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
                         : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR',
+                    fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
                     message: isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error' });
             }
             console.error(`[Cossack] Error executing action '${action}':`, e);
@@ -1239,10 +1237,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 : [];
             const allTasks = [...tasks, ...serverTasks, ...clientTasks];
             const isFilteredRun = changedPaths !== undefined;
-            // Each task runs under its own cancellation identity. A dependency
-            // change aborts the previous execution's signal and its stale
-            // result is never applied (RT-05). Slow tasks do not block their
-            // siblings; only their own cleanup ordering is preserved.
+            // Each task runs under its own cancellation identity. Dependency
+            // changes abort the previous signal; task code must check it before
+            // writing state. Slow tasks do not block siblings, and registered
+            // cleanup stays ordered per task.
             const inFlight: Promise<void>[] = [];
             for (const { propertyKey: task, track } of allTasks) {
                 if (isFilteredRun && track && track.length > 0) {
@@ -1264,10 +1262,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     const start = async () => {
                         try {
                             if (previousCleanupPromise) await previousCleanupPromise;
+                            if (controller.signal.aborted || this._phase === LifecyclePhase.Destroyed) return;
                             const taskMethod = this.getMethod(task);
                             const result = (taskMethod as any)(controller.signal);
-                            const resolved = result instanceof Promise ? await result : result;
-                            if (controller.signal.aborted) return; // stale: discard result
+                            const resolved = result && typeof result.then === 'function' ? await result : result;
+                            if (controller.signal.aborted) {
+                                // An async setup can acquire resources before noticing cancellation.
+                                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved);
+                                return;
+                            }
                             if (typeof resolved === 'function') {
                                 this._taskCleanups.set(task, resolved as () => unknown);
                             }
@@ -1300,20 +1303,29 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Invoke (and drop) the stored cleanup function for a task, if any.
      * Swallows errors so one failing cleanup can't abort sibling tasks.
      */
-    private _runTaskCleanup(task: string | symbol) {
-        const cleanup = this._taskCleanups.get(task);
-        if (!cleanup) return;
-        this._taskCleanups.delete(task);
-        try {
-            const result = cleanup();
-            if (result instanceof Promise) {
-                return result.catch(e =>
-                    console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e),
-                );
+    private _runTaskCleanup(task: string | symbol, lateCleanup?: () => unknown): Promise<void> | undefined {
+        const previous = this._taskCleanupPending.get(task);
+        const cleanup = lateCleanup ?? this._taskCleanups.get(task);
+        if (!cleanup) return previous;
+        if (!lateCleanup) this._taskCleanups.delete(task);
+        const invoke = () => {
+            try {
+                const result = cleanup();
+                if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+                    return Promise.resolve(result).then(() => {}, e =>
+                        console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e));
+                }
+            } catch (e) {
+                console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e);
             }
-        } catch (e) {
-            console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e);
-        }
+        };
+        const pending = previous ? previous.then(invoke) : invoke();
+        if (!pending) return;
+        this._taskCleanupPending.set(task, pending);
+        void pending.finally(() => {
+            if (this._taskCleanupPending.get(task) === pending) this._taskCleanupPending.delete(task);
+        });
+        return pending;
     }
 
     /**
@@ -1658,12 +1670,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         // happens, naming the component and the fix. Bundlers
                         // replace import.meta.env.DEV, eliminating this from
                         // production output.
-                        if (import.meta.env?.DEV !== false && isPublic && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
+                        if (import.meta.env?.DEV === true && isPublic && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
                             return this._diagnoseShallowMutation(key, raw as Record<PropertyKey, unknown>);
                         }
                         return raw;
                     },
                     set: (newValue: any) => {
+                        newValue = this._shallowMutationRaw.get(newValue) ?? newValue;
                         const oldValue = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
@@ -1705,10 +1718,23 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * @internal
      */
     private _shallowMutationWarned = new Set<string>();
+    private _shallowMutationProxies = new Map<string, WeakMap<object, object>>();
+    private _shallowMutationRaw = new WeakMap<object, object>();
     private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T): T {
-        if (this._shallowMutationWarned.has(key)) return raw;
+        let cache = this._shallowMutationProxies.get(key);
+        if (!cache) this._shallowMutationProxies.set(key, cache = new WeakMap());
+        const cached = cache.get(raw);
+        if (cached) return cached as T;
         const component = this;
-        return new Proxy(raw, {
+        const proxy = new Proxy(raw, {
+            get(target, property, receiver) {
+                const value = Reflect.get(target, property, receiver);
+                const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+                // Proxy invariants require returning the exact value of frozen properties.
+                if (descriptor && !descriptor.configurable && 'value' in descriptor && !descriptor.writable) return value;
+                return value !== null && typeof value === 'object' && isPlainObjectOrArray(value)
+                    ? component._diagnoseShallowMutation(key, value as Record<PropertyKey, unknown>) : value;
+            },
             set(target, property, value) {
                 if (!component._shallowMutationWarned.has(key)) {
                     component._shallowMutationWarned.add(key);
@@ -1731,6 +1757,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 return Reflect.deleteProperty(target, property);
             },
         });
+        cache.set(raw, proxy);
+        this._shallowMutationRaw.set(proxy, raw);
+        return proxy;
     }
 
     /**
@@ -2217,7 +2246,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<void>;
+    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<NavigateResult>;
+
+    /** Await the SPA navigation outcome on the client. */
+    @Client()
+    public navigate(url: string, options?: NavigateOptions): Promise<NavigateResult> {
+        if (!Cossack._onNavigate) return Promise.resolve({ outcome: 'failed', url,
+            error: new Error('[Cossack] Client navigation is not initialized.') });
+        return Cossack._onNavigate(url, options);
+    }
 
     /**
      * When true (default), server-side rendering emits hydratable marker
@@ -2459,6 +2496,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             release(() => this._runTaskCleanup(taskKey));
         }
         this._taskCleanups.clear();
+        for (const cleanup of this._taskCleanupPending.values()) release(() => cleanup);
         if (!this.isServer) {
             this.websockets.forEach(ws => {
                 // Marked so the reconnect handler does not revive a socket

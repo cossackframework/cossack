@@ -93,6 +93,12 @@ invalidateUsers() {
 
 If a client refresh fails, the resource keeps its last successful value and records the error without continuously retrying. A dependency change, explicit refresh, or invalidation allows another attempt. During SSR, loader failures propagate into the existing hierarchical error-boundary flow.
 
+`this.resourceStatus$('users')` returns a snapshot with `state` (`pending`,
+`ready`, or `error`), `hasValue`, `value`, `error`, and `stale`. A refresh keeps
+the previous value and dependency arguments. Overlapping loads publish only the
+newest result. Unknown resource names throw. Resource-name and result-type
+inference are still pending under RT-03; the current status value is `unknown`.
+
 ## Where `server$` is allowed
 
 Version 1 supports:

@@ -7,6 +7,30 @@ description: "Form validation using the @Validate decorator that runs on both cl
 
 The `@Validate` decorator provides form validation that runs on both client and server. It integrates with `@State`, `@ClientState`, `@Store`, and `@ClientStore` decorators.
 
+## Validated server actions
+
+Declare rules for the first RPC argument with `@Server({ input })`. The server
+validates and coerces that object before calling the method. HTTP, WebSocket,
+and service calls return `COSSACK_VALIDATION_FAILED` with `fieldErrors` for
+expected input failures. Client proxies expose those fields on `RpcError`.
+
+```ts
+@Server({ input: { title: { required: true, minLength: 3 } } })
+async save(input: { title: string }) {
+    // The declared rules have passed before this method runs.
+    return input.title;
+}
+```
+
+Use a static object literal for `@Server` options. The client compiler removes
+the `input` rules, including custom validation closures, while retaining options
+such as `timeout`. Dynamic option objects and spreads fail the client build
+because they can hide server validation code. The first argument must be an
+object; arrays are rejected. Unknown input keys currently remain in the object.
+Schema-derived input types, a full file-input contract, and shared resource
+authorization policies remain open under RT-02. Continue checking authorization
+inside server methods until the policy API is implemented.
+
 ## Usage
 
 ```typescript

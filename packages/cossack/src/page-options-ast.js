@@ -25,34 +25,16 @@ function sourceText(node, code) {
   return code.slice(node.start, node.end);
 }
 
-/** Walk the ESTree body; visit every node through `enter`. */
-function walk(node, enter, parent = null) {
-  if (!node || typeof node.type !== 'string') return;
-  enter(node, parent);
-  for (const key of Object.keys(node)) {
-    if (key === 'type' || key === 'start' || key === 'end' || key === 'range') continue;
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item.type === 'string') walk(item, enter, node);
-      }
-    } else if (value && typeof value.type === 'string') {
-      walk(value, enter, node);
-    }
-  }
-}
-
 function lineNumberAt(code, index) {
   return code.slice(0, index).split('\n').length;
 }
 
 /** Identifier names the source imports as an alias of `Page` from core. */
-function pageDecoratorAliases(program, code) {
+function pageDecoratorAliases(program) {
   const aliases = new Set(['Page']);
   for (const statement of program.body) {
     if (statement.type !== 'ImportDeclaration') continue;
-    const source = sourceText(statement.source, code);
-    if (!source.includes('@cossackframework/core')) continue;
+    if (statement.source?.value !== '@cossackframework/core') continue;
     for (const specifier of statement.specifiers ?? []) {
       if (specifier.type === 'ImportSpecifier' && specifier.imported.name === 'Page') {
         aliases.add(specifier.local.name);
@@ -65,26 +47,63 @@ function pageDecoratorAliases(program, code) {
 /** Extract scalar/array facts from one @Page options object literal. */
 function readOptionsObject(objectExpression, code) {
   const options = { transport: null, ssg: null, middlewares: 0, services: [] };
+  const unresolved = [];
   for (const property of objectExpression.properties ?? []) {
-    if (property.type !== 'Property' || property.key.type !== 'Identifier') continue;
-    const key = property.key.name;
+    if (property.type !== 'Property' || property.computed) {
+      unresolved.push('spread or computed options');
+      continue;
+    }
+    const key = property.key.name ?? property.key.value;
     if (key === 'transport' && property.value.type === 'Literal') {
       options.transport = property.value.value;
     } else if (key === 'ssg' && (property.value.type === 'Literal')) {
       options.ssg = property.value.value === true;
-    } else if (key === 'middlewares' && property.value.type === 'ArrayExpression') {
+    } else if (key === 'ssg' && property.value.type === 'ObjectExpression') {
+      const enabled = property.value.properties.find(p => (p.key?.name ?? p.key?.value) === 'enabled');
+      if (!enabled) options.ssg = true;
+      else if (enabled.value.type === 'Literal') options.ssg = enabled.value.value === true;
+      else unresolved.push('ssg.enabled');
+    } else if (key === 'middlewares' && property.value.type === 'ArrayExpression' && !property.value.elements.some(e => e?.type === 'SpreadElement')) {
       options.middlewares = (property.value.elements ?? []).filter(Boolean).length;
     } else if (key === 'services' && property.value.type === 'ArrayExpression') {
       options.services = (property.value.elements ?? [])
-        .filter(element => element && element.type === 'Identifier')
-        .map(element => element.name);
+        .filter(Boolean).map(element => sourceText(element, code));
+      if (property.value.elements.some(e => e?.type === 'SpreadElement' || !['Identifier', 'MemberExpression'].includes(e?.type))) unresolved.push('services');
+    } else if (['transport', 'ssg', 'middlewares', 'services'].includes(key)) {
+      unresolved.push(key);
     }
   }
-  return options;
+  return { options, unresolved };
+}
+
+function parsedProgram(parseSync, code) {
+  try {
+    const result = parseSync('page.ts', code);
+    return result.errors?.length ? null : result.program;
+  } catch { return null; }
+}
+
+function pageClass(program, code) {
+  const aliases = pageDecoratorAliases(program);
+  const namespaces = new Set(program.body.filter(s => s.type === 'ImportDeclaration' &&
+    s.source?.value === '@cossackframework/core').flatMap(s => s.specifiers
+      .filter(p => p.type === 'ImportNamespaceSpecifier').map(p => p.local.name)));
+  const candidates = [];
+  for (const statement of program.body) {
+    const cls = statement.declaration ?? statement;
+    if (!['ClassDeclaration', 'ClassExpression'].includes(cls.type)) continue;
+    const decorator = (cls.decorators ?? []).find(d => {
+      const callee = d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression;
+      return callee?.type === 'Identifier' && aliases.has(callee.name) ||
+        callee?.type === 'MemberExpression' && namespaces.has(callee.object?.name) && callee.property?.name === 'Page';
+    });
+    if (decorator) candidates.push({ cls, decorator, exported: statement.type.startsWith('Export') });
+  }
+  return candidates.find(c => c.exported) ?? candidates[0];
 }
 
 /**
- * Parse `code` and extract the first @Page decorator's options. Returns
+ * Parse `code` and extract the exported @Page class's options. Returns
  * `{ options, method, reason }`: `method` is `ast` on success, `unknown`
  * when the options object is dynamic (an identifier or spread), and `null`
  * when no parser is available (the caller falls back to regex).
@@ -92,35 +111,24 @@ function readOptionsObject(objectExpression, code) {
 export async function extractPageOptionsFromAst(code) {
   const parseSync = await loadParseSync();
   if (!parseSync) return null;
-  let program;
-  try {
-    // oxc parseSync takes (filename, sourceText); the extension selects TS.
-    program = parseSync('page.ts', code).program;
-  } catch {
+  const program = parsedProgram(parseSync, code);
+  if (!program) {
     return { options: null, method: 'unknown', reason: 'The file could not be parsed as TypeScript.' };
   }
-  const aliases = pageDecoratorAliases(program, code);
-  let decoratorCall = null;
-  let decoratorLine = null;
-  walk(program, (node, parent) => {
-    if (decoratorCall) return;
-    const isDecorator =
-      (node.type === 'Decorator' && node.expression?.type === 'CallExpression') ||
-      (node.type === 'CallExpression' && parent?.type === 'Decorator');
-    if (!isDecorator) return;
-    const call = node.type === 'Decorator' ? node.expression : node;
-    if (call.callee?.type !== 'Identifier' || !aliases.has(call.callee.name)) return;
-    decoratorCall = call;
-    decoratorLine = lineNumberAt(code, call.start);
-  });
+  const selected = pageClass(program, code);
+  const decoratorCall = selected?.decorator.expression;
+  const decoratorLine = decoratorCall ? lineNumberAt(code, decoratorCall.start) : null;
   if (!decoratorCall) return { options: null, method: 'unknown', reason: 'No @Page decorator found.' };
 
   const argument = decoratorCall.arguments?.[0]?.expression ?? decoratorCall.arguments?.[0];
   if (!argument) {
-    return { options: readOptionsObject({ properties: [] }, code), method: 'ast', decoratorLine };
+    return { options: readOptionsObject({ properties: [] }, code).options, method: 'ast', decoratorLine };
   }
   if (argument.type === 'ObjectExpression') {
-    return { options: readOptionsObject(argument, code), method: 'ast', decoratorLine };
+    const { options, unresolved } = readOptionsObject(argument, code);
+    return unresolved.length ? { options: null, method: 'unknown', decoratorLine,
+      reason: `The @Page options contain ${unresolved.join(', ')} and cannot be resolved statically.` } :
+      { options, method: 'ast', decoratorLine };
   }
   return {
     options: null,
@@ -138,17 +146,14 @@ export async function extractPageOptionsFromAst(code) {
 export async function extractMethodClassificationsFromAst(code) {
   const parseSync = await loadParseSync();
   if (!parseSync) return null;
-  let program;
-  try {
-    program = parseSync('page.ts', code).program;
-  } catch {
+  const program = parsedProgram(parseSync, code);
+  if (!program) {
     return { methods: [], reason: 'The file could not be parsed as TypeScript.' };
   }
   const aliases = new Map();
   for (const statement of program.body) {
     if (statement.type !== 'ImportDeclaration') continue;
-    const source = sourceText(statement.source, code);
-    if (!source.includes('@cossackframework/core')) continue;
+    if (statement.source?.value !== '@cossackframework/core') continue;
     for (const specifier of statement.specifiers ?? []) {
       if (specifier.type === 'ImportSpecifier' && specifier.imported?.name) {
         aliases.set(specifier.local.name, specifier.imported.name);
@@ -156,21 +161,23 @@ export async function extractMethodClassificationsFromAst(code) {
     }
   }
   const methods = [];
-  walk(program, node => {
-    if (node.type !== 'MethodDefinition' && node.type !== 'PropertyDefinition') return;
+  const selected = pageClass(program, code);
+  if (!selected) return { methods: [], reason: 'No @Page class found; method classification is unavailable.' };
+  for (const node of selected.cls.body.body) {
+    if (node.type !== 'MethodDefinition' && node.type !== 'PropertyDefinition') continue;
     const decorators = node.decorators ?? [];
-    if (!decorators.length) return;
+    if (!decorators.length) continue;
     const names = decorators
       .map(decorator => {
         const expression = decorator.expression?.type === 'CallExpression' ? decorator.expression.callee : decorator.expression;
         return expression?.type === 'Identifier' ? (aliases.get(expression.name) ?? expression.name) : null;
       })
       .filter(Boolean);
-    const kind = names.includes('Server') ? 'server'
-      : names.includes('Client') ? 'client'
-      : names.includes('Shared') ? 'shared'
+    const kind = names.includes('Shared') ? 'shared'
+      : names.some(n => ['Client', 'ClientTask', 'Optimistic', 'Computed', 'On', 'OnEvent', 'OnWindow', 'OnDocument', 'PreventNavigation', 'Validate', 'VisibleTask', 'Task'].includes(n)) ? 'client'
+      : names.includes('Server') ? 'server'
       : null;
-    if (!kind) return;
+    if (!kind) continue;
     const key = node.key?.type === 'Identifier' ? node.key.name
       : node.key?.type === 'Literal' ? String(node.key.value) : '(computed)';
     methods.push({
@@ -179,10 +186,10 @@ export async function extractMethodClassificationsFromAst(code) {
       reason: kind === 'server'
         ? '@Server() methods execute on the server; the client calls an RPC proxy.'
         : kind === 'client'
-          ? '@Client() methods execute in the browser only.'
+          ? 'A client-safe decorator preserves this method in the browser instead of installing a server proxy.'
           : '@Shared() methods execute on both sides without transport.',
       line: lineNumberAt(code, node.start),
     });
-  });
-  return { methods };
+  }
+  return { methods, reason: 'Decorated methods only; automatic RPC and transitive preservation require compiler metadata.' };
 }

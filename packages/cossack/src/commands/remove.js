@@ -36,16 +36,17 @@ async function removeCommandInner(args, ctx) {
       force: ctx.force,
       dryRun: ctx.dryRun,
       yes: ctx.flags.yes === true || ctx.flags.y === true,
-      interactive: ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
+      interactive: ctx.flags.json !== true && Boolean(process.stdin.isTTY) &&
+        ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
     });
 
     if (result.status === 'absent') {
       ctx.out.line(`  absent   ${feature} is not installed`);
-      return 0;
+      return ctx.out.data({ feature, status: result.status });
     }
     if (result.status === 'cancelled') {
       ctx.out.line('Cancelled. No files were changed.');
-      return 0;
+      return ctx.out.data({ feature, status: result.status });
     }
 
     for (const change of result.changes.writes) {
@@ -53,7 +54,7 @@ async function removeCommandInner(args, ctx) {
         path.join(root, change.path));
     }
     for (const change of result.changes.deletes) {
-      ctx.out.file('deleted', path.join(root, change.path));
+      ctx.out.file(result.status === 'dry-run' ? 'planned-delete' : 'deleted', path.join(root, change.path));
     }
     ctx.out.line(
       `${result.status === 'dry-run' ? 'Would apply' : 'Applied'} ` +
@@ -68,8 +69,7 @@ async function removeCommandInner(args, ctx) {
       resolvedFeatures: result.recipe.resolvedFeatures });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
-    console.error(`  error   ${error.message}`);
-    return 1;
+    throw Object.assign(error, { code: error.code ?? 'COSSACK_FEATURE_REMOVE_FAILED' });
   }
 }
 

@@ -2,12 +2,16 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest handoff — Codex review (2026-10-02):** read the
-> [Codex findings, fixes, and continuation instructions](./release-0.9.0.md#codex-review-2026-10-02)
-> before starting the next phase. The seven GLM commits through `e6b7153` were
-> reviewed and regression fixes were added. CLI-02, CLI-03, and RT-12 are reopened;
-> **8/58 tasks remain checked**. Start with the six concrete continuation tasks
-> in that review, then resume the detailed 58-task plan. The older distributed
+> **Latest handoff — Codex Group 3 review (2026-10-02):** read the
+> [Codex findings, fixes, and continuation instructions](./release-0.9.0.md#codex-review-group3-2026-10-02)
+> before starting the next phase. The 13 GLM commits through `fac3daf` were
+> reviewed after Codex checkpoint `59fa58e`. CLI-02 and CLI-03 are reopened;
+> RT-12 and the new Group 3 tasks remain partial. **8/58 tasks are checked**.
+> Build, type checks, bundle audit, and 2,288 unit tests pass. Browser checks
+> reproduce a Vite/Miniflare WebSocket upgrade crash with both one and two
+> workers; resolve that integration failure before claiming browser acceptance.
+> Start with the seven continuation steps in that review, then resume the
+> detailed 58-task plan. The older distributed
 > SSE prototype instructions below describe the original checkpoint and are
 > superseded by the GLM implementation and Codex fixes.
 

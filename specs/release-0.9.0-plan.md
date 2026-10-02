@@ -10,6 +10,11 @@ Read this document with [the handoff](./handoff-0.9.0.md),
 The checklist records scope and completion. This plan explains the work.
 The handoff records the exact stopping point and commands that passed.
 
+The latest [Codex Group 3 review](./release-0.9.0.md#codex-review-group3-2026-10-02)
+records corrections to GLM's implementations and the next seven continuation
+steps. This plan preserves the original task intent; use the review and task
+checkboxes for current completion status.
+
 This is an expansion of the original review intent preserved in those files.
 It is not a verbatim transcript of every earlier discussion. Some API shapes
 were not settled. Sections called Approach describe proposed implementation

@@ -11,9 +11,9 @@ below link directly to those explanations.
 ## CLI and agent tooling
 
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. GLM (2026-10-02): `CommandSpec` validates declared flag types, aliases, repeat rules, positionals, and forwarding boundaries before any effect, with supported alternatives in diagnostics; value flags reject flag-like/missing values instead of silent boolean coercion; coverage includes unit and real-binary subprocess suites (aliases, repeats, `--`, explicit false, flag-like values, conflicts). Codex review fixes (typed validation, repeated single-value options, `f`/`h` aliases) incorporated.
-- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. GLM (2026-10-02): one coherent contract — exactly one envelope on stdout under `--json` with structured effect data (planned paths for dry runs), coded failures (never numeric-only), captured build/ssg output, `COSSACK_JSON_UNSUPPORTED` for long-running `dev`/`start`, documented noninteractive flags and exit codes; 17 real-binary subprocess tests across every command family, including the review acceptance example (`generate component X --dry-run --json` = one envelope, no writes). Codex review fixes (dispatch JSON for lifecycle commands, single envelope) incorporated.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. GLM (2026-10-02): `cossack inspect routes [route]` explains effective behavior with reasons and source locations using AST-extracted @Page options (nested objects/comments/aliases handled, dynamic options unknown with a reason, regex fallback labeled), single envelope through CommandSpec; remaining: method classification reasons (server/client proxy decisions) from the compiler model and scaffold-recipe awareness.
+- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex Group 3 review (2026-10-02): reopened. CommandSpec validates types, aliases, repeats, and positional counts; this review fixes inspect route arity. Remaining: command-specific conflicts and incompatible targets, canonical alias conflict handling, and parser/help generation from the same command metadata. See the latest Codex review below.
+- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex Group 3 review (2026-10-02): reopened. This review fixes duplicate inspect envelopes, empty handler results, numeric failure diagnostics, add/remove noninteractive output, and delete planning/results. Remaining: adapter, upgrade, image, and Studio still have human-printing or prompt/process paths under --json. The original 17 subprocess tests did not cover every command family.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Remaining: consume compiler classification (automatic RPC, transitive preservation, inheritance) and scaffold recipes instead of a separate syntax scanner.
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -21,18 +21,18 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM (2026-10-02): WebSocket and explicit service RPC now use the shared request-scoped contract (correlated frames, cancellation, `@Server({ timeout })` deadlines with uncertain-outcome semantics, RpcError taxonomy, generator streaming for service RPC) with a conformance suite; serialization failures name the offending value path (`describeUnsupportedValue`, pre-dispatch rejection so silently-dropped functions become errors); the client transform rewrites @Server signatures to `RpcCall<R, Y>` for precise yielded/final result typing; remaining: upload walker normalization audit (Maps/Sets at the HTTP upload boundary) and Response cookie/flash coordination with RT-11.
-- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
-- [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
-- [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
-- [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. GLM implemented correlated calls, deadlines, cancellation, service streams, and raw upload argument validation. Codex Group 3 review fixes nested generic parsing, invalid async/generator modifiers, duplicate RpcCall imports, overlapping field replacements, and validation error propagation. Remaining: actual authored-client/IDE type inference and semantic type tests (a Vite text rewrite alone does not provide these), generator/function-field coverage, and Response cookie/flash coordination with RT-11.
+- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
+- [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
+- [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
+- [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex Group 3 review: AbortSignal cancellation, ordered cleanup across rapid changes, skipped canceled starts, and late cleanup disposal are covered. Cancellation is cooperative: tasks must check the signal before writes. Remaining: typed dependency paths, framework-gated result application, and navigation/service-disposal acceptance tests.
 - [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
-- [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
+- [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation.
-- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM (2026-10-02): resolution failures name the service, requester, and scope-chain ancestry with per-layout declarations; service ownership visible through `cossack inspect routes` (layouts' declared services and per-page injectable ancestry); service RPC awaits scoped disposal matching component RPC; request-facility isolation, single layout cleanup, and independent hook failures covered by existing core suites. specs/service.md documents global vs layout vs request ownership. Codex review (2026-10-02): reopened. SSR and RPC disposal fixes pass regression tests, but regex inspection does not prove actual service ownership for all valid declarations. Finish compiler-backed ownership inspection and navigation lifetime verification.
+- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
 - [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -87,7 +87,163 @@ Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
 
-<a id="codex-review-2026-10-02"></a>
+<a id="codex-review-group3-2026-10-02"></a>
+### Codex review of GLM command-contract follow-up and Group 3 (2026-10-02)
+
+**Reviewer: Codex.** Reviewed all 13 GLM commits from `11f1499` through
+`fac3daf`, after the previous Codex checkpoint `59fa58e`. This section is the
+current handoff. Earlier GLM verification logs record what was claimed at those
+checkpoints; this acceptance audit supersedes their completion claims.
+
+**Task audit: 8/58 checked.** CLI-02 and CLI-03 are reopened. No new Group 3
+task meets all of its detailed acceptance criteria yet. Completed slices are
+recorded below, and the task rows name the remaining work. Keep the eight
+previously accepted tasks checked: CLI-01, RT-19, CF-03, CF-05, CF-06, CF-07,
+CF-11, and REL-01. Versions remain 0.8.3 until REL-04.
+
+#### Findings fixed
+
+1. **Validation errors and ownership.** WebSocket validation previously became
+   a generic client error; JSON/stream proxies discarded field errors. Forwarded
+   service contracts used the page constructor and could skip their service's
+   rules. All now retain the stable validation code and fieldErrors, using the
+   declaring service class. WebSocket dispatch accepts only unchanged
+   framework-installed forwarders and retains the action allowlist. A canceled
+   action stops after asynchronous validation before calling the mutation.
+   Non-array payloads and array inputs fail validation.
+2. **Client validation-code exposure.** Server input rules remained in client
+   decorators, including custom validator closures. The client transform now
+   removes input rules before dependency analysis. Static option objects are
+   required; spreads and dynamic options fail closed. Timeout/provider metadata
+   remains available. This is an alpha API constraint, documented in validation.
+3. **Resource refresh races.** Refresh called loaders without their dependency
+   arguments and let an older refresh overwrite a newer value. It also skipped
+   serialization/disposal checks and mishandled synchronous failures. Initial
+   load and refresh now share one loader path and each refresh owns a separate
+   entry. Stale results do not publish, dependency arguments are captured, and
+   falsey rejection reasons still represent errors.
+4. **Task cleanup.** Rapid changes could start a task before its previous async
+   cleanup finished; a canceled run could start after waiting for cleanup.
+   Cleanup returned by late async setup was dropped. Cleanup barriers now remain
+   visible across reruns, canceled starts are skipped, late cleanups run once,
+   and thenables are awaited. Arbitrary writes inside task bodies are still
+   cooperative; the documentation now requires an AbortSignal check.
+5. **Development state identity.** Each read created a different proxy, and
+   warning changed later reads back to the raw object. Deeper nested writes
+   escaped diagnosis. Proxies are cached per field/object, recursive reads keep
+   stable identity, reassignment unwraps diagnostic proxies, and the diagnostic
+   runs only when DEV is true.
+6. **Compiler projection.** Regex generic parsing mixed yield/return/next types.
+   Async/generator modifiers were left on RpcCall signatures, imports could
+   collide, and function-field replacements overlapped annotation splices.
+   Parsing now uses the TypeScript AST, proxy signatures remove the modifiers,
+   existing RpcCall aliases are reused, and field replacements do not overlap.
+   Function fields retain their current stub signatures; their complete client
+   typing remains open. Rewriting Vite input does not change authored-source
+   TypeScript/IDE inference.
+7. **Inspection accuracy.** Spreads, dynamic properties, and recovered invalid
+   syntax were presented as static facts or silently replaced with regex guesses.
+   Methods from helper classes could be attributed to the page. Inspection now
+   selects the exported Page class, reports unresolved options as unknown,
+   supports quoted keys/SSG objects/service member names, and honors local/shared
+   decorator precedence. Method extraction explicitly describes its syntactic
+   scope and its missing compiler analysis.
+8. **CLI results.** Unknown route inspection emitted two envelopes and accepted
+   an extra ignored route argument. Empty results emitted no envelope, while
+   numeric failures had no diagnostic. These are fixed. Add/remove keep status
+   data and avoid prompts under JSON/non-TTY execution; delete has structured
+   planned-delete/deleted effects and a coded missing-file failure. Dry-run
+   deletions are labeled as plans.
+9. **Navigation.** Guard errors escaped the typed result, public callbacks
+   discarded results, URLs lost query/fragment or used the pre-redirect path,
+   and a slow bootstrap could finish after a newer commit. Public component
+   navigation and the client-app return value now expose outcomes; fetch keeps
+   its effective URL; guard failures settle; superseded errors do not reload;
+   DOM commits are ordered with sequence checks. Missing modules fail rather
+   than report success. Six behavioral tests replace the prior sample-object
+   tests. Renamed the demo layout's sidebar handler to avoid overriding the new
+   public navigate method.
+
+#### Verification
+
+Focused tests first reproduced seven failures in the new core regressions.
+The following checks pass on the reviewed implementation:
+
+- `pnpm build`.
+- `pnpm tsc --noEmit` and `pnpm typecheck` (all 11 TypeScript package configs).
+- `pnpm test:unit`: **2,288 passing tests across 13 packages** — auth 118,
+  database 84, renderer 256, scaffold 82, core 669, node-adapter 10,
+  test-utils 8, UI 112, CLI 317, framework 561, deno-adapter 3, desktop 16,
+  Studio 52. Package tests remain serial because framework pretest recreates
+  dist exports used by CLI tests.
+- Focused final CLI subprocess/AST/inspection run: 55 passing tests after
+  improving child-process tracking and removing the unused AST walker.
+- `pnpm audit:bundle`: 28 neutral modules; Cloudflare entry is Workers-safe.
+- `git diff --check -- docs packages specs`.
+
+Browser verification is **not green**. The existing navigation, prevention,
+and view-transition suites were attempted with Playwright (`--workers=2`):
+3/24 passed, then the Vite/Miniflare development server crashed during a
+WebSocket upgrade. Miniflare's `#handleLoopback` asserts that its HTTP response
+exists for `CUSTOM_NODE_SERVICE`, but `#handleLoopbackUpgrade` calls it without
+that response. The remaining 21 tests could not connect to the dead server.
+This is a concrete dev/runtime integration failure to resolve under CF-10
+and REL-03 before treating browser acceptance as verified. Retrying the same
+three files with `--workers=1` reproduces the assertion: 2/24 pass and the
+remaining 22 cannot connect. The exact commands use
+`pnpm --filter @cossackframework/framework exec playwright test`
+with `e2e/core-features/navigation.spec.ts`,
+`e2e/pages/prevent-navigation.spec.ts`, and
+`e2e/pages/view-transitions.spec.ts`, followed by `--reporter=line` and the
+worker option. Do not report these suites as passing or suppress the assertion.
+No remote deployment was attempted.
+
+#### GLM continuation — concrete next work
+
+1. **Finish CLI-02/CLI-03 before closing them.** Convert adapter, upgrade, image,
+   and Studio to structured results or an explicit unsupported JSON boundary.
+   Add subprocess success, failure, dry-run, non-TTY, and prompt-cancellation
+   coverage for every family. Include conflicts between aliases and incompatible
+   targets; derive parsing/help from command metadata. The original 17 tests
+   did not cover every family. Preserve the single-envelope regressions.
+2. **Provide actual client type inference (RT-01), then typed targets
+   (RT-03/RT-05).** Decide how authored client code sees RpcCall without changing
+   the server implementation signature. Generated declarations/client views or
+   an editor/compiler integration need semantic type tests, including inferred
+   returns, nested generics, aliases, generators, and function fields. A string
+   assertion about transformed source is not an inference test.
+3. **Finish RT-02 with RT-14.** Infer the server input from rules/schema, settle
+   unknown keys and file/array handling, and enforce resource policies before
+   mutation. Test forged requests and nested field errors through browser and
+   direct transport calls. Keep validation code out of client bundles.
+4. **Finish RT-03/RT-04/RT-05 acceptance.** Add typed resource names/results and
+   typed task dependencies. Add a result-application mechanism for stale work,
+   or make the explicit cooperative contract the reviewed design and revise the
+   acceptance criteria deliberately. Test disposal during setup, rejection of
+   async cleanup, SSR/hydration deduplication, nested arrays, cycles, computed
+   dependencies, and production semantics.
+5. **Finish navigation and ownership together (RT-09/RT-12).** Ordered commits
+   prevent late overwrites, but a bootstrap that never resolves can still block
+   later navigation. First resolve the reproduced Vite/Miniflare WebSocket
+   upgrade crash (CF-10/REL-03) and establish a working browser baseline.
+   Add cancellation/bounded completion and the Playwright
+   matrix for guards, rapid clicks, back/forward, fragments, reused layouts,
+   failures, redirects, transition fallback, and service/child disposal. Emit
+   the planned cache/layout/scroll diagnostics. Current tests run real
+   navigation logic with controlled component lifecycle fixtures in jsdom;
+   they do not prove the full renderer/browser matrix.
+6. **Unify inspection (CLI-04/RT-07/RT-12).** Expose compiler metadata for
+   automatic RPC, transitive client preservation, inheritance, effective
+   middleware, and actual service ownership. Keep dynamic facts unknown until
+   the shared model can resolve them. Add scaffold-recipe awareness and typed
+   routes/API schemas.
+7. Resume the remaining groups in the detailed plan after these foundations.
+   Update task rows and append a new GLM verification section. Do not place a
+   new section between an existing Codex anchor and its heading.
+
+Preserve the user's uncommitted `reports.md` and untracked `.zcodeignore`.
+This review does not publish, deploy, push, or start another agent/chat.
+
 ### GLM continuation: compiler typing of RPC results (2026-10-02)
 
 Review item 3 (typing): the vite-security-plugin client transform rewrites
@@ -153,6 +309,7 @@ Completed review items 1 and 2:
   `{ method, reason }` per page and layout.
 - `pnpm --filter cossack exec vitest run`: 312 tests green.
 
+<a id="codex-review-2026-10-02"></a>
 ### Codex review of GLM Groups 1–2 (2026-10-02)
 
 **Reviewer: Codex.** Reviewed the seven GLM commits from `937843d` through

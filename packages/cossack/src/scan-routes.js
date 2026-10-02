@@ -240,11 +240,12 @@ export async function buildEffectiveRouteModel(projectRoot) {
           decoratorLine: ast.decoratorLine ?? null };
         method = 'ast';
       } else {
-        options = extractPageOptions(source);
+        method = 'unknown';
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
-      methods = await extractMethodClassificationsFromAst(source);
+      methods = await extractMethodClassificationsFromAst(source) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
     } catch { /* unreadable source keeps null options; the route still lists */
+      method = 'unknown';
       reason = 'The page source could not be read.';
     }
     pages.push({
@@ -260,6 +261,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
       services: options.services,
       serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
       clientMethods: methods.methods?.filter(entry => entry.kind !== 'server') ?? [],
+      methodExtraction: { method: 'syntax', reason: methods.reason ?? null },
       extraction: { method, reason },
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine
@@ -286,10 +288,13 @@ export async function buildEffectiveRouteModel(projectRoot) {
           decoratorLine: ast.decoratorLine ?? null };
         method = 'ast';
       } else {
-        options = extractPageOptions(source);
+        method = 'unknown';
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
-    } catch { /* keep defaults */ }
+    } catch {
+      method = 'unknown';
+      reason = 'The layout source could not be read.';
+    }
     layouts.push({
       ...layout,
       services: options.services,
