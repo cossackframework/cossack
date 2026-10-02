@@ -77,6 +77,43 @@ annotation has an `unknown` final result because that annotation does not
 describe completion. Prefer an inferred return or `AsyncGenerator<Yield, Result>`
 when callers need a precise final result.
 
+Client results use `RpcSerialized<T>`, the value's JSON representation. The same
+conversion applies to generator yields, arguments, and public RPC state. It does
+not restore native prototypes in the browser.
+
+| Server value | Wire value / client type |
+| --- | --- |
+| String, boolean, null, finite number | The JSON primitive. |
+| Valid `Date` | ISO timestamp string. |
+| Object field with `undefined` | Omitted. An optional field can read as undefined. |
+| Undefined array entry or hole | Null. |
+| Top-level void or undefined completion | Undefined completion. |
+| Data/model instance | Own enumerable fields as a plain object; prototype methods are absent. |
+| Object with `toJSON()` | Its validated JSON representation, evaluated once per value location. |
+| Non-finite number, invalid Date, binary/native opaque value | `COSSACK_RPC_SERIALIZATION_FAILED` with its path. |
+
+For example, `rpc$(this.loadRecord())` maps a native
+`{ createdAt: Date }` result to `{ createdAt: string }`. Parse that string
+explicitly when a client needs a Date object. Model methods such as `save()` do
+not cross the wire. Use an explicit data object or a typed `toJSON()` method for
+class contracts; data fields must be own enumerable properties. TypeScript
+visibility modifiers do not control JSON enumeration.
+
+The snapshot validates custom JSON output too, including nested values, cycles,
+and throwing hooks/getters. Root result hooks receive an empty key on all
+transports; nested hooks receive their property name or array index. Recursion is
+limited to 256 levels. Shared references are copied, while actual cycles reject.
+Maps, Sets, weak collections, functions, symbols, bigints, RegExp, Errors, nested
+Promises, raw buffers/views, Blob/File results, and nested HTTP objects are not
+JSON data. Convert them to explicit data or use the appropriate HTTP endpoint.
+
+Method parameter types remain authored types. Declare JSON action inputs using
+the representation the server receives, such as an ISO string for a timestamp.
+HTTP/SSE component calls retain their separate File upload handling; files are
+not ordinary JSON. Service/WebSocket JSON calls reject binary values before
+dispatch. Ordinary multipart results use the same JSON snapshot and diagnostics.
+This contract does not imply multipart generator or nested-file parity.
+
 A method returning a native `Response` has an `unknown` client result. The
 HTTP/SSE transport handles responses and redirects; it does not transfer a native
 `Response` instance to the browser. Return a typed data value when a client

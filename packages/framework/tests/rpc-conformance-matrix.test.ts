@@ -12,7 +12,7 @@ import { computeRouteIds } from '../src/route-ids';
 
 const { registry, effects } = vi.hoisted(() => ({
     registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
-    effects: { runs: 0, streamsClosed: 0, disposed: 0 },
+    effects: { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0 },
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
@@ -21,10 +21,21 @@ vi.mock('virtual:cossack-config', () => ({ default: {} }));
 // Finite application I/O lets teardown prove eventual remote cleanup even when
 // a caller has already timed out/disconnected. Cancellation is not rollback.
 const pause = () => new Promise<void>(resolve => setTimeout(resolve, 160));
+class DataModel { id = 7; when = new Date('2026-10-03'); save() { throw new Error('never called'); } }
+class JsonRecord { toJSON() { effects.jsonCalls++; return { when: new Date('2026-10-03'), title: 'serialized' }; } }
+const wireData = () => ({ when: new Date('2026-10-03'), model: new DataModel(), custom: new JsonRecord(), absent: undefined, list: [undefined, null] });
+const expectedWireData = { when: '2026-10-03T00:00:00.000Z', model: { id: 7, when: '2026-10-03T00:00:00.000Z' }, custom: { when: '2026-10-03T00:00:00.000Z', title: 'serialized' }, list: [null, null] };
+const lossyValues = [NaN, new Date('invalid'), new Uint8Array([1]), { toJSON() { return { callback() {} }; } }];
 function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
     abstract class Actions extends Base {
         constructor(...args: any[]) { super(...args); }
         @State() count = 0;
+        @Server() async echo(value: unknown) { effects.runs++; return value; }
+        @Server() async structured() { effects.runs++; return wireData(); }
+        @Server() rootJson() { return { toJSON(key: string) { return { key }; } }; }
+        @Server() async *rootJsonStream() { yield this.rootJson(); return this.rootJson(); }
+        @Server() async *structuredStream() { yield wireData(); return wireData(); }
+        @Server() async lossy(index: number) { effects.runs++; return { invalid: lossyValues[index] }; }
         @Server() async ordinary(delta: number) { effects.runs++; this.count += delta; return { count: this.count }; }
         @Server() async *stream() {
             effects.runs++;
@@ -191,12 +202,46 @@ async function harness(transport: Transport) {
 describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC conformance', transport => {
     let wire: Awaited<ReturnType<typeof harness>>;
     beforeEach(async () => {
-        Object.assign(effects, { runs: 0, streamsClosed: 0, disposed: 0 });
+        Object.assign(effects, { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0 });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         wire = await harness(transport);
     });
     afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
     const settled = () => { expect(wire.client.loading).toEqual({}); expect(wire.pendingCalls()).toBe(0); };
+
+    it('returns normalized dates, model fields, custom JSON, and optional/array values', async () => {
+        expect(await wire.target.structured()).toEqual(expectedWireData);
+        expect(effects.jsonCalls).toBe(1); settled();
+    });
+    it('normalizes yielded and terminal data independently with one hook invocation per value', async () => {
+        const call = rpc$(wire.target.structuredStream()); const values = [];
+        for await (const value of call) values.push(value);
+        expect(values).toEqual([expectedWireData]); expect(await call).toEqual(expectedWireData);
+        expect(effects.jsonCalls).toBe(2); settled();
+    });
+    it('normalizes client payloads before dispatch without invoking hooks twice', async () => {
+        expect(await wire.target.echo(wireData())).toEqual(expectedWireData);
+        expect(effects.jsonCalls).toBe(1); expect(wire.requests[0].payload).toEqual([expectedWireData]); settled();
+    });
+    it('preserves an own __proto__ field as payload data through upload extraction and JSON encoding', async () => {
+        const value = JSON.parse('{"__proto__":{"label":"data"}}');
+        expect(await wire.target.echo(value)).toEqual(value);
+        expect(Object.hasOwn(wire.requests[0].payload[0], '__proto__')).toBe(true); settled();
+    });
+    it('uses the same root toJSON key for ordinary, yielded, and terminal results', async () => {
+        expect(await wire.target.rootJson()).toEqual({ key: '' });
+        const call = rpc$(wire.target.rootJsonStream()); const values = [];
+        for await (const value of call) values.push(value);
+        expect(values).toEqual([{ key: '' }]); expect(await call).toEqual({ key: '' }); settled();
+    });
+    it.each(lossyValues.map((_, index) => index))('rejects lossy result %s instead of changing or dropping it', async index => {
+        await expect(Promise.resolve(wire.target.lossy(index))).rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED', requestId: expect.any(String), message: expect.stringContaining('value.invalid') });
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it.each(lossyValues)('rejects lossy argument %s before mutation', async value => {
+        await expect(Promise.resolve(wire.target.echo(value))).rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: expect.stringContaining('payload[0]') });
+        expect(wire.requests).toHaveLength(0); expect(effects.runs).toBe(0); settled();
+    });
 
     it('returns ordinary data without yields and repeated awaits never redispatch', async () => {
         const call = rpc$(wire.target.ordinary(3));
@@ -298,5 +343,35 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         wire.disconnect();
         await expect(iterator.next()).rejects.toMatchObject({ code: transport === 'websocket' ? 'COSSACK_RPC_TRANSPORT_CLOSED' : 'COSSACK_RPC_NETWORK_FAILED', message: expect.stringContaining('unknown'), requestId: expect.any(String) });
         await expect(call).rejects.toBeDefined(); expect(wire.requests).toHaveLength(1); settled();
+    });
+});
+
+describe('multipart upload JSON values', () => {
+    afterEach(() => vi.restoreAllMocks());
+    const upload = (action: string, payload: unknown[] = []) => {
+        const body = new FormData();
+        body.set('componentRouteId', ids.routePathToIdMap.get(httpPath)!);
+        body.set('action', action); body.set('payload', JSON.stringify(payload));
+        body.set('file_test', new Blob(['hello']), 'test.txt');
+        return createApp().request('/upload', { method: 'POST', body, headers: { Origin: 'http://localhost' } }, { APP_URL: 'http://localhost' } as any);
+    };
+    it('normalizes native JSON data and invokes hooks once on ordinary results', async () => {
+        effects.jsonCalls = 0;
+        const response = await upload('structured');
+        expect(response.status).toBe(200); expect(response.headers.get('X-Cossack-Request-Id')).toBeTruthy();
+        expect(await response.json()).toMatchObject({ _cossack_return: expectedWireData });
+        expect(effects.jsonCalls).toBe(1);
+    });
+    it.each([0, 1, 2, 3])('rejects lossy upload result %s with a correlated path', async index => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const response = await upload('lossy', [index]);
+        expect(response.status).toBe(500);
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            requestId: response.headers.get('X-Cossack-Request-Id'), error: expect.stringContaining('value.invalid') });
+    });
+    it('keeps private upload exceptions in server logs even in development', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const response = await upload('internal');
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', error: 'Internal Server Error' });
     });
 });

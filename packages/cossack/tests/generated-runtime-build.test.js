@@ -181,6 +181,10 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
         return { amount, marker };
       };
       @Server() async ordinary(amount: number) { return { amount }; }
+      @Server() async *serialized() {
+        yield { when: new Date('2026-10-03'), list: [undefined] };
+        return { toJSON() { return { when: new Date('2026-10-03'), count: 3 }; } };
+      }
       @Client() async run() {
         this.pending = true; this.failure = ''; this.output = '';
         try {
@@ -199,7 +203,10 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
           const ordinary = rpc$(this.ordinary(7));
           for await (const value of ordinary) values.push('unexpected ordinary yield:' + value);
           const fourth = await ordinary;
-          this.output = values.join(',') + '|done:' + [first.total, second.amount, third.length, fourth.amount].join('/');
+          const serialized = rpc$(this.serialized());
+          for await (const value of serialized) values.push('wire:' + value.when.split('T')[0] + '/' + String(value.list[0]));
+          const fifth = await serialized;
+          this.output = values.join(',') + '|done:' + [first.total, second.amount, third.length, fourth.amount, fifth.count].join('/');
         } catch (error) { this.failure = error instanceof Error ? error.message : 'RPC failed'; }
         finally { this.pending = false; }
       }
@@ -231,9 +238,9 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       await page.goto(server.origin + '/rpc/' + transport);
       await browserExpect(page.getByRole('heading', { name: 'Typed ' + transport + ' RPC' })).toBeVisible();
       await page.getByRole('button', { name: 'Run', exact: true }).click();
-      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report|done:2/3/6/7');
+      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report,wire:2026-10-03/null|done:2/3/6/7/3');
       await browserExpect(page.getByRole('alert')).toHaveText('');
-      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary']);
+      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized']);
       expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
       expect(errors).toEqual([]);
       await page.close();

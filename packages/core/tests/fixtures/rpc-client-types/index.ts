@@ -1,8 +1,14 @@
 // Compile the authored source against the published entry, without Vite.
-import { Client, Cossack, CossackService, Server, Service, rpc$, type RpcCall, type RpcYield } from '@cossackframework/core';
+import { Client, Cossack, CossackService, Server, Service, rpc$, type RpcCall, type RpcYield, type RpcSerialized } from '@cossackframework/core';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
+type OptionalHook = Assert<Equal<RpcSerialized<{ id: number; toJSON?: () => { formatted: string } }>, { id: number } | { formatted: string }>>;
+type UnknownResult = Assert<Equal<RpcSerialized<unknown>, unknown>>;
+type AnyResult = Assert<Equal<RpcSerialized<any>, any>>;
+type UnsupportedSymbol = Assert<Equal<RpcSerialized<symbol>, never>>;
+class SelfRecord { id = 1; toJSON() { return this; } }
+type SelfHook = Assert<Equal<RpcSerialized<SelfRecord>, { id: number }>>;
 
 class BasePage extends Cossack {
   @Server()
@@ -12,7 +18,21 @@ class BasePage extends Cossack {
   }
 }
 
+class RecordModel {
+  id = 7;
+  createdAt = new Date();
+  save() { return Promise.resolve(this); }
+}
+class JsonRecord {
+  secret = 'not transferred';
+  toJSON() { return { when: new Date(), id: 1 }; }
+}
+
 class ClientPage extends BasePage {
+  @Server() structured() { return { when: new Date(), list: [new Date(), undefined] as [Date, undefined], absent: undefined }; }
+  @Server() model() { return new RecordModel(); }
+  @Server() customJson() { return new JsonRecord(); }
+  @Server() async *dates() { yield { when: new Date() }; return new Date(); }
   @Server()
   sync(id: string) { return { id }; }
 
@@ -45,6 +65,21 @@ class ClientPage extends BasePage {
 
   @Client()
   async consumeResults() {
+    const structured = rpc$(this.structured());
+    type StructuredResult = Assert<Equal<Awaited<typeof structured>, { when: string; list: [string, null] }>>;
+    const model = rpc$(this.model());
+    type ModelResult = Assert<Equal<Awaited<typeof model>, { id: number; createdAt: string }>>;
+    const json = rpc$(this.customJson());
+    type JsonResult = Assert<Equal<Awaited<typeof json>, { when: string; id: number }>>;
+    const dates = rpc$(this.dates());
+    type DateResult = Assert<Equal<Awaited<typeof dates>, string>>;
+    type DateYield = Assert<Equal<RpcYield<typeof dates>, { when: string }>>;
+    // @ts-expect-error JSON dates have no native Date methods.
+    (await structured).when.getTime();
+    // @ts-expect-error Model prototype methods do not cross the wire.
+    (await model).save();
+    // @ts-expect-error Custom JSON fields replace native fields.
+    (await json).secret;
     const call = rpc$(this.inferred(3));
     const typed: RpcCall<{ total: number }, { step: number; nested: { label: string }[] }> = call;
     type Result = Assert<Equal<Awaited<typeof call>, { total: number }>>;

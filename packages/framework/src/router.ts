@@ -9,7 +9,7 @@ import {
   createInstance,
   createLayoutServiceScope,
   createRootServiceScope,
-  describeUnsupportedValue,
+  snapshotRpcValue,
   RpcError,
   getServiceState,
   isOriginAllowed,
@@ -34,10 +34,8 @@ function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
   return serviceClass !== undefined && isRpcCallableAction(serviceClass, action);
 }
 
-function assertSerializableRpcResult(value: unknown, state: unknown): void {
-  const unsupported = describeUnsupportedValue(value, 'value') ?? describeUnsupportedValue(state, 'state');
-  if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-    `Cannot serialize RPC result: unsupported value at ${unsupported}.`);
+function serializeRpcResult(value: unknown, state: unknown) {
+  return { value: snapshotRpcValue(value, 'value'), state: snapshotRpcValue(state, 'state') };
 }
 
 /** Preserve action-owned cookies when Hono merges its existing Context response. */
@@ -858,10 +856,10 @@ export function createApp(options: CreateAppOptions = {}) {
           });
         }
         const serviceState = getServiceState(owned.instance);
-        assertSerializableRpcResult(actionResult, serviceState);
+        const serialized = serializeRpcResult(actionResult, serviceState);
         return c.json({
-          _cossack_service_state: serviceState,
-          ...(actionResult !== undefined ? { _cossack_return: actionResult } : {}),
+          _cossack_service_state: serialized.state,
+          ...(serialized.value !== undefined ? { _cossack_return: serialized.value } : {}),
         });
       } catch (error) {
         console.error('[/crpc service] request failed:', { requestId, error });
@@ -1077,15 +1075,15 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // Get the state of the component that was actually modified
         const responseData = targetInstance.getPublicState();
-        assertSerializableRpcResult(actionResult, responseData);
+        const serialized = serializeRpcResult(actionResult, responseData);
         await publishScopeState();
 
         // Non-streaming path: regular method return
-        if (actionResult !== undefined) {
-          (responseData as any)._cossack_return = actionResult;
+        if (serialized.value !== undefined) {
+          (serialized.state as any)._cossack_return = serialized.value;
         }
 
-        return c.json(responseData);
+        return c.json(serialized.state as Record<string, unknown>);
       } catch (error) {
         // Unexpected framework failures (construction, DI, serialization) still
         // produce one JSON RPC error on both backends.

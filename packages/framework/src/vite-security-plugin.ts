@@ -1600,11 +1600,12 @@ export function clientCallType(method: {
   const type = parseProgram(source)?.body[0]?.typeAnnotation;
   if (type?.type !== 'TSTypeReference' || type.typeName?.type !== 'Identifier') return undefined;
   const args = (type.typeArguments?.params ?? []).map((node: any) => sourceSlice(source, node));
+  const clientType = () => `RpcCall<import('@cossackframework/core').RpcResult<${text}>, import('@cossackframework/core').RpcYield<${text}>>`;
   if (type.typeName.name === 'AsyncGenerator' && args.length >= 1 && args.length <= 3) {
-    return `RpcCall<${args[1] ?? 'any'}, ${args[0]}>`;
+    return clientType();
   }
-  if (type.typeName.name === 'AsyncIterableIterator' && args.length === 1) return `RpcCall<any, ${args[0]}>`;
-  if (type.typeName.name === 'Promise' && args.length === 1) return `RpcCall<${args[0]}, never>`;
+  if (type.typeName.name === 'AsyncIterableIterator' && args.length === 1) return clientType();
+  if (type.typeName.name === 'Promise' && args.length === 1) return clientType();
   return undefined;
 }
 
@@ -1697,9 +1698,9 @@ export function transformCossackClass(
       if (preserved.has(m.name)) continue;
 
       // Rewrite the declared return type to the client call contract:
-      // `AsyncGenerator<Y, R>` becomes `RpcCall<R, Y>` and `Promise<R>`
-      // becomes `RpcCall<R, never>`, so client code awaits/iterates the
-      // proxy with precise result types. Methods without an explicit,
+      // Use core's RpcResult/RpcYield so compiler types agree with authored
+      // rpc$ inference and JSON representations (dates, models, custom hooks).
+      // Methods without an explicit,
       // recognized annotation keep their original signature.
       const callType = m.hasServerDecorator && m.fieldValueStart === undefined
         ? clientCallType(m)?.replace(/^RpcCall/, rpcTypeName) : undefined;

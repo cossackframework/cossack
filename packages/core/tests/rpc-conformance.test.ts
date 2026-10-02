@@ -299,6 +299,12 @@ describe('realtime (WebSocket) RPC conformance', () => {
         expect(client.loading).toEqual({});
         expect(sockets.clientSocket.sent.filter((data: string) => JSON.parse(data).type === 'action')).toHaveLength(1);
     });
+    it.each([new Blob(['data']), new File(['data'], 'file.txt')])('rejects binary socket arguments before dispatch instead of dropping them', async value => {
+        await expect(Promise.resolve(client.ordinary(value))).rejects.toMatchObject({ code: 'COSSACK_RPC_SERIALIZATION_FAILED',
+            message: expect.stringContaining('payload[0] (binary value)') });
+        expect(sockets.clientSocket.sent).toEqual([]);
+        expect(server.count).toBe(0); expect(client.loading).toEqual({});
+    });
 
     it('rejects malformed correlated socket frames before applying state', async () => {
         sockets.clientSocket.send = vi.fn();

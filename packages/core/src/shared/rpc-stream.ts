@@ -118,7 +118,32 @@ export interface RpcCall<Result = unknown, Yield = unknown> extends PromiseLike<
 
 // HTTP control-flow responses are handled by the transport, not transferred
 // as Response objects. Their client body/completion is not statically known.
-type RpcClientValue<T> = T extends Response ? unknown : T;
+/** The JSON representation of a server value, without native prototypes. */
+export type RpcSerialized<T> = 0 extends (1 & T) ? any
+    : T extends string | number | boolean | null | undefined | void ? T
+    : T extends symbol | bigint ? never
+    : T extends (...args: any[]) => unknown ? never
+    : T extends Date ? string
+    : T extends Response | Request | Headers | Blob | ArrayBuffer | ArrayBufferView |
+        Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any> | WeakRef<any> |
+        RegExp | Error | PromiseLike<any> | Number | String | Boolean ? never
+    : T extends { toJSON(...args: any[]): infer Value } ? Value extends T
+        ? T extends readonly unknown[] ? RpcSerializedArray<T> : RpcSerializedFields<T>
+        : RpcSerialized<Value>
+    : T extends readonly unknown[] ? RpcSerializedArray<T>
+    : T extends object ? RpcSerializedOptionalHook<T>
+    : T;
+type RpcSerializedArray<T extends readonly unknown[]> = { [K in keyof T]: RpcSerialized<Exclude<T[K], undefined>> | (undefined extends T[K] ? null : never) };
+type RpcSerializedFields<T> = { [K in keyof T as K extends string | number
+        ? Exclude<T[K], undefined> extends (...args: any[]) => unknown ? never : K
+        : never]: RpcSerialized<T[K]> };
+type RpcSerializedOptionalHook<T> = 'toJSON' extends keyof T
+    ? Extract<T['toJSON' & keyof T], (...args: any[]) => unknown> extends infer Hook
+        ? [Hook] extends [never] ? RpcSerializedFields<T>
+            : Hook extends (...args: any[]) => infer Result ? RpcSerializedFields<T> | RpcSerialized<Result> : RpcSerializedFields<T>
+        : RpcSerializedFields<T>
+    : RpcSerializedFields<T>;
+type RpcClientValue<T> = T extends Response ? unknown : RpcSerialized<T>;
 type RpcTerminal<T> = RpcClientValue<Awaited<T>>;
 
 /** Final client result inferred from an authored server method's return type. */
@@ -127,12 +152,12 @@ export type RpcResult<T> = T extends RpcCall<infer Result, any> ? RpcTerminal<Re
     : T extends AsyncIterable<unknown> & AsyncIterator<unknown, infer Result, any> ? RpcTerminal<Result>
     : T extends AsyncIterable<unknown> ? unknown
     : T extends Response ? unknown
-    : T;
+    : RpcSerialized<T>;
 
 /** Client stream values; ordinary server methods have no yielded values. */
-export type RpcYield<T> = T extends RpcCall<any, infer Yield> ? Yield
+export type RpcYield<T> = T extends RpcCall<any, infer Yield> ? RpcSerialized<Yield>
     : T extends PromiseLike<infer Value> ? RpcYield<Value>
-    : T extends AsyncIterable<infer Yield> ? Awaited<Yield>
+    : T extends AsyncIterable<infer Yield> ? RpcSerialized<Awaited<Yield>>
     : never;
 
 const rpcCalls = new WeakSet<object>();
@@ -164,38 +189,99 @@ export function describeUnsupportedValue(
     seen = new WeakSet<object>(),
     options: { handled?: (value: object) => boolean } = {},
 ): string | null {
-    if (value === null || value === undefined) return null;
+    try { snapshotValue(value, path, seen, options, 0, '', true); return null; }
+    catch (error) { if (error instanceof UnsupportedRpcValue) return error.description; throw error; }
+}
+
+class UnsupportedRpcValue extends Error {
+    constructor(readonly description: string) { super(description); }
+}
+
+/** Snapshot once, then stringify this plain value; never evaluate toJSON twice. */
+export function snapshotRpcValue(value: unknown, path = '', options: { handled?: (value: object) => boolean } = {}): unknown {
+    try { return snapshotValue(value, path, new WeakSet(), options, 0, '', true); }
+    catch (cause) {
+        if (!(cause instanceof UnsupportedRpcValue)) throw cause;
+        throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+            `Cannot serialize RPC data: unsupported value at ${cause.description}.`);
+    }
+}
+
+/** Values use a root JSON key on every transport, independent of its envelope. */
+export function snapshotRpcFrame(frame: RpcStreamFrame): unknown {
+    if (frame.type === 'error') return snapshotRpcValue(frame);
+    const metadata = snapshotRpcValue({ ...frame, value: undefined, state: undefined, scopeState: undefined }) as Record<string, unknown>;
+    return { ...metadata, value: snapshotRpcValue(frame.value, 'value'), state: snapshotRpcValue(frame.state, 'state'),
+        ...(frame.scopeState ? { scopeState: snapshotRpcValue(frame.scopeState, 'scopeState') } : {}) };
+}
+
+function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
+    options: { handled?: (value: object) => boolean }, depth: number, key: string, applyToJSON: boolean): unknown {
+    const fail = (reason: string): never => { throw new UnsupportedRpcValue(`${path || '(root)'} (${reason})`); };
+    if (depth > 256) return fail('maximum depth exceeded');
+    if (value === null || value === undefined) return value;
     const type = typeof value;
-    if (type === 'function') return `${path || '(root)'} (function)`;
-    if (type === 'symbol') return `${path || '(root)'} (symbol)`;
-    if (type === 'bigint') return `${path || '(root)'} (bigint)`;
-    if (type !== 'object') return null;
-    if (options.handled?.(value as object)) return null; // transport handles it specially
-    if (value instanceof Response || value instanceof Request || value instanceof Headers) {
-        return `${path || '(root)'} (${value instanceof Response ? 'Response' : value instanceof Request ? 'Request' : 'Headers'})`;
+    if (type === 'number') return Number.isFinite(value) ? value : fail('non-finite number');
+    if (type === 'string' || type === 'boolean') return value;
+    if (type !== 'object') return fail(type);
+    const object = value as Record<string, unknown>;
+    if (options.handled?.(object)) return value;
+    if (seen.has(object)) return fail('cyclic reference');
+    if (value instanceof Date) {
+        if (!Number.isFinite(Date.prototype.getTime.call(value))) return fail('invalid Date');
+        return Date.prototype.toISOString.call(value);
     }
-    if (seen.has(value as object)) return `${path || '(root)'} (cyclic reference)`;
-    if (value instanceof WeakMap || value instanceof WeakSet || value instanceof WeakRef) {
-        return `${path || '(root)'} (weak collection)`;
-    }
-    if (value instanceof Map || value instanceof Set) {
-        return `${path || '(root)'} (${value instanceof Map ? 'Map' : 'Set'})`;
-    }
-    seen.add(value as object);
+    if (value instanceof Response || value instanceof Request || value instanceof Headers)
+        return fail(value instanceof Response ? 'Response' : value instanceof Request ? 'Request' : 'Headers');
+    if (value instanceof WeakMap || value instanceof WeakSet || (typeof WeakRef !== 'undefined' && value instanceof WeakRef)) return fail('weak collection');
+    if (value instanceof Map || value instanceof Set) return fail(value instanceof Map ? 'Map' : 'Set');
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Blob) return fail('binary value');
+    if (value instanceof RegExp || value instanceof Error || value instanceof Promise ||
+        value instanceof Number || value instanceof String || value instanceof Boolean) return fail('native object');
+    seen.add(object);
     try {
+        let toJSON: unknown;
+        try { toJSON = applyToJSON ? object.toJSON : undefined; }
+        catch { return fail('toJSON access failed'); }
+        if (typeof toJSON === 'function') {
+            let representation: unknown;
+            try { representation = toJSON.call(value, key); }
+            catch { return fail('toJSON failed'); }
+            if (representation === value) seen.delete(object);
+            // JSON invokes this value's hook once, not a second hook on its
+            // returned representation. Nested properties get their own hooks.
+            return snapshotValue(representation, path, seen, options, depth + 1, key, false);
+        }
         if (Array.isArray(value)) {
+            const result: unknown[] = [];
             for (let index = 0; index < value.length; index++) {
-                const failure = describeUnsupportedValue(value[index], `${path}[${index}]`, seen, options);
-                if (failure) return failure;
+                let field: unknown;
+                try { field = value[index]; }
+                catch { throw new UnsupportedRpcValue(`${path}[${index}] (property access failed)`); }
+                result.push(snapshotValue(field, `${path}[${index}]`, seen, options, depth + 1, String(index), true) ?? null);
             }
-            return null;
+            return result;
         }
-        for (const key of Object.keys(value as Record<string, unknown>)) {
-            const failure = describeUnsupportedValue((value as Record<string, unknown>)[key], path ? `${path}.${key}` : key, seen, options);
-            if (failure) return failure;
+        let tag: string;
+        try { tag = Object.prototype.toString.call(value); }
+        catch { return fail('object tag access failed'); }
+        if (tag !== '[object Object]') return fail('native object');
+        // Data/model instances cross as own enumerable fields, never methods
+        // or prototypes. A null prototype also preserves an own __proto__ key.
+        const result = Object.create(null) as Record<string, unknown>;
+        let keys: string[];
+        try { keys = Object.keys(object); }
+        catch { return fail('property enumeration failed'); }
+        for (const property of keys) {
+            const location = path ? `${path}.${property}` : property;
+            let field: unknown;
+            try { field = object[property]; }
+            catch { throw new UnsupportedRpcValue(`${location} (property access failed)`); }
+            const normalized = snapshotValue(field, location, seen, options, depth + 1, property, true);
+            if (normalized !== undefined) result[property] = normalized;
         }
-        return null;
-    } finally { seen.delete(value as object); }
+        return result;
+    } finally { seen.delete(object); }
 }
 
 /** Minimal structural socket used by the correlated WebSocket RPC protocol. */
@@ -205,12 +291,10 @@ export type RpcSocket = { readyState?: number; send: (data: string) => void };
 export function sendRpcFrame(client: unknown, frame: RpcStreamFrame): void {
     const socket = client as RpcSocket | null | undefined;
     if (socket && socket.readyState === 1) {
-        const unsupported = describeUnsupportedValue(frame);
-        if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-            `Cannot serialize RPC frame: unsupported value at ${unsupported}.`, { requestId: frame.requestId });
         let serialized: string;
-        try { serialized = JSON.stringify(frame); }
-        catch (cause) { throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize RPC frame.',
+        try { serialized = JSON.stringify(snapshotRpcFrame(frame)); }
+        catch (cause) { throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+            cause instanceof RpcError ? cause.message : 'Cannot serialize RPC frame.',
             { requestId: frame.requestId, cause }); }
         if (new TextEncoder().encode(serialized).length > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC frame exceeds the byte limit.', { requestId: frame.requestId });

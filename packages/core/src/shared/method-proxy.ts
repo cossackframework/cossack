@@ -4,7 +4,7 @@ import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
 import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
@@ -34,19 +34,18 @@ function getAllReactiveStateKeys(constructor: any): string[] {
 
 /**
  * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
- * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
+ * primitives, plain objects, and arrays; drops DOM nodes and Event
  * instances. Unsupported data values are rejected with a diagnostic.
  */
 function isWsTransportable(arg: unknown): boolean {
     if (arg === null) return true;
     const t = typeof arg;
     if (t !== 'object') return true; // primitive (string/number/boolean/undefined/bigint)
-    // Object: reject DOM nodes, Events, Files, Blobs.
+    // UI event arguments are ignored. Binary arguments must reach validation,
+    // which rejects them before dispatch instead of silently changing arity.
     const obj = arg as { nodeType?: unknown };
     if (typeof obj.nodeType === 'number') return false; // DOM node
     if (typeof Event !== 'undefined' && arg instanceof Event) return false;
-    if (typeof File !== 'undefined' && arg instanceof File) return false;
-    if (typeof Blob !== 'undefined' && arg instanceof Blob) return false;
     return true; // plain object / array / Date — JSON.stringify-able
 }
 
@@ -84,7 +83,7 @@ function extractFilesFromArg(arg: any, files: Map<string, File>): any {
         return arg.map(item => extractFilesFromArg(item, files));
     }
     if (arg && typeof arg === 'object' && arg !== null) {
-        const newObj: any = {};
+        const newObj: any = Object.create(null);
         for (const key in arg) {
             newObj[key] = extractFilesFromArg(arg[key], files);
         }
@@ -153,7 +152,7 @@ export function applyStateToComponent(
         if (
             requestState &&
             Object.prototype.hasOwnProperty.call(requestState, key) &&
-            !transportValuesEqual(component[key], requestState[key])
+            !transportValuesEqual(component[key], requestState[key], key)
         ) {
             continue;
         }
@@ -167,13 +166,13 @@ export function applyStateToComponent(
 
 /** Clone state exactly as JSON transport will represent it. */
 function snapshotTransportState(state: Record<string, any>): Record<string, any> {
-    return JSON.parse(JSON.stringify(state));
+    return snapshotRpcValue(state, 'state') as Record<string, any>;
 }
 
 /** Compare a live value with its JSON-transport snapshot. */
-function transportValuesEqual(liveValue: unknown, sentValue: unknown): boolean {
+function transportValuesEqual(liveValue: unknown, sentValue: unknown, key: string): boolean {
     try {
-        return JSON.stringify(liveValue) === JSON.stringify(sentValue);
+        return JSON.stringify(snapshotTransportState({ [key]: liveValue })[key]) === JSON.stringify(sentValue);
     } catch {
         // The request snapshot is JSON-safe, but the live field can become
         // cyclic or contain a bigint while the request is in flight.
@@ -201,11 +200,11 @@ function createStateApplier(component: any, requestState: Record<string, any>) {
         // lets later stream frames update the same field without clobbering
         // edits made locally while the request was in flight.
         const applicable = Object.keys(state).filter(key => !Object.prototype.hasOwnProperty.call(requestState, key)
-            || transportValuesEqual(component[key], requestState[key]));
+            || transportValuesEqual(component[key], requestState[key], key));
         applyStateToComponent(component, state, requestState);
         for (const key of applicable) {
             if (!key.startsWith('_cossack_') && !RESERVED_STATE_KEYS.has(key)) {
-                requestState[key] = snapshotTransportState({ value: component[key] }).value;
+                requestState[key] = snapshotTransportState({ [key]: component[key] })[key];
             }
         }
         component.requestUpdate();
@@ -365,24 +364,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             const handledByUpload = (value: object) =>
                 value instanceof File || value instanceof FileList ||
                 value instanceof Node || value instanceof Event || value === (globalThis as any);
-            const rawUnsupported = describeUnsupportedValue(args, 'payload', new WeakSet(), { handled: handledByUpload });
-            if (rawUnsupported) {
-                const { cleanup: failClean, succeed } = createCallLifecycle(component, name);
-                succeed(); // serialization never dispatched a mutation; loading settles
-                cleanup();
-                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize arguments or state for '${name}': unsupported value at ${rawUnsupported}.`, name);
-            }
             try {
                 const files = new Map<string, File>();
-                payload = args.map(arg => extractFilesFromArg(arg, files));
+                const normalizedArgs = snapshotRpcValue(args, 'payload', { handled: handledByUpload }) as unknown[];
+                payload = normalizedArgs.map(arg => extractFilesFromArg(arg, files));
                 const liveState = component.getPublicState();
                 requestState = liveState;
-                const unsupported = describeUnsupportedValue(liveState, 'state');
-                if (unsupported) {
-                    throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                        `Cannot serialize state for '${name}': unsupported value at ${unsupported}.`);
-                }
                 requestState = snapshotTransportState(liveState);
                 if (files.size) {
                     const formData = new FormData();
@@ -405,7 +392,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         xhr.onload = () => {
                             try {
                                 resolve(new Response(xhr.responseText, {
-                                    status: xhr.status, headers: { 'Content-Type': 'application/json' },
+                                    status: xhr.status, headers: { 'Content-Type': 'application/json',
+                                        ...(xhr.getResponseHeader?.('X-Cossack-Request-Id') ? { 'X-Cossack-Request-Id': xhr.getResponseHeader('X-Cossack-Request-Id')! } : {}) },
                                 }));
                             } catch (cause) {
                                 reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
@@ -542,16 +530,14 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             const requestId = crypto.randomUUID();
             const { cleanup, succeed } = createCallLifecycle(component, name);
             // Keep serializable args (primitives, plain objects, arrays), drop
-            // non-transportable UI objects (DOM nodes, Event, File, Blob).
-            const payload = args.filter(isWsTransportable);
+            // non-transportable UI objects (DOM nodes, Event).
+            let payload = args.filter(isWsTransportable);
             const queue = new SocketFrameQueue();
             let message: string;
             let requestState: Record<string, unknown> = {};
             try {
                 requestState = component.getPublicState();
-                const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(requestState, 'state');
-                if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                    `Cannot serialize the realtime request for '${name}': unsupported value at ${unsupported}.`);
+                payload = snapshotRpcValue(payload, 'payload') as unknown[];
                 requestState = snapshotTransportState(requestState);
                 message = JSON.stringify({
                     v: 1,
@@ -564,6 +550,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 });
             } catch (cause) {
                 cleanup();
+                if (cause instanceof RpcError) return rejectedRpcCall(cause.code, cause.message, name);
                 const where = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(requestState, 'state');
                 return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
                     `Cannot serialize the realtime request for '${name}'` +

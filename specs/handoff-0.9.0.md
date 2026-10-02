@@ -2,7 +2,42 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex shared RPC conformance matrix (2026-10-03):** read
+> **Latest checkpoint — Codex JSON RPC values and types (2026-10-03):** read
+> [review and verification](./release-0.9.0.md#codex-rpc-json-values-2026-10-03),
+> [RT-01](./release-0.9.0-plan.md#rt-01), [RPC values](../docs/rpc.md), and
+> [migration notes](./migration-0.9.0.md). **Author: Codex.** Core now snapshots
+> and validates actual JSON data once before encoding across component/service
+> HTTP/SSE, WebSocket frames and ordinary multipart results. Dates become strings,
+> model fields lose native prototypes, custom hooks supply validated output,
+> undefined object fields omit and array entries become null. Lossy/opaque/binary
+> values, invalid dates, cycles, throwing hooks/getters and excess depth reject
+> with sanitized paths. Root hook keys agree across envelopes. `RpcSerialized`,
+> `RpcResult`, `RpcYield`, authored `rpc$` and compiler rewriting now agree on
+> result/yield types. Parameters and hydrated state annotations still need JSON
+> types; this does not add native revival. Fixed state hook comparison keys,
+> own `__proto__` extraction, silent WebSocket binary-argument removal, and upload
+> private-error/request-ID diagnostics.
+>
+> Passed after the final code change: core build, framework declarations,
+> matrix **134** (128 shared transport cases + six multipart), core **710**,
+> framework **763**, CLI **559** across 39 files (all **14** generated runtime
+> cases, including production HTTP/SSE JSON-value browser acceptance), root
+> TypeScript and all **11** package checks. Own-file whitespace checks passed.
+> Exact commands and scope limits are in the linked verification entry.
+>
+> **14/58 tasks checked; RT-01 remains open.** Next audit native Response bodies
+> through public proxy clients: the router forwards responses but clients still
+> expect JSON/state and can reject arbitrary non-JSON bodies. Decide/document
+> supported completion semantics, then test them. Extend multipart coverage to
+> generators, nested files, scoped ownership/cleanup, cookies/redirects, input
+> boundaries and errors. Ordinary-upload tests do not establish full parity.
+> Finish protocol diagnostics and Workers/realtime cookie/header acceptance with
+> RT-11. Its secret exclusion, recipes, rotation and concurrency criteria remain
+> open. Continue all other unchecked tasks, including Deno/Electron release gates;
+> versions stay 0.8.3 until REL-04. Build declarations sequentially before
+> dependent tests. Preserve unrelated `reports.md` and `.zcodeignore` edits.
+
+> **Previous checkpoint — Codex shared RPC conformance matrix (2026-10-03):** read
 > [acceptance evidence](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
 > and [the detailed RT-01 plan](./release-0.9.0-plan.md#rt-01). **Author: Codex.**
 > One matrix runs 19 shared cases against HTTP, SSE, WebSocket, and explicit

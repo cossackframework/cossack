@@ -2224,13 +2224,14 @@ describe('client result typing (RT-01)', () => {
     return builtinMethods.has(methodName) || decorators.some(d => d.startsWith('@Client') || d.startsWith('@Shared'));
   }
   const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafe, BUILTIN_METHODS, false);
+  const callType = (type: string, name = 'RpcCall') => `${name}<import('@cossackframework/core').RpcResult<${type}>, import('@cossackframework/core').RpcYield<${type}>>`;
 
   it('parses nested generic arguments and removes async generator modifiers', () => {
     const result = transform(`import { Cossack, Server } from '@cossackframework/core';
       class Sample extends Cossack {
         @Server() /* async * annotation comment */ async *stream(): AsyncGenerator<Record<string, number>, { ok: boolean }, void> { yield {}; return { ok: true }; }
       }`);
-    expect(result).toContain('stream(): RpcCall<{ ok: boolean }, Record<string, number>>');
+    expect(result).toContain('stream(): ' + callType('AsyncGenerator<Record<string, number>, { ok: boolean }, void>'));
     expect(result).not.toContain('async *stream');
     expect(result).toContain('/* async * annotation comment */');
   });
@@ -2241,7 +2242,7 @@ describe('client result typing (RT-01)', () => {
         @Server() async value(): Promise<number> { return 1; }
         @Server() load = async (): Promise<number> => 1;
       }`);
-    expect(result).toContain('value(): Call<number, never>');
+    expect(result).toContain('value(): ' + callType('Promise<number>', 'Call'));
     expect(result).not.toContain('import type { RpcCall }');
     expect(result).toContain('load = async (...args) =>');
     expect(result).not.toContain('=> 1');
@@ -2266,9 +2267,9 @@ describe('client result typing (RT-01)', () => {
         async *stream(): AsyncGenerator<string, number> { yield 'a'; return 1; }
       }
     `);
-    expect(result).toContain('stream(): RpcCall<number, string>');
+    expect(result).toContain('stream(): ' + callType('AsyncGenerator<string, number>'));
     expect(result).toContain("import type { RpcCall } from '@cossackframework/core'");
-    expect(result).not.toContain('AsyncGenerator<string, number>');
+    expect(result).not.toContain('async *stream');
   });
 
   it('maps one-argument generators, async iterables, and promises', () => {
@@ -2280,9 +2281,9 @@ describe('client result typing (RT-01)', () => {
         @Server() async plain(): Promise<boolean> { return true; }
       }
     `);
-    expect(result).toContain('one(): RpcCall<any, string>');
-    expect(result).toContain('iter(): RpcCall<any, string>');
-    expect(result).toContain('plain(): RpcCall<boolean, never>');
+    expect(result).toContain('one(): ' + callType('AsyncGenerator<string>'));
+    expect(result).toContain('iter(): ' + callType('AsyncIterableIterator<string>'));
+    expect(result).toContain('plain(): ' + callType('Promise<boolean>'));
   });
 
   it('leaves unrecognized or missing annotations untouched', () => {

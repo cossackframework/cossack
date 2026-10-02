@@ -75,3 +75,26 @@ with `COSSACK_RPC_INTERNAL_ERROR` and the request ID, matching component and
 WebSocket calls. Inspect server logs for the original exception. Use
 `ClientVisibleError` for a deliberate message or action validation for field
 errors that callers should receive.
+
+## Client RPC types now describe JSON values
+
+`rpc$`, `RpcResult`, and `RpcYield` now use `RpcSerialized<T>` for returned and
+yielded data. A Date becomes a string, array entries containing undefined become
+null, undefined object fields disappear, model prototype methods disappear, and
+typed `toJSON()` output replaces the native class shape. The compiler's recognized
+return annotations delegate to these same core types.
+
+Replace native Date use in client completions with explicit parsing:
+
+```typescript
+const result = await rpc$(this.loadRecord());
+const createdAt = new Date(result.createdAt);
+```
+
+Non-finite numbers, invalid Dates, binary and opaque native values now reject
+instead of silently becoming null, empty objects, or numeric-keyed records.
+Custom JSON output is evaluated once and validated before encoding. WebSocket
+File/Blob arguments reject before dispatch; they are no longer silently removed.
+HTTP component file uploads retain their separate multipart path. Ordinary
+multipart result serialization and private-error redaction match JSON RPC.
+Root result JSON hooks receive the empty key consistently across transports.

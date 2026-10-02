@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { describeUnsupportedValue, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
+import { snapshotRpcFrame, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
 
 interface RpcStreamOptions {
     result: AsyncIterable<unknown>;
@@ -77,16 +77,11 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
     let cleanupPromise: Promise<void> | undefined;
     const encode = (frame: RpcStreamFrame) => {
         let bytes: Uint8Array;
-        const unsupported = describeUnsupportedValue(frame);
-        if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-            `Cannot serialize RPC stream ${frame.type} value or state: unsupported value at ${unsupported}.`);
-        try { bytes = encoder.encode(`${JSON.stringify(frame)}\n`); }
+        try { bytes = encoder.encode(`${JSON.stringify(snapshotRpcFrame(frame))}\n`); }
         catch (cause) {
-            const where = frame.type === 'error'
-                ? null
-                : describeUnsupportedValue(frame.value) ?? describeUnsupportedValue(frame.state);
+            if (cause instanceof RpcError) throw cause;
             throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                `Cannot serialize RPC stream ${frame.type} value or state${where ? `: unsupported value at ${where}` : ''}.`, { cause });
+                `Cannot serialize RPC stream ${frame.type} value or state.`, { cause });
         }
         if (bytes.length - 1 > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC stream frame exceeds the byte limit.');

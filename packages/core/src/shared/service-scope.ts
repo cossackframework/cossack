@@ -10,7 +10,7 @@ import {
     subscribeToService,
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
-import { createRpcCall, describeUnsupportedValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
+import { createRpcCall, snapshotRpcValue, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
     context?: Context;
@@ -338,10 +338,8 @@ export class ServiceScope {
                 }, timeoutMs);
                 let request: Promise<Response>;
                 try {
-                    const state = getServiceState(entry.instance);
-                    const unsupported = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(state, 'state');
-                    if (unsupported) throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                        `Cannot serialize service request: unsupported value at ${unsupported}.`);
+                    const state = snapshotRpcValue(getServiceState(entry.instance), 'state');
+                    const normalizedPayload = snapshotRpcValue(payload, 'payload');
                     request = fetch('/crpc', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
@@ -349,7 +347,7 @@ export class ServiceScope {
                         body: JSON.stringify({
                             service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
                             action,
-                            payload,
+                            payload: normalizedPayload,
                             state,
                             scopeKey: this.scopeKey,
                         }),

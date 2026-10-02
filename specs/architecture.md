@@ -318,3 +318,20 @@ HTTP responses explicitly; serialized value trees reject nested HTTP objects.
 Background transport requests preserve valid incoming flash; HTTP error statuses
 discard partial outgoing flash. Stream failures after headers finalize cannot
 roll back cookies or completed mutations.
+
+Core owns the JSON RPC value contract through `snapshotRpcValue` and
+`snapshotRpcFrame`. Transports snapshot data once before encoding. Valid dates
+become ISO strings; undefined object fields disappear and array holes become
+null. Data/model instances contribute own enumerable fields. A typed custom
+`toJSON` supplies its validated representation, with a consistent empty root
+result key across envelopes. Cycles, non-finite numbers, opaque/binary values,
+and excessive nesting reject with paths. Component file arguments retain their
+separate multipart extraction boundary; ordinary multipart results use this
+snapshot contract too. The extraction walker preserves own __proto__ data keys.
+
+Public `RpcSerialized`, `RpcResult`, and `RpcYield` describe JSON results and
+yields. The compiler delegates recognized return annotations to the same types
+used by authored `rpc$` inference, avoiding a second type vocabulary. Native
+server code keeps its authored types; client code receives data without native
+model prototypes. Parameter and hydrated component property annotations still
+need to describe their JSON representation; this does not add native revival.

@@ -119,6 +119,15 @@ function component(transport: 'http' | 'sse' = 'sse') {
 }
 
 describe('single-dispatch RPC calls', () => {
+    it.each(['http', 'sse'] as const)('compares %s custom state using its property JSON key before applying updates', async transport => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ count: { key: 'count', value: 2 }, _cossack_return: 'saved' }),
+            { headers: { 'Content-Type': 'application/json' } })));
+        const target = component(transport);
+        target.count = { toJSON(key: string) { return { key, value: 1 }; } };
+        expect(await target.run()).toBe('saved');
+        expect(target.count).toEqual({ key: 'count', value: 2 });
+        expect(target.loading).toEqual({});
+    });
     it.each(['http', 'sse'] as const)('returns ordinary %s results without inventing generator yields', async transport => {
         const fetchMock = vi.fn(async () => new Response(JSON.stringify({ count: 7, _cossack_return: { total: 7 } }),
             { headers: { 'Content-Type': 'application/json' } }));

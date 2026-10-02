@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, ordinary completion, native response timing, and one 76-case shared transport matrix are verified. Codex fixed private service errors, WebSocket value paths, and known request IDs lost on stream failures. Remaining: audit supported wire values/client types and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-conformance-matrix-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire result/yield types, ordinary completion, native response timing, and one 134-test matrix (128 shared transport + six multipart cases) are verified. Codex fixed custom-hook evaluation, lossy serialization, private upload errors, and binary WebSocket argument dispatch. Remaining: native-response client bodies, multipart stream/file/ownership parity and protocol diagnostics, plus Workers/realtime response behavior with RT-11. See the [latest checkpoint](#codex-rpc-json-values-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,79 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-json-values-2026-10-03"></a>
+### Codex review: JSON RPC values and client types (2026-10-03)
+
+**Author: Codex.** Continued the RT-01 wire/type audit after `6433534`.
+The old validation/stringify path inspected native values before their JSON
+conversion. Dates and custom objects could change shape, hooks could execute
+again during encoding, and client types still promised native methods.
+
+Core now owns `snapshotRpcValue` and `snapshotRpcFrame`. HTTP/SSE, service,
+WebSocket and ordinary multipart result encoders consume the validated snapshot.
+Valid dates become ISO strings; undefined object fields omit, array entries/holes
+become null, and top-level void remains undefined. Data/model instances use own
+enumerable fields. Custom hooks run once per value location, with the same empty
+root result key across envelopes and the nested property/index key elsewhere.
+Self-returning hooks work; actual cycles reject. Shared references copy normally.
+Lossy non-finite numbers, invalid Dates, opaque/native/binary objects, throwing
+hooks/getters and nesting beyond 256 levels reject with sanitized value paths.
+
+Public `RpcSerialized<T>` applies that contract to `RpcResult`/`RpcYield` and
+therefore authored `rpc$` inference. Compiler return rewriting uses those same
+public helpers. Published semantic type checks cover models without prototype
+methods, nested dates, custom and optional hooks, tuples/undefined/null, unknown,
+any, self-returning hooks, and generator yields/completion. TypeScript cannot
+infer own enumerability: class contracts need an explicit data object or typed
+hook. Parameters and hydrated state properties still need JSON representation
+annotations; no native Date/model revival is added.
+
+Also fixed state comparisons passing the wrong JSON hook key, own `__proto__`
+payload data being lost during file extraction, and WebSocket File/Blob arguments
+silently disappearing before dispatch. Ordinary upload serialization failures
+now have stable code/path/request ID. Private upload errors are redacted in
+development, with original errors retained in correlated server logs. Upload
+XHR clients retain the response request ID.
+
+The existing real-handler matrix now runs 32 shared cases across four paths:
+128 tests, plus six multipart-router cases (134 total). Production generated
+Node browser acceptance executes Date/custom JSON/undefined-array generators
+through HTTP and SSE after checking authored TypeScript. No parallel transport
+suite replaces the existing matrix.
+
+Verified after the final code change: core build; framework declarations;
+focused matrix **134**; full core **710** tests/50 files; full framework **763**
+tests/49 files; full CLI **559** tests/39 files, including all **14** generated
+runtime cases; root TypeScript and all **11** package checks. Own-file whitespace
+checks passed. Updated architecture, RPC guide, migration draft, detailed plan,
+and the Codex handoff. Unrelated user files remain outside this change.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts
+```
+
+**14/58 tasks checked; no new task is closed. RT-01 stays open.** GLM should
+continue with native-response client body consumption and multipart parity.
+The router forwarding a native Response does not prove arbitrary bodies work
+through a proxy: clients still expect JSON/state and non-JSON bodies can reject
+with `COSSACK_RPC_RESPONSE_INVALID`. Decide/document the supported completion
+contract and verify it through public clients. Extend multipart coverage to
+generators, nested files, scoped ownership/cleanup, cookies/redirects, input
+boundaries and errors; the six ordinary-upload cases prove only this slice.
+Finish remaining protocol diagnostics and Workers/realtime cookie/header
+acceptance with RT-11. RT-11's secret exclusion, recipes, rotation and concurrency
+requirements remain open. Continue all other unchecked tasks and REL-02/REL-03
+runtime gates; Deno execution and Electron launch/packaging still need evidence.
+Versions remain 0.8.3 until REL-04. Rebuild declarations sequentially before
+starting dependent tests; do not regenerate them concurrently with those checks.
 
 <a id="codex-rpc-conformance-matrix-2026-10-03"></a>
 ### Codex continuation: shared RPC conformance matrix (2026-10-03)

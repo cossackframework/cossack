@@ -12,11 +12,15 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
+The latest [Codex JSON wire checkpoint](./release-0.9.0.md#codex-rpc-json-values-2026-10-03)
+records a shared normalizer, JSON result/yield types, custom hook semantics,
+ordinary upload diagnostics, and generated HTTP/SSE browser acceptance. RT-01
+remains open for native-response body handling, multipart ownership/streaming,
+protocol diagnostics, and Workers/realtime response acceptance. The preceding
+[shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
 records one matrix for HTTP/SSE components, WebSocket dispatch, and explicit
 service actions, with fixes to private errors, value paths, and known request IDs.
-RT-01 remains open for the supported-value/type audit and Workers/realtime
-response acceptance. The preceding
+The preceding
 [response timing checkpoint](./release-0.9.0.md#codex-rpc-response-timing-2026-10-03)
 records native cookies/redirects, streaming header guards, flash preservation,
 and network uncertainty. RT-01 and RT-11 remain open. The preceding
@@ -446,8 +450,9 @@ helper too. Fixed ordinary HTTP/SSE JSON calls yielding their final result once;
 they now match WebSocket/service completion and `RpcCall<Result, never>`.
 The change is recorded in the [draft migration guide](./migration-0.9.0.md).
 
-Remaining before RT-01 completion: finish the supported serialization value/type
-audit and remaining request/response protocol diagnostics. The shared conformance
+Remaining before RT-01 completion: finish native-response and multipart
+acceptance, plus remaining request/response protocol diagnostics. The JSON wire
+value/type slice is verified in the checkpoint below. The shared conformance
 matrix now exercises HTTP, SSE, WebSocket, and explicit service calls for errors,
 deadlines, disconnect, cancellation, duplicate consumers, and cleanup.
 Extend native Response/cookie/flash acceptance with RT-11 across the full matrix.
@@ -488,13 +493,46 @@ errors losing a known response request ID on invalid JSON, stream deadlines,
 or disconnect. HTTP IDs can remain unavailable before response headers arrive;
 local failures need not have server IDs, and HTTP status does not apply to WS.
 
-Next define and verify supported values, including Date/JSON representations,
-undefined/void, non-finite numbers, binary values, and model/custom serialization.
-Check client result/yield types against actual wire values rather than assuming
-the authored native type survives JSON. Extend the existing matrix and semantic
-fixtures; do not recreate another transport suite. Finish Workers/realtime cookie
-and header acceptance with RT-11. Physical upgrades, distributed coordination,
-and complete release runtime gates remain separate evidence requirements.
+Codex JSON wire checkpoint (2026-10-03): core now owns `snapshotRpcValue`
+and `snapshotRpcFrame`. Encoders validate and copy the actual JSON representation
+once before stringify. Dates become ISO strings; undefined object fields omit,
+array holes/undefined become null, and top-level void remains undefined.
+Data/model instances transfer own enumerable fields; typed `toJSON()` output
+replaces the instance. Hooks run once per value location with a consistent empty
+root result key; nested hooks receive their field/index. A hook returning itself
+is supported without permitting actual cycles. Shared references copy normally.
+Lossy non-finite numbers, invalid Dates, opaque/native/binary values, cycles,
+throwing hooks/getters, and nesting beyond 256 levels reject with sanitized paths.
+The file extraction walker preserves own `__proto__` keys as data. WebSocket
+File/Blob arguments reject before dispatch instead of disappearing.
+
+`RpcSerialized<T>` maps results and yields to their JSON types. Published
+semantic fixtures check dates, model fields/method exclusion, custom hooks,
+optional hooks, tuples, undefined entries, unknown/any, and generators. Compiler
+return rewriting delegates to the same public types as authored `rpc$`. Method
+parameters and hydrated property annotations remain authored: use JSON input/state
+types, such as ISO strings, rather than assuming native revival. TypeScript cannot
+infer which class properties are enumerable; use explicit DTOs or typed hooks.
+See [the RPC guide](../docs/rpc.md) and [migration notes](./migration-0.9.0.md).
+
+The existing matrix now has 32 shared cases across four paths (128 tests), plus
+six real multipart-router cases (134 total). It verifies dates/model/hook values,
+normalization once, root hook keys, own `__proto__`, and invalid inputs/results.
+Ordinary multipart replies use the same normalizer, stable code/path/request ID,
+and private-error redaction in development. Production generated Node browsers
+execute Date/custom-hook/undefined-array generators over HTTP and SSE after
+source TypeScript checking.
+
+Next extend this matrix and existing runtime fixtures. Audit native Response
+body consumption: forwarding a native response at the router does not prove
+that the RPC client can consume an arbitrary body; it still expects JSON/state
+and can reject non-JSON bodies with `COSSACK_RPC_RESPONSE_INVALID`. Decide and
+document the supported client completion contract, then verify it through the
+public proxy. Audit multipart generators, nested files, scoped service ownership,
+cleanup, cookies/redirects, input boundaries and errors; six ordinary-upload
+cases do not establish full parity. Finish Workers/realtime cookie and header
+acceptance with RT-11. Physical upgrades, distributed coordination, and complete
+release runtime gates remain separate evidence requirements. RT-01 stays open.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

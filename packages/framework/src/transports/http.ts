@@ -1,7 +1,7 @@
 import { getModuleDefault } from '../module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/transports/http.ts
-import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError } from '@cossackframework/core';
+import { Cossack, createInstance, isRpcCallableAction, sanitizeClientState, enforceMethodRateLimit, isClientVisibleError, snapshotRpcValue, RpcError } from '@cossackframework/core';
 import type { Context } from 'hono';
 import type { RouterContext } from '../route-ids.js';
 
@@ -15,6 +15,8 @@ function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
 /** Upload handler — processes file uploads via multipart form data. */
 export function handleUpload(ctx: RouterContext) {
     return async (c: Context) => {
+        const requestId = crypto.randomUUID();
+        c.res.headers.set('X-Cossack-Request-Id', requestId);
         const body = await c.req.parseBody({ all: true });
         const componentRouteId = body.componentRouteId as string;
         const action = body.action as string;
@@ -109,11 +111,10 @@ export function handleUpload(ctx: RouterContext) {
             // failure → 500, logged server-side, generic message to the client
             // so internals / file paths / stack details never leak.
             if (isClientVisibleError(e)) {
-                return c.json({ error: e.message }, 400);
+                return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
             }
-            console.error('[/upload] internal error:', e);
-            const isDev = (import.meta as any).env?.DEV;
-            return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
+            console.error('[/upload] internal error:', { requestId, error: e });
+            return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
 
         const location = c.res.headers.get('Location');
@@ -121,11 +122,15 @@ export function handleUpload(ctx: RouterContext) {
         if (actionResult instanceof Response) return actionResult;
 
         // Get the state of the component that was actually modified
-        const responseData = targetInstance.getPublicState();
-        if (actionResult !== undefined) {
-            (responseData as any)._cossack_return = actionResult;
+        try {
+            const responseData = snapshotRpcValue(targetInstance.getPublicState(), 'state') as Record<string, unknown>;
+            const value = snapshotRpcValue(actionResult, 'value');
+            if (value !== undefined) responseData._cossack_return = value;
+            return c.json(responseData);
+        } catch (error) {
+            console.error('[/upload] serialization failed:', { requestId, error });
+            return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
+                code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
-
-        return c.json(responseData);
     };
 }
