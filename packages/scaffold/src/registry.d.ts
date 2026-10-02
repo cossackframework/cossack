@@ -2,9 +2,9 @@
 export {
   ADAPTERS, FEATURES, AUTH_METHODS, OAUTH_PROVIDERS, UI_THEMES,
   DASHBOARD_MODULES, FEATURE_REGISTRY, PRESET_REGISTRY, DATABASE_PROVIDERS,
-  parseList, resolveFeatures, removeFeature, resolveDashboardModules, resolveRecipe,
+  parseList, resolveFeatures, removeFeature, resolveDashboardModules, resolveRecipe, recipeCapabilityRequirements,
 } from './index.js';
 export type {
   Adapter, Preset, Feature, AuthMethod, DatabaseProvider, OAuthProvider,
-  UITheme, DashboardModule, ScaffoldRecipe, CreateAppOptions,
+  UITheme, DashboardModule, ScaffoldRecipe, CreateAppOptions, RecipeCapabilityUse,
 } from './index.js';

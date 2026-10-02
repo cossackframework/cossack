@@ -85,7 +85,10 @@ excerpts. You may provide `bindings: ['COSSACK_SSE']` to override discovery for
 custom tooling; pass names only, never values, and keep them aligned with the
 environment being built.
 Unused provider-specific modules outside the route set do not make portable
-code unsupported. Other feature requirements still need explicit declarations.
+code unsupported. Generated recipes declare selected SQLite filesystem needs
+and, only for Desktop builds, native filesystem needs. Their diagnostic source is
+`.cossack/scaffold.json`. Unselected recipe defaults contribute no requirements.
+Other feature requirements still need explicit declarations.
 `checkCapabilityRequirements` is exported from
 `@cossackframework/framework/runtime-capabilities` for tooling that needs all
 diagnostics instead of a Vite build error. The parser is exported from

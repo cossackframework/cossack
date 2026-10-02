@@ -52,3 +52,14 @@ it.each(['node', 'deno'])('rejects stateful WebSocket pages on %s while permitti
   }));
   expect((await inspectRuntimeMetadata('/app', [{ ...stateful, stateful: false }])).diagnostics).toEqual([]);
 });
+
+it('checks selected recipe requirements through the shared capability model', async () => {
+  detectProjectRuntime.mockResolvedValue('cloudflare');
+  inspectDeployment.mockResolvedValue({ summary: { bindings: [] } });
+  const result = await inspectRuntimeMetadata('/app', [], undefined, [{
+    feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true },
+  }]);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: 'COSSACK_CAPABILITY_UNSUPPORTED', source: '.cossack/scaffold.json', feature: 'database/sqlite',
+  }));
+});

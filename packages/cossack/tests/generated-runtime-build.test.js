@@ -177,3 +177,14 @@ it('runs generated Node development WebSockets, preserves HMR, and replaces runt
     expect({ code, signal }, output).toEqual({ code: 0, signal: null });
   }
 }, 60000);
+it('enforces selected database recipe requirements before compiling its modules', async () => {
+  const root = await project('node', ['database']);
+  const file = path.join(root, 'vite.config.ts');
+  const config = await fs.readFile(file, 'utf8');
+  expect(config).toContain('"feature":"database/sqlite"');
+  // Simulate selecting a build runtime that cannot run the recorded local database.
+  // This must fail through the generated requirement, before importing native SQLite.
+  await fs.writeFile(file, config.replace("mode === 'desktop' ? 'desktop' : 'node'", "mode === 'desktop' ? 'desktop' : 'cloudflare'")
+    .replace('capabilities: { runtime:', 'capabilities: { bindings: [], runtime:'));
+  await expect(vite(root, [])).rejects.toThrow(/\.cossack\/scaffold.json: database\/sqlite requires filesystem on cloudflare/);
+}, 30000);

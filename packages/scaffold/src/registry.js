@@ -154,3 +154,19 @@ export function resolveRecipe(options = {}) {
     },
   };
 }
+
+/** Requirements selected by the recipe, separate from discovered page transports. */
+export function recipeCapabilityRequirements(recipe, target = 'web') {
+  if (target !== 'web' && target !== 'desktop') throw new Error(`Unknown recipe target: ${target}`);
+  const requirements = [];
+  const add = (feature, requires) => requirements.push({
+    feature, source: { file: '.cossack/scaffold.json' }, requires,
+  });
+  if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite') {
+    add('database/sqlite', { filesystem: true });
+  }
+  if (target === 'desktop' && recipe.resolvedFeatures.includes('desktop')) {
+    add('desktop', { filesystem: true });
+  }
+  return requirements;
+}

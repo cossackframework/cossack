@@ -2,7 +2,19 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex bundled route exports (2026-10-03):** read
+> **Latest checkpoint — Codex recipe requirements (2026-10-03):** read
+> [selected recipe capability declarations](./release-0.9.0.md#codex-recipe-requirements-2026-10-03).
+> **Author: Codex.** Scaffold exports `recipeCapabilityRequirements()` and emits
+> target-specific requirements into generated Vite configs. SQLite filesystem
+> needs apply only when the database feature is selected; Desktop filesystem
+> needs apply only to Desktop builds. CLI inspection exposes and checks web
+> requirements through the shared model. Verification: 94 scaffold tests, 31
+> CLI/build acceptance tests, and all types passed. **12/58 tasks remain checked.**
+> Continue RT-25 remaining provider/capability audits and runtime acceptance;
+> extend declarations when adding runtime-dependent recipes. Deno execution and
+> Electron launch/packaging remain unverified, so do not close the task yet.
+
+> **Previous checkpoint — Codex bundled route exports (2026-10-03):** read
 > [example route corrections](./release-0.9.0.md#codex-bundled-route-exports-2026-10-03).
 > **Author: Codex.** Eighteen additional bundled demo pages now export their
 > component as default. The cache-regression store moved outside the pages tree

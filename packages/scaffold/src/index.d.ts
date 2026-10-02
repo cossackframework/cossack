@@ -161,3 +161,11 @@ export declare function writeManifest(
 export declare class PromptAbortedError extends Error {
   code: 'COSSACK_PROMPT_ABORTED';
 }
+
+/** Serializable selected recipe requirements, compatible with framework build checks. */
+export interface RecipeCapabilityUse {
+  feature: string;
+  source: { file: string };
+  requires: { filesystem?: boolean };
+}
+export declare function recipeCapabilityRequirements(recipe: ScaffoldRecipe, target?: 'web' | 'desktop'): RecipeCapabilityUse[];

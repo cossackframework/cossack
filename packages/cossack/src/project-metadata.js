@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { resolveManifestRecipe, FEATURE_REGISTRY } from '@cossackframework/scaffold';
+import { resolveManifestRecipe, FEATURE_REGISTRY, recipeCapabilityRequirements } from '@cossackframework/scaffold';
 
 /** Recorded recipe facts only. Never expose arbitrary manifest config or values. */
 export async function inspectScaffoldMetadata(root) {
@@ -21,6 +21,10 @@ export async function inspectScaffoldMetadata(root) {
         explicitFeatures: recipe.explicitFeatures,
         features: recipe.resolvedFeatures.map(name => ({ name, requires: FEATURE_REGISTRY[name].requires })),
         dashboardModules: recipe.dashboardModules,
+        capabilityRequirements: {
+          web: recipeCapabilityRequirements(recipe),
+          ...(recipe.resolvedFeatures.includes('desktop') ? { desktop: recipeCapabilityRequirements(recipe, 'desktop') } : {}),
+        },
         config: recipe.config,
       },
       diagnostics: [],

@@ -28,6 +28,7 @@ it('uses registry dependencies and excludes arbitrary recorded secrets', async (
     { name: 'auth', requires: ['ui', 'database'] },
   ]);
   expect(result.recipe.runtime).toBe('node');
+  expect(result.recipe.capabilityRequirements.web).toEqual([{ feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true } }]);
   expect(JSON.stringify(result)).not.toContain('PRIVATE_VALUE');
 });
 it('rejects provider/runtime conflicts using the scaffold registry', async () => {

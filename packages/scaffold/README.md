@@ -85,3 +85,14 @@ Retain the generated app for inspection when diagnosing a failure:
 ```sh
 COSSACK_KEEP_SMOKE=1 pnpm run test:scaffold:local
 ```
+
+`recipeCapabilityRequirements(recipe, target)` returns serializable selected
+requirements for `web` (the default) or `desktop`. Generated Vite configurations
+include these declarations and CLI inspection exposes them without reading secret
+values. SQLite contributes a filesystem requirement only when database support
+is selected; Desktop contributes one only to its side target. Source locations
+point to `.cossack/scaffold.json`, where the recipe selection is recorded.
+Page transports and durable-state requirements remain discovered from page code.
+The shared framework checker evaluates availability; this registry does not copy
+runtime capability profiles. Requirements for other features must be added as
+those features acquire runtime dependencies.

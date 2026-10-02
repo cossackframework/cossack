@@ -21,6 +21,7 @@ import {
   removeFeature,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
 } from './registry.js';
 
 export {
@@ -38,6 +39,7 @@ export {
   removeFeature,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
 };
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1619,7 +1621,9 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if (rel === 'vite.config.ts') {
       let viteConfig = content.toString('utf8');
-      const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}' }`;
+      const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
+      const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));
+      const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}', requirements: mode === 'desktop' ? ${desktopRequirements} : ${webRequirements} }`;
       viteConfig = viteConfig.replace('cossackPages(),', `cossackPages({ ${runtimeCapability} }),`)
         .replace('cossackPages({ markdownProcessor: processMarkdown }),',
           `cossackPages({ markdownProcessor: processMarkdown, ${runtimeCapability} }),`);

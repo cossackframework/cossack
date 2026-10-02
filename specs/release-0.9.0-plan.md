@@ -961,6 +961,13 @@ Build/CLI discovery now checks `stateful: true` as `durableState`, separate from
 WebSocket transport support. Cloudflare requires COSSACK_OBJECT; process runtimes
 reject durable state. Dynamic declarations remain unknown. Keep this distinction
 in selected recipe requirements and agent-facing capability output.
+Scaffold now emits target-specific selected requirements using the pure
+`recipeCapabilityRequirements()` API. SQLite and Desktop declare filesystem needs
+only when selected, with source provenance to the scaffold manifest. CLI checks
+consume web requirements through the shared model. Extend this projection as
+new recipes/providers need additional runtime capabilities; do not duplicate the
+framework's runtime profiles inside the recipe engine.
+
 
 The guarded framework WebSocket factory now creates nested layout service scopes,
 uses original page params during bootstrap, and assigns scope-tree cleanup to the

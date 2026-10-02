@@ -16,6 +16,7 @@ import {
   renderRecipe,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
 } from '../src/index.js';
 
 const scaffoldPackage = JSON.parse(
@@ -303,7 +304,7 @@ describe('composition', () => {
       path.join(project.projectDir, 'package.json'),
       'utf8',
     ));
-    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } }),");
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
 
@@ -317,7 +318,7 @@ describe('composition', () => {
     )).resolves.toContain('export async function processMarkdown');
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain("cossackPages({ markdownProcessor: processMarkdown, capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } })");
+    expect(viteConfig).toContain("cossackPages({ markdownProcessor: processMarkdown, capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } })");
     expect(viteConfig).toContain("from './src/markdown-processor.ts'");
     expect(pkg.devDependencies).toHaveProperty('unified');
     expect(pkg.devDependencies).toHaveProperty('remark-parse');
@@ -332,7 +333,7 @@ describe('composition', () => {
     )).rejects.toThrow();
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare' } }),");
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
   });
@@ -1264,9 +1265,31 @@ it.each(['cloudflare', 'node', 'deno'])('enables build capability discovery for 
   for (const features of [[], ['markdown']]) {
     const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
     const config = files.get('vite.config.ts').content.toString();
-    expect(config).toContain(`capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${adapter}' }`);
+    expect(config).toContain(`capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${adapter}', requirements:`);
     expect(config.includes('markdownProcessor: processMarkdown')).toBe(features.includes('markdown'));
     // Binding names must come from the selected build environment, not a fixed template list.
     expect(config).not.toContain('bindings: [');
   }
+});
+
+it('derives capability requirements only from selected recipe features and targets', () => {
+  const minimal = resolveRecipe({ adapter: 'node', preset: 'minimal' });
+  expect(recipeCapabilityRequirements(minimal)).toEqual([]); // Default sqlite choice is inactive.
+  const recipe = resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] });
+  const source = { file: '.cossack/scaffold.json' };
+  expect(recipeCapabilityRequirements(recipe)).toEqual([{ feature: 'database/sqlite', source, requires: { filesystem: true } }]);
+  expect(recipeCapabilityRequirements(recipe, 'desktop')).toEqual([
+    { feature: 'database/sqlite', source, requires: { filesystem: true } },
+    { feature: 'desktop', source, requires: { filesystem: true } },
+  ]);
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['desktop'] }))).toEqual([]);
+  expect(() => recipeCapabilityRequirements(recipe, 'invalid')).toThrow('Unknown recipe target');
+});
+it('emits selected capability requirements into the generated Vite configuration', async () => {
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] }));
+  const config = files.get('vite.config.ts').content.toString();
+  expect(config).toContain('"feature":"database/sqlite"');
+  expect(config).toContain('"feature":"desktop"');
+  expect(config).toContain('"file":".cossack/scaffold.json"');
+  expect(config).toContain('"filesystem":true');
 });

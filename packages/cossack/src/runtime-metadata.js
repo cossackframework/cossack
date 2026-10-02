@@ -3,7 +3,7 @@ import { describeRuntimeCapabilities, evaluateTransportCapability, checkCapabili
 import { inspectDeployment } from './deployment.js';
 
 /** Binding presence from parsed configuration, never proof of remote readiness. */
-export async function inspectRuntimeMetadata(root, pages, environment) {
+export async function inspectRuntimeMetadata(root, pages, environment, requirements = []) {
   const name = await detectProjectRuntime(root);
   if (!name) return { name: 'unknown', status: 'unknown', diagnostics: [], transports: [] };
   let bindings = [];
@@ -26,6 +26,8 @@ export async function inspectRuntimeMetadata(root, pages, environment) {
     message: result.status === 'unsupported' ? 'The selected runtime does not support this route transport.'
       : `Route transport requires binding(s): ${result.missingBindings.join(', ')}.`,
   }));
+  diagnostics.push(...checkCapabilityRequirements(name, requirements, bindings)
+    .map(result => ({ ...result, severity: 'error', source: result.source.file })));
   diagnostics.push(...checkCapabilityRequirements(name, pages
     .filter(page => page.extraction.method === 'ast' && page.transport === 'durable-object' && page.stateful === true)
     .map(page => ({ feature: 'stateful page', source: { file: page.source }, requires: { durableState: true } })), bindings)

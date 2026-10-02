@@ -339,5 +339,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     page.layoutAndPageMiddlewareCount = page.middlewareStack.every(entry => entry.count !== null)
       ? page.middlewareStack.reduce((total, entry) => total + entry.count, 0) : null;
   }
-  return { pages, layouts, scaffold: await inspectScaffoldMetadata(projectRoot), runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment) };
+  const scaffold = await inspectScaffoldMetadata(projectRoot);
+  return { pages, layouts, scaffold, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
+    scaffold.recipe?.capabilityRequirements?.web ?? []) };
 }

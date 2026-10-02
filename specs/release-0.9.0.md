@@ -86,6 +86,37 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-recipe-requirements-2026-10-03"></a>
+### Codex continuation: selected recipe requirements (2026-10-03)
+
+**Author: Codex.** Added the pure scaffold API `recipeCapabilityRequirements()`
+and its published declarations. Generated Vite configs now include recipe-selected
+requirements for their web or Desktop target. SQLite requires filesystem access
+only when database support is selected; a default but inactive SQLite choice adds
+nothing. Desktop's native filesystem requirement is restricted to its side target,
+so selecting Desktop does not make an otherwise portable Cloudflare web app fail.
+Requirement sources point to the recorded `.cossack/scaffold.json` selection.
+
+CLI project inspection exposes these requirements, and route checking evaluates
+web requirements using the shared framework capability model. Scaffold declares
+feature needs without importing framework runtime code or duplicating runtime
+profiles. Existing database provider/runtime validation remains in the registry;
+page transports and durable-state needs still come from the shared page parser.
+
+Verification: all 94 scaffold tests passed; package checks via `pnpm typecheck`
+passed. Generated-app acceptance includes selecting Cloudflare for a SQLite
+recipe and verifying a source-bearing filesystem diagnostic before application
+module compilation. The fixture supplies an explicit empty binding list because
+its original Node recipe has no Wrangler config; the first attempt correctly
+failed earlier on missing configuration. The final inspection/metadata and generated
+build acceptance run passed all 31 tests (5 files); root `pnpm tsc --noEmit` also
+passed.
+
+**12/58 tasks remain checked.** These are the current filesystem declarations,
+not a claim that every future service or provider integration is covered. RT-25
+still needs remaining capability/provider audits and runtime acceptance. Deno
+execution and Electron launch/packaging remain unverified on this host.
+
 <a id="codex-bundled-route-exports-2026-10-03"></a>
 ### Codex continuation: bundled route export audit (2026-10-03)
 
