@@ -86,6 +86,35 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-generated-runtime-builds-2026-10-03"></a>
+### Codex continuation: generated Node/Deno/Desktop builds (2026-10-03)
+
+**Author: Codex.** Added generated-project acceptance using actual scaffold output,
+Vite configuration, package exports, client assets, and SSR/desktop entries.
+Fixtures build minimal Node and Deno applications plus a Node application's
+Desktop side target. All emitted JavaScript chunks in their server/desktop output
+are checked for accidental `cloudflare:workers` imports. Desktop rebuilds reject
+an added SSE page through the generated mode-specific capability configuration.
+
+The built Node app is imported in a fresh Node process and serves a real Hono
+request that must return a rendered HTML document. This exposed a template bug:
+the direct-entry guard called `pathToFileURL(process.argv[1])` even when Node eval
+or embedding supplied no entry filename. The guard now checks for that argument
+first, preserving direct startup while allowing programmatic imports.
+
+This proves build compatibility and Node HTTP SSR, not Deno runtime execution,
+Electron launch/native packaging, or WebSocket behavior. Source review also found
+that generated Node entries do not attach `CossackNodeAdapter`, despite the runtime
+profile allowing process-local WebSockets. Reconcile generated runtime wiring and
+capability enforcement before closing RT-25; do not attach the legacy adapter
+without auditing authentication, middleware, and service-scope behavior.
+
+Verification: all **3 generated runtime integration cases passed**, including
+Node HTTP execution, full emitted chunk checks, and Desktop rejection; complete
+scaffold suite **92 passed**; `pnpm tsc --noEmit` passed.
+**12/58 tasks remain checked; RT-25 stays open.** Next address Node realtime configuration and selected feature
+requirements in recipe planning, then audit the complete RT-25 acceptance set.
+
 <a id="codex-handler-default-parity-2026-10-03"></a>
 ### Codex review: functional handlers and default component selection (2026-10-03)
 

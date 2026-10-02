@@ -918,7 +918,7 @@ export const env: Record<string, unknown> = {
   DB_PATH: process.env.DB_PATH ?? './database.sqlite',
 };
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   serve({ fetch: (request) => app.fetch(request, env), port: Number(process.env.PORT) || 3000 });
 }
 `;

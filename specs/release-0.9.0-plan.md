@@ -945,7 +945,11 @@ recipe planning where applicable.
 The adapter audit found that Node/Deno do not dispatch schedules; their
 `scheduledHandlers` capability now reports `adapter-required` and selected
 requirements fail builds. Do not mark this capability available until a real
-scheduling integration is configured and verified. Full generated-app acceptance remains required.
+scheduling integration is configured and verified. Generated minimal Node/Deno and Node+Desktop builds now run through actual
+recipe configuration. Node HTTP SSR executes from the built app; Desktop rejects
+SSE. Deno runtime and Electron launch are not covered by these build tests.
+Generated Node entries still lack WebSocket adapter attachment; reconcile that
+with the capability profile and security/lifecycle requirements before completion.
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.

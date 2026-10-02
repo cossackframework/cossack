@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex handler/default parity (2026-10-03):** read
+> **Latest checkpoint — Codex generated runtime builds (2026-10-03):** read
+> [real configuration builds and Node startup correction](./release-0.9.0.md#codex-generated-runtime-builds-2026-10-03).
+> **Author: Codex.** Generated Node/Deno and Desktop side-target builds now have
+> acceptance coverage; Node's built HTTP app is exercised. Fixed imports crashing
+> when process.argv[1] is absent. **12/58 tasks remain checked.** RT-25 still needs
+> Node realtime wiring/capability parity and selected recipe feature requirements.
+> Deno execution and Electron launch/packaging were not verified here.
+
+> **Previous checkpoint — Codex handler/default parity (2026-10-03):** read
 > [CLI classification and runtime selection corrections](./release-0.9.0.md#codex-handler-default-parity-2026-10-03).
 > **Author: Codex.** CLI/build discovery recognize functional HTTP modules only
 > inside the router's API boundary. Runtime component paths select default exports
