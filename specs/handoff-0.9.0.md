@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex inherited RPC registration (2026-10-03):** read
+> **Latest checkpoint — Codex inherited options (2026-10-03):** read
+> [option resolution and real dispatch corrections](./release-0.9.0.md#codex-inherited-options-2026-10-03).
+> Core now merges inherited server-method options with nearest declarations
+> winning. Generated registration preserves inherited policies. Actual RPC dispatch
+> also retains the receiver for inherited prototype actions. **11/58 tasks remain
+> checked.** Continue CLI-04's complete grouped-route/layout/service acceptance
+> and full lifecycle verification; the release goal remains active.
+
+> **Previous checkpoint — Codex inherited RPC registration (2026-10-03):** read
 > [compiled execution findings and next verification](./release-0.9.0.md#codex-inherited-rpc-2026-10-03).
 > Fixed pre-super access to `this`, dropped constructor arguments, and missing
 > inherited automatic RPC registration. Server/client compiled execution tests

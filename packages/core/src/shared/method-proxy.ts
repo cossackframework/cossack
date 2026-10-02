@@ -1,3 +1,4 @@
+import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
@@ -286,7 +287,7 @@ function rejectedRpcCall(code: string, message: string, name: string): ReturnTyp
 
 /** Resolve the @Server({ timeout }) deadline declared for a method, if any. */
 function serverMethodTimeout(constructor: any, name: string): number | undefined {
-    const metadata = Reflect.getMetadata('cossack:server-methods', constructor) || {};
+    const metadata = collectServerMethodMetadata(constructor);
     const timeout = Number(metadata[name]?.timeout);
     return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
 }
@@ -627,7 +628,7 @@ export function setupServerMethodProxies(component: any): void {
     }
 
     // Get server methods directly from Reflect metadata
-    const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', component.constructor) || {};
+    const serverMethodsMetadata = collectServerMethodMetadata(component.constructor);
 
     // Build the server methods list from metadata
     const serverMethods = Object.entries(serverMethodsMetadata)

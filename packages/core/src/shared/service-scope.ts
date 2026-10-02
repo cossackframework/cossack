@@ -1,3 +1,4 @@
+import { collectServerMethodMetadata } from './server-method-metadata';
 import './metadata';
 import type { Context } from 'hono';
 import type { User } from './user';
@@ -318,7 +319,7 @@ export class ServiceScope {
     private installClientProxy(entry: OwnedService): void {
         if (typeof window === 'undefined' || this.clientProxyInstalled.has(entry.instance)) return;
         if (!this.ownerRouteId) return;
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', entry.serviceClass) || {};
+        const serverMethods = collectServerMethodMetadata(entry.serviceClass);
         const clientMethods = Reflect.getMetadata('cossack:client-methods', entry.serviceClass) || {};
         for (const action of Object.keys(serverMethods)) {
             if (clientMethods[action] || isSharedMethod(entry.serviceClass, action)) continue;

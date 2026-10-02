@@ -1,3 +1,4 @@
+import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/cossack.ts
 import {
     renderToString,
@@ -931,7 +932,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
 
             // Get server methods directly from Reflect metadata instead of serialized state
-            const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+            const serverMethodsMetadata = collectServerMethodMetadata(this.constructor);
             const serverMethods = Object.entries(serverMethodsMetadata)
                 .filter(([name]) => !isSharedMethod(this.constructor, name))
                 .map(([name, options]: [string, any]) => ({
@@ -1124,7 +1125,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that
             // a longer client payload could displace.
-            const result = await (actionMethod as any)(...(validatedPayload as any[]));
+            // Inherited prototype actions may not have been auto-bound by the
+            // most-derived constructor. Preserve the component receiver here.
+            const result = await (actionMethod as any).apply(this, validatedPayload as any[]);
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
                 iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
                 cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };
@@ -1881,7 +1884,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
 
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+        const serverMethods = collectServerMethodMetadata(this.constructor);
         for (const method in serverMethods) {
             const channel = serverMethods[method].channel || 'global';
             if (!definedChannels.has(channel)) {

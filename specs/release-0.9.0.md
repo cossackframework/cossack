@@ -86,6 +86,37 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-inherited-options-2026-10-03"></a>
+### Codex review: inherited options and action receivers (2026-10-03)
+
+**Author: Codex.** Core timeout lookup, component proxy/bootstrap metadata, and
+service bootstrap/disposal previously read only the nearest server-method map.
+They now share a hierarchy collector that retains inherited declarations,
+preserves their timeout/channel/provider/input options, and lets the nearest
+explicit method declaration win without mutating ancestor maps. Compiler-generated
+registration also copies inherited options instead of replacing them with default
+channel/provider metadata.
+
+A real derived component dispatched through `InMemoryWebSocketRuntime` exposed
+another bug: an inherited state-changing action was invoked without its component
+receiver because only the nearest prototype had been auto-bound. RPC execution
+now applies the action with the component receiver. The regression proves
+inherited input validation, ordinary state mutation, and successful results when
+the child owns an unrelated server-method map. A separate loopback regression
+proves inherited timeout enforcement for a derived client metadata map.
+
+Verification: complete core suite **673 passed**; complete framework suite
+**581 passed**; core build, framework declaration generation, root TypeScript,
+and all **11 package type checks passed**. The compiler
+execution fixtures also verify inherited channel/timeout retention for server and
+client output, while unit metadata tests verify nearest-declaration precedence
+and ancestor isolation.
+
+**11/58 tasks remain checked.** These fixes improve actual inheritance behavior;
+they do not by themselves complete CLI-04's grouped-route/layout/service acceptance,
+full DI/bootstrap lifecycle, or remaining runtime/release requirements. Continue
+that acceptance fixture using the shared compiler/scaffold/runtime model.
+
 <a id="codex-inherited-rpc-2026-10-03"></a>
 ### Codex review: inherited compiler RPC registration (2026-10-03)
 

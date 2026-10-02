@@ -184,6 +184,22 @@ describe('realtime (WebSocket) RPC conformance', () => {
         expect(client.loading.guarded).toBeUndefined();
     });
 
+    it('dispatches and validates inherited actions on a real derived server component', async () => {
+        class Derived extends ServerComponent {
+            @Server() ownAction() { return 'child'; }
+        }
+        const derived = createInstance(Derived) as Derived;
+        derived.connectedCallback();
+        const derivedRuntime = new InMemoryWebSocketRuntime(derived);
+        const derivedSockets = makeLoopback(derivedRuntime);
+        client.websockets.set('page', derivedSockets.clientSocket);
+        await expect(Promise.resolve(client.guarded({ title: 'x' }))).rejects.toMatchObject({
+            code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) },
+        });
+        await expect(Promise.resolve(client.guarded({ title: 'valid' }))).resolves.toBe('saved:valid');
+        await expect(Promise.resolve(client.ordinary(3))).resolves.toBe(3);
+    });
+
     it('validates forwarded service actions with their declaring class metadata', async () => {
         @Service()
         class ValidatedService {
@@ -237,6 +253,14 @@ describe('realtime (WebSocket) RPC conformance', () => {
         expect(client.loading.stream).toBeUndefined();
         // The cancel message terminated the server-side generator.
         expect(sockets.clientSocket.sent.some((raw: string) => JSON.parse(raw).type === 'cancel')).toBe(true);
+    });
+
+    it('enforces an inherited deadline when the derived client owns another server method', async () => {
+        const Parent = client.constructor;
+        client.constructor = class Child extends Parent {};
+        Reflect.defineMetadata('cossack:server-methods', { ordinary: { timeout: 100 } }, client.constructor);
+        await expect(Promise.resolve(client.neverResponds())).rejects.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
+        expect(client.loading.neverResponds).toBeUndefined();
     });
 
     it('reports deadline expiry with uncertain-outcome semantics', async () => {

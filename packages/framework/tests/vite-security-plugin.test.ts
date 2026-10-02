@@ -2326,9 +2326,11 @@ describe('compiler inspection facts', () => {
       }
     }
     const classes = new Function('Cossack', `${js.code}; return { Parent, Child };`)(Root);
+    Reflect.defineMetadata('cossack:server-methods', { parentAction: { timeout: 42, channel: 'private', provider: 'page' } }, classes.Parent);
     const child = new classes.Child('dependency');
     expect(child.args).toEqual(['dependency']);
     expect(Object.keys(child.metadata).sort()).toEqual(['childAction', 'parentAction']);
+    expect(child.metadata.parentAction).toMatchObject({ timeout: 42, channel: 'private' });
     if (target === 'client') child.__cossack_proxies = new Map([['parentAction', () => 10], ['childAction', () => 20]]);
     expect(child.parentAction()).toBe(target === 'client' ? 10 : 1);
     expect(child.childAction()).toBe(target === 'client' ? 20 : 2);

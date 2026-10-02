@@ -1,3 +1,4 @@
+import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/service-bootstrap.ts
 import './metadata';
 import { isService } from './container';
@@ -204,7 +205,7 @@ export function registerServiceState(component: any, serviceInstance: any): void
  * back to the component's state container after execution.
  */
 export function forwardServiceMethods(component: any, serviceInstance: any): void {
-    const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
+    const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
     const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
     const serviceStateKeys = Object.keys(serviceStateMeta);
@@ -239,7 +240,7 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
  * Uses the same /crpc endpoint as the component's own proxies.
  */
 export function proxyServiceMethods(component: any, serviceInstance: any): void {
-    const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
+    const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
     const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
     const serviceStateKeys = Object.keys(serviceStateMeta);

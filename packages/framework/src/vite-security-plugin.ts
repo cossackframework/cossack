@@ -1484,7 +1484,17 @@ function createMetadataInjection(
       const methods = ${methodList};
       for (const name of methods) {
         if (!serverMethods[name]) {
-          serverMethods[name] = { channel: 'global', provider: 'page', __serverOnly: true };
+          let parent = Object.getPrototypeOf(this);
+          let inherited;
+          while (parent && parent !== Function.prototype) {
+            const own = Reflect.getOwnMetadata('cossack:server-methods', parent);
+            if (own && Object.prototype.hasOwnProperty.call(own, name)) {
+              inherited = own[name];
+              break;
+            }
+            parent = Object.getPrototypeOf(parent);
+          }
+          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', provider: 'page', __serverOnly: true };
         }
       }
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
