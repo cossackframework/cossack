@@ -2,6 +2,11 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+Read [the detailed implementation plan](./release-0.9.0-plan.md) before continuing.
+It explains all 58 checklist tasks, including their purpose, current baseline,
+proposed implementation, dependencies, source locations, and acceptance criteria.
+It also gives the suggested execution order and cross-feature acceptance scenarios.
+
 ## Status and scope
 
 This is a work-in-progress checkpoint, not a release. The full objective is to

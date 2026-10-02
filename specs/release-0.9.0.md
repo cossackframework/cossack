@@ -4,78 +4,82 @@ This release implements the framework, developer experience, agent tooling,
 and Cloudflare work agreed in the feature review. An unchecked item remains
 in scope. Package versions change only after implementation and verification.
 
+Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
+purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
+below link directly to those explanations.
+
 ## CLI and agent tooling
 
-- [x] Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-- [ ] Validate command-specific flags and reject ambiguous/unknown options consistently. Explicit boolean values are implemented.
-- [ ] Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands.
-- [ ] Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
-- [ ] Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
-- [ ] Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [ ] Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
-- [ ] Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
+- [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
+- [ ] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Explicit boolean values are implemented.
+- [ ] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands.
+- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
+- [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
+- [ ] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
+- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
 
 ## Runtime and application APIs
 
-- [ ] Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics.
-- [ ] Validated server actions with input schemas, field errors, and shared resource policies.
-- [ ] Public server resource pending/error/retry state and typed refresh/invalidation.
-- [ ] State/store/computed guidance and serialization/shallow mutation diagnostics.
-- [ ] Typed task dependencies, contextual failures, and cancellation of stale async work.
-- [ ] Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
-- [ ] Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
-- [ ] Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
-- [ ] Navigation completion and cache/scroll/transition diagnostics.
-- [ ] Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] Session/flash recipes covering RPC failure, redirects, old input, and rotation.
-- [ ] DI resolution errors and scope/lifetime inspection with clear global/scoped guidance.
-- [ ] Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
-- [ ] Typed resource authorization policies and client visibility helpers.
-- [ ] Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
-- [ ] Structured migration/seeder plans including SQL, destructive operations, environment, and target.
-- [ ] Shared Studio/CLI database inspection service.
-- [ ] Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
-- [ ] Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
-- [ ] SSR/hydration diagnostics with component/field/source information and test helpers.
-- [ ] SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
-- [ ] Typed markdown frontmatter, route/URL collision checks, and locale static output.
-- [ ] Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
-- [ ] Inferred configuration factories, required binding validation, and secret redaction.
-- [ ] Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
-- [ ] Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
-- [ ] Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
-- [ ] Devtools snapshots and timelines with correlation IDs.
-- [ ] Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite.
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics.
+- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
+- [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
+- [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
+- [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work.
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
+- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
+- [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
+- [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
+- [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation.
+- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance.
+- [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
+- [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
+- [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
+- [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
+- [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
+- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
+- [ ] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
+- [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
+- [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
+- [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
+- [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
+- [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
+- [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
+- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
+- [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite.
 
 ## New services
 
-- [ ] Background jobs with delays, retries, idempotency, failure inspection, and local test adapters.
-- [ ] Schedules/Cron integration.
-- [ ] Email/in-app notification templates, preferences, and delivery status using existing SMTP support where applicable.
-- [ ] Durable multi-step Workflows integration.
-- [ ] Turnstile component and server token verification.
+- [ ] [SVC-01](./release-0.9.0-plan.md#svc-01) Background jobs with delays, retries, idempotency, failure inspection, and local test adapters.
+- [ ] [SVC-02](./release-0.9.0-plan.md#svc-02) Schedules/Cron integration.
+- [ ] [SVC-03](./release-0.9.0-plan.md#svc-03) Email/in-app notification templates, preferences, and delivery status using existing SMTP support where applicable.
+- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration.
+- [ ] [SVC-05](./release-0.9.0-plan.md#svc-05) Turnstile component and server token verification.
 
 ## Cloudflare deployment
 
-- [ ] Select environment before Vite build and share it across SSG, bindings, migrations, and deployment.
-- [ ] Explicit local/remote database targets using the existing migration system.
-- [x] Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
-- [ ] Real resource selection or Wrangler provisioning in place of fake resource IDs.
-- [ ] Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
-- [ ] Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
-- [x] Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] Production logs, source maps, correlation IDs, and build/startup budgets.
-- [ ] Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
-- [ ] Correct custom-domain/build deployment documentation and tested compatibility baseline.
-- [x] Remove tracked credential values; report any required external credential rotation without exposing values.
+- [ ] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment.
+- [ ] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system.
+- [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
+- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
+- [ ] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
+- [ ] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
+- [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
+- [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
+- [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline.
+- [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
 
 ## Release gates
 
-- [x] Fix reports.md issues and verify package/SSG regressions.
-- [ ] Compile documentation examples and validate generated applications and published tarballs.
-- [ ] Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests.
-- [ ] Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes.
-- [ ] Audit every checklist item against implementation and verification evidence before marking the goal complete.
+- [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
+- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs.
+- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests.
+- [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes.
+- [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
 
 ## Verification log
 
