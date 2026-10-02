@@ -86,6 +86,30 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-deno-runtime-eviction-2026-10-03"></a>
+### Codex continuation: Deno runtime eviction (2026-10-03)
+
+**Author: Codex.** Deno previously created duplicate components for concurrent
+connections to one scope and discarded idle runtime entries without destroying
+their components. It now caches pending creation by an unambiguous tuple key,
+reserves capacity before asynchronous initialization, and releases reservations
+after success or failure. Idle/over-capacity eviction awaits component destruction.
+Connections closed during initialization cannot register afterward; late open or
+message callbacks do not create new instances. Cleanup failures are reported
+without rejecting the close event callback.
+
+Verification: `pnpm --filter @cossackframework/deno-adapter test` passed (9 tests),
+`pnpm --filter @cossackframework/deno-adapter build` passed, and root/package type
+checks passed. Six new tests use the actual in-memory runtime with mocked Hono
+socket events. They verify shared initialization, last-client eviction, awaited
+replacement disposal, reserved capacity, failed-creation retry, early/late close,
+and cleanup failure reporting. They do not execute Deno or a real network socket.
+
+**12/58 tasks remain checked.** RT-12/RT-25 are still open. Continue with explicit
+adapter/server shutdown, waiting for in-flight actions before disposal, and live
+Deno acceptance. Node generated applications still need guarded WebSocket wiring.
+Idle pruning remains activity-triggered, not timer-driven.
+
 <a id="codex-runtime-websocket-scopes-2026-10-03"></a>
 ### Codex review: runtime WebSocket service scopes (2026-10-03)
 

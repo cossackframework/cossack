@@ -21,6 +21,7 @@ interface DenoSocket {
 interface RuntimeEntry {
   runtime: InMemoryWebSocketRuntime<DenoSocket>;
   lastActive: number;
+  dispose(): Promise<void>;
 }
 
 export interface DenoApplication {
@@ -44,6 +45,7 @@ function denoGlobal(): any {
 
 export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDenoAdapter {
   const instances = new Map<string, RuntimeEntry>();
+  const pending = new Map<string, Promise<RuntimeEntry>>();
   const fetchHandlers = new WeakMap<DenoApplication, (
     request: Request,
     env?: Record<string, unknown>,
@@ -76,52 +78,75 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
     return handler;
   };
 
-  const prune = (reserveSlot = false) => {
+  const prune = async (reserveSlot = false) => {
+    const disposals: Promise<void>[] = [];
+    const remove = (key: string, entry: RuntimeEntry) => {
+      instances.delete(key);
+      disposals.push(entry.dispose());
+    };
     const now = Date.now();
     for (const [key, entry] of instances) {
-      if (entry.runtime.clientCount === 0 && now - entry.lastActive >= idleTimeoutMs) instances.delete(key);
+      if (!pending.has(key) && entry.runtime.clientCount === 0 && now - entry.lastActive >= idleTimeoutMs) remove(key, entry);
     }
-    const targetSize = Math.max(0, maxInstances - (reserveSlot ? 1 : 0));
-    if (instances.size <= targetSize) return;
+    const targetSize = Math.max(0, maxInstances - pending.size - (reserveSlot ? 1 : 0));
+
     const idle = [...instances.entries()]
-      .filter(([, entry]) => entry.runtime.clientCount === 0)
+      .filter(([key, entry]) => !pending.has(key) && entry.runtime.clientCount === 0)
       .sort((a, b) => a[1].lastActive - b[1].lastActive);
-    for (const [key] of idle) {
+    for (const [key, entry] of idle) {
       if (instances.size <= targetSize) break;
-      instances.delete(key);
+      remove(key, entry);
     }
+    await Promise.all(disposals);
   };
 
   const handleWebSocketUpgrade = async (context: Context, upgrade: RuntimeWebSocketUpgrade): Promise<Response> => {
     let entryPromise: Promise<RuntimeEntry> | undefined;
-    const getEntry = async () => {
-      const key = `${upgrade.componentId}:${upgrade.provider}:${upgrade.target}`;
-      let entry = instances.get(key);
-      if (entry) {
-        entry.lastActive = Date.now();
-        return entry;
+    let closed = false;
+    const getEntry = (): Promise<RuntimeEntry> => {
+      const key = JSON.stringify([upgrade.componentId, upgrade.provider, upgrade.target]);
+      const existing = instances.get(key);
+      if (existing) {
+        existing.lastActive = Date.now();
+        return Promise.resolve(existing);
       }
-      prune(true);
-      if (instances.size >= maxInstances) {
-        throw new Error('Deno WebSocket instance limit reached');
+      const creating = pending.get(key);
+      if (creating) return creating;
+      // Reserve before asynchronous disposal/creation so concurrent opens share
+      // one component and count in the instance limit.
+      const cleanup = prune(true);
+      if (instances.size + pending.size >= maxInstances) {
+        return cleanup.then(() => { throw new Error('Deno WebSocket instance limit reached'); });
       }
-      const component = await upgrade.createComponent();
-      entry = {
-        runtime: new InMemoryWebSocketRuntime<DenoSocket>(component, {
-          onError: (error) => console.error('[Cossack] Ignoring malformed WebSocket message:', error),
-        }),
-        lastActive: Date.now(),
-      };
-      instances.set(key, entry);
-      return entry;
+      const creation = cleanup.then(async () => {
+        const component = await upgrade.createComponent();
+        try {
+          const entry: RuntimeEntry = {
+            runtime: new InMemoryWebSocketRuntime<DenoSocket>(component, {
+              onError: (error) => console.error('[Cossack] Ignoring malformed WebSocket message:', error),
+            }),
+            lastActive: Date.now(),
+            dispose: () => component.destroyAsync(),
+          };
+          instances.set(key, entry);
+          return entry;
+        } catch (error) {
+          await component.destroyAsync();
+          throw error;
+        }
+      }).finally(() => { pending.delete(key); });
+      pending.set(key, creation);
+      return creation;
     };
 
     const handler = upgradeWebSocket(() => ({
       async onOpen(_event, socket) {
+        if (closed) return;
         const client = socket as unknown as DenoSocket;
         try {
           entryPromise ??= getEntry();
           const entry = await entryPromise;
+          if (closed) return;
           entry.runtime.addClient(client, upgrade.user);
           const state = entry.runtime.getInitialState();
           client.send(JSON.stringify({ type: 'state-update', state }));
@@ -131,10 +156,12 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         }
       },
       async onMessage(event, socket) {
+        if (closed) return;
         const client = socket as unknown as DenoSocket;
         try {
           entryPromise ??= getEntry();
           const entry = await entryPromise;
+          if (closed) return;
           entry.lastActive = Date.now();
           await entry.runtime.onClientMessage(client, String(event.data));
         } catch (error) {
@@ -143,13 +170,15 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         }
       },
       async onClose(_event, socket) {
+        closed = true;
         if (!entryPromise) return;
         const entry = await entryPromise.catch(() => undefined);
         if (entry) {
           entry.runtime.removeClient(socket as unknown as DenoSocket);
           entry.lastActive = Date.now();
         }
-        prune();
+        try { await prune(); }
+        catch (error) { console.error('[Cossack] Deno WebSocket cleanup failed:', error); }
       },
     }));
     const response = await handler(context as any, async () => {});

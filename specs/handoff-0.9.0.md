@@ -2,7 +2,16 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex runtime WebSocket scopes (2026-10-03):** read
+> **Latest checkpoint — Codex Deno runtime eviction (2026-10-03):** read
+> [concurrent creation and disposal](./release-0.9.0.md#codex-deno-runtime-eviction-2026-10-03).
+> **Author: Codex.** Deno now shares pending component creation by scope, counts
+> reservations against capacity, awaits eviction disposal, and ignores callbacks
+> after connection close. Nine adapter tests and the package build pass.
+> **12/58 tasks remain checked.** Next finish Deno shutdown and in-flight action
+> cleanup, then Node guarded runtime wiring. Real Deno socket lifecycle acceptance
+> remains required; these new tests mock Hono's socket event bridge.
+
+> **Previous checkpoint — Codex runtime WebSocket scopes (2026-10-03):** read
 > [scope creation and cleanup fixes](./release-0.9.0.md#codex-runtime-websocket-scopes-2026-10-03).
 > **Author: Codex.** The guarded runtime WebSocket factory now constructs nested
 > layout service scopes and bootstraps with original page parameters, user, and

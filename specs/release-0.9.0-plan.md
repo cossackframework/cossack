@@ -956,6 +956,11 @@ page without changing service-state ownership. Next wire Node through this hook,
 then make adapter eviction/shutdown await component destruction. Test concurrent
 creation for the same runtime key and real authenticated connections from a
 generated app. Factory tests alone do not prove transport lifecycle behavior.
+Deno now deduplicates pending scope creation, reserves capacity, and awaits idle
+entry disposal. Socket-event tests cover early close and retry after failure.
+Finish explicit shutdown and in-flight action lifetimes, then validate with real
+Deno sockets. Idle pruning currently occurs on activity rather than a timer.
+
 
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and

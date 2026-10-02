@@ -24,6 +24,12 @@ Requirements: Deno 2.9+, Hono 4.12+, and ESM. `stateful: true` is rejected
 because Deno WebSocket instances are process-local; persist durable state in a
 database.
 
+WebSocket connections to the same component/provider/scope share one pending
+initialization and one runtime instance. `maxInstances` includes pending creation.
+When socket activity triggers idle eviction, the adapter awaits component cleanup;
+`idleTimeoutMs` does not install a periodic eviction timer. Server shutdown cleanup
+is not yet managed by the adapter.
+
 - [Introduction](./docs/introduction.md)
 - [Installation](./docs/installation.md)
 - [Web and Deno Deploy](./docs/web.md)
