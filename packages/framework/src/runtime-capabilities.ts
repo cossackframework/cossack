@@ -7,11 +7,12 @@
 //
 //   available        The runtime supports it and the required bindings exist.
 //   missing-binding  The runtime supports it, but a required binding is absent.
-//   unsupported      The runtime cannot provide it (an adapter cannot help).
+//   adapter-required A separate integration is needed; the built-in adapter does not provide it.
+//   unsupported      The current runtime profile does not support it.
 
 export type RuntimeName = 'cloudflare' | 'node' | 'deno' | 'desktop' | 'unknown';
 
-export type CapabilityStatus = 'available' | 'missing-binding' | 'unsupported';
+export type CapabilityStatus = 'available' | 'missing-binding' | 'adapter-required' | 'unsupported';
 
 export interface CapabilityRequirement {
     /** Transport protocols pages may use. */
@@ -29,6 +30,8 @@ export interface CapabilityRequirement {
 }
 
 interface RuntimeProfile extends RequirementSet {
+    /** Supported by the host, but not dispatched by the built-in runtime adapter. */
+    adapterRequirements?: readonly (keyof RequirementSet)[];
     /** Bindings that upgrade a capability from missing-binding to available. */
     bindingRequirements: Partial<Record<keyof RequirementSet, readonly string[]>>;
 }
@@ -53,6 +56,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         },
     },
     node: {
+        adapterRequirements: ['scheduledHandlers'],
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
@@ -62,6 +66,7 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         bindingRequirements: {},
     },
     deno: {
+        adapterRequirements: ['scheduledHandlers'],
         transports: ['http', 'sse', 'durable-object'],
         realtimeCoordination: false,
         processLocalRealtime: true,
@@ -97,7 +102,7 @@ export interface CapabilityUse {
 }
 
 export interface CapabilityDiagnostic {
-    code: 'COSSACK_CAPABILITY_UNSUPPORTED' | 'COSSACK_CAPABILITY_BINDING_MISSING';
+    code: 'COSSACK_CAPABILITY_UNSUPPORTED' | 'COSSACK_CAPABILITY_BINDING_MISSING' | 'COSSACK_CAPABILITY_ADAPTER_REQUIRED';
     feature: string;
     source: CapabilityUse['source'];
     capability: keyof CapabilityRequirement;
@@ -118,7 +123,9 @@ export function checkCapabilityRequirements(
         const result = evaluateCapability(runtime, capability, env, requirement);
         if (result.status === 'available') return [];
         return [{
-            code: result.status === 'unsupported' ? 'COSSACK_CAPABILITY_UNSUPPORTED' as const : 'COSSACK_CAPABILITY_BINDING_MISSING' as const,
+            code: result.status === 'unsupported' ? 'COSSACK_CAPABILITY_UNSUPPORTED' as const
+                : result.status === 'adapter-required' ? 'COSSACK_CAPABILITY_ADAPTER_REQUIRED' as const
+                : 'COSSACK_CAPABILITY_BINDING_MISSING' as const,
             feature: use.feature,
             source: use.source,
             capability,
@@ -157,6 +164,7 @@ export function evaluateCapability(
     const supported = profile[capability] === true;
     if (!supported) return { capability, status: 'unsupported', missingBindings: [] };
     if (requirement === false) return { capability, status: 'unsupported', missingBindings: [] };
+    if (profile.adapterRequirements?.includes(capability)) return { capability, status: 'adapter-required', missingBindings: [] };
     const required = profile.bindingRequirements[capability] ?? [];
     const present = env ?? {};
     const missingBindings = required.filter(name => present[name] === undefined || present[name] === null);
@@ -208,6 +216,7 @@ export function describeRuntimeCapabilities(
 /** Human/agent-readable summary line for diagnostics (names only). */
 export function formatCapabilityResult(result: CapabilityResult): string {
     if (result.status === 'available') return `${result.capability}: available`;
+    if (result.status === 'adapter-required') return `${result.capability}: requires an adapter integration; not provided by the built-in runtime adapter`;
     if (result.status === 'missing-binding') {
         return `${result.capability}: missing binding(s) ${result.missingBindings.join(', ')}`;
     }

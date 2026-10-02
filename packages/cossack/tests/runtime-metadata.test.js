@@ -35,3 +35,10 @@ it('does not guess an unrecorded runtime', async () => {
   detectProjectRuntime.mockResolvedValue(undefined);
   expect(await inspectRuntimeMetadata('/app', pages)).toMatchObject({ name: 'unknown', status: 'unknown', transports: [] });
 });
+it.each(['node', 'deno'])('reports missing schedule integration without rejecting unrelated %s routes', async runtime => {
+  detectProjectRuntime.mockResolvedValue(runtime);
+  const result = await inspectRuntimeMetadata('/app', [{ ...pages[0], transport: 'http' }]);
+  expect(result.capabilities.scheduledHandlers.status).toBe('adapter-required');
+  expect(result.transports[0].status).toBe('available');
+  expect(result.diagnostics).toEqual([]);
+});

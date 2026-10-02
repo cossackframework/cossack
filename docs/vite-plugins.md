@@ -50,7 +50,11 @@ cossackPages({
 Each requirement identifies the selected feature and its declaration. Optional
 `line` and `column` fields improve the build diagnostic location. Missing bindings
 produce `COSSACK_CAPABILITY_BINDING_MISSING`; unsupported runtime requirements
-produce `COSSACK_CAPABILITY_UNSUPPORTED`. Desktop supports HTTP transport only.
+produce `COSSACK_CAPABILITY_UNSUPPORTED`. Requirements that need a separate
+integration produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, built-in
+Node and Deno adapters do not dispatch scheduled handlers. Their profile reports
+`adapter-required`, so selecting `scheduledHandlers: true` fails the build instead
+of advertising working schedules. Desktop supports HTTP transport only.
 
 These checks cover the supplied requirements. They do not discover every route,
 validate remote resources, or install runtime adapters. Only declare selected

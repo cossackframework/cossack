@@ -932,8 +932,10 @@ explicit `capabilities` declarations checked before bundle output. Real Vite
 fixtures cover unsupported/missing-binding failure and portable supported builds.
 Next connect recipe selection and generated config to this API, derive page
 requirements from shared metadata, and resolve selected-environment bindings.
-Audit adapter-dependent capabilities before using their current profile flags as
-proof of configured support. Full generated-app acceptance remains required.
+The adapter audit found that Node/Deno do not dispatch schedules; their
+`scheduledHandlers` capability now reports `adapter-required` and selected
+requirements fail builds. Do not mark this capability available until a real
+scheduling integration is configured and verified. Full generated-app acceptance remains required.
 
 Start in framework `runtime-adapter.ts`, scaffold `registry.js`, and
 `packages/node-adapter/`, `deno-adapter/`, and `desktop/`.

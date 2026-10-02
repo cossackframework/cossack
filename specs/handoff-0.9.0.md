@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex build capabilities (2026-10-03):** read
+> **Latest checkpoint — Codex schedule capability audit (2026-10-03):** read
+> [adapter-dependent status and verification](./release-0.9.0.md#codex-schedule-capability-2026-10-03).
+> **Author: Codex.** Node/Deno no longer advertise scheduled dispatch that their
+> built-in adapters do not implement. Shared inspection reports `adapter-required`;
+> selected schedule requirements fail builds with a dedicated diagnostic.
+> **12/58 tasks remain checked.** Continue RT-25 automatic page requirements,
+> recipe configuration, environment binding discovery, and generated-app builds.
+
+> **Previous checkpoint — Codex build capabilities (2026-10-03):** read
 > [selected requirement enforcement and next integration](./release-0.9.0.md#codex-capability-build-2026-10-03).
 > **Author: Codex.** `cossackPages({ capabilities })` rejects unsupported or
 > unconfigured selected features before bundle output, using the shared model

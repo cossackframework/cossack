@@ -86,6 +86,28 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-schedule-capability-2026-10-03"></a>
+### Codex review: adapter-dependent schedule capability (2026-10-03)
+
+**Author: Codex.** Auditing Node/Deno adapter source found no scheduled-handler
+dispatch, although both profiles advertised it as available. The shared model
+now reports `adapter-required` for their scheduled handlers. This differs from
+Desktop's unsupported capability and Cloudflare's platform support. Selected
+schedule requirements produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED` with the
+feature and source location; real Vite builds reject them before output.
+
+This does not introduce a scheduler or a flag that pretends an integration is
+installed. Future scheduling work must supply and validate that integration
+before the capability can become available. Unrelated HTTP routes remain valid;
+CLI summaries show the missing schedule integration without failing those routes.
+
+Verification: shared capability and real-build suites **18 passed**; CLI runtime
+metadata and inspection suites **17 passed**; framework declaration build, root
+TypeScript, and all **11 package type checks passed**. **12/58 tasks remain
+checked; RT-25 stays open.** Next integrate automatic page requirements and
+recipe-generated configuration with the build checker. Selected-environment
+binding resolution and complete generated-app acceptance are still required.
+
 <a id="codex-capability-build-2026-10-03"></a>
 ### Codex continuation: selected build capability requirements (2026-10-03)
 

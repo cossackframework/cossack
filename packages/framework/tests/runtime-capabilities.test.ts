@@ -8,6 +8,16 @@ import {
 } from '../src/runtime-capabilities';
 
 describe('runtime capability model (RT-25)', () => {
+    it('does not advertise scheduled dispatch from the built-in Node or Deno adapters', () => {
+        for (const runtime of ['node', 'deno'] as const) {
+            const result = evaluateCapability(runtime, 'scheduledHandlers', {});
+            expect(result).toEqual({ capability: 'scheduledHandlers', status: 'adapter-required', missingBindings: [] });
+            expect(formatCapabilityResult(result)).toContain('not provided by the built-in runtime adapter');
+            expect(describeRuntimeCapabilities(runtime, {}).scheduledHandlers).toEqual(result);
+        }
+        expect(evaluateCapability('cloudflare', 'scheduledHandlers', {})).toMatchObject({ status: 'available' });
+        expect(evaluateCapability('desktop', 'scheduledHandlers', {})).toMatchObject({ status: 'unsupported' });
+    });
     it('cloudflare gains durable coordination only with the COSSACK_SSE binding', () => {
         const without = evaluateCapability('cloudflare', 'realtimeCoordination', {});
         expect(without).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_SSE'] });
