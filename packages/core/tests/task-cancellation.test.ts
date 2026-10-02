@@ -34,7 +34,6 @@ describe('task cancellation and staleness (RT-05)', () => {
         const page = new SearchPage();
         await page.bootstrap({ skipInit: true }); // bootstrap run starts the slow 'a' execution
         (page as any).query = 'b';
-        (page as any)._scheduleStateBroadcast?.('query');
         await flush(4);
         await vi.waitFor(() => expect(applied).toEqual(['b']), { timeout: 1000 });
         expect((page as any).results).toEqual(['b']);
@@ -71,7 +70,6 @@ describe('task cancellation and staleness (RT-05)', () => {
         await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled(), { timeout: 1000 });
         errorSpy.mockClear();
         (page as any).value = 2;
-        (page as any)._scheduleStateBroadcast?.('value');
         await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled(), { timeout: 1000 });
         const message = errorSpy.mock.calls.map(call => call.join(' ')).join(' ');
         expect(message).toContain("'boom'");
@@ -114,7 +112,6 @@ describe('task cancellation and staleness (RT-05)', () => {
         const page = new Deterministic();
         await page.bootstrap({ skipInit: true }); // slow 'a' starts
         (page as any).query = 'b';
-        (page as any)._scheduleStateBroadcast?.('query');
         resolvers[1]('fresh');
         resolvers[0]('stale'); // stale resolves last: must not apply
         await flush(6);

@@ -98,6 +98,43 @@ stripped `@Server` method signatures to the call contract —
 rewrite. Unrecognized/missing annotations keep declared types. Tests cover
 all mappings plus untouched cases; framework 550 and core 647 tests green.
 
+### GLM continuation: Group 3 application-state items (2026-10-02)
+
+Six more checklist items advanced with implementation + tests:
+
+- RT-01 audit (upload boundary): raw arguments are validated BEFORE the
+  upload walker transforms them, so Maps/Sets fail with the original path on
+  HTTP exactly like WS/service instead of being silently emptied; Dates pass
+  through; handled values (File/FileList/DOM) are exempt; rejections never
+  throw synchronously. `describeUnsupportedValue` gained a handled-predicate.
+- CLI-04: `inspect routes` now lists method classifications — every @Server
+  method with the reason it becomes an RPC proxy (source line included) and
+  @Client/@Shared methods as transport-free. AST-extracted, no execution.
+- RT-05: task executions carry an AbortController identity; dependency
+  changes abort the previous execution, stale results are discarded, disposal
+  cancels in-flight tasks; failures report task, component, and trigger
+  (bootstrap vs dependency change with paths); slow tasks no longer block
+  siblings. Acceptance test: slow-first/fast-second retains the second
+  result; stale deferreds never apply.
+- RT-02: `@Server({ input })` declares action input contracts enforced on
+  every transport (HTTP /crpc, WebSocket, service RPC) BEFORE the method
+  runs — invalid input can never reach a mutation; failures reject
+  client-visibly with `COSSACK_VALIDATION_FAILED` and stable nested field
+  errors; declared coercion applies before the payload reaches the method.
+  Cross-module detection via a structural validationCode marker.
+- RT-03: `resourceStatus$(name)` exposes pending/ready/error, latest value,
+  last failure, and staleness (including the refresh window);
+  `refresh$` retries the loader directly without a render pass.
+- RT-04: development-only shallow-mutation diagnostics — nested mutations on
+  plain @State warn once per field with the component name and both fixes;
+  @Store stays silent; compiled out of production. docs/states.md gains the
+  mechanism selection table (GLM).
+- RT-09: `navigate()` settles with a typed `{ outcome, url, error? }` across
+  completed/redirected/superseded/canceled/failed; a navigation sequence
+  discards late responses when superseded; documented in
+  docs/prevent-navigation.md (GLM).
+- Gates: core 661, framework 553, CLI 312 tests green after each slice.
+
 ### GLM continuation after review: command contract + AST inspection (2026-10-02)
 
 Completed review items 1 and 2:
