@@ -7,8 +7,8 @@
  * parses the real syntax tree through Vite's re-exported oxc parser
  * (`parseSync`) and reports `unknown` with a reason for options it cannot
  * resolve statically. When the parser is unavailable (for example the CLI
- * runs outside a project with vite installed), callers fall back to the
- * regex heuristic and the extraction records its method.
+ * runs outside a project with vite installed), callers report unknown
+ * options without attempting heuristic extraction.
  */
 
 let parseSyncLoader;
@@ -113,7 +113,7 @@ function pageClass(program, code) {
  * Parse `code` and extract the exported @Page class's options. Returns
  * `{ options, method, reason }`: `method` is `ast` on success, `unknown`
  * when the options object is dynamic (an identifier or spread), and `null`
- * when no parser is available (the caller falls back to regex).
+ * when no parser is available (the caller reports unknown options).
  */
 export async function extractPageOptionsFromAst(code) {
   const parseSync = await loadParseSync();

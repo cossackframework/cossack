@@ -86,6 +86,20 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-parser-unavailable-2026-10-02"></a>
+### Codex continuation: remove heuristic route facts (2026-10-02)
+
+**Author: Codex.** Effective route inspection no longer falls back to regex
+extraction when the TypeScript parser is unavailable. Pages and layouts report
+unknown options with a parser-unavailable reason, retaining null/empty values
+instead of guessed transport, SSG, and services. The standalone legacy helper
+remains available, but the effective project model does not consume it.
+
+Verification: route suites passed **37 tests**, including a mocked unavailable
+parser with plausible decorator text in both a page and layout. `pnpm tsc
+--noEmit` passed. CLI-04 remains open for project inheritance, macro source
+mapping, and scaffold/capability integration. **11/58 tasks remain checked.**
+
 <a id="codex-static-options-2026-10-02"></a>
 ### Codex review: truthful static option extraction (2026-10-02)
 

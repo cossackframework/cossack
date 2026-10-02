@@ -2,7 +2,13 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex static options (2026-10-02):** read
+> **Latest checkpoint — Codex parser availability (2026-10-02):** read
+> [the removal of heuristic route facts](./release-0.9.0.md#codex-parser-unavailable-2026-10-02).
+> Parser-unavailable page/layout options now remain unknown. Route suites:
+> 37 passed; TypeScript passed. **11/58 tasks remain checked.** Continue CLI-04's
+> unresolved project inheritance, macro mapping, and scaffold/capability work.
+
+> **Previous checkpoint — Codex static options (2026-10-02):** read
 > [the option-extraction corrections](./release-0.9.0.md#codex-static-options-2026-10-02).
 > Nested SSG spreads/computed keys and invalid scalar options now remain unknown;
 > duplicate enabled keys use the last value. Route tests: 36 passed; types passed.

@@ -224,7 +224,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
   const pages = [];
   for (const page of model.pages) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
-    let method = 'regex';
+    let method = 'unknown';
     let reason = null;
     let methods = { methods: [] };
     try {
@@ -232,9 +232,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
       const source = fs.readFileSync(absolute, 'utf8');
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
-        // No parser available: keep the regex heuristic and say so.
-        options = extractPageOptions(source);
-        reason = 'Parsed with the regex fallback; install vite for exact AST extraction.';
+        reason = 'The TypeScript parser is unavailable; route options are unknown.';
       } else if (ast.method === 'ast') {
         options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
           decoratorLine: ast.decoratorLine ?? null };
@@ -275,15 +273,14 @@ export async function buildEffectiveRouteModel(projectRoot) {
   const layouts = [];
   for (const layout of model.layouts) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
-    let method = 'regex';
+    let method = 'unknown';
     let reason = null;
     try {
       const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
-        options = extractPageOptions(source);
-        reason = 'Parsed with the regex fallback; install vite for exact AST extraction.';
+        reason = 'The TypeScript parser is unavailable; route options are unknown.';
       } else if (ast.method === 'ast') {
         options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
           decoratorLine: ast.decoratorLine ?? null };
