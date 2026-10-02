@@ -147,14 +147,14 @@ describe('effective route metadata (RT-07)', () => {
     expect(extractPageOptions('class Plain {}')).toEqual({ transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null });
   });
 
-  it('builds per-page effective metadata: id, params, layouts, boundaries', () => {
+  it('builds per-page effective metadata: id, params, layouts, boundaries', async () => {
     write('src/pages/layout.ts', 'export default class Layout {}');
     write('src/pages/dashboard/layout.ts', 'export default class DashLayout {}');
     write('src/pages/dashboard/users/[id]/index.ts', "@Page({ transport: 'http' })\nexport default class UserPage {}");
     write('src/pages/dashboard/404/index.ts', 'export default class NotFound {}');
     write('src/pages/docs/[...path]/index.ts', "@Page({ transport: 'http', ssg: true })\nexport default class DocPage {}");
 
-    const model = buildEffectiveRouteModel(project());
+    const model = await buildEffectiveRouteModel(project());
     const user = model.pages.find((page) => page.route === '/dashboard/users/:id');
     expect(user).toMatchObject({
       routeId: expect.stringMatching(/^cmp_/),
@@ -174,11 +174,11 @@ describe('effective route metadata (RT-07)', () => {
     }
   });
 
-  it('uses runtime route precedence before assigning IDs', () => {
+  it('uses runtime route precedence before assigning IDs', async () => {
     write('src/pages/(fallback)/home/index.ts', 'class Fallback {}');
     write('src/pages/home/index.ts', 'class Home {}');
     write('src/pages/layout.ts', 'class Layout {}');
-    const model = buildEffectiveRouteModel(project());
+    const model = await buildEffectiveRouteModel(project());
     expect(model.pages.map(page => page.filePath)).toEqual(['/src/pages/home/index.ts']);
   });
 
@@ -192,5 +192,56 @@ describe('effective route metadata (RT-07)', () => {
       .toBe('/src/pages/dashboard/404/index.ts');
     expect(nearestSpecialPage('/src/pages/contact/index.ts', pages, '404'))
       .toBe('/src/pages/404/index.ts');
+  });
+});
+
+describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
+  function write(relative, content) {
+    const target = path.join(tmp, 'proj2', relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+  }
+  function project() { return path.join(tmp, 'proj2'); }
+
+  it('ignores comments, strings, nested objects, and trailing commas', async () => {
+    write('package.json', '{}');
+    write('src/pages/tricky/index.ts', [
+      "// transport: 'durable-object' inside a comment",
+      "const note = \"text with transport: 'no' inside a string\";",
+      "@Page({ transport: 'sse', ssg: true, cache: { transport: 'not-this' }, middlewares: [async (c, next) => { await next(); }], })",
+      'export default class Tricky {}',
+    ].join('\n'));
+    const model = await buildEffectiveRouteModel(project());
+    const tricky = model.pages.find(page => page.route === '/tricky');
+    expect(tricky).toMatchObject({ transport: 'sse', ssg: true, middlewares: 1 });
+    expect(tricky.extraction.method).toBe('ast');
+    expect(tricky.services).toEqual([]);
+  });
+
+  it('follows aliased Page imports from core', async () => {
+    write('package.json', '{}');
+    write('src/pages/aliased/index.ts', [
+      "import { Page as Route } from '@cossackframework/core';",
+      "@Route({ transport: 'http', services: [Audit] })",
+      'export default class Aliased {}',
+    ].join('\n'));
+    const model = await buildEffectiveRouteModel(project());
+    const aliased = model.pages.find(page => page.route === '/aliased');
+    expect(aliased).toMatchObject({ transport: 'http' });
+    expect(aliased.services).toEqual(['Audit']);
+  });
+
+  it('reports dynamic option objects as unknown with a reason', async () => {
+    write('package.json', '{}');
+    write('src/pages/dynamic/index.ts', [
+      'const options = { transport: \'http\' };',
+      '@Page(options)',
+      'export default class Dynamic {}',
+    ].join('\n'));
+    const model = await buildEffectiveRouteModel(project());
+    const dynamic = model.pages.find(page => page.route === '/dynamic');
+    expect(dynamic.extraction.method).toBe('regex');
+    expect(dynamic.extraction.reason).toContain('identifier options');
+    expect(dynamic.extraction.reason).toContain('cannot be resolved statically');
   });
 });

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractPageOptionsFromAst } from './page-options-ast.js';
 import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
 
 /**
@@ -214,19 +215,36 @@ export function nearestSpecialPage(pageFilePath, pages, type) {
  * parameters, layout ancestry, nearest 404/error boundaries, and source-level
  * @Page options. Inspection reads facts; it never executes components.
  */
-export function buildEffectiveRouteModel(projectRoot) {
+export async function buildEffectiveRouteModel(projectRoot) {
   const model = buildRouteModel(projectRoot);
   const layoutKeys = model.layouts.map((layout) => layout.filePath);
   const { routePathToIdMap } = computeRouteIds(model.pages.map(page => page.filePath), layoutKeys);
   const idFor = filePath => routePathToIdMap.get(filePath) ?? null;
-  const pages = model.pages.map((page) => {
-    let options = { transport: null, ssg: null, middlewares: 0, services: [] };
+  const pages = [];
+  for (const page of model.pages) {
+    let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let method = 'regex';
+    let reason = null;
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
-      options = extractPageOptions(fs.readFileSync(absolute, 'utf8'));
+      const source = fs.readFileSync(absolute, 'utf8');
+      const ast = await extractPageOptionsFromAst(source);
+      if (ast === null) {
+        // No parser available: keep the regex heuristic and say so.
+        options = extractPageOptions(source);
+        reason = 'Parsed with the regex fallback; install vite for exact AST extraction.';
+      } else if (ast.method === 'ast') {
+        options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
+          decoratorLine: ast.decoratorLine ?? null };
+        method = 'ast';
+      } else {
+        options = extractPageOptions(source);
+        reason = ast.reason ?? 'The @Page options could not be resolved statically.';
+      }
     } catch { /* unreadable source keeps null options; the route still lists */
+      reason = 'The page source could not be read.';
     }
-    return {
+    pages.push({
       ...page,
       routeId: idFor(page.filePath),
       params: extractRouteParams(page.route),
@@ -237,25 +255,42 @@ export function buildEffectiveRouteModel(projectRoot) {
       ssg: options.ssg,
       middlewares: options.middlewares,
       services: options.services,
+      extraction: { method, reason },
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine
         ? `${page.filePath}:${options.decoratorLine}`
         : page.filePath,
-    };
-  });
+    });
+  }
   // Layouts declare the services their subtrees can inject: inspection
   // reports ownership exactly as DI resolution finds it.
-  const layouts = model.layouts.map((layout) => {
+  const layouts = [];
+  for (const layout of model.layouts) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let method = 'regex';
+    let reason = null;
     try {
       const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
-      options = extractPageOptions(fs.readFileSync(absolute, 'utf8'));
+      const source = fs.readFileSync(absolute, 'utf8');
+      const ast = await extractPageOptionsFromAst(source);
+      if (ast === null) {
+        options = extractPageOptions(source);
+        reason = 'Parsed with the regex fallback; install vite for exact AST extraction.';
+      } else if (ast.method === 'ast') {
+        options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
+          decoratorLine: ast.decoratorLine ?? null };
+        method = 'ast';
+      } else {
+        options = extractPageOptions(source);
+        reason = ast.reason ?? 'The @Page options could not be resolved statically.';
+      }
     } catch { /* keep defaults */ }
-    return {
+    layouts.push({
       ...layout,
       services: options.services,
+      extraction: { method, reason },
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
-    };
-  });
+    });
+  }
   return { pages, layouts };
 }

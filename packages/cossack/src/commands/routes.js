@@ -11,7 +11,7 @@ export async function routesCommand(args, ctx) {
   // Effective metadata (RT-07): params, layout ancestry, boundaries, and
   // source-level @Page options come from the effective model; the compact
   // model still drives the human table.
-  const effective = buildEffectiveRouteModel(root);
+  const effective = await buildEffectiveRouteModel(root);
   const model = buildRouteModel(root);
 
   if (ctx.flags.json === true) {

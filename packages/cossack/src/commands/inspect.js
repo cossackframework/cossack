@@ -47,7 +47,7 @@ async function inspectRoutes(args, ctx, command) {
   const [target] = args;
   if (!target) {
     const root = await findProjectRoot(ctx.cwd);
-    const effective = buildEffectiveRouteModel(root);
+    const effective = await buildEffectiveRouteModel(root);
     if (ctx.flags.json === true) {
       return { scope: 'routes', routes: effective.pages, layouts: effective.layouts };
     }
@@ -63,7 +63,7 @@ async function inspectRoutes(args, ctx, command) {
   }
   // `inspect routes <route>` / `explain <route>`: facts with reasons.
   const root = await findProjectRoot(ctx.cwd);
-  const effective = buildEffectiveRouteModel(root);
+  const effective = await buildEffectiveRouteModel(root);
   const explanation = explainRoute(effective, target);
   if (!explanation) {
     return commandFailure(ctx, command, 'COSSACK_ROUTE_UNKNOWN',
