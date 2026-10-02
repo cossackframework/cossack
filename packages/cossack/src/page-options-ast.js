@@ -54,17 +54,24 @@ function readOptionsObject(objectExpression, code) {
       continue;
     }
     const key = property.key.name ?? property.key.value;
-    if (key === 'transport' && property.value.type === 'Literal') {
+    if (key === 'transport' && property.value.type === 'Literal' && typeof property.value.value === 'string') {
       options.transport = property.value.value;
-    } else if (key === 'ssg' && (property.value.type === 'Literal')) {
-      options.ssg = property.value.value === true;
+    } else if (key === 'ssg' && property.value.type === 'Literal' && typeof property.value.value === 'boolean') {
+      options.ssg = property.value.value;
     } else if (key === 'ssg' && property.value.type === 'ObjectExpression') {
-      const enabled = property.value.properties.find(p => (p.key?.name ?? p.key?.value) === 'enabled');
-      if (!enabled) options.ssg = true;
-      else if (enabled.value.type === 'Literal') options.ssg = enabled.value.value === true;
-      else unresolved.push('ssg.enabled');
-    } else if (key === 'middlewares' && property.value.type === 'ArrayExpression' && !property.value.elements.some(e => e?.type === 'SpreadElement')) {
-      options.middlewares = (property.value.elements ?? []).filter(Boolean).length;
+      const properties = property.value.properties;
+      // Spreads/computed keys may replace enabled. Never infer a default from
+      // their apparent absence, and use the last static key like JavaScript.
+      if (properties.some(p => p.type !== 'Property' || p.computed)) {
+        unresolved.push('ssg spread or computed options');
+      } else {
+        const enabled = properties.filter(p => (p.key?.name ?? p.key?.value) === 'enabled').at(-1);
+        if (!enabled) options.ssg = true;
+        else if (enabled.value.type === 'Literal' && typeof enabled.value.value === 'boolean') options.ssg = enabled.value.value;
+        else unresolved.push('ssg.enabled');
+      }
+    } else if (key === 'middlewares' && property.value.type === 'ArrayExpression' && !property.value.elements.some(e => !e || e.type === 'SpreadElement')) {
+      options.middlewares = property.value.elements.length;
     } else if (key === 'services' && property.value.type === 'ArrayExpression') {
       options.services = (property.value.elements ?? [])
         .filter(Boolean).map(element => sourceText(element, code));

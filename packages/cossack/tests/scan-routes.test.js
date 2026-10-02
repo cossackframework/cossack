@@ -207,6 +207,30 @@ describe('AST-backed option extraction (CLI-04/RT-07/RT-12)', () => {
     }
   });
 
+  it.each([
+    "ssg: { ...settings }",
+    "ssg: { enabled: true, ...settings }",
+    "ssg: { [key]: false }",
+    "ssg: { enabled: 'false' }",
+    "ssg: 'false'",
+    "transport: null",
+    "transport: 42",
+    "middlewares: [, handler]",
+  ])('reports unresolved or invalid options honestly: %s', async options => {
+    mk('src/pages/options/index.ts', `@Page({ ${options} }) export default class P {}`);
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.extraction.method).toBe('unknown');
+    expect(page.ssg).toBeNull();
+    expect(page.transport).toBeNull();
+  });
+
+  it('uses the final static ssg.enabled property like JavaScript', async () => {
+    mk('src/pages/options/index.ts', '@Page({ ssg: { enabled: true, enabled: false } }) export default class P {}');
+    const page = (await buildEffectiveRouteModel(tmp)).pages[0];
+    expect(page.extraction.method).toBe('ast');
+    expect(page.ssg).toBe(false);
+  });
+
   it('uses namespace decorators consistently for options and compiler methods', async () => {
     mk('src/pages/namespace/index.ts', `
       import * as Core from '@cossackframework/core';

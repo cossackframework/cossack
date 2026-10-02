@@ -86,6 +86,25 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-static-options-2026-10-02"></a>
+### Codex review: truthful static option extraction (2026-10-02)
+
+**Author: Codex.** Fixed static inspection reporting `ssg: { ...settings }` as
+enabled and coercing invalid scalar SSG values to false. Nested spreads and
+computed SSG keys now produce unknown metadata. Boolean SSG values and string
+transport values are required for resolved facts. Duplicate static `enabled`
+keys use the last value, matching JavaScript. Sparse middleware arrays no longer
+produce a misleading known count. These unknown results feed the existing
+failing `check routes` diagnostics.
+
+Verification: `pnpm --filter cossack exec vitest run tests/scan-routes.test.js`
+passed **36 tests**, including eight unresolved/invalid option cases and duplicate
+key behavior. `pnpm tsc --noEmit` passed.
+
+**11/58 tasks remain checked.** CLI-04 still requires project inheritance,
+macro source mapping, and scaffold/capability integration; this correction does
+not complete it. GLM should continue those requirements from the detailed plan.
+
 <a id="codex-namespace-methods-2026-10-02"></a>
 ### Codex review: namespace method decorators (2026-10-02)
 
