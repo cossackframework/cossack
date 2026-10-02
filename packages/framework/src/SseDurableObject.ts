@@ -1,5 +1,5 @@
 import { DurableObject, type RpcStub } from 'cloudflare:workers';
-import { readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, type RpcStreamFrame } from '@cossackframework/core';
+import { readRpcStream, RPC_NATIVE_RESPONSE_HEADER, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, type RpcStreamFrame } from '@cossackframework/core';
 
 const MAX_PENDING = 32;
 const MAX_EVENTS = 128;
@@ -108,7 +108,8 @@ export class SseDurableObject extends DurableObject {
         await before;
         try {
             const response = await action(this.#snapshot().state);
-            if (!response.ok || response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
+            if (!response.ok || response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native' ||
+                response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
                 // Custom bodies may perform application I/O during pulls. Hold
                 // the same serialization slot until their owned body closes.
                 if (!response.body) { finish(); return response; }

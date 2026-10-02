@@ -7,6 +7,7 @@ import { createApp } from '@cossackframework/scaffold';
 import { deployCommand } from '../src/commands/deploy.js';
 import { createTestHarness } from 'wrangler';
 import { readRpcStream } from '../../core/dist/index.js';
+import { writeWorkerRpcAcceptance, checkWorkerRpcAcceptance } from './fixtures/worker-rpc-acceptance.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
@@ -17,6 +18,7 @@ afterEach(async () => {
 
 it('builds a generated staging app and validates deployment without uploading', async () => {
   vi.stubEnv('VITEST', '');
+  vi.stubEnv('NODE_ENV', 'production');
   vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-deploy-integration-'));
   const { projectDir } = await createApp('app', {
@@ -254,7 +256,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       async (c, next) => {
         if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
         const path = c.req.path;
-        const needsDatabase = path === '/crpc' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/me') || path.startsWith('/shared');
+        const needsDatabase = path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/me') || path.startsWith('/shared');
         if (needsDatabase) await database(c, next);
         else await next();
         c.header('x-worker-pipeline', 'ran');
@@ -272,6 +274,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     await fs.writeFile(path.join(projectDir, 'public', directory, 'index.html'), `<main>${body}</main>`);
     await fs.writeFile(path.join(projectDir, 'public', directory, 'record.txt'), `${body} file`);
   }
+  await writeWorkerRpcAcceptance(projectDir);
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.env = { staging: {
@@ -288,6 +291,17 @@ it('builds a generated staging app and validates deployment without uploading', 
     cwd: projectDir, flags: { env: 'staging', json: true }, dryRun: true,
   });
   const result = JSON.parse(log.mock.calls[0][0]);
+  if (result.data?.steps?.some(step => step.name === 'build' && step.exitCode !== 0)) {
+    // Retain the machine-output assertion, but surface compiler diagnostics
+    // when authoring a generated fixture fails its real Vite build.
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    try {
+      await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/vite/bin/vite.js'), 'build'], {
+        cwd: projectDir, env: { ...process.env, CLOUDFLARE_ENV: 'staging' }, maxBuffer: 4 * 1024 * 1024,
+      });
+    } catch (error) { throw new Error(`${error.stdout}\n${error.stderr}`); }
+  }
   expect(exitCode, JSON.stringify(result.diagnostics)).toBe(0);
   expect(log).toHaveBeenCalledTimes(1);
   expect(result).toMatchObject({ ok: true, data: {
@@ -456,6 +470,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(await accepted.json()).toEqual({ success: true });
     const cookie = accepted.headers.getSetCookie().find(value => value.startsWith('session_id='));
     expect(cookie).toBeDefined();
+    await checkWorkerRpcAcceptance(server, serverUrl, cookie, readHydration);
     expect((await server.fetch('/me', { redirect: 'manual' })).status).toBe(401);
     const me = await server.fetch('/me', { headers: { cookie } });
     expect(me.status).toBe(200);
@@ -532,4 +547,4 @@ it('builds a generated staging app and validates deployment without uploading', 
     diagnostics: [{ code: 'COSSACK_DEPLOY_BUILD_FAILED' }] });
   await expect(fs.access(path.join(projectDir, 'dist/client/index.html'))).rejects.toThrow();
   await expect(fs.access(path.join(projectDir, 'dist/client/sitemap.xml'))).rejects.toThrow();
-}, 60_000);
+}, 90_000);

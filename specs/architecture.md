@@ -368,3 +368,12 @@ backpressure. Both paths feed the same RPC parser and lifetime/cancellation
 contract. `createRpcCall` queries the client's known request ID when cancellation
 closes an iterator parked at a yield, so its synthetic cancellation error retains
 correlation even without another transport read.
+
+The Cloudflare SSE coordinator checks `X-Cossack-Rpc-Response: native` before
+its RPC NDJSON MIME-type branch. A native body may contain arbitrary text/JSON/
+binary data and must not be parsed as protocol frames even when its MIME type
+matches. Opaque bodies retain the same serialization slot and response cleanup
+lifetime. Built production Worker/Chromium fixtures cover multipart/public client
+consumption, native bodies, redirect/flash cookies and D1-backed request ownership
+through generator completion and scoped cleanup. Test-only D1 release/audit
+endpoints belong solely to temporary acceptance applications.

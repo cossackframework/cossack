@@ -68,7 +68,8 @@ constructor). The action callback executes in the calling Worker via RPC with
 its original `AsyncLocalStorage` snapshot, so request middleware, layout DI,
 ORM scope, config, locale, and auth contexts remain active. Response handling:
 
-- RPC-stream responses (`application/x-cossack-rpc+ndjson`) are re-emitted
+- RPC-stream responses (`application/x-cossack-rpc+ndjson`, without the reserved
+  native-response marker) are re-emitted
   frame by frame. The coordinator publishes `scopeState` when supplied for a
   child target, otherwise `state`. Protocol parsing requires both supplied
   state objects to be valid; malformed frames fail with
@@ -80,8 +81,13 @@ ORM scope, config, locale, and auth contexts remain active. Response handling:
   a Response without a body releases it immediately.
 - The router wraps custom component/service Response bodies in their original
   request context and retains middleware/DI lifetime through body completion.
-  Cookies set through the request context are applied to ordinary JSON
-  responses; reliable stream-response cookie delivery is RT-11 work.
+  Native responses marked `X-Cossack-Rpc-Response: native` remain opaque even
+  when their MIME type matches RPC NDJSON; the coordinator must check this
+  marker before parsing protocol frames. Context and native-response cookies
+  are preserved, including redirects and methods that set cookies before
+  returning a lazy generator. Cookie writes inside that generator occur after
+  headers commit and reject with `COSSACK_RESPONSE_HEADERS_COMMITTED`. Session
+  recipes, sensitive old-input handling, rotation and concurrency remain RT-11.
 - The slot releases when the stream finishes, fails, or the caller cancels the
   response body. Cancellation propagates from the browser through the Worker
   (`c.req.raw.signal` is wired to `response.body.cancel()` in the router) and

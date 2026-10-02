@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Cossack, CossackService, getRequestContext, Inject, Page, readRpcStream, RPC_STREAM_CONTENT_TYPE, Server, Service, State } from '@cossackframework/core';
+import { Cossack, CossackService, getRequestContext, Inject, Page, readRpcStream, RPC_NATIVE_RESPONSE_HEADER, RPC_STREAM_CONTENT_TYPE, Server, Service, State } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 
@@ -51,7 +51,7 @@ class FakeSseScope {
         let finished = false;
         const finish = () => { if (!finished) { finished = true; release(); } };
         const response = await action(this.snapshot!.state);
-        if (!response.ok ||
+        if (!response.ok || response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native' ||
             response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
             finish();
             return response;

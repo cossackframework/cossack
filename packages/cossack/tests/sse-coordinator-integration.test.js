@@ -55,7 +55,7 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
           return stub.execute(state => inRequest(async () => {
             const snapshot = JSON.parse(state);
             started++;
-            if (url.pathname === '/custom') {
+            if (url.pathname === '/custom' || url.pathname === '/native-ndjson') {
               let sent = false;
               let cancelled = false;
               return new Response(new ReadableStream({
@@ -65,7 +65,9 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
                   if (!cancelled) { closed++; controller.close(); }
                 },
                 cancel() { cancelled = true; closed++; },
-              }, { highWaterMark: 0 }), { headers: { 'Content-Type': 'text/plain' } });
+              }, { highWaterMark: 0 }), { headers: url.pathname === '/native-ndjson'
+                ? { 'Content-Type': 'application/x-cossack-rpc+ndjson', 'X-Cossack-Rpc-Response': 'native', 'X-Native': 'kept' }
+                : { 'Content-Type': 'text/plain' } });
             }
             return createRpcStreamResponse({
               requestId: crypto.randomUUID(), signal: request.signal,
@@ -112,6 +114,13 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
   expect(firstInit).toEqual({ state: '{"count":5}', cursor: 0, fresh: true });
   const secondInit = await (await server.fetch(`/initialize?state=${encodeURIComponent('{"count":0}')}`)).json();
   expect(secondInit).toEqual({ state: '{"count":5}', cursor: 0, fresh: false });
+
+  // A native Response can use the RPC MIME type as ordinary user data. Its
+  // reserved marker must win before the coordinator attempts protocol parsing.
+  const native = await server.getWorker('first').fetch(new URL('/native-ndjson', url));
+  expect(native.headers.get('X-Native')).toBe('kept');
+  expect(await native.text()).toBe('first');
+  expect(await (await server.fetch('/state')).json()).toEqual({ state: '{"count":5}', cursor: 0 });
 
   const calls = await Promise.all(Array.from({ length: 6 }, (_, i) => invoke(i % 2 ? 'second' : 'first')));
   expect(calls.map(frames => frames.at(-1).value).sort((a, b) => a - b)).toEqual([6, 7, 8, 9, 10, 11]);

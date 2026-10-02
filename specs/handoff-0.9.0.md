@@ -2,7 +2,45 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex multipart RPC parity (2026-10-03):** read
+> **Latest checkpoint — Codex built Workers RPC acceptance (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-workers-rpc-acceptance-2026-10-03),
+> [RT-01](./release-0.9.0-plan.md#rt-01), [RT-11](./release-0.9.0-plan.md#rt-11),
+> and [SSE response contract](./sse.md). **Author: Codex.** Real workerd exposed
+> a coordinator bug: a native Response using the RPC NDJSON MIME type lost its
+> body. `SseDurableObject.execute()` now checks the reserved native marker before
+> protocol parsing. Native data stays opaque while retaining response ownership
+> and the serialization slot. The two-Worker regression proves bytes/headers,
+> unchanged scope state and subsequent progress.
+>
+> The generated staging-app fixture now builds with `NODE_ENV=production`, then
+> runs the exact artifact with real D1, auth and the distributed SSE binding.
+> Direct multipart tests cover HTTP/SSE component and explicit service calls,
+> nested Unicode Files, input/auth rejection, early cookies, late-cookie errors,
+> generator/final results, cancellation and native NDJSON/JSON/binary/204 bodies.
+> D1 audit writes during generator completion, page cleanup and service disposal
+> prove request path/user/ORM ownership. A D1 release gate proves early yields
+> without timing assumptions; cancellation explicitly releases finite fixture I/O.
+>
+> Chromium uses the production hashed scripts and public clients to verify early
+> yields through XHR components and Fetch services, upload progress, native body
+> completion, all four redirect cookies and one-time flash/old-input consumption
+> on HTTP/SSE pages. Published package entries are exercised; this is not a
+> tarball installation or live deployment test. Queued-callback cancellation,
+> Deno execution and Electron packaging remain separate evidence requirements.
+>
+> Verified: framework declarations, focused two-workerd fixtures, framework
+> **858**/49 files, CLI **559**/39 (including all **14** generated runtime cases),
+> root TypeScript and all **11** package checks. Core is unchanged from the
+> previous **726**-test checkpoint. Exact commands are in the linked log.
+>
+> **14/58 tasks checked; all 44 unchecked items remain in scope.** RT-01 stays
+> open for systematic protocol/malformed-frame, child-target and rate-limit
+> boundaries. Continue file/unknown-key/schema policies with RT-02/RT-14 and
+> sensitive old-input, complete session recipes, rotation and concurrency with
+> RT-11. Keep versions 0.8.3 until REL-04 and preserve unrelated `reports.md` and
+> `.zcodeignore`. Rebuild declarations sequentially before dependent tests.
+
+> **Previous checkpoint — Codex multipart RPC parity (2026-10-03):** read
 > [review and verification](./release-0.9.0.md#codex-rpc-multipart-2026-10-03),
 > [RT-01](./release-0.9.0-plan.md#rt-01), [RT-02](./release-0.9.0-plan.md#rt-02),
 > and [RPC guide](../docs/rpc.md). **Author: Codex.** `/upload` now shares `/crpc`'s

@@ -12,7 +12,11 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex multipart checkpoint](./release-0.9.0.md#codex-rpc-multipart-2026-10-03)
+The latest [Codex built Workers checkpoint](./release-0.9.0.md#codex-workers-rpc-acceptance-2026-10-03)
+records real production workerd/Chromium acceptance for multipart generators,
+native response bodies, auth/D1 request ownership, cookies and one-time flash,
+and fixes native NDJSON being parsed as protocol by the coordinator.
+The preceding [Codex multipart checkpoint](./release-0.9.0.md#codex-rpc-multipart-2026-10-03)
 records a shared JSON/multipart dispatcher, nested file/service arguments,
 progressive generator consumption through Fetch and optional XHR, pre-mutation
 input validation and shared request/response cleanup. The preceding [Codex native-response checkpoint](./release-0.9.0.md#codex-rpc-native-response-2026-10-03)
@@ -20,8 +24,8 @@ records bounded native HTTP body completion through public clients and generated
 HTTP/SSE/upload browser acceptance. The preceding [JSON wire checkpoint](./release-0.9.0.md#codex-rpc-json-values-2026-10-03)
 records a shared normalizer, JSON result/yield types, custom hook semantics,
 ordinary upload diagnostics, and generated HTTP/SSE browser acceptance. RT-01
-remains open for built Workers multipart/native-response acceptance, protocol
-diagnostics and remaining transport/policy boundaries. The preceding
+remains open for systematic protocol diagnostics and remaining transport/policy
+boundaries. These runtime fixtures do not close every RT-01 or RT-11 criterion. The preceding
 [shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
 records one matrix for HTTP/SSE components, WebSocket dispatch, and explicit
 service actions, with fixes to private errors, value paths, and known request IDs.
@@ -586,15 +590,39 @@ remote closure/disposal. Tests capture counters per fixture because response
 cleanup can finish after a cancelled caller settles. Full core 726, framework
 858 and CLI 559 tests pass with root and all 11 package type checks.
 
-Next extend existing built Workers fixtures to consume multipart generators and
-native bodies, asserting cookies/flash/auth guards, request/D1 ownership and
-distributed SSE coordination. Then finish systematic malformed data/frame,
-rate-limit and child-target checks and settle file count/size/type/unknown-key
-policies with RT-02/RT-14. The shared dispatcher does not itself prove every
-runtime or authorization boundary. RT-11 still requires its secret exclusion,
+Codex built Workers checkpoint (2026-10-03): extended the generated staging
+artifact fixture with protected HTTP/SSE pages and a nested layout service.
+Native Responses using RPC NDJSON lost their bytes because the coordinator
+selected protocol parsing by MIME type alone. The reserved native marker now
+wins before parsing; opaque native bodies retain their existing cleanup and
+serialization-slot lifetime. A separate two-Worker source fixture verifies
+bytes/headers, unchanged scope state and subsequent coordinator progress.
+
+The artifact fixture uses `NODE_ENV=production`; inheriting Vitest's test env
+had emitted development asset paths and could not prove hydration. Chromium
+loads hashed scripts, waits for framework readiness, and invokes public clients.
+Component XHR and scoped-service Fetch uploads deliver an early Unicode yield,
+then wait on an explicit D1 gate before completion. Direct calls verify auth/input
+rejection, early cookies and late-cookie diagnostics, native NDJSON/JSON/binary/
+204 bodies and eventual cancellation cleanup. D1 audit records from generator
+completion, page cleanup and service disposal retain the original user/path and
+ORM context. SSR observes authoritative SSE state after multipart mutation.
+
+Real browsers also consume native bodies and observe native/helper/flash cookies
+on redirects from both component and service actions. Old input/messages render
+once and disappear on reload. These are published-entry production artifact
+checks, not tarball installation or remote deployment. Cancellation tests release
+finite application I/O explicitly; they do not claim rollback or cancellation of
+queued RPC callbacks on the pinned Wrangler baseline. Full framework 858 and CLI
+559 tests pass with root and all 11 package checks; core source is unchanged.
+
+Next finish systematic malformed data/frame, rate-limit and child-target checks
+and settle file count/size/type/unknown-key policies with RT-02/RT-14. The shared
+dispatcher and new runtime fixtures do not themselves prove every authorization
+or protocol boundary. RT-11 still requires secret exclusion, complete session
 recipes, rotation and concurrency criteria. Physical upgrades, distributed
-coordination and full release runtime gates retain their separate evidence
-requirements. RT-01 stays open; no additional checkbox closes.
+coordination, Deno execution, Electron packaging and full release gates retain
+separate evidence requirements. RT-01 stays open; no additional checkbox closes.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
@@ -848,6 +876,13 @@ already-sent headers. These are response lifecycle fixes, not completion of all
 recipes. Next finish password/token exclusion from old input, generated failure/
 login/logout/rotation flows, and documented concurrent request semantics. Verify
 Workers/realtime integration for this behavior before claiming runtime parity.
+
+Codex Workers acceptance (2026-10-03): production workerd/Chromium now verifies
+native/helper/flash redirect cookies and one-time old-input/message consumption
+for component and service actions from HTTP/SSE pages. Multipart early cookies
+and late-cookie diagnostics work through the real artifact. Continue sensitive
+old-input filtering, complete failure/login/logout/rotation recipes and documented
+concurrent request behavior; this runtime slice does not close RT-11.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.
@@ -1604,6 +1639,17 @@ Exercise authentication, component/service RPC, streaming, assets, migrations,
 bindings, and integrated realtime behavior. Keep local cloud emulation distinct
 from authenticated remote smoke tests. Use native HTTP cancellation where an
 in-memory request helper cannot reproduce disconnect behavior.
+
+Codex extension (2026-10-03): the generated staging test now uses production
+build flags and real Chromium hydration through hashed client assets. The fixture
+helper `packages/cossack/tests/fixtures/worker-rpc-acceptance.js` writes protected
+HTTP/SSE pages, a nested service and test-only D1 gate/audit endpoints. It observes
+nested multipart yields/final results, auth/input rejection, D1 ownership through
+pulls/disposal, native body representations, cookies, redirects and one-time flash.
+Keep those audit/control endpoints confined to temporary test apps. The separate
+two-Worker test covers the native-marker/MIME regression, unchanged state and
+coordinator progress. CF-06 remains checked; broader tarball/runtime release gates
+remain open and this evidence does not establish a live deployment.
 
 Start in `packages/cossack/tests/deploy-integration.test.js`,
 `sse-coordinator-integration.test.js`, scaffold tests, and production-bundle scripts.

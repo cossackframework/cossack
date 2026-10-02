@@ -6,7 +6,7 @@ description: "Real-time transport with distributed scope coordination on Cloudfl
 # Server-Sent Events (SSE) Transport
 
 SSE sends real-time state updates from the server to connected clients. The
-client sends actions with HTTP POST (`/crpc`). The server sends state updates
+client sends actions with HTTP POST (`/crpc`, or `/upload` for File arguments). The server sends state updates
 through a long-lived SSE connection.
 
 SSE pages use one of two backends, selected by the runtime:
@@ -94,7 +94,8 @@ export class LiveCounter extends Cossack {
    incremental events. Each event carries its cursor as the SSE `id`, so the
    browser's automatic `EventSource` reconnect sends `Last-Event-ID` and
    resumes without replaying delivered events.
-3. When the user triggers a server action, the client POSTs to `/crpc`. The
+3. When the user triggers a server action, the client POSTs to `/crpc` or sends
+   multipart File arguments to `/upload`. Both use the same scoped dispatcher. The
    router executes the action inside the coordinator's per-scope serialization
    slot, hydrating the component from the authoritative snapshot — not from the
    browser's state. Request middleware, layout DI, ORM scope, configuration,
@@ -349,9 +350,18 @@ Cookie, session, and redirect headers must be decided before returning a
 response; HTTP headers cannot change after streaming starts. Ordinary
 (non-streaming) results and redirects are handled identically on both
 backends: redirects return `{ _cossack_redirect }` JSON, and cookies set
-through the request context are applied to ordinary JSON responses. Reliable
-cookie delivery for streaming responses and late-cookie diagnostics remain
-open work (RT-11).
+through the request context and native Response cookies are preserved. This
+also applies when an ordinary method sets cookies and then returns a lazy
+generator. A cookie write inside the generator body happens after the response
+headers commit and rejects with `COSSACK_RESPONSE_HEADERS_COMMITTED`.
+
+Successful ordinary native Responses use the [RPC native-body contract](./rpc.md):
+the client drains a bounded body before completion. The coordinator preserves
+their bytes, status and headers, even when their MIME type is RPC NDJSON. The
+reserved `X-Cossack-Rpc-Response: native` header distinguishes user data from
+protocol frames. Native bodies still own request cleanup and the serialization
+slot until completion, failure or cancellation. Session recipes, sensitive old
+input, rotation and concurrent request semantics remain RT-11 work.
 
 ## Connection status and recovery
 

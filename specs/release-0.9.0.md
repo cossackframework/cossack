@@ -86,6 +86,69 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-workers-rpc-acceptance-2026-10-03"></a>
+### Codex review: built Workers multipart and native RPC acceptance (2026-10-03)
+
+**Author: Codex.** Continued RT-01/RT-11 acceptance after `b2b566f`. The real
+coordinator regression failed: a native Response with the RPC NDJSON MIME type
+lost its body. `SseDurableObject.execute()` now checks the reserved
+`X-Cossack-Rpc-Response: native` marker before selecting protocol parsing.
+Native bodies retain bytes/headers, request ownership and serialization-slot
+lifetime. The two-Worker test verifies the body and unchanged authoritative
+state, then runs subsequent coordinated actions. The transport unit fixture
+uses the same marker distinction.
+
+The generated staging-app fixture now extends actual Vite/Wrangler output with
+protected HTTP/SSE pages, a nested service and test-only D1 gate/audit endpoints.
+It explicitly sets `NODE_ENV=production`: inheriting Vitest's test environment
+previously emitted development client paths, so successful SSR assertions alone
+had not proved production browser hydration. It still runs the selected artifact,
+real D1/auth, provider handlers and distributed SSE binding without deployment.
+
+Direct multipart calls verify nested Unicode Files, component/service auth and
+input rejection, correlated field errors, early cookies, lazy yields/final
+results, late-cookie diagnostics and eventual cancellation cleanup. Native
+NDJSON, JSON with reserved-looking data, binary bytes and bodyless 204 preserve
+their intended body/status/headers. D1 audit writes during generator completion,
+page cleanup and service disposal retain the original request path and user,
+proving the ORM context survives response ownership. SSR observes authoritative
+SSE state after multipart mutations. Gates release finite fixture I/O explicitly;
+this does not establish queued callback abort support or mutation rollback.
+
+Chromium hydrates the production hashed scripts and calls public clients.
+Component XHR and explicit-service Fetch uploads display the first Unicode yield
+before the D1 gate releases, then report final data and upload progress. Native
+body calls retain status/headers/bytes. Component and service redirects from
+HTTP/SSE pages preserve all four native/helper/flash cookies, render the old
+input/message once and consume them before reload. Header tests use the observed
+response and final navigation; they never replay an action to collect diagnostics.
+Fixture compiler and browser errors are surfaced on failure.
+
+Verified: framework declarations; focused real-workerd fixtures **2/2**;
+framework **858** tests/49 files; CLI **559**/39, including both workerd fixtures
+and all **14** generated runtime cases; root TypeScript and all **11** package
+checks. Core source remains unchanged from the previous 726-test checkpoint.
+Updated SSE guide/spec, detailed RT-01/RT-11/CF-06 plans and Codex handoff.
+
+```sh
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter cossack exec vitest run tests/deploy-integration.test.js tests/sse-coordinator-integration.test.js
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 tasks checked; no new task closes. All 44 unchecked items remain in
+scope.** These tests exercise published entries from the workspace, not installed
+tarballs or a live deployment. Deno execution/Electron packaging remain REL-03.
+RT-01 stays open for systematic protocol/malformed-frame, rate-limit and
+child-target boundaries; continue file/unknown-key/schema policies with RT-02/
+RT-14. RT-11 still needs sensitive old-input exclusion, complete session flows,
+rotation and concurrency semantics. Keep versions 0.8.3 until REL-04, rebuild
+declarations sequentially before dependent tests and preserve unrelated
+`reports.md`/`.zcodeignore` edits.
+
 <a id="codex-rpc-multipart-2026-10-03"></a>
 ### Codex review: shared multipart RPC ownership and streaming (2026-10-03)
 
