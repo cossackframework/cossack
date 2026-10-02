@@ -73,3 +73,60 @@ describe('Cloudflare configuration inspection', () => {
       diagnostics: [{ code: 'COSSACK_ENVIRONMENT_UNKNOWN' }] });
   });
 });
+
+
+describe('Route inspection and explanation (CLI-04)', () => {
+  async function routeFixture() {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-inspect-routes-'));
+    const write = async (relative, content) => {
+      await fs.mkdir(path.join(root, path.dirname(relative)), { recursive: true });
+      await fs.writeFile(path.join(root, relative), content);
+    };
+    await write('package.json', '{}');
+    await write('src/pages/layout.ts', 'export default class Layout {}');
+    await write('src/pages/dashboard/layout.ts', 'export default class Dash {}');
+    await write('src/pages/dashboard/users/[id]/index.ts',
+      "@Page({ transport: 'sse', middlewares: [async (c, next) => { await next(); }] })\nexport default class Users {}");
+    await write('src/pages/dashboard/404/index.ts', 'export default class NotFound {}');
+    return { cwd: root, flags: {}, force: false, dryRun: false };
+  }
+
+  it('lists effective route facts with source locations', async () => {
+    const ctx = await routeFixture();
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['routes'], { ...ctx, flags: { json: true } })).toBe(0);
+    const result = JSON.parse(output.mock.calls[0][0]);
+    expect(result.command).toBe('inspect');
+    const users = result.data.routes.find((route) => route.route === '/dashboard/users/:id');
+    expect(users).toMatchObject({
+      transport: 'sse',
+      middlewares: 1,
+      source: expect.stringMatching(/\[id\]\/index\.ts:1$/),
+      layouts: ['/src/pages/layout.ts', '/src/pages/dashboard/layout.ts'],
+      notFoundBoundary: '/src/pages/dashboard/404/index.ts',
+      params: [{ name: 'id', catchAll: false }],
+    });
+  });
+
+  it('explains a route with reasons and source locations', async () => {
+    const ctx = await routeFixture();
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['routes', '/dashboard/users/:id'], { ...ctx, flags: { json: true } })).toBe(0);
+    const result = JSON.parse(output.mock.calls[0][0]);
+    expect(result.data).toMatchObject({ scope: 'routes', route: '/dashboard/users/:id', kind: 'page' });
+    const reasons = result.data.reasons.join('\n');
+    expect(reasons).toContain('Transport "sse"');
+    expect(reasons).toContain('src/pages/layout.ts');
+    expect(reasons).toContain('1 middleware(s)');
+    expect(reasons).toContain('Nearest 404 boundary');
+  });
+
+  it('fails with a coded diagnostic for unknown routes', async () => {
+    const ctx = await routeFixture();
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['routes', '/nope'], { ...ctx, flags: { json: true } })).toBe(1);
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
+      ok: false, diagnostics: [{ code: 'COSSACK_ROUTE_UNKNOWN' }],
+    });
+  });
+});

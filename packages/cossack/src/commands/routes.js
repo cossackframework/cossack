@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { buildRouteModel, layoutStackForPage } from '../scan-routes.js';
+import { buildRouteModel, buildEffectiveRouteModel, layoutStackForPage } from '../scan-routes.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { CommandSpec, runWithSpec } from '../command-spec.js';
 
@@ -8,6 +8,10 @@ const spec = new CommandSpec({ name: 'routes', flags: { verbose: { type: 'boolea
 export async function routesCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
   const root = await findProjectRoot(ctx.cwd);
+  // Effective metadata (RT-07): params, layout ancestry, boundaries, and
+  // source-level @Page options come from the effective model; the compact
+  // model still drives the human table.
+  const effective = buildEffectiveRouteModel(root);
   const model = buildRouteModel(root);
 
   if (model.pages.length === 0 && model.layouts.length === 0) {
@@ -55,17 +59,17 @@ export async function routesCommand(args, ctx) {
 
   if (ctx.flags.json === true) {
     return {
-      routes: model.pages.map(page => ({
-        kind: page.kind,
-        route: page.route,
-        filePath: page.filePath,
-        layouts: layoutStackForPage(page.filePath, layoutKeys),
-      })),
-      pages: model.pages.length,
-      layouts: model.layouts.length,
+      routes: effective.pages,
+      pages: effective.pages.length,
+      layouts: effective.layouts.length,
     };
   }
   if (ctx.flags.verbose) {
+    for (const page of effective.pages) {
+      if (page.params.length) {
+        console.log(formatRow('PARAM', page.route, page.params.map(p => p.name + (p.catchAll ? '*' : '')).join(', ')));
+      }
+    }
     console.log(`\n${model.pages.length} page(s), ${model.layouts.length} layout(s).`);
   }
   return null;

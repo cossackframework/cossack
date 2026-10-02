@@ -22,6 +22,9 @@ export function filePathToHttpRoute(filePath) {
     .replace(/\.(ts|js|md|mdx)$/, '')
     .replace(/\/index$/, '')
     .replace(/\/\([^)]+\)/g, '')
+    // Mirror the framework exactly: catch-alls become Hono multi-segment
+    // params before the generic dynamic rule can mangle them.
+    .replace(/\[\.\.\.([^\]]+)\]/g, ':$1{.+}')
     .replace(/\[([^\]]+)\]/g, ':$1');
   if (!route) route = '/';
   if (route === '/index') route = '/';
@@ -121,4 +124,123 @@ export function layoutStackForPage(pageFilePath, layoutKeys) {
     if (layoutKeys.includes(lp)) stack.push(lp);
   }
   return stack;
+}
+
+
+/**
+ * Extract dynamic route parameters from a route path: `:name` -> `name`,
+ * framework catch-alls (`:name{.+}` from `[...name]`) marked `catchAll: true`.
+ * Static segments yield nothing.
+ */
+export function extractRouteParams(route) {
+  const params = [];
+  for (const segment of route.split('/')) {
+    const catchAll = segment.match(/^:(\w[\w-]*)\{\.\+\}$/);
+    if (catchAll) {
+      params.push({ name: catchAll[1], catchAll: true });
+      continue;
+    }
+    const dynamic = segment.match(/^:(\w[\w-]*)$/);
+    if (dynamic) params.push({ name: dynamic[1], catchAll: false });
+  }
+  return params;
+}
+
+/**
+ * Source-level @Page option extraction WITHOUT executing the module: reads
+ * the decorator call text only. Transport, SSG, and middleware count are the
+ * facts inspection needs; middleware identities live in code, not metadata.
+ */
+export function extractPageOptions(source) {
+  if (!source) return { transport: null, ssg: null, middlewares: 0, decoratorLine: null };
+  const decorator = source.match(/@Page\(\s*\{([\s\S]*?)\}\s*\)/);
+  if (!decorator) return { transport: null, ssg: null, middlewares: 0, decoratorLine: null };
+  const body = decorator[1];
+  const transport = body.match(/transport\s*:\s*['"](http|sse|durable-object)['"]/);
+  const ssg = body.match(/ssg\s*:\s*(true|false)/);
+  const middlewares = body.match(/middlewares\s*:\s*\[([\s\S]*?)\]/);
+  return {
+    transport: transport ? transport[1] : null,
+    ssg: ssg ? ssg[1] === 'true' : null,
+    middlewares: middlewares ? countTopLevelEntries(middlewares[1]) : 0,
+    decoratorLine: source.slice(0, decorator.index).split('\n').length,
+  };
+}
+
+/** Count comma-separated entries at one depth (middleware array members). */
+function countTopLevelEntries(text) {
+  let depth = 0;
+  let entries = 0;
+  let inString = null;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (char === inString && text[i - 1] !== '\\') inString = null;
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') { inString = char; continue; }
+    if (char === '[' || char === '(' || char === '{') depth++;
+    else if (char === ']' || char === ')' || char === '}') depth--;
+    else if (char === ',' && depth === 0) entries++;
+  }
+  return /\S/.test(text) ? entries + 1 : 0;
+}
+
+/**
+ * Nearest special-page boundary (404 / error) for a page, mirroring the
+ * router's findNearestSpecialPage: walk from the page's directory upward,
+ * preferring deeper boundaries.
+ */
+export function nearestSpecialPage(pageFilePath, pages, type) {
+  const rel = pageFilePath.replace('/src/pages/', '');
+  const parts = rel.split('/');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const dir = parts.slice(0, i).join('/');
+    const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
+    if (pages.some((page) => page.filePath === searchPath)) return searchPath;
+  }
+  return null;
+}
+
+/**
+ * Effective route metadata model (RT-07): per page, the URL, stable route id
+ * (same index-based computation as the runtime's computeRouteIds), dynamic
+ * parameters, layout ancestry, nearest 404/error boundaries, and source-level
+ * @Page options. Inspection reads facts; it never executes components.
+ */
+export function buildEffectiveRouteModel(projectRoot) {
+  const model = buildRouteModel(projectRoot);
+  const layoutKeys = model.layouts.map((layout) => layout.filePath);
+  // Replicate computeRouteIds ordering: sorted resolved pages + layouts share
+  // one index space, so ids match the running router.
+  const resolved = model.pages.map((page) => page.filePath).sort();
+  const indexed = [...resolved, ...layoutKeys];
+  const idFor = (filePath) => {
+    const index = indexed.indexOf(filePath);
+    return index === -1 ? null : `cmp_${index.toString(36)}`;
+  };
+  const pages = model.pages.map((page) => {
+    let options = { transport: null, ssg: null, middlewares: 0 };
+    try {
+      const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
+      options = extractPageOptions(fs.readFileSync(absolute, 'utf8'));
+    } catch { /* unreadable source keeps null options; the route still lists */
+    }
+    return {
+      ...page,
+      routeId: idFor(page.filePath),
+      params: extractRouteParams(page.route),
+      layouts: layoutStackForPage(page.filePath, layoutKeys),
+      errorBoundary: nearestSpecialPage(page.filePath, model.pages, 'error'),
+      notFoundBoundary: nearestSpecialPage(page.filePath, model.pages, '404'),
+      transport: options.transport,
+      ssg: options.ssg,
+      middlewares: options.middlewares,
+      // Source location of the @Page decorator for inspection output.
+      source: options.decoratorLine
+        ? `${page.filePath}:${options.decoratorLine}`
+        : page.filePath,
+    };
+  });
+  return { pages, layouts: model.layouts };
 }
