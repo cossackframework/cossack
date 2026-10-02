@@ -301,3 +301,21 @@ export class Counter extends Cossack {
 Refer to [Websockets](/docs/websockets.md) documentation about how to make realtime application with websockets.
 
 By default, Durable Object transport is **stateless**. It does not persist state to DO storage. Add `stateful: true` to `@Page()` to persist state across connections and DO evictions.
+
+
+## Choosing between @State, @Store, client-only state, and server$ (GLM, 2026-10-02)
+
+| Mechanism | Reactivity | Crosses the server/client boundary |
+| --- | --- | --- |
+| `@State` | Shallow: assigning a new value re-renders | Yes — public state hydrates and round-trips through RPC |
+| `@Store` | Deep: nested mutations through recursive proxies trigger renders | Yes — same transport as `@State` |
+| `@ClientState` / `@ClientStore` | Shallow / deep | Never serialized to the server |
+| `server$` | Load/refresh lifecycle (`resourceStatus$`) | Loaded on the server, hydrated to the client |
+
+**Development diagnostic**: mutating a nested object on a plain `@State` field
+in place (`this.config.theme = 'dark'`) does not re-render. In development,
+the framework warns once per field, naming the component and the two fixes —
+assign a new value, or declare the field with `@Store()`. The check is
+compiled out of production builds. Serialization diagnostics across RPC
+boundaries (functions, bigints, Maps/Sets, cycles) name the offending value
+path on every transport.

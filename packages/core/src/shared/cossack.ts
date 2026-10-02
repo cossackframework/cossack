@@ -1649,9 +1649,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Plain @State / @ClientState reactive getter/setter.
                 Object.defineProperty(this, key, {
                     get: () => {
-                        return isPublic
+                        const raw = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
+                        // DEV diagnostic (RT-04): plain @State is shallow —
+                        // assigning re-renders, mutating a nested object in
+                        // place does not. Warn once per field when that
+                        // happens, naming the component and the fix. Bundlers
+                        // replace import.meta.env.DEV, eliminating this from
+                        // production output.
+                        if (import.meta.env?.DEV !== false && isPublic && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
+                            return this._diagnoseShallowMutation(key, raw as Record<PropertyKey, unknown>);
+                        }
+                        return raw;
                     },
                     set: (newValue: any) => {
                         const oldValue = isPublic
@@ -1684,6 +1694,43 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!this.isServer) {
             this._setupServerMethodProxies();
         }
+    }
+
+    /**
+     * DEV-only shallow-mutation diagnostic (RT-04): a transparent Proxy over
+     * plain-object/array @State values that warns the first time a nested
+     * mutation happens without a re-render trigger, naming the component and
+     * field and pointing at the fixes. Warnings fire once per field per
+     * instance. Never active in production builds.
+     * @internal
+     */
+    private _shallowMutationWarned = new Set<string>();
+    private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T): T {
+        if (this._shallowMutationWarned.has(key)) return raw;
+        const component = this;
+        return new Proxy(raw, {
+            set(target, property, value) {
+                if (!component._shallowMutationWarned.has(key)) {
+                    component._shallowMutationWarned.add(key);
+                    console.warn(
+                        `[Cossack] Nested mutation on plain @State '${String(key)}' of ` +
+                        `${component.constructor.name} does not re-render. Assign a new value ` +
+                        `(this.${String(key)} = { ...this.${String(key)} }) or declare the ` +
+                        'field with @Store() for deep reactivity.');
+                }
+                return Reflect.set(target, property, value);
+            },
+            deleteProperty(target, property) {
+                if (!component._shallowMutationWarned.has(key)) {
+                    component._shallowMutationWarned.add(key);
+                    console.warn(
+                        `[Cossack] Nested delete on plain @State '${String(key)}' of ` +
+                        `${component.constructor.name} does not re-render. Assign a new value ` +
+                        'or use @Store().');
+                }
+                return Reflect.deleteProperty(target, property);
+            },
+        });
     }
 
     /**
