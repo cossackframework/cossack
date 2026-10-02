@@ -11,6 +11,7 @@ import {
   supportsViewTransitions,
   supportsViewTransitionTypes,
   type NavigateOptions,
+  type NavigateResult,
   type NavigationScrollBehavior,
 } from '@cossackframework/core';
 import {
@@ -591,7 +592,11 @@ export async function createClientApp({
     detail: { pathname: window.location.pathname, navigationType: 'initial' }
   }));
 
-  const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<boolean> => {
+  // Navigation sequence: a newer navigation supersedes any in-flight one;
+  // its commit is skipped and its result resolves as 'superseded' (RT-09).
+  let navigationSequence = 0;
+  const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<NavigateResult> => {
+    const seq = ++navigationSequence;
     const navigationType = options?.navigationType ?? 'push';
     if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
       // popstate has already activated the destination entry. Do not let a
@@ -608,7 +613,7 @@ export async function createClientApp({
             };
             // Force re-render to show prevention UI if any
             await currentPage.requestUpdate();
-            return false;
+            return { outcome: 'canceled', url };
         }
     }
 
@@ -662,6 +667,11 @@ export async function createClientApp({
       }
 
       const { state } = await fetchPage(url);
+      if (seq !== navigationSequence) {
+        // A newer navigation began while this page was loading: discard the
+        // late response — it must never commit over the newer navigation.
+        return { outcome: 'superseded', url };
+      }
       setProgress(100);
 
       // DOM commit: destroy old page, instantiate new page, trigger re-render.
@@ -706,6 +716,10 @@ export async function createClientApp({
         await commit();
       }
 
+      // Redirected: the framework followed a redirect while fetching.
+      const requested = new URL(url, window.location.href).pathname;
+      const redirected = state.pathname && state.pathname !== requested;
+
       (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
         bubbles: true,
@@ -716,7 +730,7 @@ export async function createClientApp({
           scroll: options?.scroll ?? defaultScrollBehavior,
         }
       }));
-      return true;
+      return { outcome: redirected ? 'redirected' : 'completed', url: state.pathname ?? url };
     } catch (error) {
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,
@@ -729,10 +743,10 @@ export async function createClientApp({
         detail: { url, error, fromPathname: window.location.pathname },
       }));
       if (!handled) {
-        return false;
+        return { outcome: 'failed', url, error };
       }
       window.location.reload();
-      return false;
+      return { outcome: 'failed', url, error };
     }
   };
 

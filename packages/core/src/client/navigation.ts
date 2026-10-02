@@ -2,6 +2,19 @@
  * Navigation options passed from a click interceptor or programmatic
  * navigation through to the framework's navigate() implementation.
  */
+/**
+ * Typed navigation outcome (RT-09): navigation promises always settle with
+ * exactly one of these — never hang, never resolve ambiguously.
+ */
+export type NavigateOutcome = 'completed' | 'superseded' | 'canceled' | 'redirected' | 'failed';
+
+export interface NavigateResult {
+    readonly outcome: NavigateOutcome;
+    /** The effective URL (post-redirect for 'redirected'/'completed'). */
+    readonly url: string;
+    readonly error?: unknown;
+}
+
 export interface NavigateOptions {
     /**
      * View Transition types to apply to the navigation. Corresponds to the
@@ -160,7 +173,7 @@ export function supportsViewTransitionTypes(): boolean {
 }
 
 export function enableClientNavigation(
-    onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean>,
+    onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean | NavigateResult>,
     onPreFetch?: (url: string) => Promise<void>
 ) {
     const isLocalLink = (target: HTMLAnchorElement) => {

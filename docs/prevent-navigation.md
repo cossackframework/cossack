@@ -59,3 +59,22 @@ export default class UnsavedForm extends Cossack {
 2. **Evaluation**: The handler is executed. If it returns `true` (or a Promise resolving to `true`), the navigation is halted.
 3. **State Update**: The blocked navigation action is stored in `_pendingNavigation` and `_render()` is triggered to allow your UI to react.
 4. **Resolution**: `confirmNavigation(true)` runs the stored action without checking again. `confirmNavigation(false)` clears the pending state.
+
+
+## Navigation completion contract (GLM, 2026-10-02)
+
+`navigate()` settles with a typed outcome — never hangs, never resolves
+ambiguously:
+
+| Outcome | Meaning |
+| --- | --- |
+| `completed` | The page rendered, history updated, scroll policy applied. |
+| `redirected` | The server redirected during the fetch; `url` is the final path. |
+| `superseded` | A newer navigation began while this page loaded; the late response was discarded and never committed. |
+| `canceled` | A `preventNavigation` handler stopped this navigation. |
+| `failed` | The fetch or render threw after the error event; `error` carries the cause. |
+
+```ts
+const result = await this.navigate!('/dashboard');
+if (result.outcome === 'superseded') return; // a newer navigation owns the UI
+```
