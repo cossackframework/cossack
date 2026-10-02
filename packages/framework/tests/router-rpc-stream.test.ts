@@ -70,6 +70,8 @@ class StreamPage extends Cossack {
     }
     @Server()
     async regular() { await Promise.resolve(); this.count++; return 'regular result'; }
+    @Server({ input: { title: { required: true, minLength: 3 }, visits: { coerce: 'number', min: 0 } } })
+    async save(input: { title: string; visits: number }) { this.count += input.visits; return input.title; }
     @Server()
     async promisedStream() { await Promise.resolve(); return this.stream(); }
     @Server()
@@ -231,6 +233,21 @@ describe('router RPC streaming lifecycle', () => {
         expect(cancelledClose).not.toHaveBeenCalled();
         await cancelled.body!.cancel();
         expect(cancelledClose).toHaveBeenCalledOnce();
+    });
+
+    it('enforces @Server({ input }) before the method runs with stable field errors', async () => {
+        const missing = await request('save', { payload: [{ title: '', visits: 2 }] });
+        expect(missing.status).toBe(400);
+        expect(await missing.json()).toMatchObject({
+            code: 'COSSACK_VALIDATION_FAILED',
+            fieldErrors: expect.objectContaining({ title: expect.any(String) }),
+        });
+        // Coerced valid input reaches the method with the inferred types.
+        const coerced = await request('save', { payload: [{ title: 'hello', visits: '3' }] });
+        expect(coerced.status).toBe(200);
+        const body = await coerced.json() as Record<string, unknown>;
+        expect(body._cossack_return).toBe('hello');
+        expect(body.count).toBe(3);
     });
 
     it('awaits ordinary async methods even if an old client requests streaming', async () => {

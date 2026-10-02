@@ -17,7 +17,7 @@ import {
   sanitizeServiceState,
 } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
-import { isClientVisibleError } from '@cossackframework/core';
+import { enforceActionInput, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -777,8 +777,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
         let actionResult: unknown;
         try {
-          actionResult = await owned.instance[action](...(Array.isArray(payload) ? payload : []));
+          const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : []);
+          actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
         } catch (e: any) {
+          if (isActionValidationError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: e.fieldErrors, requestId }, 400);
+          }
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
@@ -957,12 +962,29 @@ export function createApp(options: CreateAppOptions = {}) {
 
         if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
 
+        // RT-02: enforce @Server({ input }) before the method runs. Coerced
+        // values replace the raw payload; failures return stable field errors.
+        let validatedPayload: unknown[] = payload as any[];
+        try {
+          validatedPayload = await enforceActionInput(targetInstance.constructor, action, payload || []);
+        } catch (validation) {
+          if (isActionValidationError(validation)) {
+            return c.json({ error: validation.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: validation.fieldErrors, requestId }, 400);
+          }
+          throw validation;
+        }
+
         // Await promises before inspecting the result. Awaiting an async generator
         // does not pull it; its response owns iteration and request-context lifetime.
         let actionResult: unknown;
         try {
-          actionResult = await targetInstance[action](...(payload || []));
+          actionResult = await targetInstance[action](...(validatedPayload as any[]));
         } catch (e: any) {
+          if (isActionValidationError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: e.fieldErrors, requestId }, 400);
+          }
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }

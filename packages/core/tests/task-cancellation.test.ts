@@ -98,9 +98,6 @@ describe('task cancellation and staleness (RT-05)', () => {
 
     it('a stale deferred resolving after a newer one never applies', async () => {
         const applied: string[] = [];
-        const deferred = (settled: { value: string }[]) => ({
-            promise: new Promise<string>(resolve => settled.push({ value: '', resolve: (v: string) => { settled.find(x => !x.value).value = v; resolve(v); } })),
-        });
         const resolvers: Array<(value: string) => void> = [];
         const make = () => new Promise<string>(resolve => resolvers.push(resolve));
         let call = 0;

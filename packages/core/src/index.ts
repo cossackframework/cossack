@@ -30,7 +30,7 @@ export { isRpcCallableAction, sanitizeClientState } from './shared/method-proxy'
 export { isOriginAllowed } from './shared/origin-security';
 export * from './shared/rate-limit';
 export * from './shared/i18n';
-export { ClientVisibleError, isClientVisibleError } from './shared/errors';
+export { ActionValidationError, ClientVisibleError, isActionValidationError, isClientVisibleError } from './shared/errors';
 export * from './shared/rpc-stream';
 
 export * from './client/navigation';

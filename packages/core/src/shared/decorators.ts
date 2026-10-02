@@ -107,6 +107,13 @@ export interface ServerOptions {
   channel?: string;
   provider?: string;
   /**
+   * Input contract for the action (RT-02): a StoreRuleMap validated on the
+   * server BEFORE the method runs, on every transport. The first payload
+   * argument is validated; failures reject with `COSSACK_VALIDATION_FAILED`
+   * and stable nested field errors.
+   */
+  input?: Record<string, unknown>;
+  /**
    * Client-side deadline for calls to this method, in milliseconds. Exceeding
    * it rejects the call with `COSSACK_RPC_TIMEOUT`; the server-side mutation
    * may still have completed, so the outcome is uncertain, never retried.
@@ -130,6 +137,7 @@ export function Server(options: ServerOptions = {}): any {
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      ...(options.input ? { input: options.input } : {}),
       ...(Number.isFinite(options.timeout) && (options.timeout as number) > 0
         ? { timeout: options.timeout } : {}),
       ...(options.serverResource ? { serverResource: true } : {}),

@@ -29,6 +29,31 @@ export class ClientVisibleError extends Error {
 }
 
 /**
+ * Expected validation failure for a server action (RT-02): client-visible on
+ * every transport (HTTP 400 / error frames), carrying stable nested field
+ * errors that map to form fields without string parsing.
+ */
+export class ActionValidationError extends ClientVisibleError {
+    /** Stable marker for cross-module detection (source + dist copies). */
+    readonly validationCode = 'COSSACK_VALIDATION_FAILED';
+    readonly fieldErrors: Record<string, unknown>;
+
+    constructor(fieldErrors: Record<string, unknown>, message = 'Validation failed.') {
+        super(message);
+        this.name = 'ClientVisibleError'; // marker: treated as client-visible across module copies
+        this.fieldErrors = fieldErrors;
+    }
+}
+
+/** Structural check that survives duplicate module copies (like isClientVisibleError). */
+export function isActionValidationError(value: unknown): value is ActionValidationError {
+    return value instanceof ActionValidationError
+        || (typeof value === 'object' && value !== null
+            && (value as { validationCode?: unknown }).validationCode === 'COSSACK_VALIDATION_FAILED');
+}
+
+
+/**
  * True when `value` is a `ClientVisibleError` (or carries the marker name set
  * by a subclass with the same intent). Used by RPC error handlers to decide
  * whether to forward the message (400) or treat it as an internal error (500).

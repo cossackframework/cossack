@@ -71,6 +71,11 @@ class ServerComponent extends Cossack {
         return 'never';
     }
 
+    @Server({ input: { title: { required: true, minLength: 2 } } })
+    async guarded(input: { title: string }) {
+        return `saved:${input.title}`;
+    }
+
     render() { return null as any; }
 }
 
@@ -139,7 +144,7 @@ describe('realtime (WebSocket) RPC conformance', () => {
             neverResponds: { timeout: 30 },
             slowStream: { timeout: 20 },
         }, client.constructor);
-        proxyServerMethods(client, ['ordinary', 'stream', 'failVisible', 'failInternal', 'neverResponds', 'slowStream']
+        proxyServerMethods(client, ['ordinary', 'stream', 'failVisible', 'failInternal', 'neverResponds', 'slowStream', 'guarded']
             .map(name => ({ name, channel: 'global', provider: 'page' })));
     });
     afterEach(() => {
@@ -168,6 +173,13 @@ describe('realtime (WebSocket) RPC conformance', () => {
         ]);
         expect(client.count).toBe(3);
         expect(server.runs).toBe(1);
+    });
+
+    it('enforces @Server({ input }) with stable field errors', async () => {
+        await expect(Promise.resolve(client.guarded({ title: 'x' })))
+            .rejects.toMatchObject({ code: 'COSSACK_RPC_CLIENT_ERROR', message: 'Validation failed.' });
+        await expect(Promise.resolve(client.guarded({ title: 'ok title' }))).resolves.toBe('saved:ok title');
+        expect(client.loading.guarded).toBeUndefined();
     });
 
     it('rejects client-visible failures with stable codes', async () => {

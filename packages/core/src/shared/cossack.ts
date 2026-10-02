@@ -49,6 +49,7 @@ import {
     clearValidationError as clearValidationErrorFn,
     setValidationError as setValidationErrorFn,
     getValidationErrorProperty as getValidationErrorPropertyFn,
+    enforceActionInput,
 } from './validation';
 import {
     bootstrapServices as bootstrapServicesFn,
@@ -1067,10 +1068,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
         let iterator: AsyncIterator<unknown> | undefined;
         try {
+            // RT-02: enforce @Server({ input }) before the method runs; a
+            // failed contract rejects with client-visible field errors.
+            const validatedPayload = await enforceActionInput(this.constructor, action, payload || []);
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that
             // a longer client payload could displace.
-            const result = await (actionMethod as any)(...(payload || []));
+            const result = await (actionMethod as any)(...(validatedPayload as any[]));
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
                 iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
                 cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };
