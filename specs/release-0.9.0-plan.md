@@ -12,13 +12,16 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex native-response checkpoint](./release-0.9.0.md#codex-rpc-native-response-2026-10-03)
+The latest [Codex multipart checkpoint](./release-0.9.0.md#codex-rpc-multipart-2026-10-03)
+records a shared JSON/multipart dispatcher, nested file/service arguments,
+progressive generator consumption through Fetch and optional XHR, pre-mutation
+input validation and shared request/response cleanup. The preceding [Codex native-response checkpoint](./release-0.9.0.md#codex-rpc-native-response-2026-10-03)
 records bounded native HTTP body completion through public clients and generated
 HTTP/SSE/upload browser acceptance. The preceding [JSON wire checkpoint](./release-0.9.0.md#codex-rpc-json-values-2026-10-03)
 records a shared normalizer, JSON result/yield types, custom hook semantics,
 ordinary upload diagnostics, and generated HTTP/SSE browser acceptance. RT-01
-remains open for multipart ownership/streaming, protocol diagnostics, and
-Workers/realtime response acceptance. The preceding
+remains open for built Workers multipart/native-response acceptance, protocol
+diagnostics and remaining transport/policy boundaries. The preceding
 [shared conformance checkpoint](./release-0.9.0.md#codex-rpc-conformance-matrix-2026-10-03)
 records one matrix for HTTP/SSE components, WebSocket dispatch, and explicit
 service actions, with fixes to private errors, value paths, and known request IDs.
@@ -556,20 +559,42 @@ before production HTTP/SSE browsers consume native text and service binary
 results; a separate real upload round-trip returns binary and native metadata.
 This proves Node/browser native body completion, not Workers response acceptance.
 
-Next extend this matrix and existing runtime fixtures. Audit multipart
-generators, nested files, scoped service ownership, cleanup, cookies/redirects,
-input boundaries and errors; ordinary-upload and native-body round-trips do not
-establish full multipart parity.
-Source inspection of framework `transports/http.ts` still finds separate
-bootstrap/dispatch, top-level file restoration, no shared action-input gate,
-no full layout ownership/awaited disposal boundary and no generator response
-handling. Start with failing public-client/router regressions. Reuse JSON RPC's
-action validation and request/response lifetime pipeline. Preserve upload
-progress and define how that client consumes streamed generator replies; do not
-collect a generator into ordinary JSON to claim parity. Finish Workers/realtime cookie and header
-acceptance with RT-11, including this new native-body contract. Physical
-upgrades, distributed coordination, and complete release runtime gates remain
-separate evidence requirements. RT-01 stays open.
+Codex multipart checkpoint (2026-10-03): `/upload` now shares `/crpc`'s action
+pipeline instead of separately bootstrapping and disposing a component. A cached
+request decoder is reused by guards and dispatch. It restores nested file
+markers, rejects malformed or duplicate metadata/parts before construction,
+keeps own `__proto__` data, and rejects explicit null/non-array payloads.
+Component and explicit-service clients preserve scope/owner metadata. FileList
+becomes an array of Files; raw Blob is still outside the argument contract.
+
+The shared dispatcher applies action input validation before mutation, restores
+layout service ownership, and retains request/config/ORM context, stream lifetime,
+awaited cleanup and native/helper/flash cookies/redirects. Fetch streams multipart
+responses by default. Numeric `<method>Progress` state selects native XHR upload
+progress. XHR forwards complete UTF-8 NDJSON lines before load and bounds frame
+bytes; it retains cumulative browser response text and has no network download
+backpressure. Do not describe it as a total-memory-bounded stream. Native XHR
+responses preserve binary bytes and browser-visible headers. Parked iterator
+cancellation retains a known request ID on all four client paths.
+
+Evidence: 44 shared cases x four transports (176), 13 raw multipart cases and
+15 multipart client/router cases (204 total); 25 existing router lifetime cases
+now run for both JSON and multipart (50). Production Node/Chromium acceptance
+checks early Unicode yields, final results and progress for HTTP/SSE components
+and explicit services. Cancellation tests retain request correlation and verify
+remote closure/disposal. Tests capture counters per fixture because response
+cleanup can finish after a cancelled caller settles. Full core 726, framework
+858 and CLI 559 tests pass with root and all 11 package type checks.
+
+Next extend existing built Workers fixtures to consume multipart generators and
+native bodies, asserting cookies/flash/auth guards, request/D1 ownership and
+distributed SSE coordination. Then finish systematic malformed data/frame,
+rate-limit and child-target checks and settle file count/size/type/unknown-key
+policies with RT-02/RT-14. The shared dispatcher does not itself prove every
+runtime or authorization boundary. RT-11 still requires its secret exclusion,
+recipes, rotation and concurrency criteria. Physical upgrades, distributed
+coordination and full release runtime gates retain their separate evidence
+requirements. RT-01 stays open; no additional checkbox closes.
 
 Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
@@ -597,6 +622,13 @@ decorator/helper spelling during implementation and document it as one API.
 
 Start in `packages/core/src/shared/validation.ts`, `decorators.ts`,
 `packages/framework/src/router.ts`, and `api-handler.ts`.
+
+Codex multipart validation slice (2026-10-03): multipart now runs the existing
+`enforceActionInput` gate before component/service mutation through the shared
+JSON dispatcher. Real clients and direct forged multipart tests verify field
+errors/request IDs, no invalid mutation, and cleanup. This closes the old upload
+bypass, but does not establish schema inference or unknown-key, array/file and
+resource-policy contracts. Those acceptance criteria remain open.
 
 Done when: Invalid input cannot reach the mutation on any supported transport.
 Errors map to nested form fields without string parsing. Valid coerced input has

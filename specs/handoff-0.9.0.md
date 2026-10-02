@@ -2,7 +2,44 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex native RPC responses (2026-10-03):** read
+> **Latest checkpoint — Codex multipart RPC parity (2026-10-03):** read
+> [review and verification](./release-0.9.0.md#codex-rpc-multipart-2026-10-03),
+> [RT-01](./release-0.9.0-plan.md#rt-01), [RT-02](./release-0.9.0-plan.md#rt-02),
+> and [RPC guide](../docs/rpc.md). **Author: Codex.** `/upload` now shares `/crpc`'s
+> scoped action pipeline. Guards and dispatch use one cached decoder; nested
+> File/FileList arguments work for HTTP/SSE components and explicit services.
+> Action-input validation, layout service ownership, request/ORM context,
+> streaming, native/helper/flash cookies and awaited cleanup use the same path.
+> Malformed metadata, duplicate fields/parts and invalid file markers reject
+> before construction with `COSSACK_RPC_REQUEST_INVALID` and a request ID.
+>
+> Fetch is the default multipart client. A numeric `<method>Progress` field
+> selects XHR upload progress; complete UTF-8 generator frames arrive before
+> load. XHR retains cumulative response text and cannot pause network downloads;
+> its per-frame limit does not bound total browser buffering. Prefer Fetch for
+> long streams. Native XHR bodies keep binary bytes/headers. Cancellation while
+> an iterator is parked at a yield now retains its known request ID.
+>
+> Verified: core build and framework declarations; matrix **204** (176 shared,
+> 13 raw multipart and 15 multipart client/router cases); paired JSON/multipart
+> router lifetime suite **50**; full core **726**/52 files, framework **858**/49,
+> CLI **559**/39 (all **14** generated runtime cases); root TypeScript and all
+> **11** package checks. Production Chromium tests consume early Unicode yields
+> from nested-file HTTP/SSE page and service calls and preserve native upload
+> bytes/status/headers. Test fixture counters now belong to their original
+> request fixture, so delayed cancellation cleanup cannot contaminate later tests.
+>
+> **14/58 tasks checked; no new task closes. All 44 unchecked tasks remain in
+> scope.** Next extend existing built Workers fixtures for multipart/native body
+> consumption, cookies/flash/auth guards, request ownership and distributed SSE.
+> Then finish protocol/malformed-frame, child-target, rate-limit and file-policy
+> boundaries with RT-02/RT-14. RT-02 still needs schema inference, unknown-key,
+> array/file and resource-policy contracts. RT-01 and RT-11 remain open; Deno
+> execution/Electron packaging and full release gates remain separate evidence.
+> Versions stay 0.8.3 until REL-04. Build declarations sequentially before
+> dependent tests. Preserve unrelated `reports.md` and `.zcodeignore` edits.
+
+> **Previous checkpoint — Codex native RPC responses (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rpc-native-response-2026-10-03),
 > [RT-01](./release-0.9.0-plan.md#rt-01), [RPC guide](../docs/rpc.md), and
 > [migration](./migration-0.9.0.md). **Author: Codex.** Successful ordinary native

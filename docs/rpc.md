@@ -109,10 +109,47 @@ JSON data. Convert them to explicit data or use the appropriate HTTP endpoint.
 
 Method parameter types remain authored types. Declare JSON action inputs using
 the representation the server receives, such as an ISO string for a timestamp.
-HTTP/SSE component calls retain their separate File upload handling; files are
-not ordinary JSON. Service/WebSocket JSON calls reject binary values before
-dispatch. Ordinary multipart results use the same JSON snapshot and diagnostics.
-This contract does not imply multipart generator or nested-file parity.
+HTTP/SSE component and explicit scoped service calls accept File arguments,
+including nested files and arrays. The client sends them as multipart parts;
+FileList arguments become arrays of Files. Public state and returned/yielded
+values still use JSON and reject files or raw binary values. WebSocket arguments
+and raw Blob arguments reject before dispatch; use File arguments on HTTP/SSE
+or an HTTP endpoint for binary operations.
+
+Multipart and JSON calls share action validation, layout service ownership,
+request/ORM context, generator replies, cookies/redirects and awaited cleanup.
+The `_cossack_file_id` field is reserved for framework file references inside
+multipart payloads. Missing/duplicate file parts, duplicate metadata, malformed
+JSON or markers and invalid envelope shapes reject before action dispatch with
+`COSSACK_RPC_REQUEST_INVALID`, a path and request ID.
+
+Component uploads use Fetch by default, preserving native response streaming.
+To observe upload progress, declare a numeric client state field named after the
+method, such as `uploadProgress` for `upload()`. That selects XMLHttpRequest
+(XHR). The percentage measures request bytes sent, not action completion. Both
+clients expose generator yields before completion and retain cancellation,
+deadlines and the same correlated stream protocol. The XHR bridge forwards
+complete UTF-8 lines as they arrive and enforces the frame limit. XHR itself
+retains received text and cannot pause downloads when an iterator pauses; prefer
+the default Fetch path for long streams. This is a browser transport limitation,
+not a server-global response buffer. See the [XHR standard](https://xhr.spec.whatwg.org/#the-responsetype-attribute).
+
+```typescript
+@ClientState() uploadProgress = 0; // Optional; omit to use Fetch.
+
+@Server({ input: { title: { required: true } } })
+async *upload(input: { title: string; nested: { files: File[] } }) {
+  yield await input.nested.files[0].text();
+  return { name: input.nested.files[0].name };
+}
+
+@Client()
+async submit(file: File) {
+  const call = rpc$(this.upload({ title: 'Draft', nested: { files: [file] } }));
+  for await (const progress of call) console.log(progress);
+  console.log((await call).name);
+}
+```
 
 An ordinary method returning a native `Response` has a `Response | undefined`
 client result. Successful HTTP/SSE component and service calls resolve to a local

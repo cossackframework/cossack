@@ -10,6 +10,7 @@ import {
     subscribeToService,
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
+import { rpcFormData, snapshotRpcPayload } from './rpc-files';
 import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
@@ -339,26 +340,22 @@ export class ServiceScope {
                 let request: Promise<Response>;
                 try {
                     const state = snapshotRpcValue(getServiceState(entry.instance), 'state');
-                    const normalizedPayload = snapshotRpcValue(payload, 'payload');
-                    request = fetch('/crpc', {
+                    const normalized = snapshotRpcPayload(payload);
+                    const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot }, action,
+                        payload: normalized.payload, state, scopeKey: this.scopeKey };
+                    request = fetch(normalized.files.size ? '/upload' : '/crpc', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
-                        body: JSON.stringify({
-                            service: { ownerRouteId: this.ownerRouteId, slot: entry.slot },
-                            action,
-                            payload: normalizedPayload,
-                            state,
-                            scopeKey: this.scopeKey,
-                        }),
+                        body: normalized.files.size ? rpcFormData(body, normalized.files) : JSON.stringify(body),
                     });
                 } catch (cause) {
                     request = Promise.reject(cause instanceof RpcError ? cause : new RpcError(
                         'COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize service request.', { cause }));
                 }
                 void request.catch(() => {});
+                let requestId: string | undefined;
                 const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
-                    let requestId: string | undefined;
                     try {
                         const response = await request;
                         requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
@@ -412,7 +409,7 @@ export class ServiceScope {
                     }
                 };
                 return createRpcCall(operation(this), () => controller.abort(),
-                    error => console.error(`Error calling service action '${action}':`, error));
+                    error => console.error(`Error calling service action '${action}':`, error), () => requestId);
             };
         }
         this.clientProxyInstalled.add(entry.instance);

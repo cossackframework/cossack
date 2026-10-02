@@ -147,6 +147,9 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
   await write('src/services/rpc-report.ts', `
     import { Server, Service, CossackService } from '@cossackframework/core';
     @Service() export class ReportService extends CossackService {
+      @Server({ input: { title: { required: true } } }) async *files(input: { title: string; nested: { files: File[] } }) {
+        yield await input.nested.files[0].text(); await new Promise(resolve => setTimeout(resolve, 500)); return input.nested.files[0].name;
+      }
       @Server() native() { return new Response(new Uint8Array([0, 255, 128]), { headers: { 'Content-Type': 'application/octet-stream', 'X-Native': 'service' } }); }
       @Server() report = async function* (label: string) {
         const serverMarker = 'private-service-generator-marker';
@@ -172,6 +175,21 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       @ClientState() output = '';
       @ClientState() failure = '';
       @ClientState() pending = false;
+      @ClientState() uploadFilesProgress = 0;
+      @Server({ input: { title: { required: true } } }) async *uploadFiles(input: { title: string; nested: { files: File[] } }) {
+        yield await input.nested.files[0].text(); await new Promise(resolve => setTimeout(resolve, 500)); return input.nested.files[0].name;
+      }
+      @Client() async readFiles(service: boolean) {
+        this.failure = ''; this.output = '';
+        const input = { title: 'valid', nested: { files: [new File(['привет🙂'], 'nested.txt')] } };
+        try {
+          const call = service ? rpc$(this.report.files(input)) : rpc$(this.uploadFiles(input));
+          for await (const value of call) this.output = 'first:' + value;
+          this.output = 'done:' + await call + '/' + (service ? 'service' : this.uploadFilesProgress);
+        } catch (error) { this.failure = error instanceof Error ? error.message : 'Upload failed'; }
+      }
+      @Client() readPageFiles() { return this.readFiles(false); }
+      @Client() readServiceFiles() { return this.readFiles(true); }
       @Server() async *steps(limit: number) {
         for (let step = 1; step <= limit; step++) yield { step };
         return { total: limit };
@@ -220,6 +238,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       }
       render() { return html\`<main><h1>Typed ${transport} RPC</h1>
         <button @click=\${this.run} ?disabled=\${this.pending}>Run</button>
+        <button @click=\${this.readPageFiles}>Page files</button><button @click=\${this.readServiceFiles}>Service files</button>
         <p role="status">\${this.output}</p><p role="alert">\${this.failure}</p></main>\`; }
     }
   `);
@@ -227,7 +246,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
     import { Cossack, Page, Server, Client, ClientState, rpc$ } from '@cossackframework/core';
     import { html } from '@cossackframework/renderer';
     @Page({ transport: 'http' }) export default class NativeUpload extends Cossack {
-      @ClientState() output = ''; @ClientState() failure = '';
+      @ClientState() output = ''; @ClientState() failure = ''; @ClientState() uploadProgress = 0;
       @Server() async upload(file: File) {
         return new Response(await file.arrayBuffer(), { status: 201, headers: { 'Content-Type': 'application/octet-stream', 'X-Native': file.name } });
       }
@@ -268,6 +287,12 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       await browserExpect(page.getByRole('alert')).toHaveText('');
       expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized', 'native', 'native']);
       expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
+      for (const label of ['Page files', 'Service files']) {
+        await page.getByRole('button', { name: label, exact: true }).click();
+        await browserExpect(page.getByRole('status')).toHaveText('first:привет🙂');
+        await browserExpect(page.getByRole('status')).toHaveText('done:nested.txt/' + (label === 'Page files' ? '100' : 'service'));
+        await browserExpect(page.getByRole('alert')).toHaveText('');
+      }
       expect(errors).toEqual([]);
       await page.close();
     }

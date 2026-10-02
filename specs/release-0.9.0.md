@@ -86,6 +86,86 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-rpc-multipart-2026-10-03"></a>
+### Codex review: shared multipart RPC ownership and streaming (2026-10-03)
+
+**Author: Codex.** Continued RT-01 after `5029287`. The upload path bootstrapped
+and dispatched separately, restored only top-level files, omitted the shared
+input-validation gate and full layout service ownership, and did not handle
+generator replies or await all request cleanup. Ordinary file/native response
+tests had not established those contracts.
+
+`/upload` and `/crpc` now share one dispatcher. Transport guards and dispatch
+reuse a cached decoder, so authorization still runs before constructors/actions.
+Multipart restores nested markers and preserves own `__proto__` data. Invalid
+JSON, null/non-array payloads, missing/invalid file markers, extra marker keys,
+duplicate metadata and duplicate referenced file parts fail before construction
+with `COSSACK_RPC_REQUEST_INVALID` and correlated IDs. Unreferenced file parts
+and broad file/unknown-key policies are not settled by this slice.
+
+Component uploads retain scope and page-parameter metadata. Explicit-service
+calls now accept nested File/FileList arguments and preserve owner/slot/state.
+FileList becomes a File array; raw Blob still rejects. The shared action path
+applies `enforceActionInput` before mutation and keeps layout service injection,
+request/config/ORM ownership, awaited disposal, native/helper/flash cookies,
+redirects and streaming response lifetime.
+
+Fetch is the default multipart transport. Declaring numeric `<method>Progress`
+state selects XHR for upload progress. XHR switches to progressive UTF-8 text
+at headers for RPC streams, forwards complete NDJSON lines before load and
+preserves native binary bodies/headers. Per-frame byte limits still apply,
+but XHR retains cumulative browser text and cannot pause network downloads;
+it does not have bounded total response memory or Fetch's network backpressure.
+The RPC guide explains that tradeoff. Cancellation while the iterator is parked
+at a yield now retains its known request ID across all four client paths.
+
+The matrix has **44 shared cases x four paths = 176**, **13 raw multipart**
+cases and **15 multipart client/router** cases: **204** total. It tests nested
+files, progress, default Fetch, input failures before mutation, early generator
+yields, state/final results, cancellation correlation and eventual remote
+cleanup. The existing **25** router lifetime cases now run for JSON and
+multipart (**50**), covering forwarded/explicit services, validation, request
+and ORM context, cancellation/disposal, cookies, redirects, flash and header
+writes. Fixture counters now belong to their original requests so delayed
+cancellation cleanup cannot contaminate later tests. An explicit completion
+gate proves early yields without depending on a timer.
+
+Generated production Node apps compile and run in Chromium. HTTP/SSE component
+and scoped-service calls send nested Unicode Files, display the first yield
+before final completion, then verify the final result and upload progress.
+Existing native-upload acceptance explicitly selects XHR and verifies binary
+bytes/status/headers. This establishes Node/browser evidence, not new Workers,
+Deno execution or Electron packaging acceptance.
+
+Verified: core build; framework declarations; focused matrix/router **254**;
+full core **726** tests/52 files; framework **858**/49; CLI **559**/39, including
+all **14** generated runtime cases; root TypeScript and all **11** package checks.
+RPC guide, architecture, migration draft, detailed plan and Codex handoff updated.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run tests/rpc-upload.test.ts
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts tests/router-rpc-stream.test.ts
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 tasks checked; no new task closes. All 44 unchecked tasks remain in
+scope. RT-01, RT-02 and RT-11 stay open.** GLM should next extend existing built
+Workers fixtures for multipart generators/native body consumption, native/helper/
+flash cookies, auth guards, D1/request lifetime and distributed SSE. Then audit
+systematic malformed data/frames, rate-limit and child-target boundaries and
+finish file count/size/type/unknown-key policies with RT-02/RT-14. RT-02 still
+needs inferred schema inputs, arrays/files and resource-policy acceptance;
+RT-11 still needs secret exclusion, full recipes, rotation and concurrency.
+The full release gates and Deno execution/Electron packaging remain required.
+Keep versions 0.8.3 until REL-04; regenerate declarations sequentially before
+dependent tests. Preserve unrelated `reports.md` and `.zcodeignore` edits.
+
 <a id="codex-rpc-native-response-2026-10-03"></a>
 ### Codex review: native HTTP RPC response completion (2026-10-03)
 

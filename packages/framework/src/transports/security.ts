@@ -1,6 +1,7 @@
-import { isOriginAllowed } from '@cossackframework/core';
+import { isOriginAllowed, RpcError } from '@cossackframework/core';
 import type { MiddlewareHandler } from 'hono';
 import type { RouterContext } from '../route-ids.js';
+import { readRpcRequest } from './http.js';
 
 /** Apply the addressed page/layout guards before any transport can bootstrap it. */
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
@@ -12,17 +13,18 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
                 return c.text('Origin not allowed', 403);
             }
+            const requestId = crypto.randomUUID();
+            c.res.headers.set('X-Cossack-Request-Id', requestId);
             try {
-                const body = c.req.path === '/upload'
-                    ? await c.req.parseBody({ all: true })
-                    : await c.req.json();
+                const body = await readRpcRequest(c);
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
                 const routeId = body.service?.ownerRouteId ?? body.componentRouteId;
                 componentPath = typeof routeId === 'string' ? ctx.routeIdMap.get(routeId) : undefined;
-            } catch {
-                return c.json({ error: 'Invalid transport body' }, 400);
+            } catch (error) {
+                return c.json({ error: error instanceof RpcError ? error.message : 'Invalid transport body',
+                    code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }
         } else if (c.req.path.startsWith('/sse/')) {
             componentPath = ctx.routeIdMap.get(c.req.param('componentRouteId') ?? '');

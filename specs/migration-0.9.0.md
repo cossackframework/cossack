@@ -117,3 +117,25 @@ bodies never hydrate component/service state. Prefer typed data returns for
 state synchronization or use an HTTP endpoint for large or continuous bodies.
 Generator Response values remain unsupported; their inferred terminal result
 is now never rather than unknown. WebSocket rejection cancels the native body.
+
+## Multipart actions use the shared RPC pipeline
+
+File arguments in HTTP/SSE component or explicit scoped service calls now use
+the same action dispatcher as JSON. Nested references are restored before input
+validation; layout services, request/ORM context, generator replies, cookies,
+redirects and cleanup follow the existing RPC contract. Duplicate metadata/file
+parts, missing or malformed markers, invalid JSON and envelope shapes reject
+with `COSSACK_RPC_REQUEST_INVALID` before actions run. `_cossack_file_id` is a
+reserved multipart payload field. Malformed JSON RPC envelopes use the same code.
+
+Component uploads use Fetch unless a numeric `<method>Progress` field requests
+XHR progress events. Prefer `@ClientState` for that field. XHR generator replies
+are decoded progressively at complete lines; native binary replies still use
+arraybuffer. XHR retains downloaded text and cannot apply download backpressure;
+use the default Fetch path for long streams. Service uploads use Fetch. Files and
+FileList/arrays are arguments only, not JSON state or returned values.
+
+Cancellation between yields now preserves a known request ID on component,
+service and WebSocket calls, including iterator return. IDs can still be unknown
+before HTTP headers arrive. Cancellation never implies mutation rollback or
+automatic retry.

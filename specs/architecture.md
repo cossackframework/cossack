@@ -348,3 +348,23 @@ metadata and undefined completion. Native bodies are not state envelopes and do
 not hydrate action state. Non-success statuses retain RPC error handling. Upload
 XHR uses arraybuffer and copies browser-visible headers. WebSocket rejection
 cancels a native response body; Response values in generators remain invalid.
+
+JSON and multipart actions now share one router dispatcher registered at `/crpc`
+and `/upload`. `readRpcRequest` decodes/caches the body for guards and dispatch,
+restores nested file references using own-property records and validates envelope
+shapes. Malformed/duplicate metadata or missing/duplicate file parts reject before
+construction or mutation. Origin checks remain before parsing, and addressed
+page/layout guards remain before component/service construction. Multipart calls
+therefore inherit JSON RPC's full layout ownership, input validation, scoped
+cleanup, SSE coordination, native response handling and response lifetimes.
+
+Core service proxies encode nested files through the shared multipart helpers.
+Component proxies use Fetch unless a numeric method-progress field selects XHR.
+The XHR bridge resolves a stream at response headers, forwards stable complete
+UTF-8 frames progressively and retains upload progress/native binary metadata.
+Frame sizes are bounded, but native XHR accumulates response text and cannot
+pause the network reader. Fetch remains the default for long replies and download
+backpressure. Both paths feed the same RPC parser and lifetime/cancellation
+contract. `createRpcCall` queries the client's known request ID when cancellation
+closes an iterator parked at a yield, so its synthetic cancellation error retains
+correlation even without another transport read.

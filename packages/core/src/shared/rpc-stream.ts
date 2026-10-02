@@ -363,6 +363,7 @@ export function createRpcCall<Result, Yield>(
     operation: AsyncGenerator<Yield, Result>,
     abort: () => void,
     onUnobservedError?: (error: unknown) => void,
+    getRequestId?: () => string | undefined,
 ): RpcCall<Result, Yield> {
     let resolve!: (value: Result) => void;
     let reject!: (error: unknown) => void;
@@ -406,7 +407,7 @@ export function createRpcCall<Result, Yield>(
         finally {
             if (!settled) {
                 settled = true;
-                reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
+                reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId: getRequestId?.() }));
             }
         }
     };

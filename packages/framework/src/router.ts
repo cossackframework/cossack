@@ -77,7 +77,7 @@ import {
   attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
-import { handleUpload } from './transports/http.js';
+import { readRpcRequest } from './transports/http.js';
 import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
@@ -758,12 +758,13 @@ export function createApp(options: CreateAppOptions = {}) {
     app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
   }
   app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
-  app.post('/upload', handleUpload(routerContext));
-
-  app.post('/crpc', async (c) => {
-    const body = await c.req.json();
+  // JSON and multipart differ only at decoding. Ownership, validation,
+  // streaming, cookies and cleanup use the same action pipeline.
+  const handleRpc: Handler = async (c) => {
+    const body = await readRpcRequest(c);
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
-    const requestId = crypto.randomUUID();
+    const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+    if (typeof action !== 'string' || !action) return c.json({ error: 'Invalid action', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
     // Materialize prepared middleware headers before an action can return an
     // independently constructed stream Response. Hono merges an existing res,
     // but otherwise drops prepared headers when assigning that raw Response.
@@ -1123,7 +1124,9 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
     return runComponentAction(undefined);
-  });
+  };
+  app.post('/crpc', handleRpc);
+  app.post('/upload', handleRpc);
 
   // Register all routes.
   //

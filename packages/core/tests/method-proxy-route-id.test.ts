@@ -161,7 +161,7 @@ describe('HTTP component RPC targeting', () => {
         vi.stubGlobal('XMLHttpRequest', FakeXhr);
         const invalidate = vi.fn();
         (globalThis as any).__cossack_invalidatePageCache = invalidate;
-        const component = makeComponent();
+        const component = { ...makeComponent(), getProperty: () => 0 };
         proxyHttpMethods(component, [{ name: 'upload' }]);
 
         await component.__cossack_proxies.get('upload')?.(

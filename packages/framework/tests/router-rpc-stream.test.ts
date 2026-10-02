@@ -94,15 +94,26 @@ const { createApp } = await import('../src/router');
 const routeIds = computeRouteIds([path], [layout]);
 const id = routeIds.routePathToIdMap.get(path)!;
 const layoutId = routeIds.routePathToIdMap.get(layout)!;
+let requestTransport: 'json' | 'multipart' = 'json';
+const endpoint = () => requestTransport === 'json' ? '/crpc' : '/upload';
+function requestBody(body: Record<string, unknown>): BodyInit {
+    if (requestTransport === 'json') return JSON.stringify(body);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(body)) {
+        if (value !== undefined) form.set(key, ['state', 'payload', 'service', 'pageParams'].includes(key) ? JSON.stringify(value) : String(value));
+    }
+    form.set('file_0', new File(['context file'], 'context.txt'));
+    return form;
+}
 const request = (action = 'stream', extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
-    createApp().request('/crpc', {
-        method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ componentRouteId: id, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
+    createApp().request(endpoint(), {
+        method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}), ...headers },
+        body: requestBody({ componentRouteId: id, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
     }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 const serviceRequest = (action: string, extra: Record<string, unknown> = {}) =>
-    createApp().request('/crpc', {
-        method: 'POST', headers: { origin: 'http://localhost', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
+    createApp().request(endpoint(), {
+        method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}) },
+        body: requestBody({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
     }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 async function collect(response: Response) {
     const frames = [];
@@ -112,7 +123,8 @@ async function collect(response: Response) {
 beforeEach(() => { Object.assign(effects, { constructed: 0, runs: 0, closed: 0, components: 0, services: 0 }); });
 afterEach(() => { middlewareStore.database = undefined; vi.restoreAllMocks(); });
 
-describe('router RPC streaming lifecycle', () => {
+describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle', transport => {
+    beforeEach(() => { requestTransport = transport; });
     it.each(['component', 'service'])('permits %s cookie/flash writes before returning a lazy generator', async target => {
         const custom = async () => {
             cookie().set('early', 'kept', { path: '/' });
@@ -210,7 +222,7 @@ describe('router RPC streaming lifecycle', () => {
         let step = 0;
         const custom = () => new Response(new ReadableStream<Uint8Array>({
             async pull(controller) {
-                expect(getRequestContext()?.req.path).toBe('/crpc');
+                expect(getRequestContext()?.req.path).toBe(endpoint());
                 const query = await sql`SELECT ${++step} AS value`;
                 controller.enqueue(new TextEncoder().encode(JSON.stringify(query.rows)));
             },
@@ -256,7 +268,7 @@ describe('router RPC streaming lifecycle', () => {
         expect(effects).toMatchObject({ runs: 0, components: 0, services: 0 });
         const frames = await middlewareStore.current!.run('different-reader', () => collect(response));
         expect(frames).toEqual([
-            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', url: 'https://configured.test', path: '/crpc' }, state: { count: 1 } },
+            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', url: 'https://configured.test', path: endpoint() }, state: { count: 1 } },
             { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', serviceCount: 2 }, state: { count: 2 } },
             { v: 1, type: 'done', requestId: response.headers.get('X-Cossack-Request-Id'), value: 'finished', state: { count: 2 } },
         ]);

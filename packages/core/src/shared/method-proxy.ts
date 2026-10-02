@@ -5,6 +5,8 @@ import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
 import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { sendRpcUpload } from './rpc-upload';
+import { rpcFormData } from './rpc-files';
 import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
@@ -337,14 +339,12 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
             const controller = new AbortController();
-            let upload: XMLHttpRequest | undefined;
             let timedOut = false;
             // A deadline aborts the call but never retries it: the mutation may
             // have completed server-side, so its outcome stays unknown.
             const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
                 timedOut = true;
                 controller.abort();
-                upload?.abort();
             }, timeoutMs);
             const { cleanup: finish, succeed } = createCallLifecycle(component, name);
             const cleanup = () => {
@@ -372,49 +372,23 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 requestState = liveState;
                 requestState = snapshotTransportState(liveState);
                 if (files.size) {
-                    const formData = new FormData();
-                    formData.append('componentRouteId', componentRouteId);
-                    if (component._id) formData.append('target', component._id);
-                    formData.append('action', name);
-                    formData.append('state', JSON.stringify(requestState));
-                    formData.append('payload', JSON.stringify(payload));
-                    files.forEach((file, id) => formData.append(id, file));
-                    request = new Promise<Response>((resolve, reject) => {
-                        const xhr = upload = new XMLHttpRequest();
-                        xhr.open('POST', `/upload${window.location.search}`, true);
-                        xhr.responseType = 'arraybuffer';
-                        xhr.upload.onprogress = (event) => {
-                            const property = `${name}Progress`;
-                            if (event.lengthComputable && typeof component.getProperty(property) === 'number') {
+                    const formData = rpcFormData({ componentRouteId, target: component._id, action: name,
+                        state: requestState, payload, scopeKey: initialState?.scopeKey,
+                        pageParams: initialState?.metadata?.params || {} }, files);
+                    const property = `${name}Progress`;
+                    // Fetch keeps native response streaming/backpressure. XHR
+                    // is required only when the author requests upload progress.
+                    request = typeof component.getProperty?.(property) === 'number'
+                        ? sendRpcUpload(`/upload${window.location.search}`, formData, controller.signal, event => {
+                            if (event.lengthComputable) {
                                 component.setProperty(property, event.loaded / event.total * 100);
                                 component.requestUpdate();
                             }
-                        };
-                        xhr.onload = () => {
-                            try {
-                                const headers = new Headers();
-                                for (const line of xhr.getAllResponseHeaders?.().split(/[\r\n]+/) ?? []) {
-                                    const separator = line.indexOf(':');
-                                    if (separator > 0) headers.append(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
-                                }
-                                for (const header of ['Content-Type', RPC_NATIVE_RESPONSE_HEADER, 'X-Cossack-Request-Id']) {
-                                    const value = xhr.getResponseHeader?.(header);
-                                    if (value && !headers.has(header)) headers.set(header, value);
-                                }
-                                if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-                                resolve(new Response(xhr.status === 204 || xhr.status === 205 || xhr.status === 304 ? null : xhr.response ?? xhr.responseText, {
-                                    status: xhr.status, statusText: xhr.statusText, headers,
-                                }));
-                            } catch (cause) {
-                                reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
-                                    'Upload failed. The server outcome is unknown and is never retried.', { cause }));
-                            }
-                        };
-                        xhr.onerror = () => reject(new RpcError('COSSACK_RPC_NETWORK_FAILED',
-                            'Upload failed. The server outcome is unknown and is never retried.'));
-                        xhr.onabort = () => reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
-                        xhr.send(formData);
-                    });
+                        })
+                        : fetch(`/upload${window.location.search}`, {
+                            method: 'POST', body: formData, signal: controller.signal,
+                            headers: { Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        });
                 } else {
                     request = fetch(`/crpc${window.location.search}`, {
                         method: 'POST',
@@ -442,8 +416,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});
             const apply = createStateApplier(component, requestState);
+            let requestId: string | undefined;
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
-                let requestId: string | undefined;
                 try {
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
                     const response = await request;
@@ -503,9 +477,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             };
             return createRpcCall(operation(), () => {
                 controller.abort();
-                upload?.abort();
                 cleanup();
-            }, error => console.error(`Error calling server action '${name}':`, error));
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
         };
         component.__cossack_proxies.set(name, proxy);
         component.setProperty(name, proxy);
@@ -613,7 +586,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 queue.fail({ v: 1, type: 'error', requestId,
                     code: 'COSSACK_RPC_CANCELLED', message: 'RPC call was cancelled.' });
                 try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
-            }, error => console.error(`Error calling server action '${name}':`, error));
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
         };
 
         // Store proxy in the map so stubbed methods can find it
