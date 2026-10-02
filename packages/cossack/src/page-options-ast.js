@@ -129,3 +129,60 @@ export async function extractPageOptionsFromAst(code) {
     reason: `The @Page options are ${argument.type === 'Identifier' ? `the identifier ${argument.name}` : 'a dynamic expression'} and cannot be resolved statically.`,
   };
 }
+
+/**
+ * Per-method RPC classification (CLI-04): list each decorated method with
+ * the reason it becomes a server proxy, client method, or shared method on
+ * this page. Purely syntactic — no module execution.
+ */
+export async function extractMethodClassificationsFromAst(code) {
+  const parseSync = await loadParseSync();
+  if (!parseSync) return null;
+  let program;
+  try {
+    program = parseSync('page.ts', code).program;
+  } catch {
+    return { methods: [], reason: 'The file could not be parsed as TypeScript.' };
+  }
+  const aliases = new Map();
+  for (const statement of program.body) {
+    if (statement.type !== 'ImportDeclaration') continue;
+    const source = sourceText(statement.source, code);
+    if (!source.includes('@cossackframework/core')) continue;
+    for (const specifier of statement.specifiers ?? []) {
+      if (specifier.type === 'ImportSpecifier' && specifier.imported?.name) {
+        aliases.set(specifier.local.name, specifier.imported.name);
+      }
+    }
+  }
+  const methods = [];
+  walk(program, node => {
+    if (node.type !== 'MethodDefinition' && node.type !== 'PropertyDefinition') return;
+    const decorators = node.decorators ?? [];
+    if (!decorators.length) return;
+    const names = decorators
+      .map(decorator => {
+        const expression = decorator.expression?.type === 'CallExpression' ? decorator.expression.callee : decorator.expression;
+        return expression?.type === 'Identifier' ? (aliases.get(expression.name) ?? expression.name) : null;
+      })
+      .filter(Boolean);
+    const kind = names.includes('Server') ? 'server'
+      : names.includes('Client') ? 'client'
+      : names.includes('Shared') ? 'shared'
+      : null;
+    if (!kind) return;
+    const key = node.key?.type === 'Identifier' ? node.key.name
+      : node.key?.type === 'Literal' ? String(node.key.value) : '(computed)';
+    methods.push({
+      name: key,
+      kind,
+      reason: kind === 'server'
+        ? '@Server() methods execute on the server; the client calls an RPC proxy.'
+        : kind === 'client'
+          ? '@Client() methods execute in the browser only.'
+          : '@Shared() methods execute on both sides without transport.',
+      line: lineNumberAt(code, node.start),
+    });
+  });
+  return { methods };
+}

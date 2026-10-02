@@ -38,6 +38,12 @@ function explainRoute(effective, route) {
   if (page.services.length) {
     reasons.push(`Services declared on the page itself: ${page.services.join(', ')}`);
   }
+  if (page.serverMethods?.length) {
+    reasons.push(`Server methods (RPC proxies on the client): ${page.serverMethods.map(entry => `${entry.name} (${entry.reason})`).join('; ')}`);
+  }
+  if (page.clientMethods?.length) {
+    reasons.push(`Client/shared methods (no transport): ${page.clientMethods.map(entry => entry.name).join(', ')}`);
+  }
   if (page.notFoundBoundary) reasons.push(`Nearest 404 boundary: ${page.notFoundBoundary}`);
   if (page.errorBoundary) reasons.push(`Nearest error boundary: ${page.errorBoundary}`);
   return { route: page.route, routeId: page.routeId, kind: page.kind, source: page.source, reasons };

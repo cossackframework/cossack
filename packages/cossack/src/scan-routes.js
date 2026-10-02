@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractMethodClassificationsFromAst } from './page-options-ast.js';
 import { extractPageOptionsFromAst } from './page-options-ast.js';
 import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
 
@@ -225,6 +226,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
     let method = 'regex';
     let reason = null;
+    let methods = { methods: [] };
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
@@ -241,6 +243,7 @@ export async function buildEffectiveRouteModel(projectRoot) {
         options = extractPageOptions(source);
         reason = ast.reason ?? 'The @Page options could not be resolved statically.';
       }
+      methods = await extractMethodClassificationsFromAst(source);
     } catch { /* unreadable source keeps null options; the route still lists */
       reason = 'The page source could not be read.';
     }
@@ -255,6 +258,8 @@ export async function buildEffectiveRouteModel(projectRoot) {
       ssg: options.ssg,
       middlewares: options.middlewares,
       services: options.services,
+      serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
+      clientMethods: methods.methods?.filter(entry => entry.kind !== 'server') ?? [],
       extraction: { method, reason },
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine

@@ -86,7 +86,7 @@ describe('Route inspection and explanation (CLI-04)', () => {
     await write('src/pages/layout.ts', 'export default class Layout {}');
     await write('src/pages/dashboard/layout.ts', "@Page({ services: [Session, Audit] })\nexport default class Dash {}");
     await write('src/pages/dashboard/users/[id]/index.ts',
-      "@Page({ transport: 'sse', middlewares: [async (c, next) => { await next(); }] })\nexport default class Users {}");
+      "@Page({ transport: 'sse', middlewares: [async (c, next) => { await next(); }] })\nexport default class Users {\n  @Server() async *load() {}\n  @Client() onClick() {}\n}");
     await write('src/pages/dashboard/404/index.ts', 'export default class NotFound {}');
     return { cwd: root, flags: {}, force: false, dryRun: false };
   }
@@ -124,6 +124,10 @@ describe('Route inspection and explanation (CLI-04)', () => {
     expect(reasons).toContain('1 middleware(s)');
     expect(reasons).toContain('Nearest 404 boundary');
     expect(reasons).toContain('Session, Audit (/src/pages/dashboard/layout.ts)');
+    // Method classification: @Server becomes an RPC proxy; @Client stays local.
+    expect(reasons).toContain('Server methods (RPC proxies on the client): load');
+    expect(reasons).toContain('execute on the server');
+    expect(reasons).toContain('Client/shared methods (no transport): onClick');
   });
 
   it('fails with a coded diagnostic for unknown routes', async () => {
