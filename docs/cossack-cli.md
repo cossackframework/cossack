@@ -171,6 +171,21 @@ declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared membe
 precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
 still succeed for those files so an agent can examine the available facts.
 
+Each page and layout includes `moduleExport`: `resolved` means its default export
+is a local class declaration, `missing` means no default export exists, and
+`unknown` means the export cannot be resolved without executing or importing it.
+Checks fail with `COSSACK_ROUTE_DEFAULT_EXPORT_MISSING` or
+`COSSACK_ROUTE_DEFAULT_EXPORT_UNKNOWN`. A resolved class is not proof that its
+constructor or lifecycle succeeds.
+
+Services are reported as source expressions on their declaring layouts. Import
+aliases are not treated as proof of service token identity. Dynamic service
+lookups and unresolved inherited layout options remain unknown. Page-level
+service declarations fail with `COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use
+layout scopes rather than creating their own. Layout/page middleware counts
+follow outer-to-inner layout order, then the page, and exclude global bootstrap
+middleware. An unknown count makes the combined total unknown.
+
 Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
 through the scaffold recipe registry, including feature dependencies and provider
 compatibility. Missing manifests have status `unrecorded`; malformed or unsupported

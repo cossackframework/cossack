@@ -12,6 +12,7 @@ function explainRoute(effective, route) {
   const page = effective.pages.find(candidate => candidate.route === route);
   if (!page) return null;
   const reasons = [];
+  reasons.push(`Default export: ${page.moduleExport.status}. ${page.moduleExport.reason}`);
   const capability = effective.runtime.transports.find(item => item.source === page.source);
   if (capability) {
     reasons.push(`Runtime ${effective.runtime.name}: ${capability.transport} transport is ${capability.status} (configured binding presence only).`);
@@ -43,7 +44,7 @@ function explainRoute(effective, route) {
     if (layout?.extraction.method === 'unknown') reasons.push(`Service ownership is unknown at ${filePath}: ${layout.extraction.reason}`);
   }
   if (ownedServices.length) {
-    reasons.push(`Injectable services (owned by ancestry): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
+    reasons.push(`Layout service declarations (source expressions, token identity not resolved): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
   }
   if (page.services.length) {
     reasons.push(`Services declared on the page itself are not owned at runtime: ${page.services.join(', ')}. Move these declarations to an ancestor layout's @Page({ services: [...] }).`);
@@ -106,6 +107,10 @@ async function checkRoutes(ctx) {
     const diagnostics = [...effective.scaffold.diagnostics, ...effective.runtime.diagnostics];
     const add = (code, message, source) => diagnostics.push({ code, severity: 'error', message, source });
     for (const item of [...effective.pages, ...effective.layouts]) {
+      if (item.moduleExport.status !== 'resolved') {
+        add(item.moduleExport.status === 'missing' ? 'COSSACK_ROUTE_DEFAULT_EXPORT_MISSING' : 'COSSACK_ROUTE_DEFAULT_EXPORT_UNKNOWN',
+          item.moduleExport.reason, item.source);
+      }
       if (item.extraction.method !== 'ast') {
         add('COSSACK_ROUTE_OPTIONS_UNKNOWN', 'Route options could not be resolved statically.', item.source);
       }
@@ -203,7 +208,8 @@ export function checkHelp() {
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
-for either scope. Route checks fail on unknown options, ignored page service declarations,
+for either scope. Route checks fail on missing/unresolved default class exports,
+unknown options, ignored page service declarations,
 unavailable compiler method facts, invalid/unsupported transports, or missing
 required transport bindings. Inherited behavior
 and runtime execution are not yet checked.

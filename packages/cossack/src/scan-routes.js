@@ -5,7 +5,7 @@ import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
-import { extractPageOptionsFromAst } from './page-options-ast.js';
+import { extractPageOptionsFromAst, inspectDefaultClassExport } from './page-options-ast.js';
 import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
 
 /**
@@ -228,12 +228,14 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
   const pages = [];
   for (const page of model.pages) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let moduleExport = { status: 'unknown', reason: 'The source could not be read.' };
     let method = 'unknown';
     let reason = null;
     let methods = { methods: [] };
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
+      moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
         reason = 'The TypeScript parser is unavailable; route options are unknown.';
@@ -270,6 +272,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       inheritance: methods.inheritance ?? { status: 'unresolved', bases: [] },
       inheritedDeclarations: methods.inheritedDeclarations ?? [],
       methodExtraction: { method: methods.method ?? 'unknown', reason: methods.reason ?? null },
+      moduleExport,
       extraction: { method, reason },
       // Source location of the @Page decorator for inspection output.
       source: options.decoratorLine
@@ -277,16 +280,18 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
         : page.filePath,
     });
   }
-  // Layouts declare the services their subtrees can inject: inspection
-  // reports ownership exactly as DI resolution finds it.
+  // Layouts declare service ownership for their subtrees. Keep source
+  // expressions here; equal names do not prove equal runtime service tokens.
   const layouts = [];
   for (const layout of model.layouts) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let moduleExport = { status: 'unknown', reason: 'The source could not be read.' };
     let method = 'unknown';
     let reason = null;
     try {
       const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
+      moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
         reason = 'The TypeScript parser is unavailable; route options are unknown.';
@@ -306,6 +311,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       ...layout,
       middlewares: method === 'ast' ? options.middlewares : null,
       services: options.services,
+      moduleExport,
       extraction: { method, reason },
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
     });

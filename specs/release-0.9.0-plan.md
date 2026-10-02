@@ -207,26 +207,21 @@ the reason behind a fact, such as a method becoming a server proxy because of
 its decorator or default classification. Include source file and position.
 Do not execute constructors or server methods merely to inspect a project.
 
-Codex review checkpoint (2026-10-02): compiler helper preservation now traverses
-all reachable calls instead of stopping at three hops. Own-method inspection now consumes the shared compiler classifier. Recorded scaffold recipes now use the shared composition registry. Inheritance
-semantics and full acceptance verification remain open. Binding-aware transport
-inspection now consumes the published runtime model and selected-environment
-configuration names. Supported resource macros now map generated
-RPC methods to authored loader locations through compiler expansion metadata. `check routes` now
-validates available static metadata with failing exits; checks over the complete
-project model remain open. See the [implementation sequence and validation fixture](./release-0.9.0.md#codex-compiler-preservation-2026-10-02)
-for the remaining work; this compiler correction does not complete CLI-04.
+Codex completion (2026-10-03): the shared compiler/scaffold/runtime model now
+supports inspection, failing checks, and explanations with authored locations.
+`packages/cossack/tests/inspection-acceptance.test.js` covers grouped routes,
+nested layouts, declared services, imported inheritance, recipes, resources,
+and compiler stripping parity. The framework companion
+`inspection-service-acceptance.test.ts` executes inspected sources through SSG,
+verifies service ownership/shadowing/hydration/disposal, and runs check/explain.
+Module-export checks reject missing or unresolved defaults. Unsupported inherited
+layout options and dynamic service expressions stay unknown. Service names are
+source declarations, not inferred token identity across modules.
 
-Codex acceptance checkpoint (2026-10-03):
-`packages/cossack/tests/inspection-acceptance.test.js` now combines grouped routes,
-nested layouts, declared services, imported inheritance, scaffold recipes,
-resources, and compiler stripping parity. Layout/page middleware counts are
-ordered and unknown totals stay unknown. The companion framework fixture
-`inspection-service-acceptance.test.ts` now executes the same inspected sources
-through SSG, verifies layout service ownership/shadowing/hydration/disposal, and
-runs check/explain. Page service declarations now fail checks because only
-layouts create scopes. Next audit missing exports, inherited layout options,
-and imported service token identity. This is not full browser lifecycle proof. See the [latest review](./release-0.9.0.md#codex-inspection-acceptance-2026-10-03).
+The [requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03)
+records completion evidence and limits. CLI-04 is complete; browser/production
+runtime gates, RT-07 typed URL/API generation, RT-24 config registry work, and
+RT-25 build/recipe capability enforcement remain under their own tasks.
 
 Start in `packages/framework/src/vite-plugin.ts`, `vite-security-plugin.ts`,
 `route-ids.ts`, `packages/scaffold/src/registry.js`, and CLI inspection commands.

@@ -75,7 +75,10 @@ function readOptionsObject(objectExpression, code) {
     } else if (key === 'services' && property.value.type === 'ArrayExpression') {
       options.services = (property.value.elements ?? [])
         .filter(Boolean).map(element => sourceText(element, code));
-      if (property.value.elements.some(e => e?.type === 'SpreadElement' || !['Identifier', 'MemberExpression'].includes(e?.type))) unresolved.push('services');
+      const staticReference = node => node?.type === 'Identifier' ||
+        node?.type === 'MemberExpression' && !node.computed && !node.optional &&
+        node.property?.type === 'Identifier' && staticReference(node.object);
+      if (property.value.elements.some(e => !staticReference(e))) unresolved.push('services');
     } else if (['transport', 'ssg', 'middlewares', 'services'].includes(key)) {
       unresolved.push(key);
     }
@@ -88,6 +91,28 @@ function parsedProgram(parseSync, code) {
     const result = parseSync('page.ts', code);
     return result.errors?.length ? null : result.program;
   } catch { return null; }
+}
+
+/** Resolve only the module's default class declaration, without importing it. */
+export async function inspectDefaultClassExport(code) {
+  const parser = await loadParseSync();
+  const program = parser && parsedProgram(parser, code);
+  if (!program) return { status: 'unknown', reason: 'Module syntax could not be parsed.' };
+  const direct = program.body.find(statement => statement.type === 'ExportDefaultDeclaration');
+  const aliases = program.body.flatMap(statement => statement.type === 'ExportNamedDeclaration'
+    ? (statement.specifiers ?? []).filter(specifier => (specifier.exported?.name ?? specifier.exported?.value) === 'default')
+      .map(specifier => ({ statement, specifier })) : []);
+  if (!direct && !aliases.length) return { status: 'missing', reason: 'The router requires a default-exported component class.' };
+  let declaration = direct?.declaration;
+  let name = declaration?.type === 'Identifier' ? declaration.name : null;
+  if (!direct && aliases.length === 1 && !aliases[0].statement.source) name = aliases[0].specifier.local?.name;
+  if (name) declaration = program.body.map(statement => statement.declaration ?? statement)
+    .find(candidate => candidate.type === 'ClassDeclaration' && candidate.id?.name === name);
+  if (declaration?.type === 'ClassDeclaration' || declaration?.type === 'ClassExpression') {
+    return { status: 'resolved', className: declaration.id?.name ?? 'Anonymous', line: lineNumberAt(code, declaration.start),
+      reason: 'Default export resolves to a local class declaration; component runtime validity is not checked.' };
+  }
+  return { status: 'unknown', reason: 'The default export does not resolve to a local class declaration.' };
 }
 
 function pageClass(program, code) {

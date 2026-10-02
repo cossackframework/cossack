@@ -2,7 +2,17 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex service inspection (2026-10-03):** read
+> **Latest checkpoint — Codex CLI-04 completion (2026-10-03):** read
+> [module validity fixes and requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03).
+> **Author: Codex.** Missing/unresolved default exports now fail route checks;
+> unsupported inherited layout options and dynamic service references stay
+> unknown. The compiler and executed SSG acceptance fixtures meet CLI-04's
+> contract. **12/58 tasks are checked.** Verification: 534 CLI tests, executed
+> service acceptance, and root types passed. Next continue **RT-25 build/recipe
+> capability enforcement**; typed routes, config registry, and runtime release
+> gates remain separate unfinished tasks.
+
+> **Previous checkpoint — Codex service inspection (2026-10-03):** read
 > [executed acceptance, fixes, and remaining audit](./release-0.9.0.md#codex-service-inspection-2026-10-03).
 > **Author: Codex.** SSG now verifies inspected layout service ownership,
 > shadowing, hydration, and disposal. Route checks reject ignored page service

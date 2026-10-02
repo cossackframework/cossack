@@ -13,7 +13,7 @@ below link directly to those explanations.
 - [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
 - [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
 - [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
-- [ ] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex Group 3 review (2026-10-02): AST inspection handles static options, aliases, quoted keys, exported page selection, and decorated method reasons; dynamic/spread/invalid options report unknown. Codex continuation: own-method facts now come from the shared compiler classifier, including automatic RPC, transitive preservation, retained fields, and stripped methods without RPC. Static route checks now fail for unavailable metadata and invalid transports. Resource macros now expose authored loader locations and matching generated method names. Recorded scaffold recipes and local/relative imported base declarations are integrated. Remaining: module validity, inherited layout options, and service token identity across imports. SSG service ownership/DI and check/explain acceptance now execute against the same source fixture. Declared member precedence, inherited RPC behavior, and a combined static/compiler fixture are verified. Binding-aware transport checks now use the shared runtime model.
+- [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03).
 - [ ] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
@@ -85,6 +85,54 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-module-inspection-2026-10-03"></a>
+### Codex review: module validity and CLI-04 acceptance audit (2026-10-03)
+
+**Author: Codex.** Pages and layouts now expose `moduleExport` facts. Checks fail
+for missing default exports or exports that do not resolve to a local class.
+Direct, identifier, and local export-clause class defaults resolve without
+execution. Dynamic/default factory exports and external re-exports remain
+unknown. Inspection stays readable for invalid modules. The no-parser fixture
+now covers module facts too.
+
+Dynamic service references (computed properties, optional access, or calls)
+produce unknown options. Undecorated derived layouts do not borrow metadata from
+a decorated base. Service explanations explicitly identify source expressions
+and do not claim to resolve runtime token identity across aliases/imports.
+
+CLI-04 requirement audit:
+
+- Shared model: route commands consume `buildEffectiveRouteModel`; compiler facts
+  come from the published security-plugin analysis, recipes from the shared
+  scaffold registry, and transport capabilities from the runtime model.
+- Facts, diagnostics, explanations: inspection/check commands share that model;
+  checks fail on missing or unknown facts, invalid declarations, and unsupported
+  or missing-binding transports. Explanations carry source locations and reasons.
+- No application execution: inspection fixtures contain throwing constructors;
+  source import resolution reads files without loading application modules.
+- Combined acceptance: `inspection-acceptance.test.js` covers grouped routes,
+  nested layouts, declared services, mixed methods, resource expansion, scaffold
+  recipes, and actual compiler stripping output. The companion framework
+  `inspection-service-acceptance.test.ts` executes the inspected sources through
+  SSG and proves service sharing/shadowing, owner IDs, state, disposal, and
+  check/explain behavior against the same project.
+- Unsupported cases: parser failure, dynamic options, unresolved inheritance,
+  ambiguous source resolution, missing/unknown exports, and dynamic service
+  references have explicit unknown facts or source-bearing diagnostics.
+
+This completes CLI-04's inspection/check/explain contract, not the broader
+RT-07 typed-route/API generation, RT-24 configuration registry, RT-25 build/recipe
+gating, or browser/production runtime release gates. Those tasks stay open.
+
+Verification: complete CLI suite **534 passed across 38 files**; the executed
+framework service acceptance fixture passed again; `pnpm tsc --noEmit` passed.
+The preceding service checkpoint verified all 11 package type checks; this
+checkpoint changes JavaScript and documentation only.
+
+**12/58 tasks are now checked. CLI-04 is complete.** Next continue RT-25
+build-time and recipe capability enforcement, reusing the existing runtime
+capability model. The full release goal stays active.
 
 <a id="codex-service-inspection-2026-10-03"></a>
 ### Codex review: executed service inspection acceptance (2026-10-03)

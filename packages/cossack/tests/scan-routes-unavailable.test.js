@@ -6,6 +6,7 @@ import path from 'node:path';
 vi.mock('../src/page-options-ast.js', () => ({
   extractPageOptionsFromAst: async () => null,
   extractMethodClassificationsFromAst: async () => null,
+  inspectDefaultClassExport: async () => ({ status: 'unknown', reason: 'Module syntax could not be parsed.' }),
 }));
 const { buildEffectiveRouteModel } = await import('../src/scan-routes.js');
 let directory;
@@ -22,6 +23,7 @@ it('keeps page and layout options unknown when the parser is unavailable', async
   expect(model.pages[0]).toMatchObject({
     transport: null, ssg: null, services: [],
     extraction: { method: 'unknown' }, methodExtraction: { method: 'unknown' },
+    moduleExport: { status: 'unknown' },
   });
   expect(model.layouts[0]).toMatchObject({ services: [], extraction: { method: 'unknown' } });
   expect(model.pages[0].extraction.reason).toContain('parser is unavailable');
