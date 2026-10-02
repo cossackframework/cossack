@@ -102,7 +102,11 @@
       "types": "./dist/esm/SseDurableObject.d.ts",
       "import": "./dist/esm/SseDurableObject.js"
     },
-    "./vite-env": "./src/vite-env.d.ts"
+    "./vite-env": "./src/vite-env.d.ts",
+    "./page-inspection": {
+      "types": "./dist/esm/page-inspection.d.ts",
+      "import": "./dist/esm/page-inspection.js"
+    }
   },
   "files": [
     "dist/esm",

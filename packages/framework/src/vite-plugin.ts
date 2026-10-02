@@ -4,6 +4,7 @@ import { resolve, dirname, join, relative, sep } from 'path';
 import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
+import { extractPageOptionsFromAst } from './page-inspection.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -71,7 +72,7 @@ export interface CossackPagesOptions {
   capabilities?: {
     runtime: Exclude<RuntimeName, 'unknown'>;
     bindings?: readonly string[];
-    requirements: readonly CapabilityUse[];
+    requirements?: readonly CapabilityUse[];
   };
   /**
    * Application-owned Markdown compiler. Install one with
@@ -88,6 +89,7 @@ export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined 
 }
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
+  let projectRoot = process.cwd();
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -137,9 +139,32 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         },
       };
     },
-    buildStart() {
+    configResolved(config) {
+      projectRoot = config.root;
+    },
+    async buildStart() {
       if (options.capabilities) {
-        const { runtime, requirements, bindings } = options.capabilities;
+        const { runtime, bindings } = options.capabilities;
+        const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
+        const { pageKeys } = scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled);
+        for (const key of pageKeys.sort()) {
+          const file = resolve(projectRoot, key.slice(1));
+          this.addWatchFile(file);
+          // The Markdown transform below fixes its generated transport to HTTP.
+          let transport = 'http';
+          let line: number | undefined;
+          if (key.endsWith('.ts')) {
+            const facts = await extractPageOptionsFromAst(readFileSync(file, 'utf8'));
+            if (facts?.method !== 'ast' || !facts.options) this.error({
+              code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
+              message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,
+            });
+            transport = facts.options.transport ?? 'http';
+            line = facts.decoratorLine ?? undefined;
+          }
+          requirements.push({ feature: 'page transport', source: { file, line },
+            requires: { transports: [transport as 'http' | 'sse' | 'durable-object'] } });
+        }
         const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
         const first = diagnostics[0];
         if (first) this.error({

@@ -25,11 +25,11 @@ Use explicit exports in client-only modules. Type-only exports are ignored,
 while runtime `export *` is rejected because the plugin cannot safely derive a
 local placeholder interface for it.
 
-## Selected runtime requirements
+## Runtime capability checks
 
-Pass explicit feature requirements to `cossackPages` to check them before a build
-emits bundles. The checker uses the same capability model as route inspection.
-Pass binding names, never binding values or secrets.
+Select a runtime in `cossackPages` to check page transports before a build emits
+bundles. Build checks and route inspection use the same source parser and
+capability model. Pass binding names, never binding values or secrets.
 
 ```ts
 import { cossackPages } from '@cossackframework/framework/vite-plugin';
@@ -38,28 +38,40 @@ cossackPages({
   capabilities: {
     runtime: 'cloudflare',
     bindings: ['COSSACK_SSE'],
-    requirements: [{
-      feature: 'chat updates',
-      source: { file: 'vite.config.ts' },
-      requires: { transports: ['sse'] },
-    }],
   },
 });
 ```
 
-Each requirement identifies the selected feature and its declaration. Optional
-`line` and `column` fields improve the build diagnostic location. Missing bindings
-produce `COSSACK_CAPABILITY_BINDING_MISSING`; unsupported runtime requirements
-produce `COSSACK_CAPABILITY_UNSUPPORTED`. Requirements that need a separate
-integration produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, built-in
-Node and Deno adapters do not dispatch scheduled handlers. Their profile reports
-`adapter-required`, so selecting `scheduledHandlers: true` fails the build instead
-of advertising working schedules. Desktop supports HTTP transport only.
+The plugin scans routes under the Vite project's `src/pages`, extracts static
+`@Page` options, and adds their transport requirements. It does not execute
+constructors or import application modules. Unknown options fail with
+`COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN` rather than defaulting to HTTP.
+Configured Markdown routes use the HTTP transport emitted by the Markdown
+transform. Layout, loading, declaration, and test files are excluded from page
+transport discovery using the same route scanner as the plugin.
 
-These checks cover the supplied requirements. They do not discover every route,
-validate remote resources, or install runtime adapters. Only declare selected
-features: an unused provider-specific module does not make portable code
-unsupported. Cloudflare bindings must come from the environment being built.
-`checkCapabilityRequirements` is also exported from
-`@cossackframework/framework/runtime-capabilities` for tooling that needs the
-complete diagnostic list instead of a Vite build error.
+Add `requirements` inside `capabilities` for other selected features:
+
+```ts
+requirements: [{
+  feature: 'chat coordination',
+  source: { file: 'vite.config.ts', line: 12 },
+  requires: { realtimeCoordination: true },
+}],
+```
+
+Each explicit requirement identifies its feature and source declaration.
+Optional `line` and `column` fields improve diagnostic locations. Missing bindings
+produce `COSSACK_CAPABILITY_BINDING_MISSING`; unsupported requirements produce
+`COSSACK_CAPABILITY_UNSUPPORTED`. Requirements needing a separate integration
+produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, built-in Node and Deno
+adapters do not dispatch scheduled handlers. Desktop supports HTTP transport only.
+
+These checks do not validate remote resources or install adapters. Runtime and
+binding selection are explicit; bindings must match the environment being built.
+Unused provider-specific modules outside the route set do not make portable
+code unsupported. Other feature requirements still need explicit declarations.
+`checkCapabilityRequirements` is exported from
+`@cossackframework/framework/runtime-capabilities` for tooling that needs all
+diagnostics instead of a Vite build error. The parser is exported from
+`@cossackframework/framework/page-inspection` for build and CLI consumers.

@@ -23,10 +23,14 @@ it('returns all selected feature failures with their source and no binding value
   expect(checkCapabilityRequirements('cloudflare', [{ feature: 'chat', source, requires: { transports: ['sse'] } }], ['COSSACK_SSE'])).toEqual([]);
 });
 
-async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] = [], requires: CapabilityRequirement = { transports: [transport] }) {
+async function buildFixture(runtime: Exclude<RuntimeName, 'unknown'>, transport: 'http' | 'sse', bindings: string[] = [], requires: CapabilityRequirement = { transports: [transport] }, pageSource?: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-capability-build-'));
   roots.push(root);
   await fs.writeFile(path.join(root, 'entry.js'), 'export const portable = true;');
+  if (pageSource) {
+    await fs.mkdir(path.join(root, 'src/pages/chat'), { recursive: true });
+    await fs.writeFile(path.join(root, 'src/pages/chat/index.ts'), pageSource);
+  }
   // An unselected optional module must not change the portable build's result.
   await fs.writeFile(path.join(root, 'unused-cloudflare.js'), "import { DurableObject } from 'cloudflare:workers'; export class Optional extends DurableObject {}");
   return build({ root, configFile: false, logLevel: 'silent', plugins: [cossackPages({ capabilities: {
@@ -58,4 +62,24 @@ it.each(['node', 'deno'] as const)('rejects scheduled dispatch without an integr
     .toEqual([expect.objectContaining({ code: 'COSSACK_CAPABILITY_ADAPTER_REQUIRED', feature: 'daily report', source })]);
   await expect(buildFixture(runtime, 'http', [], { scheduledHandlers: true }))
     .rejects.toMatchObject({ message: expect.stringContaining('requires an adapter integration') });
+});
+
+it('discovers a Desktop-incompatible page without repeating its transport in config', async () => {
+  await expect(buildFixture('desktop', 'http', [], {},
+    "@Page({ transport: 'sse' }) export default class Chat {}"))
+    .rejects.toMatchObject({ message: expect.stringMatching(/chat\/index.ts:1: page transport requires transports on desktop/) });
+});
+it('uses the shared aliased decorator parser for discovered Cloudflare requirements', async () => {
+  const source = "import { Page as Route } from '@cossackframework/core'; @Route({ transport: 'sse' }) export default class Chat {}";
+  await expect(buildFixture('cloudflare', 'http', [], {}, source))
+    .rejects.toMatchObject({ message: expect.stringContaining('COSSACK_SSE') });
+  await expect(buildFixture('cloudflare', 'http', ['COSSACK_SSE'], {}, source)).resolves.toBeDefined();
+});
+it('fails unknown discovered options rather than defaulting them to HTTP', async () => {
+  await expect(buildFixture('desktop', 'http', [], {}, '@Page(config) export default class Chat {}'))
+    .rejects.toMatchObject({ message: expect.stringContaining('page transport requirements are unknown') });
+});
+it('does not instantiate a discovered page to determine its requirements', async () => {
+  await expect(buildFixture('desktop', 'http', [], {},
+    '@Page() export default class Chat { constructor() { throw new Error("must not execute"); } }')).resolves.toBeDefined();
 });

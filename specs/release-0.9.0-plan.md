@@ -930,8 +930,10 @@ Codex checkpoint (2026-10-03): `checkCapabilityRequirements` now returns
 source-bearing diagnostics from the shared model, and `cossackPages` accepts
 explicit `capabilities` declarations checked before bundle output. Real Vite
 fixtures cover unsupported/missing-binding failure and portable supported builds.
-Next connect recipe selection and generated config to this API, derive page
-requirements from shared metadata, and resolve selected-environment bindings.
+Page transport requirements now derive automatically from the published
+`page-inspection` parser shared with the CLI when a build runtime is selected.
+Next connect recipe selection and generated config to this API and resolve
+selected-environment bindings.
 The adapter audit found that Node/Deno do not dispatch schedules; their
 `scheduledHandlers` capability now reports `adapter-required` and selected
 requirements fail builds. Do not mark this capability available until a real

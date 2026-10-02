@@ -45,7 +45,7 @@ below link directly to those explanations.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
-- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Remaining: recipe integration, automatic page requirements, selected-environment binding discovery, adapter-dependent capability audit, and generated-app acceptance.
+- [ ] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. GLM (2026-10-02): explicit `runtime-capabilities` model (transports, realtime coordination, process-local realtime, scheduled handlers, storage, filesystem) with per-runtime profiles, binding-gated availability (`COSSACK_SSE`), and available/missing-binding/unsupported status distinction; Codex continuation: CLI route inspection/checks now consume the published model and selected-environment binding names. Codex build continuation: explicit selected requirements now fail Vite builds with feature/source diagnostics. Automatic page requirements now share the published source parser with CLI inspection. Remaining: recipe integration, selected-environment binding discovery, further adapter capability audit, and generated-app acceptance.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
 - [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
@@ -85,6 +85,35 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-page-capability-discovery-2026-10-03"></a>
+### Codex continuation: shared source parser and page capability discovery (2026-10-03)
+
+**Author: Codex.** Moved the CLI's AST page inspection implementation into the
+published framework `page-inspection` subpath. The CLI retains a thin re-export,
+so build and inspection share option selection, aliases, unknown handling,
+default-export facts, and compiler-backed method classification. No application
+runtime depends on the CLI or scaffold package.
+
+With `capabilities.runtime` configured, `cossackPages` now derives page transport
+requirements automatically from the Vite root's route set. Explicit requirements
+remain optional additions. Source parsing never instantiates pages. Dynamic or
+unresolved options fail with `COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN`; generated
+Markdown uses its fixed HTTP transport. Build errors identify the authored page
+and decorator line. Existing route exclusions also apply to discovery.
+
+Real published-export Vite fixtures prove automatically discovered Desktop SSE
+rejection, selected Cloudflare binding requirements, aliased decorators, unknown
+options, and non-execution of a throwing page constructor. CLI source-inspection
+regressions exercise the moved implementation through its public export.
+
+Verification: complete framework suite **597 passed across 44 files**; complete
+CLI suite **536 passed across 38 files**; framework declaration build, root
+TypeScript, and all **11 package type checks passed**. Published-export build,
+capability, and service acceptance focused suites also passed (23 tests).
+**12/58 tasks remain checked; RT-25 remains open.** Next wire runtime/binding selection into recipe
+output and resolve selected-environment bindings. Full generated application
+build and runtime acceptance still remain; these fixtures prove build checks.
 
 <a id="codex-schedule-capability-2026-10-03"></a>
 ### Codex review: adapter-dependent schedule capability (2026-10-03)

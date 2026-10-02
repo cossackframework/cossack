@@ -2,7 +2,15 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex schedule capability audit (2026-10-03):** read
+> **Latest checkpoint — Codex page capability discovery (2026-10-03):** read
+> [shared parser and automatic build checks](./release-0.9.0.md#codex-page-capability-discovery-2026-10-03).
+> **Author: Codex.** Framework now publishes `page-inspection`; CLI re-exports it.
+> Selecting a build runtime automatically checks discovered page transports,
+> without importing pages or repeating their requirements in config.
+> **12/58 tasks remain checked.** Continue recipe/config integration,
+> selected-environment binding discovery, and generated-app acceptance for RT-25.
+
+> **Previous checkpoint — Codex schedule capability audit (2026-10-03):** read
 > [adapter-dependent status and verification](./release-0.9.0.md#codex-schedule-capability-2026-10-03).
 > **Author: Codex.** Node/Deno no longer advertise scheduled dispatch that their
 > built-in adapters do not implement. Shared inspection reports `adapter-required`;
