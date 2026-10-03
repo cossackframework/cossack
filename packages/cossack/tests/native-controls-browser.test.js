@@ -25,7 +25,7 @@ it('keeps native labels, keyboard state, validation, form data and event targets
     await fs.writeFile(path.join(root,'main.js'), `
 import './style.css';
 import {Button,Input,Label,Checkbox,Switch,Form,RadioGroup,Slider} from '@cossackframework/ui';
-import {html,component,render} from '@cossackframework/renderer';
+import {html,component,render,live,nothing} from '@cossackframework/renderer';
 let email='',accepted=false,enabled=false,disabled=false,fieldsetDisabled=false,disableMode='attribute',submitted=0,plan='free',level=1500,limit=2000,groupDisabled=false;
 let planItems=[{value:'free',label:'Free plan'},{value:'pro',label:'Pro plan'},{value:'team',label:'Team plan',disabled:true}];
 window.events=[];window.choiceEvents=[];window.groupEvents=[];
@@ -57,6 +57,28 @@ window.setFieldsetDisabled=value=>{fieldsetDisabled=value;draw();};
 window.setRange=(value,max)=>{level=value;limit=max;draw();};
 window.setGroupDisabled=value=>{groupDisabled=value;draw();};
 window.reversePlans=()=>{planItems=[...planItems].reverse();draw();};draw();
+window.verifySelectBindings=async()=>{
+  const results=[];
+  for(const spread of [false,true]){
+    const container=document.createElement('div');document.body.append(container);
+    const template=(value,values=['a','b'])=>{
+      const options=values.map(v=>html\`<option value=\${v}>\${v}</option>\`);
+      return spread?html\`<select ...=\${{'.value':value}}>\${options}</select>\`
+        :html\`<select .value=\${value}>\${options}</select>\`;
+    };
+    render(template('b'),container);await Promise.resolve();
+    const select=container.querySelector('select');results.push(select.value);
+    select.value='a';render(template('b'),container);await Promise.resolve();results.push(select.value);
+    render(template(live('b')),container);await Promise.resolve();results.push(select.value);
+    render(template(live('b'),['b','a']),container);await Promise.resolve();results.push(select.value);
+    render(template('a'),container);render(template('b'),container);render(template('b'),container);
+    await Promise.resolve();results.push(select.value);
+    render(template(live('b')),container);render(template(nothing),container);select.value='a';
+    await Promise.resolve();results.push(select.value);container.remove();
+  }
+  return results;
+};
+
 `);
     await build({root,configFile:false,logLevel:'silent',plugins:[tailwind()],resolve:{alias:{
       '@cossackframework/ui':path.join(repository,'packages/ui/dist/index.js'),
@@ -151,6 +173,7 @@ window.reversePlans=()=>{planItems=[...planItems].reverse();draw();};draw();
     await browserExpect(pro).toBeEnabled();await browserExpect(range).toBeEnabled();
     await browserExpect(pro.locator('..')).toHaveCSS('opacity','1');await browserExpect(range).toHaveCSS('opacity','1');
     await browserExpect(page.getByRole('radio',{name:'Team plan',exact:true})).toBeDisabled();
+    expect(await page.evaluate(()=>window.verifySelectBindings())).toEqual(['b','a','b','b','b','a','b','a','b','b','b','a']);
     expect(errors).toEqual([]);
   }finally{await browser?.close();if(server)await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});await fs.rm(root,{recursive:true,force:true});}
 },120000);

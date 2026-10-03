@@ -3323,6 +3323,10 @@ fieldsets, and keyboard focus rings. RadioGroup/Slider now have typed native con
 property-based selection, stable radio identities and correct range initialization
 and bounds changes. The [component inventory](./ui-contract-audit.md) records all
 remaining audit work, starting with text/select wrappers and their SSR values.
+Renderer plain/live select values now commit after dynamic options, with stale queued
+writes canceled on replacement or removal. Plain spread select values preserve
+manual selection on unrelated renders. SSR value serialization and wrapper contracts
+remain open. See the [select checkpoint](./release-0.9.0.md#codex-select-values-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 

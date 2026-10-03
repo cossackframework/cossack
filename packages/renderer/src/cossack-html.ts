@@ -1650,6 +1650,7 @@ class NodePart implements Part {
 }
 
 class SpreadPart implements Part {
+  private selectCommit = new SelectValueCommit();
   private previousValues: Record<string, unknown> = {};
   // Per-key state for `bind()` directives routed through the spread (e.g.
   // component(Input, { '.value': bind(this, 'name') })). Mirrors the per-part
@@ -1669,6 +1670,7 @@ class SpreadPart implements Part {
   update(value: unknown) {
     if (value !== nothing && (typeof value !== 'object' || value === null)) return;
     const props = value === nothing ? {} : value as Record<string, unknown>;
+    const selectPending = this.selectCommit.cancel();
 
     for (const key of Object.keys(this.previousValues)) {
       if (!(key in props)) {
@@ -1748,6 +1750,16 @@ class SpreadPart implements Part {
           (this.element as any)[propName] = undefined;
         } else if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
           this.applySpreadBind(key, propName, val);
+        } else if (propName === 'value' && this.element instanceof HTMLSelectElement) {
+          const isLive = val instanceof LiveResult;
+          const current = isLive ? val.value : val;
+          const strValue = current == null ? '' : String(current);
+          const previous = this.previousValues[key];
+          const previousValue = previous instanceof LiveResult ? previous.value : previous;
+          const changed = !(key in this.previousValues) || previous instanceof BindResult ||
+            previous === nothing || String(previousValue ?? '') !== strValue;
+          if (isLive ? this.element.value !== strValue : changed) this.element.value = strValue;
+          if (isLive || changed || selectPending) this.selectCommit.schedule(this.element, strValue);
         } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
           // live() via the spread: compare against the live DOM value (not the
           // last-rendered value) so an in-progress user edit isn't clobbered,
@@ -1905,6 +1917,7 @@ interface MultiMarkerState {
 }
 
 class AttributePart implements Part {
+  private selectCommit = new SelectValueCommit();
   // N+1 static segments for N markers. For single-marker (N=1),
   // segments is [prefix, suffix].
   private segments: string[];
@@ -1956,6 +1969,7 @@ class AttributePart implements Part {
     this.multiState = multiState ?? null;
   }
   update(value: unknown) {
+    const selectPending = this.selectCommit.cancel();
     if (value === nothing) {
       if (this.bindListener) this._detachBindListener();
       if (this.isMulti && this.multiState) {
@@ -2108,6 +2122,9 @@ class AttributePart implements Part {
             this.lastFormValue = value;
             this.lastFormKind = 'value';
           }
+          if (this.element instanceof HTMLSelectElement && (isLive || shouldWrite || selectPending)) {
+            this.selectCommit.schedule(this.element, strValue);
+          }
         }
       } else {
         (this.element as any)[propName] = value;
@@ -2242,6 +2259,27 @@ class AttributePart implements Part {
     // `.value`/`.checked` are not real HTML attributes — strip the binding
     // marker so it never appears in the DOM.
     if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+  }
+}
+
+/** Owns a pending plain/live select write across synchronous template updates. */
+class SelectValueCommit {
+  private pending: object | null = null;
+
+  cancel(): boolean {
+    const hadPending = this.pending !== null;
+    this.pending = null;
+    return hadPending;
+  }
+
+  schedule(element: HTMLSelectElement, value: string): void {
+    const token = {};
+    this.pending = token;
+    queueMicrotask(() => {
+      if (this.pending !== token) return;
+      this.pending = null;
+      if (element.value !== value) element.value = value;
+    });
   }
 }
 

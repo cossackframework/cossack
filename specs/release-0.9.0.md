@@ -6487,3 +6487,34 @@ Next audit Textarea, Select/NativeSelect, InputGroup and PasswordInput, includin
 initial values during SSR/hydration. Continue the remaining inventory afterward.
 These checks do not close the full UI contrast/layout/cross-browser or release
 matrix. Status remains 24 complete and 34 open. Versions remain 0.8.3.
+
+<a id="codex-select-values-2026-10-04"></a>
+## Codex: Dynamic select values (2026-10-04)
+
+RT-23 continuation. Plain and live `.value` bindings could run before dynamic
+options existed, leaving a select on the wrong option. Replacing option children
+could also discard a live selection. Plain spread properties additionally reset
+manual selection on unrelated renders. Seven new regression cases failed before
+this correction.
+
+Direct and spread select values now retry after child commits. Pending writes
+belong to the current binding and are canceled when replaced, cleared or removed.
+Repeated synchronous renders retain the latest pending value. Plain bindings
+preserve manual selection when the bound value stays unchanged. `live()` reapplies
+the controlled value after option changes. Existing `bind()` writeback remains
+covered, including transitions to and from plain/live bindings.
+
+Verification:
+
+- Renderer: 299 tests in 22 files passed, including 15 new select cases.
+- UI: 124 tests in 10 files passed.
+- Production Chromium native-control fixture passed with direct/spread dynamic
+  options, manual selection, live resets, reordered options and canceled writes.
+- Renderer production build, root `pnpm tsc --noEmit` and all 11 package checks
+  through `pnpm typecheck` passed. The final focused select run also passed.
+- Logs: `/tmp/cossack-select-{renderer,ui,browser,build,root-types,package-types,final-focused}.log`.
+
+Next: textarea/select SSR value serialization and the Textarea, Select/NativeSelect,
+InputGroup and PasswordInput contracts. This checkpoint does not close RT-23,
+CLI-08 or the full runtime/release matrix. Status remains 24 complete and 34 open.
+The handoff also consolidates completed history into links, as requested by the user.
