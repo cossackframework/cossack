@@ -94,16 +94,17 @@ interface BrowseTabProps {
 }
 
 function iconButton(
+  id: string,
   icon: IconEntry,
   label: string,
   onClick: () => unknown,
   options: Record<string, unknown> = {},
 ) {
-  return component(Tooltip, { label, side: 'bottom' }, component(Button, {
+  return component(Tooltip, { id, label, side: 'bottom' }, component(Button, {
     variant: 'ghost',
     size: 'icon',
     'aria-label': label,
-    title: label,
+    'aria-describedby': id,
     '@click': onClick,
     ...options,
   }, component(Icon, { entry: icon, size: 17 })));
@@ -166,7 +167,7 @@ export class BrowseTab extends Cossack {
 
         <div class="shrink-0 border-b bg-muted/15 px-4 py-2">
           <div class="mb-2 flex flex-wrap items-center gap-2" data-testid="browse-toolbar">
-            ${iconButton(
+            ${iconButton('browse-filters-tip',
               FilterIcon,
               this.props.showFilter ? 'Hide filters' : 'Add filter',
               this.props.onToggleFilter,
@@ -194,7 +195,7 @@ export class BrowseTab extends Cossack {
               </span>
             ` : ''}
             <span class="ml-auto">
-              ${iconButton(
+              ${iconButton('browse-run-tip',
                 PlayIcon,
                 this.props.loading ? 'Running browse query' : 'Execute browse query',
                 this.props.onRunQuery,
@@ -527,18 +528,18 @@ export class BrowseTab extends Cossack {
                   })}
                   <td class="border-b px-2 text-center">
                     <div class="flex justify-center gap-1">
-                      ${gridEditable ? iconButton(
+                      ${gridEditable ? iconButton(`browse-edit-${rowIndex}-tip`,
                         PenIcon,
                         'Edit row as JSON',
                         () => this.props.onEditRow(rowIndex),
                         { 'data-testid': `edit-row-${rowIndex}` },
                       ) : ''}
-                      ${iconButton(
+                      ${iconButton(`browse-export-${rowIndex}-tip`,
                         ExportIcon,
                         'Export row',
                         () => this.props.onExport([rowIndex]),
                       )}
-                      ${gridEditable ? iconButton(
+                      ${gridEditable ? iconButton(`browse-delete-${rowIndex}-tip`,
                         TrashBinMinimalisticIcon,
                         'Delete row',
                         () => this.props.onDeleteRow(rowIndex),
@@ -564,7 +565,7 @@ export class BrowseTab extends Cossack {
                             <span class="font-mono text-muted-foreground">
                               ${expansion.targetTable}
                             </span>
-                            ${iconButton(
+                            ${iconButton(`browse-relation-${rowIndex}-tip`,
                               ArrowToTopRightIcon,
                               `Open ${expansion.targetEntity} relation in a new tab`,
                               () => this.props.onOpenRelation(

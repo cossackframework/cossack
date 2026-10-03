@@ -134,8 +134,8 @@ export default class SessionsPage extends Cossack {
                     <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(s.expiresAt)}</td>
                     <td class="py-3 pr-4 text-sm text-muted-foreground">
                         ${s.userAgent
-                            ? component(Tooltip, { content: uaSummary }, html`
-                                <span class=${iconBtn + ' cursor-help'}>
+                            ? component(Tooltip, { id: `session-${encodeURIComponent(s.id)}-agent-tip`, label: uaSummary }, html`
+                                <span tabindex="0" aria-label=${deviceLabel} aria-describedby=${`session-${encodeURIComponent(s.id)}-agent-tip`} class=${iconBtn + ' cursor-help'}>
                                     ${component(Icon, { entry: deviceEntry, size: 16 })}
                                 </span>`)
                             : html`<span class="text-muted-foreground">—</span>`}

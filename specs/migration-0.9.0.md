@@ -843,3 +843,32 @@ Both release observers/listeners on cleanup and cancel deferred connection work.
 Panel positioning and maximum dimensions belong to the controller. Use width and
 height in `menuProps.style` for desired sizes. Interactive menu behavior requires
 hydration; SSR supplies stable IDs, names and roles.
+
+## Tooltip and HoverCard
+
+Tooltip now requires a stable, page-unique `id` and a plain-text `label`.
+The ID belongs to the tooltip panel. Add `aria-describedby` with that ID to the
+actual child trigger, and give the trigger its own accessible name and keyboard
+focus. Native attributes and events belong to the outer span. The wrapper no
+longer receives the tooltip text as its own accessible name. Interactive content
+belongs in HoverCard. The sessions scaffold now passes `label`; its old `content`
+prop was ignored.
+
+HoverCard requires `id`, `label` and `content`. The label names its nonmodal dialog.
+Native attributes and events belong to the outer div; `contentProps` belongs to
+the panel. Supply a focusable child trigger. The extra wrapper tab stop and
+ineffective span `popovertarget` are removed. `show()` and `hide()` remain available.
+
+Both controls require JavaScript for visual opening and use manual native popovers.
+Tooltip no longer relies on CSS hover visibility. Focus opens immediately; pointer
+hover uses `delay` (300 ms by default). `closeDelay` defaults to 150 ms. Both delays
+must be integers from 0 through 60000. Content stays open while hovered or focused.
+Escape cancels pending opening and dismisses visible content until interest leaves.
+Opening preserves focus, including with autofocus descendants. Dismissing a card
+returns focus to its trigger when the panel owns focus. Disabled controls close
+and suppress opening. Re-enabling requires a fresh interaction or explicit `show()`.
+
+The controller owns positioning and viewport bounds. `side` selects preferred
+placement; Tooltip defaults to top and HoverCard to bottom. Panels flip and clamp,
+follow scrolling/resizing, and scroll internally when oversized. Cleanup cancels
+pending timers, observers and listeners.

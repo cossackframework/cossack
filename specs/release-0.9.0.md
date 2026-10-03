@@ -88,6 +88,50 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-hover-controls-2026-10-04"></a>
+## Codex hover controls (2026-10-04)
+
+Author: Codex. Tooltip and HoverCard now share a DOM controller for pointer/focus
+ownership, opening/closing delays, Escape cancellation and cleanup. Manual native
+popovers escape ancestor clipping and flip/clamp within the visual viewport.
+Focus persists inside interactive card content; passive opening does not steal
+focus through autofocus descendants. Dismissal restores the actual trigger when
+card content owns focus. Deferred attachment waits for connected nodes and is
+canceled on cleanup. Disabled controls suppress opening.
+
+Both components require stable IDs and nonempty labels. Tooltip exposes a plain
+text description; callers put `aria-describedby` on the actual trigger. HoverCard
+names its nonmodal dialog and separates typed wrapper attributes from `contentProps`.
+The extra HoverCard wrapper tab stop is removed. Studio actions now have distinct
+IDs for repeated rows and stable IDs across loading labels. Primary-key details
+are keyboard-focusable. The sessions template now uses `label` instead of its
+previously ignored `content` prop. The demo, migration guide and packaged agent
+guide follow these contracts.
+
+Verification:
+
+- UI build passes. UI Vitest: 201 tests across 19 files, including SSR contracts,
+  invalid inputs and public declaration fixtures.
+- Production themed Chromium hover fixture: retained hydration, no-JavaScript
+  accessible description, Escape and pending timer cancellation, hover persistence,
+  autofocus suppression, Tab navigation, pointer-only focus restoration, explicit
+  show/hide, disabled state, viewport bounds and cleanup pass.
+- Studio tooltip regression fixture: three tests pass for unique row IDs, stable
+  loading labels and encoded/focusable primary-key descriptions.
+- Scaffold regression suite: all 78 tests pass after the session-tooltip migration.
+- `pnpm tsc --noEmit` and `pnpm typecheck` pass across all 11 package configurations.
+  Type checking found a missing `declaredKind` in the new Studio fixture; it is fixed.
+- `pnpm test:agent-docs:local` passes installed-tarball CLI/MCP parity, exact Tooltip
+  discovery and declared native prop contracts with Node networking disabled.
+  The six existing packaged usage examples compile and execute. The new UI guide
+  has no executable examples; broader UI example/platform acceptance remains open.
+
+Logs: `/tmp/cossack-hover-{build,ui,browser,studio,root-types,types,agent-docs,scaffold}.log`.
+Twenty-seven component foundations are reviewed. This checkpoint does not close
+RT-23, CLI-08 or the full runtime/release matrix. Other browser engines and
+assistive technologies remain unverified. Continue AlertDialog and Command, then
+all remaining pending component rows. Versions stay at 0.8.3 until REL-04.
+
 <a id="codex-websocket-ownership-2026-10-04"></a>
 ## Codex WebSocket ownership (2026-10-04)
 

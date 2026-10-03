@@ -453,9 +453,9 @@ describe("Tabs", () => {
 
 describe("Tooltip", () => {
     it("renders a wrapper with aria-label and a tooltip bubble", () => {
-        const out = renderComp(Tooltip, { label: "Save changes" }, "Save");
+        const out = renderComp(Tooltip, { id: 'save-tip', label: "Save changes" }, "Save");
         expect(out).toContain("cs-tooltip");
-        expect(out).toContain("aria-label");
+        expect(out).toContain('id="save-tip"');
         expect(out).toContain("role=");
         expect(out).toContain("tooltip");
         expect(out).toContain("Save changes");

@@ -199,10 +199,19 @@ require('node:module').syncBuiltinESMExports();
       assert.ok(!control.propsContract.members.some(member => ['popovertarget','aria-expanded','open'].includes(member.name)));
     }
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'action-menus'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'DropdownMenu', '--json']);
+    for (const [name, target] of [['Tooltip','HTMLSpanElement'],['HoverCard','HTMLDivElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes(target)));
+      assert.ok(control.propsContract.members.some(member => member.name === 'id' && member.type === 'string'));
+      assert.ok(control.propsContract.members.some(member => member.name === 'label' && member.type === 'string'));
+    }
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'hover-content'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Tooltip', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['DropdownMenu']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'DropdownMenu' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Tooltip']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Tooltip' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

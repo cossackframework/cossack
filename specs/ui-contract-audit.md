@@ -84,7 +84,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Empty](../packages/ui/src/components/Empty.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Field](../packages/ui/src/components/Field.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Form](../packages/ui/src/components/Form.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
-| [HoverCard](../packages/ui/src/components/HoverCard.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [HoverCard](../packages/ui/src/components/HoverCard.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
 | [Input](../packages/ui/src/components/Input.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [InputGroup](../packages/ui/src/components/InputGroup.ts) | Foundation reviewed | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [InputOTP](../packages/ui/src/components/InputOTP.ts) | Reviewed foundation | One labeled native field, typed props/events, controlled/default values, selection-aware paste, composition, completion, reset, validation, themed focus and SSR/hydration browser acceptance. |
@@ -120,12 +120,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Toggle](../packages/ui/src/components/Toggle.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Tooltip](../packages/ui/src/components/Tooltip.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Tooltip](../packages/ui/src/components/Tooltip.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
 | [Typography](../packages/ui/src/components/Typography.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 
 ## Next passes
 
-Next audit Tooltip and HoverCard, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit AlertDialog and Command, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

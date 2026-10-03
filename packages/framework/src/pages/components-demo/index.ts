@@ -391,7 +391,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Tooltip</h2>
                     <div class="flex items-center gap-4">
-                        ${component(Tooltip, { label: 'Save changes', side: 'top' }, component(Button, { variant: 'default' }, 'Hover me'))}
+                        ${component(Tooltip, { id: 'demo-save-tip', label: 'Save changes', side: 'top' }, component(Button, { variant: 'default', 'aria-describedby': 'demo-save-tip' }, 'Hover me'))}
                     </div>
                 </section>
 
@@ -558,6 +558,8 @@ export class ComponentsDemo extends Cossack {
                     <div class="flex flex-wrap items-center gap-4">
                         ${component(Button, { variant: 'destructive', '@click': () => { this.alertOpen = true; } }, 'Delete Account')}
                         ${component(HoverCard, {
+                            id: 'demo-hover-card',
+                            label: 'Hover details',
                             content: html`<div><p class="text-sm font-medium mb-1">Hover details</p><p class="text-xs text-muted-foreground">This card appears on hover with a 300ms delay.</p></div>`,
                         }, component(Button, { variant: 'outline' }, 'Hover me'))}
                     </div>

@@ -962,15 +962,19 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): DataTable and 25 UI foundations have reviewed contracts.
+Codex status (2026-10-04): 27 UI foundations, including DataTable, have reviewed contracts.
 Completed work covers typed native attributes and events, form behavior, SSR and
 hydration, keyboard navigation, focus, dialogs, popovers and action menus.
 The [component audit](./ui-contract-audit.md) records coverage and pending rows.
 See [archived UI checkpoints](./release-0.9.0-plan-archive.md#codex-ui-handoff-2026-10-04)
 for implementation details and links to verification evidence.
 
-Next: finish Tooltip and HoverCard, then the remaining audit rows. Their current
-working-tree changes are unfinished and do not count as reviewed foundations.
+Tooltip and HoverCard now have typed wrapper/panel contracts, stable descriptions,
+hover/focus ownership and cancellation. See the
+[hover-control checkpoint](./release-0.9.0.md#codex-hover-controls-2026-10-04).
+Next: AlertDialog and Command, then the remaining audit rows. AlertDialog still
+needs native attribute ownership, accessible naming and shared dismissal handling.
+Command needs an explicit controlled-state contract, modal focus and list semantics.
 RT-23 remains open against all criteria below.
 
 Purpose: Applications need a typed table for real server data, and agents need

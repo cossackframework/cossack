@@ -19,11 +19,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Finish the uncommitted Tooltip and HoverCard changes, then audit the remaining pending rows.
-   These changes still need final verification, documentation and a completion checkpoint.
-   Twenty-five foundations are reviewed. DropdownMenu and ContextMenu now have typed
-   action/native-event contracts, menu semantics and shared keyboard/focus handling.
-   See the [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) for tests and limits.
+   Next audit AlertDialog and Command, then the remaining pending rows.
+   Twenty-seven foundations are reviewed. Tooltip and HoverCard now have typed
+   wrapper/panel contracts, stable descriptions and shared hover/focus handling.
+   See the [hover checkpoint](./release-0.9.0.md#codex-hover-controls-2026-10-04) for tests and limits.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).

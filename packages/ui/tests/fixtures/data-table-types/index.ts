@@ -243,3 +243,17 @@ component(DropdownMenu, { id: 'actions', popovertarget: 'other' });
 // @ts-expect-error Arbitrary unimplemented options are rejected.
 component(ContextMenu, { id: 'document', menuLabel: 'Actions', open: true });
 void invalidSeparator;
+
+import { Tooltip, HoverCard } from '@cossackframework/ui';
+component(Tooltip, { id: 'help', label: 'Help', delay: 150, '@pointerenter': event => { const span: HTMLSpanElement = event.currentTarget; void span; } });
+component(HoverCard, { id: 'details', label: 'Details', content: 'Details', contentProps: { '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
+// @ts-expect-error Stable tooltip IDs are required.
+component(Tooltip, { label: 'Help' });
+// @ts-expect-error Tooltip content is plain description text, not arbitrary markup.
+component(Tooltip, { id: 'help', label: { text: 'Help' } });
+// @ts-expect-error The old ignored content prop was never a tooltip label.
+component(Tooltip, { id: 'help', content: 'Help' });
+// @ts-expect-error HoverCard needs an accessible name.
+component(HoverCard, { id: 'details', content: 'Details' });
+// @ts-expect-error The card owns its nonmodal dialog role.
+component(HoverCard, { id: 'details', label: 'Details', content: '', contentProps: { role: 'tooltip' } });

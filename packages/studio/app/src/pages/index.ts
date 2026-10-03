@@ -1526,16 +1526,17 @@ export default class StudioPage extends Cossack {
   }
 
   iconButton(
+    id: string,
     icon: IconEntry,
     label: string,
     onClick: () => unknown,
     options: Record<string, unknown> = {},
   ) {
-    return component(Tooltip, { label, side: 'bottom' }, component(Button, {
+    return component(Tooltip, { id, label, side: 'bottom' }, component(Button, {
       variant: 'ghost',
       size: 'icon',
       'aria-label': label,
-      title: label,
+      'aria-describedby': id,
       '@click': onClick,
       ...options,
     }, component(Icon, { entry: icon, size: 17 })));
@@ -1586,7 +1587,7 @@ export default class StudioPage extends Cossack {
                 Writes affect deployed data immediately
               </div>
             ` : ''}
-            ${this.iconButton(
+            ${this.iconButton('studio-theme-tip',
               this.theme === 'dark' ? SunIcon : MoonIcon,
               this.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
               this.toggleTheme,
@@ -1685,13 +1686,13 @@ export default class StudioPage extends Cossack {
             </div>
             <div class="flex items-center gap-1">
               ${this.tab === 'browse' && object
-                ? this.iconButton(RefreshIcon, 'Refresh rows', () => this.reloadRows(), {
+                ? this.iconButton('studio-refresh-rows-tip', RefreshIcon, 'Refresh rows', () => this.reloadRows(), {
                     disabled: this.browseLoading,
                     'data-testid': 'refresh-rows',
                   })
                 : ''}
               ${this.tab === 'browse' && object?.editable && !this.customBrowseQuery
-                ? this.iconButton(AddSquareIcon, this.showInsert ? 'Close insert form' : 'Insert row', this.toggleInsert, {
+                ? this.iconButton('studio-insert-row-tip', AddSquareIcon, this.showInsert ? 'Close insert form' : 'Insert row', this.toggleInsert, {
                     'data-testid': 'insert-row',
                     variant: this.showInsert ? 'secondary' : 'ghost',
                   })
@@ -1699,7 +1700,7 @@ export default class StudioPage extends Cossack {
               ${this.tab === 'pragmas' &&
                 ['sqlite', 'turso', 'd1-local', 'd1-remote']
                   .includes(this.activeSchema.connection.provider)
-                ? this.iconButton(RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
+                ? this.iconButton('studio-refresh-pragmas-tip', RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
                     disabled: Boolean(this.loading.refreshPragmas),
                     'data-testid': 'refresh-pragmas',
                   })
