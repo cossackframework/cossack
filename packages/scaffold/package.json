@@ -26,7 +26,8 @@
     "README.md",
     "src",
     "template",
-    "tsconfig.template.json"
+    "tsconfig.template.json",
+    "agent-docs.json"
   ],
   "scaffold": {
     "dependencyVersions": {

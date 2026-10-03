@@ -17,7 +17,7 @@ below link directly to those explanations.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Initial package-owned route/renderer guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -6204,3 +6204,41 @@ runtime guidance and the original RT-23/REL-02 dependency gates. These examples
 establish Node behavior only. CLI-07 stored results and RT-28 traces remain open.
 Task status stays 24 complete and 34 open. Versions remain 0.8.3. No publication,
 deployment, push or external credential rotation occurred.
+
+<a id="codex-recipe-guidance-2026-10-04"></a>
+## Codex: Recipe guidance and pure registry declarations (2026-10-04)
+
+Scaffold now publishes package-owned guides for resource, mutation, scoped-service
+and protected-route recipes. They explain generated behavior, limits, dry-run and
+application commands, adaptation steps and the boundary between static capability
+checks and remote readiness. Four executable planning examples use the installed
+public registry. Protected-route coverage checks auth/database/UI dependencies,
+D1 binding requirements and rejection of a Node/D1 selection.
+
+A compiler fixture reproduced TS2591 for Buffer when importing only the pure
+registry with no Node ambient types. The registry declarations previously
+re-exported the root filesystem declarations. Shared metadata declarations now
+live in registry.d.ts, and the root API re-exports them. Dedicated fixtures verify
+both the pure registry and the full Node API. Runtime recipe behavior is unchanged.
+
+Verification:
+
+- **109 scaffold tests across 5 files passed** after the declaration fix.
+  Log: `/tmp/cossack-recipe-guidance-tests.log`.
+- **2 final public declaration checks passed**, covering the registry without Node
+  globals and the root API with Node types. The root fixture was corrected to
+  pass recipe options rather than the distinct add-feature options type.
+  Log: `/tmp/cossack-recipe-guidance-types-tests-final.log`.
+- `pnpm test:agent-docs:local` passed with **6 compiled/executed installed examples**,
+  CLI/MCP parity, version/export refresh and zero Node network attempts.
+  Log: `/tmp/cossack-recipe-guidance-tarball.log`.
+- Root `pnpm tsc --noEmit` and all 11 package checks via `pnpm typecheck` passed.
+  Logs: `/tmp/cossack-recipe-guidance-types.log` and
+  `/tmp/cossack-recipe-guidance-package-types.log`.
+- Script syntax and whitespace checks passed.
+
+CLI-08 remains open for broader API/component guidance, verified runtime support
+and its original RT-23/REL-02 gates. These examples verify planning behavior in
+Node, not application execution on every adapter or remote readiness. Task status
+remains 24 complete and 34 open. Versions remain 0.8.3. No publication, deployment,
+push or external credential rotation occurred.

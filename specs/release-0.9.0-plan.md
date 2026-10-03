@@ -611,6 +611,21 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex recipe-guidance checkpoint (2026-10-04): scaffold now ships guidance for
+resource, mutation, scoped-service and protected-route recipes. Each guide explains
+what the template provides, its limits, preview/application commands and adaptation
+steps. Executable examples inspect resolved dependencies and host requirements
+through the public registry. The protected-route example checks auth/database/UI,
+D1 requirements and rejection of an unsupported Node/D1 selection.
+
+Authoring the examples exposed an unwanted Node Buffer dependency in the pure
+registry declarations. Shared metadata declarations now live in registry.d.ts,
+and the root API re-exports them. Separate compiler fixtures prove the registry
+works without Node ambient types and the root API retains its Node contracts.
+See the [checkpoint](./release-0.9.0.md#codex-recipe-guidance-2026-10-04).
+Continue broader API/component coverage and runtime guidance under the original
+CLI-08 criteria. Recipe planning does not prove remote deployment readiness.
+
 Codex package-guidance checkpoint (2026-10-04): library-owned `agent-docs.json`
 files now supply usage explanations and TypeScript example source through the
 shared CLI/MCP catalog. Guidance carries the installed package identity/version

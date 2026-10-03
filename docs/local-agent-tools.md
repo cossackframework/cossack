@@ -187,9 +187,13 @@ lowercase letters, digits and hyphens. Imports must belong to the owning package
 The file has a 256 KiB limit and cannot resolve outside its package directory.
 The CLI rejects unknown fields and unsupported schema versions.
 
-The initial guides explain typed route URL construction in core and escaped
-server HTML rendering in renderer. The tarball acceptance compiles and executes
+The guides explain typed route URL construction in core, escaped server HTML
+rendering in renderer, and the resource, mutation, scoped-service and protected-route
+recipes in scaffold. The tarball acceptance compiles and executes
 their examples against installed public exports. Discovery itself reports
 `exampleExecution: "not-performed"` and `runtimeSupport: "not-verified"`.
+The recipe examples inspect dependencies and capability requirements through the
+pure scaffold registry without writing files. The protected-route example also
+checks auth/database/UI dependencies, D1 requirements and an unsupported provider.
 The examples currently prove Node behavior. Other APIs, components, recipes and
 runtime targets still need their own guidance and acceptance coverage.

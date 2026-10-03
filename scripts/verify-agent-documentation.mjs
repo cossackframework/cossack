@@ -68,7 +68,8 @@ require('node:module').syncBuiltinESMExports();
     // The documentation tool itself only returns source text.
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
-    for (const [name, id] of [['@cossackframework/core', 'route-urls'], ['@cossackframework/renderer', 'server-html']]) {
+    for (const [name, id] of [['@cossackframework/core', 'route-urls'], ['@cossackframework/renderer', 'server-html'],
+      ...['resource', 'mutation', 'scoped-service', 'protected-route'].map(feature => ['@cossackframework/scaffold', feature + '-recipe'])]) {
       const pkg = catalog.data.packages.find(pkg => pkg.name === name);
       assert.equal(pkg.guidance.status, 'available');
       assert.equal(pkg.guidance.version, pkg.version);

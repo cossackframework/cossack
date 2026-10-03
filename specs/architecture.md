@@ -15,6 +15,9 @@ The framework is built on a strict separation between the **library** (`core`, `
  change sets, and schema-v3 scaffold manifests. Creation and later
  `cossack add` operations render the same resolved recipe, so incremental
  composition has the same owned files as equivalent initial onboarding.
+ The pure `/registry` entry owns recipe metadata and its declarations. It does
+ not import the Node filesystem API declarations or require Node ambient types.
+ The root scaffold entry re-exports those types alongside its Node operations.
  Application runtime packages must not depend on this Node-only package.
 
 This separation makes sure that the framework's core is reusable, maintainable, and decoupled from any single implementation.

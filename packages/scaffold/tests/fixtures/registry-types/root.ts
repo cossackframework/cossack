@@ -1,0 +1,10 @@
+import { resolveRecipe, renderRecipe, recipeCapabilityDiagnostics } from '@cossackframework/scaffold';
+import type { AddFeatureOptions, ChangeSet, ScaffoldRecipe, SwitchAdapterOptions } from '@cossackframework/scaffold';
+const options: AddFeatureOptions = { adapter: 'node', database: 'sqlite', dryRun: true };
+const recipe: ScaffoldRecipe = resolveRecipe({ adapter: options.adapter, database: options.database });
+recipeCapabilityDiagnostics(recipe);
+const switchOptions: SwitchAdapterOptions = { database: 'd1', dryRun: true };
+const changes: ChangeSet = { writes: [], deletes: [], conflicts: [], preserved: [] };
+declare const files: Awaited<ReturnType<typeof renderRecipe>>;
+const content: Buffer | undefined = files.get('package.json')?.content;
+void [switchOptions, changes, content];
