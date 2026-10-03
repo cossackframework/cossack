@@ -1052,3 +1052,121 @@ it('gates typed task commits across rapid changes, sibling navigation and layout
     expect(errors).toEqual([]);
   } finally { await browser?.close(); await server.close(); }
 }, 120000);
+
+async function developmentServer(root) {
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { createServer } from 'vite';
+    import { getRequestListener } from '@hono/node-server';
+    const runtimes = new Set();
+    // The harness serves the generated app through Vite's real SSR loader.
+    // Node scaffold currently has no first-party Vite HTTP middleware (CF-10).
+    const bridge = {
+      name: 'state-example-ssr-harness',
+      configureServer(viteServer) {
+        const handle = getRequestListener(async request => {
+          const { app, env, runtime } = await viteServer.ssrLoadModule('/src/index.ts');
+          runtimes.add(runtime);
+          env.APP_URL = new URL(request.url).origin;
+          return app.fetch(request, env);
+        });
+        viteServer.middlewares.use((request, response, next) => {
+          const pathname = new URL(request.url, 'http://localhost').pathname;
+          if (['/state-example', '/crpc'].includes(pathname)) return handle(request, response);
+          next();
+        });
+      },
+    };
+    const server = await createServer({ root: process.cwd(), server: { port: 0, host: '127.0.0.1' }, plugins: [bridge] });
+    await server.listen();
+    console.log('STATE_DEV_ORIGIN=http://127.0.0.1:' + server.httpServer.address().port);
+    process.on('message', async message => { if (message === 'STOP') { for (const runtime of runtimes) await runtime.dispose(); await server.close(); process.exit(0); } });
+  `], { cwd: root, env: { ...process.env, NODE_ENV: 'development', VITEST: '' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  let output = '';
+  child.stdout.on('data', data => { output += data; });
+  child.stderr.on('data', data => { output += data; });
+  const exited = once(child, 'exit');
+  const close = async () => {
+    if (child.connected) child.send('STOP');
+    else child.kill('SIGTERM');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+    const [code, signal] = await exited;
+    clearTimeout(kill);
+    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
+  };
+  try {
+    await expect.poll(() => {
+      if (child.exitCode !== null) throw new Error(output);
+      return /STATE_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+    }, { timeout: 20000 }).toBeTruthy();
+  } catch (error) { await close(); throw error; }
+  return { origin: /STATE_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close, output: () => output };
+}
+
+it.each(['development', 'production'])('runs state documentation examples and diagnostics in a published %s app', async mode => {
+  const root = await project('node');
+  const pageFile = path.join(root, 'src/pages/state-example/index.ts');
+  await fs.mkdir(path.dirname(pageFile), { recursive: true });
+  const source = await fs.readFile(path.join(repository, 'docs/examples/state-mechanisms.ts'), 'utf8');
+  await fs.writeFile(pageFile, source.replace('    render() {', `
+    onMount() { (window as any).__stateExample = this; }
+    render() {`));
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated state types: ${error.stdout}\n${error.stderr}`); }
+  if (mode === 'production') {
+    await vite(root, []);
+    await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  }
+  const server = mode === 'development' ? await developmentServer(root) : await productionServer(root);
+  let browser;
+  try {
+    const response = await fetch(server.origin + '/state-example');
+    const body = await response.text();
+    expect(response.status, body).toBe(200);
+    const initial = JSON.parse(body.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
+    const state = initial;
+    expect(state.public).toMatchObject({ count: 1, profile: { name: 'Ada' }, cart: { lines: [{ quantity: 1, price: 3 }], tags: [] } });
+    for (const name of ['selected', 'panelOpen', 'draft', 'total', 'record']) expect(state.public).not.toHaveProperty(name);
+    expect(state.serverResources.record).toEqual({ argsKey: '[1]', value: { id: 1, label: 'Record 1' } });
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const warnings = [];
+    const errors = [];
+    const requests = [];
+    page.on('console', message => { if (message.type() === 'warning') warnings.push(message.text()); });
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') requests.push(request.postDataJSON()); });
+    await page.goto(server.origin + '/state-example');
+    await page.waitForFunction(() => window.__stateExample);
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
+    await page.getByRole('button', { name: 'Mutate shallow state', exact: true }).click();
+    expect(await page.evaluate(() => window.__stateExample.profile.name)).toBe('Unobserved');
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
+    await page.getByRole('button', { name: 'Replace profile', exact: true }).click();
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Grace');
+    await page.getByRole('button', { name: 'Edit nested cart', exact: true }).click();
+    await browserExpect(page.getByTestId('cart-total')).toHaveText('6');
+    await browserExpect(page.getByTestId('cart-tags')).toHaveText('edited');
+    await page.getByRole('button', { name: 'Edit local draft', exact: true }).click();
+    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
+    await browserExpect(page.getByTestId('panel-open')).toHaveText('true');
+    await page.getByRole('button', { name: 'Save count', exact: true }).click();
+    await browserExpect(page.getByTestId('state-count')).toHaveText('2');
+    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
+    await page.getByRole('button', { name: 'Next record', exact: true }).click();
+    await browserExpect(page.getByTestId('record-label')).toHaveText('Record 2');
+    await browserExpect.poll(() => requests.length).toBe(2);
+    for (const request of requests) {
+      expect(request.state).toHaveProperty('cart');
+      for (const name of ['selected', 'panelOpen', 'draft', 'total']) expect(request.state).not.toHaveProperty(name);
+    }
+    await page.evaluate(() => {
+      window.__stateExample.profile.extra = new Map();
+      window.__stateExample.getPublicState();
+    });
+    if (mode === 'development') {
+      expect(warnings.some(message => message.includes("StateMechanisms at profile.name"))).toBe(true);
+      expect(warnings.some(message => message.includes("StateMechanisms field 'profile' during public state: state.profile.extra (Map)"))).toBe(true);
+    } else expect(warnings.filter(message => message.startsWith('[Cossack]'))).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally { await browser?.close(); await server.close(); }
+}, 120000);

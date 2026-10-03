@@ -1,3 +1,4 @@
+import { collectReactiveMetadata } from './reactive-metadata';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/service-bootstrap.ts
 import './metadata';
@@ -36,8 +37,7 @@ export function bootstrapService(
     instance: any,
 ): void {
     if (serviceRuntimes.has(instance)) return;
-    const stateProperties = Reflect.getMetadata('cossack:state', instance.constructor) || {};
-    const storeProperties = Reflect.getMetadata('cossack:store', instance.constructor) || {};
+    const { state: stateProperties, store: storeProperties } = collectReactiveMetadata(instance.constructor);
     const stateKeys = [...new Set([...Object.keys(stateProperties), ...Object.keys(storeProperties)])];
 
     const runtime: ServiceRuntime = {
@@ -172,7 +172,7 @@ export function bootstrapServices(component: any): void {
  * syncs it to the service, and getPublicState() returns the service's values.
  */
 export function registerServiceState(component: any, serviceInstance: any): void {
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const stateContainer = component._stateContainer;
 
     for (const key of Object.keys(serviceStateMeta)) {
@@ -207,7 +207,7 @@ export function registerServiceState(component: any, serviceInstance: any): void
 export function forwardServiceMethods(component: any, serviceInstance: any): void {
     const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const serviceStateKeys = Object.keys(serviceStateMeta);
     const stateContainer = component._stateContainer;
 
@@ -242,7 +242,7 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
 export function proxyServiceMethods(component: any, serviceInstance: any): void {
     const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const serviceStateKeys = Object.keys(serviceStateMeta);
 
     // Only proxy methods that are @Server-only (not @Shared, not @Client)

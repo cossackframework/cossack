@@ -2,7 +2,69 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-05 completion (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-04 completion (2026-10-03). Author: Codex.**
+> Continued after `abd80ad`. Read the
+> [review/evidence](./release-0.9.0.md#codex-state-diagnostics-2026-10-03),
+> [RT-04 criterion audit](./release-0.9.0-plan.md#rt-04),
+> [RT-06 continuation](./release-0.9.0-plan.md#rt-06),
+> [state guide](../docs/states.md) and
+> [migration](./migration-0.9.0.md#state-contracts-and-development-diagnostics).
+>
+> **20/58 checked, 38 unchecked; only RT-04 newly closes.** All original IDs
+> remain in scope. RT-01 and full release/runtime gates stay open. Historical
+> RT-04 remaining-work notes are superseded by this checkpoint.
+>
+> State/client state remain shallow; stores observe nested plain objects/arrays.
+> Computed evaluates on read without a cache/dependency graph. createStore uses
+> Object.is replacement notifications and explicit subscription ownership.
+> Two complete public-export examples compile; the state page runs in development
+> and production. Store proxies cannot be passed directly to structuredClone.
+>
+> Development warnings name component/field/path and print no values. Shallow
+> warnings cover ClientState too, ignore failed/no-op writes and preserve stable
+> proxies. Public-state inspection shares canonical RT-01 classifiers, skips
+> getters/custom serialization hooks, and has depth/visit limits. Unknown skipped
+> representations remain the real serializer's responsibility. Production keeps
+> its original values and JSON behavior. Strict resource validation is separate.
+> Core's library build must preserve consuming Vite DEV selection; optional env
+> access keeps direct published Node imports safe with diagnostics disabled.
+>
+> Inherited metadata now collects own fields root-to-child. Child decorations
+> replace the same field's public/client/shallow/deep kind; parent siblings stay.
+> Component/service bootstrap, legacy forwarding, sanitizers, optimistic field
+> discovery and channel validation agree. Inherited public Store channels validate.
+> Forged overlays cannot restore a public parent field overridden as client-only.
+> Client-only is a snapshot rule, not a secret rule: SSR values can appear in HTML,
+> and authored explicit RPC arguments still cross the boundary.
+>
+> Native HTTP/SSE acceptance retains local Store edits and rejects forged local
+> fields. HTTP uses allowed public overlays; SSE preserves authoritative state.
+> Actual RPC request.state is flat. Do not test nonexistent state.public or weaken
+> server authority to make a browser filter survive; use client-only fields.
+>
+> Evidence: core **1147/68**, framework **1316/57**, both builds, root tsc and all
+> **11** package type configs pass. Selected generated browser **3 passed, 14
+> skipped /17** covers both state modes and the prior task/navigation case. Native
+> staging/socket **2/2**, about 110 seconds, retains existing D1/schema/resource/
+> policy/stream/limiter acceptance. No full CLI, tarball, Deno or Electron gate claimed.
+>
+> **Open gap:** generated Node plain Vite dev returns 404. RT-04's development
+> fixture supplies an explicit HTTP SSR test bridge using the real Vite module
+> graph. It does not fix or certify CLI dev support. Follow the concrete
+> [REL-03 integration plan](./release-0.9.0-plan.md#rel-03) and CF-10 guide gate.
+>
+> **Next for GLM: RT-06.** Trace optimistic settlement across HTTP/SSE/socket,
+> write failing overlap/out-of-order tests, use action/field ownership for rollback,
+> retain later user edits and independent fields, settle indicators once, and
+> distinguish rejection from uncertain completion. Reuse RT-19 resync without
+> mutation replay. Finish browser/native acceptance and the original audit before
+> checking the task. Continue all other remaining IDs, including Node dev integration.
+>
+> Versions remain **0.8.3** until REL-04. Preserve reports.md/.zcodeignore. No
+> push/publication/live deployment/cloud changes/external messages/new chats.
+> All owned verification processes finished. Native fixtures are local/disposable.
+
+> **Previous checkpoint — Codex RT-05 completion (2026-10-03). Author: Codex.**
 > Continued after `95b2dd4`. Read the
 > [review/evidence](./release-0.9.0.md#codex-task-ownership-2026-10-03),
 > [RT-05 criterion audit and next plan](./release-0.9.0-plan.md#rt-05),

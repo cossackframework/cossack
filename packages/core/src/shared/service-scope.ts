@@ -1,3 +1,4 @@
+import { collectReactiveMetadata } from './reactive-metadata';
 import { collectServerMethodMetadata } from './server-method-metadata';
 import './metadata';
 import type { Context } from 'hono';
@@ -433,11 +434,8 @@ export function createLayoutServiceScope(
 export function sanitizeServiceState(serviceClass: ServiceClass, state: unknown): Record<string, unknown> {
     const clean: Record<string, unknown> = {};
     if (!state || typeof state !== 'object') return clean;
-    const allowed = new Set<string>();
-    for (const metadataKey of ['cossack:state', 'cossack:store']) {
-        const metadata = Reflect.getMetadata(metadataKey, serviceClass) || {};
-        for (const key of Object.keys(metadata)) allowed.add(key);
-    }
+    const { state: publicState, store } = collectReactiveMetadata(serviceClass);
+    const allowed = new Set([...Object.keys(publicState), ...Object.keys(store)]);
     for (const key of allowed) {
         if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
         if (Object.prototype.hasOwnProperty.call(state, key)) clean[key] = (state as any)[key];

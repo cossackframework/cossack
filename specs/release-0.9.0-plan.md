@@ -12,7 +12,16 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex typed task ownership (2026-10-03):**
+**Latest checkpoint — Codex state contracts and diagnostics (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-state-diagnostics-2026-10-03).
+RT-04 now meets its original criteria: **20/58 checked, 38 unchecked**. Executable
+examples, inherited contracts, client-only sanitization and development-only
+diagnostics pass unit, published declaration, development/production browser and
+native Worker HTTP/SSE checks. Continue RT-06 and all remaining tasks. Generated
+Node plain Vite development routing returns 404; its first-party integration is
+an open REL-03 gap, detailed below. All original IDs remain in scope.
+
+**Previous checkpoint — Codex typed task ownership (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-task-ownership-2026-10-03).
 RT-05 now meets its original criteria: **19/58 checked, 39 unchecked**. Typed
 paths and patch values pass published declaration fixtures. Execution-owned
@@ -1098,6 +1107,61 @@ Cycles and unsupported values produce useful paths. Client-only fields stay out
 of SSR, RPC, and shared state. Tests cover nested objects, arrays, computed
 dependencies, and development diagnostics without changing production semantics.
 
+**RT-04 completion audit — Author: Codex (2026-10-03), after `abd80ad`.**
+
+1. Mechanism guidance: states.md compares State, Store, ClientState, ClientStore,
+   Computed, server$ and createStore. Full public-export TypeScript examples are
+   compiled directly and inside a generated application. The state page runs
+   in both consuming Vite development and production modes. Tests prove a shallow
+   nested write changes raw data without rendering, replacement renders, nested
+   array/object store writes render, computed totals recalculate on read, client
+   drafts survive server actions, and resource dependencies load the next record.
+   Computed supplies no cache/dependency graph. createStore uses Object.is and
+   replacement notifications; connectStore subscription cleanup is verified.
+2. Shallow diagnostics: State and ClientState retain shallow semantics. Stable
+   development proxies warn once per field, naming owner, nested path and the
+   correct Store/ClientStore replacement. Raw aliases unwrap on assignment;
+   successful changed writes warn, while no-ops/missing deletes/failed frozen
+   writes stay quiet. Original raw aliases still bypass observation.
+3. Serialization diagnostics: a bounded read-only mode of the existing RT-01
+   traversal identifies cycles, non-finite numbers, functions/symbols/bigints,
+   invalid Dates, collections, binary and opaque native values. It logs paths
+   and component/field/snapshot context without values. Repeated acyclic
+   references, valid Dates and own-field models retain the canonical contract.
+   Getters, custom toJSON and accessor object tags are not executed to diagnose
+   unknown representations. Inspection has 10,000 visits and a 256-depth limit;
+   silence does not certify validity. Real RPC serialization still owns errors
+   and hook invocation. Do not substitute strict server$ JSON rules for state.
+4. Inherited field contracts: collect each class's own declarations root-to-child.
+   The child replaces the same field's complete public/client and shallow/deep
+   kind, while parent siblings remain. Bootstrap, service state, legacy service
+   forwarding, optimistic field discovery, channel validation and component/
+   service request sanitizers use the same contract. Store channels are validated
+   too. A client-only replacement cannot accept its parent's public overlay.
+5. Boundary proof: SSR public snapshots exclude client/derived fields. Actual
+   flat RPC request.state is checked, rather than a nonexistent state.public.
+   Native Worker HTTP/SSE tests forge id/local overlays on a client-only child
+   override and retain server initializers. HTTP accepts a public inherited
+   overlay; SSE retains coordinator authority. Client Store edits survive native
+   resource/action responses. Client-only fields still exist during SSR and can
+   appear in rendered HTML or explicit RPC arguments; they are not secrets.
+6. Production behavior: diagnostics do not normalize/reject writes or change
+   snapshot values. Core's library build preserves the DEV decision for the
+   consuming Vite app; optional env access keeps published direct Node imports
+   safe. Production browser checks produce no Cossack diagnostic warnings.
+   Direct Node imports without Vite disable these diagnostics.
+
+Final checks: core **1147 tests /68 files**, framework **1316 /57**, core/framework
+builds, root tsc and all **11** package type configs pass. Selected generated
+browser cases are **3 passed /14 skipped of 17** (both state modes and the RT-05
+task regression). Rebuilt native staging/socket are **2/2**, about 110 seconds.
+No full CLI/monorepo/tarball/native Deno/Electron release gate is claimed.
+
+The development browser fixture owns an explicit Node HTTP SSR test bridge
+using Vite's real module graph. Plain generated Node Vite development returned
+404 and is still an application/CLI integration gap; see REL-03 below. Production
+uses the real generated server. Do not treat the test bridge as a CLI fix.
+
 <a id="rt-05"></a>
 ### RT-05: Typed tasks and stale-work cancellation
 
@@ -1212,6 +1276,33 @@ Done when: Tests cover two overlapping edits to one field, edits to independent
 fields, out-of-order responses, validation rejection, timeout, and disconnect.
 Loading indicators settle once. State converges after reconnect without replaying
 the mutation. Dependencies: RT-01, RT-05, and RT-19.
+
+**Next implementation plan — Author: Codex (2026-10-03).**
+
+RT-04 and RT-05 are complete. Start by tracing existing optimistic locks,
+pending state and method settlement for component and explicit-service HTTP,
+SSE and WebSocket paths. Reuse the shared inherited reactive field contract.
+Write failing controlled tests before choosing the merge representation.
+
+Each invocation needs its own identity, original affected values and ownership
+of its optimistic contribution. Establish a baseline and ordered pending edits
+so removing one failed operation retains later edits and successful operations.
+Independent fields must remain independent. Prefer field-scoped records over
+restoring an old whole-component snapshot. Document nested Store path behavior;
+do not invent deep rollback guarantees without tests.
+
+Test two edits to the same field, independent fields, a user edit after the
+request, success/failure replies in both orders, parsed validation denial and
+transport failures. Verify client-only fields participate only in local updates
+and never enter the public overlay. Loading/error indicators must settle once.
+Distinguish confirmed rejection from uncertain server completion on timeout or
+disconnect. Reuse RT-19 uncertainty errors, then resync/refetch authoritative
+state without replaying the mutation. Preserve native SSE server authority.
+Add generated browser and native runtime acceptance before closing RT-06, with
+the complete original criterion audit. Broader RT-01 deadlines remain open.
+
+Also fix the Node development integration described under REL-03 before claiming
+the final runtime matrix. Preserve all other unchecked IDs and release gates.
 
 <a id="rt-07"></a>
 ### RT-07: Typed routes and effective route metadata
@@ -2518,6 +2609,11 @@ or manually patching generated configuration. Supported combinations pass build
 and dry-run tests. Unsupported combinations fail clearly. Dependencies: CF-01,
 CF-06, CF-09, and REL-02.
 
+Codex RT-04 acceptance (2026-10-03) also found generated Node plain Vite dev
+returns 404. Development guide claims must be tested with the actual CLI and
+generated configuration; an acceptance fixture's private SSR bridge does not
+establish supported Node dev behavior. Track the implementation under REL-03.
+
 <a id="cf-11"></a>
 ### CF-11: Tracked credential removal
 
@@ -2617,6 +2713,21 @@ Done when: Required suites pass on the final implementation and package versions
 Runtime/browser gates cover the changed features. Missing external evidence
 remains explicitly open. A source-only prototype test cannot substitute for a
 published application test. Dependencies: REL-02 and completed feature work.
+
+**Open Node development gate — Author: Codex (2026-10-03).** A generated Node
+app's plain Vite dev command serves no Cossack page and returns 404. The RT-04
+diagnostic fixture supplies a test-only getRequestListener/ssrLoadModule bridge
+to exercise consuming-app DEV behavior; production uses the real generated Node
+server. This bridge is not present in scaffold/CLI development support.
+
+Implement first-party Node Vite HTTP/SSR integration in Node-specific adapter or
+tooling, preserving the rule that core and libraries cannot depend on framework
+or import Node request APIs into shared runtime code. Compose generated Vite
+configuration, asset handling and framework routing without swallowing Vite's
+module/HMR endpoints. Verify initial page rendering, RPC, cookies, source reload,
+startup errors and bounded shutdown through the actual generated CLI dev command.
+Then remove the fixture's redundant private bridge and use the supported path.
+Recheck production and Cloudflare development before completing this gate.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

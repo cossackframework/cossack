@@ -24,7 +24,7 @@ below link directly to those explanations.
 - [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 421-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 421 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
 - [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex completion (2026-10-03): schema-only migration, parsed/native/browser signatures, public function-field inference, private compiler imports and callback failures pass the transport matrix and generated Node/native Worker acceptance. Coerced types, nested errors, File/resource guards and explicit cancellation perform no invalid/denied mutation. See the [criterion audit](./release-0.9.0-plan.md#rt-02) and [schema migration review](#codex-schema-migration-2026-10-03). Native calls explicitly parse/authorize; RT-01, RT-07 native API declarations/error mapping and final release/runtime gates remain separate.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
-- [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
+- [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
@@ -3979,3 +3979,106 @@ Final evidence:
 matrix, using the concrete continuation plan above. RT-01 and every other original
 unchecked task remain in scope. Full CLI/monorepo, tarball, native Deno/Electron
 and release/version/publication gates are still open.
+
+<a id="codex-state-diagnostics-2026-10-03"></a>
+## Codex state contracts and diagnostics review — 2026-10-03
+
+Author: **Codex**. Continued after `abd80ad`. Only **RT-04** newly completes:
+**20 checked /38 unchecked**, preserving all 58 original IDs. Read the
+[original criterion audit](./release-0.9.0-plan.md#rt-04),
+[RT-06 continuation](./release-0.9.0-plan.md#rt-06),
+[state guide](../docs/states.md) and
+[migration](./migration-0.9.0.md#state-contracts-and-development-diagnostics).
+
+The state guide now explains shallow/deep, public/client, computed, resources
+and standalone stores with complete compiled public-export examples. Shallow
+writes change raw data without rendering; replacement and nested store writes
+request renders. Computed calculates on read, without an independent cache.
+Standalone createStore compares replacements with Object.is; connectStore owns
+a subscription that must disconnect. Documentation no longer recommends cloning
+Proxy values directly with structuredClone or calling browser toasts from server
+methods. Browser singletons live in client-only modules; server request data needs
+request/service ownership.
+
+Development public-state diagnostics use bounded read-only canonical RPC
+inspection and report owner/field/boundary/path without values. Known cycles,
+unsupported values and invalid Dates warn. Valid Dates/models/repeated acyclic
+references retain their canonical behavior. Inspection does not run custom toJSON,
+property getters or accessor object tags. Unknown representations are left to
+the real serializer; depth/visit limits mean silence is not validity evidence.
+Warnings deduplicate per field/issue, with recovery after a valid value. Shallow
+diagnostics cover ClientState too, identify nested paths and the correct deep
+decorator, keep stable identity, and ignore no-op/missing-delete/failed writes.
+Removed old value-bearing change logs. Production writes and serialization remain
+unchanged. Core's build preserves consuming Vite DEV selection with optional env
+access, so published direct Node imports also remain safe.
+
+Review fixed inherited field loss and inconsistent request sanitization. Gather
+own reactive declarations root-to-child and replace the same field's complete
+kind/options. Bootstrap, explicit/legacy service state, optimistic field discovery,
+channel validation and component/service sanitizers now agree. Parent siblings
+remain; public Store channels validate; client-only child replacements reject
+forged parent public input. This does not add a new service task engine, a general
+transaction, native value revival or a deeper Computed dependency system.
+
+Final evidence and exact scope:
+
+- Core `pnpm --filter @cossackframework/core exec vitest run`: **1147 tests /68
+  files**. New state serialization/mechanism/docs fixtures and expanded shallow
+  diagnostics cover objects/arrays/computed inputs, cycles/native values,
+  inheritance, service forwarding/channel checks, sanitization, no getter/hook
+  invocation, diagnostic bounds, published declaration imports and direct Node.
+- Framework `pnpm --filter @cossackframework/framework exec vitest run`:
+  **1316 /57**. Core/framework package builds pass. Root `pnpm tsc --noEmit`
+  and `pnpm typecheck` pass all **11** package configurations. Both full example
+  files compile against built declarations; the generated state app passes its
+  own TypeScript check against package exports.
+- Generated Node/browser command `pnpm --filter cossack exec vitest run
+  tests/generated-runtime-build.test.js -t 'state documentation examples|gates
+  typed task commits'`: **3 passed /14 skipped of 17**. The exact state example
+  runs in development and production, proving shallow/replacement/deep changes,
+  computed totals, local draft retention, actual flat RPC overlay exclusion,
+  resource dependency arguments, DEV warnings and quiet production. The existing
+  typed-task/navigation/scoped-service acceptance also passes.
+- Native command `pnpm --filter cossack exec vitest run
+  tests/deploy-integration.test.js tests/websocket-peer-integration.test.js
+  --maxWorkers=1`: **2/2**, about **110 seconds**. Native HTTP/SSE resource pages
+  preserve local Store edits, omit local/computed state from SSR and actual flat
+  requests, retain inherited public fields, and reject forged client-only child
+  overlays. HTTP accepts allowed public input; SSE keeps authoritative coordinator
+  state. Existing actual D1/user/policy/schema/private failure/recovery, streams,
+  socket cancellation and limiter cases remain passing. These are local disposable
+  Workers; no account resources or live deployment were changed.
+- Workers fixture review loaded the Workers skill, current primary best practices
+  and latest Workers types; this change adds no platform APIs or Wrangler settings.
+  Owned whitespace/JS syntax checks pass. No full CLI/scaffold/monorepo, tarball,
+  native Deno or Electron release gate is claimed. Versions remain 0.8.3.
+
+Intermediate failures and corrections:
+
+- Constructor metadata typing needed to tolerate unknown input. Test render spies
+  initially returned Promise<void>; they now match the required boolean result.
+  Documentation outside package roots initially lacked @core resolution; a strict
+  built-declaration fixture supplies paths, and generated app compilation also
+  proves real package export resolution.
+- Core's original library build erased DEV checks before consuming development
+  apps could enable them. A first preserved DEV expression used nonoptional env
+  access and failed outside Vite; the final optional expression and direct Node
+  subprocess fixture fix and verify both cases.
+- Plain generated Node Vite dev returned 404. The development acceptance harness
+  now owns an explicit HTTP SSR bridge to the real Vite graph. Initial SIGTERM
+  cleanup produced exit 143; owned IPC shutdown now closes the listener/Vite cleanly.
+  This bridge does not fix scaffold or CLI Node dev. Its first-party integration
+  stays open under [REL-03](./release-0.9.0-plan.md#rel-03) and guide execution CF-10.
+- Initial browser assertions expected a nonexistent components wrapper; they now
+  inspect the actual page initial.public. RPC fixtures also mistakenly treated
+  request.state as state.public, making exclusion checks vacuous. Browser/native
+  fixtures now assert actual flat keys. Native HTTP/SSE expectations distinguish
+  accepted HTTP overlays from SSE coordinator authority instead of weakening it.
+  The initial native fixture failure is superseded by the final rebuilt 2/2 run.
+
+**Next for GLM:** RT-06's action-owned optimistic updates/rollback, using the
+detailed plan. Preserve newer local edits, settle loading once, distinguish
+rejection from uncertain completion, and resync without replay. Also fix the
+first-party Node development gap before the final runtime gate. All other original
+unchecked tasks remain; reports.md and .zcodeignore remain user-owned and unstaged.

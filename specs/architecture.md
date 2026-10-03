@@ -564,6 +564,28 @@ contract. `createRpcCall` queries the client's known request ID when cancellatio
 closes an iterator parked at a yield, so its synthetic cancellation error retains
 correlation even without another transport read.
 
+### Reactive field contracts and diagnostic ownership
+
+Core collects each class's own State, Store, ClientState and ClientStore metadata
+from root to child. A child declaration replaces the complete contract for that
+field; unrelated parent fields remain. Bootstrap, service snapshots/forwarding,
+request sanitization, optimistic field discovery and channel validation use this
+same collector. Only final public State/Store fields are accepted from request
+overlays. Client-only overrides cannot inherit public input permission.
+
+Public state remains shallow or deep according to its decorator. Computed getters
+calculate on read; rendering follows their reactive inputs rather than a computed
+cache. Standalone createStore owns replacement notifications and subscriptions,
+without component serialization or automatic server synchronization.
+
+Development snapshot diagnostics use a bounded read-only mode of the canonical
+RPC value traversal. They inspect known data descriptors without executing custom
+serialization hooks/getters, and report owner/field/path rather than values.
+Unknown representations remain subject to real serialization. Diagnostics do not
+normalize snapshots or reject state writes. Core library builds retain consuming
+Vite mode selection, with safe optional env access for direct Node imports.
+Production state and serialization semantics are unchanged.
+
 The Cloudflare SSE coordinator checks `X-Cossack-Rpc-Response: native` before
 its RPC NDJSON MIME-type branch. A native body may contain arbitrary text/JSON/
 binary data and must not be parsed as protocol frames even when its MIME type

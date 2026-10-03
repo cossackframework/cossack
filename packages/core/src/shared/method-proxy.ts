@@ -1,3 +1,4 @@
+import { collectReactiveMetadata } from './reactive-metadata';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
@@ -25,14 +26,8 @@ interface ServerMethodWs extends ServerMethodBase {
  * and client-only state too, not just `@State` keys.
  */
 function getAllReactiveStateKeys(constructor: any): string[] {
-    const keys = new Set<string>();
-    const stateMeta = Reflect.getMetadata('cossack:state', constructor) || {};
-    const storeMeta = Reflect.getMetadata('cossack:store', constructor) || {};
-    for (const k of Object.keys(stateMeta)) keys.add(k);
-    for (const k of Object.keys(storeMeta)) keys.add(k);
-    for (const k of (Reflect.getMetadata('cossack:client-state', constructor) || [])) keys.add(k);
-    for (const k of (Reflect.getMetadata('cossack:client-store', constructor) || [])) keys.add(k);
-    return Array.from(keys);
+    const { state, store, clientState, clientStore } = collectReactiveMetadata(constructor);
+    return [...new Set([...Object.keys(state), ...Object.keys(store), ...clientState, ...clientStore])];
 }
 
 /**
@@ -724,26 +719,8 @@ export function sanitizeClientState(
     const clean: Record<string, unknown> = {};
     if (!state || typeof state !== 'object') return clean;
 
-    const allowed = new Set<string>();
-    let proto: object | null = typeof constructor === 'function' ? constructor : null;
-    while (proto !== null && proto !== Function.prototype) {
-        // Allow push-back for public state only: @State and @Store.
-        // @ClientState and @ClientStore are client-only by design and must
-        // never be accepted from an inbound client request.
-        const stateMeta = Reflect.getOwnMetadata('cossack:state', proto) as
-            | Record<string, unknown>
-            | undefined;
-        if (stateMeta) {
-            for (const key of Object.keys(stateMeta)) allowed.add(key);
-        }
-        const storeMeta = Reflect.getOwnMetadata('cossack:store', proto) as
-            | Record<string, unknown>
-            | undefined;
-        if (storeMeta) {
-            for (const key of Object.keys(storeMeta)) allowed.add(key);
-        }
-        proto = Object.getPrototypeOf(proto);
-    }
+    const { state: publicState, store } = collectReactiveMetadata(constructor);
+    const allowed = new Set([...Object.keys(publicState), ...Object.keys(store)]);
 
     const source = state as Record<string, unknown>;
     for (const key of Object.keys(source)) {

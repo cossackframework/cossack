@@ -16,7 +16,7 @@ import {
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
-import { RpcError, rpcCancellations, sendRpcFrame } from './rpc-stream';
+import { RpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
@@ -64,6 +64,7 @@ import {
     getForwardedServerMethodClass,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
+import { collectReactiveMetadata } from './reactive-metadata';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
@@ -1656,10 +1657,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * same broadcast / re-render path at any depth.
      */
     private initializeState(serializedState?: SerializedComponentState) {
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
-        const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
-        const storeProperties = Reflect.getMetadata('cossack:store', this.constructor) || {};
-        const clientStoreProperties = Reflect.getMetadata('cossack:client-store', this.constructor) || new Set();
+        const { state: stateProperties, store: storeProperties,
+            clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
 
         const stateKeys = Object.keys(stateProperties);
         const clientKeys = Array.from(clientStateProperties) as string[];
@@ -1778,12 +1777,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             // a raw primitive if newValue is not an object).
                             this._storeProxies.delete(key);
 
-                            if (import.meta.env.DEV) {
-                                console.log(`[Cossack] Store change: ${key}`, oldValue, '->', newValue);
-                            }
                             triggerReactivity();
-                        } else if (import.meta.env.DEV) {
-                            console.log(`[Cossack] Store change suppressed (same value): ${key}`, oldValue);
+
                         }
                     },
                     enumerable: true,
@@ -1800,10 +1795,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         // assigning re-renders, mutating a nested object in
                         // place does not. Warn once per field when that
                         // happens, naming the component and the fix. Bundlers
-                        // replace import.meta.env.DEV, eliminating this from
+                        // replace import.meta.env?.DEV, eliminating this from
                         // production output.
-                        if (import.meta.env?.DEV === true && isPublic && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
-                            return this._diagnoseShallowMutation(key, raw as Record<PropertyKey, unknown>);
+                        if (import.meta.env?.DEV === true && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
+                            return this._diagnoseShallowMutation(key, raw as Record<PropertyKey, unknown>, String(key), isClientOnly);
                         }
                         return raw;
                     },
@@ -1821,12 +1816,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 this._stateContainer.setInternal(key, newValue);
                             }
 
-                            if (import.meta.env.DEV) {
-                                console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
-                            }
                             this._applyStateChange(key, oldValue, newValue, isPublic);
-                        } else if (import.meta.env.DEV) {
-                            console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
+
                         }
                     },
                     enumerable: true,
@@ -1852,12 +1843,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _shallowMutationWarned = new Set<string>();
     private _shallowMutationProxies = new Map<string, WeakMap<object, object>>();
     private _shallowMutationRaw = new WeakMap<object, object>();
-    private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T): T {
+    private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T, path = String(key), clientOnly = false): T {
         let cache = this._shallowMutationProxies.get(key);
         if (!cache) this._shallowMutationProxies.set(key, cache = new WeakMap());
         const cached = cache.get(raw);
         if (cached) return cached as T;
         const component = this;
+        const warn = (operation: string, property: PropertyKey) => {
+            if (component._shallowMutationWarned.has(key)) return;
+            component._shallowMutationWarned.add(key);
+            const decorator = clientOnly ? 'ClientState' : 'State';
+            const store = clientOnly ? 'ClientStore' : 'Store';
+            console.warn(`[Cossack] Nested ${operation} on plain @${decorator} '${String(key)}' of ` +
+                `${component.constructor.name} at ${path}.${String(property)} does not re-render. ` +
+                `Assign a new value to this.${String(key)} or declare the field with @${store}().`);
+        };
         const proxy = new Proxy(raw, {
             get(target, property, receiver) {
                 const value = Reflect.get(target, property, receiver);
@@ -1865,28 +1865,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Proxy invariants require returning the exact value of frozen properties.
                 if (descriptor && !descriptor.configurable && 'value' in descriptor && !descriptor.writable) return value;
                 return value !== null && typeof value === 'object' && isPlainObjectOrArray(value)
-                    ? component._diagnoseShallowMutation(key, value as Record<PropertyKey, unknown>) : value;
+                    ? component._diagnoseShallowMutation(key, value as Record<PropertyKey, unknown>, `${path}.${String(property)}`, clientOnly) : value;
             },
             set(target, property, value) {
-                if (!component._shallowMutationWarned.has(key)) {
-                    component._shallowMutationWarned.add(key);
-                    console.warn(
-                        `[Cossack] Nested mutation on plain @State '${String(key)}' of ` +
-                        `${component.constructor.name} does not re-render. Assign a new value ` +
-                        `(this.${String(key)} = { ...this.${String(key)} }) or declare the ` +
-                        'field with @Store() for deep reactivity.');
-                }
-                return Reflect.set(target, property, value);
+                value = component._shallowMutationRaw.get(value) ?? value;
+                const descriptor = Object.getOwnPropertyDescriptor(target, property);
+                const changed = !descriptor || !('value' in descriptor) || !Object.is(descriptor.value, value);
+                const result = Reflect.set(target, property, value);
+                if (result && changed) warn('mutation', property);
+                return result;
             },
             deleteProperty(target, property) {
-                if (!component._shallowMutationWarned.has(key)) {
-                    component._shallowMutationWarned.add(key);
-                    console.warn(
-                        `[Cossack] Nested delete on plain @State '${String(key)}' of ` +
-                        `${component.constructor.name} does not re-render. Assign a new value ` +
-                        'or use @Store().');
-                }
-                return Reflect.deleteProperty(target, property);
+                const existed = Object.hasOwn(target, property);
+                const result = Reflect.deleteProperty(target, property);
+                if (result && existed) warn('delete', property);
+                return result;
             },
         });
         cache.set(raw, proxy);
@@ -1929,7 +1922,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Client-only state: just trigger re-render on client
             if (!this.isServer && !this.isBootstrapping) {
                 this.requestUpdate(key, oldValue);
-            } else if (import.meta.env.DEV && this.isBootstrapping) {
+            } else if (import.meta.env?.DEV && this.isBootstrapping) {
                 console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
             }
         }
@@ -2005,7 +1998,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             definedChannels.add('global');
         }
 
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
+        const { state, store } = collectReactiveMetadata(this.constructor);
+        const stateProperties = { ...state, ...store };
         for (const prop in stateProperties) {
             const channel = stateProperties[prop].channel || 'global';
             if (!definedChannels.has(channel)) {
@@ -2525,7 +2519,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Build the serialized state object
         const serializedState: SerializedComponentState = {
-            public: this._stateContainer.getPublicState(),
+            public: this._readPublicState('initial state'),
             metadata: {
                 componentId: this.constructor.name,
                 pathname: (this.c as Context)?.req.path,
@@ -2577,8 +2571,25 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * This is a simple accessor that returns the public state from the container.
      */
     public getPublicState(): Record<string, unknown> {
-        return this._stateContainer.getPublicState();
+        return this._readPublicState('public state');
     }
+
+    private _stateSerializationWarned = new Map<string, string>();
+    private _readPublicState(boundary: string): Record<string, unknown> {
+        const state = this._stateContainer.getPublicState();
+        if (import.meta.env?.DEV === true) {
+            for (const [field, value] of Object.entries(state)) {
+                const issue = describeUnsupportedStateValue(value, `state.${field}`);
+                if (!issue) { this._stateSerializationWarned.delete(field); continue; }
+                if (this._stateSerializationWarned.get(field) === issue) continue;
+                this._stateSerializationWarned.set(field, issue);
+                console.warn(`[Cossack] Unsupported public state on ${this.constructor.name} field '${field}' ` +
+                    `during ${boundary}: ${issue}. Use JSON-compatible data, or keep browser-owned values in @ClientState/@ClientStore.`);
+            }
+        }
+        return state;
+    }
+
 
     /**
      * Realtime connection status for this component (client side): the SSE

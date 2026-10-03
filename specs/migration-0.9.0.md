@@ -413,3 +413,30 @@ Inheritance now retains parent task siblings when a subclass declares tasks.
 A child decorator on the same method replaces task kind/dependencies before
 server/client filtering. If code depended on parent tasks disappearing, declare
 the replacement explicitly. Cleanup errors now name component, trigger and stage.
+
+## State contracts and development diagnostics
+
+Inherited reactive fields now remain active when a subclass declares another
+field. A child decorator on the same field replaces its public/client and
+shallow/deep contract. Replace a parent State with ClientState explicitly when
+the browser owns that value. Component/service request sanitizers reject forged
+overlays for that replacement. Legacy service forwarding now includes public
+Store fields and preserves inherited siblings.
+
+Store channels now receive the same validation as State channels. Fix undefined
+channel names instead of relying on an unvalidated Store declaration. Public
+state remains untrusted client input; validate and authorize server mutations.
+
+Consuming Vite development builds now retain state diagnostics from the core
+library. State and ClientState warn on detectable ineffective nested writes;
+replace the field or choose Store/ClientStore. Public snapshot warnings identify
+known unsupported values and cycles without printing values or invoking getters
+and custom toJSON. These diagnostics are bounded and cannot certify every value.
+No-op/failed writes remain quiet. Earlier value-bearing change logs are removed.
+Production JSON semantics and writes are unchanged; direct Node imports without
+Vite disable diagnostics. Resource JSON rules remain stricter than state rules.
+
+Client-only fields are omitted from serialized state, but their authored initial
+values still exist during SSR and can appear in HTML. Explicit RPC arguments can
+also contain those values. Do not put secrets in client-only fields. Read the
+[state examples and JSON contract](../docs/states.md) before choosing field kinds.

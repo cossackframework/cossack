@@ -248,17 +248,43 @@ export function describeUnsupportedValue(
     seen = new WeakSet<object>(),
     options: { handled?: (value: object) => boolean } = {},
 ): string | null {
-    try { snapshotValue(value, path, seen, options, 0, '', true); return null; }
+    try { snapshotValue(value, path, seen, { handled: options.handled }, 0, '', true); return null; }
     catch (error) { if (error instanceof UnsupportedRpcValue) return error.description; throw error; }
+}
+
+/** Inspect known data properties without running serialization hooks or getters. */
+export function describeUnsupportedStateValue(value: unknown, path = 'state'): string | null {
+    try {
+        snapshotValue(value, path, new WeakSet(), { inspection: { remaining: 10000 } }, 0, '', true);
+        return null;
+    } catch (error) {
+        return error instanceof UnsupportedRpcValue ? error.description : `${path} (inspection failed)`;
+    }
 }
 
 class UnsupportedRpcValue extends Error {
     constructor(readonly description: string) { super(description); }
 }
 
+type SnapshotOptions = {
+    handled?: (value: object) => boolean;
+    inspection?: { remaining: number };
+};
+
+/** Find a property descriptor without invoking its getter. */
+function inheritedDescriptor(value: object, key: PropertyKey): PropertyDescriptor | undefined {
+    let depth = 0;
+    for (let current: object | null = value; current; current = Object.getPrototypeOf(current)) {
+        if (++depth > 256) throw new Error('Prototype inspection limit exceeded.');
+        const descriptor = Object.getOwnPropertyDescriptor(current, key);
+        if (descriptor) return descriptor;
+    }
+    return undefined;
+}
+
 /** Snapshot once, then stringify this plain value; never evaluate toJSON twice. */
 export function snapshotRpcValue(value: unknown, path = '', options: { handled?: (value: object) => boolean } = {}): unknown {
-    try { return snapshotValue(value, path, new WeakSet(), options, 0, '', true); }
+    try { return snapshotValue(value, path, new WeakSet(), { handled: options.handled }, 0, '', true); }
     catch (cause) {
         if (!(cause instanceof UnsupportedRpcValue)) throw cause;
         throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
@@ -275,8 +301,9 @@ export function snapshotRpcFrame(frame: RpcStreamFrame): unknown {
 }
 
 function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
-    options: { handled?: (value: object) => boolean }, depth: number, key: string, applyToJSON: boolean): unknown {
+    options: SnapshotOptions, depth: number, key: string, applyToJSON: boolean): unknown {
     const fail = (reason: string): never => { throw new UnsupportedRpcValue(`${path || '(root)'} (${reason})`); };
+    if (options.inspection && options.inspection.remaining-- <= 0) return undefined;
     if (depth > 256) return fail('maximum depth exceeded');
     if (value === null || value === undefined) return value;
     const type = typeof value;
@@ -300,7 +327,12 @@ function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
     seen.add(object);
     try {
         let toJSON: unknown;
-        try { toJSON = applyToJSON ? object.toJSON : undefined; }
+        if (options.inspection && applyToJSON) {
+            const descriptor = inheritedDescriptor(object, 'toJSON');
+            // A custom representation or getter is unknown until the real serializer runs.
+            if (descriptor && (!('value' in descriptor) || typeof descriptor.value === 'function')) return undefined;
+        }
+        try { toJSON = applyToJSON && !options.inspection ? object.toJSON : undefined; }
         catch { return fail('toJSON access failed'); }
         if (typeof toJSON === 'function') {
             let representation: unknown;
@@ -314,14 +346,25 @@ function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
         if (Array.isArray(value)) {
             const result: unknown[] = [];
             for (let index = 0; index < value.length; index++) {
+                if (options.inspection && options.inspection.remaining <= 0) break;
                 let field: unknown;
-                try { field = value[index]; }
+                if (options.inspection) {
+                    const descriptor = inheritedDescriptor(value, String(index));
+                    if (descriptor && !('value' in descriptor)) continue;
+                    field = descriptor?.value;
+                }
+                try { if (!options.inspection) field = value[index]; }
                 catch { throw new UnsupportedRpcValue(`${path}[${index}] (property access failed)`); }
-                result.push(snapshotValue(field, `${path}[${index}]`, seen, options, depth + 1, String(index), true) ?? null);
+                const normalized = snapshotValue(field, `${path}[${index}]`, seen, options, depth + 1, String(index), true);
+                if (!options.inspection) result.push(normalized ?? null);
             }
             return result;
         }
         let tag: string;
+        if (options.inspection) {
+            const descriptor = inheritedDescriptor(object, Symbol.toStringTag);
+            if (descriptor && !('value' in descriptor)) return undefined;
+        }
         try { tag = Object.prototype.toString.call(value); }
         catch { return fail('object tag access failed'); }
         if (tag !== '[object Object]') return fail('native object');
@@ -332,12 +375,18 @@ function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
         try { keys = Object.keys(object); }
         catch { return fail('property enumeration failed'); }
         for (const property of keys) {
+            if (options.inspection && options.inspection.remaining <= 0) break;
             const location = path ? `${path}.${property}` : property;
             let field: unknown;
-            try { field = object[property]; }
+            if (options.inspection) {
+                const descriptor = Object.getOwnPropertyDescriptor(object, property);
+                if (!descriptor || !('value' in descriptor)) continue;
+                field = descriptor.value;
+            }
+            try { if (!options.inspection) field = object[property]; }
             catch { throw new UnsupportedRpcValue(`${location} (property access failed)`); }
             const normalized = snapshotValue(field, location, seen, options, depth + 1, property, true);
-            if (normalized !== undefined) result[property] = normalized;
+            if (!options.inspection && normalized !== undefined) result[property] = normalized;
         }
         return result;
     } finally { seen.delete(object); }

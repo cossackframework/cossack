@@ -5,6 +5,9 @@ const sourceRoot = path.resolve(__dirname, 'src');
 
 // https://vite.dev/config/
 export default defineConfig({
+  // The consuming application's Vite mode selects diagnostics. A library build
+  // must not erase development checks before the app can select its mode.
+  define: { 'import.meta.env.DEV': 'import.meta.env?.DEV' },
   resolve: {
     tsconfigPaths: true,
   },
