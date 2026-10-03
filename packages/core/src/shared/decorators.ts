@@ -7,6 +7,7 @@ import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 import type { ServiceClass } from './container';
+import type { InputSchema, InputOf } from './input-schema';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -107,12 +108,13 @@ export interface ServerOptions {
   channel?: string;
   provider?: string;
   /**
-   * Input contract for the action (RT-02): a StoreRuleMap validated on the
-   * server BEFORE the method runs, on every transport. The first payload
-   * argument is validated; failures reject with `COSSACK_VALIDATION_FAILED`
-   * and stable nested field errors.
+   * Parsed input contract for an inbound action. Typed schemas describe one
+   * argument, clone/normalize input and reject unknown fields by default.
+   * Transitional rule maps retain their first-object/extra-argument behavior.
+   * Failures carry `COSSACK_VALIDATION_FAILED` and nested field errors.
+   * Native calls to the authored method do not run decorator validation.
    */
-  input?: Record<string, unknown>;
+  input?: InputSchema<any, any> | Record<string, unknown>;
   /**
    * Client-side deadline for calls to this method, in milliseconds. Exceeding
    * it rejects the call with `COSSACK_RPC_TIMEOUT`; the server-side mutation
@@ -128,6 +130,9 @@ export interface ServerOptions {
  * This decorator attaches metadata, and the Cossack base class handles the logic
  * of replacing the member with a WebSocket proxy on the client.
  */
+export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input'> & { input: S }):
+  (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>) => void;
+export function Server(options?: ServerOptions): any;
 export function Server(options: ServerOptions = {}): any {
   return (target: any, propertyKey: string | symbol) => {
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
@@ -137,7 +142,7 @@ export function Server(options: ServerOptions = {}): any {
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
-      ...(options.input ? { input: options.input } : {}),
+      ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
       ...(Number.isFinite(options.timeout) && (options.timeout as number) > 0
         ? { timeout: options.timeout } : {}),
       ...(options.serverResource ? { serverResource: true } : {}),

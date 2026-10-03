@@ -1,4 +1,3 @@
-import { ActionValidationError } from './errors';
 // src/shared/validation.ts
 
 import { resolveStatePath } from './store';
@@ -438,7 +437,7 @@ function coerceValue(
  * a `coerce` rule applied, otherwise the original input. `validateObject` uses
  * it to write coerced values back into the returned `data`.
  */
-export function validateValue(value: any, rules: ValidationRule): ValidationResult {
+export function validateValue(value: any, rules: ValidationRule, options: { empty?: 'skip' | 'validate' } = {}): ValidationResult {
   // Check required first (against the raw input — emptiness is never coerced).
   if (rules.required) {
     if (!validators.required(value)) {
@@ -451,7 +450,7 @@ export function validateValue(value: any, rules: ValidationRule): ValidationResu
 
   // Skip other validations if value is empty and not required. Coercion does
   // NOT run here, so `""` stays `""` (it never becomes `0` / `false`).
-  if (value === null || value === undefined || value === '') {
+  if (options.empty !== 'validate' && (value === null || value === undefined || value === '')) {
     return { valid: true, value };
   }
 
@@ -967,49 +966,4 @@ export function clearErrors(component: any): void {
             component.requestUpdate();
         }
     }
-}
-
-
-
-/**
- * Enforce a `@Server({ input })` contract on an inbound RPC payload (RT-02).
- * Validates the first payload argument against the declared rules and returns
- * the coerced input; throws ActionValidationError with nested field errors
- * when validation fails. Declared coercion applies before the method runs.
- */
-export async function enforceActionInput(
-    constructor: unknown,
-    action: string,
-    payload: unknown[],
-): Promise<unknown[]> {
-    if (!Array.isArray(payload)) {
-        throw new ActionValidationError({ _: 'RPC payload must be an array of arguments.' });
-    }
-    const registration = findServerMethodRegistration(constructor, action);
-    const rules = registration?.input as StoreRuleMap<unknown> | undefined;
-    if (!rules) return payload;
-    const input = payload?.[0];
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-        throw new ActionValidationError({ _: 'This action requires an object input.' },
-            'Validation failed.');
-    }
-    const result = await validateObject(input as Record<string, unknown>, rules);
-    if (!result.valid) {
-        throw new ActionValidationError(result.errors as unknown as Record<string, unknown>,
-            'Validation failed.');
-    }
-    return [result.data, ...payload.slice(1)];
-}
-
-function findServerMethodRegistration(constructor: unknown, action: string): Record<string, unknown> | undefined {
-    let proto: object | null = typeof constructor === 'function' ? constructor : null;
-    while (proto !== null && proto !== Function.prototype) {
-        const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', proto) as
-            | Record<string, Record<string, unknown>>
-            | undefined;
-        const registration = serverMethods?.[action];
-        if (registration) return registration;
-        proto = Object.getPrototypeOf(proto);
-    }
-    return undefined;
 }

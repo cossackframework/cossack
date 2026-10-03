@@ -137,7 +137,11 @@ not a server-global response buffer. See the [XHR standard](https://xhr.spec.wha
 ```typescript
 @ClientState() uploadProgress = 0; // Optional; omit to use Fetch.
 
-@Server({ input: { title: { required: true } } })
+// Import input from @cossackframework/core.
+@Server({ input: input.object({
+  title: input.string({required:true}),
+  nested: input.object({files: input.array(input.file({maxBytes:1_048_576}), {minItems:1,maxItems:4})}),
+}) })
 async *upload(input: { title: string; nested: { files: File[] } }) {
   yield await input.nested.files[0].text();
   return { name: input.nested.files[0].name };

@@ -23,7 +23,7 @@ export async function writeWorkerRpcAcceptance(root) {
     }
   `);
   await write('src/services/RpcAcceptance.ts', `
-    import { CossackService, Service, Server, State, RateLimit, cookie, flash, flashInput, getRequestContext } from '@cossackframework/core';
+    import { CossackService, Service, Server, State, RateLimit, input, cookie, flash, flashInput, getRequestContext } from '@cossackframework/core';
     import { config } from '@cossackframework/framework/config';
     import { sql } from '@cossackframework/database';
     import { audit } from '../rpc-audit';
@@ -42,7 +42,7 @@ export async function writeWorkerRpcAcceptance(root) {
       async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
       @Server() @RateLimit({ requires: { shared: true, atomicIncrement: true } })
       async requiresShared(key: string) { await audit(key, 'guarantee-denied'); return 'saved'; }
-      @Server({ input: { title: { required: true } } })
+      @Server({ input: input.object({title:input.string({required:true}),key:input.string({required:true}),nested:input.object({files:input.array(input.file({maxBytes:1024}),{minItems:1,maxItems:4})})}) })
       files(input: { title: string; key: string; nested: { files: File[] } }) {
         this.key = input.key; this.visits++;
         cookie().set('upload_early', 'kept', { httpOnly: true, path: '/' });
@@ -103,7 +103,7 @@ export async function writeWorkerRpcAcceptance(root) {
   `);
   for (const transport of ['http', 'sse']) {
     await write(`src/pages/rpc-check/${transport}/index.ts`, `
-      import { Cossack, Page, Server, Client, ClientState, State, Inject, RateLimit, getRequestContext, rpc$ } from '@cossackframework/core';
+      import { Cossack, Page, Server, Client, ClientState, State, Inject, RateLimit, getRequestContext, rpc$, input } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       import { RpcAcceptance } from '../../../services/RpcAcceptance';
       import { audit } from '../../../rpc-audit';
@@ -124,7 +124,7 @@ export async function writeWorkerRpcAcceptance(root) {
         async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
         @Server() @RateLimit({ requires: { shared: true, atomicIncrement: true } })
         async requiresShared(key: string) { await audit(key, 'guarantee-denied'); return 'saved'; }
-        @Server({ input: { title: { required: true } } })
+        @Server({ input: input.object({title:input.string({required:true}),key:input.string({required:true}),nested:input.object({files:input.array(input.file({maxBytes:1024}),{minItems:1,maxItems:4})})}) })
         files(input: { title: string; key: string; nested: { files: File[] } }) {
           this.key = input.key; this.count++;
           const inner = this.acceptance.files(input); const page = this;
@@ -248,6 +248,16 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
       expect(invalid.status).toBe(400);
       expect(await invalid.json()).toMatchObject({ code: 'COSSACK_VALIDATION_FAILED', requestId: invalid.headers.get('X-Cossack-Request-Id'), fieldErrors: { title: expect.any(String) } });
       expect(await audit(key)).toEqual([]);
+      for(const forged of [
+        {...input,canEdit:true},
+        {...input,nested:{files:[{name:'fake.txt',size:1,type:'text/plain'}]}},
+        {...input,nested:{files:[]}},
+      ]) {
+        const rejected=await invoke('files',[forged],service);
+        expect(rejected.status).toBe(400);
+        expect(await rejected.json()).toMatchObject({code:'COSSACK_VALIDATION_FAILED',requestId:rejected.headers.get('X-Cossack-Request-Id'),fieldErrors:expect.any(Object)});
+        expect(await audit(key)).toEqual([]);
+      }
       const response = await invoke('files', [input], service);
       expect(response.status).toBe(200); expect(response.headers.get('X-Rpc-Guard')).toBe('ran');
       expect(response.headers.getSetCookie().some(value => value.startsWith('upload_early=kept'))).toBe(true);

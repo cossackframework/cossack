@@ -24,7 +24,7 @@ export class ClientVisibleError extends Error {
     this.name = 'ClientVisibleError';
     // Restore the prototype chain across transpilation targets that don't
     // preserve it for built-in subclasses (e.g. older TS targeting ES5).
-    Object.setPrototypeOf(this, ClientVisibleError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 

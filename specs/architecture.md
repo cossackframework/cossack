@@ -47,6 +47,30 @@ never erases live quotas; framed scope/caller and namespace/key tuples keep
 distinct identities separate. See the cache/rate-limiting guides for the
 breaking key migration and precise resource/operation limits.
 
+## Server input boundary
+
+Core owns `input` schemas and their inferred parsed/raw types. Schema parsing
+uses Web APIs and has no framework, auth or database dependency. The action
+input gate lives separately from legacy form validation to avoid a schema/form
+import cycle. HTTP/SSE/upload component and explicit-service dispatch, plus
+socket/forwarded-service dispatch, call this gate before mutation with the
+request's owned cancellation signal. Native authored method calls keep their
+normal semantics and do not execute decorator guards.
+
+Typed parsing produces new object/array values, rejects unknown fields unless
+stripping is explicit, and bounds depth, visits and errors. Refinement callbacks
+are application-owned read-only validation. Abort releases their framework
+ownership; it does not roll back callback side effects or terminate ignored I/O.
+Unexpected callback exceptions remain private internal errors.
+
+The client compiler removes the contract metadata and private module dependencies
+that become unused, resolving runtime references separately from type uses and
+local bindings. Local contracts retained by runtime client code or exports fail
+closed. Foreign contract imports cannot also keep that module in the client
+graph, because this file cannot strip its initializers. Shared client form rules
+remain separate from the private typed action contract. Resource authorization
+is still a separate RT-14 gate; schema validity does not grant resource access.
+
 ## Desktop runtime boundary
 
 `@cossackframework/desktop` is the sole native application runtime. Its

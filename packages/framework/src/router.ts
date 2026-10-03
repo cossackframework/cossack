@@ -846,10 +846,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
         let actionResult: unknown;
         try {
-          const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : []);
+          const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
           if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
         } catch (e: any) {
+          if (e instanceof RpcError && e.code === 'COSSACK_RPC_CANCELLED') {
+            return Response.json({ error: e.message, code: e.code, requestId }, { status: 499 });
+          }
           if (isActionValidationError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
               fieldErrors: e.fieldErrors, requestId }, 400);
@@ -1042,8 +1045,12 @@ export function createApp(options: CreateAppOptions = {}) {
         let validatedPayload: unknown[] = payload as any[];
         try {
           validatedPayload = await enforceActionInput(
-            getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action, payload || []);
+            getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action, payload || [],
+            { signal: componentContext.req.raw.signal });
         } catch (validation) {
+          if (validation instanceof RpcError && validation.code === 'COSSACK_RPC_CANCELLED') {
+            return Response.json({ error: validation.message, code: validation.code, requestId }, { status: 499 });
+          }
           if (isActionValidationError(validation)) {
             return c.json({ error: validation.message, code: 'COSSACK_VALIDATION_FAILED',
               fieldErrors: validation.fieldErrors, requestId }, 400);

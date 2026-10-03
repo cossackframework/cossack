@@ -1329,7 +1329,9 @@ it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes
     expect(original).toContain("this.resourceStatus$('products')");
     expect(original).toContain("this.refresh$('products')");
   } else if (feature === 'mutation') {
-    expect(original).toContain('@Server({ input: inputRules })');
+    expect(original).toContain('@Server({ input: submissionInput })');
+    expect(original).toContain('input.object');
+    expect(original).toContain('InputOf<typeof submissionInput>');
     expect(original).toContain('await this.validateAll()');
     expect(original).toContain('error.fieldErrors?.[field]');
   } else if (feature === 'scoped-service') {

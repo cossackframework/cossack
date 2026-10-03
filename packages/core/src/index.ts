@@ -12,6 +12,8 @@ export * from './shared/storage-capabilities';
 export * from './shared/image';
 export * from './shared/ref';
 export * from './shared/validation';
+export * from './shared/input-schema';
+export * from './shared/action-input';
 export * from './shared/store';
 export * from './shared/forms';
 export * from './shared/crypto';

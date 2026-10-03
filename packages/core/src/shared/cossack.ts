@@ -1,3 +1,4 @@
+import { enforceActionInput } from './action-input';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/cossack.ts
 import {
@@ -51,7 +52,6 @@ import {
     clearValidationError as clearValidationErrorFn,
     setValidationError as setValidationErrorFn,
     getValidationErrorProperty as getValidationErrorPropertyFn,
-    enforceActionInput,
 } from './validation';
 import {
     bootstrapServices as bootstrapServicesFn,
@@ -1168,7 +1168,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // RT-02: enforce @Server({ input }) before the method runs; a
             // failed contract rejects with client-visible field errors.
             const validatedPayload = await enforceActionInput(
-                getForwardedServerMethodClass(this, action) ?? this.constructor, action, payload || []);
+                getForwardedServerMethodClass(this, action) ?? this.constructor, action, payload || [],
+                { signal: cancellation.controller.signal });
             if (cancellation.cancelled) return;
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that

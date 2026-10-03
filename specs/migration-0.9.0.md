@@ -153,6 +153,32 @@ transport requests until the next page; RPC HTTP failures discard partial outgoi
 flash. Stream errors after headers finalize cannot retract previously sent cookies.
 See [RPC examples and timing](../docs/rpc.md).
 
+## Typed server input contracts
+
+Prefer `@Server({ input: contract })` with an `input` schema and annotate the
+native method parameter with `InputOf<typeof contract>`. Plain rule maps still
+run their previous rules; they do not gain strict unknown-key, positional-argument,
+file or array behavior. See [the schema contract](../docs/validation.md).
+
+When migrating a rule map, declare every accepted key and nested/file shape.
+Unknown keys now fail by default; opt into `unknownKeys: 'strip'` where dropping
+extra keys is intentional. Use `.optional()` and `.nullable()` explicitly.
+Typed contracts accept one positional argument. Number/boolean coercion rejects
+ambiguous values instead of silently accepting them; date coercion requires a
+canonical UTC ISO string. Objects/arrays are cloned instead of being changed in
+place, and object results have no prototype.
+
+Shared client `storeRules` can supply string constraints to a separate private
+server schema. The generated mutation recipe uses this pattern. Keep the schema
+private: the compiler removes its unused module dependencies and rejects a local
+contract retained by runtime client code or exports. Expected `.refine()` failure
+returns nested field errors. An exception remains an internal error. Use the
+callback's signal for I/O cancellation and put writes in the actual action.
+
+Native server calls retain their authored signature and do not run decorator
+validation. Resource authorization is still an unfinished release gate. These
+changes do not authorize a release or remove that gate.
+
 ## Service RPC keeps internal exceptions private in development
 
 Service actions previously returned internal exception messages and stacks to

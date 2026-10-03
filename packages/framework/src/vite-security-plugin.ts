@@ -1609,10 +1609,158 @@ export function clientCallType(method: {
   return undefined;
 }
 
-/** Remove server validation closures before analyzing client dependencies. */
-function stripServerActionInput(code: string): string {
+function inputBindingNames(node:any, scope=new Set<string>()): Set<string> {
+  const bindings = (node:any) => {
+    if (!node) return;
+    if (node.type === 'Identifier') scope.add(node.name);
+    else if (node.type === 'RestElement') bindings(node.argument);
+    else if (node.type === 'AssignmentPattern') bindings(node.left);
+    else if (node.type === 'ArrayPattern') node.elements.forEach(bindings);
+    else if (node.type === 'ObjectPattern') node.properties.forEach((part:any)=>bindings(part.value ?? part.argument));
+  };
+  bindings(node); return scope;
+}
+
+/** Runtime references only: types and static property names cannot keep private input code alive. */
+function inputRuntimeReferences(root: any): Set<string> {
+  const names = new Set<string>();
+  const bindings=inputBindingNames;
+  const visit = (node: any, parent?: any, key?: string, scope=new Set<string>()) => {
+    if (!node || typeof node.type !== 'string' || node.type === 'ImportDeclaration') return;
+    if (['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSInstantiationExpression'].includes(node.type)) {
+      visit(node.expression, node, 'expression', scope); return;
+    }
+    if (node.type.startsWith('TS')) return;
+    if (node.type === 'Identifier') {
+      const definition = key === 'id' || key === 'params';
+      const staticKey = (key === 'key' && !parent?.computed && !parent?.shorthand)
+        || (parent?.type === 'MemberExpression' && key === 'property' && !parent.computed);
+      if (!definition && !staticKey && !scope.has(node.name)) names.add(node.name);
+      return;
+    }
+    if (['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression','CatchClause','BlockStatement','ForStatement','ForOfStatement','ForInStatement'].includes(node.type)) {
+      scope=new Set(scope);
+      bindings(node.id,scope); bindings(node.param,scope);
+      node.params?.forEach((param:any)=>bindings(param,scope));
+      const declarations=node.type==='BlockStatement'?node.body:[node.init,node.left];
+      for(const declaration of declarations) {
+        if(declaration?.type==='VariableDeclaration') declaration.declarations.forEach((part:any)=>bindings(part.id,scope));
+        else if(['FunctionDeclaration','ClassDeclaration'].includes(declaration?.type)) bindings(declaration.id,scope);
+      }
+    }
+    for (const [childKey, value] of Object.entries(node)) {
+      if (childKey === 'typeAnnotation' || childKey === 'typeArguments' || childKey === 'typeParameters') continue;
+      if (Array.isArray(value)) value.forEach(child => visit(child, node, childKey, scope));
+      else if (value && typeof (value as any).type === 'string') visit(value, node, childKey, scope);
+    }
+  };
+  visit(root); return names;
+}
+
+/** Remove module declarations reachable only through stripped input contracts. */
+function stripInputDependencies(code: string, roots: Set<string>): string {
+  if (!roots.size) return code;
   const program = parseProgram(code);
-  if (!program) return code;
+  if (!program) throw new Error('[Cossack Security] Could not validate server input dependencies.');
+  type Definition = {node:any; statement:any; exported:boolean; importSource?:string; unsupported?:boolean; dependencies:Set<string>};
+  const definitions = new Map<string, Definition>();
+  for (const statement of program.body) {
+    const exported = statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportDefaultDeclaration';
+    const declaration = exported ? statement.declaration : statement;
+    if (declaration?.type === 'VariableDeclaration') {
+      for (const node of declaration.declarations) {
+        const group=inputBindingNames(node.id);
+        const dependencies=new Set([...inputRuntimeReferences(node.init), ...group]);
+        for (const name of group) definitions.set(name, {node,statement,exported,dependencies});
+      }
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration?.type) && declaration.id) {
+      definitions.set(declaration.id.name, {node:declaration,statement,exported,dependencies:inputRuntimeReferences(declaration)});
+    } else if (declaration?.type === 'ImportDeclaration') {
+      for (const node of declaration.specifiers) {
+        definitions.set(node.local.name, {node,statement,exported:false,importSource:String(declaration.source.value),dependencies:new Set()});
+      }
+    } else if (['TSEnumDeclaration','TSModuleDeclaration','TSImportEqualsDeclaration'].includes(declaration?.type) && declaration.id?.type === 'Identifier') {
+      definitions.set(declaration.id.name,{node:declaration,statement,exported,unsupported:true,dependencies:new Set()});
+    }
+  }
+  const candidates = new Set<string>();
+  const gather = (name:string) => {
+    const definition = definitions.get(name);
+    if (!definition || candidates.has(name)) return;
+    if (definition.unsupported) throw new Error(`[Cossack Security] Server input dependency '${name}' uses a runtime TypeScript declaration that cannot be stripped. Use a private const/function or separate contract module.`);
+    candidates.add(name); definition.dependencies.forEach(gather);
+  };
+  roots.forEach(gather);
+  const live = new Set<string>();
+  const keep = (name:string) => {
+    if (!candidates.has(name) || live.has(name)) return;
+    live.add(name); definitions.get(name)!.dependencies.forEach(keep);
+  };
+  // Inspect everything that will remain on the client. Exported bindings are public.
+  for (const [name, definition] of definitions) if (definition.exported) keep(name);
+  for (const statement of program.body) {
+    const declaration = ['ExportNamedDeclaration', 'ExportDefaultDeclaration'].includes(statement.type) ? statement.declaration : statement;
+    if (declaration?.type === 'ImportDeclaration') continue;
+    if (declaration?.type === 'VariableDeclaration') {
+      for (const node of declaration.declarations) {
+        if (![...inputBindingNames(node.id)].some(name=>candidates.has(name))) inputRuntimeReferences(node.init).forEach(keep);
+      }
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration?.type) && candidates.has(declaration.id?.name)) continue;
+    else inputRuntimeReferences(statement).forEach(keep);
+  }
+  for (const name of roots) {
+    const definition = definitions.get(name);
+    // Core builders and deliberately shared storeRules maps can be used by client forms.
+    const sharedRules = definition?.node.init?.type === 'CallExpression'
+      && definition.node.init.callee?.type === 'Identifier'
+      && definitions.get(definition.node.init.callee.name)?.importSource === '@cossackframework/core'
+      && definitions.get(definition.node.init.callee.name)?.node.imported?.name === 'storeRules';
+    if (definition && live.has(name) && !definition.importSource && !sharedRules) {
+      throw new Error(`[Cossack Security] Server input binding '${name}' remains reachable from client code. Keep the contract private and share separate form rules.`);
+    }
+  }
+  const removed = new Set([...candidates].filter(name => !live.has(name)));
+  // An unused imported contract can still run module-level initializers if a
+  // different export keeps that module in the client graph. Fail closed where
+  // this file cannot inspect/strip the foreign module's private declarations.
+  for (const name of removed) {
+    const source = definitions.get(name)?.importSource;
+    if (!source || source === '@cossackframework/core' || isServerOnlyImportSource(source)) continue;
+    const retained = [...definitions].some(([binding, definition]) => definition.importSource === source && !removed.has(binding));
+    const sideEffect = program.body.some((statement:any) => statement.type === 'ImportDeclaration'
+      && statement.source.value === source && !statement.specifiers.length);
+    if (retained || sideEffect) {
+      throw new Error(`[Cossack Security] Server input module ${JSON.stringify(source)} is also reachable from client code. Put private contracts in a separate module or declare them locally.`);
+    }
+  }
+  const edits: Array<{start:number;end:number;replacement:string}> = [];
+  for (const statement of program.body) {
+    if (statement.type === 'VariableDeclaration') {
+      const remaining = statement.declarations.filter((node:any) => ![...inputBindingNames(node.id)].some(name=>removed.has(name)));
+      if (remaining.length !== statement.declarations.length) edits.push({start:statement.start,end:statement.end,
+        replacement:remaining.length ? `${statement.kind} ${remaining.map((node:any)=>code.slice(node.start,node.end)).join(', ')};` : ''});
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(statement.type) && removed.has(statement.id?.name)) {
+      edits.push({start:statement.start,end:statement.end,replacement:''});
+    } else if (statement.type === 'ImportDeclaration') {
+      const remaining=statement.specifiers.filter((node:any)=>!removed.has(node.local.name));
+      if (remaining.length !== statement.specifiers.length) {
+        const defaults=remaining.filter((node:any)=>node.type==='ImportDefaultSpecifier').map((node:any)=>node.local.name);
+        const namespace=remaining.filter((node:any)=>node.type==='ImportNamespaceSpecifier').map((node:any)=>`* as ${node.local.name}`);
+        const named=remaining.filter((node:any)=>node.type==='ImportSpecifier').map((node:any)=>code.slice(node.start,node.end));
+        const parts=[...defaults,...namespace,...(named.length?[`{ ${named.join(', ')} }`]:[])];
+        edits.push({start:statement.start,end:statement.end,replacement:remaining.length?`import ${statement.importKind==='type'?'type ':''}${parts.join(', ')} from ${JSON.stringify(statement.source.value)};`:''});
+      }
+    }
+  }
+  for (const edit of edits.sort((a,b)=>b.start-a.start)) code=code.slice(0,edit.start)+edit.replacement+code.slice(edit.end);
+  return code;
+}
+
+/** Remove server validation closures before analyzing client dependencies. */
+function stripServerActionInput(code: string): {code:string;bindings:Set<string>} {
+  const bindings=new Set<string>();
+  const program = parseProgram(code);
+  if (!program) return {code,bindings};
   const aliases = new Set(['Server']);
   const namespaces = new Set<string>();
   for (const statement of program.body) {
@@ -1637,8 +1785,10 @@ function stripServerActionInput(code: string): string {
           throw new Error('[Cossack Security] @Server options must be a static object literal so input validators can be removed from the client.');
         }
         for (const property of argument.properties) {
-          if (memberKeyName(property.key) === 'input') replacements.push({ start: property.start,
-            end: property.end, replacement: 'input: undefined' });
+          if (memberKeyName(property.key) === 'input') {
+            inputRuntimeReferences(property.value).forEach(name=>bindings.add(name));
+            replacements.push({ start: property.start, end: property.end, replacement: 'input: undefined' });
+          }
         }
       }
     }
@@ -1646,7 +1796,7 @@ function stripServerActionInput(code: string): string {
   for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
     code = code.slice(0, replacement.start) + replacement.replacement + code.slice(replacement.end);
   }
-  return code;
+  return {code,bindings};
 }
 
 export function transformCossackClass(
@@ -1659,7 +1809,8 @@ export function transformCossackClass(
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
   code = stripSsgGenerateStaticParams(code);
-  code = stripServerActionInput(code);
+  const serverInput = stripServerActionInput(code);
+  code = serverInput.code;
 
   const program = parseProgram(code);
   if (!program) {
@@ -1748,7 +1899,7 @@ export function transformCossackClass(
     }
   }
 
-  if (replacements.length === 0) return code;
+  if (replacements.length === 0) return stripInputDependencies(code, serverInput.bindings);
 
   // The rewritten signatures reference RpcCall; ensure the emitted module has
   // a type-only import available (the bundler erases it in production).
@@ -1764,7 +1915,7 @@ export function transformCossackClass(
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
   }
-  return result;
+  return stripInputDependencies(result, serverInput.bindings);
 }
 
 /**

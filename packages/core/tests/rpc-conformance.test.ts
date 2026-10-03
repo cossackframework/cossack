@@ -3,6 +3,7 @@ import { CossackElement } from '@cossackframework/renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
 import { ClientVisibleError } from '../src/shared/errors';
+import { input } from '../src/shared/input-schema';
 import { Server, State } from '../src/shared/decorators';
 import { proxyHttpMethods, proxyServerMethods } from '../src/shared/method-proxy';
 import { failPendingSocketCalls, routeSocketFrame } from '../src/shared/transport-connections';
@@ -74,7 +75,7 @@ class ServerComponent extends Cossack {
         return 'never';
     }
 
-    @Server({ input: { title: { required: true, minLength: 2 } } })
+    @Server({ input: input.object({title:input.string({required:true,minLength:2})}) })
     async guarded(input: { title: string }) {
         return `saved:${input.title}`;
     }
@@ -272,13 +273,16 @@ describe('realtime (WebSocket) RPC conformance', () => {
     it('validates forwarded service actions with their declaring class metadata', async () => {
         @Service()
         class ValidatedService {
-            @Server({ input: { title: { required: true, minLength: 2 } } })
+            @Server({ input: input.object({title:input.string({required:true,minLength:2})}) })
             async forwarded(input: { title: string }) { return input.title; }
         }
         forwardServiceMethods(server, new ValidatedService());
         proxyServerMethods(client, [{ name: 'forwarded', provider: 'page', channel: 'global' }]);
         await expect(Promise.resolve(client.forwarded({ title: '' }))).rejects.toMatchObject({
             code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) },
+        });
+        await expect(Promise.resolve(client.forwarded({title:'valid',canEdit:true}))).rejects.toMatchObject({
+            code:'COSSACK_VALIDATION_FAILED',fieldErrors:{canEdit:'Unknown field.'},
         });
         await expect(Promise.resolve(client.forwarded({ title: 'valid' }))).resolves.toBe('valid');
     });

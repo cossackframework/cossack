@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Cossack, CossackService, ClientVisibleError, cookie, flash, flashed, flashInput, old, forwardServiceMethods, getRequestContext, Inject, Page, readRpcStream, Server, Service, State } from '@cossackframework/core';
+import { Cossack, CossackService, ClientVisibleError, cookie, flash, flashed, flashInput, old, forwardServiceMethods, getRequestContext, Inject, Page, readRpcStream, Server, Service, State, input } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 import { config } from '../src/config';
@@ -40,7 +40,7 @@ class Counter extends CossackService {
     }
     @Server()
     async serviceRegular() { this.count += 10; return this.count; }
-    @Server({ input: { title: { required: true } } })
+    @Server({ input: input.object({title:input.string({required:true})}) })
     async guardedService(input: { title: string }) { this.count++; return input.title; }
     @Server()
     async *serviceQuery() {
@@ -72,7 +72,7 @@ class StreamPage extends Cossack {
     }
     @Server()
     async regular() { await Promise.resolve(); this.count++; return 'regular result'; }
-    @Server({ input: { title: { required: true, minLength: 3 }, visits: { coerce: 'number', min: 0 } } })
+    @Server({ input: input.object({title:input.string({required:true,minLength:3}),visits:input.number({coerce:true,min:0})}) })
     async save(input: { title: string; visits: number }) { this.count += input.visits; return input.title; }
     @Server()
     async promisedStream() { await Promise.resolve(); return this.stream(); }

@@ -145,9 +145,9 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
     await fs.writeFile(path.join(root, relative), source);
   };
   await write('src/services/rpc-report.ts', `
-    import { Server, Service, CossackService } from '@cossackframework/core';
+    import { Server, Service, CossackService, input } from '@cossackframework/core';
     @Service() export class ReportService extends CossackService {
-      @Server({ input: { title: { required: true } } }) async *files(input: { title: string; nested: { files: File[] } }) {
+      @Server({ input: input.object({title:input.string({required:true}),nested:input.object({files:input.array(input.file({maxBytes:1024}),{minItems:1,maxItems:4})})}) }) async *files(input: { title: string; nested: { files: File[] } }) {
         yield await input.nested.files[0].text(); await new Promise(resolve => setTimeout(resolve, 500)); return input.nested.files[0].name;
       }
       @Server() native() { return new Response(new Uint8Array([0, 255, 128]), { headers: { 'Content-Type': 'application/octet-stream', 'X-Native': 'service' } }); }
@@ -166,7 +166,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
     export default class RpcLayout extends Cossack { render() { return html\`\${this.children}\`; } }
   `);
   for (const transport of ['http', 'sse']) await write(`src/pages/rpc/${transport}/index.ts`, `
-    import { Cossack, Page, Server, Client, ClientState, Inject, rpc$ } from '@cossackframework/core';
+    import { Cossack, Page, Server, Client, ClientState, Inject, rpc$, input } from '@cossackframework/core';
     import { html } from '@cossackframework/renderer';
     import { ReportService } from '../../../services/rpc-report';
     @Page({ transport: '${transport}' })
@@ -176,7 +176,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       @ClientState() failure = '';
       @ClientState() pending = false;
       @ClientState() uploadFilesProgress = 0;
-      @Server({ input: { title: { required: true } } }) async *uploadFiles(input: { title: string; nested: { files: File[] } }) {
+      @Server({ input: input.object({title:input.string({required:true}),nested:input.object({files:input.array(input.file({maxBytes:1024}),{minItems:1,maxItems:4})})}) }) async *uploadFiles(input: { title: string; nested: { files: File[] } }) {
         yield await input.nested.files[0].text(); await new Promise(resolve => setTimeout(resolve, 500)); return input.nested.files[0].name;
       }
       @Client() async readFiles(service: boolean) {
@@ -311,7 +311,7 @@ it('preserves native RPC cookies and consumes flash after a real browser redirec
     await fs.writeFile(path.join(root, relative), source);
   };
   await write('src/services/cookie-result.ts', `
-    import { cookie, flash, flashInput, Server, Service, CossackService } from '@cossackframework/core';
+    import { cookie, flash, flashInput, Server, Service, CossackService, input } from '@cossackframework/core';
     export function cookieResult() {
       cookie().set('context_cookie', 'from_action', { httpOnly: true, path: '/' });
       flash('success', 'Saved'); flashInput({ title: 'Draft' });
@@ -698,6 +698,11 @@ it('runs generated Node development WebSockets, preserves HMR, and replaces runt
 
 it('runs generated mutation contracts and hydrated resource/mutation UI with failure recovery', async () => {
   const root = await project('node', ['resource', 'mutation']);
+  const pageFile = path.join(root, 'src/pages/mutation/index.ts');
+  const pageSource = await fs.readFile(pageFile, 'utf8');
+  await fs.writeFile(pageFile, pageSource
+    .replace('const inputRules =', "const privateRejection = 'PRIVATE_SCHEMA_REJECTION_SENTINEL';\nfunction acceptMessage(value: string) { return value !== privateRejection; }\nconst inputRules =")
+    .replace('message: input.string(inputRules.message!),', 'message: input.string(inputRules.message!).refine(acceptMessage),'));
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`Generated recipe types: ${error.stdout}\n${error.stderr}`); }
   await vite(root, []);
@@ -705,6 +710,8 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
   for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
     const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
     expect(code).not.toContain('Submission received for'); // Server action body is stripped.
+    expect(code).not.toContain('PRIVATE_SCHEMA_REJECTION_SENTINEL');
+    expect(code).not.toContain('acceptMessage');
   }
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
   const routeId = manifest.filePathToId['/src/pages/mutation/index.ts'];
@@ -723,6 +730,13 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
     }
     for (const input of [{ email: 'bad', message: '' }, { email: ['a@b.test'], message: ['hello'] }, { email: 'a@b.test', message: 'x'.repeat(501) }]) {
       expect(await call([input])).toMatchObject({ status: 400, body: { code: 'COSSACK_VALIDATION_FAILED', fieldErrors: expect.any(Object) } });
+    }
+    for (const payload of [
+      [{email:'a@b.test',message:'valid',canEdit:true}],
+      [{email:'a@b.test',message:'valid'},'forged'],
+      [{email:'a@b.test',message:'PRIVATE_SCHEMA_REJECTION_SENTINEL'}],
+    ]) {
+      expect(await call(payload)).toMatchObject({status:400,body:{code:'COSSACK_VALIDATION_FAILED',fieldErrors:expect.any(Object)}});
     }
     expect(await call([{ email: 'AGENT@example.test', message: 'Please contact me.' }]))
       .toMatchObject({ status: 200, body: { _cossack_return: 'Submission received for agent@example.test.' } });

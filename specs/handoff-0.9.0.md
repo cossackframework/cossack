@@ -2,6 +2,59 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest checkpoint — Codex typed-input phase (2026-10-03). Author: Codex.**
+> Continued after `fb927cb`. Read the
+> [review and exact evidence](./release-0.9.0.md#codex-typed-input-2026-10-03),
+> [RT-02 implementation/next steps](./release-0.9.0-plan.md#rt-02),
+> [RT-14 next-phase context](./release-0.9.0-plan.md#rt-14) and
+> [schema API/limits](../docs/validation.md).
+>
+> **15/58 checked, 43 unchecked; no new checkbox closes.** Typed schemas now
+> infer parsed/raw values, reject unknown keys, define optional/null, array/File
+> and strict coercion behavior, and expose nested field errors before mutation.
+> Their owned request signal stops later validation/actions on cancellation.
+> Refinement callbacks receive the signal; ignored I/O can still continue.
+> Exceptions/nonboolean results stay private. ClientVisibleError preserves subclass
+> prototypes; malformed metadata no longer disappears through truthiness.
+>
+> Core's new `input-schema.ts` and `action-input.ts` separate parsing from form
+> validation without a framework/auth dependency. Both router gates and the
+> core socket gate use the same boundary. Existing plain rule maps remain
+> explicitly transitional (unknown fields/extra arguments retained). Native
+> server calls keep their authored signature and do not run decorator guards.
+> RawInputOf describes boundary values; it does not change proxy argument types.
+>
+> Client stripping follows private module input dependencies, removing dead
+> declarations/imports/callbacks, including destructuring groups. Types and local
+> shadowed bindings cannot keep them live. Exported/client-reachable contracts,
+> shared foreign contract modules and unsupported private runtime TS declarations
+> fail closed. Separate shared storeRules from the private schema. The mutation
+> recipe now demonstrates this and passes real production/browser acceptance.
+>
+> Final core **1080/62**, framework **1243/55** (matrix **421**, compiler **163**),
+> scaffold **108/4** pass. CLI generated/runtime plus native workerd staging:
+> **15/2** pass. Typed native File/object/array guards reject unknown fields,
+> forged File metadata and empty arrays without D1 audit writes; valid streams
+> preserve request/ORM context. After the final compiler hardening/export rebuild,
+> **2** affected Node production/browser cases pass again (12 skipped); the
+> review log separates those runs. Final root TypeScript and all **11** package
+> typecheck configurations pass. No full CLI/monorepo/release audit is claimed.
+>
+> **Next for GLM: RT-14 with RT-02.** Implement typed resource action policies
+> in auth, application-owned lookup, safe booleans for UI, and structural core
+> policy enforcement after parsed input/before mutation. Use server request
+> identity, never payload owner/canEdit/state. Cover API/read loaders and all
+> action gates, private policy dependencies, owned/cross-tenant/forged-state
+> requests and zero writes on denial. Native scalar/refinement/policy acceptance,
+> plain-map migration and raw client typing choices remain. Keep RT-01 action
+> deadlines and RT-11 session freshness/revocation separate. Audit the original
+> criteria before checking either task; schema tests alone do not close them.
+>
+> Preserve the entire 58-task plan, all later release/runtime/provider gates and
+> user-owned reports.md/.zcodeignore. Package versions remain **0.8.3** until
+> REL-04. No push, publication, live deployment, cloud resource changes or external
+> messages. No test/build process remains running when this checkpoint commits.
+
 > **Latest checkpoint — Codex RT-18 completion (2026-10-03): Author: Codex.**
 > Continued after `157573d`. Start with the
 > [provider review and exact evidence](./release-0.9.0.md#codex-storage-capabilities-2026-10-03)

@@ -812,6 +812,65 @@ errors/request IDs, no invalid mutation, and cleanup. This closes the old upload
 bypass, but does not establish schema inference or unknown-key, array/file and
 resource-policy contracts. Those acceptance criteria remain open.
 
+Codex typed-input phase (2026-10-03), after `fb927cb`: the public core `input`
+builders now describe parsed and raw values (`InputOf`/`RawInputOf`), strict
+primitive coercion, optional/null fields, exact enum/literal values, canonical
+UTC dates, nested objects/arrays and actual File constraints. Typed contracts
+accept one argument. Unknown fields reject by default; stripping is explicit
+per object. Parsed objects/arrays are copies, with no prototype on object output.
+Depth/node/field/item/error bounds and accessor/prototype/cycle rejection are
+covered. The old plain-map path remains explicitly transitional; it preserves
+unknown fields/extra arguments and has no inferred schema types.
+
+`enforceActionInput` moved from validation to its own core module to avoid a
+validation/schema import cycle; its root package export remains. Both component
+and explicit-service router gates and socket actions pass their owned request
+signal. `.refine(value, {signal})` returning false is an expected field error;
+callback exceptions/nonboolean results remain private internal failures.
+Cancellation releases pending refinement ownership, skips later callbacks and
+mutation, and returns correlated cancellation (HTTP 499 / socket code). It does
+not terminate a callback that ignores its signal, roll back its own side effects,
+or add an arbitrary action deadline. ClientVisibleError now preserves subclass
+prototypes; ActionValidationError passes instanceof as well as its module marker.
+
+The client compiler removes input metadata and module declarations reachable
+only through the stripped contract, including private callbacks/constants and
+unused imports. Type references do not keep runtime declarations. Local contracts
+that remain runtime reachable/exported fail the client build. Private foreign
+contract imports cannot share a client-retained module because its initializers
+cannot be stripped from the importing file. Shared `storeRules` maps stay usable
+by browser forms. The mutation recipe uses a private schema built from its shared
+string rules. Generated Node production/browser acceptance checks the private
+callback sentinel never enters JS client chunks, plus direct forged requests and
+form error/pending/retry behavior.
+
+**Task remains unchecked.** Next steps for GLM:
+
+1. Implement RT-14's typed resource-policy kit with application-owned record
+   lookup and trusted request/user context. Existing createAuthorizer strings do
+   not establish resource-action inference. Core must stay independent of auth.
+2. Define the action-policy metadata/helper boundary. Run it after validated
+   input and before action mutation through the same component, forwarded-service,
+   explicit-service, HTTP/SSE/upload and socket gates. Trust server request identity;
+   payload/state permission booleans must never grant access. Native internal
+   method calls still need explicit policy enforcement rather than pretending
+   metadata wraps their authored execution.
+3. Extend compiler dependency stripping to private policy closures and add
+   cross-tenant forged-state/direct-request cases, allowed owned-record cases,
+   denial status/code/correlation and no-write assertions. Use the auth kit from
+   API/middleware/read paths as well, so reads and writes share policy semantics.
+4. Exercise typed schemas and resource policies together in generated native
+   Cloudflare apps through published exports. Typed File/object/array schemas
+   now run in the existing workerd HTTP/SSE page/service upload acceptance,
+   including unknown keys, forged File metadata, empty arrays and no D1 audit
+   writes on rejection. This does not establish the new resource-policy API or
+   the full scalar/refinement contract through native Cloudflare actions.
+5. Resolve the transitional plain-map migration and browser raw-input typing.
+   Authored native methods retain parsed InputOf parameters. RawInputOf describes
+   boundary values, not a new proxy argument signature. Client form code should
+   normalize its values before calling the authored method for now. Review every
+   original RT-02/RT-14 criterion before checking either task.
+
 Done when: Invalid input cannot reach the mutation on any supported transport.
 Errors map to nested form fields without string parsing. Valid coerced input has
 the inferred server type. Denied resource access performs no mutation. Test
@@ -1113,6 +1172,33 @@ Compose policies with validated actions and route middleware.
 
 Start in `packages/auth/src/authz/index.ts`, `docs/authorization.md`, framework
 RPC/API guards, and RT-02 metadata.
+
+Codex next-phase context (2026-10-03): RT-02 now supplies typed parsed input
+before action dispatch and an owned cancellation signal. Use that boundary to
+compose resource authorization. Auth's existing `createAuthorizer` remains a
+string-permission/role kit; it does not infer a record's action union. Define the
+new kit in auth with typed resource/action/context callbacks, application-owned
+lookup, boolean presentation helpers and imperative enforcement. Core should
+consume a structural policy callback/decision without importing auth or ORM.
+
+Wire enforcement after input parsing and before mutation, in both router gates
+and the core socket gate. Look up the resource from validated identifiers and
+server context; never accept a payload's owner/user/canEdit as authoritative.
+Use the same kit explicitly from API handlers and resource read loaders. Decide
+native-call enforcement honestly: metadata currently guards inbound RPC only.
+Preserve authored method signatures and require explicit checks for internal
+read/write calls rather than silently wrapping sync methods in promises.
+
+Compiler stripping must include policy metadata and its private dependencies,
+including exported/shared foreign-module hazards and destructured declarations.
+Start tests with typed action-name negatives, an owned-record allow, another
+actor/tenant deny, missing user, lookup/policy exceptions, forged permission
+state and zero writes on denial. Repeat through HTTP/SSE, uploaded input,
+forwarded/explicit services and relevant socket paths, with correlation and
+consistent denial codes. RT-11 still owns session freshness/revocation; a stored
+connection identity alone does not prove those guarantees. Native workerd
+acceptance currently proves typed upload validation, not this new resource policy.
+Neither RT-02 nor RT-14 can close from schema tests alone.
 
 Done when: A user can act on an owned record and is denied for another tenant's
 record through HTTP, RPC, and relevant realtime paths. Forged client permission

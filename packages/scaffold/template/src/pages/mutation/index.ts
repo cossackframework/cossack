@@ -1,4 +1,4 @@
-import { Client, ClientState, ClientStore, Cossack, Page, RpcError, Server, Validate, storeRules } from '@cossackframework/core';
+import { Client, ClientState, ClientStore, Cossack, Page, RpcError, Server, Validate, input, storeRules, type InputOf } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 
 interface Submission { email: string; message: string }
@@ -6,6 +6,11 @@ interface Submission { email: string; message: string }
 const inputRules = storeRules<Submission>({
   email: { required: true, email: true, maxLength: 254, message: 'Enter a valid email address.' },
   message: { required: true, minLength: 3, maxLength: 500, pattern: /\S/, message: 'Enter a message of 3 to 500 characters.' },
+});
+
+const submissionInput = input.object({
+  email: input.string(inputRules.email!),
+  message: input.string(inputRules.message!),
 });
 
 @Page({ transport: 'http' })
@@ -19,8 +24,8 @@ export default class MutationPage extends Cossack {
   @ClientState() failure = '';
   @ClientState() acknowledgment = '';
 
-  @Server({ input: inputRules })
-  async submitMessage(input: Submission): Promise<string> {
+  @Server({ input: submissionInput })
+  async submitMessage(input: InputOf<typeof submissionInput>): Promise<string> {
     // Only validated arguments reach this method. Add authorization and a
     // service/database write here when adapting this public demonstration.
     // HTTP component state is not durable storage. This example saves nothing.

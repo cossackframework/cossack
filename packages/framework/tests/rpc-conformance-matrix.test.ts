@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     Cossack, CossackService, ClientVisibleError, createInstance, InMemoryWebSocketRuntime,
-    Page, rpc$, Server, Service, ServiceScope, State, RateLimit, setRateLimitStore, __resetRateLimitForTests, RPC_NATIVE_RESPONSE_MAX_BYTES, getRequestContext,
+    Page, rpc$, Server, Service, ServiceScope, State, RateLimit, input, type InputOf, setRateLimitStore, __resetRateLimitForTests, RPC_NATIVE_RESPONSE_MAX_BYTES, getRequestContext,
 } from '@cossackframework/core';
 // Wire browser-side transport boundaries from the same built core modules the
 // public entry uses. These internals are deliberately not new application APIs.
@@ -20,6 +20,7 @@ vi.mock('virtual:cossack-config', () => ({ default: {} }));
 
 // Finite application I/O lets teardown prove eventual remote cleanup even when
 // a caller has already timed out/disconnected. Cancellation is not rollback.
+const normalizedInput = input.object({profile:input.object({age:input.number({coerce:true,integer:true,min:1})}), enabled:input.boolean({coerce:true}), tags:input.array(input.enum(['draft','published']),{maxItems:2}), note:input.string().optional()});
 const pause = () => new Promise<void>(resolve => setTimeout(resolve, 160));
 class DataModel { id = 7; when = new Date('2026-10-03'); save() { throw new Error('never called'); } }
 class JsonRecord { private readonly owner = effects.current; toJSON() { this.owner.jsonCalls++; return { when: new Date('2026-10-03'), title: 'serialized' }; } }
@@ -49,7 +50,7 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         invalidRateOptions() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ max: 1, requires: { shared: true, atomicIncrement: true } })
         sharedAtomicLimit() { this.effectOwner.runs++; return ++this.count; }
-        @Server({ input: { title: { required: true } } })
+        @Server({ input: input.object({ title: input.string({required:true}), nested: input.object({files: input.array(input.file({maxBytes:16}), {minItems:1,maxItems:3})}) }) })
         async fileInfo(input: { title: string; nested: { files: File[] } }) {
             this.effectOwner.runs++; this.count++;
             return { title: input.title, files: await Promise.all(input.nested.files.map(async file => ({ name: file.name, text: await file.text() }))), path: getRequestContext()?.req.path };
@@ -115,8 +116,21 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         }
         @Server() async visible() { this.effectOwner.runs++; throw new ClientVisibleError('Prompt required'); }
         @Server() async internal() { this.effectOwner.runs++; throw new Error('PRIVATE_TOKEN must never reach the caller'); }
-        @Server({ input: { title: { required: true } } })
+        @Server({ input: input.object({ title: input.string({required:true}) }) })
         async validated(input: { title: string }) { this.effectOwner.runs++; return input.title; }
+        @Server({input:normalizedInput})
+        normalized(value:InputOf<typeof normalizedInput>) { this.effectOwner.runs++; return value; }
+        @Server({input:input.string().refine(() => {throw new Error('PRIVATE_SCHEMA_FAILURE');})})
+        brokenValidation(value:string) { this.effectOwner.runs++; return value; }
+        @Server({input:input.string().refine(async (_value, options) => {
+            const owner=effects.current;
+            await new Promise<void>(resolve => {
+                owner.fileContinue=resolve;
+                options.signal?.addEventListener('abort', () => resolve(), {once:true});
+            });
+            return true;
+        })})
+        waitingValidation(value:string) { this.effectOwner.runs++; return value; }
         @Server({ timeout: 80 }) async slow() { this.effectOwner.runs++; await pause(); return 'completed remotely'; }
         @Server({ timeout: 80 }) async *slowStream() {
             this.effectOwner.runs++;
@@ -621,6 +635,46 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         await expect(Promise.resolve(wire.target.validated({}))).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED', requestId: expect.any(String), fieldErrors: { title: expect.any(String) } });
         expect(effects.current.runs).toBe(0); settled();
     });
+    it('normalizes nested typed input before mutation without mutating client values', async () => {
+        const raw = {profile:{age:'2'},enabled:'false',tags:['draft']};
+        expect(await rpc$(wire.target.normalized(raw))).toEqual({profile:{age:2},enabled:false,tags:['draft']});
+        expect(raw.profile.age).toBe('2'); expect(effects.current.runs).toBe(1); settled();
+    });
+    it.each([
+        [{profile:{age:'0'},enabled:true,tags:[]}, {profile:{age:'Minimum value is 1'}}],
+        [{profile:{age:'bad'},enabled:true,tags:['admin']}, {profile:{age:'Expected a safe integer.'},tags:{0:'Unexpected value.'}}],
+        [{profile:{age:2,canEdit:true},enabled:true,tags:[]}, {profile:{canEdit:'Unknown field.'}}],
+        [{profile:{age:2},enabled:'maybe',tags:[]}, {enabled:'Expected a boolean.'}],
+        [{profile:{age:2},enabled:true,tags:'draft'}, {tags:'Expected an array.'}],
+        [{profile:{age:2},enabled:true,tags:[],note:null}, {note:'Expected a string.'}],
+        [null, {_:'Expected an object.'}],
+    ])('rejects forged typed input with nested errors before any mutation (%#)', async (raw, fieldErrors) => {
+        await expect(rpc$(wire.target.normalized(raw))).rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED',fieldErrors,requestId:expect.any(String)});
+        expect(effects.current.runs).toBe(0); settled();
+    });
+    it('rejects excess typed arguments instead of letting callers bypass the contract', async () => {
+        await expect(rpc$(wire.target.normalized({profile:{age:2},enabled:true,tags:[]},'forged')))
+            .rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED',fieldErrors:{_:'This action accepts one input argument.'}});
+        expect(effects.current.runs).toBe(0); settled();
+    });
+    it('redacts unexpected validator exceptions and runs no mutation', async () => {
+        await expect(rpc$(wire.target.brokenValidation('x'))).rejects.toMatchObject({code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
+        expect(effects.current.runs).toBe(0); settled();
+    });
+    it('cancels a pending schema callback before mutation and releases the next request', async () => {
+        const call=rpc$(wire.target.waitingValidation('x'));
+        const rejection=expect(call).rejects.toMatchObject({code:'COSSACK_RPC_CANCELLED'});
+        await vi.waitFor(() => expect(effects.current.fileContinue).toBeTypeOf('function'));
+        await call.cancel(); await rejection;
+        if(transport!=='websocket') {
+            await vi.waitFor(() => expect(wire.responses).toHaveLength(1));
+            expect(wire.responses[0].status).toBe(499);
+            expect(wire.responses[0].headers.get('X-Cossack-Request-Id')).toEqual(expect.any(String));
+            expect(await wire.responses[0].clone().json()).toMatchObject({code:'COSSACK_RPC_CANCELLED', requestId:wire.responses[0].headers.get('X-Cossack-Request-Id')});
+        }
+        expect(await rpc$(wire.target.echo('next'))).toBe('next');
+        expect(effects.current.runs).toBe(1); settled();
+    });
     it('preserves yields before a correlated application failure and closes once', async () => {
         const call = rpc$(wire.target.streamError());
         const iterator = call[Symbol.asyncIterator]();
@@ -847,6 +901,13 @@ describe.each(['http', 'sse', 'service'] as const)('%s multipart client/router c
         const data = input(); data.title = '';
         await expect(rpc$(wire.target.fileInfo(data))).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED', fieldErrors: { title: expect.any(String) }, requestId: expect.any(String) });
         expect(effects.current.runs).toBe(0); expect(effects.current.disposed).toBeGreaterThan(0); expect(wire.client.loading).toEqual({});
+    });
+    it('rejects forged file metadata and oversize uploads before mutation', async () => {
+        for(const files of [[{name:'forged',size:1}], [new File(['x'.repeat(17)],'large.txt')]]) {
+            await expect(rpc$(wire.target.fileInfo({title:'valid',nested:{files}})))
+                .rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED',fieldErrors:{nested:{files:{0:expect.any(String)}}},requestId:expect.any(String)});
+        }
+        expect(effects.current.runs).toBe(0); expect(wire.client.loading).toEqual({});
     });
     it('yields before the upload generator completes and preserves state/final result', async () => {
         const call = rpc$(wire.target.fileStream(input())); const iterator = call[Symbol.asyncIterator]();
