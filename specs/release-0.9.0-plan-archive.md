@@ -4152,3 +4152,107 @@ Update completion boxes only when the complete row meets its acceptance criteria
 Keep prototype status visible until the published application path uses the feature.
 Preserve unrelated user files, including the uncommitted reports and tool settings.
 Use the final review to audit GLM's commits against this plan and the checkpoint.
+
+
+<a id="codex-completed-handoff-2026-10-04"></a>
+## Codex completed handoff details (2026-10-04)
+
+Archived during handoff compaction. The active checklist owns current task status.
+These records preserve the implementation details and limits from completed tasks.
+
+- [x] [CLI-01](./release-0.9.0-plan.md#cli-01) Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
+- [x] [CLI-02](./release-0.9.0-plan.md#cli-02) Validate command-specific flags and reject ambiguous/unknown options consistently. Codex continuation (2026-10-02): every built-in command uses shared parser/help metadata, canonical aliases, repeat rules, scoped options and arity, and target/provider checks before effects. Vite forwarding retains its explicit boundary. See the metadata checkpoint below.
+- [x] [CLI-03](./release-0.9.0-plan.md#cli-03) Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. Codex completion (2026-10-02): supervised finite results and lifecycle events, isolated imports/tool logs, safe ORM/parser failures, bounded execution and shutdown, and subprocess success/failure/dry-run coverage across command families. See the machine-contract acceptance checkpoint below.
+- [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](./release-0.9.0.md#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](./release-0.9.0.md#codex-handler-default-parity-2026-10-03).
+- [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](./release-0.9.0.md#codex-four-recipe-capabilities-2026-10-03).
+- [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
+- [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex completion (2026-10-03): schema-only migration, parsed/native/browser signatures, public function-field inference, private compiler imports and callback failures pass the transport matrix and generated Node/native Worker acceptance. Coerced types, nested errors, File/resource guards and explicit cancellation perform no invalid/denied mutation. See the [criterion audit](./release-0.9.0-plan.md#rt-02) and [schema migration review](./release-0.9.0.md#codex-schema-migration-2026-10-03). Native calls explicitly parse/authorize; RT-01, RT-07 native API declarations/error mapping and final release/runtime gates remain separate.
+- [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](./release-0.9.0.md#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
+- [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](./release-0.9.0.md#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
+- [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](./release-0.9.0.md#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
+- [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](./release-0.9.0.md#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
+- [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. Codex completion (2026-10-03): shared discovery/manifest, published URL and API contracts, actual Node/native workerd/D1 handlers, source-specific boundaries and middleware ownership pass. Grouped/dynamic unknown URLs, literal/catch-all selection, ambiguous source groups, guards, status-preserving browser hydration/navigation and read-only source explanations now meet the original criteria. The unused PageOptions.route is removed with type/runtime/compiler diagnostics and migration guidance. See the [criterion audit](./release-0.9.0-plan.md#rt-07) and [completion review](./release-0.9.0.md#codex-route-boundaries-2026-10-03). Broader RPC, session and runtime/release gates remain separate.
+- [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination. Codex completion (2026-10-04): inferred codecs/defaults, copied Unicode URLs, SSR/hydration, push/replace/history, merged pending patches, draft ownership and exact backend reads pass the criterion audit and production Node/workerd matrix. See the [acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
+- [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex completion (2026-10-04): bounded outcomes, stale/disposed ownership, rapid links, guarded/interrupted history, errors/redirects, retained layouts, fragments and unavailable transitions pass the criterion audit. RT-28 devtools UI and full release gates remain separate. See the [acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
+- [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers. Codex completion (2026-10-03): typed named actions, app-owned lookup, server request/socket identity, pre-mutation gates, API/read/middleware enforcement and boolean UI projections pass direct forged-state, native D1 and browser/socket acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-14) and [review](./release-0.9.0.md#codex-resource-policies-2026-10-03). Native calls require explicit authorization; session freshness stays RT-11.
+- [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Codex completion (2026-10-03): pure provider traits, millisecond contracts, pre-operation required-guarantee rejection, bounded key/namespace/Redis/memory policies and read-only provider inspection now pass unit/SQLite/compiled/native acceptance. Shared DO budgets survive concurrent Workers, actual eviction and reload. See the [criterion audit](./release-0.9.0-plan.md#rt-18) and [provider review](./release-0.9.0.md#codex-storage-capabilities-2026-10-03); actual incoming disconnect delivery and full release gates remain separate.
+- [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
+- [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. Codex completion (2026-10-03): one pure core model serves scaffold planning, framework builds, and CLI inspection; selected recipe requirements, transport bindings, durable-state and adapter requirements have source diagnostics. Published-export Node/Deno/Desktop build fixtures preserve the HTTP-only Desktop boundary and reject Workers imports. The [criterion audit](./release-0.9.0-plan.md#rt-25) is complete; Deno execution and Electron launch/packaging remain REL-03 gates.
+- [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
+- [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. GLM (2026-10-02): coordinator wired through SSR, `/crpc`, and `/sse`; scaffolded `COSSACK_SSE` binding (`new_sqlite_classes`) and `SseDurableObject` entry; missing-binding and environment-inheritance diagnostics; cursor reconnect with bounded history; broadcasts. Node/Deno keep the documented process-local backend (see [specs/sse.md](./sse.md)). Not claimed: exactly-once external side effects, native pre-header TCP disconnect delivery (explicit coordinator cancellation is now verified), stream-response cookie handling (RT-11).
+- [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime. GLM (2026-10-02): the generated staging app runs under workerd through published packages covering D1-backed credentials auth (login/protected route/authenticated SSE scope isolation), component+service RPC with streams and cancellation, protected assets with policies, public SSG validation, binding/artifact comparison, the SSE coordinator (subscriptions, cursors, reconnect, broadcasts), and the migration system applying real migrations against the bound D1 (recorded bookkeeping, idempotent re-runs) plus schema-serving reads.
+- [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
+- [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
+- [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
+
+<a id="codex-ui-handoff-2026-10-04"></a>
+## Codex completed UI checkpoints (2026-10-04)
+
+Historical progress notes for RT-23. RT-23 remains open. Use the active handoff
+and component audit for the next work.
+
+Codex checkpoint (2026-10-04): InputOTP now has one native field with decorative
+slots, typed props/events, controlled/default values, completion and native reset
+handling. See the [review evidence](./release-0.9.0.md#codex-input-otp-2026-10-04).
+Combobox now has stable IDs, typed native input props, controlled/default selection,
+accessible popup navigation and native form/reset acceptance. See the
+[Combobox review](./release-0.9.0.md#codex-combobox-2026-10-04).
+MultiSelect now has typed input props, stable IDs, controlled/default tags, repeated
+form values and visible validation. See the [MultiSelect review](./release-0.9.0.md#codex-multiselect-2026-10-04).
+Calendar and DatePicker now share strict Gregorian arithmetic, bounded keyboard
+navigation and native date-field form contracts. Studio preserves invalid stored
+text via the public isCalendarDate guard. See the [date-control review](./release-0.9.0.md#codex-date-controls-2026-10-04).
+Modal, Sheet and Drawer now share typed native dialog contracts. See the
+[dialog review](./release-0.9.0.md#codex-dialog-controls-2026-10-04).
+Popover now has stable IDs, separate typed trigger/panel attributes and native
+dismissal with bounded positioning. See the [Popover review](./release-0.9.0.md#codex-popover-2026-10-04).
+DropdownMenu and ContextMenu now share typed action contracts, menu semantics and
+keyboard/focus handling. See the [menu review](./release-0.9.0.md#codex-action-menus-2026-10-04).
+Continue Tooltip, HoverCard and pending UI audit rows. RT-23 stays open.
+
+Codex DataTable implementation (2026-10-04): the UI root now exports a generic
+DataTable and typed row/column/query contracts. Columns select a valid row key or
+an accessor. Parents own HTTP queries, stale-response handling and selection.
+Filtering, sorting and page-size changes reset page to 1. Stable IDs preserve
+selection across pages and filters. Loading, errors, retry and empty states are
+explicit. Native table controls expose labels, sort state and mixed selection.
+Paging preserves focus through loading/boundaries, and retry returns focus to the
+filter. A package-owned guide explains the contract and its accessibility needs.
+
+Public type tests exposed extensionless UI declaration imports. UI builds now
+rewrite relative declaration imports for NodeNext/Deno resolution. Consumer tests
+reject invalid accessors and competing key/accessor definitions without weakening
+DataTableProps with an arbitrary attribute signature.
+
+Unit/SSR and Chromium HTTP-data tests verify the component. Generated Node and
+local workerd apps now exercise server resources, URL queries, hydration without
+duplicate reads, paging/filtering/sorting, history, selection and refresh retry.
+Same-owner query navigation restores identified controls and unchanged text
+selection. DataTable's optional unique `id` identifies its query/paging controls.
+Next audit native attributes, events, labels, keyboard behavior and focus across
+the remaining UI catalog.
+Codex native-control audit (2026-10-04): Button, Input, Label, Checkbox, Switch and
+Form now use typed native attributes and DOM event targets. Renderer component()
+no longer adds an arbitrary prop index signature. Public declarations reject
+misspelled props/listeners and invalid values. Chromium verifies native labels,
+keyboard toggles, controlled reset, disabled/required behavior and FormData.
+Checkbox now consumes its label prop; Switch renders children and updates its
+native checked property. Sample and Studio consumers use correct prop/event types.
+Themed follow-up verifies disabled styles from actual native state, including
+fieldsets, and keyboard focus rings. RadioGroup/Slider now have typed native contracts,
+property-based selection, stable radio identities and correct range initialization
+and bounds changes. The [component inventory](./ui-contract-audit.md) records all
+remaining audit work.
+Renderer plain/live select values now commit after dynamic options, with stale queued
+writes canceled on replacement or removal. Plain spread select values preserve
+manual selection on unrelated renders. Textarea/select SSR now uses escaped text and selected options. Textarea, Select
+and NativeSelect have closed native contracts and retained-hydration acceptance.
+Plain input/textarea spreads also preserve edits when the bound value is unchanged.
+A browser-specific renderer entry removes the SSR parser from normal UI bundles.
+Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
+have native contracts, composed callbacks, ARIA reference types and retained SSR
+hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
+Next: Tooltip, HoverCard and pending UI audit rows. See the
+[input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
+See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
+The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).

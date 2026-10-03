@@ -962,72 +962,16 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex checkpoint (2026-10-04): InputOTP now has one native field with decorative
-slots, typed props/events, controlled/default values, completion and native reset
-handling. See the [review evidence](./release-0.9.0.md#codex-input-otp-2026-10-04).
-Combobox now has stable IDs, typed native input props, controlled/default selection,
-accessible popup navigation and native form/reset acceptance. See the
-[Combobox review](./release-0.9.0.md#codex-combobox-2026-10-04).
-MultiSelect now has typed input props, stable IDs, controlled/default tags, repeated
-form values and visible validation. See the [MultiSelect review](./release-0.9.0.md#codex-multiselect-2026-10-04).
-Calendar and DatePicker now share strict Gregorian arithmetic, bounded keyboard
-navigation and native date-field form contracts. Studio preserves invalid stored
-text via the public isCalendarDate guard. See the [date-control review](./release-0.9.0.md#codex-date-controls-2026-10-04).
-Modal, Sheet and Drawer now share typed native dialog contracts. See the
-[dialog review](./release-0.9.0.md#codex-dialog-controls-2026-10-04).
-Popover now has stable IDs, separate typed trigger/panel attributes and native
-dismissal with bounded positioning. See the [Popover review](./release-0.9.0.md#codex-popover-2026-10-04).
-DropdownMenu and ContextMenu now share typed action contracts, menu semantics and
-keyboard/focus handling. See the [menu review](./release-0.9.0.md#codex-action-menus-2026-10-04).
-Continue Tooltip, HoverCard and pending UI audit rows. RT-23 stays open.
+Codex status (2026-10-04): DataTable and 25 UI foundations have reviewed contracts.
+Completed work covers typed native attributes and events, form behavior, SSR and
+hydration, keyboard navigation, focus, dialogs, popovers and action menus.
+The [component audit](./ui-contract-audit.md) records coverage and pending rows.
+See [archived UI checkpoints](./release-0.9.0-plan-archive.md#codex-ui-handoff-2026-10-04)
+for implementation details and links to verification evidence.
 
-Codex DataTable implementation (2026-10-04): the UI root now exports a generic
-DataTable and typed row/column/query contracts. Columns select a valid row key or
-an accessor. Parents own HTTP queries, stale-response handling and selection.
-Filtering, sorting and page-size changes reset page to 1. Stable IDs preserve
-selection across pages and filters. Loading, errors, retry and empty states are
-explicit. Native table controls expose labels, sort state and mixed selection.
-Paging preserves focus through loading/boundaries, and retry returns focus to the
-filter. A package-owned guide explains the contract and its accessibility needs.
-
-Public type tests exposed extensionless UI declaration imports. UI builds now
-rewrite relative declaration imports for NodeNext/Deno resolution. Consumer tests
-reject invalid accessors and competing key/accessor definitions without weakening
-DataTableProps with an arbitrary attribute signature.
-
-Unit/SSR and Chromium HTTP-data tests verify the component. Generated Node and
-local workerd apps now exercise server resources, URL queries, hydration without
-duplicate reads, paging/filtering/sorting, history, selection and refresh retry.
-Same-owner query navigation restores identified controls and unchanged text
-selection. DataTable's optional unique `id` identifies its query/paging controls.
-Next audit native attributes, events, labels, keyboard behavior and focus across
-the remaining UI catalog.
-Codex native-control audit (2026-10-04): Button, Input, Label, Checkbox, Switch and
-Form now use typed native attributes and DOM event targets. Renderer component()
-no longer adds an arbitrary prop index signature. Public declarations reject
-misspelled props/listeners and invalid values. Chromium verifies native labels,
-keyboard toggles, controlled reset, disabled/required behavior and FormData.
-Checkbox now consumes its label prop; Switch renders children and updates its
-native checked property. Sample and Studio consumers use correct prop/event types.
-Themed follow-up verifies disabled styles from actual native state, including
-fieldsets, and keyboard focus rings. RadioGroup/Slider now have typed native contracts,
-property-based selection, stable radio identities and correct range initialization
-and bounds changes. The [component inventory](./ui-contract-audit.md) records all
-remaining audit work.
-Renderer plain/live select values now commit after dynamic options, with stale queued
-writes canceled on replacement or removal. Plain spread select values preserve
-manual selection on unrelated renders. Textarea/select SSR now uses escaped text and selected options. Textarea, Select
-and NativeSelect have closed native contracts and retained-hydration acceptance.
-Plain input/textarea spreads also preserve edits when the bound value is unchanged.
-A browser-specific renderer entry removes the SSR parser from normal UI bundles.
-Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
-have native contracts, composed callbacks, ARIA reference types and retained SSR
-hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
-Next: Tooltip, HoverCard and pending UI audit rows. See the
-[input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
-See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
-The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
-
+Next: finish Tooltip and HoverCard, then the remaining audit rows. Their current
+working-tree changes are unfinished and do not count as reviewed foundations.
+RT-23 remains open against all criteria below.
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

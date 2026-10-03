@@ -12,13 +12,15 @@ Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive
 
 Completed IDs: CLI-01–06, RT-02–09, RT-14, RT-18, RT-19, RT-25,
 CF-03, CF-05–07, CF-11 and REL-01.
-See the [verification log](./release-0.9.0.md#verification-log) for implementation and test history.
+See the [archived completion details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
+and the [verification log](./release-0.9.0.md#verification-log) for implementation and test history.
 Earlier handoff details remain available through `git show 8f084e0:specs/handoff-0.9.0.md`.
 
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit Tooltip and HoverCard, then the remaining pending rows.
+   Finish the uncommitted Tooltip and HoverCard changes, then audit the remaining pending rows.
+   These changes still need final verification, documentation and a completion checkpoint.
    Twenty-five foundations are reviewed. DropdownMenu and ContextMenu now have typed
    action/native-event contracts, menu semantics and shared keyboard/focus handling.
    See the [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) for tests and limits.
