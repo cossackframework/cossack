@@ -86,6 +86,46 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-navigation-diagnostics-2026-10-03"></a>
+## Codex navigation diagnostics (2026-10-03)
+
+Author: **Codex**. Continued after `75609d2`. Development now emits versioned,
+frozen navigation diagnostic records with per-document IDs and monotonic timestamps.
+Phases report cache hit/miss/shared reads, invalidation count, attempted layout
+retention/replacement, actual scroll decisions, transition fallback and final
+outcome/commit status. Prefetch and invalidation use a null navigation ID.
+
+Core scroll application returns its actual decision, including a missing fragment
+that falls back to the top. Framework does not duplicate that selection logic.
+Transition animation rejection is reported separately and can arrive after finish.
+Records omit URLs, state, application identifiers, transition names and raw errors.
+Production builds emit no diagnostic events. See the
+[event contract](../docs/prevent-navigation.md#development-diagnostics).
+
+Verification:
+
+- `pnpm --filter @cossackframework/core build`: passed.
+- `pnpm --filter @cossackframework/framework build`: passed, including SSG.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,437 passed, 85 files.
+  Scroll assertions cover top, preserve, saved history, found/missing fragments
+  and the absence of a browser.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,453 passed, 68 files.
+  The 47-case navigation file includes ordered/frozen records, correlation,
+  cache reuse/invalidation, layout counts, shared prefetch, cancellation,
+  supersession, failure, transition fallbacks and production suppression.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership|parses and navigates typed URL state'`:
+  4 passed, 26 skipped. Production Node/native workerd ownership scenarios also
+  assert that no diagnostic event is emitted.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+**No task closes: 22/58 checked, 36 unchecked.** Extend diagnostic acceptance with
+remaining native provider/runtime/transport and interrupted same-URL history
+scenarios. Actual backend read counts still require independent assertions.
+Controlled diagnostic tests do not close those requirements or the release gates.
+Versions remain 0.8.3. No full CLI rerun or live deployment is claimed here.
+
 <a id="codex-route-inheritance-2026-10-03"></a>
 ## Codex route inheritance (2026-10-03)
 

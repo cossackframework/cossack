@@ -4,6 +4,8 @@ export class SharedPageRequests<T> {
 
   constructor(private readonly timeoutMs = 30_000) {}
 
+  has(key: string): boolean { return this.entries.has(key); }
+
   // Invalidation detaches existing work without changing its readers' result.
   clear(): void { this.entries.clear(); }
 

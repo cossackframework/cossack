@@ -2124,6 +2124,26 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
+Codex diagnostics continuation (2026-10-03): development navigation emits
+`cossack:navigation-diagnostic` with version 1, per-document navigation IDs,
+monotonic timestamps and frozen fixed-field records. Phases describe start,
+cache hit/miss/shared reads, cache invalidation, attempted layout retention,
+actual scroll decisions, transition selection/animation rejection and finish.
+No URL, user/draft data, application identifiers, transition names or raw errors
+are included. Production emits no diagnostic events. Animation rejection can
+arrive after finish and does not change navigation success. Initial hydration
+and rejected stale URL-update requests do not create traces.
+
+Controlled navigation tests cover ordering/correlation, retained/created/retired
+layouts, shared prefetch, invalidation, guard/failure/supersession, transition
+fallbacks and production silence. Core scroll tests verify the actual decision.
+Native production tests also assert no emitted diagnostics. See the
+[event contract](../docs/prevent-navigation.md#development-diagnostics) and
+[verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03).
+Continue native ownership and interrupted same-URL history acceptance. Measure
+actual backend reads separately from diagnostic cache decisions. RT-09 remains open.
+
+
 Codex root ownership review (2026-10-03), after `ee5734a`:
 the root App previously survived user and scope changes. Its private drafts and
 children could cross the ownership boundary even when page/layout owners reset.

@@ -77,6 +77,12 @@ records the implementation in `8f084e0`. Tests use declared layout services.
 Legacy undeclared global dependency injection is outside that ownership contract.
 The query-based test identity is not an authentication example.
 
+Development navigation diagnostics now emit a versioned, frozen decision stream.
+It correlates cache reads, layout commit attempts, actual scroll outcomes,
+transition fallbacks and final outcomes without exposing URLs or application data.
+See the [event contract](../docs/prevent-navigation.md#development-diagnostics) and
+[verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03).
+
 Continue in this order:
 
 1. Finish the native ownership matrix for provider/runtime/transport. Compare
@@ -88,8 +94,9 @@ Continue in this order:
    it. Assert entry identity, DOM, drafts and service context.
 3. Count actual backend resource reads across retained-layout changes, rollback
    and interruption. Verify returned values and read counts, not only rendered text.
-4. Add navigation diagnostics for cache decisions, layout retention, scroll,
-   fragments and transition fallback. Verify fields and ordering without exposing drafts.
+4. Extend diagnostic acceptance alongside the remaining native ownership/history
+   scenarios. The development event stream and controlled ordering/privacy tests
+   are implemented. Do not replace backend read-count assertions with cache events.
 5. Audit every original RT-08/RT-09 criterion before checking either box.
 
 Start in `packages/core/src/client/navigation.ts`,
@@ -127,22 +134,18 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The root ownership checkpoint records `8f084e0` results below. The inheritance
-follow-up adds 5 framework cases (1,444 total), repeats all 11 type checks and
-production navigation acceptance, and rebuilds framework/SSG. All 30 cases in
-the full generated-runtime file pass. See its linked verification for commands. Other suite counts below
-remain evidence from `8f084e0`, not claims of a new run.
+The [diagnostic checkpoint](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03)
+records the latest runs. Older unaffected-suite evidence remains linked below.
 
 | Check | Result |
 | --- | --- |
-| Renderer tests | 284 passed, 22 files |
-| Core tests | 1,434 passed, 85 files |
-| Framework tests | 1,439 passed, 68 files |
-| Full CLI suite | 610 passed, 44 files |
-| Focused production Node/native workerd navigation | 4 passed, 26 skipped |
-| Renderer/framework builds, including framework SSG | Passed |
-| Root `pnpm tsc --noEmit` | Passed |
-| `pnpm typecheck` | All 11 package checks passed |
+| Core tests | 1,437 passed, 85 files |
+| Framework tests | 1,453 passed, 68 files |
+| Production Node/native workerd navigation | 4 passed, 26 skipped; production diagnostic silence verified |
+| Core/framework builds, including framework SSG | Passed |
+| Root `pnpm tsc --noEmit` and `pnpm typecheck` | Passed; all 11 package checks |
+| Full generated-runtime file at `75609d2` | 30 passed |
+| Renderer / full CLI at `8f084e0` | 284 / 610 passed; not rerun for diagnostics |
 
 ## Working rules
 

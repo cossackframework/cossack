@@ -103,6 +103,10 @@ export async function writeNavigationOwnershipAcceptance(root) {
 
 export async function checkNavigationOwnershipBrowser(browser, origin) {
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.__navigationDiagnostics = [];
+    document.addEventListener('cossack:navigation-diagnostic', event => window.__navigationDiagnostics.push(event.detail));
+  });
   const fields = ['root-draft','root-service','root-child','layout-draft','layout-service','layout-child','page-draft','page-child'];
   const navigate = (viewer, space, revision) => page.evaluate(async ({viewer,space,revision}) => {
     return (await window.__ownershipApp.navigate('/owner?'+new URLSearchParams({viewer,space,revision}))).outcome;
@@ -173,5 +177,6 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     await browserExpect(page.locator('#root-draft')).toHaveCount(0);
     await browserExpect(page.locator('#page-draft')).toHaveCount(0);
     expect(await page.locator('body').innerText()).not.toContain('private before empty');
+    expect(await page.evaluate(() => window.__navigationDiagnostics)).toEqual([]);
   } finally { await page.evaluate(() => window.__releaseOwnerCleanup?.()).catch(() => {}); await page.close(); }
 }

@@ -175,6 +175,17 @@ check rejects superseded modules before publishing SSR state or resources.
 Full staged-commit and ownership-change acceptance remains RT-08 work.
 Bounded completion and navigation diagnostics remain RT-09 work.
 
+## Development navigation diagnostics
+
+Framework emits fixed-field `cossack:navigation-diagnostic` records only in
+development. Per-document IDs correlate navigation decisions without retaining
+URLs, application identifiers, state or errors. Cache invalidation and prefetch
+use a null navigation ID. Core scroll application returns its actual decision,
+so the framework does not duplicate fragment/history selection logic. Layout
+counts describe attempted publication. Animation rejection has an independent
+lifetime and can be reported after navigation finish. Diagnostics do not replace
+runtime acceptance or backend read-count verification.
+
 ## Authored route inheritance
 
 Route dispatch searches authored prototypes before the Cossack base prototype.

@@ -23,7 +23,7 @@ vi.mock('@cossackframework/core', async importOriginal => {
         createRootServiceScope: () => ({ disposeAsync: async () => {} }),
         createLayoutServiceScope: (parent: any) => ({ parent }),
         enableClientNavigation: vi.fn(),
-        applyNavigationScroll: vi.fn(),
+        applyNavigationScroll: vi.fn(() => 'top'),
     };
 });
 const { Cossack } = await import('@cossackframework/core');
@@ -549,5 +549,106 @@ describe('navigation completion behavior', () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('missing')));
         expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' });
         expect(window.location.pathname).toBe('/start');
+    });
+});
+
+
+describe('development navigation diagnostics', () => {
+    let events: any[];
+    const collect = (event: Event) => events.push((event as CustomEvent).detail);
+    beforeEach(() => { events = []; document.addEventListener('cossack:navigation-diagnostic', collect); });
+    afterEach(() => { document.removeEventListener('cossack:navigation-diagnostic', collect); vi.unstubAllEnvs(); });
+
+    it('correlates ordered decisions, cache reuse and invalidation without URL or state values', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        expect(await navigate('/fast?secret=private#private')).toMatchObject({outcome:'completed'});
+        const first = events[0].navigationId;
+        expect(events.map(event => event.phase)).toEqual(['start','cache','transition','layouts','scroll','finish']);
+        expect(events.find(event => event.phase === 'cache').decision).toBe('miss');
+        expect(events.at(-1)).toMatchObject({phase:'finish',outcome:'completed',committed:true});
+        expect(events.every(event => event.version===1 && event.navigationId===first && Object.isFrozen(event))).toBe(true);
+        expect(events.map(event => event.timestamp)).toEqual([...events.map(event => event.timestamp)].sort((a,b)=>a-b));
+        expect(JSON.stringify(events)).not.toMatch(/private|secret|fast/);
+        events.length=0;
+        await navigate('/fast?secret=private#another');
+        expect(events[0].navigationId).not.toBe(first);
+        expect(events.find(event => event.phase==='cache').decision).toBe('hit');
+        expect(fetch).toHaveBeenCalledOnce();
+        (globalThis as any).__cossack_invalidatePageCache();
+        expect(events.at(-1)).toMatchObject({phase:'invalidate',navigationId:null,entries:2});
+        await navigate('/fast?secret=private');
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports cancellation and failure without a committed destination or raw error', async () => {
+        fixture.guard=async()=>true;
+        expect(await navigate('/slow')).toMatchObject({outcome:'canceled'});
+        expect(events.map(event=>event.phase)).toEqual(['start','finish']);
+        expect(events.at(-1)).toMatchObject({outcome:'canceled',committed:false});
+        fixture.guard=async()=>false;
+        vi.stubGlobal('fetch', vi.fn(async()=>{throw new Error('private failure');}));
+        expect(await navigate('/fast')).toMatchObject({outcome:'failed'});
+        expect(events.at(-1)).toMatchObject({outcome:'failed',committed:false});
+        expect(JSON.stringify(events)).not.toContain('private failure');
+    });
+
+    it('distinguishes created, retained and retired layouts', async () => {
+        class Layout extends Component {}
+        fixture.registry.layouts['/src/pages/layout.ts']=async()=>({default:Layout});
+        vi.stubGlobal('fetch', vi.fn(async(target:string)=>new Response(`<script>window.__INITIAL_STATE__ = ${JSON.stringify({
+            routePath:target,pathname:target,_layout_stack:target==='/final'?[]:[{path:'/src/pages/layout.ts',state:{public:{}}}],
+        })}</script>`)));
+        await navigate('/slow'); await navigate('/fast'); await navigate('/final');
+        expect(events.filter(event=>event.phase==='layouts').map(({retained,created,retired,rootReplaced})=>({retained,created,retired,rootReplaced}))).toEqual([
+            {retained:0,created:1,retired:0,rootReplaced:false},
+            {retained:1,created:0,retired:0,rootReplaced:false},
+            {retained:0,created:0,retired:1,rootReplaced:false},
+        ]);
+    });
+
+
+    it('correlates a shared prefetch and superseded navigation independently', async () => {
+        let release!: (response: Response) => void;
+        const pending = new Promise<Response>(resolve=>{release=resolve;});
+        vi.stubGlobal('fetch', vi.fn(async(target:string)=>target==='/slow'?pending:documentResponse('fast')));
+        const core = await import('@cossackframework/core');
+        const prefetch = vi.mocked(core.enableClientNavigation).mock.calls.at(-1)![1]!;
+        await prefetch('/slow');
+        const older = navigate('/slow');
+        await vi.waitFor(()=>expect(events.some(event=>event.phase==='cache' && event.decision==='shared')).toBe(true));
+        expect(await navigate('/fast')).toMatchObject({outcome:'completed'});
+        expect(await older).toMatchObject({outcome:'superseded'});
+        const finishes=events.filter(event=>event.phase==='finish');
+        expect(finishes).toEqual(expect.arrayContaining([
+            expect.objectContaining({outcome:'superseded',committed:false}),
+            expect.objectContaining({outcome:'completed',committed:true}),
+        ]));
+        expect(new Set(finishes.map(event=>event.navigationId)).size).toBe(2);
+        release(documentResponse('slow'));
+    });
+
+    it.each(['unsupported','callback','typed','types-unsupported'] as const)('reports the %s transition path', async mode => {
+        const core = await import('@cossackframework/core');
+        vi.spyOn(core,'supportsViewTransitionTypes').mockReturnValue(mode==='typed');
+        if(mode!=='unsupported') (document as any).startViewTransition=(argument:any)=>{
+            const update=typeof argument==='function'?argument:argument.update;
+            return {ready:Promise.reject(new Error('animation only')),finished:Promise.resolve(),updateCallbackDone:Promise.resolve().then(update)};
+        };
+        try {
+            navigate=(await createClientApp({container:'#app',AppComponent:App,viewTransitions:true}))!.navigate;
+            vi.stubGlobal('fetch',vi.fn(async()=>documentResponse('fast')));
+            await navigate('/fast',{types:mode==='typed'||mode==='types-unsupported'?['private-type']:undefined});
+            expect(events.filter(event=>event.phase==='transition').map(event=>event.decision)).toEqual(
+                mode==='unsupported'?['unsupported']:[mode,'animation-skipped']);
+            expect(JSON.stringify(events)).not.toContain('private-type');
+            expect(events.at(-1)).toMatchObject({phase:'finish',outcome:'completed'});
+        } finally { delete (document as any).startViewTransition; }
+    });
+
+    it('does not emit diagnostics in production', async () => {
+        vi.stubEnv('DEV',false);
+        vi.stubGlobal('fetch', vi.fn(async()=>documentResponse('fast')));
+        await navigate('/fast'); (globalThis as any).__cossack_invalidatePageCache();
+        expect(events).toEqual([]);
     });
 });

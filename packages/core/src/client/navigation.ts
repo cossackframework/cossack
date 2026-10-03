@@ -117,7 +117,7 @@ function scrollToPosition(position: ScrollPosition): void {
     window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' });
 }
 
-function scrollToUrlTarget(url: string): void {
+function scrollToUrlTarget(url: string): 'fragment' | 'fragment-missing' | 'top' {
     const { hash } = new URL(url, window.location.href);
     if (hash) {
         let fragment = hash.slice(1);
@@ -131,11 +131,12 @@ function scrollToUrlTarget(url: string): void {
             ?? document.getElementsByName(fragment)[0];
         if (target) {
             target.scrollIntoView({ block: 'start', behavior: 'instant' });
-            return;
+            return 'fragment';
         }
     }
 
     scrollToPosition({ x: 0, y: 0 });
+    return hash ? 'fragment-missing' : 'top';
 }
 
 /**
@@ -147,23 +148,24 @@ export function applyNavigationScroll(
     url: string,
     behavior: NavigationScrollBehavior,
     navigationType: NavigationType,
-): void {
-    if (typeof window === 'undefined' || behavior === 'preserve') return;
+): 'unavailable' | 'preserve' | 'history' | 'top' | 'fragment' | 'fragment-missing' {
+    if (typeof window === 'undefined') return 'unavailable';
+    if (behavior === 'preserve') return 'preserve';
 
     if (behavior === 'auto' && navigationType === 'traverse') {
         const saved = getSavedScrollPosition(window.history.state);
         if (saved) {
             scrollToPosition(saved);
-            return;
+            return 'history';
         }
     }
 
     if (behavior === 'top') {
         scrollToPosition({ x: 0, y: 0 });
-        return;
+        return 'top';
     }
 
-    scrollToUrlTarget(url);
+    return scrollToUrlTarget(url);
 }
 
 /**

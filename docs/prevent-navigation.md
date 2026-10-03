@@ -154,3 +154,39 @@ Module imports resolve before the framework changes the live page or layout
 contexts. A superseded page/layout import cannot publish its state. This does
 not undo arbitrary application effects after publication. Interrupted history,
 shared render ownership and the remaining acceptance matrix stay in RT-09.
+
+## Development diagnostics
+
+In development builds, listen on `document` for `cossack:navigation-diagnostic`.
+The event detail is a frozen, versioned record. It has `version: 1`, a numeric
+`navigationId`, a `performance.now()` timestamp, and one phase from the table below.
+IDs distinguish concurrent navigations within the current document. Prefetch cache
+decisions and cache invalidation use `navigationId: null`.
+
+```typescript
+document.addEventListener('cossack:navigation-diagnostic', event => {
+    console.debug((event as CustomEvent).detail);
+});
+```
+
+| Phase | Fields and meaning |
+| --- | --- |
+| `start` | `navigationType`: `push`, `replace` or `traverse`. |
+| `cache` | `decision`: `hit`, `miss` or `shared` with an in-flight reader. |
+| `invalidate` | `entries`: number of cached documents cleared, including the initial document. |
+| `layouts` | `retained`, `created`, `retired` counts and `rootReplaced` for the commit attempt. |
+| `scroll` | Requested `behavior` and actual `decision`: `preserve`, `history`, `top`, `fragment`, `fragment-missing` or `unavailable`. |
+| `transition` | `decision`: `disabled`, `unsupported`, `callback`, `typed`, `types-unsupported` or `animation-skipped`. |
+| `finish` | Navigation `outcome` and `committed`: whether destination history was committed. |
+
+A normal navigation emits start, cache, transition, layouts, scroll and finish.
+A guard can cancel before fetching. A failure can stop before scrolling. Layout
+counts describe an attempted commit; a later failure can roll it back. Animation
+rejection does not fail a committed navigation. Its `animation-skipped` event can
+arrive after finish because animation completion has a separate lifetime.
+`fragment-missing` means the target was absent and the viewport moved to the top.
+
+The stream excludes URLs, query/fragment values, user data, drafts, application
+identifiers, transition names and raw errors. Production builds emit no diagnostic
+events. Existing lifecycle/error events keep their own contracts. Initial hydration
+and rejected stale URL-update requests do not create navigation traces.

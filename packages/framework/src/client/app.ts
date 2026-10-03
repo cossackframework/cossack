@@ -1,3 +1,4 @@
+import { createNavigationTrace, emitNavigationDiagnostic, type NavigationTrace } from './navigation-diagnostics.js';
 import { NavigationOwner } from './navigation-owner.js';
 import { SharedPageRequests } from './shared-page-requests.js';
 import { getModuleDefault } from '../module-default.js';
@@ -113,9 +114,11 @@ function pageCacheKey(url: string): string {
 }
 
 function invalidatePageCache() {
+  const entries = pageCache.size;
   pageCache.clear();
   inFlightPages.clear();
   pageCacheEpoch++;
+  emitNavigationDiagnostic(null, { phase: 'invalidate', entries });
 }
 
 // Allow the RPC layer (core method-proxy) to invalidate every cached route
@@ -200,16 +203,18 @@ function preloadPageModules(urls: readonly string[]): void {
  */
 const inFlightPages = new SharedPageRequests<CachedPage>();
 
-async function fetchPage(url: string, signal?: AbortSignal) {
+async function fetchPage(url: string, signal?: AbortSignal, trace: NavigationTrace = event => emitNavigationDiagnostic(null, event)) {
   signal?.throwIfAborted();
   const key = pageCacheKey(url);
   const cached = pageCache.get(key);
   if (cached) {
+    trace({ phase: 'cache', decision: 'hit' });
     // Refresh insertion order so eviction is genuinely least-recently-used.
     pageCache.delete(key);
     pageCache.set(key, cached);
     return cached;
   }
+  trace({ phase: 'cache', decision: inFlightPages.has(key) ? 'shared' : 'miss' });
   const requestEpoch = pageCacheEpoch;
   return inFlightPages.read(key, async requestSignal => {
     const response = await fetch(key, { signal: requestSignal });
@@ -469,7 +474,7 @@ export async function createClientApp({
     currentPage?._frameworkNavigateComplete(pathname);
   };
 
-  const prepareComponent = async (initialState: any, destination?: string, owner?: NavigationOwner) => {
+  const prepareComponent = async (initialState: any, destination?: string, owner?: NavigationOwner, trace?: NavigationTrace) => {
     const isCurrent = () => !owner?.signal.aborted;
     const assertCurrent = () => owner?.assertCurrent();
     const destinationUrl = destination ?? initialState?.metadata?.url ?? window.location.href;
@@ -622,6 +627,8 @@ export async function createClientApp({
           const restorers = [appInstance, ...oldLayouts, ...(oldPage ? [oldPage] : [])]
             .map(instance => instance._frameworkCaptureNavigationContext?.());
           const staleLayouts = oldLayouts.filter(layout => ![...nextLayouts.values()].includes(layout));
+          trace?.({ phase: 'layouts', retained: [...nextLayouts.values()].filter(layout => oldLayouts.includes(layout)).length,
+            created: [...nextLayouts.values()].filter(layout => !oldLayouts.includes(layout)).length, retired: staleLayouts.length, rootReplaced: oldApp !== nextApp });
           retire = () => {
             const errors: unknown[] = [];
             const outgoing = [...(oldPage ? [oldPage] : []), ...staleLayouts, ...(oldApp !== nextApp ? [oldApp] : [])];
@@ -772,6 +779,9 @@ export async function createClientApp({
   const navigate = async (url: string, force = false, options?: NavigateOptions, intent?: QueryIntent): Promise<NavigateResult> => {
     if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
     if (!intent) pendingQuery = undefined;
+    const trace = createNavigationTrace();
+    let outcome: NavigateResult['outcome'] = 'failed';
+    const settle = (result: NavigateResult) => { outcome = result.outcome; return result; };
     const seq = ++navigationSequence;
     activeOwner?.abort();
     const owner = new NavigationOwner();
@@ -779,6 +789,7 @@ export async function createClientApp({
     let prepared: Awaited<ReturnType<typeof prepareComponent>> | undefined;
     let ownLoading: Cossack | undefined;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
+    trace({ phase: 'start', navigationType });
     const requestedHistory = getNavigationHistoryLocation(window.history.state);
     let navigationCommitted = false;
     let restorationAttempted = false;
@@ -792,8 +803,8 @@ export async function createClientApp({
     try {
       if (!force && currentPage && !isDisplayingLoadingState) {
           const prevented = await owner.wait(currentPage._checkPreventNavigation());
-          if (seq !== navigationSequence) return { outcome: 'superseded', url };
-          if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
+          if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
+          if (intent && !intent.isCurrent()) return settle({ outcome: 'canceled', url });
           if (prevented) {
               currentPage._pendingNavigation = async () => {
                   if (navigationType === 'traverse' && requestedHistory) await moveHistory(requestedHistory, url, true);
@@ -802,12 +813,12 @@ export async function createClientApp({
               if (navigationType === 'traverse') {
                 restorationAttempted = true;
                 const restored = await moveHistory(committedHistory, committedUrl);
-                if (seq !== navigationSequence) return { outcome: 'superseded', url };
+                if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
                 if (restored.outcome !== 'completed') throw restored.error;
               }
               // Force re-render to show prevention UI if any
               await owner.wait(currentPage.requestUpdate());
-              return { outcome: 'canceled', url };
+              return settle({ outcome: 'canceled', url });
           }
       }
 
@@ -857,17 +868,17 @@ export async function createClientApp({
           };
 
           await owner.wait(loadingInstance.bootstrap({ skipInit: true }));
-          if (seq !== navigationSequence) return { outcome: 'superseded', url };
+          if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
           await owner.wait(triggerAppUpdate(() => !owner.signal.aborted));
       }
 
-      const { state, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal));
+      const { state, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal, trace));
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
-        return { outcome: 'superseded', url };
+        return settle({ outcome: 'superseded', url });
       }
-      if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
+      if (intent && !intent.isCurrent()) return settle({ outcome: 'canceled', url });
       setProgress(100);
 
       // DOM commit: destroy old page, instantiate new page, trigger re-render.
@@ -881,7 +892,7 @@ export async function createClientApp({
       if (!destination.hash) destination.hash = requestedUrl.hash;
       const destinationUrl = destination.pathname + destination.search + destination.hash;
       const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
-      prepared = await owner.wait(prepareComponent(state, destinationUrl, owner));
+      prepared = await owner.wait(prepareComponent(state, destinationUrl, owner, trace));
       let ownerDisposed = false;
       const commit = async () => {
         if (seq !== navigationSequence) return;
@@ -906,11 +917,12 @@ export async function createClientApp({
         navigationCommitted = true;
         prepared!.finish();
         owner.assertCurrent();
-        applyNavigationScroll(
+        const scrollDecision = applyNavigationScroll(
           destinationUrl,
           options?.scroll ?? defaultScrollBehavior,
           navigationType,
         );
+        trace({ phase: 'scroll', behavior: options?.scroll ?? defaultScrollBehavior, decision: scrollDecision });
         saveCurrentScrollPosition();
         notifyNavigationComplete(state.pathname);
       };
@@ -923,6 +935,7 @@ export async function createClientApp({
           // single-callback form so older browsers don't throw inside the
           // transition (which would surface as a navigation failure).
           const useTypes = !!(options?.types?.length) && supportsViewTransitionTypes();
+          trace({ phase: 'transition', decision: useTypes ? 'typed' : options?.types?.length ? 'types-unsupported' : 'callback' });
           const transition = useTypes
             ? (document as any).startViewTransition({ update: commit, types: options.types })
             : (document as any).startViewTransition(commit);
@@ -931,10 +944,11 @@ export async function createClientApp({
           // never becomes an unhandled promise rejection. Navigation readiness
           // follows `updateCallbackDone`, which is the standard promise that
           // resolves after the async commit callback has actually completed.
-          void transition.ready.catch(() => {});
+          void transition.ready.catch(() => trace({ phase: 'transition', decision: 'animation-skipped' }));
           void transition.finished.catch(() => {});
           await transition.updateCallbackDone;
         } else {
+          trace({ phase: 'transition', decision: viewTransitionsEnabled ? 'unsupported' : 'disabled' });
           await commit();
         }
       };
@@ -946,8 +960,8 @@ export async function createClientApp({
       });
       commitQueue = committed.catch(() => {});
       await owner.wait(committed);
-      if (seq !== navigationSequence) return { outcome: 'superseded', url };
-      if (ownerDisposed) return { outcome: 'canceled', url };
+      if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
+      if (ownerDisposed) return settle({ outcome: 'canceled', url });
 
       (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
@@ -959,13 +973,13 @@ export async function createClientApp({
           scroll: options?.scroll ?? defaultScrollBehavior,
         }
       }));
-      return { outcome: redirected ? 'redirected' : 'completed', url: destinationUrl };
+      return settle({ outcome: redirected ? 'redirected' : 'completed', url: destinationUrl });
     } catch (error) {
       prepared?.dispose();
-      if (seq !== navigationSequence) return { outcome: 'superseded', url };
+      if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
       if (navigationType === 'traverse' && !navigationCommitted && !restorationAttempted) {
         await moveHistory(committedHistory, committedUrl);
-        if (seq !== navigationSequence) return { outcome: 'superseded', url };
+        if (seq !== navigationSequence) return settle({ outcome: 'superseded', url });
       }
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,
@@ -978,10 +992,10 @@ export async function createClientApp({
         detail: { url, error, fromPathname: window.location.pathname },
       }));
       if (!handled) {
-        return { outcome: 'failed', url, error };
+        return settle({ outcome: 'failed', url, error });
       }
       window.location.reload();
-      return { outcome: 'failed', url, error };
+      return settle({ outcome: 'failed', url, error });
     } finally {
       prepared?.dispose();
       if (ownLoading) {
@@ -994,6 +1008,7 @@ export async function createClientApp({
       }
       owner.dispose();
       if (activeOwner === owner) activeOwner = undefined;
+      trace({ phase: 'finish', outcome, committed: navigationCommitted });
     }
   };
 
