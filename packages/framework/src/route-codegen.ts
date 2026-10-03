@@ -58,12 +58,19 @@ export function discoverRoutes(projectRoot: string, includeMarkdown = false): Ro
   return buildRoutesManifest(pageKeys, layoutKeys, computeRouteIds(pageKeys, layoutKeys));
 }
 
-/** Emit public paths only. Never import application modules into the generated client graph. */
+/** Runtime paths plus type-only native exports. No application runtime imports enter the client graph. */
 export function renderRouteSource(manifest: RoutesManifest): string {
   const patterns = Object.fromEntries(manifest.routes.filter(route => route.addressable).map(route => [route.name, route.pattern]));
+  const apiModules = manifest.routes.filter(route => route.kind === 'api' && route.addressable)
+    .map(route => `  ${JSON.stringify(route.name)}: typeof import(${JSON.stringify('..' + route.filePath)});`).join('\n');
   return GENERATED_HEADER + "import { createRouteBuilder } from '@cossackframework/core/routes';\n" +
     `export const routePatterns = ${JSON.stringify(patterns, null, 2)} as const;\n` +
-    'export const routes = createRouteBuilder(routePatterns);\n';
+    'export const routes = createRouteBuilder(routePatterns);\n' +
+    "import type { ApiMethods, ApiRawInput, ApiOutput } from '@cossackframework/framework/api';\n" +
+    `type ApiModules = {\n${apiModules}\n};\n` +
+    'export type ApiRoutes = { [N in keyof ApiModules as keyof ApiMethods<ApiModules[N]> extends never ? never : N]: ApiMethods<ApiModules[N]> };\n' +
+    'export type ApiRequest<N extends keyof ApiRoutes, M extends keyof ApiRoutes[N]> = ApiRawInput<ApiRoutes[N][M]>;\n' +
+    'export type ApiResponse<N extends keyof ApiRoutes, M extends keyof ApiRoutes[N]> = ApiOutput<ApiRoutes[N][M]>;\n';
 }
 
 export function generateRoutes(projectRoot: string, options: { includeMarkdown?: boolean; write?: boolean } = {}): {

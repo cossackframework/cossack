@@ -12,6 +12,8 @@ import { chromium, expect as browserExpect } from '@playwright/test';
 import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './fixtures/worker-optimistic-recovery.js';
 import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/worker-optimistic-sse.js';
 import { writeWorkerOptimisticStreams, checkWorkerOptimisticStreams } from './fixtures/worker-optimistic-streams.js';
+import { writeApiContractAcceptance, checkApiContractAcceptance, checkApiContractAssets } from './fixtures/api-contract-acceptance.js';
+import { createTestHarness } from 'wrangler';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -84,6 +86,38 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
 }
+it.each(['node', 'cloudflare'])('executes declared API contracts in a generated production %s app', async adapter => {
+  const root = await project(adapter);
+  await writeApiContractAcceptance(root);
+  if (adapter === 'cloudflare') {
+    const configPath = path.join(root, 'wrangler.jsonc');
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    config.d1_databases = [{ binding: 'DB', database_name: 'native-api-test' }];
+    await fs.writeFile(configPath, JSON.stringify(config));
+  }
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  else await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/wrangler/bin/wrangler.js'), 'types'], { cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, timeout: 30000 });
+  await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, timeout: 30000 })
+    .catch(error => { throw new Error(`${error.stdout}\n${error.stderr}`); });
+  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--json'], { cwd: root, timeout: 30000 });
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.routes.find(route => route.name === '/api/declared/[id]').apiContracts.methods).toEqual([
+    expect.objectContaining({ method: 'POST', declaration: 'defineApi', inputLocations: ['params', 'query', 'body'], output: 'json', authorization: 'declared' }),
+    expect.objectContaining({ method: 'GET', output: 'response', authorization: 'none' }),
+  ]);
+  expect(inspected.routes.find(route => route.name === '/api/native').routeStyle).toBe('http-handlers');
+  await checkApiContractAssets(root);
+  if (adapter === 'node') {
+    const runtime = await productionServer(root);
+    try { await checkApiContractAcceptance((url, options) => fetch(runtime.origin + url, options)); }
+    finally { await runtime.close(); }
+  } else {
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+    try { await harness.listen(); await checkApiContractAcceptance((url, options) => harness.fetch(url, options)); }
+    finally { await harness.close(); }
+  }
+}, 120000);
 it('generates typed URLs that execute real grouped, dynamic, catch-all and API handlers in production', async () => {
   const root = await project('node');
   const write = async (file, source) => {

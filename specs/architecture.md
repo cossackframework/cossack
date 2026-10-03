@@ -84,8 +84,23 @@ The CLI consumes that entry and keeps its compiler-based inspection facts.
 Vite and `cossack routes --generate` emit `.cossack/routes.ts`. The virtual import
 resolves to this real file, so runtime URLs and TypeScript literals share one
 contract. Generated client code contains public patterns and the core helper.
-It contains no application module imports. Source layout ancestry in the manifest
+It contains no application runtime imports. Native API declarations use type-only
+references to actual module exports and the portable framework `/api` type helpers.
+Default function precedence matches native routing; component modules and plain
+handlers do not invent validated contracts. Source layout ancestry in the manifest
 does not assert that functional API modules execute component layouts.
+
+Framework's portable `/api` entry owns declared native HTTP contracts. It reuses
+core input schemas and JSON snapshots, with explicit request locations and
+parsed/raw/wire types. Parsing and authorization precede handler execution.
+Output schemas run before JSON serialization; native response mode is explicit.
+The pipeline owns a bounded body reader and linked cancellation/deadline until
+response headers. Late callbacks remain observed and late bodies are cancelled.
+Native streams retain application body ownership after headers. Unexpected
+callback/output failures stay private and have correlated server diagnostics.
+The shared AST classifier resolves canonical factories and local aliases before
+client imports load. CLI inspection reports structural facts and unknown dynamic
+contracts without executing application code.
 
 ## Application socket registry
 

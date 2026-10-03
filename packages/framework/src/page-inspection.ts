@@ -231,33 +231,108 @@ export async function extractMethodClassificationsFromAst(code: string, file = '
   };
 }
 
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
+/** Resolve local const aliases and TS wrappers without executing initializers. */
+function apiSyntax(program: AstNode) {
+  const locals = new Map<string, AstNode>();
+  const factories = new Set<string>();
+  const namespaces = new Set<string>();
+  for (const statement of program.body) {
+    if (statement.type === 'ImportDeclaration' && statement.importKind !== 'type' && statement.source?.value === '@cossackframework/framework/api') {
+      for (const specifier of statement.specifiers ?? []) {
+        if (specifier.type === 'ImportSpecifier' && specifier.importKind !== 'type' && specifier.imported?.name === 'defineApi') factories.add(specifier.local.name);
+        if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+      }
+    }
+    const declaration = statement.declaration ?? statement;
+    if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration.type) && declaration.id) locals.set(declaration.id.name, declaration);
+    if (declaration.type === 'VariableDeclaration' && declaration.kind === 'const') {
+      for (const entry of declaration.declarations) if (entry.id?.type === 'Identifier') locals.set(entry.id.name, entry.init);
+    }
+  }
+  const resolve = (node: AstNode) => {
+    const seen = new Set();
+    for (let count = 0; count < 32; count++) {
+      if (['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'ParenthesizedExpression'].includes(node?.type)) { node = node.expression; continue; }
+      if (node?.type !== 'Identifier' || !locals.has(node.name)) return node;
+      if (seen.has(node.name)) return null;
+      seen.add(node.name); node = locals.get(node.name);
+    }
+    return null;
+  };
+  const factory = (value: AstNode) => {
+    const node = resolve(value);
+    if (node?.type !== 'CallExpression' || node.optional) return null;
+    const callee = resolve(node.callee);
+    return callee?.type === 'Identifier' && factories.has(callee.name) ||
+      callee?.type === 'MemberExpression' && !callee.computed && !callee.optional &&
+      callee.object?.type === 'Identifier' && namespaces.has(callee.object.name) && callee.property?.name === 'defineApi' ? node : null;
+  };
+  const exports: { method: string; value: AstNode; source: AstNode }[] = [];
+  for (const statement of program.body) {
+    if (statement.type === 'ExportDefaultDeclaration') exports.push({ method: '*', value: statement.declaration, source: statement });
+    if (statement.type !== 'ExportNamedDeclaration' || statement.exportKind === 'type') continue;
+    const declaration = statement.declaration;
+    if (declaration?.type === 'FunctionDeclaration' && HTTP_METHODS.has(declaration.id?.name)) exports.push({ method: declaration.id.name, value: declaration, source: declaration });
+    if (declaration?.type === 'VariableDeclaration') for (const entry of declaration.declarations) {
+      if (HTTP_METHODS.has(entry.id?.name)) exports.push({ method: entry.id.name,
+        value: declaration.kind === 'const' ? entry.init : null, source: entry });
+    }
+    for (const specifier of statement.specifiers ?? []) {
+      if (specifier.exportKind === 'type') continue;
+      const name = specifier.exported?.name ?? specifier.exported?.value;
+      if (name === 'default' || HTTP_METHODS.has(name)) exports.push({ method: name === 'default' ? '*' : name,
+        value: statement.source ? null : specifier.local, source: specifier });
+    }
+  }
+  const defaultExport = exports.find(entry => entry.method === '*');
+  const isFunction = (value: AstNode) => ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(resolve(value)?.type) || Boolean(factory(value));
+  const http = defaultExport ? isFunction(defaultExport.value) : exports.length > 0;
+  return { resolve, factory, http, exports: defaultExport ? [defaultExport] : exports };
+}
+
 /** Statically identifiable functional APIs need HTTP, not component metadata. */
 export async function isHttpHandlerModule(code: string): Promise<boolean> {
   const parser = await loadParseSync();
   const program = parser && parsedProgram(parser, code);
-  if (!program) return false;
-  const defaultExport = program.body.find((node: AstNode) => node.type === 'ExportDefaultDeclaration');
-  if (defaultExport) {
-    let value = defaultExport.declaration;
-    if (value?.type === 'Identifier') {
-      const name = value.name;
-      value = program.body.flatMap((node: AstNode) => {
-        const declaration = node.declaration ?? node;
-        if (declaration.type === 'FunctionDeclaration' && declaration.id?.name === name) return [declaration];
-        return declaration.type === 'VariableDeclaration'
-          ? declaration.declarations.filter((entry: AstNode) => entry.id?.name === name).map((entry: AstNode) => entry.init) : [];
-      })[0];
-    }
-    return ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'].includes(value?.type);
-  }
-  if (program.body.some((node: AstNode) => node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration')) return false;
-  const methods = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
-  return program.body.some((node: AstNode) => {
-    if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') return false;
-    if (node.declaration?.type === 'FunctionDeclaration') return methods.has(node.declaration.id?.name);
-    if (node.declaration?.type === 'VariableDeclaration') return node.declaration.declarations.some((entry: AstNode) => methods.has(entry.id?.name));
-    return !node.source && node.specifiers?.some((entry: AstNode) => methods.has(entry.exported?.name ?? entry.exported?.value));
+  return Boolean(program && apiSyntax(program).http);
+}
+
+export interface ApiContractFact {
+  method: string;
+  declaration: 'defineApi' | 'unvalidated' | 'unknown';
+  inputLocations: string[] | null;
+  output: 'json' | 'response' | 'unknown';
+  authorization: 'declared' | 'none' | 'unknown';
+  source: { file: string; line: number };
+  reason: string;
+}
+/** Structural contracts only: the compiler never imports schemas, guards or handlers. */
+export async function inspectApiContractsFromAst(code: string, file = 'page.ts') {
+  const parser = await loadParseSync();
+  const program = parser && parsedProgram(parser, code);
+  if (!program) return { status: 'unknown' as const, methods: [] as ApiContractFact[], reason: 'Module syntax could not be parsed.' };
+  const syntax = apiSyntax(program);
+  if (!syntax.http) return { status: 'unknown' as const, methods: [] as ApiContractFact[], reason: 'The module is not a statically identifiable native HTTP API.' };
+  const object = (node: AstNode) => {
+    const value = syntax.resolve(node);
+    if (value?.type !== 'ObjectExpression' || value.properties.some((p: AstNode) => p.type !== 'Property' || p.computed || p.kind !== 'init')) return null;
+    return new Map<string, AstNode>(value.properties.map((p: AstNode) => [p.key.name ?? p.key.value, p.value]));
+  };
+  const methods: ApiContractFact[] = syntax.exports.map(entry => {
+    const call = syntax.factory(entry.value);
+    const options = call?.arguments?.length === 1 && object(call.arguments[0]);
+    const input = options && options.has('input') ? object(options.get('input')) : new Map();
+    const resolved = Boolean(options && input && [...input.keys()].every(key => ['params', 'query', 'body'].includes(key)));
+    return { method: entry.method, declaration: call ? 'defineApi' : syntax.resolve(entry.value) ? 'unvalidated' : 'unknown',
+      inputLocations: call && resolved ? [...input!.keys()] : null,
+      output: call && options ? options.has('output') ? 'json' : 'response' : 'unknown',
+      authorization: call && options ? options.has('authorize') ? 'declared' : 'none' : 'unknown',
+      source: { file, line: lineNumberAt(code, entry.source.start) },
+      reason: resolved ? 'Declared locations; schema behavior and callback authorization require runtime validation.'
+        : call ? 'Dynamic or spread API declaration; contract details are unknown.' : 'No defineApi declaration; runtime validation is not asserted.' };
   });
+  return { status: 'resolved' as const, methods, reason: 'Effective exports follow native router precedence; schema values are not evaluated.' };
 }
 
 /** Compiler-backed cache declarations. Never evaluate config modules or callbacks. */

@@ -5,7 +5,7 @@ import { inspectScaffoldMetadata } from './project-metadata.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
-import { extractPageOptionsFromAst, inspectDefaultClassExport, isHttpHandlerModule } from './page-options-ast.js';
+import { extractPageOptionsFromAst, inspectDefaultClassExport, isHttpHandlerModule, inspectApiContractsFromAst } from './page-options-ast.js';
 import { filePathToHttpRoute, classifyRoute, resolveLayoutPaths, resolveNearestSpecialPage, routeParameters } from '@cossackframework/framework/route-ids';
 import { discoverRoutes, scanPagesDir } from '@cossackframework/framework/route-codegen';
 export { filePathToHttpRoute, classifyRoute, scanPagesDir };
@@ -114,10 +114,14 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let reason = null;
     let methods = { methods: [] };
     let routeStyle = 'component';
+    let apiContracts = null;
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
-      if (page.kind === 'api' && await isHttpHandlerModule(source)) routeStyle = 'http-handlers';
+      if (page.kind === 'api' && await isHttpHandlerModule(source)) {
+        routeStyle = 'http-handlers';
+        apiContracts = await inspectApiContractsFromAst(source, page.filePath);
+      }
       moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
@@ -145,6 +149,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     pages.push({
       ...page,
       routeStyle,
+      ...(apiContracts ? { apiContracts } : {}),
       routeId: idFor(page.filePath),
       params: page.params,
       layouts: routeStyle === 'http-handlers' ? [] : layoutStackForPage(page.filePath, layoutKeys),

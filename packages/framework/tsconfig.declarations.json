@@ -16,6 +16,7 @@
   },
   "include": [
     "src/api-handler.ts",
+    "src/api.ts",
     "src/cache.ts",
     "src/client/devtools.ts",
     "src/client/index.ts",

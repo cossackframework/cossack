@@ -114,6 +114,10 @@
     "./route-codegen": {
       "types": "./dist/esm/route-codegen.d.ts",
       "import": "./dist/esm/route-codegen.js"
+    },
+    "./api": {
+      "types": "./dist/esm/api.d.ts",
+      "import": "./dist/esm/api.js"
     }
   },
   "files": [

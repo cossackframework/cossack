@@ -27,7 +27,7 @@ below link directly to those explanations.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
-- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; Codex continuation (2026-10-03): shared route discovery/manifest, published typed URL construction, virtual generated imports and actual Node/browser handler/middleware/error/404 acceptance now pass. See the [route checkpoint](#codex-typed-routes-2026-10-03). Remaining: declared native API schemas/generated API types, full grouped/dynamic unknown-URL boundary acceptance and the original criterion audit.
+- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; Codex continuation (2026-10-03): shared route discovery/manifest, published typed URL construction, virtual generated imports and actual Node/browser handler/middleware/error/404 acceptance now pass. See the [route checkpoint](#codex-typed-routes-2026-10-03). Native declared contracts, generated API types and actual Node/native workerd/D1 acceptance now pass; see the [API checkpoint](#codex-api-contracts-2026-10-03). Remaining: grouped/dynamic unknown-URL boundary acceptance, the unused PageOptions.route decision and the original criterion audit.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
@@ -85,6 +85,77 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-api-contracts-2026-10-03"></a>
+### Codex checkpoint: native API contracts and generated declarations (2026-10-03)
+
+**Author: Codex.** Continued after `7f4ce93` against RT-07.
+**21/58 checked, 37 unchecked. RT-07 remains open. No new checkbox closes.**
+The [detailed checkpoint](./release-0.9.0-plan.md#rt-07) gives the implementation,
+criterion status and the next steps for GLM.
+
+`defineApi` at framework `/api` adds explicit params/query/body schemas and
+inferred parsed authorization/handler inputs. Parsing precedes authorization
+and mutation. JSON output validates and serializes to wire types; native mode
+requires Response and preserves cookies, redirects, status and streams.
+Review reproduced discarded context cookies and duplicate native cookie values.
+The wrapper now merges those cookies through Hono's finalization exactly once.
+The final review also prevents a single explicit generic from erasing output
+types, rejects null contract configuration, reports mutable exports unknown,
+and checks elapsed time before accepting a late native body.
+
+JSON input reads actual bounded bytes with fatal UTF-8, independent of a claimed
+Content-Length. Readers release on errors and deadlines even when source cancel
+never resolves. Query arrays are explicit and repeated scalar keys reject.
+Abort/deadline owns every asynchronous pipeline phase until headers. Ignored
+callbacks remain observed and late native bodies cancelled. Native stream
+lifetime, application I/O termination and rollback remain application concerns.
+Unexpected callback/output failures retain private diagnostics. Expected public
+failures have stable codes, nested location fields and correlated IDs.
+
+The shared compiler inspects canonical factory imports, namespace/const aliases
+and default export aliases. Security stubs private API modules before imports
+load. CLI apiContracts facts have effective methods/source lines and explicit
+unknown dynamic contracts. Generated ApiRequest/ApiResponse use type-only actual
+exports from the shared structural route model; no private modules enter runtime
+client output. Native default functions use method '*'. Unvalidated handlers and
+class modules do not invent validated input/output guarantees.
+
+New acceptance includes 29 controlled runtime cases, 16 AST/security cases, a
+published declaration fixture with 16 negative examples, and actual generated
+Node/native workerd apps. Both generated imports type-check with six negative
+examples. The shared request matrix covers coercion/Unicode, validation, malformed
+JSON, wrong media, authorization, cookies/redirects, output privacy and deadlines.
+Actual workerd/D1 proves zero mutations after malformed or unauthorized requests
+and exactly one after valid input. Client assets lack private sentinels and SQL.
+
+Final verification:
+
+- Framework full build (including SSG) passed before the final API adjustments;
+  the final `build:types` passed afterward. Published entries resolve in both
+  real generated production builds.
+- `pnpm tsc --noEmit` passed. Final `pnpm typecheck` passed all 11 packages.
+- Full framework Vitest: **1,379/64 files**, including all new API suites.
+- Focused real Node/workerd API suite: **2/2**, 22 existing cases skipped.
+- Full CLI regression: **603/44 files** passed before the final elapsed-time
+  and mutable-export checks. After those changes, both actual production API
+  cases and all three functional module CLI cases passed again (**5/5**, 39
+  unrelated cases skipped). The final declaration default/config-null correction
+  has focused published/runtime acceptance below.
+- After the final generic-default and null-configuration corrections, all four
+  targeted framework suites passed (**52/4 files**) and both real generated
+  Node/native Worker API cases passed again (**2/2**, 22 unrelated cases skipped).
+  The final root/all-package type checks and declaration build also passed.
+- JavaScript syntax, original task ledger, local links and owned whitespace
+  checks passed. Both new API guide examples also type-check through published
+  exports. There is no live deployment or final REL-03 certification claim.
+
+These are local production/native tests, not a live deployment or full release
+certification. No original RT-07 boundary criterion is dropped: grouped/dynamic
+unknown-URL 404 selection and PageOptions.route remain open. RT-01/RT-11, plain
+Node Vite development, native Deno/Electron and every other REL gate are separate.
+Versions remain 0.8.3. User-owned reports.md/.zcodeignore remain untouched.
+No push, publication, live cloud changes or external messages.
 
 <a id="codex-typed-routes-2026-10-03"></a>
 ### Codex checkpoint: generated typed URLs and shared route discovery (2026-10-03)

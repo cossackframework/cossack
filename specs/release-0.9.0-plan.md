@@ -12,7 +12,17 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex RT-07 route generation (2026-10-03):**
+**Latest checkpoint — Codex RT-07 native API contracts (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-api-contracts-2026-10-03).
+Portable declared native schemas, parsed guards, correlated failures and owned
+cancellation are implemented. Shared AST inspection recognizes aliases and
+strips private factories. Generated API types follow actual exports through
+type-only references. Actual Node/native workerd requests and D1 mutation
+acceptance pass. **21/58 checked, 37 unchecked. RT-07 remains open.**
+Finish grouped/dynamic unknown-URL 404 acceptance and resolve `PageOptions.route`,
+then audit all original criteria. Every other task and release gate remains.
+
+**Previous checkpoint — Codex RT-07 route generation (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-typed-routes-2026-10-03).
 Vite and the CLI now share route discovery, patterns, source ancestry and IDs.
 The virtual route import resolves to a generated TypeScript file. Published
@@ -1646,6 +1656,92 @@ incorrect parameters fail type tests. Manifest middleware order matches actual
 execution. Fixtures cover aliases, route groups, catch-alls, API routes, and
 nearest error/404 boundaries. CLI-04 consumes this same manifest.
 
+
+**Codex implementation checkpoint (2026-10-03): native API contracts are implemented.**
+Author: Codex. Continued after `7f4ce93`. This completes the native contract
+portion of the previous seven-step continuation, not the full RT-07 task.
+See [the API guide](../docs/api-routes.md#declared-input-and-output) and
+[verification](./release-0.9.0.md#codex-api-contracts-2026-10-03).
+
+The portable framework `/api` entry owns `defineApi`, `ApiHandler`, `ApiInput`,
+`ApiRawInput`, `ApiOutput` and `ApiMethods`. It reuses core schemas and snapshots.
+Input location keys are explicit: params, query, body. Handler and authorizer
+receive inferred parsed input, Hono context and an owned signal. JSON handlers
+return the output schema's parsed type; wire output uses `RpcSerialized`.
+Native mode omits output and requires Response. Class API methods need an
+explicit wrapper call with their context; @Server metadata does not guard
+ordinary native calls automatically.
+
+Runtime order is parsing, authorizing, running the handler, validating output,
+then serializing JSON. Invalid input invokes neither authorizer nor handler.
+False authorization and existing auth markers have fixed public denials.
+Controlled handler ClientVisibleError/HTTPException retain their public behavior.
+Unexpected input callbacks, authorizer errors and output failures remain private
+500 errors. Expected schema failures use location-prefixed fieldErrors, stable
+codes and a matching request ID header. Output failures never look like input
+validation failures. A native Response cannot bypass a JSON schema.
+
+Declared JSON bodies accept JSON/+json media, use fatal UTF-8 and actual stream
+byte bounds (1 MiB default, configurable up to 16 MiB). A growable bounded buffer
+avoids collecting unbounded chunk metadata. The reader cancels and releases its
+lock even when underlying cancellation never completes. Optional absent bodies
+parse undefined. Undeclared bodies remain native application input. Query keys
+are strings; repeated scalar keys reject. queryArrays lists inferred array keys,
+keeps singleton arrays and leaves absent optional arrays absent. Encoded query
+text is bounded to 64 KiB and 1,024 pairs.
+
+The default asynchronous deadline is 10 seconds, configurable up to five minutes.
+It links request cancellation through schema parsing, auth, handler and output.
+Ignored callbacks stop retaining framework waits; eventual rejections are
+observed and late response bodies cancelled. This does not interrupt synchronous
+code, terminate ignored I/O or reverse committed writes. After native response
+headers, the application owns stream lifetime. Use the original request signal
+for body cancellation. Core schema limits still bound nodes/depth/items.
+
+The AST classifier recognizes canonical `/api` factory import aliases, namespace
+imports, const aliases/TS wrappers and default export aliases. Named handlers
+may export helper classes. Compiler facts use native default precedence and
+source lines. Dynamic/spread declarations remain unknown. Inspection does not
+execute imports, schemas, guards or handlers. The security load hook stubs a
+factory default before its private initializer/dependency graph loads.
+
+Generated routes retain the existing discovered structural model. ApiRoutes,
+ApiRequest and ApiResponse refer to actual API exports through type-only module
+queries. These vanish from runtime output. Named method inference and default
+`'*'` precedence follow the router. Plain handlers have unknown contracts;
+default classes do not pretend ignored named native handlers execute. These
+are declarations, not a generated network client. Keep browser fetch input
+construction separate from runtime schema enforcement.
+
+| Previous continuation step | Current evidence | Status |
+| --- | --- | --- |
+| 1. Explicit native schemas and parsed types | Published `/api` entry, location/type checks, raw/parsed/wire inference. | Implemented. |
+| 2. Gates and owned cancellation | 29 controlled cases cover malformed/unknown fields, coercion, media/byte/query bounds, all callback phases, private output errors, native response cookies/redirects/streams and abort/deadlines. Actual Node/workerd requests pass. D1 proves zero invalid/unauthorized mutations. | Implemented for the native contract. Incoming adapter disconnect delivery remains RT-01/CF-10 work. |
+| 3. Shared compiler facts and stripping | 16 AST/security cases, CLI facts, actual production assets without private markers or SQL. No user module execution. | Implemented for canonical local declarations; dynamic/transitive facts remain unknown. |
+| 4. Generated API and published types | Published negative type fixture and both generated app type checks; actual grouped/dynamic native APIs execute and compare CLI facts. | Implemented. |
+| 5. Unknown grouped/dynamic URL boundaries | Previous source-ancestry/root404 proof remains valid. The router still reconstructs source paths from public unknown URLs. | Still open. |
+| 6. PageOptions.route | Declaration still unused by registration. Default/decorator export aliases are separately proven. | Still open. |
+| 7. Original task/release audit | All 58 IDs and checkbox states preserved. | Still open. |
+
+**Next steps for GLM:**
+
+1. Reproduce unknown URLs beneath `(group)/users/[id]` and a deeper group boundary
+   in real generated Node and native Worker requests. Include competing source
+   groups, literal/dynamic precedence, the root fallback, expected HTTP status
+   and global/component middleware ownership. Fix selection using shared route
+   metadata rather than pretending a public URL reconstructs its source file.
+   Keep error-page selection and CLI source ancestry aligned. Add browser parity
+   where client navigation owns the same decision.
+2. Resolve PageOptions.route explicitly. Removal is appropriate in alpha if the
+   option has never worked: remove its public declaration, identify all in-repo
+   callers, give migration guidance and published negative typing. If aliases
+   are retained, implement registration, client matching, RPC identities, SSG
+   and generation together, with actual acceptance. Do not check an alias task
+   merely because a default export/decorator import alias works.
+3. Audit every original RT-07 criterion, update the evidence table and only then
+   close that checkbox. Preserve all other unchecked tasks and REL gates. No
+   release bump until REL-04. Continue the original framework/agent/Cloudflare
+   objective; this checkpoint does not narrow it to API schemas.
 
 **Codex implementation checkpoint (2026-10-03): path generation is implemented.**
 This is partial RT-07 completion. No release checkbox changes here. Core owns

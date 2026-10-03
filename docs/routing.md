@@ -119,11 +119,12 @@ over an equivalent file inside an additional route group, as in the router.
 `PageOptions.route` does not currently register a URL alias.
 
 The generated browser module contains public patterns and the portable core
-helper. It imports no page modules, server schemas, or private handlers. The
+helper. Native API declarations use type-only page references, which disappear
+from browser output. No page runtime imports, schemas or handlers enter it. The
 structural manifest retains source layout ancestry and nearest source boundaries.
 Functional API handlers do not execute component layouts. Method and middleware
-facts remain in `cossack routes --json` inspection. Explicit API input/output
-schema generation remains release work.
+facts remain in `cossack routes --json` inspection. See
+[declared API contracts and generated types](./api-routes.md#declared-input-and-output).
 
 ### Route Groups
 

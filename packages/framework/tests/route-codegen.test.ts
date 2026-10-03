@@ -31,7 +31,8 @@ describe('shared structural route model', () => {
     expect(generated.manifest.routes.find(route => route.name === '/home')?.filePath).toBe('/src/pages/home/index.ts');
     expect(generated.source).toContain('"/docs/[...path]": "/docs/:path{.+}"');
     expect(generated.source).toContain('"/api/items/[id]": "/api/items/:id"');
-    expect(generated.source).not.toContain('/src/pages');
+    expect(generated.source).toContain('typeof import("../src/pages/api/items/[id].ts")');
+    expect(generated.source).not.toMatch(/^import\s.*["']\.\.\/src\/pages/m);
     expect(generated.source).not.toContain('404');
     expect(generated.source).not.toContain('error');
     const patterns = Object.fromEntries(generated.manifest.routes.filter(route => route.addressable).map(route => [route.name, route.pattern]));

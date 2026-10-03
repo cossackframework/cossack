@@ -2,6 +2,51 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest checkpoint — Codex RT-07 native API contracts (2026-10-03). Author: Codex.**
+> Continued after `7f4ce93`. Read the
+> [review/evidence](./release-0.9.0.md#codex-api-contracts-2026-10-03),
+> [detailed RT-07 checkpoint and remaining steps](./release-0.9.0-plan.md#rt-07),
+> and [API guide](../docs/api-routes.md#declared-input-and-output).
+>
+> **21/58 checked, 37 unchecked. No checkbox newly closes. RT-07 stays open.**
+> Native API declarations, guard ordering and generated API types are now
+> implemented. `defineApi` lives at the portable framework `/api` entry.
+> Its explicit params/query/body schemas infer parsed input. Authorization
+> follows parsing and precedes the handler. JSON output schemas validate before
+> serialization; omitting output requires a native Response. Cookies, redirects,
+> status and streams have direct and production acceptance.
+>
+> Input uses bounded streamed JSON, fatal UTF-8 and explicit repeated query
+> array declarations. Request abort/deadline stops framework waits through
+> parsing, authorization, handler and output. Ignored callbacks remain observed;
+> late bodies are cancelled. This does not roll back writes or terminate ignored
+> application I/O. Native stream lifetime after headers remains application-owned.
+>
+> Shared AST classification follows canonical factory imports and local aliases,
+> namespace imports and default aliases. It strips private modules before client
+> dependency loading. CLI `apiContracts` reports source lines, effective methods,
+> declared locations and structural output/authorization facts. Dynamic contracts
+> stay unknown. Generated ApiRequest/ApiResponse use type-only actual exports.
+> Plain handlers retain unknown contracts. Class defaults do not falsely expose
+> ignored named native contracts. Default native precedence uses method `'*'`.
+>
+> Actual generated Node and native workerd apps pass the shared acceptance.
+> D1 verifies zero mutations after invalid/unauthorized requests and exactly one
+> after valid input. Package-export and generated-import negative types pass;
+> client chunks contain no private schema/refinement/output sentinels or SQL.
+> Review also fixed discarded context cookies and duplicate native cookies.
+>
+> **Next for GLM:** audit unknown-URL 404 behavior under grouped/dynamic source
+> ancestry, then resolve unused `PageOptions.route` by removal with migration
+> guidance or complete cross-runtime aliases. Compare every original RT-07
+> criterion before checking it. Keep all other 37 unchecked tasks in scope.
+> RT-01/RT-11, plain Node Vite dev and native Deno/Electron gates stay separate.
+> Versions remain 0.8.3. Preserve reports.md/.zcodeignore. No push/publication,
+> live cloud operations, external messages or new chats.
+> Final commands/counts appear in the linked evidence. No owned process remains
+> after this handoff.
+>
+
 > **Latest checkpoint — Codex RT-07 route generation (2026-10-03). Author: Codex.**
 > Continued after `d3b8c5b`. Read the
 > [review/evidence](./release-0.9.0.md#codex-typed-routes-2026-10-03),
