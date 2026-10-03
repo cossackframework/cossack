@@ -55,6 +55,12 @@ Asynchronous navigation waits have a 30-second budget and report
 COSSACK_NAVIGATION_TIMEOUT. Superseding a stalled bootstrap lets a newer page
 complete. Arbitrary application effects after publication cannot be rolled back.
 
+Local draft transfer now copies plain records and arrays instead of sharing their
+raw targets with the disposed page. Cycles, aliases and native File identity are
+preserved. Native/class/function values remain opaque references. Accessors in
+draft records fail before publication with COSSACK_NAVIGATION_DRAFT_ACCESSOR.
+Move computed getters to the component and retain data properties in the draft.
+
 Same-page query navigation now preserves declared ClientState/ClientStore drafts,
 including local File values, when ownership matches. Browser file-input DOM
 values remain empty after page replacement. Copied URLs and unrelated pages

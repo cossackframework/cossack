@@ -2,7 +2,37 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex staged navigation (2026-10-03).
+> Latest checkpoint: Codex draft target isolation (2026-10-03).
+> Author: **Codex**. Continued after `c80fef6`. Read the
+> [verification](./release-0.9.0.md#codex-draft-isolation-2026-10-03),
+> [RT-09 plan](./release-0.9.0-plan.md#rt-09) and
+> [draft contract](../docs/url-state.md).
+>
+> Fixed shared raw targets between old and new page drafts. Capabilities now
+> snapshot plain records/arrays, including null-prototype records, as one graph.
+> Cycles, aliases, data attributes and File identity survive. Native/class/function
+> values remain opaque references; arbitrary capability internals are not isolated.
+> Accessors in draft records fail before publication without invoking their getters.
+>
+> Saved-proxy and cleanup-time writes cannot alter copied new-owner targets.
+> Actual Node/native workerd browsers now retain an old proxy, navigate, write
+> through it, force the new page to render and check its draft. Both pass along
+> with the previous query/File/history/resource cases. Full core: 1,420/84 files.
+> Full framework: 1,435/68 files. Both builds, framework SSG, root TypeScript and
+> all 11 package checks pass. Full CLI was not rerun. No owned process remains.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** The raw plain-draft target
+> issue identified in the prior handoff is fixed. Continue shared App rendering
+> and recovery after publication, interrupted history, changed/nested owners,
+> actual backend read counts and the diagnostic acceptance matrix. Do not claim
+> rollback of arbitrary application effects or isolation of opaque capabilities.
+> Keep every other unchecked release task in scope. Versions stay 0.8.3 until REL-04.
+>
+> Preserve reports.md/.zcodeignore. No push, publication, live cloud change,
+> external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex staged navigation (2026-10-03).
 > Author: **Codex**. Continued after `2aa46fb`. Read the
 > [verification](./release-0.9.0.md#codex-staged-navigation-2026-10-03),
 > [RT-09 continuation](./release-0.9.0-plan.md#rt-09) and

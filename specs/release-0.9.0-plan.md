@@ -2043,8 +2043,8 @@ Codex staging update (2026-10-03): the
 30-second navigation wait budget. The newer-navigation-before-old-bootstrap
 regression passes. Latest matching drafts transfer at publication, before tasks
 and mount hooks. The next acceptance work below now starts with shared render
-state, post-publication failures and interrupted history. Also audit retained raw
-store targets against late writes from a disposed owner's saved proxy.
+state, post-publication failures and interrupted history. The subsequent draft isolation checkpoint below resolves plain raw-target sharing
+with disposed owners; opaque native/class capabilities retain identity.
 
 **Next steps for GLM, in order:**
 
@@ -2184,12 +2184,23 @@ ran in mount/render hooks. Read the
 Next, validate shared App render state and post-publication failure recovery.
 An interrupted render must not leave a mismatched visible tree, URL, service
 context or live owner. Hold render and transition callbacks separately, then
-exercise supersession, deadline and late rejection. Audit transferred raw store
-targets: a disposed owner's saved proxy must not silently mutate a new page's
-draft. Extend actual browsers for user/scope/provider/parent ownership changes,
+exercise supersession, deadline and late rejection. Plain draft target sharing is fixed by the following checkpoint. Keep the
+opaque capability boundary explicit. Extend actual browsers for user/scope/provider/parent ownership changes,
 nested drafts, interrupted history and backend read counts. Add cache/scroll/
 fragment/transition fallback diagnostics and timeline evidence. Audit every
 original RT-08/RT-09 criterion before closure. No checkbox closes here.
+
+
+Codex draft isolation checkpoint (2026-10-03): local capability capture now copies
+plain records/arrays into a new graph. A disposed owner's saved proxy or cleanup
+hook cannot mutate those copied targets. Both Node and native workerd browsers
+force a fresh render after such a late write. Cycles, aliases and File identity
+survive. Opaque native/class/function capabilities retain identity, so their
+internal mutation is not isolated. Accessors in draft records reject before
+publication without running getters. Read the
+[verification](./release-0.9.0.md#codex-draft-isolation-2026-10-03).
+Continue the remaining shared-render, post-publication recovery and full acceptance
+work above. Do not treat these focused draft tests as an RT-08/RT-09 closure.
 
 
 Done when: Browser tests cover rapid links, back/forward, navigation guards,

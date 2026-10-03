@@ -421,6 +421,22 @@ describe('navigation completion behavior', () => {
         expect(window.__INITIAL_STATE__.pathname).toBe('/start');
     });
 
+    it('keeps the committed page when a local draft cannot be snapshotted', async () => {
+        const previous = fixture.page;
+        const destroyed = vi.spyOn(previous, 'destroy');
+        previous._frameworkCaptureClientDraft = () => {
+            throw Object.assign(new Error('draft accessor'), { code: 'COSSACK_NAVIGATION_DRAFT_ACCESSOR' });
+        };
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('start')));
+        expect(await navigate('/start?next=1')).toMatchObject({
+            outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_DRAFT_ACCESSOR' },
+        });
+        expect(fixture.page).toBe(previous);
+        expect(destroyed).not.toHaveBeenCalled();
+        expect(window.location.search).toBe('');
+        expect(window.__INITIAL_STATE__.pathname).toBe('/start');
+    });
+
     it.each(['guard', 'bootstrap'])('bounds an unresponsive %s and permits a later navigation', async boundary => {
         vi.useFakeTimers();
         if (boundary === 'guard') fixture.guard = () => new Promise<boolean>(() => {});

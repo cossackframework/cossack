@@ -68,6 +68,7 @@ import { StateContainer } from './state-container';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
+import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
 import { supportsViewTransitions, type NavigateOptions, type NavigateResult } from '../client/navigation';
@@ -1210,7 +1211,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (this._stateContainer.isInitialized(key)) values.set(key, this._stateContainer.getInternal(key));
         }
         const token = Object.freeze({});
-        navigationDrafts.set(token, { constructor: this.constructor, values });
+        navigationDrafts.set(token, { constructor: this.constructor, values: snapshotNavigationDraft(values) });
         return token;
     }
 

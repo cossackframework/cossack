@@ -43,6 +43,7 @@ export async function writeUrlStateAcceptance(root) {
       @ClientState() blocked=false;
       @ClientState() guardChecks=0;
       @ClientState() outcome='';
+      @ClientState() revision=0;
       @PreventNavigation() prevent(){this.guardChecks++;return this.blocked;}
       @ClientState() file:File|undefined=undefined;
       @ClientStore() draft={text:''};
@@ -56,12 +57,15 @@ export async function writeUrlStateAcceptance(root) {
       @Client() async searchOnly(){this.outcome=(await this.updateUrlState(filters,{search:'latest'})).outcome;}
       @Client() async fail(){this.outcome=(await this.updateUrlState(filters,{search:'failing'})).outcome;}
       @Client() leave(){return this.navigate('/plain');}
+      @Client() rememberDraft(){const draft=this.draft;(window as any).__lateDraftWrite=()=>{draft.text='obsolete owner';};}
       render(){return html\`<main id="rows"><p id="query-values">\${JSON.stringify(this.filters)}</p><p id="query-items">\${this.items}</p>
         <input id="page-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         <input id="draft-file" type="file" @change=\${(event:Event)=>{this.file=(event.target as HTMLInputElement).files?.[0];}}><span id="file-name">\${this.file?.name??''}</span>
         <button id="page-only" @click=\${this.pageOnly}>Page</button><button id="search-only" @click=\${this.searchOnly}>Search</button>
         <button id="fail-query" @click=\${this.fail}>Fail</button><button id="toggle-guard" @click=\${()=>{this.blocked=!this.blocked;}}>Guard</button>
         <button id="confirm-history" @click=\${()=>this.confirmNavigation(true)}>Confirm</button><span id="guard-checks">\${this.guardChecks}</span>
+        <button id="remember-draft" @click=\${this.rememberDraft}>Remember draft</button>
+        <button id="redraw-draft" @click=\${()=>{this.revision++;}}>Redraw</button><span id="draft-revision">\${this.revision}</span>
         <span id="query-outcome">\${this.outcome}</span>
         <button id="rapid-query" @click=\${this.rapid}>Rapid</button><button id="leave-list" @click=\${this.leave}>Leave</button>
         <button id="change-query" @click=\${this.change}>Change</button><button id="replace-query" @click=\${this.replace}>Replace</button></main>\`;}
@@ -79,7 +83,13 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.locator('#page-draft').fill('unsaved page'); await page.locator('#layout-draft').fill('unsaved layout'); await page.locator('#service-draft').fill('unsaved service');
     await page.locator('#draft-file').setInputFiles({name:'draft.txt',mimeType:'text/plain',buffer:Buffer.from('draft')});
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await page.locator('#remember-draft').click();
     await page.locator('#change-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
+    // An old closure still holds the disposed page's proxy. Force a new-owner
+    // render so shared raw-target corruption cannot hide behind stale DOM.
+    await page.evaluate(() => { window.__lateDraftWrite(); delete window.__lateDraftWrite; });
+    await page.locator('#redraw-draft').click();
+    await browserExpect(page.locator('#draft-revision')).toHaveText('1');
     await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');

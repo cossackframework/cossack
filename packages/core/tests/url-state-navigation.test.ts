@@ -54,7 +54,31 @@ it('adopts edits made while preparing without sharing the outgoing store before 
     expect(next.file).toBe(file);
     expect(next.draft.text).toBe('edited while preparing');
     expect(next.draft).not.toBe(previous.draft);
-    previous.destroy(); next.destroy();
+    const oldProxy = previous.draft;
+    const oldNested = previous.draft.nested;
+    previous.destroy();
+    oldProxy.text = 'late old write';
+    oldNested.count = 99;
+    expect(next.draft).toEqual({ text: 'edited while preparing', nested: { count: 0 } });
+    next.draft.text = 'new owner edit';
+    expect(oldProxy.text).toBe('late old write');
+    next.destroy();
+});
+
+it('snapshots before outgoing cleanup can change the transferred draft', async () => {
+    @Page({ transport: 'http' }) class PageWithCleanup extends Draft {
+        onCleanup() { this.draft.text = 'cleanup mutation'; }
+    }
+    const previous = new PageWithCleanup();
+    await previous.bootstrap({ initialState: state(), deferMount: true });
+    previous.draft.text = 'saved edit';
+    const token = previous._frameworkCaptureClientDraft()!;
+    previous.destroy();
+    const next = new PageWithCleanup();
+    expect(next._frameworkRestoreClientDraft(token)).toBe(true);
+    await next.bootstrap({ initialState: state(2), stageNavigation: true });
+    expect(next.draft.text).toBe('saved edit');
+    next.destroy();
 });
 
 it.each(['resolve', 'reject'] as const)('retained resource handoff discards a late %s and hydrates the new query without RPC', async settlement => {

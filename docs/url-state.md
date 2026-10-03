@@ -88,6 +88,18 @@ and `ClientStore` drafts when user, transport, provider and service ownership
 match. The framework adopts the latest local values when publishing the prepared page. SSR JSON and copied URLs
 cannot restore them. Stores get proxies owned by the new page; declared File
 values retain their identity. Browser file-input DOM values are not restored.
+Plain records, null-prototype records and arrays are copied as one local graph.
+Cycles, shared references between draft fields, sparse arrays and property
+attributes are preserved. Saved proxies and cleanup code from the old owner
+cannot mutate those copied targets. Native objects, authored class instances and
+functions remain opaque references with their original identity. Their own
+mutable contents and external effects are outside this isolation contract.
+Use retained services for intentionally shared mutable state.
+
+Draft records must use data properties. An accessor fails navigation before
+publication with `COSSACK_NAVIGATION_DRAFT_ACCESSOR`; its getter is not executed.
+Keep computed getters on the component and store their inputs in the draft.
+
 Unrelated pages and changed ownership start with new drafts. New page tasks,
 transports, onMount and clientInit start at publication. Framework preparation
 keeps the old page editable and does not bind retained services to the destination.

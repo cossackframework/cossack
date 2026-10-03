@@ -86,6 +86,53 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-draft-isolation-2026-10-03"></a>
+## Codex draft target isolation (2026-10-03)
+
+Author: **Codex**. Continued after `c80fef6`. New page proxies still wrapped
+outgoing raw draft targets. A saved proxy or cleanup hook from the disposed page
+could mutate the new draft, even though it no longer owned reactive updates.
+
+Local draft capabilities now snapshot plain records, null-prototype records and
+arrays as one graph. Cycles and aliases across fields survive. Sparse arrays,
+symbol/non-enumerable data properties, descriptors and non-extensibility survive.
+Native objects, authored class instances and functions retain identity as opaque
+references. Their own mutable contents and external effects are not isolated.
+File identity still survives real navigation. No JSON serialization is involved.
+
+Accessors inside draft records fail with COSSACK_NAVIGATION_DRAFT_ACCESSOR before
+publication and without executing the getter. The error identifies the field and
+suggests moving computed getters onto the component. The existing navigation
+failure path preserves the old page, URL and global SSR state in this case.
+Public URL-state documentation and migration guidance explain the shape contract.
+
+Four snapshot tests cover graph ownership, data attributes, native identity and
+accessor rejection. Component tests cover both transfer paths, old saved proxies,
+and cleanup-time mutation. A framework test checks snapshot failure before live
+publication. Both actual production browser fixtures now retain an old proxy,
+navigate, write through it, force a new-owner render and verify the draft stays
+unchanged. This forces rendering so stale DOM cannot hide shared-target corruption.
+The existing File, query, resource, draft and history matrix still passes.
+
+Final verification:
+
+- Full core: **1,420 tests / 84 files**. The first focused run exposed the existing
+  proxy predicate excluding null-prototype records. Snapshot handling now includes
+  those records explicitly; final graph and full-suite tests pass.
+- Full framework: **1,435 / 68 files**, including failure-before-publication.
+- Generated production Node/native workerd URL tests: **2 passed / 26 skipped**.
+  Command: `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js
+  -t 'parses and navigates typed URL state'`.
+- Core/framework ESM and declaration builds, framework SSG, root `pnpm tsc --noEmit`
+  and `pnpm typecheck` for all **11 packages** pass. Consumer checks ran after builds.
+- JS syntax, owned whitespace and exact release ID/order/state checks pass.
+  Full CLI was not rerun; the previous full CLI result belongs to its checkpoint.
+
+All **58 original IDs** remain: **22 checked / 36 unchecked**. No checkbox closes.
+RT-08/RT-09 still require shared-render and post-publication recovery, interrupted
+history, changed/nested owners, backend read counts and diagnostics acceptance.
+Versions stay 0.8.3 until REL-04. No owned test/build process remains.
+
 <a id="codex-staged-navigation-2026-10-03"></a>
 ## Codex staged navigation review (2026-10-03)
 
