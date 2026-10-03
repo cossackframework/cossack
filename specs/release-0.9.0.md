@@ -6847,3 +6847,41 @@ Logs: `/tmp/cossack-dialog-{build,ui,studio,browser,root-types,types,agent-docs}
 Twenty-two foundations are reviewed. Continue Popover and remaining UI audit rows.
 RT-23, CLI-07/CLI-08 and the broader release matrix remain open. The checklist stays
 at 24 of 58 completed tasks. Package versions remain 0.8.3 until REL-04.
+
+<a id="codex-popover-2026-10-04"></a>
+### Codex: native Popover contract (2026-10-04)
+
+Popover now requires a stable ID and exposes typed native trigger attributes.
+`contentProps` supplies typed panel attributes and events. Native targeting,
+expansion, light dismissal and focus remain browser-owned. Supplied callbacks and
+preventDefault directives retain their real event targets and veto behavior.
+The public show/hide/toggle methods respect disconnected and disabled triggers.
+Inherited disabled fieldsets close existing content.
+
+Positioning now follows nested scrolling, trigger/content size changes and the
+visual viewport. It flips toward available space, clamps oversized panels and
+uses RTL alignment. Cleanup releases listeners/observers and closes the panel.
+The demo supplies an explicit ID. Migration notes cover IDs, attribute ownership,
+placement classes and positioning styles. Package guidance states naming, role
+selection and keyboard responsibilities without implying menu behavior.
+
+Verification: UI build, 189 tests across 17 UI files, root `pnpm tsc --noEmit` and
+all 11 package type checks pass. The themed Chromium fixture covers no-JS native
+activation, deterministic retained hydration, fresh mounts, keyboard focus,
+Escape/light dismissal, real native event targets, click/beforetoggle vetoes,
+preventDefault directives, fieldset disabling, content growth, nested scrolling,
+RTL alignment, viewport resizing, oversized content and cleanup. Chromium's
+native accessibility tree verifies implicit expanded state; Playwright's simplified
+snapshot omits this browser-derived property. Source and browser behavior align
+with the [HTML popover specification](https://html.spec.whatwg.org/multipage/popover.html).
+Other browser engines and assistive-technology acceptance remain unverified.
+
+Installed-tarball acceptance passes for the Popover contract and new guide, with
+exact-symbol CLI/MCP parity and discovery with Node networking disabled. All six
+existing packaged examples compile and execute. The new UI guide does not add
+an executable example.
+
+Logs: `/tmp/cossack-popover-{build,ui,browser,root-types,types,agent-docs}.log`.
+Twenty-three foundations are reviewed. Continue DropdownMenu and ContextMenu,
+then the remaining pending UI rows. RT-23 and CLI-07/CLI-08 remain open. No release
+checkbox or package version changed.

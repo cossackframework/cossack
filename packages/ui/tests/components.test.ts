@@ -464,7 +464,7 @@ describe("Tooltip", () => {
 
 describe("Popover", () => {
     it("renders a trigger button with popovertarget and a popover div", () => {
-        const out = renderComp(Popover, { trigger: "Open" }, "Body");
+        const out = renderComp(Popover, { id: 'popover-test', trigger: "Open" }, "Body");
         expect(out).toContain("popovertarget");
         expect(out).toContain("popover");
         expect(out).toContain("auto");

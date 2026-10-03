@@ -208,3 +208,19 @@ component(Sheet, { role: 'button' });
 component(Drawer, { '@close': (event: Event & { currentTarget: HTMLTextAreaElement }) => {} });
 // @ts-expect-error Unknown attributes no longer disappear into an any index.
 component(Modal, { unknownOption: true });
+
+import { Popover, type PopoverContentProps } from '@cossackframework/ui';
+const popoverContent: PopoverContentProps = { role: 'dialog', 'aria-label': 'Details', '@toggle': event => { const panel: HTMLDivElement = event.currentTarget; void panel; } };
+component(Popover, { id: 'details', trigger: 'Details', contentProps: popoverContent, '@click': event => { const trigger: HTMLButtonElement = event.currentTarget; void trigger; }, disabled: true });
+// @ts-expect-error Stable identity is required.
+component(Popover, { trigger: 'Details' });
+// @ts-expect-error Native target belongs to the component.
+component(Popover, { id: 'details', popovertarget: 'other' });
+// @ts-expect-error Native auto-popover expansion belongs to the browser.
+component(Popover, { id: 'details', 'aria-expanded': true });
+// @ts-expect-error Panel identity belongs to the component.
+component(Popover, { id: 'details', contentProps: { id: 'other' } });
+// @ts-expect-error The panel is not a button.
+component(Popover, { id: 'details', contentProps: { '@click': (event: Event & { currentTarget: HTMLButtonElement }) => {} } });
+// @ts-expect-error Unknown options no longer disappear into an any index.
+component(Popover, { id: 'details', open: true });

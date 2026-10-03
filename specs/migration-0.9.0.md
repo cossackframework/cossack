@@ -796,3 +796,24 @@ Native form validation and `method="dialog"` submission remain available.
 `onClose` receives the actual native event; its currentTarget contains returnValue.
 A new opening clears the previous returnValue. Drawer now applies vertical size
 and offers its localizable close button on all sides.
+
+## Popover
+
+Provide a stable, page-unique `id` without whitespace. The trigger uses that ID;
+the panel uses `${id}-content`. Random IDs are removed. Native attributes and
+`@event` callbacks now target the trigger button instead of being ignored. Use
+`contentProps` for panel attributes and events. Neither object accepts arbitrary
+props. Trigger type, native targeting and expansion semantics are owned.
+
+The panel uses native auto-popover state. `show()`, `hide()` and `toggle()` remain
+available. There is no controlled `open` prop. Disabled buttons and fieldsets
+block opening and close existing content. Native events preserve their targets
+and cancellation behavior. Supply appropriate panel semantics and names through
+`contentProps`; Popover does not implement menu navigation or a focus trap.
+
+Positioning now follows nested scrolling, content/trigger resizing and the visual
+viewport. It flips and clamps within viewport limits, uses RTL start/end alignment,
+and scrolls oversized content. Use `data-side` for actual placement instead of
+`cs-popover--<side>` classes. The component owns panel positioning and maximum
+viewport dimensions. Use `contentProps.style` width/height for desired size.
+Native targeting works without JavaScript; custom positioning requires hydration.

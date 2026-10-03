@@ -101,7 +101,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [NavigationMenu](../packages/ui/src/components/NavigationMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Pagination](../packages/ui/src/components/Pagination.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Foundation reviewed | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
-| [Popover](../packages/ui/src/components/Popover.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Popover](../packages/ui/src/components/Popover.ts) | Reviewed foundation | Stable IDs, typed trigger/panel contracts, native accessibility and dismissal, nested-scroll/resize positioning, disabled fieldsets, SSR/hydration and Chromium acceptance. |
 | [Progress](../packages/ui/src/components/Progress.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Popover and the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit DropdownMenu and ContextMenu, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the
@@ -136,3 +136,5 @@ native behavior. Preserve an explicit status for unknown or unsupported behavior
 the installed catalog rather than implying that unreviewed components are complete.
 
 Modal, Sheet and Drawer share native lifecycle handling. The [dialog checkpoint](./release-0.9.0.md#codex-dialog-controls-2026-10-04) records public types, SSR, browser and installed-catalog evidence. Twenty-two foundations are reviewed. The full RT-23 acceptance scope remains open.
+
+Popover now preserves native trigger/panel event ownership and accessibility with stable IDs. The [Popover checkpoint](./release-0.9.0.md#codex-popover-2026-10-04) records evidence and limits. Twenty-three foundations are reviewed.
