@@ -12,7 +12,17 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex authoritative optimistic reads (2026-10-03):**
+**Latest checkpoint — Codex native optimistic socket recovery (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03).
+RT-06 now has actual committed/lost socket replies, reconnect after DO eviction,
+queued cancellation and post-yield stream error/cancellation acceptance. The default
+DO uses the application's compiler registry. A client API-body leak found by native
+asset inspection now has a shared-classifier guard and explicit export-shape tests.
+**20/58 checked, 38 unchecked. All original IDs remain and RT-06 stays open.**
+Finish SSE resync/different late snapshots, retained consumers and the optimistic
+stream matrix across remaining transports/services. Continue every other task.
+
+**Previous checkpoint — Codex authoritative optimistic reads (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03).
 RT-06 step 2 now uses explicit typed resource reconciliation after known uncertain
 RPC failures. Repeated recovery shares one current-dependency read and never
@@ -1451,6 +1461,33 @@ errors after writes need an explicit read. It does not infer persisted records,
 add independent deadlines, or stop ignored I/O. Recovered means the read completed
 under its current resource ownership. Broader RT-01 gates remain separate.
 
+**Codex native-socket continuation (2026-10-03), after `51bef75`:**
+
+Native Chromium/workerd acceptance writes D1 before signaling a held action.
+A test-only server endpoint closes the real socket before reply delivery.
+Backend audit, client request IDs and captured terminal frames distinguish a
+committed mutation from its lost reply. The same socket has two pending browser
+calls in another case. One mutation commits and the queued invocation cancels
+before execution. Both loading owners release exactly once. Actual DO eviction
+closes any early replacement socket. A new connection restores persisted public
+state and retains the client draft without dispatching a mutation again.
+
+Post-yield component socket cases commit, then fail visibly or cancel explicitly.
+They preserve persisted count/draft and settle loading. Native actor checks prove
+u1 from handshake identity. The disposable app now installs ORM context on /ws/
+before session validation. Native acceptance uses the published AppDurableObject
+registry after its failing regression exposed package-demo lookup. That registry
+now uses the same application page/layout keys as the router and rejects helper/
+HTTP module exports. A separate browser asset audit found binding-only API SQL.
+Functional handler modules now become export-compatible throwing stubs before
+private dependencies enter the client graph. SSR stays original.
+
+[Exact evidence and intermediate corrections](./release-0.9.0.md#codex-optimistic-socket-2026-10-03)
+record the final commands. These cases advance step 3 and the native component
+part of step 4. They do not close SSE resync/different late snapshots, retained
+layout/service consumers or optimistic stream acceptance on remaining transports.
+Native cancellation is not server transaction rollback. Preserve this distinction.
+
 **Required next work, before RT-06 can close:**
 
 1. Contribution semantics: implemented for the explicit increment/append/remove
@@ -1459,18 +1496,19 @@ under its current resource ownership. Broader RT-01 gates remain separate.
 2. Authoritative uncertain HTTP/service reads: implemented through declared
    resources above. Preserve committed/lost-response acceptance and zero repeated
    mutation dispatches. Recovery reads do not establish transactional rollback.
-3. Test actual native socket loss/reconnect and SSE recovery, including snapshots
-   delivered before/after call cleanup, multiple pending calls, retained layouts
-   and explicit service consumers. Current unit calls to applyStateToComponent
-   prove merging, not native reconnect delivery. Preserve server snapshot authority
+3. Native component socket loss/reconnect, eviction, queued cancellation and
+   multiple pending calls now pass. Finish actual SSE resync/recovery, different
+   snapshots before/after cleanup, retained layouts and explicit service consumers.
+   Unit state application does not prove the remaining native SSE delivery. Preserve server snapshot authority
    and client-only drafts. Decide how late action-related broadcasts interact with
    user edits after settlement; the final browser/native acceptance must cover it.
-4. Verify malformed replies, stream errors after yields, cancellation/cleanup and
-   indicators settling once across all transports. Keep RT-01's broader boundary
-   and actual incoming disconnect gates separate. Add a published full example
+4. Native component socket post-yield failure/cancellation now passes. Finish
+   optimistic malformed replies, post-yield errors and cancellation/cleanup across
+   HTTP/SSE and explicit services, with indicators settling once. Keep RT-01's
+   broader boundary and actual incoming disconnect gates separate. Add a published full example
    for the final API, then audit every original RT-06 done criterion.
 
-Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03)
+Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03)
 and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
 Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
 

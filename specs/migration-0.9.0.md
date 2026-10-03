@@ -520,3 +520,19 @@ nested components. Generated resource actions perform exactly their selected
 read. Do not depend on render-triggered resource I/O running before an RPC guard
 or mutation. SSR discovery and browser resource rendering keep their behavior.
 RT-06 still requires actual socket loss/reconnect and late-snapshot acceptance.
+
+## Default Durable Object application registry
+
+AppDurableObject now uses the compiler's application page and layout registry.
+Generated application targets use the router's exact source paths. Named helpers
+and native HTTP handler modules are excluded. The old library-relative glob
+registered bundled framework demos and could not resolve generated application pages.
+Custom Durable Object subclasses can retain their explicit registry overrides.
+The default registry requires the framework's Vite virtual-module integration.
+See [socket recovery behavior](../docs/websockets.md#application-component-registry-and-lost-replies).
+
+Functional HTTP route exports now become throwing stubs in the browser catalog,
+including binding-only handlers. The server keeps the original functions.
+Browser code must call their URLs. Shared values belong in separate non-route
+modules. Use explicit exports instead of runtime export stars. Read the
+[API boundary guide](../docs/api-routes.md#browser-boundary-for-functional-handlers).

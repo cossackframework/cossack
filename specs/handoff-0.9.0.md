@@ -2,7 +2,58 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-06 authoritative reads (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex native optimistic socket recovery (2026-10-03). Author: Codex.**
+> Continued after `51bef75`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03),
+> [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06),
+> [socket guide](../docs/websockets.md#application-component-registry-and-lost-replies), and
+> [native API boundary](../docs/api-routes.md#browser-boundary-for-functional-handlers).
+>
+> **20/58 checked, 38 unchecked. All original IDs remain. RT-06 stays open.**
+> Native Chromium/workerd/D1 acceptance now commits a write while its correlated
+> reply stays held, initiates a real server socket close, releases held I/O and
+> checks uncertainty/loading. Reconnect never repeats the mutation. Actual DO
+> eviction closes any early reconnect too, forcing a new socket and persisted
+> public snapshot. Browser drafts remain local. A two-pending-call case proves
+> one committed write and one canceled queued invocation. Socket actions execute
+> serially. Two pending browser calls do not mean both server writes started.
+>
+> Native streaming cases commit and yield before a client-visible failure or
+> explicit cancellation. Each failure releases loading once, retains the persisted
+> public count and draft, and dispatches exactly one action. Authenticated actor
+> assertions use the socket's actual user u1. The test app now installs ORM context
+> for /ws/ session validation, matching its existing /sse/ setup. This is fixture
+> wiring, not a production auth policy change. Cancellation cannot prove rollback.
+>
+> A production bug surfaced: AppDurableObject scanned framework demo pages instead
+> of generated application pages. It now uses the compiler's exact page/layout
+> registry and accepts only default Cossack component exports. The regression
+> failed before correction. Native acceptance uses that published default lookup.
+> Its subclass adds only a test-only native socket-close endpoint.
+>
+> The client asset audit then found binding-only API SQL in an emitted browser
+> chunk. The security load hook now recognizes functional HTTP routes through the
+> shared classifier, replaces default/named exports before loading dependencies,
+> and refuses ambiguous runtime export stars. SSR keeps original modules and
+> component classes keep their normal transform. Explicit aliases/string exports
+> retain their runtime shape. Tests cover export shape, misuse errors and body
+> exclusion. Native asset checks exclude both socket SQL table names.
+>
+> **Next for GLM: finish RT-06 steps 3–4.** Prove actual SSE resync and different
+> late snapshots before/after cleanup, multiple pending calls and retained layout/
+> service consumers. The native socket stream matrix is component-owned. Extend
+> optimistic post-yield errors, malformed replies and cancellation across HTTP/SSE
+> and explicit services. A late subscriber joining pending service work still
+> needs its ownership/loading audit. Audit every original criterion before
+> checking RT-06. Continue all remaining tasks and release gates.
+>
+> The value fingerprint remains an echo comparison, not server revision ordering.
+> Wider RT-01 deadlines/init/incoming disconnect, RT-11 session gates and the Node
+> plain Vite development 404 gap remain open. Versions stay 0.8.3 until REL-04.
+> Preserve reports.md/.zcodeignore. No push/publication/live cloud changes,
+> external messages or new chats. Exact final verification appears in the review.
+
+> **Previous checkpoint — Codex RT-06 authoritative reads (2026-10-03). Author: Codex.**
 > Continued after `7cdb039`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03),
 > [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and

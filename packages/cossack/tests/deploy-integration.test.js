@@ -8,6 +8,7 @@ import { deployCommand } from '../src/commands/deploy.js';
 import { createTestHarness } from 'wrangler';
 import { readRpcStream } from '../../core/dist/index.js';
 import { writeWorkerRpcAcceptance, checkWorkerRpcAcceptance } from './fixtures/worker-rpc-acceptance.js';
+import { writeWorkerOptimisticSocket, checkWorkerOptimisticSocket } from './fixtures/worker-optimistic-socket.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
@@ -258,7 +259,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       async (c, next) => {
         if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
         const path = c.req.path;
-        const needsDatabase = path.startsWith('/sse/') || path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/api/rpc-policy') || path.startsWith('/rpc-policy') || path.startsWith('/me') || path.startsWith('/shared') || path.startsWith('/resource-check');
+        const needsDatabase = path.startsWith('/ws/') || path.startsWith('/sse/') || path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/api/rpc-policy') || path.startsWith('/rpc-policy') || path.startsWith('/me') || path.startsWith('/shared') || path.startsWith('/resource-check');
         if (needsDatabase) await database(c, next);
         else await next();
         c.header('x-worker-pipeline', 'ran');
@@ -277,6 +278,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     await fs.writeFile(path.join(projectDir, 'public', directory, 'record.txt'), `${body} file`);
   }
   await writeWorkerRpcAcceptance(projectDir);
+  await writeWorkerOptimisticSocket(projectDir);
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.env = { staging: {
@@ -284,8 +286,10 @@ it('builds a generated staging app and validates deployment without uploading', 
     d1_databases: [{ binding: 'DB', database_name: 'stream-test-database' }],
     // Cloudflare environments do not inherit bindings; the coordinator must
     // be re-declared for staging or the built Worker loses COSSACK_SSE.
-    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' },
+      {name:'COSSACK_OBJECT',class_name:'SocketRecoveryObject'}] },
   } };
+  config.migrations.push({tag:'v2',new_sqlite_classes:['SocketRecoveryObject']});
   await fs.writeFile(configPath, JSON.stringify(config));
   await fs.copyFile(path.join(projectDir, '.dev.vars'), path.join(projectDir, '.dev.vars.staging'));
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -323,6 +327,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(code).not.toContain('PRIVATE_SCHEMA_REFINEMENT_SENTINEL');
     expect(code).not.toContain('PRIVATE_RESOURCE_FAILURE_SENTINEL');
     expect(code).not.toContain('PRIVATE_PUBLIC_POLICY_EXCEPTION');
+    expect(code).not.toContain('socket_counter'); expect(code).not.toContain('socket_operations');
   }
   expect(staticHome).not.toContain('ssg-user');
   const readHydration = output => JSON.parse(output.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
@@ -491,6 +496,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     const authedShared = await server.fetch('/shared', { headers: { cookie } });
     const authedState = readHydration(await authedShared.text());
     expect(authedState.scopeKey).toBe('user:u1');
+    await checkWorkerOptimisticSocket(server, serverUrl, cookie);
     const authedInvoke = action => server.fetch('/crpc', {
       method: 'POST', headers: { origin: serverUrl.origin, 'Content-Type': 'application/json', cookie },
       body: JSON.stringify({ componentRouteId: sharedState.componentRouteId, scopeKey: 'user:u1', action, payload: [] }),

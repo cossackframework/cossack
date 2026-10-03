@@ -65,6 +65,22 @@ export const POST = async (c) => {
 };
 ```
 
+## Browser boundary for functional handlers
+
+Functional HTTP route modules run on the server.
+The client compiler identifies their default handler or named HTTP exports through the shared route classifier.
+It replaces those exports with throwing stubs before loading imports or executing module code.
+This also covers handlers that use Web APIs or bindings directly, without a database library import.
+API source bodies and their private dependencies do not enter the browser route catalog.
+SSR keeps the original module.
+
+Call an API through its URL from browser code.
+Do not import its handlers into a client method.
+Move browser-shared data or pure utilities into a separate module outside the route tree.
+Use explicit exports for native handler modules.
+A runtime `export *` has an unknown stub interface and fails with a source-bearing compiler diagnostic.
+Cossack page classes retain the usual method stripping and RPC behavior.
+
 ## Class-based API Routes
 
 If you prefer an object-oriented approach, you can extend the `Cossack` base class.

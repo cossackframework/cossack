@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Real socket reconnect, late snapshots and stream acceptance remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Native component socket loss/reconnect, eviction and post-yield failure/cancellation now pass. See the [socket checkpoint](#codex-optimistic-socket-2026-10-03). SSE resync/different late snapshots, retained consumers and the remaining optimistic stream/service matrix stay open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4416,3 +4416,129 @@ snapshots by server revision. Keep broader RT-01 incoming disconnect/deadline/in
 and RT-11 session gates separate. Continue all remaining IDs and the Node plain
 Vite development 404 gap. The [detailed plan](./release-0.9.0-plan.md#rt-06) and
 [Codex handoff](./handoff-0.9.0.md) identify the next concrete work.
+
+
+<a id="codex-optimistic-socket-2026-10-03"></a>
+## Codex review: native optimistic socket recovery (2026-10-03)
+
+Author: Codex. Continued after `51bef75`. **20/58 checked, 38 unchecked.**
+All original IDs and states remain. RT-06 stays open for the remaining SSE,
+late-snapshot, retained-consumer and optimistic stream/service matrix criteria.
+
+Native acceptance now generates a stateful durable-object page, builds through
+published framework exports and runs Chromium against actual workerd and D1.
+A mutation inserts an operation record, increments the durable count, updates
+public state and signals commit while its correlated reply remains held. The
+checker audits D1, loading and request IDs before a test-only DO endpoint closes
+the real server socket. Held I/O releases after close starts. The browser reports
+TRANSPORT_CLOSED, releases loading once and sees no correlated terminal reply.
+Backend counts prove one committed write and zero mutation replay.
+
+A second case sends two pending calls on one socket. The server queue starts one
+write and holds it. The second invocation remains queued. Closing cancels both
+client owners, and the queued method never executes. D1 contains one operation
+and one increment for the pair. This preserves the actual socket queue contract,
+not a claim that every pending client action already committed.
+
+The harness then actually evicts the DO and closes any early replacement socket.
+The checker requires a different open socket after eviction. Its authoritative
+public snapshot restores the persisted count. The client-only draft stays local.
+The next action uses restored component state and handshake identity. Actor
+assertions require the signed-in user u1. The test app installs its ORM context on
+/ws/ before ORM-backed session validation, as it already does on /sse/. This
+changes disposable app wiring, not production authentication policy.
+
+Two further native cases commit and yield before a client-visible stream error
+or explicit client cancellation. Each retains persisted public data and the draft,
+releases loading once and sends one action. The final D1 count is four, with four
+unique committed operations. The extra queued request has no operation record.
+A canceled or failed stream cannot establish rollback of a preceding write.
+This matrix is component-owned. Explicit service and HTTP/SSE optimistic stream
+acceptance remains separate.
+
+The native fixture initially supplied an explicit registry. Inspection uncovered
+a production default-registry bug: AppDurableObject used a package-relative glob
+and registered bundled framework demos instead of generated application pages.
+A failing unit regression returned those demo keys. The default now uses the
+router's virtual application page/layout registry, preserves exact compiler paths
+and accepts only default Cossack subclasses. Named helpers, missing defaults and
+native HTTP modules are excluded. Final native acceptance subclasses this default
+only to add socket-close control. Lookup/restoration use the published production
+registry. No fixture-specific page registry remains.
+
+A client asset audit also found socket SQL in an emitted native API chunk. The
+route used D1 directly, so the import-based server-only detector did not classify
+it. Client catalog imports could therefore expose the handler and its dependency.
+The security load hook now uses the shared functional-HTTP source classifier for
+route modules. It replaces their default/named export shapes with throwing stubs
+before original imports/body evaluation. Explicit aliases and string export names
+remain usable module bindings. Ambiguous runtime export stars refuse compilation
+with a route-specific diagnostic. SSR returns original modules, and component
+classes still follow normal stripping. This does not infer arbitrary non-route
+module privacy. The native fixture scans every emitted client JS asset for both
+socket SQL table names. Those checks pass after the compiler correction.
+
+Final verification against the rebuilt framework:
+
+- `pnpm --filter @cossackframework/framework run build`: declarations, library ESM
+  and executed framework SSG pass. Build completed before runtime consumers ran.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1326 /60 files**.
+  Default DO registry regression: **1**. Native HTTP boundary file: **8**, including
+  four handler shapes, SSR preservation, component/helper separation, explicit
+  aliases/string exports and export-star refusal. Final targeted boundary/security
+  command passes **177 /2 files**. Child-target regressions also remain passing.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  final **19/19**, about **114 seconds**. Existing published Node/Deno/Desktop
+  builds and production Node/browser HTTP/SSE/resource/state/task/schema/recipe/
+  socket/dev/HMR acceptance pass. This is not native Deno or Electron execution.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+  tests/websocket-peer-integration.test.js --maxWorkers=1`: final **2/2**, about
+  **120 seconds**. New generated native socket/eviction/stream cases, explicit
+  actor identity and client SQL exclusion pass. Existing native D1/schema/policy/
+  HTTP/SSE/cancellation/limiter/socket-peer acceptance remains passing.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: all **11** package configurations
+  pass on final source. Core implementation is unchanged from the preceding
+  checkpoint's **1255 /72** suite. No new full monorepo release gate is claimed.
+- Owned whitespace, fixture JS syntax and relative documentation file links pass.
+  All original 58 checkbox IDs/states are preserved. Versions remain 0.8.3.
+  reports.md/.zcodeignore remain user-owned and unstaged. No remote/live changes.
+
+Intermediate evidence:
+
+- The first fixture used transport websocket on Cloudflare. Capability validation
+  rejected it before build. The fixture now uses durable-object. This was a
+  fixture error, not a new production transport capability.
+- The first native checker initiated browser close and waited for every pending
+  action to commit while holding the first action. Its queue made that impossible,
+  and the close handshake could also wait on the held callback. The valid checker
+  distinguishes committed from queued work, initiates server close, then releases
+  I/O. It never weakens the one-mutation/no-replay invariant.
+- An intermediate native run passed after that correction with an explicit
+  registry. The default registry regression subsequently failed on demo keys.
+  Corrected default-registry/actor/eviction acceptance passed **2/2** before the
+  API-body audit. It did not certify client SQL exclusion.
+- The API boundary baseline failed **4/6**. Actual client chunk inspection also
+  exposed the D1 SQL. Eight final boundary cases pass after the load guard.
+  The final rebuilt native run executes both SQL-exclusion assertions and passes.
+  Final rebuilt generated **19/19** and framework **1326/60** supersede the earlier
+  **19/19** and **1318/59** runs before the compiler guard.
+- Processes were observed through their original handles. No live test restarted
+  solely because an observation timed out. Each rerun followed a fixture/compiler
+  correction or a changed acceptance assertion.
+
+References retrieved for native API/type checks: current
+[Cloudflare WebSocket guidance](https://developers.cloudflare.com/durable-objects/best-practices/websockets/),
+[Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/)
+and the latest Workers type definitions. Installed Wrangler harness declarations
+provide the authoritative evictDurableObject signature used by the test.
+
+Next for GLM: finish RT-06 steps 3–4. Prove actual SSE resync and different late
+snapshots before/after call cleanup. Test retained layout/service consumers and
+late subscribers joining pending service work. Extend optimistic post-yield
+failure, malformed reply and cancellation acceptance through HTTP/SSE and explicit
+services. Preserve mutation uncertainty, server snapshot authority and local
+drafts, then audit every original criterion before checking RT-06. Echo history
+is still value-based and does not order different snapshots by server revisions.
+Broader RT-01 incoming disconnect/deadline/init and RT-11 session criteria remain
+open. Continue every unchecked ID and the Node plain Vite development 404 gap.
+Read the [plan](./release-0.9.0-plan.md#rt-06) and [Codex handoff](./handoff-0.9.0.md).

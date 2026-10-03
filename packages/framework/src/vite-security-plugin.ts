@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
 import { readFileSync } from 'node:fs';
+import { isHttpHandlerModule } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -99,7 +100,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
      * are stubbed here so the import resolves on the client without leaking
      * server code or Node built-ins.
      */
-    load(id) {
+    async load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
       if (id.includes('node_modules')) return;
 
@@ -119,6 +120,24 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       if (!isClientEnvironment) return;
+
+      // Functional HTTP routes are server-only even when they use only Web
+      // APIs or platform bindings, without a known server-library import.
+      // Keep their export interface in the browser route catalog, but never
+      // load their bodies or transitive database/credential dependencies.
+      if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
+        const source = readFileSync(cleanId, 'utf8');
+        if (await isHttpHandlerModule(source)) {
+          const shape = readClientOnlyExports(source, cleanId, 'Server-only HTTP route');
+          const label = JSON.stringify(moduleLabelFromId(cleanId));
+          const lines = [`const __httpOnly = name => () => { throw new Error('HTTP route export ' + name + ' from ' + ${label} + ' is server-only. Call its URL or use a @Server method.'); };`];
+          shape.named.forEach((name, index) => lines.push(
+            `const __httpExport${index} = __httpOnly(${JSON.stringify(name)}); export { __httpExport${index} as ${JSON.stringify(name)} };`,
+          ));
+          if (shape.hasDefault) lines.push(`export default __httpOnly('default');`);
+          return lines.join('\n');
+        }
+      }
 
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
@@ -476,17 +495,17 @@ export function generateClientOnlyServerStub(id: string, moduleName = moduleLabe
   return prelude + lines.join('');
 }
 
-function readClientOnlyExports(source: string, id: string): ClientOnlyExports {
+function readClientOnlyExports(source: string, id: string, kind = 'Client-only module'): ClientOnlyExports {
   const program = parseProgram(source);
-  if (!program) throw new Error(`[Cossack Security] Could not parse client-only module ${id}.`);
+  if (!program) throw new Error(`[Cossack Security] Could not parse ${kind.toLowerCase()} ${id}.`);
   const named = new Set<string>();
   let hasDefault = false;
   for (const stmt of program.body ?? []) {
     if (stmt.type === 'ExportAllDeclaration') {
       if (stmt.exportKind !== 'type') {
         throw new Error(
-          `[Cossack Security] Client-only module ${id} uses runtime "export *", ` +
-          `whose SSR stub interface cannot be determined locally. Replace it with explicit named exports.`,
+          `[Cossack Security] ${kind} ${id} uses runtime "export *", ` +
+          `whose stub interface cannot be determined locally. Replace it with explicit named exports.`,
         );
       }
       continue;

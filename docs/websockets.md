@@ -48,6 +48,30 @@ Each status entry tracks `state`, `attempts` (reconnects since the last open),
 `this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
 expired history with an authoritative snapshot.
 
+## Application component registry and lost replies
+
+The default AppDurableObject resolves pages and layouts through the compiler's
+application registry. Its keys match the router's source paths, including route
+groups and dynamic segments. Modules need a default Cossack component export.
+Named helpers and native HTTP handler modules do not become socket targets.
+The framework does not scan its bundled example pages for application targets.
+
+A socket can close after the server commits a write but before its reply arrives.
+The client removes that call's preview and releases its loading count once.
+The error remains `COSSACK_RPC_TRANSPORT_CLOSED`, and reconnect does not retry the mutation.
+Stateful connections receive persisted public state when the new socket opens.
+ClientState and ClientStore drafts remain local.
+Use a declared resource read when public component state does not describe the persisted record.
+Read [optimistic recovery](./optimistic.md#handle-an-uncertain-result) for that contract.
+
+Socket actions on one component execute in a queue.
+Two pending browser calls do not mean that both server writes started.
+Closing a socket cancels registered queued work before invocation.
+An already committed write remains committed.
+Stream failure or cancellation after a yield also cannot establish rollback of a prior write.
+Keep application reads and write consistency explicit.
+The full optimistic SSE resync, late-snapshot, and retained-consumer audit remains RT-06 work.
+
 ## Action identity and request context
 
 Actions use the verified identity and request context of their originating

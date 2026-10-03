@@ -73,6 +73,24 @@ closed. Foreign contract imports cannot also keep that module in the client
 graph, because this file cannot strip its initializers. Shared client form rules
 remain separate from the private typed action contract.
 
+## Application socket registry
+
+Framework AppDurableObject reads the same virtual:cossack-pages registry as the
+router. It preserves compiler source keys for eager pages and layouts. Only
+modules with a default Cossack subclass become remote component targets. Named
+helpers and native HTTP handlers are excluded. A library-relative glob cannot
+resolve generated application components and must not serve this registry.
+Core CossackDurableObject remains application-agnostic and calls the framework's
+registry hook during initial connection and durable reconstruction.
+
+The client security load hook also uses the shared source classifier for
+functional HTTP route modules. Their export shapes become throwing stubs before
+any original body or transitive dependency enters the browser graph. This covers
+Web API and binding-only handlers without known server-library imports. Default
+and named exports retain their shapes. Runtime export stars fail closed when the
+shape cannot be determined. SSR and component-class transformations keep their
+existing paths. This does not infer arbitrary non-route module privacy.
+
 ## Server resource lifecycle
 
 Core owns resource entries, status snapshots and lifecycle operations. The
