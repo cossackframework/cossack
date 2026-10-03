@@ -1012,7 +1012,7 @@ export function createApp(options: CreateAppOptions = {}) {
         await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
         if (authoritativeState !== undefined) applyReceivedState(componentInstance, authoritativeState);
         else if (!target || target === componentInstance._id) applyReceivedState(componentInstance, state);
-        componentInstance._render();
+        componentInstance.__renderRpcTarget();
         let targetInstance: any = componentInstance;
         if (target && target !== targetInstance._id) {
           if (targetInstance.activeComponents.has(target)) targetInstance = targetInstance.activeComponents.get(target);

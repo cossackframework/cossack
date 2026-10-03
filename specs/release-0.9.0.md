@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Complete authoritative reads for uncertain HTTP outcomes, real reconnect and stream acceptance remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Real socket reconnect, late snapshots and stream acceptance remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4312,3 +4312,107 @@ second state system. Then exercise actual native socket loss/reconnect, SSE
 recovery and different late snapshots, retained layouts/service subscribers,
 post-yield errors and cancellation, with full original criterion audit. Continue
 all other unchecked IDs and the Node plain Vite dev gap afterward.
+
+
+<a id="codex-optimistic-reconciliation-2026-10-03"></a>
+## Codex review: authoritative optimistic reads (2026-10-03)
+
+Author: Codex. Continued after `7cdb039`. **20/58 checked, 38 unchecked.**
+All original IDs remain. RT-06 stays open. This phase implements its explicit
+read contract and committed/lost-response HTTP/service acceptance.
+
+Core exports `isUncertainRpcError` and ServerResourceReconciliation. Components
+call typed `reconcile$(failure, ...names)` for declared resources. Known uncertain
+RpcError diagnostics select reads. Standard guard/pre-dispatch/consumer errors
+skip reads. Server-correlated serialization failures and generic HTTP 5xx RPC
+failures also qualify. Plain application errors and code-shaped objects do not.
+This classification does not establish transaction outcomes for authored errors
+following writes. Applications explicitly read data for those cases.
+
+All names bind before read dispatch. Each unique target refreshes once. A weak
+per-error cache shares the promise for the sorted target set and current dependency
+identities. Cached recovery failures require explicit refresh$ for a later retry.
+The exact resource entries bind synchronously before dependencies can change.
+Results distinguish not-needed/recovered/failed/superseded/disposed. Recovery
+errors remain separate from the original mutation failure. Destruction refuses
+late state updates and discards the cache. Existing resource/RPC lifecycle owns
+these reads. No new deadline or termination of ignored I/O is promised.
+
+RPC target reconstruction previously started an incidental render resource read
+before executing the selected generated read action. A failing router regression
+observed two reads instead of one. Core's synchronous __renderRpcTarget depth
+suppresses loader dispatch across nested reconstruction, with finally cleanup.
+Framework uses this render entry point. Deterministic child targets still build.
+SSR and ordinary browser resource discovery retain their behavior. The selected
+action reads once. Existing child-target and transport guard acceptance passes.
+
+A shared browser fixture runs real Node production HTTP/SSE pages and native
+Worker pages backed by D1. Component and layout-owned service actions update a
+record. The interception consumes the real response and checks persisted counts
+before aborting delivery to the browser. Each case reports NETWORK_FAILED,
+restores its preview, performs exactly one resource read, displays the persisted
+value, releases loading and never dispatches the mutation again. Backend telemetry
+requires mutations +1 and reads +1, not merely a matching final display. Service
+requests carry an actual service reference. The SSE page requires its authenticated
+EventSource to be open before the cases start. Actions/recovery still use HTTP
+through its coordinator. Socket mutation loss/reconnect and SSE resync delivery
+are not certified by these cases. Node's fixture uses process-owned records.
+Native workerd uses actual D1 and request-user isolation.
+
+Final verification:
+
+- Core/framework builds pass, including published declarations and framework SSG.
+  Builds completed before their consumers ran.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1255 /72 files**.
+  New reconciliation tests: **30**, including dependency races, cached errors,
+  code classification, disposal, explicit supersession and immutable snapshots.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1317 /58 files**.
+  New reconstruction regression: **1**. Existing child/guard/conformance coverage
+  passes. The targeted reconstruction/child/conformance command passes **491 /3**.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  **19/19**, about **116 seconds**. The new case generates, type checks and builds
+  an app, then proves four committed/lost-reply cases in production Chromium.
+  Existing recipes/state/tasks/resources/schema/HTTP/SSE/Node sockets/dev/HMR pass.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+  tests/websocket-peer-integration.test.js --maxWorkers=1`: **2/2**, about **111
+  seconds**. Existing native D1/policy/schema/stream/cancellation/limiter/socket
+  acceptance remains passing alongside the new persisted-recovery matrix.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: all **11** package configurations.
+  The complete public-export guide example is included in the resource type
+  fixture. Its final standalone published-type test passes **1/1** after that
+  addition. Negative names and immutable result types are covered too.
+- Owned whitespace, fixture JS syntax and relative documentation file links pass.
+  All 58 original checkbox IDs/states remain unchanged. Versions stay 0.8.3.
+  reports.md/.zcodeignore are user-owned and unstaged. No remote/live resource changes.
+
+Intermediate failures and corrections:
+
+- The first unit cases failed because reconcile$ did not exist. A later dependency
+  race sent both reads to the later record. Synchronous entry binding fixes that.
+- The router reconstruction regression failed with two reads before suppression.
+  An initial test import used a nonexistent router export and was corrected before
+  the valid failing baseline. The final test uses the actual createApp factory.
+- Generated fixture compilation exposed invalid Layout/Inject declarations and
+  an untyped API Context. Correct Page service ownership, explicit Inject type,
+  typed Hono context and an inline server$ loader now compile. These were fixture
+  defects, not final production acceptance.
+- A native run passed the peer test but failed while waiting for actual SSE open.
+  Its test app omitted /sse/ from ORM middleware coverage. ORM-backed session
+  validation failed outside database context, so the stream could not authenticate.
+  The fixture now initializes database context on /sse/ before session validation.
+  Earlier SSE-page checks did not wait for actual open. The stronger final check
+  does. This changes the disposable test application, not library auth policy.
+- The first full framework run passed 1316 cases and failed one partial component
+  fixture lacking __renderRpcTarget. The fixture now models the new internal entry
+  point. Its original forbidden-method status assertion passes unchanged. The
+  final full suite above supersedes that intermediate run.
+
+Next for GLM: finish RT-06 steps 3–4. Prove native socket loss after committed
+writes, reconnect without replay, actual SSE resync and different late snapshots,
+multiple pending calls, retained layout/service consumers, post-yield stream
+errors and cancellation. Make every loading owner settle once. Audit all original
+criteria before checking RT-06. Existing value fingerprints do not order different
+snapshots by server revision. Keep broader RT-01 incoming disconnect/deadline/init
+and RT-11 session gates separate. Continue all remaining IDs and the Node plain
+Vite development 404 gap. The [detailed plan](./release-0.9.0-plan.md#rt-06) and
+[Codex handoff](./handoff-0.9.0.md) identify the next concrete work.

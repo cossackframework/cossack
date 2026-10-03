@@ -12,7 +12,18 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex explicit optimistic operations (2026-10-03):**
+**Latest checkpoint — Codex authoritative optimistic reads (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03).
+RT-06 step 2 now uses explicit typed resource reconciliation after known uncertain
+RPC failures. Repeated recovery shares one current-dependency read and never
+repeats mutations. Node browser and actual Worker/D1 tests lose replies only after
+writes commit. Component and service HTTP actions converge on HTTP and genuinely
+connected SSE pages. RPC reconstruction no longer starts duplicate resource reads.
+**20/58 checked, 38 unchecked. All original IDs remain and RT-06 stays open.**
+Finish actual socket loss/reconnect, SSE resync/different late snapshots, retained
+consumers and stream/cancellation acceptance. Continue every other task and gate.
+
+**Previous checkpoint — Codex explicit optimistic operations (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-operations-2026-10-03).
 RT-06 now records explicit finite increments and detached append/remove operations.
 A failed older contribution leaves newer pending or committed local operations.
@@ -1414,22 +1425,40 @@ history while preserving active previews. Controlled and browser regressions
 cover this correction. It compares values, not server revisions, so step 3 still
 needs different late snapshots and actual native lost-response recovery.
 
+**Codex authoritative-read continuation (2026-10-03), after `7cdb039`:**
+
+Step 2 has a declared resource contract. `reconcile$(failure, ...names)` selects
+known uncertain RpcError diagnostics and reads existing resources without retrying
+writes. All target names bind before dispatch. Same failure object, target set
+and current dependency identities share a promise. Binding is synchronous to
+preserve the record selected at invocation. Dependency replacement and destruction
+refuse obsolete completion. Read failures have their own error and remain cached.
+Explicit refresh$ retries later. Public name/result declarations and the complete
+[guide example](../docs/optimistic.md#handle-an-uncertain-result) compile.
+
+Production Node/Chromium and native Worker/D1 acceptance prove both component
+and injected-service writes commit before their replies are deliberately lost.
+Each case sees one mutation, one read, convergence and loading zero. The same
+matrix runs on HTTP and SSE pages after actual EventSource open. Those SSE actions
+still use HTTP coordinator RPC. Native socket loss/reconnect is not certified.
+RPC reconstruction previously performed an incidental render read plus the
+selected action read. Synchronous nested render suppression fixes that duplication.
+Native tests also exposed and corrected missing ORM context on the test app's
+SSE authentication route. The review records intermediate failures and final proof.
+
+The helper classifies diagnostics, not transaction outcomes. Arbitrary authored
+errors after writes need an explicit read. It does not infer persisted records,
+add independent deadlines, or stop ignored I/O. Recovered means the read completed
+under its current resource ownership. Broader RT-01 gates remain separate.
+
 **Required next work, before RT-06 can close:**
 
-1. Audit contribution semantics with dependent increments and array operations.
-   Decide whether an explicit declarative patch/reducer form is needed to remove
-   a failed contribution that later previews incorporated. Never infer arithmetic
-   intent from two numbers or replay arbitrary client handlers with side effects.
-   Whole-field/latest-value semantics must not silently stand in for a stronger
-   original rollback criterion. Add controlled failing cases and document the
-   chosen supported representation before claiming completion.
-2. Define the authoritative read after uncertain HTTP/service results. Existing
-   stable RpcError codes preserve uncertainty and never retry mutations, but the
-   framework does not universally refetch a persisted record. Use a declared
-   read/resource contract or a safe runtime snapshot mechanism. Prove an already
-   committed mutation with a deliberately lost response, one authoritative read,
-   convergence, and zero repeated mutation dispatches. Do not equate rollback of
-   a local preview with rollback of the server effect.
+1. Contribution semantics: implemented for the explicit increment/append/remove
+   contract above. Direct assignments remain absolute whole-field values. Preserve
+   all original rollback tests and limitations in the final criterion audit.
+2. Authoritative uncertain HTTP/service reads: implemented through declared
+   resources above. Preserve committed/lost-response acceptance and zero repeated
+   mutation dispatches. Recovery reads do not establish transactional rollback.
 3. Test actual native socket loss/reconnect and SSE recovery, including snapshots
    delivered before/after call cleanup, multiple pending calls, retained layouts
    and explicit service consumers. Current unit calls to applyStateToComponent
@@ -1441,7 +1470,7 @@ needs different late snapshots and actual native lost-response recovery.
    and actual incoming disconnect gates separate. Add a published full example
    for the final API, then audit every original RT-06 done criterion.
 
-Read the [exact phase evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03)
+Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03)
 and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
 Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
 

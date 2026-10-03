@@ -64,7 +64,7 @@ it('rejects service-name collisions with internal component methods', async () =
   class CollisionPage {
     activeComponents = new Map();
     bootstrap = bootstrap;
-    _render() {}
+    __renderRpcTarget() {}
     getPublicState() { return {}; }
     async destroyAsync() {}
   }

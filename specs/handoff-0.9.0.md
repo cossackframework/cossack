@@ -2,7 +2,57 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-06 explicit operations (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-06 authoritative reads (2026-10-03). Author: Codex.**
+> Continued after `7cdb039`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-reconciliation-2026-10-03),
+> [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and
+> [complete recovery example](../docs/optimistic.md#handle-an-uncertain-result).
+>
+> **20/58 checked, 38 unchecked. All original IDs remain. RT-06 stays open.**
+> Step 2 now has an explicit read contract: `reconcile$(failure, ...names)`.
+> The application supplies declared read-only resource targets. Known uncertain
+> RpcError diagnostics trigger one refresh per resource. Same error object, target
+> set and current dependencies share one recovery promise. Entries bind immediately.
+> Dependency changes cannot redirect an earlier recovery to a later record.
+> Results distinguish not-needed/recovered/failed/superseded/disposed. Original
+> mutation errors remain intact. Failed recovery remains cached. Use refresh$ for
+> an explicit retry. A completed read does not confirm which mutation committed.
+>
+> Framework RPC reconstruction now suppresses incidental resource loaders while
+> retaining deterministic child reconstruction. The selected generated resource
+> action performs one read. Ordinary SSR/client discovery keeps its behavior.
+> A real regression previously performed two reads for one resource action.
+>
+> Generated Node production/browser and native Worker/D1 acceptance consume a
+> committed mutation's response before aborting delivery to the browser. Both
+> component and injected-service HTTP actions report network uncertainty, restore
+> their previews, read once, converge and release loading without repeating writes.
+> The SSE page waits for its actual authenticated EventSource to open first.
+> Its mutations and recovery reads still use HTTP through the SSE coordinator.
+> This does not prove socket mutation loss/reconnect or SSE resync delivery.
+>
+> Native acceptance exposed missing ORM setup on the fixture's /sse/ route.
+> The test application now installs its database context before ORM-backed session
+> validation there. Earlier checks that merely loaded SSE pages did not prove an
+> open EventSource. The stronger check now does. No production auth policy changes.
+>
+> **Next for GLM: finish RT-06 steps 3–4.** Exercise actual native socket loss
+> after a committed mutation, reconnect and authoritative state without replay.
+> Test SSE resync and different late snapshots before/after cleanup, multiple
+> pending calls, retained layouts and service consumers. Then cover post-yield
+> stream failures and cancellation with indicators settling once. Audit every
+> original criterion before checking RT-06. Continue all other unchecked IDs.
+>
+> Error codes are a bounded classification, not transaction evidence. Arbitrary
+> application errors after writes need an explicit read. The helper does not infer
+> persisted records, add deadlines, or terminate ignored external I/O. RT-01's
+> wider disconnect/deadline/init gates and the Node plain Vite 404 gap remain open.
+> Versions stay 0.8.3 until REL-04. Preserve reports.md/.zcodeignore. No push or
+> publication, live cloud changes, external messages, or new chats.
+>
+> Exact final verification commands and counts appear in the linked review.
+
+> **Previous checkpoint — Codex RT-06 explicit operations (2026-10-03). Author: Codex.**
 > Continued after `231bcc1`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-operations-2026-10-03),
 > [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06),

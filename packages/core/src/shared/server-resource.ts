@@ -19,6 +19,14 @@ export type ServerResourceStatus<Value> =
         | { hasValue: false; value: undefined }
     ));
 
+/** Recovery reads data; it never confirms or repeats the original mutation. */
+export type ServerResourceReconciliation<Name extends string = string> = {
+    readonly resources: readonly Name[];
+} & (
+    | { readonly state: 'not-needed' | 'recovered' | 'disposed' | 'superseded'; readonly error?: undefined }
+    | { readonly state: 'failed'; readonly error: unknown }
+);
+
 /** Options accepted by the compiler-only {@link server$} macro. */
 export interface ServerResourceOptions<T, Args extends readonly unknown[] = readonly unknown[]> {
     initial?: T;

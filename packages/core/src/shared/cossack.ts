@@ -16,7 +16,7 @@ import {
 import { isServer } from './environment';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
-import { RpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
+import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
@@ -82,9 +82,13 @@ import type {
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
-import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus } from './server-resource';
+import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus, type ServerResourceReconciliation } from './server-resource';
 import type { ServiceClass } from './container';
 import type { ServiceScope } from './service-scope';
+
+// RPC tree reconstruction is synchronous, including nested renderer components.
+// It binds resource getters without dispatching unrelated read operations.
+let rpcReconstructionDepth = 0;
 import { TaskCommitError, type TaskContext } from './task';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
@@ -182,6 +186,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _cleanupCompletion?: Promise<unknown[]>;
     private _serverResources = new Map<string, ServerResourceEntry>();
     private _bindingServerResource = false;
+    private _resourceReconciliations = new WeakMap<object, Map<string, Promise<ServerResourceReconciliation>>>();
     /** @internal Compiler-owned named resource fields, separately stored per class. */
     static readonly __cossackResourceFields: readonly string[] = [];
 
@@ -248,7 +253,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this._serverResources.set(name, entry);
         }
         entry.loader = () => loader(...args);
-        if (!this._bindingServerResource && !entry.resolved && !entry.pending && !entry.failed) {
+        if (!this._bindingServerResource && rpcReconstructionDepth === 0 && !entry.resolved && !entry.pending && !entry.failed) {
             this._loadServerResource(name, entry);
         }
         return entry.value as TValue | undefined;
@@ -339,6 +344,61 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const pending = entry.loader ? this._loadServerResource(name, entry) : undefined;
         void this.requestUpdate();
         await pending;
+    }
+
+    /** Read declared resources after an uncertain RPC failure, without retrying its action. */
+    public reconcile$<Name extends ServerResourceName<T, this>>(
+        failure: unknown, name: Name, ...otherNames: Name[]
+    ): Promise<ServerResourceReconciliation<Name>> {
+        const names = [...new Set([name, ...otherNames])];
+        const result = (state: 'not-needed' | 'recovered' | 'disposed' | 'superseded') =>
+            Object.freeze({ state, resources: Object.freeze(names) }) as ServerResourceReconciliation<Name>;
+        const failed = (error: unknown) => Object.freeze({ state: 'failed' as const,
+            resources: Object.freeze(names), error });
+        if (!isUncertainRpcError(failure)) return Promise.resolve(result('not-needed'));
+        if (this._phase === LifecyclePhase.Destroyed) return Promise.resolve(result('disposed'));
+        // Validate all targets before any read starts. Binding may evaluate
+        // compiler-declared dependency getters, but suppresses loader dispatch.
+        try {
+            for (const key of names) {
+                if (typeof key !== 'string' || !key) throw new Error('[Cossack] Recovery needs a server$ resource name.');
+                this._bindServerResourceField(key, true);
+                if (!this._serverResources.get(key)?.loader) throw new Error(`[Cossack] Unknown server$ resource "${key}".`);
+            }
+        } catch (error) { return Promise.resolve(failed(error)); }
+        const identity = JSON.stringify(names.slice().sort().map(key => [key, this._serverResources.get(key)!.argsKey]));
+        let recoveries = this._resourceReconciliations.get(failure);
+        if (!recoveries) this._resourceReconciliations.set(failure, recoveries = new Map());
+        const existing = recoveries.get(identity);
+        if (existing) return existing as Promise<ServerResourceReconciliation<Name>>;
+        const operation = async (): Promise<ServerResourceReconciliation<Name>> => {
+            const entries = new Map<string, ServerResourceEntry>();
+            try {
+                const reads = names.map(key => {
+                    const pending = this.refresh$(key);
+                    entries.set(key, this._serverResources.get(key)!);
+                    return pending;
+                });
+                await Promise.all(reads);
+                if (this._phase === LifecyclePhase.Destroyed) return result('disposed');
+                if ([...entries].some(([key, entry]) => this._serverResources.get(key) !== entry)) return result('superseded');
+                // Client refresh resolves after exposing its error in status.
+                // It must not masquerade as a successful authoritative read.
+                for (const entry of entries.values()) if (entry.failed) return failed(entry.error);
+                return result('recovered');
+            } catch (error) {
+                if (this._phase === LifecyclePhase.Destroyed) return result('disposed');
+                return failed(error);
+            }
+        };
+        // Publish before starting the refreshes, then bind their entries now.
+        // Deferring that binding could let two dependency identities read the
+        // same later dependency. The resource's loader still starts in a microtask.
+        let complete!: (value: ServerResourceReconciliation<Name>) => void;
+        const pending = new Promise<ServerResourceReconciliation<Name>>(resolve => { complete = resolve; });
+        recoveries.set(identity, pending as Promise<ServerResourceReconciliation>);
+        void operation().then(complete);
+        return pending;
     }
 
     public invalidate$<Name extends ServerResourceName<T, this>>(name: Name): void {
@@ -2181,6 +2241,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
+    /** @internal Reconstruct deterministic RPC child targets without unrelated resource I/O. */
+    public __renderRpcTarget(): string {
+        rpcReconstructionDepth++;
+        try { return this._render(); }
+        finally { rpcReconstructionDepth--; }
+    }
+
     public _render(): string {
         if (!this.isServer && !this.skipRenderTasks) {
             this.runTasks(undefined, 'render');
@@ -2683,6 +2750,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this._serviceScopeLifetime = undefined;
         }
         this._serverResources.clear();
+        this._resourceReconciliations = new WeakMap();
         const syncErrors = errors.slice();
         this._cleanupCompletion = Promise.all(pending).then(() => errors);
         // Synchronous callers cannot await hooks; observe rejected hooks here.

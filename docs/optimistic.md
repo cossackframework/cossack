@@ -184,11 +184,83 @@ Restoring a preview does not prove that the server rolled back its mutation.
 | `COSSACK_RPC_CANCELLED` | Release client ownership; application I/O may still finish |
 
 Do not retry an uncertain mutation automatically.
-When the connection is available, obtain an authoritative read.
-For a server resource, refresh its declared field with `refresh$`.
-For a persisted record, call an application-owned read action that reads the record again.
+Use `reconcile$(error, 'resourceName')` to read a declared resource after an uncertain RPC failure.
+The application chooses which resource describes the persisted data.
+The helper reads that resource through its existing loader and never dispatches the failed mutation again.
+
+This example declares the storage interface that the application supplies through its environment.
+Its server owns the durable increment and read.
+The preview stays in a client-only field.
+
+```ts
+import { Cossack, Client, ClientState, Optimistic, Server, server$ } from '@cossackframework/core';
+
+interface CounterStore {
+    read(): Promise<{ count: number }>;
+    increment(): Promise<void>;
+}
+interface Env { COUNTER: CounterStore }
+
+export class DurableCounter extends Cossack<Env, { Resources: 'counter' }> {
+    counter = server$(async () => this.env.COUNTER.read(), { initial: { count: 0 } });
+    @ClientState() previewCount = 0;
+    @ClientState() error = '';
+    @ClientState() recovery = '';
+
+    @Optimistic('increment')
+    preview() { this.previewCount = this.counter.count + 1; }
+
+    @Server()
+    async increment() { await this.env.COUNTER.increment(); }
+
+    @Client()
+    async increase() {
+        try {
+            await this.increment();
+            await this.refresh$('counter');
+        } catch (failure) {
+            this.error = failure instanceof Error ? failure.message : 'The result is unknown.';
+            const result = await this.reconcile$(failure, 'counter');
+            this.recovery = result.state;
+            if (result.state === 'failed') {
+                // result.error belongs to the read. Keep the mutation failure above.
+                this.recovery = 'Read failed. Refresh when the connection is available.';
+            }
+        }
+    }
+}
+```
+
+| Recovery state | Meaning |
+| --- | --- |
+| `not-needed` | The error is outside the helper's uncertainty classification. No read starts. |
+| `recovered` | The selected resource reads finished and still own their entries. |
+| `failed` | A target or read failed. `error` describes recovery, and the original failure remains unchanged. |
+| `superseded` | Another refresh, invalidation, or dependency change replaced an entry. |
+| `disposed` | The component was destroyed. Late results cannot update it. |
+
+`recovered` confirms a read, not the original mutation's outcome or a database transaction.
+Concurrent callers can change the record before that read.
+Resource names and result snapshots are immutable and typed through the component's `Resources` declaration.
+Pass multiple names to read each target once.
+All target names bind before reads start.
+
+Calls with the same RpcError object, target set, and current dependencies share one recovery promise.
+That cache also retains a failed recovery.
+Use `refresh$` for an explicit later retry.
+Changed dependencies select a new invocation and make the old result obsolete.
+Destruction discards results but does not terminate external I/O that ignores cancellation.
+The helper adds no separate deadline beyond the existing resource/RPC lifecycle.
+
+`isUncertainRpcError` selects actual RpcError instances with network, closed-transport,
+timeout, cancellation, malformed/oversized response or stream, buffer, or internal-error codes.
+It also selects server-correlated serialization failures and generic RPC failures with HTTP status 500 or greater.
+Standard pre-dispatch serialization, send, consumer, validation, and authorization diagnostics do not trigger these reads.
+Plain application errors and code-shaped objects also return `not-needed`.
+This classification does not prove transactional rollback for application-authored failures after writes.
+Use an explicit `refresh$` or an application-owned read when those failures need reconciliation.
+
+The same component resource can recover data written by an injected service action.
+The helper does not infer which persisted record any action changes.
 WebSocket reconnect and SSE recovery can also deliver authoritative public snapshots.
 Read [Realtime Recovery](./websockets.md) and [Server Resources](./server-functions.md) for those mechanisms.
-
-The current implementation does not provide a universal HTTP read action or an automatic record refetch for every uncertain mutation.
-An application must choose the authoritative read for its data.

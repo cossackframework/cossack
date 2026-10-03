@@ -1,9 +1,11 @@
+import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './worker-optimistic-recovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
 import { chromium, expect as browserExpect } from '@playwright/test';
 
 export async function writeWorkerResourceAcceptance(root) {
+  await writeWorkerOptimisticRecovery(root);
   const write = async (name, source) => {
     const file = path.join(root, name);
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -195,4 +197,5 @@ export async function checkWorkerResourceAcceptance(server, serverUrl, sessionCo
       await context.close();
     }
   } finally { await browser.close(); }
+  await checkWorkerOptimisticRecovery(server, serverUrl, sessionCookie);
 }

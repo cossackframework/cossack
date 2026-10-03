@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
 import { chromium, expect as browserExpect } from '@playwright/test';
+import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './fixtures/worker-optimistic-recovery.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -1283,4 +1284,29 @@ it.each(['development', 'production'])('runs state documentation examples and di
     } else expect(warnings.filter(message => message.startsWith('[Cossack]'))).toEqual([]);
     expect(errors).toEqual([]);
   } finally { await browser?.close(); await server.close(); }
+}, 120000);
+
+
+it('reconciles component and service mutations after their committed replies are lost', async () => {
+  const root = await project('node'); await writeWorkerOptimisticRecovery(root);
+  // Process-owned records survive the fresh component instances for HTTP RPC.
+  // Native Worker acceptance uses the same UI against actual D1 records.
+  await fs.writeFile(path.join(root, 'src/private-optimistic-recovery.ts'), `
+    const records = new Map<string, {count:number;mutations:number;reads:number}>();
+    function record(scope:string) {
+      let value = records.get(scope);
+      if (!value) { value = {count:0,mutations:0,reads:0}; records.set(scope,value); }
+      return value;
+    }
+    export async function readCounter(scope:string) { const value=record(scope); value.reads++; return {count:value.count}; }
+    export async function incrementCounter(scope:string) { const value=record(scope); value.count++; value.mutations++; return {count:value.count}; }
+    export async function auditCounter(scope:string) { return {...record(scope)}; }
+  `);
+  try { await promisify(execFile)('pnpm', ['exec','tsc','--noEmit'], {cwd:root,timeout:30000,maxBuffer:1024*1024}); }
+  catch(error) { throw new Error(error.stdout + '\n' + error.stderr); }
+  await vite(root, []); await vite(root, ['--ssr','src/index.ts','--outDir','dist/server']);
+  const server = await productionServer(root);
+  try {
+    await checkWorkerOptimisticRecovery({fetch:(path, init)=>fetch(server.origin+path,init)}, new URL(server.origin), 'session_id=test');
+  } finally { await server.close(); }
 }, 120000);

@@ -502,3 +502,21 @@ settlement. Changed broadcasts and explicit reads retain server authority.
 Reconnect and resync clear duplicate history without clearing pending calls.
 The history compares values; it does not order different late snapshots by a
 server revision. Client-only drafts remain the durable browser-owned choice.
+
+## Explicit reads after uncertain mutations
+
+Use `reconcile$(failure, 'declaredResource')` in a mutation catch handler when a
+known uncertain RpcError needs an authoritative read. Declare target names in
+Cossack's Resources option. The helper returns an immutable result and never
+retries the mutation. A recovered result confirms only that the read completed.
+Read errors remain separate from the original failure. Repeated requests with
+the same error, names and current dependencies share a promise. Use refresh$
+for an explicit later read retry. Application failures outside the known code
+classification require an application-chosen read. See the
+[complete example](../docs/optimistic.md#handle-an-uncertain-result).
+
+RPC tree reconstruction now suppresses incidental resource loaders, including
+nested components. Generated resource actions perform exactly their selected
+read. Do not depend on render-triggered resource I/O running before an RPC guard
+or mutation. SSR discovery and browser resource rendering keep their behavior.
+RT-06 still requires actual socket loss/reconnect and late-snapshot acceptance.

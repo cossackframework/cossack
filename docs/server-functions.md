@@ -152,6 +152,21 @@ allow retry. Invalidation drops it and the next read uses the declared initial
 value. Unmount discards outstanding results and errors; it does not stop ignored
 external I/O. Reading a destroyed component's resource fails before loading.
 
+## Read after an uncertain mutation
+
+Call `await this.reconcile$(failure, 'users')` in the mutation's catch handler.
+The helper selects known uncertain RPC diagnostics and refreshes the declared resource.
+It never retries the mutation.
+Multiple target names, current dependency identity, and repeated calls share the existing resource lifecycle.
+The result distinguishes a completed read, failed recovery, obsolete ownership, and destruction.
+A failed read keeps its own error separate from the original mutation failure.
+Read the [complete recovery example and limits](./optimistic.md#handle-an-uncertain-result).
+
+RPC tree reconstruction binds resource getters without starting incidental loaders.
+The selected generated resource action still performs its read.
+Ordinary SSR discovery and browser rendering retain their loading behavior.
+This avoids a second read when a resource action reconstructs its own component tree.
+
 ## Where `server$` is allowed
 
 Version 1 supports:

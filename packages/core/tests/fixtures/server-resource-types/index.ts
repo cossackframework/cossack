@@ -1,4 +1,4 @@
-import { Cossack, server$, type ServerResourceStatus } from '@cossackframework/core';
+import { Cossack, Client, ClientState, Optimistic, Server, server$, type ServerResourceStatus } from '@cossackframework/core';
 
 interface User { id: number; name: string }
 class Resources extends Cossack<{}, { Resources: 'users' | 'selected' | 'missing' | 'count' | 'empty' | 'optional' }> {
@@ -41,6 +41,25 @@ class Resources extends Cossack<{}, { Resources: 'users' | 'selected' | 'missing
         const optional = this.resourceStatus$('optional');
         if (optional.state === 'ready') { const value: User | undefined = optional.value; void value; }
         void this.refresh$('users');
+        const recovered = this.reconcile$(new Error('unknown'), 'users', 'selected');
+        recovered.then(result => {
+            const names: readonly ('users' | 'selected')[] = result.resources;
+            if (result.state === 'failed') { const error: unknown = result.error; void error; }
+            // @ts-expect-error Recovery snapshots are immutable.
+            result.state = 'recovered';
+            // @ts-expect-error Resource targets are immutable.
+            result.resources.push('users');
+            void names;
+        });
+        // @ts-expect-error Recovery requires at least one resource target.
+        this.reconcile$(new Error('unknown'));
+        // @ts-expect-error Ordinary fields are not declared resources.
+        this.reconcile$(new Error('unknown'), 'query');
+        // @ts-expect-error Resource names must exist on the host.
+        this.reconcile$(new Error('unknown'), 'missing');
+        // @ts-expect-error Arbitrary strings are not accepted on a declared host.
+        this.reconcile$(new Error('unknown'), 'users' as string);
+
         this.invalidate$('selected');
         // @ts-expect-error Existing state is not a declared resource target.
         void this.refresh$('query');
@@ -76,3 +95,39 @@ class RuntimeChecked extends Cossack {
     }
 }
 void RuntimeChecked;
+
+// Complete public-export recovery example from docs/optimistic.md.
+interface CounterStore {
+    read(): Promise<{ count: number }>;
+    increment(): Promise<void>;
+}
+interface Env { COUNTER: CounterStore }
+
+export class DurableCounter extends Cossack<Env, { Resources: 'counter' }> {
+    counter = server$(async () => this.env.COUNTER.read(), { initial: { count: 0 } });
+    @ClientState() previewCount = 0;
+    @ClientState() error = '';
+    @ClientState() recovery = '';
+
+    @Optimistic('increment')
+    preview() { this.previewCount = this.counter.count + 1; }
+
+    @Server()
+    async increment() { await this.env.COUNTER.increment(); }
+
+    @Client()
+    async increase() {
+        try {
+            await this.increment();
+            await this.refresh$('counter');
+        } catch (failure) {
+            this.error = failure instanceof Error ? failure.message : 'The result is unknown.';
+            const result = await this.reconcile$(failure, 'counter');
+            this.recovery = result.state;
+            if (result.state === 'failed') {
+                // result.error belongs to the read. Keep the mutation failure above.
+                this.recovery = 'Read failed. Refresh when the connection is available.';
+            }
+        }
+    }
+}

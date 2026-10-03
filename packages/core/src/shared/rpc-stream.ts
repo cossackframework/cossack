@@ -26,6 +26,19 @@ export class RpcError extends Error {
     }
 }
 
+/** Failures whose diagnostics cannot establish whether server writes finished. */
+export function isUncertainRpcError(error: unknown): error is RpcError {
+    if (!(error instanceof RpcError)) return false;
+    if (['COSSACK_RPC_NETWORK_FAILED', 'COSSACK_RPC_TRANSPORT_CLOSED', 'COSSACK_RPC_TIMEOUT',
+        'COSSACK_RPC_CANCELLED', 'COSSACK_RPC_RESPONSE_INVALID', 'COSSACK_RPC_RESPONSE_TOO_LARGE',
+        'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE', 'COSSACK_RPC_STREAM_TRUNCATED',
+        'COSSACK_RPC_BUFFER_EXCEEDED', 'COSSACK_RPC_INTERNAL_ERROR'].includes(error.code)) return true;
+    // Pre-dispatch serialization and send errors have no correlated server
+    // reply. A server-side serialization failure can follow a committed write.
+    if (error.code === 'COSSACK_RPC_SERIALIZATION_FAILED') return error.requestId !== undefined || (error.status ?? 0) >= 500;
+    return error.code === 'COSSACK_RPC_FAILED' && (error.status ?? 0) >= 500;
+}
+
 function parseFrame(bytes: Uint8Array): RpcStreamFrame {
     let frame: any;
     try {

@@ -83,6 +83,22 @@ status/refresh without invoking arbitrary getters. Refresh binds current
 arguments with loading suppressed, then starts one new entry. Inline render
 resources retain stable compiler IDs and their last declared invocation.
 
+Named resource reconciliation uses `reconcile$(failure, ...names)`. The shared
+RpcError classifier selects known uncertain diagnostics. Core binds all targets
+before dispatch and caches one promise per error object, sorted target set and
+current dependency identities. Refresh entries bind synchronously so subsequent
+dependency changes cannot redirect an earlier recovery. Entry identity and
+failure state determine recovered/superseded/failed results. Destruction discards
+the weak cache. Recovery never retries the mutation or changes its error.
+Application-authored failure codes do not establish transactional outcomes.
+
+Framework RPC target reconstruction calls `__renderRpcTarget`. A synchronous
+module depth suppresses incidental resource loader dispatch across nested
+components. The render still builds deterministic child targets. A finally block
+releases the suppression before the selected action executes. SSR and browser
+render discovery retain ordinary resource loading. No asynchronous request state
+or additional resource entry system is introduced.
+
 The optional Cossack Resources name union checks lifecycle targets against public
 fields. Status value types come from those fields without branding or wrapping
 application values. Untyped names still fail at runtime when unknown. Serialized
