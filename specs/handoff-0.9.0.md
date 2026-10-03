@@ -2,7 +2,40 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex render recovery (2026-10-03).
+> Latest checkpoint: Codex scope retirement (2026-10-03).
+> Author: **Codex**. Reviewed and continued after `773c9c3`. Read the
+> [verification](./release-0.9.0.md#codex-scope-retirement-2026-10-03),
+> [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and
+> [navigation contract](../docs/prevent-navigation.md).
+>
+> Fixed service disposal before renderer-created descendants finish cleanup.
+> Navigation destruction still cancels tasks immediately. Scope disposal waits
+> for DOM consumers and their async cleanup, including ancestor scopes. The same
+> hold applies when successful navigation removes a child before cleanup finishes.
+> New consumers cannot attach to retiring scopes; an owner cannot wait on its own
+> scope hold. Renderer connection/hydration failures clean partial sibling parts,
+> and throwing disconnection hooks cannot skip sibling destruction.
+>
+> Verification results are recorded in the linked checkpoint. Generated production
+> Node/native workerd acceptance covers post-render failure, restored URL and
+> page/layout/service/File state, plus gated child cleanup on both rollback and
+> successful retirement. Renderer: 261 tests. Full core: 1,431 plus the final
+> 5-case retirement file. Full CLI: 608 before the final successful-retirement
+> change. After rebuilding, full framework (1,439), both production browsers,
+> root TypeScript and all 11 package checks passed. No owned process remains.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** Next: capture nested local
+> child drafts before partial DOM teardown and restore only into matching new
+> owners. Never revive Destroyed components. Audit changed parent/scope/provider
+> ownership, interrupted same-URL history, real backend read counts and diagnostic
+> events. RT-08/RT-09 remain open; preserve every other unchecked release task.
+> Versions remain 0.8.3 until REL-04.
+>
+> Preserve reports.md/.zcodeignore. No push, publication, live cloud change,
+> external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex render recovery (2026-10-03).
 > Author: **Codex**. Continued after `457646e`. Read the
 > [verification](./release-0.9.0.md#codex-render-recovery-2026-10-03),
 > [RT-09 plan](./release-0.9.0-plan.md#rt-09) and

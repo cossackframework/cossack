@@ -103,6 +103,14 @@ I/O, synchronous blocking code, or undo effects from a custom render or mount
 hook that already ran. Nested component state after partial DOM teardown still
 needs its RT-08/RT-09 acceptance audit. A later navigation can retry.
 
+During rollback, abandoned components become destroyed and cancel their tasks
+immediately. During both rollback and successful retirement, their owned service
+scopes stay available until the renderer removes their child consumers and those
+consumers finish asynchronous cleanup. New
+consumers cannot attach to a retiring scope. This lifetime hold does not extend
+the navigation deadline or impose a deadline on application cleanup. Ordinary
+explicit component destruction keeps its existing behavior.
+
 Navigation uses a core-owned render pass and does not join an unrelated pending
 App update promise. It calls the normal render/controller lifecycle and reports
 render errors through the navigation failure path. Returning false from the App's

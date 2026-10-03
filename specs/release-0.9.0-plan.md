@@ -2228,6 +2228,37 @@ interrupted same-URL history entries and lifecycle cleanup failures, and finish
 the remaining criteria above.
 
 
+Codex scope-retirement review (2026-10-03), after `773c9c3`:
+renderer-created consumers now hold their service scope and its ancestors through
+DOM removal and asynchronous component cleanup. Navigation retirement snapshots
+these holds before destruction; component task cancellation and the Destroyed
+phase remain immediate. Rollback rejects attachment to retiring scopes. Successful
+retirement must also honor a consumer whose DOM has gone but whose cleanup is
+still pending. An owner releases its own DOM hold before awaiting scope disposal,
+which avoids a self-wait. Ordinary explicit destruction retains its existing
+contract. The renderer uses structural internal hooks and adds no core dependency.
+
+The renderer also cleans up partially created sibling parts after connection or
+hydration failure and invalidates disposed root caches. A throwing disconnection
+hook cannot skip sibling destruction or scope release. Tests must exercise both
+failed publication and successful retirement in actual Node/native workerd apps,
+with an async child cleanup that reads the service before its disposal.
+See the [verification](./release-0.9.0.md#codex-scope-retirement-2026-10-03).
+
+Next implementation steps for GLM:
+
+1. Capture local nested child drafts before any DOM teardown. Record the owning
+   class, parent, service scope and rendering identity. Restore only into matching
+   replacement owners; never reconnect a Destroyed instance. Test changed owners
+   as well as retained owners and keep File/native capability boundaries explicit.
+2. Hold navigation at render, cleanup and history boundaries. Supersede it with
+   another intent, including two history entries with the same URL. Compare the
+   visible tree, history entry, resource context and cleanup counts after release.
+3. Measure actual backend resource reads during those cases. Add the planned
+   cache, layout, scroll, fragment and transition diagnostics; test their contents.
+4. Audit all RT-08 and RT-09 criteria before checking either box. This cleanup fix
+   does not close those tasks or reduce the release checklist.
+
 Done when: Browser tests cover rapid links, back/forward, navigation guards,
 errors, redirects, reused layouts, fragments, and unavailable transition APIs.
 Promises always settle and disposed pages do not receive late updates.

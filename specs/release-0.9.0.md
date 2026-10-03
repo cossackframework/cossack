@@ -86,6 +86,63 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-scope-retirement-2026-10-03"></a>
+## Codex scope retirement (2026-10-03)
+
+Author: **Codex**. Reviewed and continued after `773c9c3`. Rollback destroyed
+transient layout service scopes before renderer-created children finished cleanup.
+Successful retirement could also close a service after DOM removal but before
+an asynchronous child cleanup finished.
+
+Core now tracks renderer consumer lifetimes for a scope and its ancestors.
+Navigation retirement snapshots those consumers before destruction. Components
+become Destroyed and cancel tasks immediately; service disposal waits for consumer
+removal and async cleanup. New attachments to a retiring scope fail. Owned-scope
+holds release before the owner's own disposal completion to prevent a self-wait.
+Ordinary explicit destruction keeps its existing contract. A permanently pending
+application cleanup can retain its services; this hold does not extend navigation's
+completion deadline or forcibly cancel user I/O.
+
+Renderer structural hooks keep the renderer independent of core. Failed connection
+or hydration cleans partially created siblings; invalidated root caches cannot
+reuse disposed parts. A throwing disconnection hook is logged, and sibling
+cleanup and scope release continue. Core tests cover scope ancestry, immediate
+task cancellation, self-wait prevention, late attachment rejection, ordinary
+destruction and successful retirement during pending child cleanup. Renderer
+tests cover attachment/removal, partial render/hydration failure and hook errors.
+
+Generated Node/native workerd apps throw after actual DOM reconciliation, then
+check rollback state and an async child's use of its still-open service before
+exactly one disposal. Explicit @Client hooks keep browser-only assertions in the
+client bundle. Nested child draft restoration remains separate follow-up work.
+
+Verification on 2026-10-03:
+
+- `pnpm --filter @cossackframework/renderer exec vitest run`: **261 / 20 files**.
+- Full core: **1,431 / 85 files**. After adding the successful-retirement case,
+  `pnpm --filter @cossackframework/core exec vitest run tests/navigation-scope-retirement.test.ts`:
+  **5 passed**. Core implementation did not change after the full run.
+- Renderer, core and framework builds passed, including framework SSG.
+- Full CLI: `pnpm --filter cossack exec vitest run --maxWorkers=2`:
+  **608 / 44 files**, 338 seconds. This ran before the final successful-retirement
+  framework change and explicit browser cleanup gates.
+- After that change, framework was rebuilt. Final full framework:
+  `pnpm --filter @cossackframework/framework exec vitest run`: **1,439 / 68 files**.
+- Final generated production Node/native workerd browser matrix:
+  `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state'`:
+  **2 passed / 26 skipped**. Both rollback and successful retirement hold async
+  cleanup behind an explicit gate, prove no early disposal, then release it and
+  observe cleanup with an open service followed by exactly one disposal.
+- Final `pnpm tsc --noEmit` and `pnpm typecheck`: passed, all **11 packages**.
+- `git diff --check -- . ':!reports.md'`: passed. No owned test/build process remains.
+
+No live Cloudflare deployment or release publication was performed.
+
+**No release task closes.** All 58 original IDs remain in order, with 22 checked
+and 36 unchecked. RT-08 and RT-09 still need their full acceptance audit. Follow
+the [detailed next steps](./release-0.9.0-plan.md#rt-09) and
+[Codex handoff](./handoff-0.9.0.md). Versions remain 0.8.3.
+
 <a id="codex-render-recovery-2026-10-03"></a>
 ## Codex render recovery (2026-10-03)
 

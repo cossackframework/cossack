@@ -497,6 +497,7 @@ export async function createClientApp({
       owner?.signal.removeEventListener('abort', dispose);
       if (finalized || abandoned) return;
       abandoned = true;
+      for (const instance of staged) instance._frameworkRetireNavigationScope?.();
       rollback?.();
       for (const instance of [...staged].reverse()) {
         try { instance.destroy(); } catch (error) { console.error('Navigation cleanup failed:', error); }
@@ -580,7 +581,9 @@ export async function createClientApp({
           const staleLayouts = oldLayouts.filter(layout => ![...nextLayouts.values()].includes(layout));
           retire = () => {
             const errors: unknown[] = [];
-            for (const instance of [...(oldPage ? [oldPage] : []), ...staleLayouts]) {
+            const outgoing = [...(oldPage ? [oldPage] : []), ...staleLayouts];
+            for (const instance of outgoing) instance._frameworkRetireNavigationScope?.();
+            for (const instance of outgoing) {
               try { instance.destroy(); } catch (error) { errors.push(error); }
             }
             if (errors.length) throw new AggregateError(errors, '[Cossack] Outgoing navigation cleanup failed.');

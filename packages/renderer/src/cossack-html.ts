@@ -694,6 +694,13 @@ interface Part {
   update(value: unknown): void;
 }
 
+const disposeFailedParts = (parts: Part[]) => {
+  for (const part of parts) {
+    try { (part as any)?.dispose?.(); }
+    catch (error) { console.error('[cossack] Failed render cleanup:', error); }
+  }
+};
+
 const templateIdentities = new WeakMap<TemplateStringsArray, Map<string, object>>();
 const templateIdentity = (result: TemplateResult): object => {
   let byType = templateIdentities.get(result.strings);
@@ -1026,7 +1033,13 @@ class NodePart implements Part {
         (this.componentInstance as any).props = result.props;
       }
       this.componentInstance.children = result.children;
-      this.componentInstance.connectedCallback();
+      try {
+        (this.componentInstance as any)._frameworkRendererAttached?.();
+        this.componentInstance.connectedCallback();
+      } catch (error) {
+        this.disposeComponent();
+        throw error;
+      }
     }
     const instance = this.componentInstance;
     Object.assign(instance, result.props);
@@ -1071,15 +1084,20 @@ class NodePart implements Part {
    */
   private _adoptTemplate(value: TemplateResult) {
     const { fragment: blueprint, parts } = compileTemplate(value);
-    const existing = this._nodesBetween();
-    const map = new Map<Node, Node>();
-    reconcileNodeLists(blueprint.childNodes, existing, map);
-    rebindParts(parts, map);
-    for (let i = 0; i < value.values.length; i++) {
-      if (parts[i]) parts[i]!.update(value.values[i]);
+    try {
+      const existing = this._nodesBetween();
+      const map = new Map<Node, Node>();
+      reconcileNodeLists(blueprint.childNodes, existing, map);
+      rebindParts(parts, map);
+      for (let i = 0; i < value.values.length; i++) {
+        if (parts[i]) parts[i]!.update(value.values[i]);
+      }
+      this._cachedTemplateIdentity = templateIdentity(value);
+      this._cachedParts = parts;
+    } catch (error) {
+      disposeFailedParts(parts);
+      throw error;
     }
-    this._cachedTemplateIdentity = templateIdentity(value);
-    this._cachedParts = parts;
   }
 
   private _nodesBetween(): Node[] {
@@ -1097,15 +1115,17 @@ class NodePart implements Part {
       instance.removeRenderListener(this.renderListener);
       this.renderListener = null;
     }
-    instance.disconnectedCallback();
-    // Full Cossack-level cleanup (WebSockets, IntersectionObservers, event
-    // listeners). Without this, child components removed via repeat/key/
-    // conditional rendering leak live connections for the page's lifetime.
-    if (typeof instance.destroy === 'function') {
+    try {
+      instance.disconnectedCallback();
+    } catch (error) {
+      console.error('[cossack] Component disconnection failed:', error);
+    } finally {
       try {
-        instance.destroy();
+        if (typeof instance.destroy === 'function') instance.destroy();
       } catch {
-        // Component may already be destroyed (phase guard); ignore.
+        // Preserve the renderer's existing best-effort destruction behavior.
+      } finally {
+        instance._frameworkRendererDetached?.();
       }
     }
   }
@@ -1141,7 +1161,13 @@ class NodePart implements Part {
         (this.componentInstance as any).props = result.props;
       }
       this.componentInstance.children = result.children;
-      this.componentInstance.connectedCallback();
+      try {
+        (this.componentInstance as any)._frameworkRendererAttached?.();
+        this.componentInstance.connectedCallback();
+      } catch (error) {
+        this.disposeComponent();
+        throw error;
+      }
     }
     const instance = this.componentInstance;
     Object.assign(instance, result.props);
@@ -2248,6 +2274,7 @@ export const render = (result: TemplateResult, container: Node) => {
   // torn down before we wipe the DOM and rebuild — otherwise re-rendering a
   // container with a different template leaks every old child component.
   if (existing) {
+    containerCache.delete(container);
     for (const part of existing.parts) {
       if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
     }
@@ -2256,25 +2283,30 @@ export const render = (result: TemplateResult, container: Node) => {
   const { fragment, parts } = compileTemplate(result);
   const values = result.values;
 
-  for (let i = 0; i < values.length; i++) {
-    if (parts[i]) {
-      parts[i].update(values[i]);
+  try {
+    for (let i = 0; i < values.length; i++) {
+      if (parts[i]) {
+        parts[i].update(values[i]);
+      }
     }
-  }
 
-  if (
-    (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
-    (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
-  ) {
-    container.innerHTML = '';
-  } else {
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
+    if (
+      (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
+      (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
+    ) {
+      container.innerHTML = '';
+    } else {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
     }
-  }
-  container.appendChild(fragment);
+    container.appendChild(fragment);
 
-  containerCache.set(container, { identity, parts });
+    containerCache.set(container, { identity, parts });
+  } catch (error) {
+    disposeFailedParts(parts);
+    throw error;
+  }
 };
 
 /**
@@ -2465,12 +2497,13 @@ export const hydrate = (result: TemplateResult, container: Node) => {
     return;
   }
   if (cached) {
+    containerCache.delete(container);
     for (const part of cached.parts) {
       if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
     }
   }
 
-  let parts: Part[];
+  let parts: Part[] = [];
   try {
     const { fragment: blueprint, parts: compiled } = compileTemplate(result);
     parts = compiled;
@@ -2481,6 +2514,7 @@ export const hydrate = (result: TemplateResult, container: Node) => {
       if (parts[i]) parts[i]!.update(result.values[i]);
     }
   } catch (e) {
+    disposeFailedParts(parts);
     if (e instanceof HydrateMismatch) {
       // Mismatch between SSR output and client template (divergent render
       // output, manual DOM edits, etc.). Safe fall back to a full render so

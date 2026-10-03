@@ -9,11 +9,37 @@ export async function writeUrlStateAcceptance(root) {
     import {html} from '@cossackframework/renderer';
     @Page({transport:'http'}) export class App extends Cossack {
       @Client() onMount(){(window as any).__queryTestApp=this;}
+      @Client() updated(){if(this.c.req.path==='/retire' && !(window as any).__allowRetire) throw new Error('deliberate post-render failure');}
       render(){
         if(!this.isServer && this.c.req.query('search')==='render-failing') throw new Error('deliberate render failure');
         return html\`\${this.children}\`;
       }
     }
+  `);
+  await fs.mkdir(path.join(root,'src/pages/retire'),{recursive:true});
+  await fs.writeFile(path.join(root,'src/pages/retire/layout.ts'), `
+    import {Cossack,CossackService,Page,Service,Inject,Client} from '@cossackframework/core';
+    import {html,component} from '@cossackframework/renderer';
+    @Service() class Resource extends CossackService {
+      open=true;
+      @Client() onDispose(){this.open=false;(window as any).__scopeEvents.push('disposed');}
+    }
+    class Child extends Cossack {
+      @Inject(Resource) resource!:Resource;
+      async onCleanup(){
+        if(this.isServer)return;
+        await new Promise<void>(resolve=>{(window as any).__finishScopeCleanup=resolve;});
+        (window as any).__scopeEvents.push(this.resource.open?'cleanup-open':'cleanup-closed');
+      }
+      render(){return html\`<p id="transient-child">Transient child</p>\`;}
+    }
+    @Page({transport:'http',services:[Resource]}) export default class Layout extends Cossack {
+      render(){return html\`<section>\${component(Child)}\${this.children}</section>\`;}
+    }
+  `);
+  await fs.writeFile(path.join(root,'src/pages/retire/index.ts'), `
+    import {Cossack,Page} from '@cossackframework/core';import {html} from '@cossackframework/renderer';
+    @Page({transport:'http'}) export default class Retire extends Cossack {render(){return html\`<p>Retire</p>\`;}}
   `);
   await fs.writeFile(path.join(root, 'src/filters.ts'), `
     import {defineUrlState,url} from '@cossackframework/core';
@@ -69,6 +95,7 @@ export async function writeUrlStateAcceptance(root) {
       @Client() async fail(){this.outcome=(await this.updateUrlState(filters,{search:'failing'})).outcome;}
       @Client() leave(){return this.navigate('/plain');}
       @Client() async renderFailure(){this.outcome=(await this.updateUrlState(filters,{search:'render-failing'})).outcome;}
+      @Client() async retireFailure(){this.outcome=(await this.navigate('/retire')).outcome;}
       @Client() rememberDraft(){const draft=this.draft;(window as any).__lateDraftWrite=()=>{draft.text='obsolete owner';};}
       render(){return html\`<main id="rows"><p id="query-values">\${JSON.stringify(this.filters)}</p><p id="query-items">\${this.items}</p>
         <input id="page-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
@@ -77,6 +104,7 @@ export async function writeUrlStateAcceptance(root) {
         <button id="fail-query" @click=\${this.fail}>Fail</button><button id="toggle-guard" @click=\${()=>{this.blocked=!this.blocked;}}>Guard</button>
         <button id="confirm-history" @click=\${()=>this.confirmNavigation(true)}>Confirm</button><span id="guard-checks">\${this.guardChecks}</span>
         <button id="fail-render" @click=\${this.renderFailure}>Fail render</button>
+        <button id="fail-retire" @click=\${this.retireFailure}>Fail after rendering</button>
         <button id="remember-draft" @click=\${this.rememberDraft}>Remember draft</button>
         <button id="redraw-draft" @click=\${()=>{this.revision++;}}>Redraw</button><span id="draft-revision">\${this.revision}</span>
         <span id="query-outcome">\${this.outcome}</span>
@@ -117,13 +145,25 @@ export async function checkUrlStateBrowser(browser, origin) {
     const length = await page.evaluate(() => history.length);
     const beforeRenderFailure = page.url();
     await page.evaluate(() => document.addEventListener('cossack:navigation-error', event => {
-      if(event.detail.error?.message==='deliberate render failure') event.preventDefault();
+      if(['deliberate render failure','deliberate post-render failure'].includes(event.detail.error?.message)) event.preventDefault();
     }));
     await page.locator('#fail-render').click();
     await browserExpect(page.locator('#query-outcome')).toHaveText('failed');
     expect(page.url()).toBe(beforeRenderFailure);
     await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
     await browserExpect(page.locator('#layout-summary')).toHaveText('雪 & books:2');
+    await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
+    await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
+    await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
+    await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await page.evaluate(() => { window.__scopeEvents=[]; });
+    await page.locator('#fail-retire').click();
+    await browserExpect.poll(() => page.evaluate(() => typeof window.__finishScopeCleanup)).toBe('function');
+    expect(await page.evaluate(() => window.__scopeEvents)).toEqual([]);
+    await page.evaluate(() => { window.__finishScopeCleanup(); delete window.__finishScopeCleanup; });
+    await browserExpect.poll(() => page.evaluate(() => window.__scopeEvents)).toEqual(['cleanup-open','disposed']);
+    expect(page.url()).toBe(beforeRenderFailure);
+    await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
     await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
@@ -222,5 +262,17 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#layout-draft')).toHaveValue('');
     await browserExpect(page.locator('#service-draft')).toHaveValue('');
     await browserExpect(page.locator('#file-name')).toHaveText('');
+    await page.evaluate(async () => {
+      window.__scopeEvents=[];
+      window.__allowRetire=true;
+      await window.__queryTestApp.navigate('/retire');
+    });
+    await browserExpect(page.locator('#transient-child')).toHaveText('Transient child');
+    await page.evaluate(() => window.__queryTestApp.navigate('/plain'));
+    await browserExpect(page.locator('#return-list')).toHaveCount(1);
+    await browserExpect.poll(() => page.evaluate(() => typeof window.__finishScopeCleanup)).toBe('function');
+    expect(await page.evaluate(() => window.__scopeEvents)).toEqual([]);
+    await page.evaluate(() => { window.__finishScopeCleanup(); delete window.__finishScopeCleanup; });
+    await browserExpect.poll(() => page.evaluate(() => window.__scopeEvents)).toEqual(['cleanup-open','disposed']);
   } finally { release?.(); await page.unrouteAll({behavior:'wait'}); await page.close(); }
 }

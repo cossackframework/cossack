@@ -183,6 +183,8 @@ function attachTemplateOwner(value: unknown, owner: CossackElement): void {
 // Local capabilities never enter serialized state. Only the original class can
 // consume one, once; raw store targets receive fresh proxies in their new owner.
 const navigationDrafts = new WeakMap<object, { constructor: Function; values: Map<string, unknown> }>();
+const rendererScopeAttachments = new WeakMap<ServiceScope, Set<Promise<void>>>();
+const retiringNavigationScopes = new WeakSet<ServiceScope>();
 
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     private _serviceScope?: ServiceScope;
@@ -1239,6 +1241,55 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this._storeProxies.delete(key);
         }
         return true;
+    }
+
+    private _rendererRelease?: () => void;
+    private _navigationScopeRemoval?: Promise<void>;
+
+    /** @internal Called only by the client renderer for a mounted component part. */
+    public _frameworkRendererAttached(): void {
+        if (this.isServer || this._rendererRelease || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        if (!this._serviceScope) this._serviceScope = (this.getParentComponent() as any)?._getServiceScope?.();
+        const scopes: ServiceScope[] = [];
+        for (let scope = this._serviceScope; scope; scope = scope.parent) {
+            if (retiringNavigationScopes.has(scope)) throw new Error('[Cossack] Cannot attach a component to a retiring navigation scope.');
+            scopes.push(scope);
+        }
+        const owned = this._serviceScopeLifetime ?? (this._ownsServiceScope ? this._serviceScope : undefined);
+        const releases = scopes.map(scope => {
+            let release!: () => void;
+            const detached = new Promise<void>(resolve => { release = resolve; });
+            let attachments = rendererScopeAttachments.get(scope);
+            if (!attachments) rendererScopeAttachments.set(scope, attachments = new Set());
+            attachments.add(detached);
+            return { scope, release: () => {
+                attachments!.delete(detached);
+                release();
+            } };
+        });
+        this._rendererRelease = () => {
+            // An owned scope can itself be waiting for this DOM lease. Release
+            // it first; keep ancestors alive through asynchronous child cleanup.
+            for (const entry of releases) if (entry.scope === owned) entry.release();
+            void Promise.resolve(this._cleanupCompletion).then(() => {
+                for (const entry of releases) if (entry.scope !== owned) entry.release();
+            });
+        };
+    }
+
+    /** @internal Called after renderer disconnection and component destruction. */
+    public _frameworkRendererDetached(): void {
+        const release = this._rendererRelease;
+        this._rendererRelease = undefined;
+        release?.();
+    }
+
+    /** @internal Retire abandoned scopes only after their DOM consumers detach. */
+    public _frameworkRetireNavigationScope(): void {
+        const scope = this._serviceScopeLifetime ?? (this._ownsServiceScope ? this._serviceScope : undefined);
+        if (!scope || this._navigationScopeRemoval) return;
+        retiringNavigationScopes.add(scope);
+        this._navigationScopeRemoval = Promise.all([...rendererScopeAttachments.get(scope) ?? []]).then(() => {});
     }
 
     /** @internal Restore retained request/resource ownership after an abandoned publication. */
@@ -2938,8 +2989,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const scope = this._serviceScopeLifetime ?? this._serviceScope;
             // Keep request facilities available until asynchronous
             // component/descendant hooks have finished using services.
-            release(() => pending.length
-                ? Promise.all(pending).then(() => scope?.disposeAsync())
+            const facilities = this._navigationScopeRemoval ? [...pending, this._navigationScopeRemoval] : pending;
+            release(() => facilities.length
+                ? Promise.all(facilities).then(() => scope?.disposeAsync())
                 : scope?.disposeAsync());
             this._ownsServiceScope = false;
             this._serviceScopeLifetime = undefined;

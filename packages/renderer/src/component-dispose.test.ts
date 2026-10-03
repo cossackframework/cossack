@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CossackElement } from './cossack-element';
-import { html, render } from './cossack-html';
+import { html, render, hydrate, renderToString } from './cossack-html';
 import type { ComponentResult } from './component';
 
 /**
@@ -14,6 +14,85 @@ function makeComponentResult(clazz: new () => CossackElement): ComponentResult {
 }
 
 describe('component disposal calls destroy()', () => {
+    it.each(['render', 'hydrate'])('releases renderer scope attachments after %s', (mode) => {
+        const attached = vi.fn();
+        const detached = vi.fn();
+        const destroyed = vi.fn();
+        class Child extends CossackElement {
+            _frameworkRendererAttached() { attached(); }
+            _frameworkRendererDetached() { detached(); }
+            destroy() { destroyed(); }
+            render() { return html`<p>child</p>`; }
+        }
+        const container = document.createElement('div');
+        const template = (value: unknown) => html`${value}`;
+        const result = template(makeComponentResult(Child));
+        if (mode === 'hydrate') {
+            container.innerHTML = renderToString(result);
+            attached.mockClear();
+            detached.mockClear();
+            destroyed.mockClear();
+            hydrate(result, container);
+        } else render(result, container);
+        expect(attached).toHaveBeenCalledTimes(1);
+        render(template('removed'), container);
+        expect(destroyed).toHaveBeenCalledTimes(1);
+        expect(detached).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['render', 'hydrate'])('releases partial siblings and permits another %s after connection failure', (mode) => {
+        const detached = vi.fn();
+        const destroyed = vi.fn();
+        let fail = false;
+        class Child extends CossackElement {
+            _frameworkRendererAttached() {}
+            _frameworkRendererDetached() { detached(); }
+            destroy() { destroyed(); }
+            render() { return html`<p>child</p>`; }
+        }
+        class FailingChild extends Child {
+            connectedCallback() {
+                if (fail) throw new Error('connection failed');
+                super.connectedCallback();
+            }
+        }
+        const container = document.createElement('div');
+        const old = () => html`<div>previous</div>`;
+        render(old(), container);
+        const result = html`${makeComponentResult(Child)}${makeComponentResult(FailingChild)}`;
+        if (mode === 'hydrate') container.innerHTML = renderToString(result, { hydrate: true });
+        detached.mockClear();
+        destroyed.mockClear();
+        fail = true;
+        expect(() => (mode === 'hydrate' ? hydrate : render)(result, container))
+            .toThrow('connection failed');
+        expect(detached).toHaveBeenCalledTimes(2);
+        expect(destroyed).toHaveBeenCalledTimes(2);
+        render(old(), container);
+        expect(container.textContent).toBe('previous');
+    });
+
+    it('continues sibling teardown when a disconnection hook throws', () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const detached = vi.fn();
+        const destroyed = vi.fn();
+        class Child extends CossackElement {
+            _frameworkRendererAttached() {}
+            _frameworkRendererDetached() { detached(); }
+            disconnectedCallback() { throw new Error('disconnect failed'); }
+            destroy() { destroyed(); }
+            render() { return html`<p>child</p>`; }
+        }
+        try {
+            const container = document.createElement('div');
+            render(html`${makeComponentResult(Child)}${makeComponentResult(Child)}`, container);
+            render(html`removed`, container);
+            expect(destroyed).toHaveBeenCalledTimes(2);
+            expect(detached).toHaveBeenCalledTimes(2);
+            expect(logged).toHaveBeenCalledTimes(2);
+        } finally { logged.mockRestore(); }
+    });
+
     it('recreates a same-class child when its rendering parent instance changes', () => {
         const destroySpy = vi.fn();
         class Child extends CossackElement {
