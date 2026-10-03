@@ -48,7 +48,8 @@ export async function enforceActionInput(
     return [result.data, ...payload.slice(1)];
 }
 
-function findServerMethodRegistration(constructor: unknown, action: string): Record<string, unknown> | undefined {
+/** @internal Shared by the input and authorization gates. */
+export function findServerMethodRegistration(constructor: unknown, action: string): Record<string, unknown> | undefined {
     let proto: object | null = typeof constructor === 'function' ? constructor : null;
     while (proto !== null && proto !== Function.prototype) {
         const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', proto) as

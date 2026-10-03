@@ -1,4 +1,5 @@
 import { enforceActionInput } from './action-input';
+import { enforceActionAuthorization, getAuthorizationFailure } from './action-authorization';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/cossack.ts
 import {
@@ -1170,6 +1171,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const validatedPayload = await enforceActionInput(
                 getForwardedServerMethodClass(this, action) ?? this.constructor, action, payload || [],
                 { signal: cancellation.controller.signal });
+            await enforceActionAuthorization(actionClass, action, validatedPayload,
+                this._actionIdentity.context, cancellation.controller.signal);
             if (cancellation.cancelled) return;
             // Arguments are entirely client-controlled. Identity belongs in the
             // action context, never an appended positional argument that
@@ -1204,11 +1207,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Error boundary: log and continue so the runtime doesn't receive an
             // unhandled rejection and so `loading[action]` is always released.
             if (requestId !== undefined && !cancellation.cancelled) {
+                const denial = getAuthorizationFailure(e);
                 sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
-                    code: isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
-                        : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR',
+                    code: denial?.code ?? (isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
+                        : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR'),
                     fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
-                    message: isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error' });
+                    message: denial?.message ?? (isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error') });
             }
             console.error(`[Cossack] Error executing action '${action}':`, e);
         } finally {

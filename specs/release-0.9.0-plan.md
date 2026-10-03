@@ -844,32 +844,42 @@ string rules. Generated Node production/browser acceptance checks the private
 callback sentinel never enters JS client chunks, plus direct forged requests and
 form error/pending/retry behavior.
 
-**Task remains unchecked.** Next steps for GLM:
+Codex resource-policy phase (2026-10-03), after `49d3236`: RT-14 now supplies
+the typed auth kit and structural `@Server({ authorize })` gate. Parsed schema
+input, trusted context and owned signal compose without a core→auth dependency.
+Direct and typed-channel decorators retain authorizer input inference. The
+456-case transport matrix, forwarded socket case, API/SSR tests and compiler
+policy-dependency tests pass. Native D1 page/service actions now reject cross-owner,
+cross-tenant, missing/anonymous resources and forged input/state through JSON and
+multipart without changing records/audit tables. Native sockets and browser UI
+also exercise the policy. Read the RT-14 criterion audit below; do not recreate
+that completed implementation or interpret it as RT-02 completion.
 
-1. Implement RT-14's typed resource-policy kit with application-owned record
-   lookup and trusted request/user context. Existing createAuthorizer strings do
-   not establish resource-action inference. Core must stay independent of auth.
-2. Define the action-policy metadata/helper boundary. Run it after validated
-   input and before action mutation through the same component, forwarded-service,
-   explicit-service, HTTP/SSE/upload and socket gates. Trust server request identity;
-   payload/state permission booleans must never grant access. Native internal
-   method calls still need explicit policy enforcement rather than pretending
-   metadata wraps their authored execution.
-3. Extend compiler dependency stripping to private policy closures and add
-   cross-tenant forged-state/direct-request cases, allowed owned-record cases,
-   denial status/code/correlation and no-write assertions. Use the auth kit from
-   API/middleware/read paths as well, so reads and writes share policy semantics.
-4. Exercise typed schemas and resource policies together in generated native
-   Cloudflare apps through published exports. Typed File/object/array schemas
-   now run in the existing workerd HTTP/SSE page/service upload acceptance,
-   including unknown keys, forged File metadata, empty arrays and no D1 audit
-   writes on rejection. This does not establish the new resource-policy API or
-   the full scalar/refinement contract through native Cloudflare actions.
-5. Resolve the transitional plain-map migration and browser raw-input typing.
+**RT-02 remains unchecked.** Next steps for GLM:
+
+1. Extend `worker-policy-acceptance.js`/the native RPC fixture with the remaining
+   scalar/refinement matrix: strict/coercing boolean/number/date, enum/literal,
+   optional/null distinctions, async refinement false/private exceptions and
+   cancellation. Use generated published exports and actual request/record/audit
+   context, prove no mutation on rejection, and preserve request IDs. Typed File,
+   object/array, numeric identifiers and resource guards already have native
+   acceptance. Actual native incoming disconnect delivery belongs to RT-01;
+   explicit/cooperative cancellation must not be reported as that guarantee.
+2. Resolve the transitional plain-map migration and browser raw-input typing.
    Authored native methods retain parsed InputOf parameters. RawInputOf describes
    boundary values, not a new proxy argument signature. Client form code should
-   normalize its values before calling the authored method for now. Review every
-   original RT-02/RT-14 criterion before checking either task.
+   normalize its values before calling the authored method for now. The project
+   prefers alpha breaks: choose/document a deliberate 0.9 migration rather than
+   silently advertising strict schema guarantees for old maps. Inventory action
+   maps, migrate examples/recipes, and verify direct browser/native calls retain
+   authored signatures. If raw proxy argument typing is added, isolate the client
+   view instead of widening native server parameters. Also audit typed-schema
+   function-field decorators: current descriptor inference is verified for
+   methods, not property decorator signatures. Add appropriate inference and
+   generated/native cases before advertising that authored form as complete.
+3. Add the chosen migration to release/user/agent guides, run meaningful affected
+   package/generated checks, and audit every original RT-02 criterion before
+   checking it. Keep RT-01 deadlines and RT-11 session freshness separate.
 
 Done when: Invalid input cannot reach the mutation on any supported transport.
 Errors map to nested form fields without string parsing. Valid coerced input has
@@ -1199,6 +1209,64 @@ consistent denial codes. RT-11 still owns session freshness/revocation; a stored
 connection identity alone does not prove those guarantees. Native workerd
 acceptance currently proves typed upload validation, not this new resource policy.
 Neither RT-02 nor RT-14 can close from schema tests alone.
+
+**Codex implementation and criterion audit (2026-10-03), after `49d3236`.**
+The following supersedes the unfinished RT-14 next-phase instructions above.
+
+- Auth exports `createResourcePolicy<Resource, User>()(rules)`. Named actions
+  retain their literal union. `can` and `permissions` produce presentation
+  booleans; `authorize` returns the permitted record; `action` adapts an
+  application-owned lookup to Server metadata; `middleware` checks an HTTP
+  record before its handler. Config callbacks are snapshotted, actions/maps
+  frozen, decisions strictly boolean, and absent actors/records denied.
+- Core exports the independent structural authorizer/context types and gate.
+  HTTP/SSE/upload component/explicit service and socket/forwarded-service gates
+  run it after input parsing and before invocation. Upstream request/socket actor
+  identity supplies `context.get('user')`; payload/state owner/user/canEdit is
+  never authoritative. Direct/typed-channel Server overloads infer parsed input.
+- Expected failures use fixed 401/403 codes/messages and request IDs across
+  direct API, server reads, middleware and action envelopes. Lookup/policy
+  exceptions and invalid/nonboolean metadata remain private. Error redaction
+  does not invoke arbitrary exception getters. Abort skips later mutation,
+  releases pending ownership and observes late callback errors; it does not
+  terminate ignored I/O or roll back callback side effects.
+- Review fixed a native Hono context proxy defect: private-field getters/methods
+  and response setters need the original receiver, including through nested
+  socket proxies. The new real-Hono response read/write test and native socket
+  denials verify it. Server context helpers still delegate their own form API.
+- Compiler stripping removes policy metadata/private transitive declarations
+  and dead dependencies used solely by server reads. Shared client helpers
+  survive; exported/client-reachable private metadata and retained foreign
+  contract modules fail. Static typed-decorator factory/result/destructured
+  aliases receive the same method classification and stripping. Unrecognized
+  dynamic factories are not advertised as supported patterns.
+
+Original done criteria:
+
+1. Owned-record allow, another owner/tenant deny: shared transport/API/read
+   tests and generated native D1 JSON/multipart page/service fixtures. Denials
+   leave both actual record versions and audit rows unchanged. Application
+   conditional writes repeat actor/tenant predicates to avoid a lookup/write race.
+2. Relevant realtime path: actual Cloudflare socket peer/reconstruction fixture
+   and forwarded-service socket tests. Denials preserve state; the current trusted
+   socket actor is used instead of a stale context user. Session revocation and
+   freshness remain RT-11, not a claim from connection identity alone.
+3. Forged permission state: raw direct requests/socket frames supply fake
+   owner/user/canEdit/permission state and gain no access. Unknown payload fields
+   fail typed input before lookup. UI visibility does not replace server checks.
+4. Unknown resource actions/type shapes: standalone auth inference fixture rejects
+   unknown action/permission names, incorrect resources and mismatched parsed
+   lookup input. Core published-declaration fixtures verify authorizer/channel
+   inference and reject mismatched native method/authorizer inputs.
+5. UI/direct request consistency: generated workerd browser controls reflect
+   server-derived named permission flags, owned HTTP/SSE edits succeed and direct
+   unauthorized writes fail. API/SSR reads deny cross-tenant resources using the
+   same kit. Client chunks contain neither private policy sentinel nor SQL.
+
+RT-14 can close on this evidence. The exact final test counts and any failed
+intermediate runs are recorded in the release checkpoint. Native authored method
+calls still require explicit authorization; decorator metadata only guards
+inbound RPC. Full release/runtime gates and RT-02 migration remain open.
 
 Done when: A user can act on an owned record and is denied for another tenant's
 record through HTTP, RPC, and relevant realtime paths. Forged client permission

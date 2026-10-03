@@ -18,7 +18,7 @@ import {
   sanitizeServiceState,
 } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
-import { enforceActionInput, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
+import { enforceActionInput, enforceActionAuthorization, getAuthorizationFailure, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -684,6 +684,12 @@ export function createApp(options: CreateAppOptions = {}) {
           }),
         );
       } catch (err) {
+        const denial = getAuthorizationFailure(err);
+        if (denial) {
+          const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+          c.header('X-Cossack-Request-Id', requestId);
+          return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        }
         console.error('[Cossack SSR Error]:', err);
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
@@ -847,9 +853,12 @@ export function createApp(options: CreateAppOptions = {}) {
         let actionResult: unknown;
         try {
           const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
+          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, c, c.req.raw.signal);
           if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
         } catch (e: any) {
+          const denial = getAuthorizationFailure(e);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
           if (e instanceof RpcError && e.code === 'COSSACK_RPC_CANCELLED') {
             return Response.json({ error: e.message, code: e.code, requestId }, { status: 499 });
           }
@@ -897,6 +906,8 @@ export function createApp(options: CreateAppOptions = {}) {
         });
       } catch (error) {
         console.error('[/crpc service] request failed:', { requestId, error });
+        const denial = getAuthorizationFailure(error);
+        if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
@@ -1047,7 +1058,11 @@ export function createApp(options: CreateAppOptions = {}) {
           validatedPayload = await enforceActionInput(
             getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action, payload || [],
             { signal: componentContext.req.raw.signal });
+          await enforceActionAuthorization(getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor,
+            action, validatedPayload, componentContext, componentContext.req.raw.signal);
         } catch (validation) {
+          const denial = getAuthorizationFailure(validation);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
           if (validation instanceof RpcError && validation.code === 'COSSACK_RPC_CANCELLED') {
             return Response.json({ error: validation.message, code: validation.code, requestId }, { status: 499 });
           }
@@ -1066,6 +1081,8 @@ export function createApp(options: CreateAppOptions = {}) {
         try {
           actionResult = await targetInstance[action](...(validatedPayload as any[]));
         } catch (e: any) {
+          const denial = getAuthorizationFailure(e);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
           if (isActionValidationError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
               fieldErrors: e.fieldErrors, requestId }, 400);
@@ -1138,6 +1155,8 @@ export function createApp(options: CreateAppOptions = {}) {
         // Unexpected framework failures (construction, DI, serialization) still
         // produce one JSON RPC error on both backends.
         console.error('[/crpc] request failed:', { requestId, error });
+        const denial = getAuthorizationFailure(error);
+        if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {

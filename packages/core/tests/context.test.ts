@@ -2,6 +2,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Context } from 'hono';
+import { Hono } from 'hono';
 
 // jsdom defines `window`, so `environment.isServer` is false by default and the
 // flash module no-ops. getFormData is server-only, so force isServer true for
@@ -31,6 +32,25 @@ function mockContext(pairs: [string, string][]): Context {
     req: { formData: async () => fd },
   } as unknown as Context;
 }
+
+describe('createCossackContext — native receivers', () => {
+  it('reads and sets the real Hono response through nested proxies', async () => {
+    const app = new Hono();
+    app.get('/', c => {
+      const context = new Proxy(createCossackContext(c, true), {});
+      context.header('X-Test', 'policy');
+      expect(context.res.headers.get('X-Test')).toBe('policy');
+      const response = context.json({ ok: true });
+      context.res = response;
+      expect(context.res).toBe(c.res);
+      return context.res;
+    });
+    const response = await app.request('/');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(response.headers.get('X-Test')).toBe('policy');
+  });
+});
 
 describe('createCossackContext — getFormData', () => {
   it('parses nested form data (server side)', async () => {

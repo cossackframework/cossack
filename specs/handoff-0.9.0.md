@@ -2,6 +2,65 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest checkpoint — Codex resource-policy phase (2026-10-03). Author: Codex.**
+> Continued after `49d3236`. Read the
+> [review/evidence](./release-0.9.0.md#codex-resource-policies-2026-10-03),
+> [RT-14 implementation and criterion audit](./release-0.9.0-plan.md#rt-14),
+> [RT-02 remaining work](./release-0.9.0-plan.md#rt-02) and
+> [public policy API](../docs/authorization.md#typed-resource-policies).
+>
+> **16/58 checked, 42 unchecked; only RT-14 newly closes.** The original
+> criterion audit covers owned/other-tenant resources, relevant realtime paths,
+> forged state, unknown action types and consistent UI/direct request behavior.
+>
+> Auth's `createResourcePolicy<Resource, User>()(rules)` now has typed named
+> actions, app-owned lookup, imperative/API/middleware enforcement and frozen
+> boolean UI projections. Core has an independent structural authorizer: no
+> auth/ORM dependency. `@Server({ input, authorize })` runs policy after parsing
+> and before mutation through router and socket gates, including services.
+> Direct and typed-channel Server overloads infer parsed authorizer input.
+>
+> The trusted server request/socket actor supplies identity. Payload/state
+> owner/user/canEdit grants nothing. Expected denials have fixed 401/403 messages,
+> codes and request IDs. Malformed/nonboolean callbacks and backend exceptions
+> remain internal; redaction does not evaluate exception getters. Signals release
+> stuck policy/lookup ownership and skip later mutation, without stopping ignored
+> I/O or rolling back callbacks. Native calls still require explicit authorize.
+>
+> Review fixed Hono private-field getter/method/response-setter receivers in the
+> Cossack context proxy. Compiler stripping now includes private policy metadata,
+> transitive declarations and dead server-read dependencies; shared client helpers
+> remain. Static typed-decorator aliases receive consistent classification and
+> stripping. Private contracts retained by exports/client code/foreign module
+> imports fail rather than expose policy/lookup initializers.
+>
+> Core **1095/63**, framework **1294/57** (matrix **456**, policy compiler **11**
+> plus existing compiler **163**) and auth **143/8** pass. Root TypeScript and
+> all **11** package typecheck configurations pass. Two affected Node production
+> browser cases pass separately (13 other cases skipped in each targeted run).
+> Native workerd D1/browser acceptance passes in isolated complete staging runs;
+> native socket acceptance passes. The release review records intermediate
+> fixture/type failures and lost/empty native replies from a test API that ignored
+> its POST body. Its JSON parser now consumes the request without trusting submitted
+> permission fields; assertions also consume/check each reply before audit reads.
+> The final sequential native run passes both files, and a second complete staging
+> run passes after the body fixes. This does not close broader
+> RT-01 native early-response/disconnect guarantees. No full CLI/monorepo/release
+> audit is claimed.
+>
+> **Next for GLM: finish RT-02's documented migration/native schema work.**
+> Do not reimplement RT-14 or widen native signatures to raw client inputs.
+> Add the remaining native scalar/refinement/error/cancellation acceptance and
+> resolve plain-map migration/raw browser typing deliberately. Use published
+> exports, application-owned lookup/conditional writes and real audit evidence.
+> Keep RT-01 action deadlines/disconnect delivery and RT-11 session freshness
+> separate. Preserve every release ID and later release/provider/runtime gate.
+>
+> Package versions remain **0.8.3** until REL-04. Preserve user-owned
+> reports.md/.zcodeignore. No push, publication, live deployment, cloud resource
+> changes, external messages or newly created chats. Only close a checkbox from
+> its original criterion audit, not test counts or a partial feature slice.
+
 > **Latest checkpoint — Codex typed-input phase (2026-10-03). Author: Codex.**
 > Continued after `fb927cb`. Read the
 > [review and exact evidence](./release-0.9.0.md#codex-typed-input-2026-10-03),

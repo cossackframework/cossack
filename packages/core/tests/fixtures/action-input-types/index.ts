@@ -1,4 +1,4 @@
-import { input, Server, type InputOf, type RawInputOf } from '@cossackframework/core';
+import { input, Server, createTypedDecorators, type InputOf, type RawInputOf } from '@cossackframework/core';
 const schema = input.object({
     count: input.number({coerce:true,integer:true}),
     enabled: input.boolean({coerce:true}),
@@ -37,3 +37,29 @@ class Actions {
 }
 const native:Promise<number>=new Actions().save(output);
 void native;
+class ProtectedActions {
+    @Server({input:schema,authorize:(value,{context,signal})=>{
+        const count:number=value.count; const aborted:boolean=signal.aborted;
+        void context;void count;void aborted;
+        // @ts-expect-error Authorizer sees parsed fields, never raw strings.
+        value.count.toUpperCase();
+        return true;
+    }})
+    save(value:Data){return value.count;}
+    // @ts-expect-error A differently typed authorizer cannot escape via the legacy-map overload.
+    @Server({input:schema,authorize:(value:{count:string})=>true})
+    wrong(value:Data){return value.count;}
+}
+void ProtectedActions;
+const channel=createTypedDecorators<{Channels:'team'}>();
+class ChannelActions {
+    @channel.Server({channel:'team',input:schema,authorize:value=>value.count>0})
+    save(value:Data){return value.count;}
+    // @ts-expect-error Channel factories preserve schema parameter validation.
+    @channel.Server({input:schema}) wrong(value:{count:string}){return value.count;}
+    // @ts-expect-error Channel factories preserve parsed authorizer input types.
+    @channel.Server({input:schema,authorize:(value:{count:string})=>true}) invalidGuard(value:Data){return value.count;}
+    // @ts-expect-error Unknown channel names remain invalid.
+    @channel.Server({channel:'private',input:schema}) invalidChannel(value:Data){return value.count;}
+}
+void ChannelActions;

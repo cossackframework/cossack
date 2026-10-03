@@ -68,8 +68,32 @@ that become unused, resolving runtime references separately from type uses and
 local bindings. Local contracts retained by runtime client code or exports fail
 closed. Foreign contract imports cannot also keep that module in the client
 graph, because this file cannot strip its initializers. Shared client form rules
-remain separate from the private typed action contract. Resource authorization
-is still a separate RT-14 gate; schema validity does not grant resource access.
+remain separate from the private typed action contract.
+
+## Resource authorization boundary
+
+Auth owns the typed `createResourcePolicy<Resource, User>()(rules)` kit. The
+application owns record lookup and write consistency. Core has no auth/ORM
+dependency: `@Server({ authorize })` takes a structural callback over the parsed
+first argument, trusted Hono context and owned action signal. Both router gates
+and socket dispatch enforce it after input validation and before method invocation.
+Forwarded services use their declaring class metadata. Only a boolean `true`
+grants access. Expected denials have fixed 401/403 messages/codes and request IDs;
+unexpected policy/lookup failures remain internal.
+
+Native API handlers, SSR/resource reads and internal method calls explicitly use
+`policy.authorize` or resource middleware. Metadata does not wrap authored calls.
+`policy.permissions` derives frozen named booleans for UI state; changing those
+client booleans cannot establish resource access. An upstream server authentication
+middleware supplies the actor. Connection freshness/revocation is a separate
+session requirement, not an authorization-kit guarantee.
+
+Policy callbacks/lookups receive cancellation signals; abort releases framework
+ownership, not their underlying I/O or side effects. Check ownership again in a
+conditional write/transaction when records can change between lookup and mutation.
+The compiler removes authorization metadata and dead private policy dependencies,
+including those used only by server read methods. Shared client helpers survive.
+Static core typed-decorator factory aliases use the same classification/stripping.
 
 ## Desktop runtime boundary
 

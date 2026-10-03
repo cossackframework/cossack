@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { Hono, type Context } from 'hono';
+import { createResourcePolicy } from '../../auth/src/index';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     Cossack, CossackService, ClientVisibleError, createInstance, InMemoryWebSocketRuntime,
@@ -15,12 +17,20 @@ const { registry, effects } = vi.hoisted(() => ({
     effects: { current: { runs: 0, streamsClosed: 0, disposed: 0, jsonCalls: 0, nativePulls: 0, fileContinue: undefined as (() => void) | undefined } },
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
-vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
+vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c:any,next:()=>Promise<void>)=>{
+    c.set('user',c.env?.TEST_POLICY_USER); await next();
+}] }));
 vi.mock('virtual:cossack-config', () => ({ default: {} }));
 
 // Finite application I/O lets teardown prove eventual remote cleanup even when
 // a caller has already timed out/disconnected. Cancellation is not rollback.
 const normalizedInput = input.object({profile:input.object({age:input.number({coerce:true,integer:true,min:1})}), enabled:input.boolean({coerce:true}), tags:input.array(input.enum(['draft','published']),{maxItems:2}), note:input.string().optional()});
+interface PolicyPost {id:number;owner:string;tenant:string;}
+interface PolicyActor {id:string;tenant:string;}
+const records:PolicyPost[]=[{id:1,owner:'u1',tenant:'t1'},{id:2,owner:'u2',tenant:'t1'},{id:3,owner:'u1',tenant:'t2'}];
+const policyLookup=vi.fn((data:{id:number})=>records.find(record=>record.id===data.id));
+const policy=createResourcePolicy<PolicyPost,PolicyActor>()({edit:({user,resource})=>user.id===resource.owner && user.tenant===resource.tenant});
+const policyInput=input.object({id:input.number({coerce:true,integer:true,min:1})});
 const pause = () => new Promise<void>(resolve => setTimeout(resolve, 160));
 class DataModel { id = 7; when = new Date('2026-10-03'); save() { throw new Error('never called'); } }
 class JsonRecord { private readonly owner = effects.current; toJSON() { this.owner.jsonCalls++; return { when: new Date('2026-10-03'), title: 'serialized' }; } }
@@ -131,6 +141,17 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
             return true;
         })})
         waitingValidation(value:string) { this.effectOwner.runs++; return value; }
+        @Server({input:policyInput,authorize:policy.action('edit',policyLookup)})
+        protectedMutation(value:InputOf<typeof policyInput>) { this.effectOwner.runs++;this.count++;return value.id; }
+        @Server({input:policyInput,authorize:()=>{throw Error('PRIVATE_POLICY_EXCEPTION');}})
+        brokenPolicy(value:InputOf<typeof policyInput>) {this.effectOwner.runs++;return value.id;}
+        @Server({input:policyInput,authorize:async (_value,{signal})=>{
+            await new Promise<void>(resolve=>{effects.current.fileContinue=resolve;});
+            return !signal.aborted;
+        }})
+        waitingPolicy(value:InputOf<typeof policyInput>) {this.effectOwner.runs++;return value.id;}
+        @Server({input:input.object({id:input.number({coerce:true,integer:true}),file:input.file({maxBytes:16})}),authorize:policy.action('edit',policyLookup)})
+        protectedFile(value:{id:number;file:File}) {this.effectOwner.runs++;return value.file.name;}
         @Server({ timeout: 80 }) async slow() { this.effectOwner.runs++; await pause(); return 'completed remotely'; }
         @Server({ timeout: 80 }) async *slowStream() {
             this.effectOwner.runs++;
@@ -146,19 +167,19 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
     }
     return Actions;
 }
-@Page({ transport: 'http' })
+@Page({ transport: 'http', scope:()=> 'user:anonymous' })
 class HttpPage extends actions(Cossack) {
     setFixtureEnv(env: Record<string, any>) { this.env = env; }
     render() { return null as any; }
     onCleanup() { this.effectOwner.disposed++; }
 }
-@Page({ transport: 'sse' })
+@Page({ transport: 'sse', scope:()=> 'user:anonymous' })
 class SsePage extends HttpPage {}
 @Service()
 class MatrixService extends actions(CossackService) {
     onDispose() { this.effectOwner.disposed++; }
 }
-@Page({ services: [MatrixService] })
+@Page({ services: [MatrixService],scope:()=> 'user:anonymous' })
 class Layout extends Cossack { render() { return null as any; } }
 const httpPath = '/src/pages/http/index.ts';
 const ssePath = '/src/pages/sse/index.ts';
@@ -216,7 +237,10 @@ async function harness(transport: Transport, uploadMode = false) {
         server.setFixtureEnv(environment);
         server.__cossack_rpcOwner = httpPath;
         server.connectedCallback();
-        const runtime = new InMemoryWebSocketRuntime(server);
+        let peerContext!:Context;
+        const peerApp=new Hono();peerApp.get('/peer',c=>{peerContext=c;return new Response(null);});
+        await peerApp.fetch(new Request('http://localhost/peer'),environment);
+        const runtime = new InMemoryWebSocketRuntime(server,{getUser:()=>environment.TEST_POLICY_USER,getContext:()=>peerContext});
         const peer = { readyState: 1, send(data: string) {
             if (!disconnected) routeSocketFrame(socket, rewrite(JSON.parse(data)));
         } };
@@ -675,6 +699,41 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         expect(await rpc$(wire.target.echo('next'))).toBe('next');
         expect(effects.current.runs).toBe(1); settled();
     });
+    it('allows an owned record using normalized input and request identity',async()=>{
+        policyLookup.mockClear();wire.configureEnv({TEST_POLICY_USER:{id:'u1',tenant:'t1'}});
+        expect(await rpc$(wire.target.protectedMutation({id:'1'}))).toBe(1);
+        expect(policyLookup).toHaveBeenCalledWith({id:1},expect.objectContaining({context:expect.any(Object),signal:expect.any(AbortSignal)}));
+        expect(effects.current.runs).toBe(1);settled();
+    });
+    it.each([
+        [{id:'u1',tenant:'t1'},2,'COSSACK_AUTH_FORBIDDEN'],
+        [{id:'u1',tenant:'t1'},3,'COSSACK_AUTH_FORBIDDEN'],
+        [{id:'u1',tenant:'t1'},999,'COSSACK_AUTH_FORBIDDEN'],
+        [undefined,1,'COSSACK_AUTH_UNAUTHENTICATED'],
+    ])('rejects record/tenant/anonymous access despite forged client permissions (%#)',async(actor,id,code)=>{
+        wire.configureEnv({TEST_POLICY_USER:actor});
+        wire.client.getPublicState=()=>({count:0,canEdit:true,user:{id:'u1',tenant:'t1'},owner:'u1'});
+        await expect(rpc$(wire.target.protectedMutation({id}))).rejects.toMatchObject({code,requestId:expect.any(String),
+            ...(transport!=='websocket'?{status:actor?403:401}:{})});
+        expect(effects.current.runs).toBe(0);settled();
+    });
+    it('validates before a resource lookup/policy and never trusts ownership in the payload',async()=>{
+        wire.configureEnv({TEST_POLICY_USER:{id:'u1',tenant:'t1'}});policyLookup.mockClear();
+        await expect(rpc$(wire.target.protectedMutation({id:1,owner:'u1',canEdit:true}))).rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED'});
+        expect(policyLookup).not.toHaveBeenCalled();expect(effects.current.runs).toBe(0);settled();
+    });
+    it('keeps unexpected policy failures private and runs no mutation',async()=>{
+        await expect(rpc$(wire.target.brokenPolicy({id:1}))).rejects.toMatchObject({code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error'});
+        expect(effects.current.runs).toBe(0);settled();
+    });
+    it('releases an aborted policy before its callback finishes and skips mutation',async()=>{
+        const call=rpc$(wire.target.waitingPolicy({id:1}));const rejection=expect(call).rejects.toMatchObject({code:'COSSACK_RPC_CANCELLED'});
+        await vi.waitFor(()=>expect(effects.current.fileContinue).toBeTypeOf('function'));
+        await call.cancel();await rejection;
+        if(transport!=='websocket')await vi.waitFor(()=>expect(wire.responses).toHaveLength(1));
+        expect(await rpc$(wire.target.echo('next'))).toBe('next');expect(effects.current.runs).toBe(1);settled();
+        effects.current.fileContinue!();await Promise.resolve();await Promise.resolve();expect(effects.current.runs).toBe(1);
+    });
     it('preserves yields before a correlated application failure and closes once', async () => {
         const call = rpc$(wire.target.streamError());
         const iterator = call[Symbol.asyncIterator]();
@@ -908,6 +967,14 @@ describe.each(['http', 'sse', 'service'] as const)('%s multipart client/router c
                 .rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED',fieldErrors:{nested:{files:{0:expect.any(String)}}},requestId:expect.any(String)});
         }
         expect(effects.current.runs).toBe(0); expect(wire.client.loading).toEqual({});
+    });
+    it('enforces the same resource policy before an uploaded mutation',async()=>{
+        wire.configureEnv({TEST_POLICY_USER:{id:'u1',tenant:'t1'}});
+        for(const id of [2,3])await expect(rpc$(wire.target.protectedFile({id,file:new File(['safe'],'owned.txt')})))
+            .rejects.toMatchObject({code:'COSSACK_AUTH_FORBIDDEN',status:403,requestId:expect.any(String)});
+        expect(effects.current.runs).toBe(0);
+        expect(await rpc$(wire.target.protectedFile({id:1,file:new File(['safe'],'owned.txt')}))).toBe('owned.txt');
+        expect(effects.current.runs).toBe(1);expect(wire.client.loading).toEqual({});
     });
     it('yields before the upload generator completes and preserves state/final result', async () => {
         const call = rpc$(wire.target.fileStream(input())); const iterator = call[Symbol.asyncIterator]();

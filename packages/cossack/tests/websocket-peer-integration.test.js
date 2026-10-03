@@ -22,19 +22,26 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   const core = fileURLToPath(new URL('../../core/dist/index.js', import.meta.url));
   const proxy = fileURLToPath(new URL('../../framework/src/transports/websocket.ts', import.meta.url));
   const hono = fileURLToPath(new URL('../../../node_modules/hono/dist/index.js', import.meta.url));
+  const auth = fileURLToPath(new URL('../../auth/src/index.ts', import.meta.url));
   const main = path.join(directory, 'worker.ts');
   await fs.writeFile(main, `
     import { Hono } from ${JSON.stringify(hono)};
     import { Cossack, CossackDurableObject, Page, Server, State, RateLimit,
-      RateLimitDurableObject, enforceMethodRateLimit } from ${JSON.stringify(core)};
+      RateLimitDurableObject, enforceMethodRateLimit, input } from ${JSON.stringify(core)};
+    import { createResourcePolicy } from ${JSON.stringify(auth)};
     import { handleWebSocketProxy } from ${JSON.stringify(proxy)};
     export { RateLimitDurableObject };
     const componentPath = '/src/pages/live/index.ts';
+    const records = [{id:1,owner:'member',tenant:'t1'},{id:2,owner:'second',tenant:'t1'},{id:3,owner:'member',tenant:'t2'}];
+    const policy = createResourcePolicy<{id:number;owner:string;tenant:string},{id:string;tenant:string}>()({
+      edit:({user,resource})=>user.id===resource.owner && user.tenant===resource.tenant,
+    });
     class Live extends Cossack {
       count = 0;
       render() { return null; }
       limited() { return ++this.count; }
       custom() { return ++this.count; }
+      edit(value) { ++this.count; return value.id; }
       inspect() {
         return { user: this.user?.id ?? null, contextUser: this.c.get('user')?.id ?? null,
           ip: this.c.req.header('cf-connecting-ip'), bucket: this.c.req.header('x-bucket'),
@@ -53,6 +60,9 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', Live);
     for (const name of ['limited', 'custom', 'inspect', 'observe'])
       Server()(Live.prototype, name, Object.getOwnPropertyDescriptor(Live.prototype, name));
+    Server({input:input.object({id:input.number({coerce:true,integer:true,min:1})}),
+      authorize:policy.action('edit',(value:{id:number})=>records.find(record=>record.id===value.id))})
+      (Live.prototype,'edit',Object.getOwnPropertyDescriptor(Live.prototype,'edit'));
     RateLimit({ max: 1, window: 60000, requires: { shared: true, durable: true, atomicIncrement: true } })(Live.prototype, 'limited', Object.getOwnPropertyDescriptor(Live.prototype, 'limited'));
     RateLimit({ max: 1, window: 60000, key: c => JSON.stringify([c.req.param('tenant'), c.req.header('x-bucket')]) })
       (Live.prototype, 'custom', Object.getOwnPropertyDescriptor(Live.prototype, 'custom'));
@@ -72,7 +82,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     app.use('*', async (c, next) => {
       // Test-only auth/edge headers, supplied by this Worker. Browsers cannot
       // choose CF-Connecting-IP in production. No test auth endpoint is shipped.
-      if (c.req.header('x-test-user')) c.set('user', { id: c.req.header('x-test-user') });
+      if (c.req.header('x-test-user')) c.set('user', { id: c.req.header('x-test-user'), tenant:'t1' });
       await next();
     });
     app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName(c.req.query('name') || 'shared').toString() }));
@@ -181,6 +191,14 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   expect((await server.fetch('/restore', { method: 'POST' })).status).toBe(200);
   expect((await member.call('inspect')).value).toMatchObject({ user: 'member', contextUser: 'member', ip: '192.0.2.1', bucket: 'one', tenant: 'example' });
   expect((await secondBucket.call('inspect')).value).toMatchObject({ user: 'second', contextUser: 'second', bucket: 'two' });
+  const beforePolicy = (await member.call('inspect')).value.count;
+  for (const [peer, id, code] of [[member,2,'COSSACK_AUTH_FORBIDDEN'],[member,3,'COSSACK_AUTH_FORBIDDEN'],[member,99,'COSSACK_AUTH_FORBIDDEN'],[a,1,'COSSACK_AUTH_UNAUTHENTICATED']]) {
+    expect(await peer.call('edit',{payload:[{id}],state:{canEdit:true,user:{id:'member'},owner:'member'}}))
+      .toMatchObject({type:'error',code,requestId:expect.any(String),message:code==='COSSACK_AUTH_FORBIDDEN'?'Forbidden':'Authentication required'});
+    expect((await member.call('inspect')).value.count).toBe(beforePolicy);
+  }
+  expect(await member.call('edit',{payload:[{id:'1'}]})).toMatchObject({type:'done',value:1});
+  expect((await member.call('inspect')).value.count).toBe(beforePolicy+1);
   await server.getWorker('first').evictDurableObject('RateLimitDurableObject', {
     name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'user:member']),
   });

@@ -117,7 +117,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     import { createAuth } from '@cossackframework/auth';
     import { sql } from '@cossackframework/database';
 
-    export interface DemoUser { id: string; email: string }
+    export interface DemoUser { id: string; email: string; tenant: string }
 
     export async function ensureSchema() {
       await sql\`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT NOT NULL)\`;
@@ -134,7 +134,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       },
       resolveUserById: async id => {
         const rows = await sql\`SELECT id, email FROM users WHERE id = \${id}\`;
-        return rows.rows[0] ?? null;
+        return rows.rows[0] ? {...rows.rows[0],tenant:'t1'} : null;
       },
       createSession: async (user, c) => {
         const id = crypto.randomUUID();
@@ -256,7 +256,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       async (c, next) => {
         if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
         const path = c.req.path;
-        const needsDatabase = path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/me') || path.startsWith('/shared');
+        const needsDatabase = path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/api/rpc-policy') || path.startsWith('/rpc-policy') || path.startsWith('/me') || path.startsWith('/shared');
         if (needsDatabase) await database(c, next);
         else await next();
         c.header('x-worker-pipeline', 'ran');
@@ -314,6 +314,11 @@ it('builds a generated staging app and validates deployment without uploading', 
   expect(await fs.readFile(path.join(projectDir, 'worker-configuration.d.ts'), 'utf8')).toContain('APP_SECRET');
   expect(artifact.assets.run_worker_first).toBe(true);
   const staticHome = await fs.readFile(path.join(projectDir, 'dist/client/index.html'), 'utf8');
+  const clientScripts=await fs.readdir(path.join(projectDir,'dist/client/assets'));
+  for(const file of clientScripts.filter(file=>file.endsWith('.js'))){
+    const code=await fs.readFile(path.join(projectDir,'dist/client/assets',file),'utf8');
+    expect(code).not.toContain('PRIVATE_RESOURCE_POLICY_SENTINEL');expect(code).not.toContain('policy_posts');
+  }
   expect(staticHome).not.toContain('ssg-user');
   const readHydration = output => JSON.parse(output.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
   expect(readHydration(staticHome)._layout_stack[0].state.services).toEqual({
@@ -530,7 +535,8 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(client.status).toBe(200);
     expect(client.headers.get('x-worker-pipeline')).toBe('ran');
     expect((await client.text()).length).toBeGreaterThan(0);
-  } finally { await server.close(); }
+  } catch(error) { log.mockRestore(); server.debug(); throw error; }
+  finally { await server.close(); }
   // A protected SSG route must fail the real Vite build before any generated
   // page HTML or sitemap is published. The previously successful output is
   // cleared by Vite rather than surviving as a deployable stale page.

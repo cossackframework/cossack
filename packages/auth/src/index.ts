@@ -34,3 +34,8 @@ export {
     type AuthorizerOptions,
     type UnauthorizedReason,
 } from './authz';
+export {
+    createResourcePolicy, ResourceAuthorizationError,
+    type ResourceAuthorizationCode, type ResourcePolicy, type ResourcePolicyOptions,
+    type ResourcePolicyContext, type ResourceLookupContext,
+} from './authz/resource-policy';

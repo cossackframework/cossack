@@ -1,7 +1,7 @@
 // src/api-handler.ts
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { Cossack, enforceMethodRateLimit, createCossackContext } from '@cossackframework/core';
+import { Cossack, enforceMethodRateLimit, createCossackContext, getAuthorizationFailure } from '@cossackframework/core';
 
 /**
  * Create an API handler for a Cossack class method.
@@ -59,6 +59,12 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             return c.json(state);
 
         } catch (error) {
+            const denial = getAuthorizationFailure(error);
+            if (denial) {
+                const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+                c.header('X-Cossack-Request-Id', requestId);
+                return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+            }
             // If the error is a controlled HTTP exception, re-throw it for Hono to handle.
             if (error instanceof HTTPException) {
                 throw error;

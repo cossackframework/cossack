@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { Hono, type Context } from 'hono';
 import { CossackElement } from '@cossackframework/renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
@@ -268,6 +269,27 @@ describe('realtime (WebSocket) RPC conformance', () => {
         });
         await expect(Promise.resolve(client.guarded({ title: 'valid' }))).resolves.toBe('saved:valid');
         await expect(Promise.resolve(client.ordinary(3))).resolves.toBe(3);
+    });
+
+    it('authorizes forwarded services with their declaring metadata and socket actor',async()=>{
+        let context!:Context;const app=new Hono<{Variables:{user:{id:string}}}>();
+        app.get('/',c=>{context=c;c.set('user',{id:'stale-context'});return new Response(null);});await app.request('/');
+        let actor={id:'owner'};
+        const checks=vi.fn((value:{id:number},options:any)=>options.context.get('user')?.id==='owner' && value.id===1);
+        class ProtectedService {
+            calls=0;
+            @Server({input:input.object({id:input.number({coerce:true})}),authorize:checks})
+            forwarded(value:{id:number}){this.calls++;return value.id;}
+        }
+        const service=new ProtectedService();forwardServiceMethods(server,service);
+        runtime=new InMemoryWebSocketRuntime(server,{getUser:()=>actor,getContext:()=>context});
+        sockets=makeLoopback(runtime);client.websockets.set('page',sockets.clientSocket);
+        proxyServerMethods(client,[{name:'forwarded',provider:'page',channel:'global'}]);
+        await expect(client.forwarded({id:'1'})).resolves.toBe(1);expect(service.calls).toBe(1);
+        actor={id:'other'};
+        await expect(client.forwarded({id:1})).rejects.toMatchObject({code:'COSSACK_AUTH_FORBIDDEN',requestId:expect.any(String)});
+        expect(service.calls).toBe(1);expect(checks).toHaveBeenCalledTimes(2);
+        expect(client.loading).toEqual({});
     });
 
     it('validates forwarded service actions with their declaring class metadata', async () => {

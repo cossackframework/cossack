@@ -85,7 +85,7 @@ export function createCossackContext(
     isServer: boolean
 ): Context {
     return new Proxy(context, {
-        get(target, prop, receiver) {
+        get(target, prop) {
             // `getFormData<T>()` — server-only convenience for nested + typed
             // (optionally validated) form data. Client access throws below.
             if (prop === 'getFormData') {
@@ -125,11 +125,18 @@ export function createCossackContext(
 
             // On the server, delegate everything to the real Hono context
             if (isServer) {
-                return Reflect.get(target, prop, receiver);
+                // Hono getters/methods use private fields. Their receiver must
+                // be the original Context, including through nested proxies.
+                const value = Reflect.get(target, prop, target);
+                return typeof value === 'function' ? value.bind(target) : value;
             }
 
             // On the client, throw an error for any other property access
             throw new Error(`[Cossack] context.${String(prop)} is only available on the server.`);
-        }
+        },
+        set(target, prop, value) {
+            if (!isServer) throw new Error(`[Cossack] context.${String(prop)} is only available on the server.`);
+            return Reflect.set(target, prop, value, target);
+        },
     }) as Context; // We cast to Context to ensure type compatibility for the developer
 }

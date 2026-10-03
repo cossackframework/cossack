@@ -22,7 +22,7 @@ below link directly to those explanations.
 ## Runtime and application APIs
 
 - [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 421-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 421 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
-- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex typed-input phase (2026-10-03): parsed/raw inference, strict coercion and unknown-key/array/File behavior, private compiler dependencies and validation cancellation now pass component/forwarded/explicit-service and multipart transport acceptance. Generated Node browser and native Worker File guards pass. Remaining: resource policies with RT-14, transitional rule-map migration and the remaining native scalar/refinement acceptance. See the [typed-input checkpoint](#codex-typed-input-2026-10-03).
+- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex typed-input/resource-policy phases (2026-10-03): parsed/raw inference, strict coercion, private compiler dependencies and validation/policy cancellation pass the component/forwarded/explicit-service and multipart matrix. Generated Node browser and native Worker File/resource guards pass. RT-14 is complete. Remaining: transitional rule-map migration, raw client/function-field typing audit and native scalar/refinement acceptance. See the [resource-policy checkpoint](#codex-resource-policies-2026-10-03).
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
 - [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex Group 3 review: AbortSignal cancellation, ordered cleanup across rapid changes, skipped canceled starts, and late cleanup disposal are covered. Cancellation is cooperative: tasks must check the signal before writes. Remaining: typed dependency paths, framework-gated result application, and navigation/service-disposal acceptance tests.
@@ -34,7 +34,7 @@ below link directly to those explanations.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library.
-- [ ] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
+- [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers. Codex completion (2026-10-03): typed named actions, app-owned lookup, server request/socket identity, pre-mutation gates, API/read/middleware enforcement and boolean UI projections pass direct forged-state, native D1 and browser/socket acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-14) and [review](#codex-resource-policies-2026-10-03). Native calls require explicit authorization; session freshness stays RT-11.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
@@ -85,6 +85,84 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-resource-policies-2026-10-03"></a>
+### Codex checkpoint: typed resource policies and trusted action identity (2026-10-03)
+
+**Author: Codex.** Continued after `49d3236`. Only RT-14 closes on its original
+[criterion audit](./release-0.9.0-plan.md#rt-14): **16/58 checked, 42 unchecked**;
+all 58 IDs remain. RT-02 migration/native schema work, RT-01 transport deadlines
+and disconnect delivery, RT-11 session freshness and later release gates stay open.
+
+Auth now exports `createResourcePolicy<Resource, User>()(rules)` with named action
+inference, application-owned record lookup, imperative/API/middleware enforcement
+and frozen boolean permissions for UI. Core has an independent structural
+`@Server({ authorize })` callback over parsed input, trusted request context and
+owned signal. The two router gates and socket dispatch run it before invocation;
+forwarded services use their declaring metadata. Direct and typed-channel Server
+decorators retain parsed input/authorizer/channel inference. Native internal/API
+method calls still require explicit checks; metadata does not wrap them.
+
+Expected denials have fixed 401/403 codes/messages and request IDs. Input owner,
+user, tenant and permission state cannot replace lookup or the authenticated
+request/socket actor. Nonboolean/malformed metadata and backend exceptions remain
+private internal failures. Redaction does not execute arbitrary exception getters.
+Cancellation releases stuck lookup/policy ownership, observes late failures and
+skips later mutation, without terminating ignored I/O or rolling back callbacks.
+
+Review found Hono private-field getter/method/response-setter calls were using a
+proxy receiver. Core's context proxy now preserves the original receiver through
+nested socket proxies, verified by real-Hono and native socket tests. Compiler
+stripping removes authorization metadata, private transitive callbacks/imports
+and dead dependencies used only by server read loaders. Shared client helpers
+survive. Static typed-decorator factory, namespace, result and destructured aliases
+receive the same classification/stripping. Private contracts retained by exports,
+client code or foreign module initializers fail closed.
+
+Verified evidence:
+
+- Core: **1,095 tests / 63 files**. Typed authorizer/channel inference, exact
+  service metadata, trusted socket actor over a stale context user, strict
+  decision/cancellation/error redaction and native Hono response receivers.
+- Framework: **1,294 tests / 57 files**. Matrix **456** covers policy with parsed
+  input through HTTP/SSE/component/service/socket/multipart. Separate API/SSR
+  tests exercise one kit, request IDs, record reads and permission visibility.
+  Policy compiler **11** plus the existing compiler **163** pass.
+- Auth: **143 tests / 8 files**, including standalone action/resource/permission
+  type negatives, boolean projections, middleware, cancellation and private
+  lookup/policy errors. Auth's published main remains its source entry.
+- Two affected generated Node production/browser tests pass in separate targeted
+  runs: inferred client RPC/upload views and mutation/resource failure recovery.
+  Each skipped the other 13 generated cases. No full CLI run is claimed.
+- Native workerd staging and socket acceptance: **2 tests / 2 files** pass
+  sequentially after final fixture corrections. Published auth/core exports and
+  actual D1 records prove owned writes, cross-owner/cross-tenant/anonymous/missing
+  denials, forged payload/state rejection and unchanged record versions/audit
+  rows on denial through JSON/multipart page/services. Browser HTTP/SSE edits and
+  server-derived permission controls pass; API/SSR reads share the kit. Native
+  socket peer/reconstruction cases deny forged identity/state without mutation.
+  Client chunks contain neither private policy sentinel nor record SQL.
+  A second complete staging run passes after the final request/reply body fixes.
+- Sequential core/framework declaration builds, root `pnpm tsc --noEmit`, all
+  **11** package typecheck configurations and owned-file whitespace checks pass.
+
+Intermediate failures are retained as evidence, not counted as final passes.
+The first matrix run failed on a fixture's absent environment and Hono's receiver
+defect; both are fixed. Type runs caught factory overload, UUID, fixture dependency,
+test environment and optional-param mistakes; final inference/config checks pass.
+The first D1 fixture used the wrong write-result member; the correct field is
+`result.meta.rowsAffected`. Earlier native runs reached policy checks but had
+intermittent lost/empty responses around a test API that ignored its POST body;
+merely reading response bodies did not resolve it. The API now owns JSON request
+parsing, ignores submitted permission flags, and tests consume/assert every new
+reply before audit reads. An empty success request was corrected to `{}`. Final
+native verification includes full denial envelopes, not status-only assertions.
+This does not claim the broader RT-01 native early-response/disconnect guarantees.
+
+Next: [RT-02 migration/native acceptance](./release-0.9.0-plan.md#rt-02), then the
+remaining original plan. Do not reimplement completed RT-14, discard unchecked
+tasks or treat these tests as full release acceptance. Versions remain **0.8.3**
+until REL-04; no publication, live deployment or cloud resource changes occurred.
 
 <a id="codex-typed-input-2026-10-03"></a>
 ### Codex checkpoint: typed input and private validator dependencies (2026-10-03)

@@ -43,6 +43,14 @@ calls do not run decorator validation. Normalize client form values before
 calling the authored method. Validation metadata is not a wrapper around native
 JavaScript calls.
 
+Compose input parsing with `@Server({ input: contract, authorize })` for record
+access. The authorizer receives parsed values, trusted server context and the
+owned action signal; it must return boolean `true` to allow mutation. Use
+the resource kit's `policy.action(...)` for a typed record lookup and decision.
+See [resource policies](./authorization.md#typed-resource-policies). Neither
+input validity nor public permission state establishes ownership. Both direct
+and typed-channel Server decorators retain authorizer input inference.
+
 | Builder | Incoming values and behavior |
 | :--- | :--- |
 | `input.string(rules)` | Strings only. Empty strings are valid unless constrained; `required` also rejects whitespace. Existing length, pattern, email and URL rules apply. |

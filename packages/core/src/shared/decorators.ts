@@ -8,6 +8,7 @@ import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 import type { ServiceClass } from './container';
 import type { InputSchema, InputOf } from './input-schema';
+import type { ServerActionAuthorizer } from './action-authorization';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -115,6 +116,8 @@ export interface ServerOptions {
    * Native calls to the authored method do not run decorator validation.
    */
   input?: InputSchema<any, any> | Record<string, unknown>;
+  /** Server-only, evaluated on parsed input and trusted request context before inbound mutation. */
+  authorize?: ServerActionAuthorizer<any>;
   /**
    * Client-side deadline for calls to this method, in milliseconds. Exceeding
    * it rejects the call with `COSSACK_RPC_TIMEOUT`; the server-side mutation
@@ -130,10 +133,14 @@ export interface ServerOptions {
  * This decorator attaches metadata, and the Cossack base class handles the logic
  * of replacing the member with a WebSocket proxy on the client.
  */
-export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input'> & { input: S }):
+export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }):
   (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>) => void;
-export function Server(options?: ServerOptions): any;
+export function Server(options?: Omit<ServerOptions, 'input'> & { input?: Record<string, unknown> }): any;
 export function Server(options: ServerOptions = {}): any {
+  return registerServer(options);
+}
+
+function registerServer(options: ServerOptions): any {
   return (target: any, propertyKey: string | symbol) => {
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
       ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
@@ -143,6 +150,7 @@ export function Server(options: ServerOptions = {}): any {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
       ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
+      ...(Object.hasOwn(options, 'authorize') ? { authorize: options.authorize } : {}),
       ...(Number.isFinite(options.timeout) && (options.timeout as number) > 0
         ? { timeout: options.timeout } : {}),
       ...(options.serverResource ? { serverResource: true } : {}),
@@ -861,9 +869,15 @@ export function PreventNavigation(): MethodDecorator {
  * for channel names.
  */
 export function createTypedDecorators<T extends CossackOptions>() {
+  type Channel = T['Channels'] | 'global';
+  function typedServer<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize' | 'channel'> & {
+    channel?: Channel; input: S; authorize?: ServerActionAuthorizer<InputOf<S>>;
+  }): (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>) => void;
+  function typedServer(options?: Omit<ServerOptions, 'input' | 'channel'> & { channel?: Channel; input?: Record<string, unknown> }): any;
+  function typedServer(options: ServerOptions = {}): any { return registerServer(options); }
   return {
     State: (options: StateOptions & { channel?: T['Channels'] | 'global' } = {}) => State(options),
-    Server: (options: ServerOptions & { channel?: T['Channels'] | 'global' } = {}) => Server(options),
+    Server: typedServer,
   };
 }
 

@@ -805,6 +805,43 @@ function* findClasses(program: any): Generator<any> {
   }
 }
 
+/** Statically authored aliases of core's typed State/Server decorator factory. */
+function typedDecoratorBindings(program: any): { aliases: Map<string, string>; namespaces: Set<string> } {
+  const factories = new Set<string>(), coreNamespaces = new Set<string>();
+  const aliases = new Map<string, string>(), namespaces = new Set<string>();
+  for (const node of program.body ?? []) {
+    if (node.type !== 'ImportDeclaration' || node.source?.value !== '@cossackframework/core' || node.importKind === 'type') continue;
+    for (const specifier of node.specifiers ?? []) {
+      if (specifier.imported?.name === 'createTypedDecorators') factories.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') coreNamespaces.add(specifier.local.name);
+    }
+  }
+  const factoryCall = (node: any) => node?.type === 'CallExpression' && (
+    node.callee?.type === 'Identifier' && factories.has(node.callee.name) ||
+    node.callee?.type === 'MemberExpression' && !node.callee.computed &&
+      coreNamespaces.has(node.callee.object?.name) && node.callee.property?.name === 'createTypedDecorators'
+  );
+  for (const statement of program.body ?? []) {
+    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (declaration?.type !== 'VariableDeclaration') continue;
+    for (const binding of declaration.declarations) {
+      if (factoryCall(binding.init)) {
+        if (binding.id.type === 'Identifier') namespaces.add(binding.id.name);
+        if (binding.id.type === 'ObjectPattern') {
+          for (const property of binding.id.properties) {
+            const name = !property.computed && memberKeyName(property.key);
+            if (property.type === 'Property' && typeof name === 'string' && ['Server', 'State'].includes(name) && property.value?.type === 'Identifier') aliases.set(property.value.name, name);
+          }
+        }
+      } else if (binding.id.type === 'Identifier' && binding.init?.type === 'MemberExpression' && !binding.init.computed && factoryCall(binding.init.object)) {
+        const name = memberKeyName(binding.init.property);
+        if (name && ['Server', 'State'].includes(name)) aliases.set(binding.id.name, name);
+      }
+    }
+  }
+  return { aliases, namespaces };
+}
+
 /** Resolve component aliases and local inheritance before selecting classes. */
 function frameworkClasses(program: any): Set<any> {
   const bases = new Set(['Cossack', 'CossackElement']);
@@ -821,6 +858,9 @@ function frameworkClasses(program: any): Set<any> {
       if (serverDecorators.has(imported)) serverDecorators.add(specifier.local.name);
     }
   }
+  const typed = typedDecoratorBindings(program);
+  for (const [alias, name] of typed.aliases) if (name === 'Server') serverDecorators.add(alias);
+  typed.namespaces.forEach(name => namespaces.add(name));
   const matches = (node: any, names: Set<string>) =>
     node?.type === 'Identifier' ? names.has(node.name) :
     node?.type === 'MemberExpression' && !node.computed &&
@@ -920,6 +960,9 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
       if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
     }
   }
+  const typed = typedDecoratorBindings(program);
+  typed.aliases.forEach((name, alias) => aliases.set(alias, name));
+  typed.namespaces.forEach(name => namespaces.add(name));
   const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) => {
     const expression = d.expression;
     const callee = expression?.type === 'CallExpression' ? expression.callee : expression;
@@ -1658,7 +1701,7 @@ function inputRuntimeReferences(root: any): Set<string> {
 }
 
 /** Remove module declarations reachable only through stripped input contracts. */
-function stripInputDependencies(code: string, roots: Set<string>): string {
+function stripInputDependencies(code: string, roots: Set<string>, privateRoots = roots): string {
   if (!roots.size) return code;
   const program = parseProgram(code);
   if (!program) throw new Error('[Cossack Security] Could not validate server input dependencies.');
@@ -1690,6 +1733,8 @@ function stripInputDependencies(code: string, roots: Set<string>): string {
     if (definition.unsupported) throw new Error(`[Cossack Security] Server input dependency '${name}' uses a runtime TypeScript declaration that cannot be stripped. Use a private const/function or separate contract module.`);
     candidates.add(name); definition.dependencies.forEach(gather);
   };
+  privateRoots.forEach(gather);
+  const privateDependencies = new Set(candidates);
   roots.forEach(gather);
   const live = new Set<string>();
   const keep = (name:string) => {
@@ -1708,7 +1753,7 @@ function stripInputDependencies(code: string, roots: Set<string>): string {
     } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration?.type) && candidates.has(declaration.id?.name)) continue;
     else inputRuntimeReferences(statement).forEach(keep);
   }
-  for (const name of roots) {
+  for (const name of privateRoots) {
     const definition = definitions.get(name);
     // Core builders and deliberately shared storeRules maps can be used by client forms.
     const sharedRules = definition?.node.init?.type === 'CallExpression'
@@ -1724,6 +1769,7 @@ function stripInputDependencies(code: string, roots: Set<string>): string {
   // different export keeps that module in the client graph. Fail closed where
   // this file cannot inspect/strip the foreign module's private declarations.
   for (const name of removed) {
+    if (!privateDependencies.has(name)) continue;
     const source = definitions.get(name)?.importSource;
     if (!source || source === '@cossackframework/core' || isServerOnlyImportSource(source)) continue;
     const retained = [...definitions].some(([binding, definition]) => definition.importSource === source && !removed.has(binding));
@@ -1770,6 +1816,9 @@ function stripServerActionInput(code: string): {code:string;bindings:Set<string>
       if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
     }
   }
+  const typed = typedDecoratorBindings(program);
+  for (const [alias, name] of typed.aliases) if (name === 'Server') aliases.add(alias);
+  typed.namespaces.forEach(name => namespaces.add(name));
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
   for (const cls of frameworkClasses(program)) {
     for (const member of cls.body.body) {
@@ -1785,9 +1834,9 @@ function stripServerActionInput(code: string): {code:string;bindings:Set<string>
           throw new Error('[Cossack Security] @Server options must be a static object literal so input validators can be removed from the client.');
         }
         for (const property of argument.properties) {
-          if (memberKeyName(property.key) === 'input') {
+          if (['input', 'authorize'].includes(memberKeyName(property.key) ?? '')) {
             inputRuntimeReferences(property.value).forEach(name=>bindings.add(name));
-            replacements.push({ start: property.start, end: property.end, replacement: 'input: undefined' });
+            replacements.push({ start: property.start, end: property.end, replacement: `${memberKeyName(property.key)}: undefined` });
           }
         }
       }
@@ -1811,6 +1860,7 @@ export function transformCossackClass(
   code = stripSsgGenerateStaticParams(code);
   const serverInput = stripServerActionInput(code);
   code = serverInput.code;
+  const bodyDependencies = new Set(serverInput.bindings);
 
   const program = parseProgram(code);
   if (!program) {
@@ -1873,10 +1923,14 @@ export function transformCossackClass(
         // pass can't see bare template references, so stripping them by default
         // would break apps.
         if (!m.hasServerDecorator) continue;
+        const member = cls.body.body.find((node:any) => memberKeyName(node.key) === m.name);
+        inputRuntimeReferences(member?.value).forEach(name=>bodyDependencies.add(name));
         const stub = createFieldStub(m.name, className, devWarning, !!m.fieldIsAsync, m.fieldKind === 'function');
         replacements.push({ start: m.fieldValueStart, end: m.bodyEnd, replacement: stub });
       } else {
         const stub = createStub(m.name, className, devWarning);
+        const member = cls.body.body.find((node:any) => memberKeyName(node.key) === m.name);
+        inputRuntimeReferences(member?.value).forEach(name=>bodyDependencies.add(name));
         // Splice the stub between the body braces (exclusive of the braces).
         replacements.push({
           start: m.bodyStart + 1,
@@ -1915,7 +1969,7 @@ export function transformCossackClass(
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
   }
-  return stripInputDependencies(result, serverInput.bindings);
+  return stripInputDependencies(result, bodyDependencies, serverInput.bindings);
 }
 
 /**
