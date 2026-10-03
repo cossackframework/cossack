@@ -3,11 +3,32 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ESNext", "DOM"],
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "experimentalDecorators": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@cossackframework/core": [
+        "../../../dist/index.d.ts"
+      ],
+      "@cossackframework/renderer": [
+        "../../../../renderer/dist/index.d.ts"
+      ],
+      "@cossackframework/database": [
+        "../../../../database/dist/index.d.ts"
+      ],
+      "@/private/optimistic-stream.server": [
+        "../../../../../docs/examples/optimistic-stream.server.ts"
+      ]
+    }
   },
-  "files": ["index.ts"]
+  "files": [
+    "index.ts",
+    "../../../../../docs/examples/optimistic-stream.ts",
+    "../../../../../docs/examples/optimistic-stream.server.ts"
+  ]
 }

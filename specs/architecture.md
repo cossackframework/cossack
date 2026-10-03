@@ -691,3 +691,15 @@ lifetime. Built production Worker/Chromium fixtures cover multipart/public clien
 consumption, native bodies, redirect/flash cookies and D1-backed request ownership
 through generator completion and scoped cleanup. Test-only D1 release/audit
 endpoints belong solely to temporary acceptance applications.
+
+## Client response cancellation ownership
+
+Component HTTP/SSE calls and explicit-service calls share an abort-aware response
+waiter. It observes the original request after cancellation, discards late responses
+and releases their bodies. Client deadlines do not depend on a request producer
+honoring abort. This does not terminate external I/O or prove server rollback.
+Service optimistic/loading cleanup is idempotent and runs from explicit cancellation,
+even before its generator first starts. Terminal/finally cleanup cannot release an
+invocation twice. Confirmed yield state remains authoritative when a later frame
+fails; unconfirmed client-only previews roll back. Late scoped consumers keep their
+per-invocation ownership. See the [optimistic guide](../docs/optimistic.md#cancel-a-stream).

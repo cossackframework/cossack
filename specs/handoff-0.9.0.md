@@ -2,7 +2,54 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex optimistic SSE ordering (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-06 completion (2026-10-03). Author: Codex.**
+> Continued after `0272cba`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-completion-2026-10-03),
+> [original RT-06 criterion audit](./release-0.9.0-plan.md#rt-06), and
+> [executable example](../docs/optimistic.md#complete-streamed-recovery-example).
+>
+> **21/58 checked, 37 unchecked. RT-06 is complete. All original IDs remain.**
+> The original overlap, independent-field, out-of-order, rejection, timeout,
+> disconnect, loading and reconnect criteria now have the audit in the plan.
+> Existing explicit operations, public snapshot authority, read reconciliation,
+> native socket eviction/SSE resync and retained consumers remain verified.
+>
+> New review reproduced service cancellation before iterator startup retaining
+> its preview/loading. Cleanup now runs explicitly and once. Component/service
+> response waits also reject on cancellation/deadline when request producers ignore
+> abort. Late response bodies are released without hydration. This releases
+> client ownership and does not terminate ignored application I/O or roll back writes.
+>
+> **32** new controlled cases cover confirmed-yield errors, malformed JSON, wrong
+> IDs, truncation, trailing terminal frames, repeated cancellation/result reads,
+> before-iteration cancellation, pre-header cancellation/deadlines, post-yield
+> deadlines, late consumers and independent streamed service fields/local edits.
+> The shared **25-case** real browser matrix covers component HTTP/SSE streams and
+> explicit-service HTTP streams on HTTP, open SSE and open socket pages. Backend
+> audit proves one mutation per case. Page/layout/nested consumers settle together.
+> Native workerd/D1 uses the actual published dispatcher. Browser delivery damage
+> occurs only after consuming a real bounded two-frame reply and committed write.
+>
+> The example page and private SQL helper compile through published declarations.
+> The fixture copies the exact page and native helper. Actual controls prove
+> success, an authored post-write failure and cancel/read convergence with a local
+> draft and three mutation dispatches. Node substitutes only the persistence
+> provider. Its production test server now attaches the actual WebSocket runtime;
+> without that fixture wiring the new socket-page check could not open.
+>
+> **Next for GLM: RT-07 and all other unchecked tasks.** Trace the compiler route
+> registration model before generating typed URLs/params and API contracts. Use
+> public negative type cases and actual handler/middleware-order acceptance.
+> Extend existing CLI-04 inspection from the same effective metadata. Read the
+> detailed RT-07 plan; preserve aliases, groups, catch-alls and nearest boundaries.
+>
+> Broader RT-01 execution/init/incoming-disconnect and RT-11 session gates remain
+> open. Node plain Vite development 404 remains CF-10/REL-03 work. Deno/Electron
+> native execution and full release gates are not certified here. Versions stay
+> 0.8.3 until REL-04. Preserve reports.md/.zcodeignore. No push/publication/live
+> cloud changes, external messages or new chats. Exact final checks are in the review.
+
+> **Previous checkpoint — Codex optimistic SSE ordering (2026-10-03). Author: Codex.**
 > Continued after `4d8fff0`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03),
 > [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and

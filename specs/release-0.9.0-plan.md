@@ -12,7 +12,18 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex optimistic SSE ordering (2026-10-03):**
+**Latest checkpoint — Codex RT-06 completion (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-completion-2026-10-03).
+The original RT-06 criteria now pass the explicit audit under that task. Service
+cancellation before iteration releases preview/loading; component/service response
+waits honor client cancellation/deadlines independently of request producers.
+The 32-case controlled stream suite, 25-case production Node/native browser matrix
+and executable published example complete the remaining stream/read contracts.
+**21/58 checked, 37 unchecked. All original IDs remain. RT-06 is complete.**
+Continue RT-07 and every other unchecked task/release gate. Broader RT-01/RT-11,
+Node Vite development and native Deno/Electron execution remain separate work.
+
+**Previous checkpoint — Codex optimistic SSE ordering (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03).
 Actual SSE publication confirms its own pending preview once. Cursor order prevents
 older replies from replacing newer state. Native Worker/D1/browser acceptance proves
@@ -1562,6 +1573,43 @@ Read the [evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03
 Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03)
 and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
 Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
+
+**Codex completion audit (2026-10-03), after `0272cba`.**
+
+The original RT-06 scope is complete for the documented explicit optimistic
+operation/whole-field contract. This audit supersedes the preceding remaining-work
+list; historical checkpoints retain the gaps that existed at those commits.
+Read the [completion review](./release-0.9.0.md#codex-optimistic-completion-2026-10-03).
+
+| Original requirement | Authoritative evidence | Result |
+| --- | --- | --- |
+| Two overlapping edits to one field | Core optimistic-concurrency and optimistic-operations tests cover HTTP/SSE/WS completion orders, contribution removal and scoped services. Production Node and native resource acceptance holds older invalid calls while newer success completes. | Complete. Only the failed call's owned contribution is removed. |
+| Independent fields | Component transport matrix retains the other pending field. New explicit-service streams confirm count while title remains pending/rejects, including a later local edit. | Complete. Confirmed count and surviving title ownership remain independent. |
+| Out-of-order replies | Core transport/service ownership cases retain newer success when older success/rejection arrives last. SSE cursor tests and real Node/native publications prevent delayed older replies from replacing newer state. | Complete. Late calls still return their own results. |
+| Validation rejection | Real input-schema rejection in browser/native resource and retained-service acceptance performs no invalid write. Controlled structured errors preserve correlation and rollback. | Complete. A confirmed guard rejection stays distinct from uncertain completion. |
+| Timeout | HTTP/SSE/WS optimistic-concurrency tests and new component/service streams cover deadlines before headers and after confirmed yields. Held request producers deliberately ignore abort; late bodies cannot hydrate. | Complete for client deadlines. Arbitrary server execution deadlines remain RT-01. |
+| Disconnect and uncertainty | Real committed/lost component/service HTTP replies on HTTP/open SSE pages recover through declared resources. Native socket close after D1 commit, actual DO eviction and queued cancellation retain uncertainty and persisted writes. | Complete. No rollback or mutation retry is inferred. |
+| Loading settles once | Existing per-call/loading/navigation tests plus 32 new stream cases cover repeated cancel/result reads, before-iteration cancellation, late consumers and independent calls. Browser/native layout/page/nested indicators settle together. | Complete. Terminal cleanup and explicit cancellation are idempotent. |
+| State converges after reconnect without mutation replay | Native socket recovery uses a new connection after actual eviction. Native EventSource reconnect follows real response EOF and 130 coordinator publications exceed history, requiring resync. D1 audit and browser dispatch counts remain exact. | Complete. Client-only drafts survive; public snapshots restore authority. |
+| Remaining stream and explicit-service acceptance from the implementation plan | A shared 25-case production Node/native Worker browser matrix covers post-yield error/cancel/malformed JSON/truncation/trailing terminal frames. Component HTTP/SSE and service calls on HTTP/open SSE/open socket pages use actual production dispatch. Core also covers wrong request IDs and deadlines. | Complete. Service proxies use HTTP regardless of page transport. Native component socket streams retain their earlier error/cancellation acceptance. |
+| Complete published example | The optimistic-stream page/private-store files compile through published declarations. The shared fixture copies the exact page into generated apps; native D1 uses the exact parameterized SQL helper. Actual controls exercise success, authored post-write failure and cancel/read convergence without retry. | Complete. Node substitutes only the persistence provider; no native Deno/Electron claim. |
+
+The synchronous helper contract supports finite increment and detached plain-data
+append/remove operations. Direct assignments remain absolute field values. Arbitrary
+nested/native mutations do not gain inferred contribution semantics. Tests and the
+guide preserve those deliberate contracts instead of claiming transaction rollback.
+RT-05 lifecycle and RT-19 connection state/recovery remain intact. Broader RT-01
+initialization/incoming-disconnect/server-execution, RT-11 session and REL-03 runtime
+gates remain separate. Node plain Vite development routing still returns 404.
+
+**Next for GLM — RT-07:** start with the compiler's route registration model,
+route-ids.ts, vite-plugin.ts and router.ts before extending CLI AST inspection.
+Generate URL/parameter types from that model; cover missing/extra/wrong parameters,
+route groups, aliases and catch-alls through public declarations and actual handlers.
+Then define explicit API input/output schemas and a compiler-backed effective manifest
+whose middleware order, layouts and error/404 boundaries match execution. Extend the existing CLI-04 inspection from
+the same effective metadata. Do not infer runtime validation from TypeScript alone. Follow
+the original RT-07 plan below and continue every other unchecked task/release gate.
 
 <a id="rt-07"></a>
 ### RT-07: Typed routes and effective route metadata

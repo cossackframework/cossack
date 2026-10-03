@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Native component socket loss/reconnect, eviction and post-yield failure/cancellation now pass. See the [socket checkpoint](#codex-optimistic-socket-2026-10-03). Retained layouts and late explicit-service consumers now inherit pending loading through navigation, success and rejection. See the [retained-consumer checkpoint](#codex-retained-service-loading-2026-10-03). Actual native SSE resync, correlated publications, late-reply ordering and component SSE stream error/cancellation now pass. See the [SSE ordering checkpoint](#codex-optimistic-sse-ordering-2026-10-03). The remaining optimistic HTTP/service stream matrix and original criterion audit stay open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
+- [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4724,3 +4724,93 @@ stay 0.8.3. Preserve reports.md/.zcodeignore. No remote/live change was made.
 Read the [detailed plan](./release-0.9.0-plan.md#rt-06),
 [SSE contract](../docs/sse.md#optimistic-confirmation-and-snapshot-order),
 [optimistic guide](../docs/optimistic.md), and [handoff](./handoff-0.9.0.md).
+
+<a id="codex-optimistic-completion-2026-10-03"></a>
+## Codex RT-06 completion and stream ownership (2026-10-03)
+
+Author: **Codex**. Continued after `0272cba`. RT-06 now passes its original
+criterion audit: **21/58 checked, 37 unchecked**. All original IDs remain.
+Only RT-06 changes checkbox state. The complete objective remains all 58 tasks.
+
+The first controlled stream suite found a real service bug: cancellation before
+iterator startup never entered the generator's finally block, retaining both the
+preview and loading. Explicit service cancellation now invokes idempotent cleanup.
+Terminal/finally cleanup cannot release the call twice. Component/service calls also
+share an abort-aware response waiter. Cancellation/deadlines stop waiting even when
+a request producer ignores abort. The original promise stays observed, and a late
+body is released without state hydration. This does not terminate external I/O.
+
+The final **32-case** controlled suite covers component HTTP/SSE and explicit-service
+streams: confirmed yields followed by visible errors, malformed JSON, wrong request
+IDs, missing completion or trailing terminal data; pending-reader cancellation,
+before-iteration cancellation, stalled pre-header cancellation/deadlines and
+post-yield deadlines. Repeated cancellation and result reads dispatch once and keep
+loading settled. Late consumers inherit loading, then settle together. Two service
+cases confirm count while independent title rejects, with/without a later local edit.
+Confirmed public state survives. Unconfirmed client-only previews roll back.
+
+A shared **25-case** production Node/browser and native Chromium/workerd/D1 matrix
+executes real mutations before failures. Component HTTP/SSE streams and explicit
+services on HTTP/open SSE/open socket pages cover post-yield error, cancellation,
+malformed JSON, truncation and trailing terminal frames. The test corrupts only
+bounded actual response delivery after the backend commits. Each record has one
+mutation, each browser action dispatches once, public state remains one, local drafts
+persist, and page/layout/nested loading is zero. Services use HTTP regardless of page
+transport. Earlier native component socket stream failure/cancellation stays verified.
+Cancellation fixtures explicitly release held application I/O; they do not prove
+server rollback or termination of ignored work.
+
+The published [page](../docs/examples/optimistic-stream.ts) and
+[private store](../docs/examples/optimistic-stream.server.ts) are executable artifacts.
+The page uses validated input, explicit previews, rpc$ iteration/cancel, automatic
+loading, a ClientState draft and declared persisted reads. The private SQL helper
+uses the authenticated request's owner ID and an atomic parameterized increment.
+It uses SQLite/D1 syntax and shows demo table creation; real apps use a migration.
+Generated fixtures copy the exact page. Native D1 uses the exact helper; Node replaces
+only persistence. Actual controls exercise success, authored post-write failure and
+cancel/read convergence. Three increments remain three dispatches and persisted
+count three; no uncertain mutation is retried. The SQL names stay out of client chunks.
+
+The example chooses refresh explicitly for its deliberately authored post-write
+client-visible error; that error is outside transport uncertainty classification.
+Network/cancel uncertainty uses reconcile$. A recovered read remains distinct from
+the original mutation's outcome. The read can include other callers' changes.
+
+Final verification:
+
+- Core ESM/declaration build passes. Full core suite **1310 /75 files**, including
+  all **32** new stream cases and the published-export example declarations.
+- Framework build passes declarations, library ESM and executed SSG; full suite
+  **1327 /60 files**. Consumer runs use completed dependency builds.
+- Generated runtime suite **21/21**, about **139 seconds**, including actual
+  production Node/browser stream and example acceptance, all prior navigation,
+  service, recovery and portable-build checks. The production test server now
+  attaches the real Node WebSocket runtime before announcing its origin.
+- Native workerd/D1 and socket-peer suite **2/2**, about **140 seconds**, including
+  the 25-case stream matrix, exact example/helper, preceding socket eviction/SSE
+  resync, sessions, policies, migrations and client-private-SQL asset audits.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: all **11** package configurations
+  pass. JS syntax, owned whitespace, documentation file links and exact ledger
+  ID/state comparison are checked before commit. No complete monorepo release
+  gate, native Deno/Electron execution or live deployment claim.
+
+Intermediate results: an import typo stopped the first new suite before collection.
+The initial collected **24-case** run had **18 failures**; one reproduced the service
+pre-start cancellation bug. The others reflected fixture assumptions about closed
+stream cancel callbacks, the existing truncated-stream error code, or canceling a
+late already-closed body. Corrected assertions inspect the actual EOF/reader ownership
+contract. The extended final 32 cases pass. The first example declaration run lacked
+published package paths for files outside packages; explicit declaration paths now
+compile the real artifacts. An expanded Node socket-page run timed out because the
+production fixture omitted runtime.attach. Correct fixture wiring makes the connection
+open, and the final generated 21/21 supersedes that run. Native final 2/2 follows all
+fixture/example extensions. Tests were observed through their original live handles.
+
+Read the [original criterion audit](./release-0.9.0-plan.md#rt-06),
+[guide](../docs/optimistic.md#cancel-a-stream), and [Codex handoff](./handoff-0.9.0.md).
+Next for GLM: RT-07 typed URLs/parameters/API contracts from the compiler route model
+and existing inspection metadata, then every other unchecked task and release gate.
+Broader RT-01 initialization/incoming disconnect/server-execution deadlines, RT-11
+sessions and Node plain Vite development 404 remain open. Versions stay 0.8.3 until
+REL-04. reports.md/.zcodeignore remain user-owned and unstaged. No push/publication,
+live cloud operation, external message or new chat was performed.

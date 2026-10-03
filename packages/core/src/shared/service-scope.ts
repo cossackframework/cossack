@@ -15,6 +15,7 @@ import {
 import { isSharedMethod } from './shared-method';
 import { rpcFormData, snapshotRpcPayload } from './rpc-files';
 import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
+import { awaitRpcResponse } from './rpc-response';
 import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
@@ -359,6 +360,14 @@ export class ServiceScope {
                 let request: Promise<Response>;
                 let requestState: Record<string, unknown> = {};
                 let success = false;
+                let finished = false;
+                const cleanup = () => {
+                    if (finished) return;
+                    finished = true;
+                    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                    finishOptimisticCall(call, success);
+                    finishLoading();
+                };
                 try {
                     requestState = snapshotRpcValue(optimisticRequestState(entry.instance, getServiceState(entry.instance)), 'state') as Record<string, unknown>;
                     const normalized = snapshotRpcPayload(payload);
@@ -374,6 +383,7 @@ export class ServiceScope {
                     request = Promise.reject(cause instanceof RpcError ? cause : new RpcError(
                         'COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize service request.', { cause }));
                 }
+                request = awaitRpcResponse(request, controller.signal, () => requestId);
                 void request.catch(() => {});
                 const applyState = createStateApplier(entry.instance, requestState, call);
                 const apply = (state: Record<string, unknown>) => applyState(sanitizeServiceState(entry.serviceClass, state));
@@ -419,12 +429,10 @@ export class ServiceScope {
                         throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
                             'Service RPC request failed. The server outcome is unknown and is never retried.', { cause, requestId });
                     } finally {
-                        if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
-                        finishOptimisticCall(call, success);
-                        finishLoading();
+                        cleanup();
                     }
                 };
-                return createRpcCall(operation(), () => controller.abort(),
+                return createRpcCall(operation(), () => { controller.abort(); cleanup(); },
                     error => console.error(`Error calling service action '${action}':`, error), () => requestId);
             };
         }

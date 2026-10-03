@@ -282,3 +282,52 @@ The same component resource can recover data written by an injected service acti
 The helper does not infer which persisted record any action changes.
 WebSocket reconnect and SSE recovery can also deliver authoritative public snapshots.
 Read [Realtime Recovery](./websockets.md) and [Server Resources](./server-functions.md) for those mechanisms.
+
+
+## Cancel a stream
+
+Use rpc$(this.method(...)) to keep one call's result, iterator and cancel handle.
+Cancel before or during iteration releases that call's preview and loading ownership.
+This also applies to injected services and consumers that joined pending work later.
+Repeated cancellation and result reads do not dispatch another action.
+If a frame already confirmed public state, failure or cancellation retains that state.
+Unconfirmed client-only preview operations roll back. Later client-only drafts remain.
+
+A deadline or cancellation stops waiting for response headers even when the request
+producer ignores abort. A late response is discarded and its body is released.
+This releases framework ownership. It does not stop ignored application I/O or prove
+that a write rolled back. After uncertain completion, use an explicit declared read.
+Malformed frames, missing completion and trailing terminal data keep their correlated
+errors. Terminal state is not applied before the whole response passes validation.
+
+## Complete streamed recovery example
+
+Copy [the page](./examples/optimistic-stream.ts) to
+`src/pages/optimistic-stream/index.ts`. Copy
+[its server store](./examples/optimistic-stream.server.ts) to
+`src/private/optimistic-stream.server.ts`. The generated app's @ alias points to src.
+Keep the private helper outside the route tree. Install the auth and database
+recipes first. The example uses the authenticated request's user ID as its database
+key. The store uses parameterized SQL and an atomic increment. Move its table creation
+to a migration in a real application. The example's SQL uses SQLite/D1 syntax.
+
+The page uses SSE, explicit public/client-only increment previews, automatic loading,
+validated input, rpc$ iteration and a declared read resource. The local draft is
+ClientState. The server yields after the write commits. A short demo pause lets the
+user cancel after that yield. Cancel releases client ownership; the write remains.
+The failure checkbox selects a deliberate application error after the same write.
+Neither path retries the increment.
+
+Transport uncertainty uses reconcile$ to read the persisted count. The deliberate
+client-visible error needs an explicit refresh because the application knows this
+specific action already wrote. The error remains separate from the read result.
+Confirmed yield state survives failure. The client-only preview rolls back, loading
+settles once and the local draft remains. A higher SSE revision can still replace
+public state. The read can include another caller's changes and does not prove which
+mutation committed or that a database transaction rolled back.
+
+The executable files use published package exports. Production Node/browser and
+native Worker/D1 checks exercise success, post-yield failure and cancellation from
+the actual rendered controls. A separate matrix corrupts real component/service
+responses after their writes commit, including malformed frames, missing completion
+and trailing terminal data on HTTP and open SSE pages.

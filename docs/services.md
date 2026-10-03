@@ -365,3 +365,18 @@ src/
 
 There is no service auto-discovery. This keeps ownership visible and prevents a
 consumer from silently creating a new scope.
+
+## Cancel an optimistic service stream
+
+Use rpc$(service.method(...)) to iterate and cancel the same invocation.
+The service proxy uses HTTP on HTTP, SSE and socket pages. Each subscribed consumer
+owns one loading contribution. Late consumers inherit it; duplicate injection does
+not add a second count. Cancellation also releases ownership before iteration starts.
+A request producer that ignores abort cannot hold the client response wait open.
+Its late body is released and cannot hydrate service state.
+
+A confirmed yield supplies public state. A later malformed frame, error or cancellation
+keeps that state, removes only unconfirmed previews and settles each consumer once.
+ClientState/ClientStore drafts remain local. Canceling does not roll back a server
+write or terminate ignored application I/O. Use an application-chosen authoritative
+read after uncertain completion. See the [optimistic guide](./optimistic.md#cancel-a-stream).

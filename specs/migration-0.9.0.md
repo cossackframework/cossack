@@ -479,7 +479,8 @@ Cloudflare and later broadcasts. Update hand-written adapter tests from
 Timeout, cancellation and network/socket loss still leave the server result
 uncertain. Never retry a mutation automatically. Use an authoritative read or
 resource refresh, and retain the distinction between local preview restoration
-and server rollback. The complete RT-06 uncertainty/reconnect audit is still open.
+and server rollback. RT-06 now has a complete criterion audit for its explicit optimistic contract.
+Broader execution/session and full release gates remain separate.
 
 ## Explicit optimistic operations
 
@@ -529,7 +530,8 @@ nested components. Generated resource actions perform exactly their selected
 read. Do not depend on render-triggered resource I/O running before an RPC guard
 or mutation. SSR discovery and browser resource rendering keep their behavior.
 Actual native socket loss/reconnect and SSE resync/late-snapshot acceptance now pass.
-RT-06 still requires the remaining optimistic stream/service matrix and criterion audit.
+The remaining optimistic stream/service matrix and RT-06 criterion audit now pass.
+Read the [completion review](./release-0.9.0.md#codex-optimistic-completion-2026-10-03).
 
 ## Default Durable Object application registry
 
@@ -546,3 +548,12 @@ including binding-only handlers. The server keeps the original functions.
 Browser code must call their URLs. Shared values belong in separate non-route
 modules. Use explicit exports instead of runtime export stars. Read the
 [API boundary guide](../docs/api-routes.md#browser-boundary-for-functional-handlers).
+
+## Canceling optimistic service streams
+
+Service cancellation now releases previews and loading before iterator startup.
+Client deadlines/cancellation release response waits even when a producer ignores
+abort. Late response bodies are discarded. A confirmed yield remains public state;
+unconfirmed client-only previews roll back. No mutation retry or server rollback is
+implied. The [complete example](../docs/optimistic.md#complete-streamed-recovery-example)
+uses a validated streamed mutation, ClientState draft and explicit persisted read.

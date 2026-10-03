@@ -11,6 +11,7 @@ import { createApp } from '@cossackframework/scaffold';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './fixtures/worker-optimistic-recovery.js';
 import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/worker-optimistic-sse.js';
+import { writeWorkerOptimisticStreams, checkWorkerOptimisticStreams } from './fixtures/worker-optimistic-streams.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -54,6 +55,7 @@ async function productionServer(root, environment = {}) {
       listener.once('error', error => { console.error(error); process.exit(1); });
     });
     env.APP_URL = 'http://127.0.0.1:' + server.address().port;
+    runtime.attach(server, request => app.fetch(request, env));
     console.log('RECIPE_ORIGIN=' + env.APP_URL);
     process.once('SIGTERM', async () => {
       await runtime.dispose();
@@ -1389,4 +1391,34 @@ it('orders SSE action broadcasts and delayed replies against newer server snapsh
   const server=await productionServer(root);
   try { await checkWorkerOptimisticSse({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test',{native:false}); }
   finally { await server.close(); }
+},120000);
+
+
+it('retains confirmed optimistic component and service yields through failures and cancellation', async () => {
+  const root=await project('node');await writeWorkerOptimisticStreams(root);
+  await fs.writeFile(path.join(root,'src/private-optimistic-streams.ts'), `
+    const records=new Map<string,{count:number;mutations:number;released:number}>();
+    function record(scope:string) {
+      let value=records.get(scope);if(!value){value={count:0,mutations:0,released:0};records.set(scope,value);}return value;
+    }
+    export async function audit(scope:string){return {...record(scope)};}
+    export async function commit(scope:string){const value=record(scope);value.count++;value.mutations++;return {count:value.count};}
+    export async function release(scope:string){record(scope).released=1;}
+    export async function waitForRelease(scope:string){
+      const deadline=Date.now()+15000;
+      while(!record(scope).released){if(Date.now()>deadline)throw new Error('Test did not release stream');await new Promise(resolve=>setTimeout(resolve,10));}
+    }
+  `);
+  await fs.writeFile(path.join(root,'src/private/optimistic-stream.server.ts'), `
+    import {audit,commit} from '../private-optimistic-streams';
+    export async function readCounter(){return {count:(await audit('docs-example')).count};}
+    export async function incrementCounter(){return commit('docs-example');}
+  `);
+  try {await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024});}
+  catch(error){throw new Error(error.stdout+'\n'+error.stderr);}
+  await vite(root,[]);await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
+  await assertPortableChunks(path.join(root,'dist/server'));
+  const server=await productionServer(root);
+  try {await checkWorkerOptimisticStreams({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test');}
+  finally {await server.close();}
 },120000);

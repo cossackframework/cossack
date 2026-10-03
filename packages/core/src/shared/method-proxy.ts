@@ -10,6 +10,7 @@ import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
 import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
 import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
+import { awaitRpcResponse } from './rpc-response';
 import { sendRpcUpload } from './rpc-upload';
 import { rpcFormData } from './rpc-files';
 import { wsPendingCalls } from './transport-connections';
@@ -322,6 +323,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 }
             }
             // The request starts immediately; selecting a result consumer never dispatches it again.
+            request = awaitRpcResponse(request, controller.signal, () => requestId);
             void request.catch(() => {});
             const apply = createStateApplier(component, requestState, optimisticCall);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
