@@ -28,6 +28,7 @@
     "src/route-ids.ts",
     "src/page-inspection.ts",
     "src/runtime-capabilities.ts",
+    "src/storage-capabilities.ts",
     "src/session.ts",
     "src/router.ts",
     "src/sitemap-generator.ts",

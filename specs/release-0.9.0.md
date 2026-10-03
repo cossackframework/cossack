@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 354-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 374-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 374 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -38,7 +38,7 @@ below link directly to those explanations.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
-- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Transactional DO counters, configured-provider ownership and bounded counter decisions are verified. Codex cache checkpoint: millisecond TTLs, binding identity/request-owned factories, framed KV namespaces/logical expiry, null-safe DO protocol, bounded memory/batches and cache I/O now pass unit/SQLite/native storage acceptance. Remaining: limiter URL/key/namespace/capacity policies and provider capability declarations, inspection and rejection of unsupported guarantees. See [cache review](#codex-cache-contracts-2026-10-03).
+- [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Codex completion (2026-10-03): pure provider traits, millisecond contracts, pre-operation required-guarantee rejection, bounded key/namespace/Redis/memory policies and read-only provider inspection now pass unit/SQLite/compiled/native acceptance. Shared DO budgets survive concurrent Workers, actual eviction and reload. See the [criterion audit](./release-0.9.0-plan.md#rt-18) and [provider review](#codex-storage-capabilities-2026-10-03); actual incoming disconnect delivery and full release gates remain separate.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
@@ -85,6 +85,97 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-storage-capabilities-2026-10-03"></a>
+### Codex completion: storage guarantees, limiter policies and provider inspection (2026-10-03)
+
+**Author: Codex.** Continued RT-18 after `157573d`. The initial limiter policy
+regressions produced **47 failures / 8 passes** in 55 cases. Memory accepted
+invalid capacities and grew beyond its cap, concatenated namespace/caller keys
+collided, and Redis accepted unsafe URL/token inputs and automatic redirects.
+Malformed decorator metadata could also be interpreted as absent limits.
+
+Memory now prunes expiry and rejects new keys at capacity, retaining every live
+spent budget and continuing existing increments. Capacities are bounded, keys
+and namespaces require bounded valid UTF-8, and KV/Redis validate the final JSON
+tuple key before I/O. Evaluated scope/caller keys are framed too. Redis validates
+HTTPS, normalized URL size, credentials/query/fragment/control exclusions and
+bounded ASCII bearer tokens. Authenticated requests use manual redirects; every
+redirect rejects. Null, malformed and unknown/misspelled limiter options reject
+before a counter or handler. See the migration guide for the one-time budget
+reset and mixed-version rollout implications.
+
+One pure core model declares operation support, millisecond units, locality,
+persistence, consistency, logical expiry and atomic increments. Framework
+re-exports it; the database adapter declares structural metadata independently.
+DO cache get/set never claims atomic increment. KV remains eventual/non-atomic;
+database deployment traits and Redis persistence remain unknown. Unknown custom
+providers cannot satisfy positive requirements unless their implementer explicitly
+declares validated traits. These are declarations, not remote attestation.
+
+Cache configuration/facades and limiter enforcement reject unsupported required
+traits before operations, compute callbacks and counter dispatch. Requirements
+are snapshotted and cannot be weakened by chained facades or later mutation.
+Custom factory construction remains the factory author's resource responsibility.
+Runtime inspection consumes no cache operation/quota. The CLI now offers
+`inspect providers`/`check providers`, including human and single-envelope JSON
+output through the shared command specification. Compiler AST parsing resolves
+bounded static cache declarations and public selected Wrangler settings without
+executing project code. Dynamic helpers, mutation, escaped/computed registration
+namespaces and manual defaults remain conservative unknowns. Credentials and raw
+invalid backend values are omitted. Missing selected cache bindings fail checks;
+missing optional unselected bindings warn and expose their unavailable status.
+
+Native compiled-library acceptance: two Workers share real KV/DO caches;
+inspection units and failed requirements preserve absent values, while supported
+DO requirements allow writes visible to the second Worker. Counter/API/socket
+fixtures require shared/durable/atomic DO traits and retain spent budgets across
+concurrent Workers, actual limiter eviction and reload. The socket eviction names
+were migrated to the real framed bucket IDs. Compiled generated HTTP/SSE page and
+scoped service calls deny unsupported requirements without D1 writes. The test
+counter gate now reads the caller from the tuple instead of matching the obsolete
+suffix, preserving actual cancellation/deadline acceptance. Its gated custom
+store remains an undeclared test provider, not a distributed/atomic claim.
+
+Final verification:
+
+- Core full suite: **1039** tests / **60** files.
+- Framework full suite after the final AST namespace fix: **1187** / **55**;
+  RPC matrix **374**, storage AST **13**, cache capability tests **10**.
+- CLI full suite: **585** / **43**, including all **14** generated/runtime
+  acceptance cases, native storage/counter/socket fixtures and real pnpm release
+  installation. After the final conservative namespace/optional-binding/name refinements,
+  the affected published-export inspection/command/subprocess suites pass again:
+  **85** / **4**, including **18** provider cases, the added optional-store case,
+  valid store labels and sanitized invalid literal drivers.
+  This split is deliberate; do not merge the added follow-up cases into an
+  invented full-suite run.
+- Database **87** / **15**, Node adapter **16** / **4**, Deno adapter **16** / **2**,
+  scaffold **108** / **4**. Deno tests do not prove execution in a native Deno binary.
+- Sequential core/framework/database builds pass. Framework's explicit declaration
+  list includes the new storage export; a published-export failure caught that
+  omission before it was fixed. Final framework export build, root
+  `pnpm tsc --noEmit`, all **11** `pnpm typecheck` configs and owned-file
+  `git diff --check` pass. No user-owned report/ignore changes are staged.
+
+Logs: `/tmp/cossack-provider-core-final.log`,
+`/tmp/cossack-provider-framework-verified.log`,
+`/tmp/cossack-provider-cli-final.log`,
+`/tmp/cossack-provider-cli-reviewed.log`,
+`/tmp/cossack-provider-{db,node,deno,scaffold}-final.log`,
+`/tmp/cossack-provider-{core,framework,database}-build-complete.log`,
+`/tmp/cossack-provider-framework-export-final.log`, and
+`/tmp/cossack-provider-{root-types,types}-verified.log`.
+
+**RT-18 is complete**, with its original criterion audit in the detailed plan.
+The ledger retains every original ID: **15/58 checked, 43 unchecked**. RT-01,
+RT-02/RT-14, and REL-02..05 remain open. Actual native incoming pre-header TCP
+abort delivery, arbitrary action deadlines/initialization concurrency, live KV
+regional/throttling behavior, live Redis readiness/persistence, remote producer
+shutdown and native Deno/Electron release gates are not established by this
+checkpoint. Package versions remain 0.8.3 until REL-04. No publication/deployment
+or push was performed. The next authorization/schema/resource work must retain
+these boundaries and the full 58-task scope.
 
 <a id="codex-sse-cancellation-2026-10-03"></a>
 ### Codex continuation: native coordinator cancellation (2026-10-03)

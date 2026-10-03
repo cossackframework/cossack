@@ -1,9 +1,12 @@
+import type { StorageRequirements } from './storage-capabilities';
 import { RpcError } from './rpc-stream';
 
 /** Counter replies are tiny records, not arbitrary application payloads. */
 export const RATE_LIMIT_RESPONSE_MAX_BYTES = 8192;
 
 export interface RateLimitHitOptions {
+    /** Requested provider guarantees, checked before any built-in hit. */
+    requires?: StorageRequirements;
     /** Cancel this decision. A counter already incremented is not rolled back. */
     signal?: AbortSignal;
     /** Backend deadline in milliseconds, including response EOF. Default 5000. */

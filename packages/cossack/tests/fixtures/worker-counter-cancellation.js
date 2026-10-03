@@ -10,7 +10,7 @@ export async function writeCounterCancellation(root) {
     const memory = new InMemoryRateLimitStore();
     const gates = new Map<string, { hits: number; aborted?: boolean; release?: () => void }>();
     setRateLimitStore({ async hit(key: string, window: number, options?: RateLimitHitOptions) {
-      const gate = [...gates].find(([name]) => key.endsWith(':' + name))?.[1];
+      const gate = gates.get(JSON.parse(key)[1]);
       if (!gate) return memory.hit(key, window, options);
       gate.hits++; gate.aborted = options?.signal?.aborted ?? false;
       options?.signal?.addEventListener('abort', () => { gate.aborted = true; }, { once: true });

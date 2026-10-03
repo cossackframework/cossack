@@ -14,6 +14,7 @@
 // Public TTLs are integer milliseconds. KV retention converts to whole seconds;
 // a stored epoch timestamp independently enforces logical cache expiration.
 
+import { storageCapabilities, readStorageCapabilities, assertStorageRequirements, storageRequirements, type StorageCapabilities, type StorageRequirements } from '@cossackframework/core/storage-capabilities';
 import { getRequestContext } from '@cossackframework/core';
 import { config } from './config.js';
 import { cacheKey, cacheKeys, cacheExpiry, cacheJson, cacheNamespace, cacheKvKey, prepareCacheEntries, CACHE_MAX_BATCH_BYTES } from './cache-policy.js';
@@ -38,6 +39,7 @@ const DEFAULT_TTL_MS = 3_600_000; // 1 hour
  * `set(key, undefined)` is equivalent to `delete(key)`.
  */
 export interface CacheStore {
+    readonly capabilities?: StorageCapabilities;
     get<T = unknown>(key: string): Promise<T | undefined>;
     set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
     has(key: string): Promise<boolean>;
@@ -74,6 +76,7 @@ interface MemoryEntry {
  * Object, or database store.
  */
 export class InMemoryCacheStore implements CacheStore {
+    readonly capabilities = storageCapabilities('cache', 'memory');
     private readonly entries = new Map<string, MemoryEntry>();
     private readonly maxEntries: number;
     private bytes = 0;
@@ -185,6 +188,7 @@ export interface KvCacheStoreOptions {
  * > you need strict consistency, use a Durable Object store instead.
  */
 export class KvCacheStore implements CacheStore {
+    readonly capabilities = storageCapabilities('cache', 'kv');
     private readonly namespace: string;
 
     constructor(private readonly kv: CacheKvNamespace, options: KvCacheStoreOptions = {}) {
@@ -371,6 +375,7 @@ export class CacheDurableObject {
 
 /** Strongly consistent storage owned by one Durable Object, with request-owned stubs. */
 export class DurableObjectCacheStore implements CacheStore {
+    readonly capabilities = storageCapabilities('cache', 'durable-object');
     constructor(private readonly ns: CacheDurableObjectNamespace) {
         if (!ns || typeof ns.idFromName !== 'function' || typeof ns.get !== 'function') {
             throw new Error('[Cossack] Invalid Durable Object cache binding.');
@@ -495,6 +500,8 @@ async function readCacheJson(body: ReadableStream<Uint8Array> | null, signal: Ab
  * env) for KV/DO stores. Unknown options are passed through to the store.
  */
 export interface CacheStoreSpec {
+    /** Guarantees required before store operations. Unsupported or unknown traits reject. */
+    requires?: StorageRequirements;
     driver: 'memory' | 'kv' | 'durable-object' | 'database' | (string & {});
     /** Name of the Worker binding (KV/DO). Resolved from the request env. */
     binding?: string;
@@ -630,6 +637,11 @@ function sameEnv(a: [string, unknown][], b: [string, unknown][]): boolean {
 function buildStore(input: CacheStoreSpec, name: string): CacheStore {
     ensureBuiltinDrivers();
     const spec = snapshotSpec(input);
+    const requirements = storageRequirements(spec.requires);
+    const checked = (store: CacheStore) => {
+        assertStorageRequirements(readStorageCapabilities(store.capabilities, 'cache'), requirements);
+        return store;
+    };
     const factory = driverFactories.get(spec.driver);
     if (!factory) throw new Error('[Cossack] Unknown cache driver in config/cache.ts. Register it with extendCacheDriver().');
     const context = getRequestContext();
@@ -645,9 +657,9 @@ function buildStore(input: CacheStoreSpec, name: string): CacheStore {
         }
         const key = JSON.stringify([name, specKey]);
         const cached = bucket.get(key);
-        if (cached) return cached;
+        if (cached) return checked(cached);
         if (bucket.size >= 256) throw new Error('[Cossack] Cache configuration exceeds 256 store selections; use stable store declarations.');
-        const store = validateStore(factory(spec, env));
+        const store = checked(validateStore(factory(spec, env)));
         bucket.set(key, store); return store;
     }
     // Custom factories may read every spec field and request binding/credential.
@@ -656,8 +668,8 @@ function buildStore(input: CacheStoreSpec, name: string): CacheStore {
     const fields = Object.keys(env).sort().map(key => [key, env[key]] as [string, unknown]);
     const bucket = context ? requestStores.get(context) ?? new Map<string, Selection>() : undefined;
     const cached = bucket?.get(name);
-    if (cached && cached.factory === factory && cached.specKey === specKey && sameEnv(cached.envFields, fields)) return cached.store;
-    const store = validateStore(factory(spec, env));
+    if (cached && cached.factory === factory && cached.specKey === specKey && sameEnv(cached.envFields, fields)) return checked(cached.store);
+    const store = checked(validateStore(factory(spec, env)));
     if (bucket && context) {
         bucket.set(name, { factory, specKey, envFields: fields, store }); requestStores.set(context, bucket);
     }
@@ -676,6 +688,10 @@ function resolveDefaultStore(): CacheStore {
 
 /** A cache facade bound to a single store (the default, or a named one). */
 export interface StoreBoundCache {
+    /** Inspect the current selection; no cache operation is dispatched. */
+    inspect(): StorageCapabilities;
+    /** Add required guarantees; nested requirements cannot weaken existing ones. */
+    require(requirements: StorageRequirements): StoreBoundCache;
     get<T = unknown>(key: string): Promise<T | undefined>;
     set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
     has(key: string): Promise<boolean>;
@@ -690,6 +706,15 @@ export interface StoreBoundCache {
 
 function bindToStore(getStore: () => CacheStore): StoreBoundCache {
     return {
+        inspect() { return readStorageCapabilities(getStore().capabilities, 'cache'); },
+        require(input) {
+            const requirements = storageRequirements(input);
+            return bindToStore(() => {
+                const store = getStore();
+                assertStorageRequirements(readStorageCapabilities(store.capabilities, 'cache'), requirements);
+                return store;
+            });
+        },
         async get<T = unknown>(key: string): Promise<T | undefined> {
             cacheKey(key);
             return getStore().get<T>(key);

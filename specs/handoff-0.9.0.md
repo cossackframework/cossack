@@ -2,6 +2,65 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest checkpoint — Codex RT-18 completion (2026-10-03): Author: Codex.**
+> Continued after `157573d`. Start with the
+> [provider review and exact evidence](./release-0.9.0.md#codex-storage-capabilities-2026-10-03)
+> and [RT-18 criterion audit/implementation context](./release-0.9.0-plan.md#rt-18).
+> Those sections supersede the unfinished RT-18 follow-ups in older notes below.
+>
+> **15/58 checked, 43 unchecked. Only RT-18 newly closed; every task ID retained.**
+> Duration contracts, pure provider capabilities, runtime/CLI inspection,
+> unsupported-guarantee rejection, server transport coverage and limiter policies
+> now meet that task's original criteria. Unknown traits cannot satisfy required
+> guarantees. Database deployment traits/Redis persistence remain unknown; DO
+> cache get/set does not claim atomic increment. Custom declarations assert their
+> author's guarantees; factory construction/disposal stays with the factory.
+>
+> `cache.require` and named store `requires` guard cache operations; limiter
+> `requires` guards wrappers/API/component/service/socket actions before hit or
+> mutation. `cache.inspect` and `inspectRateLimitStore(env)` consume no operation.
+> `cossack inspect/check providers --json --env staging` uses compiler declarations
+> and selected public Wrangler settings, without executing modules or contacting
+> providers. Dynamic helpers/registration overrides remain unknown. Selected
+> missing bindings fail; optional unselected missing bindings warn.
+>
+> Memory saturation rejects new keys without restoring live quotas. Keys,
+> namespaces and framed backend keys are bounded UTF-8. Redis requires bounded
+> HTTPS URL/ASCII token and rejects redirects without forwarding credentials.
+> Null/malformed/misspelled options fail. New framework scope/caller and KV/Redis
+> namespace/key framing causes a **one-time budget migration**; coordinate mixed
+> versions. `window` retains its name and always means milliseconds. The earlier
+> cache `ttlMs` migration remains required. See the migration and provider guides.
+>
+> Evidence: core **1039**, final framework **1187** (matrix **374**, AST **13**),
+> CLI full run **585**, then **85** affected published-export/command/subprocess
+> cases after the final namespace/optional-binding/name changes; database **87**,
+> Node **16**, Deno **16**, scaffold **108**. Full CLI includes all **14** generated
+> runtime cases, native cache/counter/socket acceptance and real-pnpm installation.
+> Generated HTTP/SSE page/service denial writes no D1 row; native HTTP/socket DO
+> budgets retain shared/atomic guarantees across actual limiter eviction/reload.
+> Cancellation gate helpers and eviction IDs now use actual framed keys.
+> Sequential builds, final export build, root TypeScript and all **11** package
+> typecheck configs pass. These exact runs are distinguished in the review log.
+>
+> **Next work for GLM:** continue the full plan, with RT-02/RT-14 schema/type
+> inference and resource authorization as the next cohesive phase. Keep RT-01
+> arbitrary action deadlines and init/restoration concurrency separate from the
+> completed counter deadline. Actual native pre-header TCP disconnect delivery
+> remains unobserved on the installed workerd; explicit signal cancellation is
+> verified and does not prove that delivery. Native Deno/Electron, live provider
+> readiness/consistency, remote producer shutdown and REL-02..05 remain gates.
+> Do not recheck/reimplement completed RT-18 criteria as prerequisites to every
+> later phase; add targeted regressions when changing their contracts.
+>
+> Package versions remain **0.8.3** until REL-04. No push, publication, deployment,
+> external messages or cloud resource changes. User-owned `reports.md` and
+> `.zcodeignore` remain outside the commit. All 58 tasks stay in scope; the active
+> goal is not complete. Other checked tasks were retained rather than re-audited
+> as part of this provider review. Read each task's detailed goal/acceptance text
+> before closing further checkboxes.
+
+
 > **Latest checkpoint — Codex cache contracts (2026-10-03):** **Author: Codex.**
 > Continued after `e6e5677`. Read [review/evidence](./release-0.9.0.md#codex-cache-contracts-2026-10-03),
 > [detailed RT-18 plan](./release-0.9.0-plan.md#rt-18) and

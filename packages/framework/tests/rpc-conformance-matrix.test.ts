@@ -45,6 +45,10 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         invalidLimit() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ key: () => '' })
         invalidRateKey() { this.effectOwner.runs++; return ++this.count; }
+        @Server() @RateLimit(null as any)
+        invalidRateOptions() { this.effectOwner.runs++; return ++this.count; }
+        @Server() @RateLimit({ max: 1, requires: { shared: true, atomicIncrement: true } })
+        sharedAtomicLimit() { this.effectOwner.runs++; return ++this.count; }
         @Server({ input: { title: { required: true } } })
         async fileInfo(input: { title: string; nested: { files: File[] } }) {
             this.effectOwner.runs++; this.count++;
@@ -417,13 +421,30 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         expect(effects.current.runs).toBe(1); expect(wire.target.count).toBe(1);
         expect(wire.requests).toHaveLength(3); settled();
     });
-    it.each(['invalidLimit', 'invalidRateKey'])('rejects %s before counter or mutation', async action => {
+    it.each(['invalidLimit', 'invalidRateKey', 'invalidRateOptions'])('rejects %s before counter or mutation', async action => {
         const hit = vi.fn(() => ({ count: 1, resetAt: Date.now() + 60000 })); setRateLimitStore({ hit });
         await expect(rpc$(wire.target[action]())).rejects.toMatchObject({
             code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error', requestId: expect.any(String),
         });
         expect(hit).not.toHaveBeenCalled(); expect(effects.current.runs).toBe(0);
         expect(wire.target.count).toBe(0); settled();
+    });
+    it.each(['memory', 'kv', 'custom'])('rejects unsupported %s guarantees before counter or mutation', async provider => {
+        const hit = vi.fn(() => ({ count: 1, resetAt: Date.now() + 60000 }));
+        const get = vi.fn(); const put = vi.fn();
+        if (provider === 'kv') wire.configureEnv({ rateLimit: 'kv', RATE_LIMITS: { get, put } });
+        else if (provider === 'custom') setRateLimitStore({ hit });
+        await expect(rpc$(wire.target.sharedAtomicLimit())).rejects.toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', requestId: expect.any(String) });
+        expect(hit).not.toHaveBeenCalled(); expect(get).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled();
+        expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0); settled();
+    });
+    it('admits a shared atomic DO declaration while retaining its spent budget', async () => {
+        let count = 0;
+        const fetch = vi.fn(async () => Response.json({ count: ++count, resetAt: Date.now() + 60000 }));
+        wire.configureEnv({ rateLimit: 'do', RATE_LIMIT_DO: { idFromName: (name: string) => name, get: () => ({ fetch }) } });
+        expect(await rpc$(wire.target.sharedAtomicLimit())).toBe(1);
+        await expect(rpc$(wire.target.sharedAtomicLimit())).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
+        expect(fetch).toHaveBeenCalledTimes(2); expect(effects.current.runs).toBe(1); expect(wire.target.count).toBe(1); settled();
     });
     it.each([null, { count: 0, resetAt: 100 }, { count: NaN, resetAt: 100 },
         { count: 1, resetAt: Infinity }])('rejects malformed counter %j before mutation', async reply => {

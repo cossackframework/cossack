@@ -32,13 +32,14 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
       .fetch('https://limit/?window=' + c.req.query('window')));
     let mutations = 0;
     app.post('/limited', async c => {
-      const blocked = await enforceRateLimit(c, 'route', { window: 120000, max: 2, key: () => 'member' });
+      const blocked = await enforceRateLimit(c, 'route', { window: 120000, max: 2, key: () => 'member', requires: { shared: true, durable: true, atomicIncrement: true } });
       return blocked || c.json({ mutations: ++mutations });
     });
     app.get('/mutations', c => c.json({ mutations, run: c.env.RUN }));
     app.onError(c => Response.json({ error: 'Internal Server Error' }, { status: 500 }));
     app.get('/configured', async c => {
-      const blocked = await enforceRateLimit(c, 'config-route', { max: 1, key: () => 'member' });
+      const blocked = await enforceRateLimit(c, 'config-route', { max: 1, key: () => 'member',
+        ...(c.req.query('required') ? { requires: { shared: true, atomicIncrement: true } } : {}) });
       return blocked || c.json({ mutations: ++mutations });
     });
     export default { fetch(request, env, context) {
@@ -88,7 +89,7 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
 
   expect((await first.fetch('/limited', { method: 'POST' })).status).toBe(200);
   expect((await second.fetch('/limited', { method: 'POST' })).status).toBe(200);
-  await first.evictDurableObject('RATE_LIMIT_DO', { name: 'route:member' });
+  await first.evictDurableObject('RATE_LIMIT_DO', { name: JSON.stringify(['route', 'member']) });
   const blocked = await first.fetch('/limited', { method: 'POST' });
   expect(blocked.status).toBe(429);
   expect(await blocked.json()).toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED' });
@@ -112,6 +113,8 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
   expect((await configured.fetch('/configured?mode=unknown')).status).toBe(500);
   expect((await configured.fetch('/configured?mode=null')).status).toBe(500);
   expect((await configured.fetch('/configured?store=missing')).status).toBe(500);
+  expect((await configured.fetch('/configured?mode=unset&required=1')).status).toBe(500);
+  expect(await (await configured.fetch('/mutations')).json()).toEqual({ mutations: 2, run: 'after' });
   expect((await configured.fetch('/configured?mode=unset')).status).toBe(200);
   expect((await configured.fetch('/configured?mode=unset')).status).toBe(429);
   expect(await (await configured.fetch('/mutations')).json()).toEqual({ mutations: 3, run: 'after' });

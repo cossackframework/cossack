@@ -21,6 +21,7 @@ It works in three places:
 | `max` | `number` | `60` | Non-negative safe integer; zero denies all calls. |
 | `key` | `(c) => string` | user id, else IP | Returns a non-empty string identifying the caller bucket. |
 | `message` | `string` | `'Too Many Requests'` | Body of the `429` response. |
+| `requires` | `StorageRequirements` | `{}` | Required provider guarantees; checked before charging a counter. |
 | `backendTimeoutMs` | `number` (ms) | `5000` | Counter decision deadline, including response EOF. Positive safe integer, at most `2147483647`. |
 
 Invalid runtime options reject before the counter is touched. Counter replies
@@ -322,3 +323,63 @@ export function configureLimiter(store: RateLimitStore) {
     setRateLimitStore(store);
 }
 ```
+
+
+## Required storage guarantees
+
+Use `@RateLimit({ requires: { shared: true, atomicIncrement: true } })` on a
+server action, or pass the same options to the functional handler wrapper.
+Unsupported/unknown traits reject before a counter hit or handler invocation.
+Builtin direct calls accept `hit(key, windowMs, { requires })`. Framework
+component, service, HTTP/SSE, multipart and socket enforcement checks the same
+requirements. Client debounce does not spend or protect server quota.
+
+`inspectRateLimitStore(env)` describes the selected manual/configured store
+without consuming quota. `cossack inspect providers --json --env staging` shows
+declared backends and millisecond units without executing project modules or
+exposing Redis credentials. Compiler declarations and selected Wrangler settings
+do not prove process/secret overrides, remote readiness or live consistency.
+
+| Provider | Locality | Persistence | Consistency | Atomic increment |
+| --- | --- | --- | --- | --- |
+| Memory | Process | Ephemeral | Strong within this process | Yes |
+| KV | Shared | Durable | Eventual | No |
+| Durable Object | Shared | Durable | Strong within its owner | Yes |
+| Redis REST | Shared | Unknown | Strong within its EVAL owner | Yes |
+| Undeclared custom | Unknown | Unknown | Unknown | Unknown |
+
+All builtin profiles use logical millisecond expiry and expose `hit` only.
+Requirements support `shared`, `durable`, `strongConsistency`, `atomicIncrement`,
+`millisecondExpiry` and `operations`. Unknown cannot satisfy a requested guarantee.
+Redis persistence depends on the endpoint's configuration and is not assumed.
+A custom store may declare `capabilities`; its author owns the truth of that
+validated declaration. Direct custom calls own their requirement checks too.
+
+## Resource limits and migration
+
+Keys must be nonblank valid UTF-8 strings of at most 512 bytes. KV/Redis frame
+namespace/key pairs as JSON tuples and reject when the final encoded key exceeds
+512 bytes. Namespace is a valid UTF-8 string (empty is allowed), at most 512 bytes;
+explicit null is invalid. Framework scope/caller keys use JSON tuples too, so
+separators in identifiers cannot merge distinct budgets.
+
+`InMemoryRateLimitStore(maxEntries)` defaults to 10,000 entries and accepts
+integers from 1 to 100,000. At capacity it removes expired buckets and rejects a
+new key if every bucket is live. It never evicts a spent live budget to grant
+fresh quota. Existing buckets still increment. Capacity errors are backend
+failures, not 429 quota denials; no retry or fallback is performed.
+
+Redis requires an explicit HTTPS REST URL, at most 2048 UTF-8 bytes, without
+embedded credentials, query, fragment, whitespace, controls or backslashes.
+The bearer token must be nonempty ASCII without whitespace/controls and at most
+8192 bytes. Authenticated POST requests use manual redirect handling; redirects
+reject rather than forwarding credentials to another origin. Plain HTTP has no
+local-development exception.
+
+The 0.9.0 key framing changes reset existing framework/namespace budgets once
+at deployment. Old Redis/KV windows expire through their existing TTL; old DO
+records retain their previous names until expiry cleanup. Coordinate a rollout
+if a mixed-version deployment must not admit two independent budgets. Ordinary
+requests never reset a live bucket merely to free capacity. `window` retains its
+name and always means integer milliseconds; misspelled/unknown options now reject
+instead of being silently ignored.

@@ -1,6 +1,7 @@
 import { commandSpecs, inspectRoutesSpec } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { inspectDeployment } from '../deployment.js';
+import { inspectProviders } from '../providers-inspection.js';
 import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
 import { showCommandHelp, validateCommand, runWithSpec } from '../command-spec.js';
@@ -182,9 +183,32 @@ async function inspectCloudflare(args, ctx, command) {
   }
 }
 
+async function inspectProviderDeclarations(ctx, command) {
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const { diagnostics, ...data } = await inspectProviders(root, ctx.flags.env ?? process.env.CLOUDFLARE_ENV);
+    const valid = !diagnostics.some(item => item.severity === 'error');
+    const ok = command === 'inspect' || valid;
+    if (ctx.flags.json === true) writeResult(command, { ok, data, diagnostics });
+    else {
+      console.log(`Providers (${data.runtime}, ${data.environment ?? 'default'}): ${data.inspectionScope}`);
+      console.log(`Cache default: ${data.cache.default.name ?? 'unknown'}`);
+      const show = (label, capabilities) => console.log(`${label}: ${capabilities.provider}; durations=${capabilities.durationUnit}; locality=${capabilities.locality}; persistence=${capabilities.persistence}; consistency=${capabilities.consistency}; atomicIncrement=${capabilities.atomicIncrement}; expiry=${capabilities.expiryPrecision}`);
+      for (const store of data.cache.stores) show(`Cache ${store.name}`, store.capabilities);
+      show('Rate limit', data.rateLimit.capabilities);
+      for (const diagnostic of diagnostics) console.error(`${diagnostic.code}: ${diagnostic.message}`);
+    }
+    return ok ? 0 : 1;
+  } catch (error) {
+    const code = diagnosticCode(error, 'COSSACK_INSPECTION_FAILED');
+    return commandFailure(ctx, command, code, diagnosticMessage(error, code));
+  }
+}
+
 export function inspectCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.inspect, args, ctx, inspectHelp)) return 0;
   if (!validateCommand(commandSpecs.inspect, args, ctx)) return 1;
+  if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'inspect');
   if (args[0] === 'routes') {
     return runWithSpec(routesSpec, args.slice(1), ctx, () => inspectRoutes(args.slice(1), ctx, 'inspect'));
   }
@@ -193,12 +217,13 @@ export function inspectCommand(args, ctx) {
 export function checkCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.check, args, ctx, checkHelp)) return 0;
   if (!validateCommand(commandSpecs.check, args, ctx)) return 1;
+  if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'check');
   if (args[0] === 'routes') return checkRoutes(ctx);
   return inspectCloudflare(args, ctx, 'check');
 }
 
 export function inspectHelp() {
-  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes> [route]
+  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes|providers> [route]
 
 Read the project's resolved Worker, environment, bindings, required secret
 names, and configuration diagnostics. Inspection succeeds when configuration
@@ -206,11 +231,14 @@ can be read, even if diagnostics identify deployment errors.
 No builds, generated files, resource provisioning, or cloud requests.
 Use cossack check cloudflare for a failing exit code on invalid configuration.
 Use cossack inspect routes to list effective routes, or supply a route to
-explain its options, layout ancestry, methods, and source locations.`);
+explain its options, layout ancestry, methods, and source locations.
+Use cossack inspect providers for declared cache/limiter backends, millisecond
+units, locality, persistence, consistency, atomicity and supported operations.
+Dynamic configuration/overrides remain unknown; modules are never executed.`);
 }
 
 export function checkHelp() {
-  return commandSpecs.check.help(`cossack check <cloudflare|routes> [--json]
+  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers> [--json]
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
@@ -221,5 +249,7 @@ required transport bindings. Inherited behavior
 and runtime execution are not yet checked.
 Returns a nonzero exit code for configuration errors. Build artifacts,
 remote resources, permissions, and secret availability are not checked.
---json emits one versioned result with resource names and diagnostics.`);
+--json emits one versioned result with resource names and diagnostics.
+Provider checks validate declared cache requirements, binding names and limiter
+selection. They do not verify process/secret overrides or remote readiness.`);
 }

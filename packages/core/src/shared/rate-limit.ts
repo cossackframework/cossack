@@ -1,5 +1,7 @@
 // src/shared/rate-limit.ts
 import './metadata';
+import { storageCapabilities, storageRequirements, readStorageCapabilities, assertStorageRequirements, type StorageCapabilities, type StorageRequirements } from './storage-capabilities';
+import { assertRateLimitKey as assertKey, rateLimitNamespace, rateLimitStorageKey, redisEndpoint, redisToken } from './rate-limit-policy';
 import type { Context } from 'hono';
 import { assertRateLimitNotAborted, readRateLimitResponse, runRateLimitOperation, rateLimitTimeout, RATE_LIMIT_RESPONSE_MAX_BYTES, type RateLimitHitOptions } from './rate-limit-io';
 export { RATE_LIMIT_RESPONSE_MAX_BYTES, type RateLimitHitOptions } from './rate-limit-io';
@@ -15,6 +17,8 @@ export const RATE_LIMIT_METADATA_KEY = 'cossack:rate-limit';
  * ```
  */
 export interface RateLimitOptions {
+    /** Required provider guarantees. Unknown or unsupported traits reject before I/O. */
+    requires?: StorageRequirements;
     /**
      * Positive safe-integer fixed-window milliseconds. Default `60_000`.
      */
@@ -47,6 +51,7 @@ export interface RateLimitOptions {
  * (e.g. backed by Durable Objects, KV, D1, or Upstash). Only `hit` is required.
  */
 export interface RateLimitStore {
+    readonly capabilities?: StorageCapabilities;
     /**
      * Increment the counter for `key`. If the window has elapsed since the last
      * reset, start a fresh window with count `1`. Must return the current count
@@ -69,9 +74,11 @@ function assertWindow(windowMs: number): void {
     }
 }
 
-function assertKey(key: string): void {
-    if (typeof key !== 'string' || !key.trim()) {
-        throw new Error('[Cossack] Rate-limit key must be a non-empty string.');
+function assertRateLimitOptions(options: unknown): asserts options is RateLimitOptions {
+    if (!options || typeof options !== 'object' || Array.isArray(options) ||
+        ![Object.prototype, null].includes(Object.getPrototypeOf(options)) ||
+        Object.keys(options).some(key => !['window', 'max', 'key', 'message', 'backendTimeoutMs', 'requires'].includes(key))) {
+        throw new Error('[Cossack] Rate-limit options must be an object with window (milliseconds), max, key, message, backendTimeoutMs or requires.');
     }
 }
 
@@ -97,27 +104,35 @@ function readCounter(value: unknown): RateLimitCounter {
 }
 
 /**
- * Simple in-memory fixed-window counter. Entries are pruned lazily once the
- * store grows beyond `maxEntries` (default 10 000).
+ * Simple in-memory fixed-window counter. New buckets reject at
+ * `maxEntries` (default 10 000), after pruning expiry. Live quotas are never evicted.
  */
 export class InMemoryRateLimitStore implements RateLimitStore {
+    readonly capabilities = storageCapabilities('rate-limit', 'memory');
     private readonly entries = new Map<string, { count: number; resetAt: number }>();
     private readonly maxEntries: number;
 
     constructor(maxEntries = 10_000) {
+        if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100000) {
+            throw new Error('[Cossack] Rate-limit maxEntries must be an integer between 1 and 100000.');
+        }
         this.maxEntries = maxEntries;
     }
 
     hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): { count: number; resetAt: number } {
+        assertStorageRequirements(this.capabilities, options.requires);
         assertKey(key); assertWindow(windowMs);
         rateLimitTimeout(options);
         assertRateLimitNotAborted(options.signal);
         const now = Date.now();
         const existing = this.entries.get(key);
         if (!existing || now >= existing.resetAt) {
+            if (!existing && this.entries.size >= this.maxEntries) {
+                this.prune(now);
+                if (this.entries.size >= this.maxEntries) throw new Error('[Cossack] Memory rate-limit capacity exceeded; use a shared provider or increase maxEntries.');
+            }
             const resetAt = now + windowMs;
             this.entries.set(key, { count: 1, resetAt });
-            if (this.entries.size > this.maxEntries) this.prune(now);
             return { count: 1, resetAt };
         }
         existing.count = readCounter({ count: existing.count + 1, resetAt: existing.resetAt }).count;
@@ -174,6 +189,7 @@ export interface KvRateLimitStoreOptions {
  * > burst traffic or strict limits, use Durable Objects or Redis.
  */
 export class KvRateLimitStore implements RateLimitStore {
+    readonly capabilities = storageCapabilities('rate-limit', 'kv');
     private readonly namespace: string;
 
     constructor(
@@ -183,13 +199,15 @@ export class KvRateLimitStore implements RateLimitStore {
         if (!hasMethod(kv, 'get') || !hasMethod(kv, 'put')) {
             throw new Error('[Cossack] RATE_LIMITS requires a KV binding with get/put methods.');
         }
-        this.namespace = options.namespace ?? 'cossack:rl:';
+        this.namespace = options.namespace === undefined ? 'cossack:rl:' : options.namespace;
+        rateLimitNamespace(this.namespace);
     }
 
     async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
+        assertStorageRequirements(this.capabilities, options.requires);
         assertKey(key); assertWindow(windowMs);
         return runRateLimitOperation(options, async signal => {
-            const kvKey = `${this.namespace}${key}`;
+            const kvKey = rateLimitStorageKey(this.namespace, key);
             const entry = await this.read(kvKey);
             assertRateLimitNotAborted(signal);
             const now = Date.now();
@@ -321,6 +339,7 @@ export class RateLimitDurableObject {
  * ```
  */
 export class DurableObjectRateLimitStore implements RateLimitStore {
+    readonly capabilities = storageCapabilities('rate-limit', 'durable-object');
     constructor(private readonly ns: RateLimitDurableObjectNamespace) {
         if (!hasMethod(ns, 'idFromName') || !hasMethod(ns, 'get')) {
             throw new Error('[Cossack] RATE_LIMIT_DO requires a Durable Object namespace binding.');
@@ -328,6 +347,7 @@ export class DurableObjectRateLimitStore implements RateLimitStore {
     }
 
     async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
+        assertStorageRequirements(this.capabilities, options.requires);
         assertKey(key); assertWindow(windowMs);
         return runRateLimitOperation(options, async signal => {
             const id = this.ns.idFromName(key);
@@ -387,6 +407,7 @@ const REDIS_RATE_LIMIT_SCRIPT =
  * ```
  */
 export class RedisRateLimitStore implements RateLimitStore {
+    readonly capabilities = storageCapabilities('rate-limit', 'redis');
     private readonly url: string;
     private readonly token: string;
     private readonly namespace: string;
@@ -394,10 +415,13 @@ export class RedisRateLimitStore implements RateLimitStore {
 
     constructor(options: RedisRateLimitStoreOptions = {}) {
         const env = (typeof globalThis !== 'undefined' && (globalThis as any).process?.env) || {};
-        this.url = options.url ?? env.UPSTASH_REDIS_REST_URL ?? '';
-        this.token = options.token ?? env.UPSTASH_REDIS_REST_TOKEN ?? '';
-        this.namespace = options.namespace ?? 'cossack:rl:';
-        this.fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
+        this.url = redisEndpoint(options.url === undefined ? env.UPSTASH_REDIS_REST_URL : options.url);
+        this.token = options.token === undefined ? env.UPSTASH_REDIS_REST_TOKEN ?? '' : options.token;
+        this.namespace = options.namespace === undefined ? 'cossack:rl:' : options.namespace;
+        rateLimitNamespace(this.namespace);
+        this.fetchFn = options.fetch === undefined ? globalThis.fetch.bind(globalThis) : options.fetch;
+        redisToken(this.token);
+        if (typeof this.fetchFn !== 'function') throw new Error('[Cossack] Redis fetch must be a function.');
         if (!credential(this.url) || !credential(this.token)) {
             throw new Error(
                 '[Cossack] RedisRateLimitStore requires a Upstash REST url + token. ' +
@@ -407,11 +431,12 @@ export class RedisRateLimitStore implements RateLimitStore {
     }
 
     async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
+        assertStorageRequirements(this.capabilities, options.requires);
         assertKey(key); assertWindow(windowMs);
         return runRateLimitOperation(options, async signal => {
-            const kvKey = `${this.namespace}${key}`;
+            const kvKey = rateLimitStorageKey(this.namespace, key);
             const res = await this.fetchFn(this.url, {
-                method: 'POST', signal,
+                method: 'POST', signal, redirect: 'manual',
                 headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(['EVAL', REDIS_RATE_LIMIT_SCRIPT, '1', kvKey, String(windowMs)]),
         });
@@ -586,7 +611,11 @@ export async function evaluateRateLimit(
     options: RateLimitOptions,
     signal: AbortSignal | undefined = c.req?.raw?.signal,
 ): Promise<{ message: string; retryAfter: number } | null> {
+    assertRateLimitOptions(options);
     const store = configureRateLimitFromEnv((c as unknown as { env?: Record<string, unknown> }).env);
+    const capabilities = readStorageCapabilities(store.capabilities, 'rate-limit');
+    const requirements = storageRequirements(options.requires);
+    assertStorageRequirements(capabilities, requirements);
     const windowMs = options.window === undefined ? 60_000 : options.window;
     const max = options.max === undefined ? 60 : options.max;
     assertWindow(windowMs);
@@ -603,8 +632,8 @@ export async function evaluateRateLimit(
     const caller = options.key ? options.key(c) : defaultRateLimitKey(c);
     assertKey(caller);
     const { count, resetAt } = await runRateLimitOperation({ signal, timeoutMs: options.backendTimeoutMs },
-        async operationSignal => readCounter(await store.hit(`${scopeKey}:${caller}`, windowMs,
-            { signal: operationSignal, timeoutMs: options.backendTimeoutMs })));
+        async operationSignal => readCounter(await store.hit(JSON.stringify([scopeKey, caller]), windowMs,
+            { signal: operationSignal, timeoutMs: options.backendTimeoutMs, requires: requirements })));
     if (count <= max) return null;
 
     const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
@@ -624,6 +653,7 @@ export function getRateLimitForAction(constructor: unknown, action: string): Rat
             | Record<string, RateLimitOptions>
             | undefined;
         if (store && Object.prototype.hasOwnProperty.call(store, action)) {
+            assertRateLimitOptions(store[action]);
             return store[action];
         }
         proto = Object.getPrototypeOf(proto);
@@ -644,7 +674,7 @@ export async function enforceMethodRateLimit(
     scopePrefix: string,
 ): Promise<Response | null> {
     const options = getRateLimitForAction(constructor, action);
-    if (!options) return null;
+    if (options === undefined) return null;
     return enforceRateLimit(c, `${scopePrefix}:${action}`, options);
 }
 
@@ -684,7 +714,7 @@ export function RateLimit<T extends HonoHandler>(options: RateLimitOptions, hand
 export function RateLimit(first: RateLimitOptions | HonoHandler, second?: HonoHandler): any {
     // Form 2: RateLimit(options, handler)
     if (typeof second === 'function') {
-        return wrapHandler((first as RateLimitOptions) ?? {}, second);
+        return wrapHandler(first as RateLimitOptions, second);
     }
     // Form 3: RateLimit(handler)
     if (typeof first === 'function') {
@@ -709,4 +739,9 @@ function wrapHandler(options: RateLimitOptions, handler: HonoHandler): HonoHandl
         assertRateLimitNotAborted(c.req?.raw?.signal);
         return handler(c);
     };
+}
+
+/** Inspect a request-selected store without charging any counter. */
+export function inspectRateLimitStore(env?: Record<string, unknown>): StorageCapabilities {
+    return readStorageCapabilities(configureRateLimitFromEnv(env).capabilities, 'rate-limit');
 }

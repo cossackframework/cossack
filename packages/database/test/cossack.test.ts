@@ -13,6 +13,15 @@ function memoryORM(driver = new MemoryDriver()) {
 }
 
 describe("Cossack integration", () => {
+  it("declares cache operations and units without guessing database deployment guarantees", () => {
+    const capabilities = createDatabaseCacheStore().capabilities!;
+    expect(capabilities).toMatchObject({ kind: "cache", provider: "database", durationUnit: "milliseconds",
+      locality: "unknown", persistence: "unknown", consistency: "unknown", atomicIncrement: false,
+      expiryPrecision: "milliseconds" });
+    expect(capabilities.operations).toEqual(["get", "set", "has", "delete", "flush", "getMany", "setMany", "deleteMany"]);
+    expect(Object.isFrozen(capabilities)).toBe(true);
+    expect(Object.isFrozen(capabilities.operations)).toBe(true);
+  });
   it("keeps singleton ORM ownership with the caller", async () => {
     const orm = memoryORM();
     const close = vi.spyOn(orm, "close");

@@ -37,7 +37,9 @@ it('uses compiled cache contracts with native KV, cross-Worker DO storage, evict
       } } }, next));
     });
     app.post('/action', async c => {
-      const { operation, key, value, ttlMs, entries, keys } = await c.req.json();
+      const { operation, key, value, ttlMs, entries, keys, requires } = await c.req.json();
+      if (operation === 'inspect') return c.json(cache.inspect());
+      if (operation === 'requiredSet') { await cache.require(requires).set(key, value); return c.json({ ok: true }); }
       if (operation === 'set') { await cache.set(key, value, ttlMs); return c.json({ ok: true }); }
       if (operation === 'get') { const result = await cache.get(key); return c.json({ found: result !== undefined, value: result }); }
       if (operation === 'has') return c.json(await cache.has(key));
@@ -77,6 +79,19 @@ it('uses compiled cache contracts with native KV, cross-Worker DO storage, evict
     expect(response.status).toBe(200); return response.json();
   };
   const keys = ['.', '..', '/', 'flush', 'get-many', '?key', '#hash', '🙂'];
+  for (const driver of ['kv', 'durable-object']) {
+    expect(await invoke(first, { operation: 'inspect' }, '?driver=' + driver)).toMatchObject({
+      kind: 'cache', provider: driver, durationUnit: 'milliseconds', locality: 'shared',
+      persistence: 'durable', atomicIncrement: false,
+    });
+    expect((await first.fetch('/action?driver=' + driver, { method: 'POST', body: JSON.stringify({
+      operation: 'requiredSet', key: 'guarantee-denied', value: 1, requires: { atomicIncrement: true },
+    }) })).status).toBe(500);
+    expect(await invoke(second, { operation: 'get', key: 'guarantee-denied' }, '?driver=' + driver)).toEqual({ found: false });
+  }
+  await invoke(first, { operation: 'requiredSet', key: 'guarantee-accepted', value: 2,
+    requires: { shared: true, durable: true, strongConsistency: true, millisecondExpiry: true, operations: ['set'] } });
+  expect(await invoke(second, { operation: 'get', key: 'guarantee-accepted' })).toEqual({ found: true, value: 2 });
   await invoke(first, { operation: 'setMany', entries: keys.map(key => ({ key, value: null })) });
   expect(await invoke(second, { operation: 'getMany', keys: [...keys, 'missing'] })).toEqual([
     ...keys.map(() => ({ found: true, value: null })), { found: false },

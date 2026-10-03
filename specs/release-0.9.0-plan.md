@@ -1200,6 +1200,50 @@ Baseline: Memory, KV, Durable Object, and other provider implementations exist.
 Cache TTL uses seconds while rate-limit windows use milliseconds. Capability
 diagnostics and transport coverage need consolidation.
 
+**Latest Codex completion (2026-10-03):** RT-18 is complete. The baseline and
+older checkpoints below describe prior states. This task closes only the
+cache/limiter contract; it does not close arbitrary action deadlines, resource
+authorization, actual incoming disconnect delivery, or full release/runtime gates.
+
+Criterion audit:
+
+| Original requirement | Implementation and acceptance evidence |
+| --- | --- |
+| One explicit duration convention | Cache `ttlMs` and limiter `window`/`windowMs` use integer milliseconds. Fake-clock cache/counter suites prove exact boundaries; native KV/DO prove short logical expiry independent of retention. The database adapter matches the structural contract without framework imports. |
+| Provider expiry/atomicity/locality/consistency | Pure core storage model and frozen builtin declarations. Cache DO get/set is not an atomic increment; KV remains eventual/non-atomic. Database deployment traits and Redis persistence remain unknown. Undeclared custom traits remain unknown. |
+| Reject unsupported requested guarantees | `CacheStoreSpec.requires`, `cache.require`, `RateLimitOptions.requires`, and builtin `hit(..., {requires})` check before operations. Immutable snapshots prevent later weakening. Provider/handler spies prove no denied operation; compiled page/service acceptance proves no denied D1 writes. Factory construction remains the factory author's resource responsibility. |
+| Backend and units in inspection | Runtime `cache.inspect()`/`inspectRateLimitStore(env)` consume no operation. CLI `inspect/check providers` uses compiler AST and selected Wrangler public settings, never config execution or provider calls. Static scope, dynamic/override uncertainty, operation support and binding status are explicit. Missing selected bindings fail; optional unselected bindings warn. |
+| Shared multi-request counter behavior | Two native Workers share transactional DO counters across concurrent hits, actual limiter eviction and Worker reload. Native HTTP/socket guards share spent budgets and require shared/durable/atomic traits. Compiled HTTP/SSE page/service and multipart acceptance proves unsupported traits deny mutation. |
+| Actual server limits rather than client debounce | The shared RPC matrix exercises server decisions and mutation counters for HTTP/SSE/socket and scoped service dispatch; API wrapper/decorator tests use actual Hono dispatch. Client debounce is independent. |
+| Resource/configuration safety and migration | Saturated memory rejects new keys without forgetting live quotas. Keys/namespaces and final framed keys have UTF-8 bounds. Redis validates HTTPS/token/wire URL limits and rejects redirects. Malformed/null/unknown options fail. Framework scope/caller and KV/Redis namespace/key framing have a documented one-time budget migration. |
+
+Public contracts and ownership context for GLM:
+
+- `StorageRequirements` supports `shared`, `durable`, `strongConsistency`,
+  `atomicIncrement`, `millisecondExpiry`, and `operations`. Unknown cannot prove a
+  positive requirement. Custom capability metadata is the implementer's assertion,
+  not remote attestation. Direct custom limiter calls own their own enforcement.
+- Memory limiter `maxEntries` is 1..100,000 (default 10,000). Expired buckets free
+  capacity; a live spent quota is never evicted. Capacity/backend failures are not
+  429 decisions. Final KV/Redis keys must fit 512 encoded bytes; Redis URL limits
+  apply both before and after URL normalization. No plain-HTTP exception/retry.
+- `window` keeps its existing name and millisecond meaning. Cache's previous
+  seconds-to-milliseconds break is retained. New tuple encoding resets old limiter
+  budgets once; coordinate mixed-version rollouts if separate quotas matter.
+- Compiler inspection follows bounded static declarations/public env calls only.
+  Mutation/helper/spread/getter expressions remain unknown. Registration aliases,
+  escaped/dynamic namespaces and manual defaults are conservative candidates, not
+  proof that an unused module executes. The CLI does not read credential values.
+- Do not claim live regional KV/write throttling, live Redis readiness/persistence,
+  actual native pre-header TCP abort delivery, remote producer shutdown, rollback,
+  arbitrary action deadlines, or native Deno/Electron execution from these tests.
+  Those acceptance boundaries retain their original tasks and release gates.
+
+Verification commands/evidence are recorded in the
+[Codex provider review](./release-0.9.0.md#codex-storage-capabilities-2026-10-03).
+Dependency RT-25 is already checked. All 58 release task IDs remain in the ledger;
+this completion changes only RT-18 from open to checked.
+
 Approach: Choose one explicit public duration convention and normalize at provider
 boundaries. Record breaking renames if needed. Declare expiry precision, atomic
 increment support, locality, and consistency per provider. Reject a requested
@@ -1317,7 +1361,7 @@ Guide, agent examples, architecture, runnable demo and generated package
 acceptance use the new unit. Provider capability declarations/inspection and
 requested-guarantee rejection remain unfinished: do not check RT-18 yet.
 
-Next steps, with each goal kept separate:
+Historical next steps before the latest RT-18 completion, with each goal kept separate:
 
 1. Finish actual native disconnect acceptance. Coordinator cancellation now has
    cross-Worker native RPC evidence: 32-entry saturation, duplicate-ID refusal,
@@ -1356,7 +1400,7 @@ Next steps, with each goal kept separate:
    and inspection units, then audit every RT-18 acceptance criterion and related
    RT-01 transport criteria before checking either task.
 
-Concrete follow-up implementation notes for GLM:
+Historical implementation notes for GLM (now satisfied by RT-18; retained as context):
 
 - Start limiter regressions in core `shared/rate-limit.ts` and its existing
   provider matrix. A saturated memory limiter must reject a *new* key after

@@ -58,7 +58,15 @@ export interface CacheEntry<T = unknown> {
   readonly ttlMs?: number;
 }
 
+const DATABASE_CACHE_CAPABILITIES = Object.freeze({
+  kind: 'cache' as const, provider: 'database', durationUnit: 'milliseconds' as const,
+  locality: 'unknown' as const, persistence: 'unknown' as const, consistency: 'unknown' as const,
+  atomicIncrement: false as const, expiryPrecision: 'milliseconds' as const,
+  operations: Object.freeze(['get', 'set', 'has', 'delete', 'flush', 'getMany', 'setMany', 'deleteMany'] as const),
+});
+
 export interface CacheStore {
+  readonly capabilities?: typeof DATABASE_CACHE_CAPABILITIES;
   get<T = unknown>(key: string): Promise<T | undefined>;
   set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
   has(key: string): Promise<boolean>;
@@ -94,6 +102,7 @@ export function createDatabaseCacheStore(
   const table = options.tableName ?? "cache_items";
   const getORM = () => resolveORM(orm);
   return {
+    capabilities: DATABASE_CACHE_CAPABILITIES,
     async get<T>(key: string): Promise<T | undefined> {
       cacheKey(key);
       const scoped = getORM();

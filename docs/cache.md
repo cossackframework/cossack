@@ -264,3 +264,56 @@ Multiply old cache TTL numbers by 1,000 and rename batch `ttlSeconds` to `ttlMs`
 KV keys now use `JSON.stringify([namespace, key])`, and values use a versioned envelope. Old unframed records are not read or migrated automatically; the new cache begins empty. Old records with no expiration require explicit cleanup. Rebuild and deploy cache clients and the exported Durable Object class together: the private protocol now uses `/entry?key=...`, `ttlMs`, and explicit found/missing batch records. Stored DO entries retain their existing epoch timestamp format.
 
 See [KV write limits and retention](https://developers.cloudflare.com/kv/api/write-key-value-pairs/) and [KV consistency](https://developers.cloudflare.com/kv/concepts/how-kv-works/). Live KV also limits writes to one per key per second. Local tests do not prove regional propagation, production write throttling, or remote producer shutdown.
+
+## Required guarantees and inspection
+
+`cache.inspect()` describes the current provider without dispatching a cache
+operation. Resolving a custom factory can still construct resources; keep factory
+construction free of storage operations and close owned resources yourself.
+
+```typescript
+import { cache } from '@cossackframework/framework/cache';
+
+const capabilities = cache.inspect();
+const shared = cache.require({ shared: true, strongConsistency: true });
+await shared.set('settings', { theme: 'dark' }, 60_000);
+```
+
+`cache.store('name').require(...)` works the same way. Requirements are immutable
+snapshots checked when each operation resolves its provider. Chaining `require`
+cannot weaken an earlier requirement. Declare the same `requires` object on a
+named store in `src/config/cache.ts` to apply it to every use of that declaration.
+Unsupported or unknown guarantees throw `COSSACK_STORAGE_GUARANTEE_UNSUPPORTED`
+before get/set/batch operations or a `remember` computation.
+
+Supported requirements are `shared`, `durable`, `strongConsistency`,
+`millisecondExpiry`, `atomicIncrement` and `operations` (a list of operation
+names). Cache providers do not expose an increment operation, so none can satisfy
+`atomicIncrement: true`. A DO-backed separate get/set sequence is still not atomic.
+
+| Provider | Locality | Persistence | Consistency | Operations |
+| --- | --- | --- | --- | --- |
+| Memory | Process | Ephemeral | Strong within this process | All cache operations |
+| KV | Shared | Durable | Eventual | All except flush |
+| Durable Object | Shared | Durable | Strong within its owner | All cache operations |
+| Database | Unknown | Unknown | Unknown | All cache operations |
+| Undeclared custom | Unknown | Unknown | Unknown | Unknown |
+
+Built-ins and the database adapter declare logical millisecond expiry. Database
+locality, persistence and consistency depend on deployment/read settings and stay
+unknown. Custom stores can declare a validated `StorageCapabilities` object on
+`capabilities`; declarations are assertions by their implementer, not remote
+verification. Undeclared stores remain usable without requested guarantees.
+The pure model is exported from `@cossackframework/core/storage-capabilities`
+and re-exported from `@cossackframework/framework/storage-capabilities`.
+
+Run `cossack inspect providers --json [--env staging]` for compiler-backed cache
+and limiter declarations, backend profiles, units and binding diagnostics.
+`cossack check providers` fails on invalid declarations or unsupported required
+cache guarantees. Missing bindings on the selected default fail checks; missing
+bindings on optional unselected stores produce warnings and
+`bindingStatus: "missing"`. Named-store operations still validate their binding at runtime.
+Inspection never executes config modules or contacts providers.
+It reads public selected Wrangler variables/bindings, not process/dev/secret
+values. Dynamic helpers, registration candidates and default-store overrides
+remain unknown. A declared built-in profile does not establish remote readiness.

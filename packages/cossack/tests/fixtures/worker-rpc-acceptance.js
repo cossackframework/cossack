@@ -40,6 +40,8 @@ export async function writeWorkerRpcAcceptance(root) {
       }
       @Server() @RateLimit({ max: 1, window: 60000 })
       async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
+      @Server() @RateLimit({ requires: { shared: true, atomicIncrement: true } })
+      async requiresShared(key: string) { await audit(key, 'guarantee-denied'); return 'saved'; }
       @Server({ input: { title: { required: true } } })
       files(input: { title: string; key: string; nested: { files: File[] } }) {
         this.key = input.key; this.visits++;
@@ -120,6 +122,8 @@ export async function writeWorkerRpcAcceptance(root) {
       }
       @Server() @RateLimit({ max: 1, window: 60000 })
         async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
+        @Server() @RateLimit({ requires: { shared: true, atomicIncrement: true } })
+        async requiresShared(key: string) { await audit(key, 'guarantee-denied'); return 'saved'; }
         @Server({ input: { title: { required: true } } })
         files(input: { title: string; key: string; nested: { files: File[] } }) {
           this.key = input.key; this.count++;
@@ -211,6 +215,12 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
     };
     for (const service of [false, true]) {
       const limitedKey = `limited-${transport}-${service}`;
+      const guaranteeKey = `guarantee-${transport}-${service}`;
+      const deniedGuarantee = await invoke('requiresShared', [guaranteeKey], service);
+      expect(deniedGuarantee.status).toBe(500);
+      expect(await deniedGuarantee.json()).toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR',
+        requestId: deniedGuarantee.headers.get('X-Cossack-Request-Id') });
+      expect(await audit(guaranteeKey)).toEqual([]);
       const envelope = { componentRouteId: state.componentRouteId, scopeKey: state.scopeKey,
         ...(service ? { service: { ownerRouteId: owner, slot: '0' } } : {}), action: 'limited', payload: [limitedKey] };
       const limited = await server.fetch('/crpc', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(envelope) });

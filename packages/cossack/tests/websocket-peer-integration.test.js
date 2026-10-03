@@ -53,7 +53,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', Live);
     for (const name of ['limited', 'custom', 'inspect', 'observe'])
       Server()(Live.prototype, name, Object.getOwnPropertyDescriptor(Live.prototype, name));
-    RateLimit({ max: 1, window: 60000 })(Live.prototype, 'limited', Object.getOwnPropertyDescriptor(Live.prototype, 'limited'));
+    RateLimit({ max: 1, window: 60000, requires: { shared: true, durable: true, atomicIncrement: true } })(Live.prototype, 'limited', Object.getOwnPropertyDescriptor(Live.prototype, 'limited'));
     RateLimit({ max: 1, window: 60000, key: c => JSON.stringify([c.req.param('tenant'), c.req.header('x-bucket')]) })
       (Live.prototype, 'custom', Object.getOwnPropertyDescriptor(Live.prototype, 'custom'));
     export class PeerObject extends CossackDurableObject {
@@ -142,7 +142,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     tenant: 'example', filter: 'active', marker: 'peer-worker', cookie: null, authorization: null });
   expect((await a.call('limited')).type).toBe('done');
   await server.getWorker('first').evictDurableObject('RATE_LIMIT_DO', {
-    name: JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited:ip:192.0.2.1',
+    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'ip:192.0.2.1']),
   });
   const again = await connect({ worker: 'second', name: 'new-object' });
   expect(await again.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
@@ -182,7 +182,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   expect((await member.call('inspect')).value).toMatchObject({ user: 'member', contextUser: 'member', ip: '192.0.2.1', bucket: 'one', tenant: 'example' });
   expect((await secondBucket.call('inspect')).value).toMatchObject({ user: 'second', contextUser: 'second', bucket: 'two' });
   await server.getWorker('first').evictDurableObject('RateLimitDurableObject', {
-    name: JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited:user:member',
+    name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'user:member']),
   });
   expect(await member.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED' });
   await server.update({ ...options, workers: options.workers.map(worker => ({ config: { ...worker.config,

@@ -37,9 +37,9 @@ Redis now uses PEXPIRE and millisecond durations, without whole-second rounding.
 KV storage retention has a minimum of 60 seconds, while its stored millisecond
 deadline determines the logical window. KV still cannot guarantee exact counting
 across regions or sustain more than one write to a key per second; write failures
-reject. Provider capability inspection and cache duration conventions remain
-under RT-18. Provider-specific resource policies and native disconnect/coordinator coverage
-still require further audit.
+reject. Provider inspection and required-guarantee checks are documented in the cache
+and rate-limiting guides. Actual native pre-header disconnect delivery remains
+an RT-01 acceptance gap.
 
 ## Counter decisions own a deadline and bounded replies
 
@@ -295,3 +295,23 @@ Cancellation between yields now preserves a known request ID on component,
 service and WebSocket calls, including iterator return. IDs can still be unknown
 before HTTP headers arrive. Cancellation never implies mutation rollback or
 automatic retry.
+
+
+## Storage guarantees and limiter key migration
+
+Cache and rate-limit stores expose validated capability declarations. Required
+shared/durable/strong/atomic/millisecond guarantees reject if unsupported or
+unknown, before operations. KV is not atomic; DO cache get/set is not an atomic
+increment. Database deployment traits and Redis persistence remain unknown.
+Custom providers can declare their own traits; declarations do not probe remote
+services. See [cache](../docs/cache.md#required-guarantees-and-inspection) and
+[limiter](../docs/rate-limiting.md#required-storage-guarantees) examples.
+
+Framework scope/caller and KV/Redis namespace/key tuples replace concatenated
+limiter keys. This creates a fresh budget once on deployment. Coordinate mixed
+versions to avoid independent quotas; old records follow their prior expiry.
+Keys/namespaces must be valid bounded UTF-8; final KV/Redis keys are capped at
+512 bytes. Memory saturation rejects new keys without forgetting live quotas.
+Redis REST URLs now require HTTPS without credentials/query/fragment, and manual
+redirect responses reject. Tokens must be bounded ASCII bearer tokens.
+Null/malformed/misspelled limiter options now fail instead of bypassing limits.

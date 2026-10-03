@@ -52,6 +52,26 @@ beforeEach(async () => {
   await fs.writeFile(path.join(tmp, 'package.json'), '{}');
 });
 
+it('provider inspection shares JSON/check contracts and never executes configuration', async () => {
+  await fs.writeFile(path.join(tmp, 'package.json'), JSON.stringify({ cossack: { runtime: 'node' } }));
+  await fs.mkdir(path.join(tmp, 'src/config'), { recursive: true });
+  const source = "export default { default: 'main', stores: { main: { driver: 'memory', requires: { shared: true } } } };";
+  await fs.writeFile(path.join(tmp, 'src/config/cache.ts'), source);
+  await fs.writeFile(path.join(tmp, 'src/helper.ts'), "throw Error('PRIVATE_CONFIGURATION');");
+  const files = await fs.readdir(tmp);
+  const inspect = await runCli(['inspect', 'providers', '--json']);
+  expect(inspect.code).toBe(0); expect(inspect.stderr).toBe('');
+  const inspection = parseEnvelope(inspect.stdout);
+  expect(inspection.data.cache.stores[0].capabilities).toMatchObject({ provider: 'memory', durationUnit: 'milliseconds' });
+  expect(inspection.diagnostics[0].code).toBe('COSSACK_STORAGE_GUARANTEE_UNSUPPORTED');
+  expect(inspect.stdout).not.toContain('PRIVATE_CONFIGURATION');
+  const check = await runCli(['check', 'providers', '--json']);
+  expect(check.code).toBe(1); expect(check.stderr).toBe('');
+  expect(parseEnvelope(check.stdout)).toMatchObject({ ok: false, diagnostics: inspection.diagnostics });
+  expect(await fs.readdir(tmp)).toEqual(files);
+  expect(await fs.readFile(path.join(tmp, 'src/config/cache.ts'), 'utf8')).toBe(source);
+});
+
 describe('adapter, image, upgrade, and Studio machine contracts', () => {
   it.each(['build', 'ssg'])('%s isolates project logs and reports tool failure', async command => {
     const toolDir = path.join(tmp, 'tools');

@@ -259,3 +259,184 @@ export async function isHttpHandlerModule(code: string): Promise<boolean> {
     return !node.source && node.specifiers?.some((entry: AstNode) => methods.has(entry.exported?.name ?? entry.exported?.value));
   });
 }
+
+/** Compiler-backed cache declarations. Never evaluate config modules or callbacks. */
+export async function inspectCacheConfigFromAst(code: string, variables?: Record<string, string>) {
+    if (code.length > 512 * 1024) return { status: 'unknown' as const, reason: 'Cache configuration exceeds inspection limits.', stores: [] };
+    const parser = await loadParseSync();
+    const program = parser && parsedProgram(parser, code);
+    const unknown = (reason: string) => ({ status: 'unknown' as const, reason });
+    if (!program || code.length > 512 * 1024) return { ...unknown('Cache configuration could not be parsed within inspection limits.'), stores: [] };
+    const constants = new Map<string, AstNode>();
+    for (const statement of program.body) {
+        const declaration = statement.declaration ?? statement;
+        if (declaration.type === 'VariableDeclaration' && declaration.kind === 'const') {
+            for (const entry of declaration.declarations) if (entry.id?.type === 'Identifier') constants.set(entry.id.name, entry.init);
+        }
+    }
+    const unwrap = (node: AstNode) => {
+        for (let count = 0; count < 16 && ['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'ParenthesizedExpression'].includes(node?.type); count++) node = node.expression;
+        return node;
+    };
+    const isPureInitializer = (node: AstNode): boolean => {
+        if (!node || typeof node !== 'object') return true;
+        if (['ArrowFunctionExpression', 'FunctionExpression'].includes(node.type)) return true;
+        if (['CallExpression', 'NewExpression', 'AssignmentExpression', 'UpdateExpression', 'AwaitExpression',
+            'TaggedTemplateExpression', 'SpreadElement', 'MemberExpression', 'BinaryExpression',
+            'UnaryExpression', 'LogicalExpression', 'ConditionalExpression'].includes(node.type)) return false;
+        return Object.values(node).every(value => Array.isArray(value)
+            ? value.every(isPureInitializer) : isPureInitializer(value));
+    };
+    const constantsStable = program.body.every((entry: AstNode) => {
+        if (entry.type === 'ImportDeclaration') return true;
+        const declaration = entry.declaration ?? entry;
+        if (declaration.type === 'VariableDeclaration') return declaration.kind === 'const' &&
+            declaration.declarations.every((value: AstNode) => value.id?.type === 'Identifier' && isPureInitializer(value.init));
+        if (entry.type === 'ExportDefaultDeclaration') return isPureInitializer(declaration);
+        return ['TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'FunctionDeclaration'].includes(declaration.type) ||
+            declaration.type === 'TSModuleDeclaration' && declaration.declare === true;
+    });
+    const resolve = (input: AstNode, names = new Set<string>()): AstNode => {
+        const node = unwrap(input);
+        if (node?.type !== 'Identifier' || node.name === 'undefined') return node;
+        if (names.has(node.name) || !constants.has(node.name)) return null;
+        // A later top-level mutation/call can invalidate a const object's initial value.
+        if (!constantsStable) return null;
+        return resolve(constants.get(node.name), new Set([...names, node.name]));
+    };
+    let root = resolve(program.body.find((entry: AstNode) => entry.type === 'ExportDefaultDeclaration')?.declaration);
+    let envName: string | undefined;
+    if (['ArrowFunctionExpression', 'FunctionExpression', 'FunctionDeclaration'].includes(root?.type)) {
+        const first = root.params?.[0];
+        const envProperty = first?.type === 'ObjectPattern' ? first.properties.find((p: AstNode) => !p.computed && (p.key?.name ?? p.key?.value) === 'env') : undefined;
+        if (envProperty?.value?.type === 'Identifier') envName = envProperty.value.name;
+        if (root.body.type === 'BlockStatement') {
+            root = root.body.body.length === 1 && root.body.body[0].type === 'ReturnStatement' ? resolve(root.body.body[0].argument) : null;
+        } else root = resolve(root.body);
+    }
+    const objectFields = (input: AstNode): Map<string, AstNode> | null => {
+        const node = resolve(input);
+        if (node?.type !== 'ObjectExpression' || node.properties.some((p: AstNode) => p.type !== 'Property' || p.computed || p.method || p.kind !== 'init')) return null;
+        const entries: Array<[string, AstNode]> = [];
+        for (const property of node.properties) {
+            const key = property.key.name ?? property.key.value;
+            if (typeof key !== 'string' || key === '__proto__') return null;
+            entries.push([key, property.value]);
+        }
+        return new Map(entries); // Last literal declaration wins, like JavaScript.
+    };
+    const fields = objectFields(root);
+    const stores = fields && objectFields(fields.get('stores'));
+    if (!fields || !stores) return { ...unknown('Cache default/stores must be statically resolvable object declarations; spreads, mutations and dynamic helpers remain unknown.'), stores: [] };
+    let nodes = 0;
+    const read = (input: AstNode, depth = 0): { status: 'resolved'; value: any } | { status: 'unknown'; reason: string } => {
+        if (++nodes > 4096 || depth > 16) return unknown('Inspection expression limits exceeded.');
+        const node = resolve(input);
+        if (node?.type === 'Literal') return { status: 'resolved', value: node.value };
+        if (node?.type === 'Identifier' && node.name === 'undefined') return { status: 'resolved', value: undefined };
+        if (node?.type === 'UnaryExpression' && ['-', '+'].includes(node.operator) && typeof node.argument.value === 'number') return { status: 'resolved', value: node.operator === '-' ? -node.argument.value : node.argument.value };
+        if (node?.type === 'CallExpression' && envName && node.callee.type === 'Identifier' && node.callee.name === envName) {
+            const key = node.arguments[0]?.value;
+            // Only public selection settings are used; arbitrary secret lookups are unknown.
+            if (!variables || !['CACHE_DRIVER', 'CACHE_BINDING', 'CACHE_DO_BINDING'].includes(key) || node.arguments.length > 2) return unknown('Environment selection is outside the inspected public variables.');
+            return Object.hasOwn(variables, key) ? { status: 'resolved', value: variables[key] }
+                : node.arguments.length === 2 ? (() => {
+                    const fallback = read(node.arguments[1], depth + 1);
+                    return fallback.status === 'resolved' ? { ...fallback, value: fallback.value ?? '' } : fallback;
+                })() : { status: 'resolved', value: '' };
+        }
+        if (node?.type === 'ArrayExpression' && !node.elements.some((entry: AstNode) => !entry || entry.type === 'SpreadElement')) {
+            const items = node.elements.map((entry: AstNode) => read(entry, depth + 1));
+            return items.every((item: any) => item.status === 'resolved') ? { status: 'resolved', value: items.map((item: any) => item.value) } : unknown('Array values are dynamic.');
+        }
+        const object = objectFields(node);
+        if (object) {
+            const result = Object.create(null);
+            for (const [key, expression] of object) {
+                const item = read(expression, depth + 1); if (item.status !== 'resolved') return item;
+                result[key] = item.value;
+            }
+            return { status: 'resolved', value: result };
+        }
+        return unknown('Expression cannot be resolved without executing application code.');
+    };
+    const selection = read(fields.get('default'));
+    return { status: 'resolved' as const, selection, stores: [...stores].map(([name, expression]) => {
+        const declaration = objectFields(expression);
+        const location = { line: lineNumberAt(code, expression.start) };
+        if (!declaration) return { name, location, status: 'unknown' as const, reason: 'Store declaration is dynamic.' };
+        return { name, location, status: 'resolved' as const, driver: read(declaration.get('driver')),
+            binding: declaration.has('binding') ? read(declaration.get('binding')) : { status: 'resolved' as const, value: undefined },
+            requires: declaration.has('requires') ? read(declaration.get('requires')) : { status: 'resolved' as const, value: undefined } };
+    }) };
+}
+
+/** Conservative candidates: registration calls may occur only at runtime or in unused modules. */
+export async function inspectStorageOverridesFromAst(code: string) {
+    if (code.length > 512 * 1024) return { status: 'unknown' as const, cache: ['*'], rateLimit: true, cacheDefault: true };
+    const parser = await loadParseSync(); const program = parser && parsedProgram(parser, code);
+    if (!program || code.length > 512 * 1024) return { status: 'unknown' as const, cache: ['*'], rateLimit: true, cacheDefault: true };
+    const aliases = new Map<string, 'cache' | 'rate-limit'>(); const namespaces = new Map<string, string>();
+    const cacheAliases = new Set<string>();
+    for (const statement of program.body) {
+        if (statement.type !== 'ImportDeclaration') continue;
+        const source = statement.source.value;
+        for (const specifier of statement.specifiers) {
+            if (specifier.type === 'ImportNamespaceSpecifier') namespaces.set(specifier.local.name, source);
+            const name = specifier.imported?.name ?? specifier.imported?.value;
+            if (['@cossackframework/framework', '@cossackframework/framework/cache'].includes(source) && name === 'extendCacheDriver') aliases.set(specifier.local.name, 'cache');
+            if (['@cossackframework/framework', '@cossackframework/framework/cache'].includes(source) && name === 'cache') cacheAliases.add(specifier.local.name);
+            if (source === '@cossackframework/core' && name === 'setRateLimitStore') aliases.set(specifier.local.name, 'rate-limit');
+        }
+    }
+    const cache = new Set<string>(); let rateLimit = false, cacheDefault = false;
+    const isCache = (node: AstNode): boolean => node?.type === 'Identifier' ? cacheAliases.has(node.name)
+        : node?.type === 'MemberExpression' && (node.computed ? node.property?.value : node.property?.name) === 'cache'
+            && ['@cossackframework/framework', '@cossackframework/framework/cache'].includes(namespaces.get(node.object?.name) ?? '');
+    const kind = (node: AstNode) => {
+        if (node?.type === 'Identifier') return aliases.get(node.name);
+        if (node?.type !== 'MemberExpression' || !namespaces.has(node.object?.name)) return undefined;
+        const property = node.computed ? node.property?.value : node.property?.name;
+        const source = namespaces.get(node.object.name);
+        return property === 'extendCacheDriver' && ['@cossackframework/framework', '@cossackframework/framework/cache'].includes(source ?? '') ? 'cache'
+            : property === 'setRateLimitStore' && source === '@cossackframework/core' ? 'rate-limit' : undefined;
+    };
+    const visit = (node: AstNode) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.type === 'ImportDeclaration') return;
+        const markNamespace = (source: string) => {
+            if (['@cossackframework/framework', '@cossackframework/framework/cache'].includes(source)) {
+                cache.add('*'); cacheDefault = true;
+            } else if (source === '@cossackframework/core') rateLimit = true;
+        };
+        if (node.type === 'Identifier' && namespaces.has(node.name)) { markNamespace(namespaces.get(node.name)!); return; }
+        if (node.type === 'MemberExpression' && namespaces.has(node.object?.name) && !kind(node) && !isCache(node)) {
+            if (node.computed && typeof node.property?.value !== 'string') {
+                markNamespace(namespaces.get(node.object.name)!); visit(node.property);
+            }
+            return;
+        }
+        if (node.type === 'MemberExpression' && isCache(node.object)) {
+            const property = node.computed ? node.property?.value : node.property?.name;
+            if (property === 'setDefaultStore' || property === undefined) cacheDefault = true;
+            // Reading ordinary cache operations is not a default-store override.
+            return;
+        }
+        // An escaped cache facade can be mutated by a helper; keep selection unknown.
+        if (isCache(node)) { cacheDefault = true; return; }
+        if (node.type === 'CallExpression' && kind(node.callee)) {
+            if (kind(node.callee) === 'rate-limit') rateLimit = true;
+            else cache.add(node.arguments[0]?.type === 'Literal' && typeof node.arguments[0].value === 'string' ? node.arguments[0].value : '*');
+            for (const argument of node.arguments) visit(argument);
+            return;
+        }
+        const reference = kind(node);
+        if (reference) { if (reference === 'cache') cache.add('*'); else rateLimit = true; return; }
+        for (const value of Object.values(node)) {
+            if (Array.isArray(value)) for (const item of value) visit(item);
+            else if (value && typeof value === 'object') visit(value);
+        }
+    };
+    visit(program);
+    return { status: 'resolved' as const, cache: [...cache], rateLimit, cacheDefault };
+}

@@ -28,6 +28,25 @@ Recipe resolution records structural facts; rendering rejects unsupported target
 before planning writes. Inspection can therefore report an older unsupported
 selection with its feature, target, and manifest source instead of discarding it.
 
+The storage capability model lives at
+`@cossackframework/core/storage-capabilities`, also re-exported by framework.
+It is independent of platform bindings and application configuration. Profiles
+separate process/shared locality, persistence, consistency, logical expiry,
+atomic increments and supported operations. A common interface does not imply
+distributed guarantees. Unknown traits reject positive requirements; custom
+declarations are their implementer's assertions, not remote verification.
+The database cache adapter declares structural metadata without importing core
+or framework; its deployment/read guarantees remain unknown.
+
+Cache facades/config declarations and limiter guards check requirements before
+operations. Cache factories may still construct resources during resolution.
+CLI provider inspection uses the compiler parser and selected Wrangler settings,
+without executing configuration or contacting a backend. Dynamic declarations
+and possible registration overrides remain unknown. Memory limiter capacity
+never erases live quotas; framed scope/caller and namespace/key tuples keep
+distinct identities separate. See the cache/rate-limiting guides for the
+breaking key migration and precise resource/operation limits.
+
 ## Desktop runtime boundary
 
 `@cossackframework/desktop` is the sole native application runtime. Its
