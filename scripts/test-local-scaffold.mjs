@@ -1,3 +1,4 @@
+import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
@@ -371,26 +372,7 @@ async function verifyNodeProductionAssets(projectDir) {
   }
 }
 
-const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
-const keep = process.env.COSSACK_KEEP_SMOKE === '1';
-
-try {
-  const tarballDirectory = path.join(temporaryRoot, 'tarballs');
-  await fs.mkdir(tarballDirectory);
-  await buildPublishablePackages();
-  const tarballs = await packPackages(tarballDirectory);
-
-  await run(process.execPath, [
-    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
-    'create',
-    'minimal-production',
-    '--adapter=cloudflare',
-    '--preset=minimal',
-    '--yes',
-  ], { cwd: temporaryRoot });
-  const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
-  await useTarballs(minimalProjectDir, tarballs);
-  await installGeneratedProject(minimalProjectDir);
+async function verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs) {
   await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
   await verifyMinimalProductionBundles(minimalProjectDir);
   await assertStarterBundleBudgets(minimalProjectDir);
@@ -606,6 +588,32 @@ export default class PackagingSsgPage extends Cossack {
   }
   await fs.access(path.join(projectDir, 'dist/server/index.js'));
   console.log(`Bidirectional local package smoke test passed: ${projectDir}`);
+}
+
+const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
+const keep = process.env.COSSACK_KEEP_SMOKE === '1';
+
+try {
+  const tarballDirectory = path.join(temporaryRoot, 'tarballs');
+  await fs.mkdir(tarballDirectory);
+  await buildPublishablePackages();
+  const tarballs = await packPackages(tarballDirectory);
+
+  await run(process.execPath, [
+    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
+    'create',
+    'minimal-production',
+    '--adapter=cloudflare',
+    '--preset=minimal',
+    '--yes',
+  ], { cwd: temporaryRoot });
+  const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
+  await useTarballs(minimalProjectDir, tarballs);
+  await installGeneratedProject(minimalProjectDir);
+  await verifyAgentDocumentation(minimalProjectDir);
+  if (!process.argv.includes('--agent-docs-only')) {
+    await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
+  }
 } finally {
   if (keep) {
     console.log(`COSSACK_KEEP_SMOKE=1; retained ${temporaryRoot}`);

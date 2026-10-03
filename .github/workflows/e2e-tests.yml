@@ -39,7 +39,8 @@ jobs:
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               packages/scaffold \
               packages/cossack \
-              scripts/test-local-scaffold.mjs || generated_app=true
+              scripts/test-local-scaffold.mjs \
+              scripts/verify-agent-documentation.mjs || generated_app=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               packages/studio || studio=true
           fi

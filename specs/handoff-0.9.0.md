@@ -39,7 +39,7 @@ See [setup and usage](../docs/local-agent-tools.md) and the
 [latest discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04).
 
 Next add authored API/component/recipe guidance, verified runtime support and
-executable examples. Prove offline behavior from installed tarballs.
+executable examples. Extend the installed-tarball acceptance to cover that content.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -71,6 +71,9 @@ Carry these unresolved limits into implementation and review:
   Never copy old credential values from Git history.
 
 ## Verification references
+
+The [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
+proves CLI/MCP catalog parity, version/export refresh and discovery with Node networking disabled in a generated tarball installation.
 
 Use the [discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04)
 for current CLI work and its test logs. The

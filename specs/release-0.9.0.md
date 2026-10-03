@@ -6127,3 +6127,38 @@ CLI-08 remains open for authored guidance, executable examples, verified runtime
 support and offline tarball acceptance. CLI-07 test-result and devtools trace tools
 remain open. The release checklist retains 58 IDs, with 24 complete and 34 open.
 Versions remain 0.8.3 until REL-04. No publication, deployment or push occurred.
+
+<a id="codex-installed-docs-acceptance-2026-10-04"></a>
+## Codex: Installed documentation acceptance (2026-10-04)
+
+Added `pnpm test:agent-docs:local`, also included in the existing generated-app
+CI acceptance path. It builds and packs local packages, generates a minimal
+application and installs the tarballs. CLI/MCP entrypoints and inspected packages
+must resolve inside that installation, rather than to workspace symlinks.
+The test checks installed versions, command metadata, packaged/generated guidance,
+renderer signatures, CLI/MCP parity and version/export refresh in a running server.
+Manifest replacement uses new files to avoid modifying pnpm store hardlinks.
+
+Node fetch, socket, HTTP and DNS calls are blocked during discovery. The guard
+records attempts even if callers catch errors. It is tested before discovery,
+and the final assertion proves no attempts occurred. MCP workers inherit the
+guard. Dependency installation can use the registry. This is ordinary Node API
+coverage, not operating-system isolation against hostile native code.
+
+Verification:
+
+- `pnpm test:agent-docs:local` passed after correcting a test assertion to expect
+  the server's explicit `isError: false`. Log: `/tmp/cossack-agent-docs-tarball-final.log`.
+- The acceptance builds publishable packages before packing them. The focused
+  command skips the unrelated application build/runtime smoke scenarios.
+- Script syntax checks, workflow YAML parsing and whitespace checks passed.
+- Root `pnpm tsc --noEmit` and all 11 package checks via `pnpm typecheck` passed.
+  Logs: `/tmp/cossack-docs-acceptance-root-types-final.log` and
+  `/tmp/cossack-docs-acceptance-package-types-final.log`.
+
+CLI-08 remains open for authored API/component/recipe guidance, executable
+examples, verified runtime support and acceptance of that remaining content.
+The renderer signature check does not establish complete declaration coverage
+for every package. CLI-07 stored results and RT-28 trace tools remain open.
+Task status remains 24 complete and 34 open. Versions remain 0.8.3.
+No publication, deployment, push or external credential rotation occurred.

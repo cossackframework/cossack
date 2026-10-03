@@ -611,6 +611,19 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex installed-tarball checkpoint (2026-10-04): the catalog foundation now passes
+`pnpm test:agent-docs:local` in a generated application with real local tarballs.
+The installed CLI and MCP entrypoints agree on versions, command metadata, the
+packaged guide and renderer declaration signatures. A running server refreshes
+changed versions and removed exports. Discovery runs with Node network calls
+blocked and recorded. Installation itself can use the registry.
+
+This acceptance also runs in the existing generated-app CI path. It does not
+prove every package's examples, component guidance or runtime support. Those
+original requirements, plus RT-23 and REL-02 dependencies, remain open. See the
+[acceptance record](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
+Older notes that list all installed-tarball discovery as pending are superseded.
+
 Codex export-discovery checkpoint (2026-10-04): wildcard/implicit declaration
 discovery is implemented. Catalogs add concrete wildcard matches while preserving
 the source pattern. Exact entries, more-specific patterns and null exclusions take

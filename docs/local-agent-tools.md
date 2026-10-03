@@ -148,3 +148,19 @@ provision an application.
 The implementation uses the official SDK's
 [stdio server entrypoint](https://ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/server/server/serveStdio.html).
 Tests cover both legacy initialization and protocol revision `2026-07-28`.
+
+## Test the installed documentation tools
+
+From the framework repository, run `pnpm test:agent-docs:local`. The test builds
+and packs the local packages, creates a minimal application, and installs the
+tarballs. Dependency installation can use the registry.
+
+The discovery phase runs the installed CLI and MCP server with Node fetch, socket,
+HTTP and DNS calls disabled. The guard records attempted calls even when callers
+catch their errors. This is a regression check for ordinary Node networking, not
+an operating-system sandbox for untrusted code.
+
+The test checks packaged and generated guides, installed versions, command
+schemas, renderer declarations, CLI/MCP parity and refreshed exports after a
+package change. It also runs inside `pnpm test:scaffold:local`. These checks do
+not certify every package's examples, runtime support or component guidance.
