@@ -4,6 +4,17 @@ import { expect } from 'vitest';
 import { expect as browserExpect } from '@playwright/test';
 export async function writeUrlStateAcceptance(root) {
   const directory = path.join(root, 'src/pages/list'); await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(root, 'src/App.ts'), `
+    import {Cossack,Page,Client} from '@cossackframework/core';
+    import {html} from '@cossackframework/renderer';
+    @Page({transport:'http'}) export class App extends Cossack {
+      @Client() onMount(){(window as any).__queryTestApp=this;}
+      render(){
+        if(!this.isServer && this.c.req.query('search')==='render-failing') throw new Error('deliberate render failure');
+        return html\`\${this.children}\`;
+      }
+    }
+  `);
   await fs.writeFile(path.join(root, 'src/filters.ts'), `
     import {defineUrlState,url} from '@cossackframework/core';
     export const filters=defineUrlState({search:url.string(),page:url.integer({default:1,min:1}),sort:url.enum(['name','price']),tags:url.array(url.string())});
@@ -57,6 +68,7 @@ export async function writeUrlStateAcceptance(root) {
       @Client() async searchOnly(){this.outcome=(await this.updateUrlState(filters,{search:'latest'})).outcome;}
       @Client() async fail(){this.outcome=(await this.updateUrlState(filters,{search:'failing'})).outcome;}
       @Client() leave(){return this.navigate('/plain');}
+      @Client() async renderFailure(){this.outcome=(await this.updateUrlState(filters,{search:'render-failing'})).outcome;}
       @Client() rememberDraft(){const draft=this.draft;(window as any).__lateDraftWrite=()=>{draft.text='obsolete owner';};}
       render(){return html\`<main id="rows"><p id="query-values">\${JSON.stringify(this.filters)}</p><p id="query-items">\${this.items}</p>
         <input id="page-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
@@ -64,6 +76,7 @@ export async function writeUrlStateAcceptance(root) {
         <button id="page-only" @click=\${this.pageOnly}>Page</button><button id="search-only" @click=\${this.searchOnly}>Search</button>
         <button id="fail-query" @click=\${this.fail}>Fail</button><button id="toggle-guard" @click=\${()=>{this.blocked=!this.blocked;}}>Guard</button>
         <button id="confirm-history" @click=\${()=>this.confirmNavigation(true)}>Confirm</button><span id="guard-checks">\${this.guardChecks}</span>
+        <button id="fail-render" @click=\${this.renderFailure}>Fail render</button>
         <button id="remember-draft" @click=\${this.rememberDraft}>Remember draft</button>
         <button id="redraw-draft" @click=\${()=>{this.revision++;}}>Redraw</button><span id="draft-revision">\${this.revision}</span>
         <span id="query-outcome">\${this.outcome}</span>
@@ -102,6 +115,22 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
     const length = await page.evaluate(() => history.length);
+    const beforeRenderFailure = page.url();
+    await page.evaluate(() => document.addEventListener('cossack:navigation-error', event => {
+      if(event.detail.error?.message==='deliberate render failure') event.preventDefault();
+    }));
+    await page.locator('#fail-render').click();
+    await browserExpect(page.locator('#query-outcome')).toHaveText('failed');
+    expect(page.url()).toBe(beforeRenderFailure);
+    await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
+    await browserExpect(page.locator('#layout-summary')).toHaveText('雪 & books:2');
+    await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
+    await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
+    await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
+    await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    // The actual App owns an unrelated promise that never settles. Navigation
+    // must render through its own completion path and release the stale cache.
+    await page.evaluate(() => { window.__queryTestApp.__updatePromise=new Promise(()=>{}); });
     await page.locator('#replace-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
     expect(await page.evaluate(() => history.length)).toBe(length); await settled(); expect(rpc).toHaveLength(0);
     const copied = await browser.newPage();

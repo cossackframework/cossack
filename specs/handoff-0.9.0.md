@@ -2,7 +2,41 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex draft target isolation (2026-10-03).
+> Latest checkpoint: Codex render recovery (2026-10-03).
+> Author: **Codex**. Continued after `457646e`. Read the
+> [verification](./release-0.9.0.md#codex-render-recovery-2026-10-03),
+> [RT-09 plan](./release-0.9.0-plan.md#rt-09) and
+> [public contract](../docs/prevent-navigation.md#navigation-completion-contract-glm-2026-10-02).
+>
+> Core owns a navigation render pass that bypasses stale update promises,
+> propagates render errors and stops later callbacks after revocation. Before
+> history commit, failed/canceled publication restores the prior page/layout
+> map, request/user/resource contexts, service binding and global SSR state.
+> The outgoing page remains alive until success. After commit, cleanup errors
+> leave the committed destination current. Pending restored reads can reload.
+>
+> Controlled cases cover error/veto/deadline recovery and newer navigation while
+> an old render waits. Generated Node/native workerd apps verify App.render
+> failure recovery and navigation past an actual never-settling App update.
+> Full core: 1,427/84 files. Full framework: 1,439/68 files. Full CLI: 608/44 files
+> before final callback guards. After the final rebuild, full framework, both
+> production URL browser cases, root TypeScript and all 11 package checks passed
+> again. No owned test/build process remains.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** Next: partial DOM teardown
+> with nested drafts and transient scoped services. Do not revive destroyed
+> components. Capture local child drafts before retirement and restore them only
+> into matching new owners. Keep transient scopes available until rollback DOM
+> reconciliation removes their descendants; revoke task publication immediately.
+> Then finish changed/nested ownership, interrupted same-URL history, backend read
+> counts and diagnostics. Application side effects remain outside rollback.
+> Continue every other unchecked task. Versions stay 0.8.3 until REL-04.
+>
+> Preserve reports.md/.zcodeignore. No push, publication, live cloud change,
+> external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex draft target isolation (2026-10-03).
 > Author: **Codex**. Continued after `c80fef6`. Read the
 > [verification](./release-0.9.0.md#codex-draft-isolation-2026-10-03),
 > [RT-09 plan](./release-0.9.0-plan.md#rt-09) and

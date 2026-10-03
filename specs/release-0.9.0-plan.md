@@ -2042,9 +2042,10 @@ Codex staging update (2026-10-03): the
 [RT-09 checkpoint](#rt-09) now supplies prepared page/layout ownership and a
 30-second navigation wait budget. The newer-navigation-before-old-bootstrap
 regression passes. Latest matching drafts transfer at publication, before tasks
-and mount hooks. The next acceptance work below now starts with shared render
-state, post-publication failures and interrupted history. The subsequent draft isolation checkpoint below resolves plain raw-target sharing
-with disposed owners; opaque native/class capabilities retain identity.
+and mount hooks. The later render-recovery checkpoint restores framework-owned
+state before history commit. Next cover nested state after partial DOM teardown
+and interrupted history. The draft isolation checkpoint resolves plain raw-target
+sharing with disposed owners; opaque native/class capabilities retain identity.
 
 **Next steps for GLM, in order:**
 
@@ -2181,14 +2182,15 @@ they do not cancel arbitrary application I/O or roll back effects that already
 ran in mount/render hooks. Read the
 [verification](./release-0.9.0.md#codex-staged-navigation-2026-10-03).
 
-Next, validate shared App render state and post-publication failure recovery.
-An interrupted render must not leave a mismatched visible tree, URL, service
-context or live owner. Hold render and transition callbacks separately, then
-exercise supersession, deadline and late rejection. Plain draft target sharing is fixed by the following checkpoint. Keep the
-opaque capability boundary explicit. Extend actual browsers for user/scope/provider/parent ownership changes,
-nested drafts, interrupted history and backend read counts. Add cache/scroll/
-fragment/transition fallback diagnostics and timeline evidence. Audit every
-original RT-08/RT-09 criterion before closure. No checkbox closes here.
+The subsequent render-recovery checkpoint below restores framework-owned tree,
+context and resource state before history commit. Next validate nested state
+after partial DOM teardown, changed/nested owners and interrupted history.
+Hold callbacks at each lifecycle boundary and compare visible tree, URL, service
+context, cleanup count and drafts. Plain draft target sharing is fixed by the
+following checkpoint. Keep the opaque capability boundary explicit. Extend actual
+browsers for user/scope/provider/parent ownership changes and backend read counts.
+Add cache/scroll/fragment/transition fallback diagnostics and timeline evidence.
+Audit every original RT-08/RT-09 criterion before closure. No checkbox closes here.
 
 
 Codex draft isolation checkpoint (2026-10-03): local capability capture now copies
@@ -2201,6 +2203,29 @@ publication without running getters. Read the
 [verification](./release-0.9.0.md#codex-draft-isolation-2026-10-03).
 Continue the remaining shared-render, post-publication recovery and full acceptance
 work above. Do not treat these focused draft tests as an RT-08/RT-09 closure.
+
+
+Codex render-recovery checkpoint (2026-10-03): core now owns a guarded navigation
+render pass. It does not join a stuck application update promise. It propagates
+render errors and suppresses later lifecycle callbacks once ownership is revoked.
+The framework keeps the outgoing page alive until rendering and history commit
+succeed. Before commit, failure/cancellation restores the page/layout map, retained
+request/user/resource contexts, service request bindings and global SSR state.
+Unresolved resource snapshots can reload rather than joining discarded promises.
+Snapshot recovery does not revive destroyed nested components or undo application
+side effects. Errors after commit keep the destination current. Read the
+[verification](./release-0.9.0.md#codex-render-recovery-2026-10-03).
+
+Controlled tests cover error/veto/deadline recovery and newer navigation while an
+old render waits. Actual Node/native workerd apps throw from App.render, verify
+restored page/layout/service/File state, then navigate while the App owns a promise
+that never settles. The prior ordinary history/query matrix stays in that fixture.
+Next audit partial DOM teardown with nested drafts and transient scopes. Keep
+transient scopes alive until rollback reconciliation removes their descendants,
+while immediately revoking their task publication. Do not revive destroyed child
+instances; restore captured local drafts only into matching new owners. Then test
+interrupted same-URL history entries and lifecycle cleanup failures, and finish
+the remaining criteria above.
 
 
 Done when: Browser tests cover rapid links, back/forward, navigation guards,

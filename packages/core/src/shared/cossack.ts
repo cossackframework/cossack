@@ -1241,6 +1241,32 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return true;
     }
 
+    /** @internal Restore retained request/resource ownership after an abandoned publication. */
+    public _frameworkCaptureNavigationContext(): () => void {
+        const path = this._cossack_path;
+        const url = this._cossack_url;
+        const params = this._cossack_params;
+        const user = this.user;
+        const children = this._childrenStateRegistry;
+        const scope = this._serviceScope;
+        const request = scope?.getRequestContext();
+        // Pending results belonged to the old entry identities. On recovery,
+        // unresolved reads can start again instead of joining discarded work.
+        const resources = new Map([...this._serverResources].map(([name, entry]) =>
+            [name, { ...entry, pending: undefined }] as const));
+        return () => {
+            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            this._cossack_path = path;
+            this._cossack_url = url;
+            this._cossack_params = params;
+            this.user = user;
+            this.provide(UserContext, user);
+            this._childrenStateRegistry = children;
+            this._serverResources = resources;
+            if (request) scope?.bindRequest(request);
+        };
+    }
+
     /** @internal Replace SSR resource ownership in a retained browser component. */
     @Client()
     public _frameworkHydrateNavigationResources(state: SerializedComponentState, pathname: string, destination: string): void {
@@ -2410,6 +2436,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     
     // Override performUpdate to wrap template with devtools markers for client-side rendering
     protected async performUpdate() {
+        return this._performOwnedUpdate(() => true, false);
+    }
+
+    /** @internal Render a navigation without joining a stale application update promise. */
+    public _frameworkRenderNavigation(isCurrent: () => boolean): Promise<boolean> {
+        return this._performOwnedUpdate(isCurrent, true);
+    }
+
+    private async _performOwnedUpdate(isCurrent: () => boolean, propagateError: boolean) {
+        const active = () => isCurrent() && !this.isInPhase(LifecyclePhase.Destroyed);
+        if (!isCurrent()) return false;
         // Skip if component is destroyed
         if (this._phase === LifecyclePhase.Destroyed) {
             return false;
@@ -2419,19 +2456,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Check again after async boundary (component may have been destroyed during await)
         // Use type assertion to avoid TS narrowing issue
-        if ((this._phase as LifecyclePhase) === LifecyclePhase.Destroyed) {
+        if ((this._phase as LifecyclePhase) === LifecyclePhase.Destroyed || !isCurrent()) {
             return false;
         }
 
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
+        const pendingUpdate = elementInternal.__updatePromise;
         const changedProperties = elementInternal.__changedProperties;
         const controllers = elementInternal.__controllers;
         try {
             shouldUpdate = this.shouldUpdate(changedProperties);
             if (shouldUpdate) {
                 // Controller hostUpdate
-                controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
+                controllers.forEach((c: any) => { if (active()) c.hostUpdate?.(); });
+                if (!active()) return false;
 
                 // Run @Task methods before willUpdate/render. On the server,
                 // tasks run during `bootstrap()` and state broadcasts. On the
@@ -2452,7 +2491,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     });
                 }
 
+                if (!active()) return false;
                 this.willUpdate(changedProperties);
+                if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) return false;
 
                 this.resetRenderState();
                 pushCurrentInstance(this);
@@ -2460,24 +2501,32 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // `_getWrappedTemplate` self-guards the render window (see `_render`).
                 const template = this._getWrappedTemplate();
 
+                if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) {
+                    popCurrentInstance();
+                    return false;
+                }
                 elementInternal.__notifyListeners(template);
 
                 popCurrentInstance();
 
+                if (!active()) return false;
                 this.updated(changedProperties);
 
                 // Controller hostUpdated
-                controllers.forEach((c: any) => c.hostUpdated && c.hostUpdated());
+                controllers.forEach((c: any) => { if (active()) c.hostUpdated?.(); });
             }
         } catch (e) {
-            console.error('Error during update:', e);
             if (instanceStack[instanceStack.length - 1] === this) {
                 popCurrentInstance();
             }
+            if (propagateError) throw e;
+            console.error('Error during update:', e);
+        } finally {
+            if (elementInternal.__updatePromise === pendingUpdate) {
+                elementInternal.__changedProperties = new Map();
+                elementInternal.__updatePromise = null;
+            }
         }
-
-        elementInternal.__changedProperties = new Map();
-        elementInternal.__updatePromise = null;
         return shouldUpdate;
     }
 

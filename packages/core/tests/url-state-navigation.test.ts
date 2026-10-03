@@ -81,6 +81,34 @@ it('snapshots before outgoing cleanup can change the transferred draft', async (
     next.destroy();
 });
 
+it('restores retained query, user, parameters, resources and shared service binding on rollback', async () => {
+    @Page({ transport: 'http' }) class Layout extends Cossack {
+        get request() { return this.c.req; }
+        get currentUser() { return this.user; }
+        get item() { return this.__serverResource('item', loader, { deps: () => [this.urlState(filters).page] }); }
+    }
+    const loader = vi.fn(async (_page: number) => 'loaded');
+    const layout = new Layout();
+    const requestContext = { context: { request: 'committed' }, user: { id: 'old' }, env: {} };
+    const bind = vi.fn();
+    (layout as any)._serviceScope = { bindRequest: bind, getRequestContext: () => requestContext };
+    await layout.bootstrap({ initialState: { ...state(), metadata: { ...state().metadata,
+        user: { id: 'old' }, params: { id: 'before' } },
+        serverResources: { item: { argsKey: '[1]', value: 'one' } } }, deferMount: true });
+    const restore = layout._frameworkCaptureNavigationContext();
+    layout._frameworkHydrateNavigationResources({ public: {}, metadata: { componentId: 'list', user: { id: 'new' }, params: { id: 'after' } },
+        serverResources: { item: { argsKey: '[2]', value: 'two' } } }, '/list', '/list?page=2');
+    expect(layout.item).toBe('two');
+    restore();
+    expect(layout.item).toBe('one');
+    expect(layout.request.query('page')).toBe('1');
+    expect(layout.request.param('id')).toBe('before');
+    expect(layout.currentUser).toMatchObject({ id: 'old' });
+    expect(bind).toHaveBeenLastCalledWith(requestContext);
+    expect(loader).not.toHaveBeenCalled();
+    layout.destroy();
+});
+
 it.each(['resolve', 'reject'] as const)('retained resource handoff discards a late %s and hydrates the new query without RPC', async settlement => {
     let resolve!: (value: string) => void; let reject!: (error: Error) => void;
     const pending = new Promise<string>((yes, no) => { resolve = yes; reject = no; });

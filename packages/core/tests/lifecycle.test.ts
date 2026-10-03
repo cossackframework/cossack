@@ -139,6 +139,55 @@ describe('Lifecycle Hooks', () => {
     });
 
     describe('terminal disposal', () => {
+        it('renders navigation without joining a stuck application update promise', async () => {
+            const c = new LifecycleComponent();
+            const pending = new Promise<boolean>(() => {});
+            c.requestUpdate = () => pending;
+            Object.defineProperty(c, 'updateComplete', { get: () => pending });
+            (c as any).__updatePromise = pending;
+            expect(await c._frameworkRenderNavigation(() => true)).toBe(true);
+            expect(c.renderCount).toBe(1);
+            expect((c as any).__updatePromise).toBeNull();
+            c.destroy();
+        });
+
+        it('propagates navigation render errors and permits a subsequent render', async () => {
+            class Broken extends Cossack { render(): any { throw new Error('broken render'); } }
+            const c = new Broken();
+            await expect(c._frameworkRenderNavigation(() => true)).rejects.toThrow('broken render');
+            c.render = () => renderer.html``;
+            expect(await c._frameworkRenderNavigation(() => true)).toBe(true);
+            c.destroy();
+        });
+
+        it('does not publish a template that revoked its navigation during render', async () => {
+            let current = true;
+            class Redirecting extends Cossack { render() { current = false; return renderer.html``; } }
+            const c = new Redirecting();
+            const notify = vi.spyOn(c as any, '__notifyListeners');
+            expect(await c._frameworkRenderNavigation(() => current)).toBe(false);
+            expect(notify).not.toHaveBeenCalled();
+            c.destroy();
+        });
+
+        it.each(['controller', 'willUpdate', 'listener'])('stops later hooks after revocation in %s', async boundary => {
+            let current = true;
+            const c = new LifecycleComponent();
+            const later = vi.fn();
+            const updated = vi.spyOn(c, 'updated');
+            (c as any).__controllers = [
+                { hostUpdate: () => { if (boundary === 'controller') current = false; }, hostUpdated: later },
+                { hostUpdate: () => { if (!current) later(); }, hostUpdated: later },
+            ];
+            if (boundary === 'willUpdate') vi.spyOn(c, 'willUpdate').mockImplementation(() => { current = false; });
+            if (boundary === 'listener') vi.spyOn(c as any, '__notifyListeners').mockImplementation(() => { current = false; });
+            expect(await c._frameworkRenderNavigation(() => current)).toBe(false);
+            expect(later).not.toHaveBeenCalled();
+            expect(updated).not.toHaveBeenCalled();
+            if (boundary === 'controller') expect(c.taskRunCount).toBe(0);
+            c.destroy();
+        });
+
         it('defers tasks, service binding, transport and mount until staged publication', async () => {
             const mounted = vi.fn();
             class Page extends Cossack {

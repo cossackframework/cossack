@@ -121,8 +121,9 @@ query response remains pending. A blocked or failed traversal restores the
 previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-during-back-and-forward)
 for confirmation and history ownership.
 
-Navigation has a 30-second completion budget. The complete post-publication,
-ownership-change and resource-read audit remains open in the
+Navigation has a 30-second completion budget and restores framework-owned state
+on failure before history commit. Nested state after partial DOM teardown,
+ownership changes and the resource-read audit remain open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
 ## Parsing and defaults

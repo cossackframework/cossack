@@ -377,6 +377,7 @@ export async function createClientApp({
   let currentPageUrl: string | undefined;
   let currentPageState: any;
   let committedUrl = window.location.href;
+  let publication: object | undefined;
   const ownershipKey = (state: any) => JSON.stringify([
     state?.metadata?.user ?? null, state?.runtime ?? null,
     state?.transport ?? 'http', state?.scopeKey ?? null, state?.providerTargets ?? null,
@@ -402,18 +403,23 @@ export async function createClientApp({
   }
 
   const triggerAppUpdate = async (isCurrent: () => boolean = () => true) => {
-      if (!isCurrent()) return;
-      appInstance.children = composeContent();
-      // A service/layout update may already be rendering the App when a
-      // navigation commits. Joining that in-flight request after replacing
-      // `children` is racy: the active render may already have captured the
-      // previous tree, yet callers would treat its completion as if the new
-      // page had been committed. Wait for it to finish, then always schedule
-      // a fresh App pass for the latest composition.
-      await appInstance.updateComplete;
-      if (!isCurrent()) return;
-      await appInstance.requestUpdate();
-      if (isCurrent()) syncHead();
+      const expectedPublication = publication;
+      const allowed = () => publication === expectedPublication && isCurrent();
+      if (!allowed()) return false;
+      // Core owns this render rather than joining an unrelated, potentially
+      // abandoned application update. Small non-core adapters keep the fallback.
+      let rendered: boolean;
+      if (appInstance._frameworkRenderNavigation) {
+        appInstance.children = composeContent();
+        rendered = await appInstance._frameworkRenderNavigation(allowed);
+      } else {
+        await appInstance.updateComplete;
+        if (!allowed()) return false;
+        appInstance.children = composeContent();
+        rendered = await appInstance.requestUpdate();
+      }
+      if (allowed()) syncHead();
+      return rendered;
   };
 
   let _lastHeadTagsJson: string | undefined;
@@ -483,10 +489,15 @@ export async function createClientApp({
     }));
     assertCurrent();
     const staged = new Set<Cossack>();
-    let published = false;
+    let finalized = false;
+    let abandoned = false;
+    let rollback: (() => void) | undefined;
+    let retire: (() => void) | undefined;
     const dispose = () => {
       owner?.signal.removeEventListener('abort', dispose);
-      if (published) return;
+      if (finalized || abandoned) return;
+      abandoned = true;
+      rollback?.();
       for (const instance of [...staged].reverse()) {
         try { instance.destroy(); } catch (error) { console.error('Navigation cleanup failed:', error); }
       }
@@ -541,6 +552,13 @@ export async function createClientApp({
 
       return {
         dispose,
+        finish() {
+          assertCurrent();
+          finalized = true;
+          owner?.signal.removeEventListener('abort', dispose);
+          rollback = undefined;
+          retire?.();
+        },
         async commit(onMutation?: (state: any) => void) {
           assertCurrent();
           const samePage = currentPage && currentPageFile === componentPath && currentPageUrl &&
@@ -549,14 +567,52 @@ export async function createClientApp({
           const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
           if (draft) nextPage._frameworkAdoptClientDraft(draft);
           const oldPage = currentPage;
-          const staleLayouts = currentLayoutInstances.filter(layout => ![...nextLayouts.values()].includes(layout));
+          const oldLayouts = currentLayoutInstances;
+          const oldMap = new Map(currentLayoutsMap);
+          const oldFile = currentPageFile;
+          const oldUrl = currentPageUrl;
+          const oldState = currentPageState;
+          const oldInitial = window.__INITIAL_STATE__;
+          const oldPublication = publication;
+          const token = {};
+          const restorers = [appInstance, ...oldLayouts, ...(oldPage ? [oldPage] : [])]
+            .map(instance => instance._frameworkCaptureNavigationContext?.());
+          const staleLayouts = oldLayouts.filter(layout => ![...nextLayouts.values()].includes(layout));
+          retire = () => {
+            const errors: unknown[] = [];
+            for (const instance of [...(oldPage ? [oldPage] : []), ...staleLayouts]) {
+              try { instance.destroy(); } catch (error) { errors.push(error); }
+            }
+            if (errors.length) throw new AggregateError(errors, '[Cossack] Outgoing navigation cleanup failed.');
+          };
+          rollback = () => {
+            if (publication !== token) return;
+            publication = oldPublication;
+            currentPage = oldPage;
+            currentLayoutInstances = oldLayouts;
+            currentLayoutsMap.clear();
+            for (const [path, instance] of oldMap) currentLayoutsMap.set(path, instance);
+            currentPageFile = oldFile;
+            currentPageUrl = oldUrl;
+            currentPageState = oldState;
+            window.__INITIAL_STATE__ = oldInitial;
+            for (const restore of restorers) restore?.();
+            appInstance.setCurrentPage(oldPage!);
+            loadingPage = undefined;
+            isDisplayingLoadingState = false;
+            void triggerAppUpdate(() => publication === oldPublication)
+              .catch(error => console.error('Navigation recovery render failed:', error));
+          };
+          publication = token;
           onMutation?.(initialState);
           appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
           appInstance.updatePath(pathname, destinationUrl);
+          assertCurrent();
           for (const { path, state } of layoutStack) {
             const instance = nextLayouts.get(path)!;
             if (!staged.has(instance)) instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl);
             instance.updatePath(pathname, destinationUrl);
+            assertCurrent();
           }
           currentLayoutsMap.clear();
           for (const [path, instance] of nextLayouts) currentLayoutsMap.set(path, instance);
@@ -568,25 +624,22 @@ export async function createClientApp({
           appInstance.setCurrentPage(nextPage);
           loadingPage = undefined;
           isDisplayingLoadingState = false;
-          published = true;
-          owner?.signal.removeEventListener('abort', dispose);
-          try {
-            oldPage?.destroy();
-            for (const instance of staged) {
-              assertCurrent();
-              await instance._frameworkPublishNavigation?.();
-            }
+          assertCurrent();
+          for (const instance of staged) {
             assertCurrent();
-            await triggerAppUpdate(isCurrent);
-            const sourceFile = (nextPage.constructor as any).__source?.file;
-            if (import.meta.env.DEV && sourceFile) {
-              void import('./devtools.js').then(({ registerDevToolsInstance }) => {
-                if (currentPage === nextPage && isCurrent()) registerDevToolsInstance(sourceFile, nextPage);
-              }).catch(error => console.error('DevTools registration failed:', error));
-            }
-          } finally {
-            // Outgoing descendants finish DOM teardown before layout services retire.
-            for (const instance of staleLayouts) instance.destroy();
+            await instance._frameworkPublishNavigation?.();
+          }
+          assertCurrent();
+          const rendered = await triggerAppUpdate(isCurrent);
+          assertCurrent();
+          if (rendered === false) throw Object.assign(new Error('[Cossack] App declined the navigation render.'), {
+            code: 'COSSACK_NAVIGATION_RENDER_SKIPPED',
+          });
+          const sourceFile = (nextPage.constructor as any).__source?.file;
+          if (import.meta.env.DEV && sourceFile) {
+            void import('./devtools.js').then(({ registerDevToolsInstance }) => {
+              if (currentPage === nextPage && isCurrent()) registerDevToolsInstance(sourceFile, nextPage);
+            }).catch(error => console.error('DevTools registration failed:', error));
           }
         },
       };
@@ -598,6 +651,7 @@ export async function createClientApp({
 
   const initial = await prepareComponent(window.__INITIAL_STATE__, window.location.href);
   await initial.commit();
+  initial.finish();
   // Mount now that the full app tree (header + page + footer) is composed.
   // Hydrate the existing SSR DOM in place instead of wiping it — the server
   // already rendered this exact tree, so we bind to the existing nodes (no
@@ -666,7 +720,7 @@ export async function createClientApp({
     let ownLoading: Cossack | undefined;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
     const requestedHistory = getNavigationHistoryLocation(window.history.state);
-    let treeMutationStarted = false;
+    let navigationCommitted = false;
     let restorationAttempted = false;
     if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
       // popstate has already activated the destination entry. Do not let a
@@ -774,7 +828,6 @@ export async function createClientApp({
         if (intent && !intent.isCurrent()) { ownerDisposed = true; return; }
         owner.assertCurrent();
         await prepared!.commit(preparedState => {
-          treeMutationStarted = true;
           window.__INITIAL_STATE__ = preparedState;
         });
         owner.assertCurrent();
@@ -790,6 +843,9 @@ export async function createClientApp({
         }
         committedUrl = new URL(destinationUrl, window.location.href).href;
         committedHistory = getNavigationHistoryLocation(window.history.state) ?? committedHistory;
+        navigationCommitted = true;
+        prepared!.finish();
+        owner.assertCurrent();
         applyNavigationScroll(
           destinationUrl,
           options?.scroll ?? defaultScrollBehavior,
@@ -845,8 +901,9 @@ export async function createClientApp({
       }));
       return { outcome: redirected ? 'redirected' : 'completed', url: destinationUrl };
     } catch (error) {
+      prepared?.dispose();
       if (seq !== navigationSequence) return { outcome: 'superseded', url };
-      if (navigationType === 'traverse' && !treeMutationStarted && !restorationAttempted) {
+      if (navigationType === 'traverse' && !navigationCommitted && !restorationAttempted) {
         await moveHistory(committedHistory, committedUrl);
         if (seq !== navigationSequence) return { outcome: 'superseded', url };
       }

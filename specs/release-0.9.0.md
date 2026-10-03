@@ -86,6 +86,58 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-render-recovery-2026-10-03"></a>
+## Codex render recovery (2026-10-03)
+
+Author: **Codex**. Continued after `457646e`. App rendering could swallow an
+exception and report navigation success. Waiting on an unrelated App update
+promise also blocked later rendering. The outgoing page was already destroyed,
+so failure after publication had no live page owner to restore.
+
+Core now owns a guarded navigation render pass, independent of cached application
+update promises. It preserves the render/controller lifecycle, propagates errors,
+and checks ownership before template publication and later lifecycle hooks.
+A shouldUpdate veto reports COSSACK_NAVIGATION_RENDER_SKIPPED. Ordinary background
+updates keep their existing logged-error behavior. Navigation customization uses
+render/lifecycle hooks, not requestUpdate/performUpdate synchronization overrides.
+
+The framework keeps the outgoing page alive through rendering. Before history
+commit, cancellation or failure restores the prior page/layout map, request URL,
+parameters, user, resource entries, service request binding and global SSR state.
+Restored unresolved reads can reload rather than join discarded results. An
+identity guard prevents late recovery work from overwriting a newer publication.
+After rendering and history commit, old owners retire. Cleanup/completion errors
+after that boundary leave the committed destination current. Sibling outgoing
+owners still receive cleanup when one cleanup throws.
+
+Core tests cover stuck update promises, render errors, revocation during render,
+controllers, willUpdate and listeners, plus retained context/resource restoration.
+Framework tests cover error/veto/deadline recovery and a newer navigation completing
+before an obsolete render is released. Real generated Node/native workerd apps
+throw from App.render, verify restored page/layout/service/File state, and then
+navigate with an actual App update promise that never settles.
+
+Verification checkpoints: full core **1,427 / 84 files** and full framework
+**1,439 / 68 files** pass. Both builds and all type checks pass. Full CLI
+**608 / 44 files** passed in 337 seconds before the final callback guard tightening.
+After that tightening, both packages were rebuilt. Final full framework
+**1,439/68**, both generated production URL browser cases (**2 passed / 26 skipped**),
+root TypeScript and all **11** package checks passed again. No owned test/build
+process remains. The full CLI suite was not repeated after those final guards.
+Initial focused failures came from a renderer mock classifying null as a template;
+the tests now return its supported empty template. Type checking caught an omitted
+resource loader argument and required serialized-state fields in a new fixture.
+Those fixture declarations are corrected. No production type error was suppressed.
+
+Limits: framework context recovery cannot undo arbitrary application effects.
+Nested components already removed by DOM teardown are not revived. Next add
+partial-DOM recovery acceptance, preserving nested drafts through new owners and
+keeping transient layout scopes alive until renderer descendants retire. Then
+finish changed/nested ownership, interrupted same-URL history, backend read counts,
+scroll/fragment/transition diagnostics and the original acceptance audit.
+All **58 original IDs** remain: **22 checked / 36 unchecked**. No checkbox closes.
+Versions stay 0.8.3 until REL-04. No live cloud or release-wide gate was run.
+
 <a id="codex-draft-isolation-2026-10-03"></a>
 ## Codex draft target isolation (2026-10-03)
 

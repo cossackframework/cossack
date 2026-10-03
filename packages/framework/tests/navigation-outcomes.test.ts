@@ -7,6 +7,10 @@ const fixture = vi.hoisted(() => ({
     guard: async () => false,
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
+    renderGate: undefined as Promise<void> | undefined,
+    renderStarted: false,
+    renderError: false,
+    renderSkip: false,
     bootstrapUrls: [] as string[],
     page: undefined as any,
 }));
@@ -51,6 +55,16 @@ class Component {
 class App extends Component {
     setCurrentPage(page: any) { fixture.page = page; }
     mount() {}
+    async _frameworkRenderNavigation(isCurrent: () => boolean) {
+        if (this.children === '/slow') {
+            fixture.renderStarted = true;
+            if (fixture.renderGate) await fixture.renderGate;
+            if (fixture.renderError) throw new Error('render failed');
+            if (fixture.renderSkip) return false;
+        }
+        if (!isCurrent()) return false;
+        return this.requestUpdate();
+    }
     override async requestUpdate() {
         document.querySelector('#app')!.textContent = this.children;
         return true;
@@ -81,6 +95,10 @@ beforeEach(async () => {
     fixture.guard = async () => false;
     fixture.bootstrapGate = undefined;
     fixture.bootstrapStarted = false;
+    fixture.renderGate = undefined;
+    fixture.renderStarted = false;
+    fixture.renderError = false;
+    fixture.renderSkip = false;
     fixture.bootstrapUrls = [];
     (globalThis as any).__cossack_invalidatePageCache?.();
     window.history.replaceState({}, '', '/start');
@@ -435,6 +453,50 @@ describe('navigation completion behavior', () => {
         expect(destroyed).not.toHaveBeenCalled();
         expect(window.location.search).toBe('');
         expect(window.__INITIAL_STATE__.pathname).toBe('/start');
+    });
+
+    it.each(['error', 'veto'])('restores the prior page after render %s without destroying its owner', async failure => {
+        const previous = fixture.page;
+        const destroyed = vi.spyOn(previous, 'destroy');
+        fixture.renderError = failure === 'error';
+        fixture.renderSkip = failure === 'veto';
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('slow')));
+        const result = await navigate('/slow');
+        expect(result).toMatchObject({ outcome: 'failed' });
+        if (failure === 'veto') expect(result.error).toMatchObject({ code: 'COSSACK_NAVIGATION_RENDER_SKIPPED' });
+        await vi.waitFor(() => expect(document.querySelector('#app')!.textContent).toBe('/start'));
+        expect(fixture.page).toBe(previous);
+        expect(destroyed).not.toHaveBeenCalled();
+        expect(window.__INITIAL_STATE__.pathname).toBe('/start');
+        expect(window.location.pathname).toBe('/start');
+    });
+
+    it('recovers before a newer navigation while an obsolete render remains pending', async () => {
+        let release!: () => void;
+        fixture.renderGate = new Promise<void>(resolve => { release = resolve; });
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => documentResponse(url.slice(1))));
+        const older = navigate('/slow');
+        await vi.waitFor(() => expect(fixture.renderStarted).toBe(true));
+        expect(await navigate('/fast')).toMatchObject({ outcome: 'completed' });
+        expect(await older).toMatchObject({ outcome: 'superseded' });
+        release();
+        await Promise.resolve(); await Promise.resolve();
+        expect(document.querySelector('#app')!.textContent).toBe('/fast');
+        expect(window.location.pathname).toBe('/fast');
+        expect(window.__INITIAL_STATE__.pathname).toBe('/fast');
+    });
+
+    it('restores page ownership after a render deadline and allows a later commit', async () => {
+        const previous = fixture.page;
+        fixture.renderGate = new Promise<void>(() => {});
+        vi.useFakeTimers();
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => documentResponse(url.slice(1))));
+        const pending = navigate('/slow');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_TIMEOUT' } });
+        expect(fixture.page).toBe(previous);
+        expect(document.querySelector('#app')!.textContent).toBe('/start');
+        expect(await navigate('/fast')).toMatchObject({ outcome: 'completed' });
     });
 
     it.each(['guard', 'bootstrap'])('bounds an unresponsive %s and permits a later navigation', async boundary => {

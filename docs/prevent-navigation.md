@@ -71,7 +71,7 @@ the page render, history change, and scroll update. Applications that call
 | --- | --- |
 | `completed` | The page rendered, history updated, scroll policy applied. |
 | `redirected` | The server redirected during the fetch; `url` includes the final path, query, and fragment. |
-| `superseded` | A newer navigation began while this page loaded; the late response was discarded and never committed. |
+| `superseded` | A newer navigation took ownership. Revoked work cannot publish further changes. |
 | `canceled` | A `preventNavigation` handler stopped this navigation. |
 | `failed` | The fetch or render threw after the error event; `error` carries the cause. |
 
@@ -80,10 +80,16 @@ const result = await this.navigate('/dashboard');
 if (result.outcome === 'superseded') return; // a newer navigation owns the UI
 ```
 
-Guards that throw produce `failed`. A superseded request cannot update history
-or emit completion events. New page and layout bootstrap runs before publication,
+Guards that throw produce `failed`. After revocation, old work cannot update
+history or emit completion events. A destination committed before a newer intent
+remains a valid history entry. New page and layout bootstrap runs before publication,
 outside the commit queue. A stalled old bootstrap cannot block a newer page.
-Preparation failures keep the committed page alive. Use `redirect()` in server methods.
+The old page stays alive until the new tree renders and history commits.
+Before that commit, failure or cancellation restores the page, layout map,
+request contexts, resource entries and global SSR state. Unresolved restored
+resource reads can reload instead of joining discarded results. After commit,
+cleanup or completion-hook errors leave the committed destination current.
+Use `redirect()` in server methods.
 
 Navigation has one 30-second completion budget across asynchronous guards, fetch,
 imports, preparation, rendering and transition completion. Expiry revokes its
@@ -94,8 +100,15 @@ navigation returns `failed`; otherwise the existing reload fallback runs.
 
 The deadline settles the framework's wait. It cannot stop arbitrary application
 I/O, synchronous blocking code, or undo effects from a custom render or mount
-hook that already ran. Shared App render state and failures after publication
-still need the remaining RT-09 acceptance audit. A later navigation can retry.
+hook that already ran. Nested component state after partial DOM teardown still
+needs its RT-08/RT-09 acceptance audit. A later navigation can retry.
+
+Navigation uses a core-owned render pass and does not join an unrelated pending
+App update promise. It calls the normal render/controller lifecycle and reports
+render errors through the navigation failure path. Returning false from the App's
+shouldUpdate hook reports `COSSACK_NAVIGATION_RENDER_SKIPPED`. Customize render
+and lifecycle hooks rather than using requestUpdate or performUpdate overrides
+as navigation synchronization hooks.
 
 Page fetches share requests with prefetches, but each reader owns its wait.
 A newer navigation releases the old navigation's reader immediately. The request

@@ -55,6 +55,18 @@ Asynchronous navigation waits have a 30-second budget and report
 COSSACK_NAVIGATION_TIMEOUT. Superseding a stalled bootstrap lets a newer page
 complete. Arbitrary application effects after publication cannot be rolled back.
 
+Navigation now keeps the outgoing page alive until rendering and history commit
+succeed. Failure before commit restores framework-owned tree, context, resource
+and SSR state. Pending resource reads can reload after recovery. Application
+side effects and nested state already removed by DOM teardown are not restored
+by this mechanism. Errors after history commit leave that destination current.
+
+Core owns navigation rendering and propagates render errors into the navigation
+failure path. Unrelated pending App update promises no longer block it. Use render
+and lifecycle hooks for customization; requestUpdate/performUpdate overrides are
+not navigation synchronization hooks. An App shouldUpdate veto fails navigation
+with COSSACK_NAVIGATION_RENDER_SKIPPED instead of reporting a completed render.
+
 Local draft transfer now copies plain records and arrays instead of sharing their
 raw targets with the disposed page. Cycles, aliases and native File identity are
 preserved. Native/class/function values remain opaque references. Accessors in
