@@ -702,3 +702,21 @@ leading zeroes. Length must be an integer from 1 to 32 (default 6).
 and initial values do not emit either callback. Both receive the native input target.
 Completion reports an edited code and does not imply server verification.
 Native form reset restores the uncontrolled default or current controlled value.
+
+## Combobox requires a stable ID and explicit selection ownership
+
+Provide a page-unique `id` and associate a visible label through `for`, or set
+`aria-label`. Random popup IDs are removed. The component owns combobox roles,
+popup ARIA relationships, autocomplete and the input value. Native `@events`
+and other supported attributes target the text input.
+
+Use `defaultValue` for an uncontrolled initial selection. With `value`, update the
+parent value in `onChange` to accept selection. Options need unique nonempty string
+values and nonempty labels. Disabled options cannot be selected. A missing or
+disabled selected option displays and submits an empty value.
+
+Typing filters labels without changing selection. `name` submits the option value
+through a hidden input. Escape, Tab, blur and popup dismissal restore the committed
+label. Form reset restores the initial uncontrolled selection or current controlled
+value. Native `required` needs a selected option, not arbitrary search text.
+Localize `placeholder`, `emptyLabel` and `requiredMessage` as needed.

@@ -6663,3 +6663,45 @@ Next: Combobox, MultiSelect and DatePicker. Combobox currently drops native prop
 lacks combobox ARIA semantics and can retain a stale selected label after parent
 updates. The broader application/accessibility and release runtime matrix remain.
 No release checkbox or package version changed.
+
+<a id="codex-combobox-2026-10-04"></a>
+## Codex: Combobox selection and form contract (2026-10-04)
+
+Combobox previously discarded native props, used random popup IDs, lacked
+combobox/listbox semantics and retained old selected labels after parent updates.
+Its text input did not provide a usable form-value contract.
+
+Combobox now requires a stable page-unique id and exposes closed input attributes
+and event types. It owns popup relationships and submits the selected option value
+through a hidden input. Search text filters choices without committing arbitrary
+values. Controlled selections require parent acceptance; uncontrolled selections
+start from defaultValue. Current options determine the displayed label. Missing
+or disabled options cannot be committed or submitted as valid selections.
+
+Arrow keys skip disabled choices. Enter commits the active option. Escape, Tab,
+blur and native popup dismissal discard search and restore the committed label.
+The input keeps focus while aria-activedescendant identifies the active option.
+Popup placement follows input size, viewport space, scroll and resize. Disabled
+fieldsets close an open popup. Required validation checks selection, and form
+reset respects controlled values, initial defaults and canceled reset events.
+Native event cancellation takes precedence over internal keyboard handling.
+
+The demo now supplies a stable ID and accessible name. Migration notes and
+package-owned guidance explain attribute, focus and selection ownership. The
+keyboard design follows the [W3C combobox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/).
+Full assistive-technology acceptance remains part of the broader UI audit.
+
+Verification: UI build, 141 UI tests across 13 files, root `pnpm tsc --noEmit`
+and all 11 package type checks pass. Production Chromium checks no-JS SSR,
+retained hydration, fresh rendering, pointer/keyboard focus, theme sizing/rings,
+controlled acceptance/rejection, parent resets, option removal, disabled options,
+required validation, FormData, native/canceled reset, fieldsets and event vetoes.
+The fresh-render check also verifies fieldset changes after client insertion.
+
+The installed-tarball verifier checks Combobox props and exact-symbol CLI/MCP
+parity. Installed acceptance passed with Node networking disabled during discovery.
+All six existing packaged examples compiled and executed.
+Logs: `/tmp/cossack-combobox-{build,ui,browser,root-types,package-types,agent-docs}.log`.
+
+Sixteen UI foundations are reviewed. Next: MultiSelect, then DatePicker.
+RT-23 and CLI-07/CLI-08 remain open. No release checkbox or package version changed.

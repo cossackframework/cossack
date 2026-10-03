@@ -646,6 +646,8 @@ export class ComponentsDemo extends Cossack {
                         </div>
                         <div class="w-56">
                             ${component(Combobox, {
+                                id: 'demo-country',
+                                'aria-label': 'Country',
                                 options: [
                                     { value: 'us', label: 'United States' },
                                     { value: 'vn', label: 'Vietnam' },

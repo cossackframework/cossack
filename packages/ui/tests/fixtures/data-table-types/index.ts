@@ -151,3 +151,17 @@ component(InputOTP,{maxlength:4});
 component(InputOTP,{onComplete:(value:number)=>{void value;}});
 // @ts-expect-error OTP no longer accepts arbitrary ignored attributes.
 component(InputOTP,{placehoder:'Code'});
+
+import { Combobox, type ComboboxOption } from '@cossackframework/ui';
+const countries: readonly ComboboxOption[] = [{value:'us',label:'United States',disabled:false}];
+component(Combobox,{id:'country',options:countries,name:'country',required:true,'aria-label':'Country',onChange:value=>value.toUpperCase(),'@keydown':event=>event.currentTarget.select()});
+// @ts-expect-error Stable SSR/hydration ID is required.
+component(Combobox,{options:countries});
+// @ts-expect-error The component owns the input role.
+component(Combobox,{id:'country',role:'textbox'});
+// @ts-expect-error Selected option value belongs to value, not a native value directive.
+component(Combobox,{id:'country','.value':'us'});
+// @ts-expect-error Options are labeled string values.
+component(Combobox,{id:'country',options:[{value:1,label:'One'}]});
+// @ts-expect-error No arbitrary prop index signature.
+component(Combobox,{id:'country',placehoder:'Search'});
