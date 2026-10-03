@@ -2,7 +2,66 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex coordinator cancellation (2026-10-03):** read
+> **Latest checkpoint — Codex cache contracts (2026-10-03):** **Author: Codex.**
+> Continued after `e6e5677`. Read [review/evidence](./release-0.9.0.md#codex-cache-contracts-2026-10-03),
+> [detailed RT-18 plan](./release-0.9.0-plan.md#rt-18) and
+> [cache migration/ownership guide](../docs/cache.md).
+>
+> Fixed same-name binding reuse/missing-binding fallback, ignored custom store
+> options and memory-extension registration. Built-ins use actual binding identity
+> and complete named declarations; custom factories belong to the current request.
+> Same-request memoization tracks shallow env fields/identities, so nested env
+> objects must remain stable. Resource disposal remains the factory/caller's job.
+> `remember()` captures its provider before awaiting the computation.
+>
+> Public cache TTLs now use integer milliseconds (`ttlMs`), matching limiter windows.
+> Facade `set()` defaults to 3_600_000 ms; direct stores/batches omit expiration
+> unless supplied. Zero expires immediately; invalid durations/batch entries reject
+> before any write. Multiply old TTL arguments by 1,000 and rename `ttlSeconds` in
+> custom/batch contracts. The database adapter stays structurally independent;
+> matching pure validators live in each package and must remain aligned.
+>
+> KV framing prevents namespace/key collisions. Versioned envelopes enforce logical
+> expiry independently of native minimum-60-second retention. Old unframed records
+> are intentionally not read; indefinite legacy keys need explicit cleanup. DB/DO
+> epoch timestamp formats remain unchanged. Stale KV reads cannot delete newer
+> writes; real SQLite interleaving proves conditional cleanup preserves replacements.
+> DO query-key/found-record protocol preserves null and dot segments; deploy the
+> client and class together. DO stubs are obtained inside each operation.
+>
+> Cache key/value/batch limits, full batch prevalidation, LRU count/serialized-byte
+> bounds and bounded DO I/O are covered. DO client requests use five seconds/current
+> request signals, strict UTF-8, EOF and at most 2 MiB JSON; unused/error/late bodies
+> are disposed without awaiting a producer cancellation hook. A dispatched write
+> can still commit; backend failures may leave partial batches. This does not apply
+> an automatic I/O deadline to arbitrary custom cache/DB calls or promise rollback.
+>
+> Native workerd imports the compiled cache/config/core entries. Two Workers share
+> native KV/DO storage, isolate alternate bindings and survive actual DO eviction
+> and entrypoint reload. Short TTLs expire while KV retains the underlying envelope.
+> This proves native compiled-library storage behavior, not live regional KV/write
+> throttling, actual pre-header TCP abort delivery or remote producer shutdown.
+> Guides, agent examples, runnable demo and generated acceptance use milliseconds.
+>
+> Verified: framework **1144**/53 files (cache **161**, transport matrix **354**),
+> CLI **570**/42 including all **14** generated/runtime cases plus native
+> storage/counter/socket fixtures and the real-pnpm release fixture; database
+> **86**/15, scaffold **108**/4: **1908** passing cases. Final sequential
+> framework/database builds, root `pnpm tsc --noEmit` and all **11** typecheck
+> configs pass. Core/Node/Deno sources retain prior unchanged-source evidence;
+> this is a reviewed checkpoint, not a complete release audit.
+>
+> **14/58 checked; all 44 unchecked retained. RT-18 remains open.** Next implement
+> limiter URL/scheme/redirect/key/namespace/capacity policies, provider capability
+> declarations and inspection (including units), and reject unsupported requested
+> guarantees before I/O. Audit all RT-18 criteria before checking it. Keep the
+> actual pre-header disconnect gap and arbitrary action/init/restoration deadlines
+> under RT-01, plus Deno/Electron/live-provider release gates. Follow the full plan;
+> package versions remain 0.8.3 until REL-04. Preserve `reports.md`/`.zcodeignore`.
+> Build declarations before CLI/generated consumers; never invoke framework
+> `pretest` concurrently with those tests. Use `pnpm exec vitest run` directly.
+
+> **Previous checkpoint — Codex coordinator cancellation (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-sse-cancellation-2026-10-03),
 > [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
 > [SSE semantics](../docs/sse.md). **Author: Codex.** Continued after `87495f7`.

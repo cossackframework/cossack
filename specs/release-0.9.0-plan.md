@@ -1280,6 +1280,43 @@ fetch cases inside workerd prove late-body disposal for both clients; these are
 not live Redis or native header-abort guarantees. Remote native producer cancel
 callbacks were not observed after cancelling the subrequest; do not claim them.
 
+Codex cache checkpoint (2026-10-03, after `e6e5677`): public cache TTLs now
+use nonnegative integer milliseconds (`ttlMs`), including the structurally
+independent database adapter. Facade `set()` defaults to 3_600_000 ms; omitted
+TTL on direct stores or batch entries remains indefinite. Zero expires at once.
+Invalid durations/batches reject before writes; `remember()` validates even on
+a hit and captures its provider before awaiting its computation.
+
+Store selection no longer reuses the first same-name binding: actual binding
+identity/full named declarations own built-in wrappers. A missing/invalid
+current binding rejects before memo lookup. Custom factories are request-owned,
+reuse unchanged full specs/shallow env values, and remain responsible for their
+resources; nested env objects must remain stable. Built-in registration is
+independent of a custom memory factory. Named memory stores are separate and
+bounded to 256 stable selections. DO stubs are obtained inside operations.
+
+KV uses framed namespace/key tuples and versioned envelopes. Logical expiry is
+checked in milliseconds, while retention rounds up to at least 60 seconds.
+Expired/corrupt KV reads never delete records because they can be stale compared
+to a fresh write. Database cleanup compares the selected value/deadline before
+deleting; a real SQLite interleaving test proves fresh replacements survive.
+DO private routes use a query key (preserving dot segments) and explicit
+found/missing batch records (preserving null). Cache input validation bounds
+valid UTF-8 keys to 512 bytes, values to 1 MiB, and write batches to 128 entries/
+2 MiB including overhead. Memory uses LRU with count and serialized-byte budgets.
+DO I/O has a five-second deadline/current request signal, strict UTF-8/EOF and
+2 MiB JSON bounds; cancellation cleanup is detached. Writes already dispatched
+may commit, backend failures can leave partial batches, and custom cache/DB
+operations do not automatically receive these I/O deadlines.
+
+Migration context for GLM: multiply old TTL arguments by 1,000 and rename batch
+`ttlSeconds` to `ttlMs` in custom stores. DB/DO epoch timestamp formats remain
+unchanged; new KV framing starts a fresh cache without reading old records.
+Indefinite old keys need explicit cleanup. Deploy DO clients and class together.
+Guide, agent examples, architecture, runnable demo and generated package
+acceptance use the new unit. Provider capability declarations/inspection and
+requested-guarantee rejection remain unfinished: do not check RT-18 yet.
+
 Next steps, with each goal kept separate:
 
 1. Finish actual native disconnect acceptance. Coordinator cancellation now has
@@ -1301,20 +1338,51 @@ Next steps, with each goal kept separate:
    cancellation as proof of that delivery. Arbitrary already-started methods
    and initialization/restoration still need policy/deadline audits. Keep actual
    Deno/Electron release gates separate; native producer shutdown remains unproven.
-2. Finish provider-specific configuration/resource validation. Audit Redis URL
-   schemes, optional namespace values, key UTF-8 bounds, memory prune/capacity
-   semantics and backend maximum durations. Check namespace encoding/collision
+2. Finish limiter-specific configuration/resource validation. Cache key/namespace,
+   batch/value, memory count/byte and duration policies now have regressions.
+   Audit Redis URL schemes/redirects, optional limiter namespace values, key UTF-8
+   bounds, memory limiter capacity semantics and backend maximum durations. Check namespace encoding/collision
    policy with RT-01/RT-14. Do not reinterpret KV write errors as ordinary caller
    quota denials or approximate consistency as a bounded global counter.
-3. Normalize or explicitly distinguish public cache seconds and limiter
-   milliseconds. Choose one consistent public duration convention and document
-   any breaking change; preserve provider-specific expiry precision accurately.
-   Audit cache get/set/remember and configured-provider failure/ownership too.
+3. Cache public durations now use milliseconds, matching limiter windows; retain
+   the breaking migration and provider retention explanations. Verify remaining
+   native cache I/O/cancellation cases as needed, without claiming actual TCP
+   disconnect delivery, live KV regional consistency or remote producer shutdown.
+   Decide whether the limiter option should explicitly be called `windowMs`; its
+   existing `window` field is already documented and evaluated in milliseconds.
 4. Declare provider locality, persistence, expiry precision, atomicity and
    unsupported operations; expose them through inspection. Reject a requested
    guarantee the selected provider cannot provide. Prove capability rejection
    and inspection units, then audit every RT-18 acceptance criterion and related
    RT-01 transport criteria before checking either task.
+
+Concrete follow-up implementation notes for GLM:
+
+- Start limiter regressions in core `shared/rate-limit.ts` and its existing
+  provider matrix. A saturated memory limiter must reject a *new* key after
+  pruning expired buckets; never evict a live spent bucket to admit it, because
+  that restores quota. Existing bucket increments must still work at capacity.
+- Validate Redis endpoint scheme/embedded credentials/redirect behavior before
+  authenticated fetch. Keep diagnostic text free of tokens/URLs. Prove that
+  redirects cannot forward bearer credentials to another origin; choose and
+  document any supported local-development exception explicitly.
+- Frame namespace/key pairs and bound their final UTF-8 encoding before backend
+  I/O. Distinguish logical application keys from provider limits. Audit the
+  evaluated scope/caller composite for the same collision risk. Record the
+  one-time effect on existing limiter bucket names; do not silently reset them
+  during ordinary requests or retries.
+- Define a pure provider capability model without library-to-framework imports.
+  Separate locality, persistence, consistency, expiry precision, supported
+  operations and atomic increment. DO cache get/set does not make an arbitrary
+  read-modify-write atomic. Database guarantees depend on provider/read settings;
+  custom providers without declarations remain unknown rather than implicitly
+  distributed. Expose installed/configured backend facts and millisecond units
+  in inspection without executing config modules or revealing credentials.
+- A requested guarantee must be checked before the first hit/write. Add denied
+  mutation/provider-spy tests, inspection fixtures and the existing multi-request
+  transport matrix. Keep actual abort delivery/live providers as separate
+  evidence gates. Review every original RT-18 acceptance sentence before marking
+  completion; these notes explain the remaining work rather than replacing scope.
 
 Done when: Fake-clock and provider tests prove expiry boundaries and counter
 behavior. Multi-request tests prove supported shared limits. KV behavior is not

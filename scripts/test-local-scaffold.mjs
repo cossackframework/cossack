@@ -248,7 +248,7 @@ try {
     if (!assignment) throw new Error('Seeder did not create the admin role assignment');
 
     const cache = createDatabaseCacheStore(orm);
-    await cache.set('acceptance', { ok: true }, 60);
+    await cache.set('acceptance', { ok: true }, 60_000);
     const cached = await cache.get<{ ok: boolean }>('acceptance');
     if (!cached?.ok) throw new Error('ORM cache store round-trip failed');
     await cache.delete('acceptance');

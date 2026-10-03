@@ -1,3 +1,4 @@
+import { cacheKey, cacheKeys, cacheExpiry as validatedCacheExpiry, cacheJson, prepareCacheEntries } from "./cache-policy.js";
 import type { ORM } from "../orm.js";
 import { currentORM } from "../scope.js";
 import type { SQLFragment } from "../sql/fragment.js";
@@ -54,12 +55,12 @@ export function ormMiddleware<Context extends MiddlewareContext>(
 export interface CacheEntry<T = unknown> {
   readonly key: string;
   readonly value: T;
-  readonly ttlSeconds?: number;
+  readonly ttlMs?: number;
 }
 
 export interface CacheStore {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void>;
+  set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
   has(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
   flush(): Promise<void>;
@@ -78,10 +79,8 @@ function resolveORM(explicit?: ORM): ORM {
   return orm;
 }
 
-function cacheExpiry(ttlSeconds?: number): number | null {
-  return ttlSeconds === undefined
-    ? null
-    : Date.now() + Math.max(0, ttlSeconds) * 1_000;
+function cacheExpiry(ttlMs?: number): number | null {
+  return validatedCacheExpiry(ttlMs) ?? null;
 }
 
 function cacheExpired(value: unknown): boolean {
@@ -96,6 +95,7 @@ export function createDatabaseCacheStore(
   const getORM = () => resolveORM(orm);
   return {
     async get<T>(key: string): Promise<T | undefined> {
+      cacheKey(key);
       const scoped = getORM();
       const result = await scoped.executeFragment<Record<string, unknown>>(scoped.sql.fragment`
         SELECT ${scoped.sql.id("value")}, ${scoped.sql.id("expires_at")}
@@ -106,21 +106,34 @@ export function createDatabaseCacheStore(
       const row = result.rows[0];
       if (!row) return undefined;
       if (cacheExpired(row["expires_at"])) {
-        await this.delete(key);
+        await scoped.executeFragment(scoped.sql.fragment`
+          DELETE FROM ${scoped.sql.id(table)}
+          WHERE ${scoped.sql.id("key")} = ${key}
+            AND ${scoped.sql.id("value")} = ${String(row["value"])}
+            AND (${scoped.sql.id("expires_at")} = ${row["expires_at"] == null ? null : Number(row["expires_at"])}
+              OR (${scoped.sql.id("expires_at")} IS NULL AND ${row["expires_at"] == null ? null : Number(row["expires_at"])} IS NULL))
+        `, "delete");
         return undefined;
       }
       try {
         return JSON.parse(String(row["value"])) as T;
       } catch {
-        await this.delete(key);
+        await scoped.executeFragment(scoped.sql.fragment`
+          DELETE FROM ${scoped.sql.id(table)}
+          WHERE ${scoped.sql.id("key")} = ${key}
+            AND ${scoped.sql.id("value")} = ${String(row["value"])}
+            AND (${scoped.sql.id("expires_at")} = ${row["expires_at"] == null ? null : Number(row["expires_at"])}
+              OR (${scoped.sql.id("expires_at")} IS NULL AND ${row["expires_at"] == null ? null : Number(row["expires_at"])} IS NULL))
+        `, "delete");
         return undefined;
       }
     },
-    async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-      if (value === undefined) return this.delete(key);
+    async set<T>(key: string, value: T, ttlMs?: number): Promise<void> {
+      cacheKey(key);
+      const expiresAt = cacheExpiry(ttlMs);
+      const json = cacheJson(value);
+      if (json === undefined || ttlMs === 0) return this.delete(key);
       const scoped = getORM();
-      const json = JSON.stringify(value);
-      const expiresAt = cacheExpiry(ttlSeconds);
       const updatedAt = Date.now();
       const fragment = scoped.driver.dialect === "mysql"
         ? scoped.sql.fragment`
@@ -144,22 +157,10 @@ export function createDatabaseCacheStore(
       await scoped.executeFragment(fragment, "insert");
     },
     async has(key: string): Promise<boolean> {
-      const scoped = getORM();
-      const result = await scoped.executeFragment<Record<string, unknown>>(scoped.sql.fragment`
-        SELECT ${scoped.sql.id("expires_at")}
-        FROM ${scoped.sql.id(table)}
-        WHERE ${scoped.sql.id("key")} = ${key}
-        LIMIT 1
-      `, "select");
-      const row = result.rows[0];
-      if (!row) return false;
-      if (cacheExpired(row["expires_at"])) {
-        await this.delete(key);
-        return false;
-      }
-      return true;
+      return (await this.get(key)) !== undefined;
     },
     async delete(key: string): Promise<void> {
+      cacheKey(key);
       const scoped = getORM();
       await scoped.executeFragment(
         scoped.sql.fragment`DELETE FROM ${scoped.sql.id(table)} WHERE ${scoped.sql.id("key")} = ${key}`,
@@ -171,14 +172,17 @@ export function createDatabaseCacheStore(
       await scoped.executeFragment(scoped.sql.fragment`DELETE FROM ${scoped.sql.id(table)}`, "delete");
     },
     async getMany<T>(keys: string[]): Promise<(T | undefined)[]> {
+      cacheKeys(keys);
       return Promise.all(keys.map((key) => this.get<T>(key)));
     },
     async setMany<T>(entries: CacheEntry<T>[]): Promise<void> {
-      for (const entry of entries) {
-        await this.set(entry.key, entry.value, entry.ttlSeconds);
+      const prepared = prepareCacheEntries(entries);
+      for (const entry of prepared) {
+        await this.set(entry.key, entry.raw === undefined ? undefined : JSON.parse(entry.raw), entry.ttlMs);
       }
     },
     async deleteMany(keys: string[]): Promise<void> {
+      cacheKeys(keys);
       if (!keys.length) return;
       const scoped = getORM();
       await scoped.executeFragment(

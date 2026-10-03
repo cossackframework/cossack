@@ -314,6 +314,28 @@ and replies instead of granting a fresh budget. Store failures
 reject before mutation. Process-local SSE publishes page state after child
 actions, matching distributed page/target snapshot separation.
 
+Server cache durations use integer milliseconds (`ttlMs`), matching limiter
+windows. The facade defaults `set()` to one hour; direct stores/batch entries
+omit expiry unless requested. KV uses framed namespace/key tuples and versioned
+value envelopes with logical millisecond deadlines, plus native retention rounded
+up to at least 60 seconds. Legacy unframed records are intentionally not reused.
+Database/DO epoch timestamp layouts remain compatible.
+
+Cache selection belongs to the current request. Built-in wrappers are memoized
+by actual binding identity and complete named declarations; missing/invalid
+current bindings fail before memo lookup. Named memory stores are process-local
+with LRU count and serialized-byte limits. Custom factories reuse unchanged
+selections within a request only; shallow env descriptors and binding identities
+are tracked, and nested objects must remain stable. Factories retain their own
+resource ownership; the manager cannot infer disposal. `remember()` captures its
+provider before awaiting work and allows duplicate concurrent computations.
+DO cache stubs are obtained inside operations. Their bounded, strict-UTF-8 JSON
+reads require EOF, with a five-second I/O deadline and the current request signal.
+Cleanup never awaits producer cancellation. Dispatched writes can still commit;
+there is no rollback/retry promise. Database and framework validators remain
+independent pure modules so libraries do not depend on the application. Batch
+input validation precedes writes, but storage failures can leave partial batches.
+
 Each limiter evaluation captures its request environment's store. Automatic
 selection caches unchanged environment/binding/credential descriptors without
 changing a global last-selected backend. Invalid explicit configuration rejects;

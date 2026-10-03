@@ -38,7 +38,7 @@ below link directly to those explanations.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
-- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Persistent transactional DO windows, expiry cleanup and native concurrency/eviction are verified; configuration ownership and runtime counter/option validation now pass; backend I/O/resource policy, cache durations and capability inspection remain open.
+- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Transactional DO counters, configured-provider ownership and bounded counter decisions are verified. Codex cache checkpoint: millisecond TTLs, binding identity/request-owned factories, framed KV namespaces/logical expiry, null-safe DO protocol, bounded memory/batches and cache I/O now pass unit/SQLite/native storage acceptance. Remaining: limiter URL/key/namespace/capacity policies and provider capability declarations, inspection and rejection of unsupported guarantees. See [cache review](#codex-cache-contracts-2026-10-03).
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
@@ -3477,3 +3477,69 @@ Closed the remaining acceptance gaps so four rows could be checked honestly:
   type checks, and database bundle audit passed. `pnpm test:unit` passed 2,125
   tests across 12 packages, including the new coordinator test. Exact commands
   and outstanding verification gates are recorded in the handoff note.
+
+<a id="codex-cache-contracts-2026-10-03"></a>
+## Codex cache contract review — 2026-10-03
+
+Author: **Codex**. Continued from `e6e5677` while preserving the full 58-task
+release scope. This checkpoint advances RT-18 and does not check it off.
+
+Regressions reproduced cache manager cross-request binding reuse, missing-binding
+fallback, custom option omission, skipped built-in registration, invalid TTL
+writes, namespace collisions, lost nulls and normalized dot-segment keys. The
+ownership baseline had 19 failures in 23 new cases; the duration baseline had
+31 failures in 36 cases. The fixes select wrappers by actual binding identity/
+complete named declarations, keep custom selections request-owned, and obtain
+DO I/O stubs per operation. Custom factory disposal remains caller-owned and
+nested env object mutations are outside the shallow memoization contract.
+
+All public cache TTLs now use nonnegative integer milliseconds (`ttlMs`), matching
+limiter windows. `set()` defaults to one hour; direct stores/batches omit expiry
+unless supplied. KV frames namespace/key tuples and stores versioned logical
+expiration envelopes, independently of rounded minimum-60-second retention.
+Stale expired/corrupt KV reads cannot delete fresh replacements. SQL cleanup
+matches its selected value/deadline, proven against a real replacement race.
+DO query keys and found/missing batch replies preserve reserved paths and null.
+
+Inputs are validated/snapshotted before writes: valid UTF-8 keys at most 512
+bytes, JSON values at most 1 MiB, write batches at most 128 entries/2 MiB including
+overhead. Memory evicts LRU entries at count/serialized-byte budgets, and invalid
+capacity or oversized overwrite rejects first. These are per-store serialized
+limits, not a process heap bound. DO JSON requests/replies are bounded, strict
+UTF-8 and EOF checked; the client uses five seconds/current-request signals and
+detached cancellation. Started storage writes may commit and later failures may
+leave partial batches. Custom/DB I/O does not inherit the DO deadline.
+
+The native fixture imports the compiled public cache/config/core modules in
+workerd. Two Workers share native KV/DO bindings, separate alternate namespaces,
+survive actual DO eviction and entrypoint reload, and expire short TTLs while KV
+still retains the record. It checks missing-binding failure, private invalid
+batch non-mutation, namespace collision prevention and null/dot-segment values.
+This is native compiled-library acceptance, not proof of every generated cache
+configuration, regional KV propagation, production write throttling, actual TCP
+abort delivery, or remote producer shutdown.
+
+Breaking migration: multiply old TTL numbers by 1,000, rename batch
+`ttlSeconds` to `ttlMs`, update custom providers and deploy DO client/class
+together. DB/DO stored epoch timestamps remain valid. New KV keys/envelopes
+start a fresh cache; old indefinite records require explicit cleanup. Docs,
+architecture, agent examples and runnable/generated acceptance were updated.
+
+Final verification: framework **1144** cases in **53** files (cache contracts
+**161**, shared transport matrix **354**); CLI **570** in **42** files including
+all **14** generated/runtime cases, native cache storage acceptance and the
+real-pnpm release fixture; database **86** in **15** files; scaffold **108** in
+**4** files. Total **1908** passing cases across those suites. Final framework
+and database builds pass, root `pnpm tsc --noEmit` passes and `pnpm typecheck`
+passes all **11** package/test configs. Consumer suites ran after declaration
+builds. Core/Node/Deno sources were unchanged in this checkpoint; retain their
+prior evidence and separate release gates. Owned-file whitespace checks pass;
+the pre-existing `reports.md` EOF warning is preserved with the user's changes.
+
+Requirement audit: **14/58 checked, all 44 unchecked retained.** RT-18 still
+requires limiter URL/key/namespace/capacity validation, explicit provider
+capabilities/units in inspection and pre-operation rejection of unsupported
+requested guarantees. RT-01's actual pre-header disconnect and arbitrary action
+deadlines, Deno/Electron/live-provider gates and all other remaining criteria
+stay open. Package versions remain 0.8.3 until REL-04. Preserve user-owned
+`reports.md` and `.zcodeignore`.

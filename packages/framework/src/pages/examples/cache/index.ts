@@ -54,7 +54,7 @@ export default class CacheExample extends Cossack {
         //    longer than the delay below).
         const writeTime = new Date();
         this.storedAt = writeTime.toISOString();
-        await cache.set('cache-example:datetime', writeTime.toISOString(), 60);
+        await cache.set('cache-example:datetime', writeTime.toISOString(), 60_000);
 
         // 2. Wait ~3 seconds. The "real" current time advances; the cached
         //    value must NOT (if the cache is working).
