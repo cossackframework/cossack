@@ -85,10 +85,14 @@ two calls that both read `this.filters.page + 1` request the same number.
 
 Same-path navigation to the same page class preserves declared `ClientState`
 and `ClientStore` drafts when user, transport, provider and service ownership
-match. The framework transfers local values directly. SSR JSON and copied URLs
+match. The framework adopts the latest local values when publishing the prepared page. SSR JSON and copied URLs
 cannot restore them. Stores get proxies owned by the new page; declared File
 values retain their identity. Browser file-input DOM values are not restored.
-Unrelated pages and changed ownership start with new drafts.
+Unrelated pages and changed ownership start with new drafts. New page tasks,
+transports, onMount and clientInit start at publication. Framework preparation
+keeps the old page editable and does not bind retained services to the destination.
+A custom bootstrap override runs during preparation; it must not assume that
+local drafts have transferred or that its page has become visible.
 
 Retained layouts keep their drafts and service instances. Their resource entries
 are replaced with the new SSR results before changing query dependencies.
@@ -105,7 +109,7 @@ query response remains pending. A blocked or failed traversal restores the
 previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-during-back-and-forward)
 for confirmation and history ownership.
 
-Bounded navigation completion remains RT-09. The complete staged-commit,
+Navigation has a 30-second completion budget. The complete post-publication,
 ownership-change and resource-read audit remains open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 

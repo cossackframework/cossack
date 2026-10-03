@@ -47,6 +47,14 @@ for the API and the remaining RT-08 integration work.
 For overlapping query edits, use `this.updateUrlState(definition, patch, options)`.
 It merges against the latest live pending intent. Constructing a URL from the
 committed request for each overlapping edit can lose an earlier field change.
+Client navigation now prepares pages and new layouts before publishing them.
+Framework tasks, connections and mount hooks start at publication. Latest local
+drafts transfer immediately before those hooks. A custom bootstrap override runs
+before that point and must not assume visibility or transferred drafts.
+Asynchronous navigation waits have a 30-second budget and report
+COSSACK_NAVIGATION_TIMEOUT. Superseding a stalled bootstrap lets a newer page
+complete. Arbitrary application effects after publication cannot be rolled back.
+
 Same-page query navigation now preserves declared ClientState/ClientStore drafts,
 including local File values, when ownership matches. Browser file-input DOM
 values remain empty after page replacement. Copied URLs and unrelated pages

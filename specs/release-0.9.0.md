@@ -86,6 +86,61 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-staged-navigation-2026-10-03"></a>
+## Codex staged navigation review (2026-10-03)
+
+Author: **Codex**. Continued after `2aa46fb`. Page bootstrap previously ran
+inside the serialized commit queue after destroying the old page. A stalled
+bootstrap blocked newer navigation, and failure left the live tree partially
+replaced before the destination was ready.
+
+Preparation now resolves modules and bootstraps new page/layout instances before
+joining the commit queue. Core's internal stageNavigation option defers task
+execution, transport connections, shared service request binding and mount hooks.
+The committed page/layout map and global SSR state remain active during this
+phase. Failed or canceled preparation disposes its new owners. New scopes are
+also disposed if component construction fails. Reactive updates from unpublished
+components cannot render the active tree.
+
+Publication adopts the latest same-owner ClientState/ClientStore capability,
+including edits made while preparation waited, before running tasks and mount
+hooks. Preparation does not share the outgoing draft through an early restore.
+Declared native File identity stays intact. Retained layouts keep their services
+and adopt destination resources at publication. Outgoing layout scopes retire
+after DOM reconciliation. Loading content no longer destroys the committed page.
+
+NavigationOwner races asynchronous guards, fetch, module/bootstrap preparation,
+commit queue and transition completion against supersession and a 30-second
+budget. Timeout reports COSSACK_NAVIGATION_TIMEOUT and revokes publication.
+Independent fetch readers retain their separate response deadline and shared
+request ownership. History recovery retains its separate two-second limit.
+Ignored application promises have rejection handlers even after ownership ends.
+
+New core tests cover delayed activation, abandoned stages, exactly-once activation,
+service binding and edits made during preparation. The existing race test now
+requires the newer navigation to complete before releasing the old bootstrap.
+New navigation tests cover preparation failure, stalled guard/bootstrap/module/
+transition deadlines, retry and a late transition callback rejected before
+publication. The old response-timeout assertion changed to the earlier navigation
+budget's code; its first run was the only focused navigation failure.
+
+Final verification: full core **1,415 tests / 83 files**; final full framework
+**1,434 / 68 files**; full CLI **608 / 44 files** (339 seconds, maxWorkers=2).
+Total: **3,457 tests**. Core and framework ESM/declaration builds, framework SSG,
+root TypeScript and all **11** package checks pass. Consumer checks use completed
+builds. The full CLI run includes generated production Node/native workerd query,
+history, scoped-service, stream, database and build acceptance. No live cloud
+operation or complete 0.9.0 release gate was run. No owned test/build process remains.
+
+Limits: this stages preparation and bounds framework waits. It cannot undo
+arbitrary user effects once publication, mount or render has started. Shared App
+render state and interrupted publication still need explicit recovery acceptance.
+Transferred raw store targets also need a late-write audit for disposed owners.
+Changed/nested ownership, interrupted history, actual backend read counts,
+scroll/fragment/transition diagnostics and the full criterion audit remain open.
+All **58 original IDs** remain in scope: **22 checked / 36 unchecked**. RT-08 and
+RT-09 remain open. Versions stay 0.8.3 until REL-04.
+
 <a id="codex-fetch-ownership-2026-10-03"></a>
 ## Codex navigation fetch ownership (2026-10-03)
 

@@ -118,6 +118,8 @@ export interface BootstrapOptions {
   skipInit?: boolean;
   /** Defer `onMount()`/`clientInit()` to a later manual call. */
   deferMount?: boolean;
+  /** @internal Prepare navigation without binding shared services or activating browser hooks. */
+  stageNavigation?: boolean;
 }
 
 // ========== Internal type helpers (not exported publicly) ==========

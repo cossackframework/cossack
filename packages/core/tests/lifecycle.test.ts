@@ -139,6 +139,41 @@ describe('Lifecycle Hooks', () => {
     });
 
     describe('terminal disposal', () => {
+        it('defers tasks, service binding, transport and mount until staged publication', async () => {
+            const mounted = vi.fn();
+            class Page extends Cossack {
+                @Task()
+                task() { mounted('task'); }
+                onMount() { mounted('mount'); }
+                async clientInit() { mounted('init'); }
+            }
+            const c = new Page();
+            const binding = vi.fn();
+            (c as any)._serviceScope = { bindRequest: binding };
+            const socket = vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {});
+            await c.bootstrap({ stageNavigation: true });
+            expect(binding).not.toHaveBeenCalled();
+            expect(socket).not.toHaveBeenCalled();
+            expect(mounted).not.toHaveBeenCalled();
+            await Promise.all([c._frameworkPublishNavigation(), c._frameworkPublishNavigation()]);
+            expect(binding).toHaveBeenCalled();
+            expect(socket).toHaveBeenCalledTimes(1);
+            expect(mounted.mock.calls.flat()).toEqual(['task', 'mount', 'init']);
+            c.destroy();
+        });
+
+        it('does not activate an abandoned staged component', async () => {
+            const c = new LifecycleComponent();
+            const mount = vi.spyOn(c, 'onMount');
+            const socket = vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {});
+            await c.bootstrap({ stageNavigation: true });
+            c.destroy();
+            await c._frameworkPublishNavigation();
+            expect(c.taskRunCount).toBe(0);
+            expect(mount).not.toHaveBeenCalled();
+            expect(socket).not.toHaveBeenCalled();
+        });
+
         function observe(c: Cossack) {
             return {
                 socket: vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {}),

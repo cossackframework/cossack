@@ -1,3 +1,4 @@
+import { NavigationOwner } from './navigation-owner.js';
 import { SharedPageRequests } from './shared-page-requests.js';
 import { getModuleDefault } from '../module-default.js';
 import {
@@ -371,6 +372,7 @@ export async function createClientApp({
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
   let isDisplayingLoadingState = false;
+  let loadingPage: Cossack | undefined;
   let currentPageFile: string | undefined;
   let currentPageUrl: string | undefined;
   let currentPageState: any;
@@ -390,7 +392,7 @@ export async function createClientApp({
 
   const composeContent = () => {
     if (!currentPage) return null;
-    let body = (currentPage as any)._getWrappedTemplate();
+    let body = ((loadingPage ?? currentPage) as any)._getWrappedTemplate();
     for (let i = currentLayoutInstances.length - 1; i >= 0; i--) {
        const layout = currentLayoutInstances[i];
        layout.children = body;
@@ -399,7 +401,8 @@ export async function createClientApp({
     return body;
   }
 
-  const triggerAppUpdate = async () => {
+  const triggerAppUpdate = async (isCurrent: () => boolean = () => true) => {
+      if (!isCurrent()) return;
       appInstance.children = composeContent();
       // A service/layout update may already be rendering the App when a
       // navigation commits. Joining that in-flight request after replacing
@@ -408,8 +411,9 @@ export async function createClientApp({
       // page had been committed. Wait for it to finish, then always schedule
       // a fresh App pass for the latest composition.
       await appInstance.updateComplete;
+      if (!isCurrent()) return;
       await appInstance.requestUpdate();
-      syncHead();
+      if (isCurrent()) syncHead();
   };
 
   let _lastHeadTagsJson: string | undefined;
@@ -445,18 +449,15 @@ export async function createClientApp({
     currentPage?._frameworkNavigateComplete(pathname);
   };
 
-  const loadComponent = async (initialState: any, destination?: string,
-    isCurrent: () => boolean = () => true, onMutation?: (state: any) => void) => {
+  const prepareComponent = async (initialState: any, destination?: string, owner?: NavigationOwner) => {
+    const isCurrent = () => !owner?.signal.aborted;
+    const assertCurrent = () => owner?.assertCurrent();
     const destinationUrl = destination ?? initialState?.metadata?.url ?? window.location.href;
     initialState = { ...initialState, metadata: { ...initialState?.metadata, url: destinationUrl } };
-    // Support both routePath (new) and componentPath (legacy) for backward compatibility
     const routePath = initialState?.routePath || initialState?.componentPath;
     const layoutStack = initialState?._layout_stack || [];
     const pathname = initialState?.pathname || window.location.pathname;
-
-    if (!routePath) {
-      throw new Error('Could not find routePath or componentPath in initial state');
-    }
+    if (!routePath) throw new Error('Could not find routePath or componentPath in initial state');
 
     // Convert route path to file path for module lookup
     const identified = routeIdMap.get(initialState?.componentRouteId);
@@ -480,136 +481,123 @@ export async function createClientApp({
       if (!LayoutComponent) throw new Error(`Failed to load layout module for path: ${path}`);
       layoutComponents.set(path, LayoutComponent);
     }));
-    // Imports can settle after a newer intent. Resolve every module before
-    // changing the live contexts, draft owners or renderer tree.
-    if (!isCurrent()) throw new Error('[Cossack] Navigation was superseded during module loading.');
-    onMutation?.(initialState);
-
-    appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
-    appInstance.updatePath(pathname, destinationUrl);
-
-    // Build a set of active layout file paths (layoutStack now contains file paths)
-    const activeLayoutPaths = new Set<string>();
-    for (const l of layoutStack) {
-        // Layout paths are already file paths (from server)
-        activeLayoutPaths.add(l.path);
-    }
-
-    const staleLayoutInstances: Cossack[] = [];
-    for (const [path, instance] of currentLayoutsMap.entries()) {
-        if (!activeLayoutPaths.has(path)) {
-            // Keep the scope alive until the new App render has removed the
-            // old page's renderer-created descendants. Those children can
-            // have a queued final update and still need their injected service
-            // while the DOM reconciliation tears them down.
-            staleLayoutInstances.push(instance);
-            currentLayoutsMap.delete(path);
-        }
-    }
-
+    assertCurrent();
+    const staged = new Set<Cossack>();
+    let published = false;
+    const dispose = () => {
+      owner?.signal.removeEventListener('abort', dispose);
+      if (published) return;
+      for (const instance of [...staged].reverse()) {
+        try { instance.destroy(); } catch (error) { console.error('Navigation cleanup failed:', error); }
+      }
+      staged.clear();
+    };
+    owner?.signal.addEventListener('abort', dispose, { once: true });
+    const hookUpdates = (instance: Cossack) => {
+      const active = () => currentPage === instance || currentLayoutInstances.includes(instance);
+      instance.updateHead = () => { if (active()) syncHead(); };
+      const original = instance.requestUpdate.bind(instance);
+      instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
+        if (!active() || (instance as any)._phase === LifecyclePhase.Destroyed) return false;
+        await original(name, oldValue);
+        if (!active()) return false;
+        await triggerAppUpdate(active);
+        return true;
+      };
+    };
     try {
-      currentLayoutInstances = [];
+      const nextLayouts = new Map<string, Cossack>();
       let activeServiceScope = clientServiceRoot;
-      for (const { path: layoutFilePath, state, componentRouteId } of layoutStack) {
-        // Layout paths are already file paths (from server). Layouts are lazy
-        // on the client (code-split per route, like pages), so the registry
-        // holds loader functions — await to get the module. This keeps a layout
-        // with heavy deps (e.g. dashboard sidebar pulling @cossackframework/ui)
-        // off routes that don't use it.
-        let instance = currentLayoutsMap.get(layoutFilePath);
+      for (const { path, state, componentRouteId } of layoutStack) {
+        assertCurrent();
+        let instance = currentLayoutsMap.get(path);
         if (instance && (instance._getServiceScope()?.parent !== activeServiceScope ||
-          layoutOwnership.get(instance) !== layoutOwnershipKey(state, initialState, instance.constructor))) {
-          staleLayoutInstances.push(instance);
-          currentLayoutsMap.delete(layoutFilePath);
-          instance = undefined;
-        }
+          layoutOwnership.get(instance) !== layoutOwnershipKey(state, initialState, instance.constructor))) instance = undefined;
         if (!instance) {
-          const LComp = layoutComponents.get(layoutFilePath)!;
-          const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
-            ownerRouteId: componentRouteId,
-            ownerRoutePath: layoutFilePath,
-            initialState: state?.services,
-            scopeKey: initialState?.scopeKey,
+          const Layout = layoutComponents.get(path)!;
+          const scope = createLayoutServiceScope(activeServiceScope, Layout, {
+            ownerRouteId: componentRouteId, ownerRoutePath: path,
+            initialState: state?.services, scopeKey: initialState?.scopeKey,
           });
-          instance = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-          instance.updateHead = syncHead;
-
-          // Hook reactivity
-          const originalRequestUpdate = instance.requestUpdate.bind(instance);
-          instance.requestUpdate = async (name?: string, oldValue?: unknown) => {
-                const p = originalRequestUpdate(name, oldValue);
-                await p;
-                await triggerAppUpdate();
-                return true;
-          };
-
-          await instance.bootstrap({
-            initialState: { ...state, metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId },
-            skipInit: true,
-          });
-          currentLayoutsMap.set(layoutFilePath, instance);
-          layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, LComp));
-        } else {
-          instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl);
+          try { instance = createInstance(Layout, { serviceScope: scope, ownsServiceScope: true }); }
+          catch (error) { await scope.disposeAsync(); throw error; }
+          staged.add(instance);
+          hookUpdates(instance);
+          await instance.bootstrap({ initialState: { ...state,
+            metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId },
+            skipInit: true, stageNavigation: true });
+          assertCurrent();
+          layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, Layout));
         }
-        instance.updatePath(pathname, destinationUrl);
-        currentLayoutInstances.push(instance);
+        nextLayouts.set(path, instance);
         activeServiceScope = instance._getServiceScope() || activeServiceScope;
       }
+      const nextPage = createInstance(PageComponent, { serviceScope: activeServiceScope });
+      staged.add(nextPage);
+      hookUpdates(nextPage);
+      await nextPage.bootstrap({ initialState, skipInit: true, stageNavigation: true });
+      assertCurrent();
+      nextPage.updatePath(pathname, destinationUrl);
 
-      if (PageComponent) {
-        const samePage = currentPage && currentPageFile === componentPath && currentPageUrl &&
-          new URL(currentPageUrl, window.location.href).pathname === new URL(destinationUrl, window.location.href).pathname &&
-          currentPage._getServiceScope() === activeServiceScope && ownershipKey(currentPageState) === ownershipKey(initialState);
-        const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
-        if (currentPage) {
-          currentPage.destroy();
-        }
-        const componentInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
-        if (draft) componentInstance._frameworkRestoreClientDraft(draft);
-        currentPage = componentInstance;
-
-        // Register the page with the app instance for child component state restoration
-        appInstance.setCurrentPage(componentInstance);
-
-        componentInstance.updateHead = syncHead;
-
-        // Hook reactivity
-        const originalRequestUpdate = componentInstance.requestUpdate.bind(componentInstance);
-        componentInstance.requestUpdate = async (name?: string, oldValue?: unknown) => {
-          const p = originalRequestUpdate(name, oldValue);
-          await p;
-          await triggerAppUpdate();
-          return true;
-        };
-
-        await componentInstance.bootstrap({ initialState, skipInit: true });
-        if (!isCurrent()) throw new Error('[Cossack] Navigation was superseded during bootstrap.');
-        componentInstance.updatePath(pathname, destinationUrl);
-        currentPageFile = componentPath;
-        currentPageUrl = destinationUrl;
-        currentPageState = initialState;
-
-        // Register with DevTools for state inspection (use absolute path from Vite injection)
-        const sourceFile = (componentInstance.constructor as any).__source?.file;
-        if (import.meta.env.DEV && sourceFile) {
-          const { registerDevToolsInstance } = await import('./devtools.js');
-          registerDevToolsInstance(sourceFile, componentInstance);
-        }
-
-        // Perform initial composition and render
-        await triggerAppUpdate();
-      }
-      isDisplayingLoadingState = false;
-    } finally {
-      // Scope disposal must happen even when module loading, bootstrap, or the
-      // final App reconciliation throws. The scopes stay alive until this
-      // point so outgoing renderer children can finish teardown safely.
-      for (const staleLayout of staleLayoutInstances) staleLayout.destroy();
+      return {
+        dispose,
+        async commit(onMutation?: (state: any) => void) {
+          assertCurrent();
+          const samePage = currentPage && currentPageFile === componentPath && currentPageUrl &&
+            new URL(currentPageUrl, window.location.href).pathname === new URL(destinationUrl, window.location.href).pathname &&
+            currentPage._getServiceScope() === activeServiceScope && ownershipKey(currentPageState) === ownershipKey(initialState);
+          const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
+          if (draft) nextPage._frameworkAdoptClientDraft(draft);
+          const oldPage = currentPage;
+          const staleLayouts = currentLayoutInstances.filter(layout => ![...nextLayouts.values()].includes(layout));
+          onMutation?.(initialState);
+          appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
+          appInstance.updatePath(pathname, destinationUrl);
+          for (const { path, state } of layoutStack) {
+            const instance = nextLayouts.get(path)!;
+            if (!staged.has(instance)) instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl);
+            instance.updatePath(pathname, destinationUrl);
+          }
+          currentLayoutsMap.clear();
+          for (const [path, instance] of nextLayouts) currentLayoutsMap.set(path, instance);
+          currentLayoutInstances = [...nextLayouts.values()];
+          currentPage = nextPage;
+          currentPageFile = componentPath;
+          currentPageUrl = destinationUrl;
+          currentPageState = initialState;
+          appInstance.setCurrentPage(nextPage);
+          loadingPage = undefined;
+          isDisplayingLoadingState = false;
+          published = true;
+          owner?.signal.removeEventListener('abort', dispose);
+          try {
+            oldPage?.destroy();
+            for (const instance of staged) {
+              assertCurrent();
+              await instance._frameworkPublishNavigation?.();
+            }
+            assertCurrent();
+            await triggerAppUpdate(isCurrent);
+            const sourceFile = (nextPage.constructor as any).__source?.file;
+            if (import.meta.env.DEV && sourceFile) {
+              void import('./devtools.js').then(({ registerDevToolsInstance }) => {
+                if (currentPage === nextPage && isCurrent()) registerDevToolsInstance(sourceFile, nextPage);
+              }).catch(error => console.error('DevTools registration failed:', error));
+            }
+          } finally {
+            // Outgoing descendants finish DOM teardown before layout services retire.
+            for (const instance of staleLayouts) instance.destroy();
+          }
+        },
+      };
+    } catch (error) {
+      dispose();
+      throw error;
     }
   };
 
-  await loadComponent(window.__INITIAL_STATE__, window.location.href);
+  const initial = await prepareComponent(window.__INITIAL_STATE__, window.location.href);
+  await initial.commit();
   // Mount now that the full app tree (header + page + footer) is composed.
   // Hydrate the existing SSR DOM in place instead of wiping it — the server
   // already rendered this exact tree, so we bind to the existing nodes (no
@@ -631,7 +619,7 @@ export async function createClientApp({
   // Navigation sequence: a newer navigation supersedes any in-flight one;
   // its commit is skipped and its result resolves as 'superseded' (RT-09).
   let navigationSequence = 0;
-  let activeFetchOwner: AbortController | undefined;
+  let activeOwner: NavigationOwner | undefined;
   let commitQueue: Promise<void> = Promise.resolve();
   type QueryIntent = { url: string; isCurrent: () => boolean };
   let pendingQuery: QueryIntent | undefined;
@@ -671,9 +659,11 @@ export async function createClientApp({
     if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
     if (!intent) pendingQuery = undefined;
     const seq = ++navigationSequence;
-    activeFetchOwner?.abort();
-    const fetchOwner = new AbortController();
-    activeFetchOwner = fetchOwner;
+    activeOwner?.abort();
+    const owner = new NavigationOwner();
+    activeOwner = owner;
+    let prepared: Awaited<ReturnType<typeof prepareComponent>> | undefined;
+    let ownLoading: Cossack | undefined;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
     const requestedHistory = getNavigationHistoryLocation(window.history.state);
     let treeMutationStarted = false;
@@ -687,7 +677,7 @@ export async function createClientApp({
 
     try {
       if (!force && currentPage && !isDisplayingLoadingState) {
-          const prevented = await currentPage._checkPreventNavigation();
+          const prevented = await owner.wait(currentPage._checkPreventNavigation());
           if (seq !== navigationSequence) return { outcome: 'superseded', url };
           if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
           if (prevented) {
@@ -702,7 +692,7 @@ export async function createClientApp({
                 if (restored.outcome !== 'completed') throw restored.error;
               }
               // Force re-render to show prevention UI if any
-              await currentPage.requestUpdate();
+              await owner.wait(currentPage.requestUpdate());
               return { outcome: 'canceled', url };
           }
       }
@@ -735,9 +725,9 @@ export async function createClientApp({
           isDisplayingLoadingState = true;
           const loadingScope = currentLayoutInstances.at(-1)?._getServiceScope() || clientServiceRoot;
           const loadingInstance = createInstance(LoadingCompClass, { serviceScope: loadingScope });
-          // We swap current page with loading component temporarily
-          if (currentPage) currentPage.destroy();
-          currentPage = loadingInstance;
+          // Display loading content without destroying the committed page.
+          ownLoading = loadingInstance;
+          loadingPage = loadingInstance;
 
           // Hook reactivity for loading component too
           const originalRequestUpdate = loadingInstance.requestUpdate.bind(loadingInstance);
@@ -752,12 +742,12 @@ export async function createClientApp({
               return true;
           };
 
-          await loadingInstance.bootstrap({ skipInit: true });
+          await owner.wait(loadingInstance.bootstrap({ skipInit: true }));
           if (seq !== navigationSequence) return { outcome: 'superseded', url };
-          await triggerAppUpdate();
+          await owner.wait(triggerAppUpdate(() => !owner.signal.aborted));
       }
 
-      const { state, url: responseUrl } = await fetchPage(url, fetchOwner.signal);
+      const { state, url: responseUrl } = await owner.wait(fetchPage(url, owner.signal));
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
@@ -777,14 +767,17 @@ export async function createClientApp({
       if (!destination.hash) destination.hash = requestedUrl.hash;
       const destinationUrl = destination.pathname + destination.search + destination.hash;
       const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
+      prepared = await owner.wait(prepareComponent(state, destinationUrl, owner));
       let ownerDisposed = false;
       const commit = async () => {
         if (seq !== navigationSequence) return;
         if (intent && !intent.isCurrent()) { ownerDisposed = true; return; }
-        await loadComponent(state, destinationUrl, () => seq === navigationSequence, preparedState => {
+        owner.assertCurrent();
+        await prepared!.commit(preparedState => {
           treeMutationStarted = true;
           window.__INITIAL_STATE__ = preparedState;
         });
+        owner.assertCurrent();
         if (seq !== navigationSequence) return;
         if (navigationType === 'push') {
           const active = getNavigationHistoryLocation(window.history.state);
@@ -831,9 +824,12 @@ export async function createClientApp({
       };
       // Bootstrap/render can await user code. Serialize DOM commits so an
       // older navigation cannot finish applying its tree after a newer one.
-      const committed = commitQueue.then(performCommit);
+      const committed = commitQueue.then(() => {
+        owner.assertCurrent();
+        return owner.wait(performCommit());
+      });
       commitQueue = committed.catch(() => {});
-      await committed;
+      await owner.wait(committed);
       if (seq !== navigationSequence) return { outcome: 'superseded', url };
       if (ownerDisposed) return { outcome: 'canceled', url };
 
@@ -870,8 +866,17 @@ export async function createClientApp({
       window.location.reload();
       return { outcome: 'failed', url, error };
     } finally {
-      fetchOwner.abort();
-      if (activeFetchOwner === fetchOwner) activeFetchOwner = undefined;
+      prepared?.dispose();
+      if (ownLoading) {
+        if (loadingPage === ownLoading) {
+          loadingPage = undefined;
+          isDisplayingLoadingState = false;
+          void triggerAppUpdate().catch(error => console.error('Loading restoration failed:', error));
+        }
+        ownLoading.destroy();
+      }
+      owner.dispose();
+      if (activeOwner === owner) activeOwner = undefined;
     }
   };
 

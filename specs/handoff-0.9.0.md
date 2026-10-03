@@ -2,7 +2,41 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex navigation fetch ownership (2026-10-03).
+> Latest checkpoint: Codex staged navigation (2026-10-03).
+> Author: **Codex**. Continued after `2aa46fb`. Read the
+> [verification](./release-0.9.0.md#codex-staged-navigation-2026-10-03),
+> [RT-09 continuation](./release-0.9.0-plan.md#rt-09) and
+> [public contract](../docs/prevent-navigation.md#navigation-completion-contract-glm-2026-10-02).
+>
+> Page/layout preparation runs outside the commit queue. The old page survives
+> until publication. New owners defer tasks, transport connections, retained
+> service binding and mount hooks. Latest same-owner drafts transfer at publication.
+> Canceled preparation destroys its new instances. A controlled regression now
+> completes the newer navigation before releasing the old bootstrap.
+>
+> One NavigationOwner bounds asynchronous navigation waits to 30 seconds and
+> reports COSSACK_NAVIGATION_TIMEOUT. Guards, fetch, imports, bootstrap and
+> transition/commit waits race that owner. The shared fetch reader contract stays
+> intact. History recovery retains its separate two-second limit. A late
+> transition callback after expiry cannot publish its prepared tree.
+>
+> Full core: 1,415 tests / 83 files. Final full framework: 1,434 / 68 files.
+> Both package builds, framework SSG, root TypeScript and all 11 package checks
+> pass. Full CLI: 608 tests / 44 files, including generated production Node/native
+> workerd acceptance. Total: 3,457 tests. No owned test/build process remains.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** Next: shared App render
+> state and recovery after publication; late writes through disposed owners'
+> saved store proxies; interrupted history; real changed/nested ownership and
+> backend read counts; diagnostics and full RT-08/RT-09 criterion audits.
+> Prepared-state cancellation does not roll back application effects after
+> publication. Keep that limit explicit. Continue every other unchecked task.
+> Versions remain 0.8.3 until REL-04. Preserve reports.md/.zcodeignore.
+>
+> No push, publication, live cloud change, external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex navigation fetch ownership (2026-10-03).
 > Author: **Codex**. Continued after `b0da7d0`. Read the
 > [verification](./release-0.9.0.md#codex-fetch-ownership-2026-10-03),
 > [RT-09 plan](./release-0.9.0-plan.md#rt-09) and

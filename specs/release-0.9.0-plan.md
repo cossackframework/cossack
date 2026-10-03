@@ -2038,6 +2038,14 @@ restored query and exclude the abandoned pending field. Matching resources still
 make zero extra hydration RPCs. Controlled cases also delay page/layout imports
 and bound a missing history event. The public guard guide records the contract.
 
+Codex staging update (2026-10-03): the
+[RT-09 checkpoint](#rt-09) now supplies prepared page/layout ownership and a
+30-second navigation wait budget. The newer-navigation-before-old-bootstrap
+regression passes. Latest matching drafts transfer at publication, before tasks
+and mount hooks. The next acceptance work below now starts with shared render
+state, post-publication failures and interrupted history. Also audit retained raw
+store targets against late writes from a disposed owner's saved proxy.
+
 **Next steps for GLM, in order:**
 
 1. **Pending history and staged commit acceptance (RT-08/RT-09).** The ordinary
@@ -2046,9 +2054,9 @@ and bound a missing history event. The public guard guide records the contract.
    restoration/confirmation and foreign history entries. Delay bootstrap,
    rendering and view-transition callbacks separately. Check
    address, committed readers, drafts and actual visible tree after every outcome.
-   Current sequence guards and serialized commits do not prove bounded settlement
-   or atomic rollback of application bootstrap. Fetch/guard deadlines and disposal
-   must release navigation ownership without replaying mutations.
+   Preparation and wait deadlines now have controlled evidence. They do not prove
+   atomic rollback after publication or shared-render recovery. Verify those
+   boundaries without replaying mutations.
 2. **Ownership changes and nested drafts (RT-08/RT-12).** Exercise user, scopeKey,
    transport/provider and parent-layout changes in real browser applications.
    Verify old service cleanup exactly once and fresh instances under the new owner.
@@ -2155,15 +2163,33 @@ preload modules. Invalidation retains existing reader results while detaching
 future readers, and cache epoch checks still apply. Read the
 [verification](./release-0.9.0.md#codex-fetch-ownership-2026-10-03).
 
-Next: extend ownership across guard, imports, bootstrap, renderer and transition
-completion. Reuse the fetch reader boundary instead of aborting shared prefetches
-indiscriminately. Response deadlines alone do not bound navigation. Stage new
-pages/layouts before publishing them; restore service request bindings and dispose
-staged scopes on failure. Preserve edits made to outgoing drafts while staging.
-Late application I/O may continue, but it cannot publish through revoked owners.
-Prove a stalled old bootstrap cannot block a newer valid navigation. Then add
-cache/invalidation, retained scope, scroll/fragment, transition fallback and
-diagnostic timeline evidence. Audit every original criterion before closure.
+Codex staged navigation checkpoint (2026-10-03): preparation now runs outside
+the commit queue. A new page/layout bootstraps without opening transports,
+running tasks, binding retained service requests or mounting. Publication adopts
+the latest matching local drafts, then activates the new owners. Canceled
+preparation disposes new instances. The committed tree remains active while a
+bootstrap override waits. A controlled regression requires the newer navigation
+to complete before releasing that old bootstrap. Preparation failure preserves
+the old page and global SSR state.
+
+NavigationOwner supplies one 30-second asynchronous completion budget. It races
+guards, response loading, module/bootstrap preparation, commit queue and transition
+completion. Expiry revokes publication with COSSACK_NAVIGATION_TIMEOUT. Fetch
+readers keep their independent cancellation/deadline contract. History recovery
+has its existing separate two-second bound. These limits settle framework waits;
+they do not cancel arbitrary application I/O or roll back effects that already
+ran in mount/render hooks. Read the
+[verification](./release-0.9.0.md#codex-staged-navigation-2026-10-03).
+
+Next, validate shared App render state and post-publication failure recovery.
+An interrupted render must not leave a mismatched visible tree, URL, service
+context or live owner. Hold render and transition callbacks separately, then
+exercise supersession, deadline and late rejection. Audit transferred raw store
+targets: a disposed owner's saved proxy must not silently mutate a new page's
+draft. Extend actual browsers for user/scope/provider/parent ownership changes,
+nested drafts, interrupted history and backend read counts. Add cache/scroll/
+fragment/transition fallback diagnostics and timeline evidence. Audit every
+original RT-08/RT-09 criterion before closure. No checkbox closes here.
 
 
 Done when: Browser tests cover rapid links, back/forward, navigation guards,

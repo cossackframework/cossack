@@ -38,6 +38,25 @@ it('transfers inherited browser drafts and File identity without reading seriali
     next.destroy(); expect(next._frameworkCaptureClientDraft()).toBeUndefined();
 });
 
+it('adopts edits made while preparing without sharing the outgoing store before publication', async () => {
+    const previous = new Inherited();
+    await previous.bootstrap({ initialState: state(), deferMount: true });
+    const next = new Inherited();
+    await next.bootstrap({ initialState: state(2), stageNavigation: true });
+    next.draft.text = 'prepared initializer';
+    expect(previous.draft.text).not.toBe('prepared initializer');
+    const file = new File(['new edit'], 'new.txt');
+    previous.file = file;
+    previous.draft.text = 'edited while preparing';
+    const token = previous._frameworkCaptureClientDraft()!;
+    expect(next._frameworkAdoptClientDraft(token)).toBe(true);
+    expect(next._frameworkAdoptClientDraft(token)).toBe(false);
+    expect(next.file).toBe(file);
+    expect(next.draft.text).toBe('edited while preparing');
+    expect(next.draft).not.toBe(previous.draft);
+    previous.destroy(); next.destroy();
+});
+
 it.each(['resolve', 'reject'] as const)('retained resource handoff discards a late %s and hydrates the new query without RPC', async settlement => {
     let resolve!: (value: string) => void; let reject!: (error: Error) => void;
     const pending = new Promise<string>((yes, no) => { resolve = yes; reject = no; });

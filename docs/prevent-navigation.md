@@ -81,21 +81,29 @@ if (result.outcome === 'superseded') return; // a newer navigation owns the UI
 ```
 
 Guards that throw produce `failed`. A superseded request cannot update history
-or emit completion events. Component commits run in order. A component bootstrap
-that never settles can still block a later commit; cancellation and bounded
-completion for that case remain part of RT-09. Use `redirect()` in server methods.
+or emit completion events. New page and layout bootstrap runs before publication,
+outside the commit queue. A stalled old bootstrap cannot block a newer page.
+Preparation failures keep the committed page alive. Use `redirect()` in server methods.
+
+Navigation has one 30-second completion budget across asynchronous guards, fetch,
+imports, preparation, rendering and transition completion. Expiry revokes its
+publication authority and reports `COSSACK_NAVIGATION_TIMEOUT`. A history
+restoration after failure has its separate two-second limit. If the application
+prevents the default action of the cancelable `cossack:navigation-error` event,
+navigation returns `failed`; otherwise the existing reload fallback runs.
+
+The deadline settles the framework's wait. It cannot stop arbitrary application
+I/O, synchronous blocking code, or undo effects from a custom render or mount
+hook that already ran. Shared App render state and failures after publication
+still need the remaining RT-09 acceptance audit. A later navigation can retry.
 
 Page fetches share requests with prefetches, but each reader owns its wait.
 A newer navigation releases the old navigation's reader immediately. The request
 is aborted when no readers remain. Another prefetch or navigation can continue
 reading the same request. Abandoned responses cannot repopulate the page cache.
-
-Each reader has a 30-second deadline for the response and its body. Expiry emits
-the existing cancelable `cossack:navigation-error` event with error code
-`COSSACK_NAVIGATION_FETCH_TIMEOUT`. If the application prevents that event's
-default action, navigation returns `failed`; otherwise the existing reload
-fallback runs. A later navigation can retry the URL. This deadline does not cover
-guards, module imports, bootstrap, rendering, or view transitions.
+Each reader also has a separate 30-second response/body deadline with code
+`COSSACK_NAVIGATION_FETCH_TIMEOUT`; the earlier whole-navigation deadline normally
+wins for navigation readers. Independent prefetch readers keep their own budget.
 
 ## Guards during back and forward
 
@@ -119,5 +127,5 @@ the existing cancelable `cossack:navigation-error` event.
 
 Module imports resolve before the framework changes the live page or layout
 contexts. A superseded page/layout import cannot publish its state. This does
-not make arbitrary application bootstrap or rendering failures atomic. Their
-cancellation and bounded completion remain part of RT-09.
+not undo arbitrary application effects after publication. Interrupted history,
+shared render ownership and the remaining acceptance matrix stay in RT-09.

@@ -135,7 +135,7 @@ describe('navigation completion behavior', () => {
         }));
         const pending = navigate('/slow');
         await vi.advanceTimersByTimeAsync(30_000);
-        expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_FETCH_TIMEOUT' } });
+        expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_TIMEOUT' } });
         expect(requestSignal.aborted).toBe(true);
         expect(window.location.pathname).toBe('/start');
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('slow')));
@@ -392,13 +392,79 @@ describe('navigation completion behavior', () => {
         vi.stubGlobal('fetch', vi.fn(async (url: string) => documentResponse(url.slice(1))));
         const older = navigate('/slow');
         await vi.waitFor(() => expect(fixture.bootstrapStarted).toBe(true));
+        expect(document.querySelector('#app')!.textContent).toBe('/start');
+        expect(fixture.page.path).toBe('/start');
+        expect(window.__INITIAL_STATE__.pathname).toBe('/start');
         const newer = navigate('/fast');
         await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-        release();
         expect(await older).toMatchObject({ outcome: 'superseded' });
         expect(await newer).toMatchObject({ outcome: 'completed' });
+        release();
+        await Promise.resolve(); await Promise.resolve();
         expect(document.querySelector('#app')!.textContent).toBe('/fast');
         expect(window.location.pathname).toBe('/fast');
+    });
+
+    it('keeps the committed page alive when preparation fails', async () => {
+        let reject!: (error: Error) => void;
+        fixture.bootstrapGate = new Promise<void>((_resolve, no) => { reject = no; });
+        const previous = fixture.page;
+        const destroyed = vi.spyOn(previous, 'destroy');
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('slow')));
+        const pending = navigate('/slow');
+        await vi.waitFor(() => expect(fixture.bootstrapStarted).toBe(true));
+        reject(new Error('preparation failed'));
+        expect(await pending).toMatchObject({ outcome: 'failed' });
+        expect(fixture.page).toBe(previous);
+        expect(destroyed).not.toHaveBeenCalled();
+        expect(document.querySelector('#app')!.textContent).toBe('/start');
+        expect(window.__INITIAL_STATE__.pathname).toBe('/start');
+    });
+
+    it.each(['guard', 'bootstrap'])('bounds an unresponsive %s and permits a later navigation', async boundary => {
+        vi.useFakeTimers();
+        if (boundary === 'guard') fixture.guard = () => new Promise<boolean>(() => {});
+        else fixture.bootstrapGate = new Promise<void>(() => {});
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => documentResponse(url.slice(1))));
+        const pending = navigate('/slow');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_TIMEOUT' } });
+        expect(window.location.pathname).toBe('/start');
+        expect(fixture.page.path).toBe('/start');
+        fixture.guard = async () => false;
+        expect(await navigate('/fast')).toMatchObject({ outcome: 'completed' });
+    });
+
+    it.each(['module', 'transition'])('revokes publication after a stalled %s reaches its deadline', async boundary => {
+        let lateCommit: (() => Promise<void>) | undefined;
+        const path = '/src/pages/slow/index.ts';
+        const loader = fixture.registry.pages[path];
+        if (boundary === 'module') fixture.registry.pages[path] = () => new Promise(() => {});
+        else {
+            (document as any).startViewTransition = (update: () => Promise<void>) => {
+                lateCommit = update;
+                return { ready: Promise.resolve(), finished: Promise.resolve(), updateCallbackDone: new Promise(() => {}) };
+            };
+            navigate = (await createClientApp({ container: '#app', AppComponent: App, viewTransitions: true }))!.navigate;
+        }
+        try {
+            vi.useFakeTimers();
+            vi.stubGlobal('fetch', vi.fn(async () => documentResponse('slow')));
+            const previous = fixture.page;
+            const pending = navigate('/slow');
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_TIMEOUT' } });
+            if (boundary === 'transition') {
+                expect(lateCommit).toBeDefined();
+                await expect(lateCommit!()).rejects.toMatchObject({ code: 'COSSACK_NAVIGATION_TIMEOUT' });
+            }
+            expect(fixture.page).toBe(previous);
+            expect(window.location.pathname).toBe('/start');
+            expect(window.__INITIAL_STATE__.pathname).toBe('/start');
+        } finally {
+            fixture.registry.pages[path] = loader;
+            delete (document as any).startViewTransition;
+        }
     });
 
     it('reports missing route modules as failures instead of successful navigations', async () => {

@@ -965,7 +965,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount, stageNavigation }: BootstrapOptions = {}) {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
@@ -1038,7 +1038,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.provide(RequestContext, this.c);
         this.provide(RuntimeContext, this.runtime);
 
-        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        if (!stageNavigation) this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
 
         this.initializeState(initialState);
         this._navigationClientDraft = undefined;
@@ -1056,33 +1056,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         // Run tasks after state initialization
-        await this.runTasks();
+        if (!stageNavigation) await this.runTasks();
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
 
         if (this.isServer) {
             this.proxyClientMethods();
         } else {
-            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
-
-            // Get server methods directly from Reflect metadata instead of serialized state
-            const serverMethodsMetadata = collectServerMethodMetadata(this.constructor);
-            const serverMethods = Object.entries(serverMethodsMetadata)
-                .filter(([name]) => !isSharedMethod(this.constructor, name))
-                .map(([name, options]: [string, any]) => ({
-                    name,
-                    channel: options.channel || 'global',
-                    provider: options.provider || 'page',
-                }));
-
-            if (pageOptions?.transport === 'http') {
-                this.proxyHttpMethods(serverMethods);
-            } else if (pageOptions?.transport === 'sse') {
-                this.connectSSE();
-                this.proxyHttpMethods(serverMethods);
-            } else {
-                this.connectWebSocket();
-                this.proxyServerMethods(serverMethods);
-            }
+            if (!stageNavigation) this._frameworkConnectClientTransport();
         }
 
         // Perform initialization (wrapped hooks). get()/init() are server-only;
@@ -1105,7 +1085,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // critical for the client app bootstrap — mounting before the page
         // content is loaded would render the App shell with empty `children`,
         // wiping the SSR DOM and flashing an empty main (a major CLS source).
-        if (this.container && !this.isServer && !deferMount) {
+        if (this.container && !this.isServer && !deferMount && !stageNavigation) {
             this.skipRenderTasks = true;
             try {
                 this.mount(this.container as HTMLElement);
@@ -1118,25 +1098,63 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
-        if (!this.isServer && !this.isMounted && !deferMount) {
-            this.isMounted = true;
-            this._frameworkMount();
-            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        if (!deferMount && !stageNavigation) this._frameworkActivateNavigation();
 
-            // Run clientInit() if it exists - for client-only initialization
-            // that should show loading state on initial page load
-            if (this.hasMethod('clientInit')) {
-                const clientInitMethod = this.getMethod('clientInit');
-                if (clientInitMethod) {
-                    (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
-                }
-            }
-        }
         } finally {
             this.isBootstrapping = false;
             // Restore phase after bootstrap complete
             this._restorePhase();
         }
+    }
+
+    private _frameworkConnectClientTransport(): void {
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+
+        // Get server methods directly from Reflect metadata instead of serialized state
+        const serverMethodsMetadata = collectServerMethodMetadata(this.constructor);
+        const serverMethods = Object.entries(serverMethodsMetadata)
+            .filter(([name]) => !isSharedMethod(this.constructor, name))
+            .map(([name, options]: [string, any]) => ({
+                name,
+                channel: options.channel || 'global',
+                provider: options.provider || 'page',
+            }));
+
+        if (pageOptions?.transport === 'http') {
+            this.proxyHttpMethods(serverMethods);
+        } else if (pageOptions?.transport === 'sse') {
+            this.connectSSE();
+            this.proxyHttpMethods(serverMethods);
+        } else {
+            this.connectWebSocket();
+            this.proxyServerMethods(serverMethods);
+        }
+    }
+
+    /** @internal Activate a prepared browser owner once, after publishing its tree. */
+    public _frameworkActivateNavigation(): void {
+        if (this.isServer || this.isMounted || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        this.isMounted = true;
+        this._frameworkMount();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        if (this.hasMethod('clientInit')) {
+            const method = this.getMethod('clientInit');
+            if (method) Promise.resolve((method as any)()).catch((error: Error) => console.error('clientInit error:', error));
+        }
+    }
+
+    private _navigationPublished = false;
+
+    /** @internal Start prepared transport only when its navigation publishes. */
+    public async _frameworkPublishNavigation(): Promise<void> {
+        if (this.isServer || this.isMounted || this._navigationPublished || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._navigationPublished = true;
+        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        await this.runTasks();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._frameworkConnectClientTransport();
+        this._frameworkActivateNavigation();
     }
 
     private _wrapLifecycleMethods() {
@@ -1204,6 +1222,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!draft || draft.constructor !== this.constructor) return false;
         navigationDrafts.delete(token);
         this._navigationClientDraft = draft.values;
+        return true;
+    }
+
+    /** @internal Adopt the latest local draft after preparation, before activation. */
+    @Client()
+    public _frameworkAdoptClientDraft(token: object): boolean {
+        if (this.isServer || this.isMounted || this.isInPhase(LifecyclePhase.Destroyed)) return false;
+        const draft = navigationDrafts.get(token);
+        if (!draft || draft.constructor !== this.constructor) return false;
+        navigationDrafts.delete(token);
+        for (const [key, value] of draft.values) {
+            if (!this._stateContainer.isInitialized(key)) continue;
+            this._stateContainer.setInternal(key, value);
+            this._storeProxies.delete(key);
+        }
         return true;
     }
 
