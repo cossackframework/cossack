@@ -53,13 +53,35 @@ export async function indexDeclarations(folder, exports) {
     const flags = ts.getCombinedModifierFlags(declaration);
     return !!(flags & (ts.ModifierFlags.Private | ts.ModifierFlags.Protected)) || declaration.name?.kind === ts.SyntaxKind.PrivateIdentifier;
   });
+  const documentation = symbol => ({
+    documentation: ts.displayPartsToString(symbol.getDocumentationComment(checker)),
+    tags: symbol.getJsDocTags(checker).map(tag => ({ name: tag.name, text: ts.displayPartsToString(tag.text ?? []) })),
+  });
+  const indexSignatures = type => checker.getIndexInfosOfType(type).map(info => ({
+    keyType: checker.typeToString(info.keyType, info.declaration, format),
+    valueType: checker.typeToString(info.type, info.declaration, format),
+    readonly: info.isReadonly, source: source(info.declaration),
+  }));
   const members = type => checker.getPropertiesOfType(type).filter(isPublic).filter(symbol => symbol.name !== 'prototype').map(symbol => {
     const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
     const value = checker.getTypeOfSymbolAtLocation(symbol, declaration);
-    return { name: symbol.name, optional: !!(symbol.flags & ts.SymbolFlags.Optional),
+    return { name: symbol.name, ...documentation(symbol), optional: !!(symbol.flags & ts.SymbolFlags.Optional),
       type: checker.typeToString(value, declaration, format),
-      callSignatures: signatures(value, ts.SignatureKind.Call, declaration), source: source(declaration) };
+      callSignatures: signatures(checker.getNonNullableType(value), ts.SignatureKind.Call, declaration), source: source(declaration) };
   }).sort((a,b) => a.name.localeCompare(b.name));
+  const propsContract = type => {
+    const props = checker.getPropertyOfType(type, 'props');
+    if (!props || !isPublic(props)) return null;
+    const declaration = props.valueDeclaration ?? props.declarations?.[0];
+    const value = checker.getTypeOfSymbolAtLocation(props, declaration);
+    const shape = checker.getNonNullableType(value);
+    const structured = !!(shape.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection | ts.TypeFlags.Union));
+    return { type: checker.typeToString(value, declaration, format), source: source(declaration),
+      status: !structured ? 'unknown' : shape.flags & ts.TypeFlags.Union ? 'partial' : 'declared',
+      ...documentation(props), members: structured ? members(shape) : [],
+      indexSignatures: structured ? indexSignatures(shape) : [],
+    };
+  };
   const diagnostics = ts.getPreEmitDiagnostics(program);
   const entries = files.map(file => {
     const sf = program.getSourceFile(file);
@@ -78,7 +100,9 @@ export async function indexDeclarations(folder, exports) {
       const valueType = checker.getTypeOfSymbolAtLocation(target, declaration);
       return { name, declarationName: target.name, status: 'indexed', abstract: !!(ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Abstract), declarationKind: ts.SyntaxKind[declaration.kind],
         source: source(declaration), type: checker.typeToString(type, declaration, format),
-        documentation: ts.displayPartsToString(target.getDocumentationComment(checker)),
+        ...documentation(target),
+        indexSignatures: type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection) ? indexSignatures(type) : [],
+        propsContract: target.flags & ts.SymbolFlags.Class ? propsContract(type) : null,
         callSignatures: signatures(valueType, ts.SignatureKind.Call, declaration),
         constructSignatures: signatures(valueType, ts.SignatureKind.Construct, declaration),
         members: typeSpace && (type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(type) : [],

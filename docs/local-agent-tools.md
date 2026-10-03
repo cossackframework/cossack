@@ -197,3 +197,28 @@ pure scaffold registry without writing files. The protected-route example also
 checks auth/database/UI dependencies, D1 requirements and an unsupported provider.
 The examples currently prove Node behavior. Other APIs, components, recipes and
 runtime targets still need their own guidance and acceptance coverage.
+
+
+## Component prop declarations
+
+With `--symbols` (or MCP `symbols: true`), public members include their declaration
+comments, JSDoc tags and optional callback signatures. Index signatures report
+key and value types, readonly status and source locations. An index signature
+such as `[key: string]: any` remains visible. It permits arbitrary values and does
+not establish type-safe HTML attributes or event handlers.
+
+Exported classes with a public `props` member also include `propsContract`.
+It contains the instantiated prop type, its source, public members and index
+signatures. Inherited generic props resolve through the compiler. Private and
+protected props are excluded. This is a structural declaration view, not automatic
+classification of a class as a UI component.
+
+A contract is `declared` when an object shape is available, `partial` for a union
+and `unknown` for an unstructured type such as `any`. Union members are only the
+properties common to all alternatives. `declared` does not mean every field is
+strictly typed. Read index signatures and package diagnostics too.
+
+The catalog does not prove native attribute forwarding, keyboard behavior, labels
+or focus management. Those require authored guidance and browser acceptance.
+The installed UI check currently verifies Button prop descriptions and its index
+signature across CLI and MCP. It retains unresolved platform diagnostics.

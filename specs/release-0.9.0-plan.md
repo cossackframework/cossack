@@ -611,6 +611,16 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex prop-catalog checkpoint (2026-10-04): declaration catalogs now preserve
+member comments, JSDoc tags, optional callback signatures and index signatures.
+Exported classes with public props expose an instantiated propsContract, including
+inherited generics. Union shapes are partial and unknown shapes remain explicit.
+This records declared types, not native attribute forwarding or accessibility.
+The actual UI catalog exposes Button descriptions and its permissive string/any
+index signature. Platform diagnostics remain partial. See the
+[checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04).
+
+
 Codex recipe-guidance checkpoint (2026-10-04): scaffold now ships guidance for
 resource, mutation, scoped-service and protected-route recipes. Each guide explains
 what the template provides, its limits, preview/application commands and adaptation
@@ -3279,6 +3289,15 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
+
+Codex catalog preparation (2026-10-04): CLI-08 now exposes class prop declarations,
+member documentation, optional callback signatures and index contracts from
+installed types. This does not close the component audit. Button/Input currently
+allow arbitrary attributes through string/any signatures. Table remains a styled
+native-table wrapper. DataTable is mentioned in the blocks README but no
+implementation is present in the inspected UI sources. Implement the controlled
+server-data contract and browser acceptance below before marking RT-23 complete.
+
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

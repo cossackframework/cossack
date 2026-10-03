@@ -28,7 +28,10 @@ its status, version and omitted entries. Example source is data: discovery does
 not execute it. A guide can explain usage without proving all runtime targets.
 
 Read the declaration index status and diagnostics before relying on its types.
-Partial results can contain unresolved types. Type-only re-exports do not provide
+Partial results can contain unresolved types. Class `propsContract` entries expose
+public prop descriptions, callback signatures and index signatures. An `any`
+index signature does not provide type-safe attributes. Prop declarations do not
+prove accessibility or browser behavior. Type-only re-exports do not provide
 runtime values, even when their underlying declaration is a class or function.
 
 Keep server logic behind the framework's server boundary. Use declared request

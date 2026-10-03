@@ -65,6 +65,9 @@ conditions and availability are facts. Optional per-package declaration indexing
 uses the CLI's pinned TypeScript 6 API alias, without replacing the project's
 TypeScript 7 compiler. Programs read installed declaration graphs afresh, resolve
 aliases/re-exports and report public signatures with diagnostics and source hashes.
+Member comments, JSDoc tags and index signatures remain visible. Exported classes
+with public props expose their instantiated declaration shape. Union and unknown
+prop contracts are explicit. No DOM behavior or accessibility is inferred.
 Export discovery expands bounded file/type matches with Node pattern precedence
 and null exclusions, while reporting unsupported or incomplete scans. TypeScript
 extension substitution discovers adjacent declarations without running JavaScript.

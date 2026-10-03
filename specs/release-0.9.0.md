@@ -6242,3 +6242,42 @@ and its original RT-23/REL-02 gates. These examples verify planning behavior in
 Node, not application execution on every adapter or remote readiness. Task status
 remains 24 complete and 34 open. Versions remain 0.8.3. No publication, deployment,
 push or external credential rotation occurred.
+
+<a id="codex-prop-catalog-2026-10-04"></a>
+## Codex: Installed component prop contracts (2026-10-04)
+
+Declaration catalogs now retain member comments, JSDoc tags, optional callback
+signatures and index signatures. Exported classes with public props expose an
+instantiated propsContract, including inherited generic contracts. Private and
+protected props stay excluded. Union shapes report partial common-member views,
+and unstructured types such as any remain unknown. Declared object shapes do
+not imply strict attribute typing, browser behavior or accessibility.
+
+The actual UI catalog exposes Button's declared prop descriptions and unrestricted
+string/any index signature. Existing unresolved platform diagnostics stay partial.
+The installed tarball acceptance now compares the UI catalog through CLI and MCP.
+The first fixture attempt correctly reported UI unavailable because the minimal
+app had no direct UI dependency. The acceptance fixture now declares the local UI
+tarball as a development dependency without adding UI feature source or imports.
+CI includes UI changes in its generated-app acceptance trigger.
+
+Verification:
+
+- **36 tests across 3 CLI files passed**, including inherited generic props,
+  private/unknown/union shapes, JSDoc, optional callbacks and index signatures.
+  Log: `/tmp/cossack-props-catalog-tests.log`.
+- `pnpm test:agent-docs:local` passed with installed UI CLI/MCP parity,
+  six compiled/executed examples, fresh manifests/guides and zero Node network attempts.
+  Log: `/tmp/cossack-props-catalog-tarball-final.log`.
+- Root `pnpm tsc --noEmit` and all 11 package checks via `pnpm typecheck` passed.
+  Logs: `/tmp/cossack-props-catalog-types-final.log` and
+  `/tmp/cossack-props-catalog-package-types-final.log`.
+- JavaScript syntax, workflow YAML parsing and whitespace checks passed.
+
+RT-23 remains open: Table is a styled wrapper, and the inspected UI sources have
+no DataTable implementation despite its blocks README mention. Controlled server
+data, typed column accessors, selection/pagination, native attribute contracts and
+keyboard/focus/accessibility acceptance still require implementation. CLI-08 also
+retains broader usage/runtime guidance and its RT-23/REL-02 gates. No checklist
+status changed: 24 complete and 34 open. Versions remain 0.8.3. No publication,
+deployment, push or credential rotation occurred.

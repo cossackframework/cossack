@@ -110,6 +110,21 @@ require('node:module').syncBuiltinESMExports();
     assert.equal(remote.isError, false);
     assert.deepEqual(remote.structuredContent.data, documented.data);
 
+    // Real UI declarations must expose prop documentation and permissive attributes
+    // through both transports, while retaining unresolved platform diagnostics.
+    const ui = await invoke(['docs', '--package', '@cossackframework/ui', '--symbols', '--json']);
+    assert.equal(ui.ok, true);
+    const uiPackage = ui.data.packages[0];
+    assert.equal(uiPackage.installed, true);
+    const button = uiPackage.declarations.entries.flatMap(entry => entry.symbols).find(symbol => symbol.name === 'Button');
+    assert.equal(button.propsContract.status, 'declared');
+    assert.match(button.propsContract.members.find(member => member.name === 'variant').documentation, /Visual style/);
+    assert.ok(button.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true } });
+    assert.equal(uiRemote.isError, false);
+    assert.deepEqual(uiRemote.structuredContent.data, ui.data);
+    console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');
+
     // A running MCP server must refresh installed facts after a package change.
     const manifestPath = path.join(projectDir, 'node_modules', renderer.name, 'package.json');
     const original = await fs.readFile(manifestPath, 'utf8');

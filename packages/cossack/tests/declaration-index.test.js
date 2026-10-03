@@ -148,3 +148,30 @@ it('discovers wildcard type-only files while leaving absent runtime files explic
   expect(pkg.exports.find(entry=>entry.subpath==='./only').targets[0]).toMatchObject({target:'./only.js',status:'missing'});
   expect(pkg.declarations.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name))).toContain('typed');
 },30000);
+
+it('preserves prop documentation, optional event signatures and permissive index contracts', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    export interface ButtonProps {
+      /** Button styling. @default outline */
+      variant?: 'outline' | 'solid';
+      /** Activation callback. */
+      '@click'?: (event: MouseEvent) => void;
+      readonly [attribute: string]: any;
+    }
+    declare class Base<T> { props: T; }
+    export declare class Button extends Base<ButtonProps> {}
+    export declare class Unknown { props: any; }
+    export declare class Private { private props; }
+    export declare class Choice { props: {kind:'a'; a:string} | {kind:'b'; b:number}; }
+  `});
+  const index=(await read()).data.packages[0].declarations;
+  const symbols=index.entries[0].symbols;
+  const button=symbols.find(s=>s.name==='Button');
+  expect(button.propsContract).toMatchObject({status:'declared',type:'ButtonProps',indexSignatures:[{keyType:'string',valueType:'any',readonly:true}]});
+  expect(button.propsContract.members.find(s=>s.name==='variant')).toMatchObject({documentation:'Button styling.',tags:[{name:'default',text:'outline'}],optional:true});
+  expect(button.propsContract.members.find(s=>s.name==='@click')).toMatchObject({documentation:'Activation callback.',callSignatures:['(event: MouseEvent): void'],optional:true});
+  expect(symbols.find(s=>s.name==='ButtonProps').indexSignatures).toEqual(button.propsContract.indexSignatures);
+  expect(symbols.find(s=>s.name==='Unknown').propsContract).toMatchObject({status:'unknown',type:'any',members:[]});
+  expect(symbols.find(s=>s.name==='Private').propsContract).toBeNull();
+  expect(symbols.find(s=>s.name==='Choice').propsContract).toMatchObject({status:'partial',members:[{name:'kind'}]});
+},30000);

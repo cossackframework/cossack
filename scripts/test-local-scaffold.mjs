@@ -68,7 +68,7 @@ async function packPackages(destination) {
   return tarballs;
 }
 
-async function useTarballs(projectDir, tarballs) {
+async function useTarballs(projectDir, tarballs, { documentation = false } = {}) {
   const packagePath = path.join(projectDir, 'package.json');
   const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
   const pkg = JSON.parse(await fs.readFile(packagePath, 'utf8'));
@@ -85,6 +85,11 @@ async function useTarballs(projectDir, tarballs) {
     ...(pkg.devDependencies ?? {}),
     '@cossackframework/scaffold': `file:${tarballs.get('@cossackframework/scaffold')}`,
   };
+  // UI discovery needs a directly resolvable dependency in the documentation fixture.
+  // This adds no UI feature files or runtime imports to the minimal application.
+  if (documentation && !pkg.dependencies?.['@cossackframework/ui']) {
+    pkg.devDependencies['@cossackframework/ui'] = `file:${tarballs.get('@cossackframework/ui')}`;
+  }
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 
   // pnpm 11 moved overrides out of package.json's `pnpm` field. Keep the
@@ -608,7 +613,7 @@ try {
     '--yes',
   ], { cwd: temporaryRoot });
   const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
-  await useTarballs(minimalProjectDir, tarballs);
+  await useTarballs(minimalProjectDir, tarballs, { documentation: true });
   await installGeneratedProject(minimalProjectDir);
   await verifyAgentDocumentation(minimalProjectDir);
   if (!process.argv.includes('--agent-docs-only')) {

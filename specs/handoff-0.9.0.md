@@ -32,15 +32,16 @@ CLI-07 and CLI-08 remain open. Their implemented foundations are:
 
 - `cossack-mcp --project <directory>`: static inspection, installed versions and bounded cancellable workers.
 - `cossack docs` and MCP `read_documentation`: installed exports, command schemas and packaged agent guidance.
-- `docs --package <name> --symbols --json` or MCP `symbols: true`: signatures through a pinned TypeScript 6 API alias.
+- `docs --package <name> --symbols --json` or MCP `symbols: true`: signatures, prop contracts, comments and index signatures through a pinned TypeScript 6 API alias.
 - Package-owned guides: typed route URLs, server HTML and four feature recipes include TypeScript examples. Discovery reads their source without executing it.
 - Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
 See [setup and usage](../docs/local-agent-tools.md) and the
-[latest guidance checkpoint](./release-0.9.0.md#codex-recipe-guidance-2026-10-04).
+[latest catalog checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04).
 
 Next expand authored API/component/recipe guidance and executable examples,
 and add verified runtime support. Extend the installed-tarball acceptance to cover that content.
+RT-23 still needs a controlled DataTable and native attribute, keyboard/focus and accessibility acceptance.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -73,9 +74,9 @@ Carry these unresolved limits into implementation and review:
 
 ## Verification references
 
-The [recipe-guidance checkpoint](./release-0.9.0.md#codex-recipe-guidance-2026-10-04)
-records 109 scaffold tests, two final declaration checks, six installed examples
-and root/package type checks. Registry declarations no longer require Node globals.
+The [prop-catalog checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04)
+records 36 focused tests, installed UI CLI/MCP parity, six executable examples
+and root/package type checks. Prior scaffold evidence remains in the release log.
 
 The [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
 proves CLI/MCP catalog parity, version/export refresh and discovery with Node networking disabled in a generated tarball installation.
