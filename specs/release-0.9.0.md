@@ -17,7 +17,7 @@ below link directly to those explanations.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures, runtime guidance, authored examples and offline tarball acceptance remain open. See the [checkpoint](#codex-installed-catalog-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Runtime guidance, authored/executable examples, wildcard discovery and offline tarball acceptance remain open. See the [declaration checkpoint](#codex-declaration-index-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -6049,3 +6049,43 @@ executable examples, wildcard expansion and offline installed-tarball verificati
 still need implementation/evidence. Test-result and devtools trace tools remain
 CLI-07/RT-28 work. All 58 task IDs remain: 24 complete, 34 open. Versions stay
 0.8.3 until REL-04. No remote publication, deployment or push occurred.
+
+<a id="codex-declaration-index-2026-10-04"></a>
+## Codex: Compiler-backed declaration catalog (2026-10-04)
+
+Added optional per-package symbol indexing to CLI/MCP documentation. The Node-only
+CLI pins TypeScript API 6.0.3 under `typescript-api`; the root TypeScript 7 compiler
+is unchanged. Public signatures come from fresh programs over installed type files,
+not regex parsing, repository sources or executed entrypoints.
+
+The index includes aliases and re-exports, overloads/generics, public class and
+interface members, static members, object/namespace/enum helpers and CommonJS
+export assignments. It omits private/protected members and constructors and marks
+abstract classes. Declared type-only class/function signatures never imply runtime
+value availability. Programs do not load project tsconfig plugins. The documentation
+records the fixed ES2022/ESNext/Bundler strict profile with no automatic ambient
+packages, partial/unavailable states and the first-100 diagnostic limit.
+
+Tests prove freshness when referenced declarations change without manifest/version
+changes. They also cover missing/unresolved type files, non-module declarations,
+private constructor exclusion, CLI input validation and actual MCP worker results.
+A manual installed-core run indexed 357 root exports and four additional declared
+entrypoints. It returned partial with five unresolved platform-type diagnostics,
+which remains a reported limit rather than hidden compatibility evidence.
+
+Verification:
+
+- **222 tests across 7 CLI files** passed before the final member-visibility follow-up.
+- **30 declaration/documentation/MCP tests across 3 files** passed after the final edits.
+- Root `pnpm tsc --noEmit` and all **11** package type checks passed after final code changes.
+- Whitespace check excluding the user's existing `reports.md` passed.
+
+Logs: `/tmp/cossack-declaration-regression.log`,
+`/tmp/cossack-declaration-verified.log`,
+`/tmp/cossack-declaration-root-types-verified.log` and
+`/tmp/cossack-declaration-package-types-verified.log`.
+
+CLI-08 stays unchecked. Authored API/component/recipe guidance, executable examples,
+verified runtime support, wildcard/implicit type discovery and offline installed
+package acceptance remain. CLI-07 still needs test-result and devtools trace tools.
+The checklist retains 58 IDs: 24 complete, 34 open. Versions remain 0.8.3 until REL-04.

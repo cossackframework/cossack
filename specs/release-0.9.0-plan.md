@@ -611,6 +611,30 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex declaration-index checkpoint (2026-10-04): named exports/signatures are now
+available through `cossack docs --package <name> --symbols --json` and MCP
+`read_documentation` with `symbols: true`. One package must be selected. The CLI
+owns a pinned `typescript-api` alias at TypeScript 6.0.3 because the workspace's
+TypeScript 7 entry no longer exposes the classic compiler API. Project compilation
+still uses TypeScript 7. The index reports its own compiler version explicitly.
+
+Fresh programs read declared type targets, including legacy `types` entries.
+They resolve aliases, star/type-only/namespace re-exports and CommonJS export
+assignments. Results include overloads/generics, public constructors and members,
+object/namespace/enum helpers, documentation, source locations and a declaration
+graph hash. Private/protected members and constructors are omitted. Abstract
+classes are marked. Underlying signatures never certify runtime value exports.
+Missing targets or compiler diagnostics produce unavailable/partial status, not a
+successful compatibility claim. Source diagnostic payloads omit raw compiler text.
+See the [verification](./release-0.9.0.md#codex-declaration-index-2026-10-04).
+
+Next finish authored API/component/recipe explanations and executable examples,
+verified runtime guidance, wildcard/implicit declaration discovery and offline
+installed-tarball acceptance. The initial fixed compiler profile has no automatic
+ambient platform packages; actual core inspection reports unresolved platform globals
+as partial. It does not invent Cloudflare runtime readiness. Keep CLI-08 open until
+all original requirements and dependency gates are proven.
+
 Codex catalog checkpoint (2026-10-04): `cossack docs [--package <name>] --json`
 and MCP `read_documentation` now share `documentation-service.js`. It reads fresh
 installed manifests through a fixed Cossack package allowlist. Results contain

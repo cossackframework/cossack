@@ -149,6 +149,9 @@ importers:
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
+      typescript-api:
+        specifier: npm:typescript@6.0.3
+        version: typescript@6.0.3
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -3952,6 +3955,11 @@ packages:
 
   typescript@5.4.5:
     resolution: {integrity: sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -8204,6 +8212,8 @@ snapshots:
   type-fest@1.4.0: {}
 
   typescript@5.4.5: {}
+
+  typescript@6.0.3: {}
 
   typescript@7.0.2:
     optionalDependencies:

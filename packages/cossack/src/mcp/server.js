@@ -42,7 +42,8 @@ export async function startMcpServer(project, options = {}) {
     });
     server.registerTool('read_documentation', {
       description: 'Read offline installed package export targets, versioned CLI command schemas and agent guidance. No application modules are executed.',
-      inputSchema: z.object({ package: z.enum(COSSACK_PACKAGES).optional() }).strict(),
+      inputSchema: z.object({ package: z.enum(COSSACK_PACKAGES).optional(), symbols: z.boolean().default(false) }).strict()
+        .refine(value => !value.symbols || value.package !== undefined, { message: 'symbols requires package.' }),
       outputSchema: toolResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async (input, ctx) => {

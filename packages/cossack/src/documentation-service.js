@@ -31,11 +31,12 @@ function commandCatalog() {
 }
 
 /** Fresh offline facts from the bound project's installed manifests, not workspace sources. */
-export async function readDocumentation(root, { package: selected } = {}) {
+export async function readDocumentation(root, { package: selected, symbols = false } = {}) {
   if (selected !== undefined && !COSSACK_PACKAGES.includes(selected)) {
     throw Object.assign(new Error('Select a supported Cossack package.'), { code: 'COSSACK_DOCS_PACKAGE_UNKNOWN' });
   }
-  const packages = [], diagnostics = [];
+  if (symbols && !selected) throw Object.assign(new Error('Select one package when requesting symbols.'), { code: 'COSSACK_DOCS_PACKAGE_REQUIRED' });
+  const packages = [], diagnostics = [], installedFolders = new Map();
   for (const name of selected ? [selected] : COSSACK_PACKAGES) {
     let installed;
     try { installed = await readInstalledPackage(root, name); }
@@ -45,6 +46,7 @@ export async function readDocumentation(root, { package: selected } = {}) {
     }
     if (!installed) { packages.push({ name, installed: false }); continue; }
     const { folder, manifest, source } = installed;
+    installedFolders.set(name, folder);
     const exports = manifest.exports;
     const map = exports && typeof exports === 'object' && !Array.isArray(exports) && Object.keys(exports).some(key => key.startsWith('.'))
       ? exports : exports === undefined ? {} : { '.': exports };
@@ -56,10 +58,26 @@ export async function readDocumentation(root, { package: selected } = {}) {
       legacyEntries: exports === undefined ? { main: manifest.main ?? null, types: manifest.types ?? null } : null,
     });
   }
+  if (symbols) {
+    const { indexDeclarations } = await import('./declaration-index.js');
+    for (const pkg of packages.filter(pkg => pkg.installed)) {
+      const folder = installedFolders.get(pkg.name);
+      const entries = [...pkg.exports];
+      if (typeof pkg.legacyEntries?.types === 'string') {
+        const target = pkg.legacyEntries.types.startsWith('./') ? pkg.legacyEntries.types : './' + pkg.legacyEntries.types;
+        entries.push(await describeExport(folder, '.', { types: target }));
+      }
+      pkg.declarations = await indexDeclarations(folder, entries);
+      if (pkg.declarations.status !== 'indexed') diagnostics.push({
+        code: 'COSSACK_DOCS_DECLARATIONS_INCOMPLETE', severity: 'warning', package: pkg.name,
+        message: 'Some installed declarations are unavailable, unresolved or have compiler diagnostics. Runtime imports remain unverified.',
+      });
+    }
+  }
   const guide = await fs.readFile(new URL('./agent-guide.md', import.meta.url), 'utf8');
-  return { ok: diagnostics.length === 0, diagnostics, data: {
+  return { ok: !diagnostics.some(diagnostic => diagnostic.severity === 'error'), diagnostics, data: {
     schemaVersion: 1, cliVersion: readPackageVersion(), packages,
     commands: commandCatalog(), guide: { version: readPackageVersion(), markdown: guide },
-    coverage: { exportTargets: 'installed-manifests', symbols: 'not-indexed', runtimeSupport: 'not-verified', examples: 'not-included' },
+    coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations' : 'not-requested', runtimeSupport: 'not-verified', examples: 'not-included' },
   } };
 }

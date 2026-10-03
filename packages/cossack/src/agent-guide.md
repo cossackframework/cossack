@@ -15,6 +15,17 @@ named symbol exists, that runtime dependencies resolve or that an API works on
 all adapters. The catalog reports those limits explicitly. Wildcard exports are
 patterns, and blocked exports remain blocked.
 
+For named exports and signatures, select a package:
+
+```sh
+pnpm exec cossack docs --package @cossackframework/core --symbols --json
+```
+
+Replace the package name when needed. MCP `read_documentation` accepts the same package and `symbols: true`.
+Read the declaration index status and diagnostics before relying on its types.
+Partial results can contain unresolved types. Type-only re-exports do not provide
+runtime values, even when their underlying declaration is a class or function.
+
 Keep server logic behind the framework's server boundary. Use declared request
 and service scopes for request facilities. Read the installed types before calling
 an unfamiliar API. Do not use an online example from another version as proof.

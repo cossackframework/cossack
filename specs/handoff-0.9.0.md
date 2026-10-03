@@ -61,11 +61,15 @@ CLI-08 now has `cossack docs` and MCP `read_documentation` for fresh installed
 export targets, command schemas and packaged/scaffolded agent guidance. See the
 [catalog checkpoint](./release-0.9.0.md#codex-installed-catalog-2026-10-04).
 
-Next add named-symbol/signature indexing, authored API/component/recipe guidance,
-verified runtime support and executable examples. Prove offline behavior from
-installed tarballs. Then continue CLI-07 stored test results and RT-28 snapshots/
-traces through shared services. Both CLI tasks remain open. A present export file
-does not prove runtime importability. Preserve the original acceptance criteria.
+Named-symbol/signature indexing is now available with `docs --package <name> --symbols --json` or MCP `symbols: true`. It uses a pinned TypeScript 6 API alias,
+reports partial/unavailable declarations and keeps runtime availability unverified.
+See the [declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04).
+
+Next add authored API/component/recipe guidance, verified runtime support and
+executable examples. Finish wildcard/implicit type discovery and prove offline
+behavior from installed tarballs. Then continue CLI-07 stored test results and
+RT-28 snapshots/traces through shared services. Both CLI tasks remain open.
+Preserve the original acceptance criteria.
 
 Keep every other unchecked task in scope. Close tasks only against their original
 criteria. Versions stay 0.8.3 until REL-04.
@@ -99,14 +103,14 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The [catalog checkpoint](./release-0.9.0.md#codex-installed-catalog-2026-10-04) records current CLI/scaffold results.
+The [declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04) records current CLI results.
 The [navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
 records unchanged runtime/browser evidence. Earlier suites are labeled by checkpoint.
 
 | Check | Result |
 | --- | --- |
-| Documentation / MCP / CLI regressions | 212 passed; final malformed-manifest follow-up: 18 passed |
-| Scaffold tests | 78 passed |
+| Documentation / MCP / CLI regressions | 222 passed; final declaration follow-up: 30 passed |
+| Scaffold at `ee1ec7d` | 78 passed; unaffected by declaration indexing |
 | Full generated-runtime matrix | 31 passed |
 | Navigation/guard/transition browser suites | 27 passed |
 | Focused core / framework navigation suites | 70 / 50 passed |

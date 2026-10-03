@@ -58,8 +58,13 @@ can read installed package metadata and imported declarations outside that root.
 This project binding is not a sandbox for untrusted local repositories.
 The CLI and MCP share `documentation-service.js`. It reads fresh manifests for an
 explicit Cossack package allowlist, without executing module entrypoints. Export
-conditions and availability are facts; named symbols and runtime compatibility are
-not inferred from file presence. Command schemas and packaged guidance belong to
+conditions and availability are facts. Optional per-package declaration indexing
+uses the CLI's pinned TypeScript 6 API alias, without replacing the project's
+TypeScript 7 compiler. Programs read installed declaration graphs afresh, resolve
+aliases/re-exports and report public signatures with diagnostics and source hashes.
+No project tsconfig plugins or module entrypoints execute. Type-only declarations
+do not establish runtime value availability. Runtime compatibility is not inferred
+from file presence or from declaration signatures. Command schemas and packaged guidance belong to
 the CLI version. Stored test results and devtools traces will extend this boundary
 through shared services, not shell parsing or arbitrary file reads.
 

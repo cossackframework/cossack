@@ -81,12 +81,38 @@ version, a manifest hash and declared public export targets. Conditions and arra
 fallback order remain visible. Targets report present, missing, blocked, invalid
 or an unexpanded pattern. Missing packages report `installed: false`.
 
-File presence does not prove that an import executes or that a named symbol exists.
-The catalog explicitly reports named-symbol indexing, runtime verification and
-executable examples as incomplete. It does not replace type checking. Command
-schemas and the packaged agent guide belong to the reported CLI version, which
-can differ from installed library versions. MCP refreshes framework version
-metadata for each response too.
+For exported symbols and signatures, select one package and request declaration
+indexing. In MCP, set `symbols: true` with `package`. In the CLI:
+
+```sh
+pnpm exec cossack docs --package @cossackframework/core --symbols --json
+```
+
+The index follows declared `.d.ts`, `.d.mts` and `.d.cts` targets, including legacy
+`types` entries. It resolves aliases and re-exports and reports generic/overloaded
+call signatures, constructors, public instance/static and object/namespace members,
+documentation and
+package-relative declaration locations. Private/protected members and constructors
+are excluded. `name` is the public export name and `declarationName` is the original
+name, which can differ for aliases. Abstract classes are marked explicitly.
+
+The CLI pins TypeScript API 6.0.3 for this analysis. It does not replace the project's
+compiler. Analysis uses ES2022, ESNext modules, Bundler resolution, strict checking
+and no automatic ambient type packages. It does not load project tsconfig plugins.
+Missing platform globals, unresolved imports or unsupported syntax produce a partial
+index with diagnostic codes and source locations. A missing type entry produces an
+unavailable index. The declaration hash changes when referenced declarations change,
+even if the package version and manifest do not. Reads do not reuse an old program.
+
+Declaration signatures do not prove runtime exports. For example, a class reached
+through `export type *` has a constructor declaration but provides no runtime value.
+All runtime availability remains `not-verified`. Wildcard expansion and implicit
+types inferred from JavaScript entrypoints remain unsupported. The first 100
+compiler diagnostics are included, alongside the total count.
+
+Command schemas and the packaged agent guide belong to the reported CLI version,
+which can differ from installed library versions. MCP refreshes framework version
+metadata for each response too. The catalog does not replace application type checks.
 
 Generated applications receive an AGENTS guide that points to local discovery.
 No network request or application-module execution is needed to read the catalog.
@@ -95,8 +121,8 @@ Unknown package paths are rejected. Malformed manifest diagnostics omit raw cont
 ## Current scope
 
 These tools expose static inspection, configuration diagnostics and the initial
-offline catalog. Full API/component signatures, authored usage examples and verified
-runtime guidance remain CLI-08 work. Stored test results and development traces
+offline catalog with declaration signatures. Authored API/component examples,
+verified runtime guidance and installed-tarball acceptance remain CLI-08 work. Stored test results and development traces
 still need shared services. The server does not build, test, mutate, deploy or
 provision an application.
 

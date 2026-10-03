@@ -24,7 +24,7 @@ it('reads installed versions and conditional public targets without importing co
   const {root}=await fixture({'.':{types:'./index.d.ts',import:'./index.js'},'./blocked':null,'./missing':'./missing.js','./pattern/*':'./dist/*.js'});
   const result=await readDocumentation(root,{package:'@cossackframework/core'});
   expect(result.ok).toBe(true);
-  expect(result.data).toMatchObject({cliVersion:readPackageVersion(),coverage:{symbols:'not-indexed',runtimeSupport:'not-verified'}});
+  expect(result.data).toMatchObject({cliVersion:readPackageVersion(),coverage:{symbols:'not-requested',runtimeSupport:'not-verified'}});
   expect(result.data.packages[0]).toMatchObject({name:'@cossackframework/core',version:'0.1.2',installed:true,exports:[
     {import:'@cossackframework/core',targets:[{conditions:['types'],status:'present'},{conditions:['import'],status:'present'}]},
     {import:'@cossackframework/core/blocked',targets:[{status:'blocked'}]},
@@ -72,4 +72,12 @@ it('CLI subprocess accepts offline discovery and rejects invalid flags before ef
   expect(stderr).toBe(''); expect(JSON.parse(stdout)).toMatchObject({command:'docs',ok:true,data:{packages:[{version:'0.1.2'}]}});
   const failure=await exec(process.execPath,[bin,'docs','--package','../../secret','--json'],{cwd:root}).catch(error=>error);
   expect(failure.code).toBe(1); expect(JSON.parse(failure.stdout).ok).toBe(false);
+},30000);
+it('CLI exposes signatures and requires a selected package before compilation',async()=>{
+  const {root}=await fixture(); const bin=fileURLToPath(new URL('../bin/cossack.js',import.meta.url));
+  const {stdout}=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbols','--json'],{cwd:root});
+  expect(JSON.parse(stdout)).toMatchObject({ok:true,data:{coverage:{symbols:'installed-declarations'},packages:[{declarations:{status:'indexed',entries:[{symbols:[{name:'present',type:'string'}]}]}}]}});
+  const invalid=await exec(process.execPath,[bin,'docs','--symbols','--json'],{cwd:root}).catch(error=>error);
+  expect(invalid.code).toBe(1);
+  expect(JSON.parse(invalid.stdout).diagnostics[0].code).toBe('COSSACK_DOCS_PACKAGE_REQUIRED');
 },30000);

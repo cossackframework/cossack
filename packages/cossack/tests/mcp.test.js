@@ -201,3 +201,16 @@ it('shares the installed documentation catalog with the CLI service', async () =
   const invalid=await client.callTool({name:'read_documentation',arguments:{package:'../../private'}});
   expect(invalid.isError).toBe(true);
 },30000);
+it('indexes installed signatures through the cancellable MCP worker', async () => {
+  const root = await fixture();
+  const folder = path.join(root,'node_modules/@cossackframework/core');
+  await fs.mkdir(folder,{recursive:true});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':{types:'./index.d.ts',import:'./index.js'}}}));
+  await fs.writeFile(path.join(folder,'index.d.ts'),'export declare function find<T>(value:T):Promise<T>;');
+  await fs.writeFile(path.join(folder,'index.js'),'throw new Error("must not execute")');
+  const {client}=await connect(root);
+  const result=await client.callTool({name:'read_documentation',arguments:{package:'@cossackframework/core',symbols:true}});
+  expect(result.structuredContent.data.packages[0].declarations).toMatchObject({status:'indexed',entries:[{symbols:[{name:'find',callSignatures:['<T>(value: T): Promise<T>']}]}]});
+  const invalid=await client.callTool({name:'read_documentation',arguments:{symbols:true}});
+  expect(invalid.isError).toBe(true);
+},30000);

@@ -30,6 +30,7 @@
     "@modelcontextprotocol/server": "^2.3.0",
     "prompts": "^2.4.2",
     "tsx": "^4.23.0",
+    "typescript-api": "npm:typescript@6.0.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {
