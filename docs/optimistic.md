@@ -175,7 +175,16 @@ A background realtime snapshot can update the confirmed base while a preview rem
 If a later user edit survives settlement, a duplicate snapshot of that call's confirmed value preserves the edit.
 A changed snapshot or explicit RPC read restores server authority.
 Reconnect and resync clear duplicate history, then apply authoritative public snapshots.
-Duplicate history is a value comparison, not a server revision or an ordering guarantee for different late snapshots.
+SSE state publications carry a cursor and the originating request ID.
+A matching publication confirms that call's public preview without releasing its loading count.
+The terminal reply still settles loading and returns its own result.
+An older reply or duplicate publication cannot replace a newer SSE snapshot.
+A higher cursor is authoritative even when its public values equal an earlier snapshot.
+Only pending local edits retain ownership; use ClientState or ClientStore for lasting drafts.
+Cursor ordering applies within the current EventSource baseline. Reopening resets that baseline.
+Cloudflare persists cursors per scope; Node/Deno order publications within one process,
+including SSR entry replacement, and lose that order on process restart.
+Other realtime snapshots still use value comparison rather than revision ordering.
 Use ClientState or ClientStore for drafts that must survive later authoritative snapshots.
 
 ## Handle an uncertain result

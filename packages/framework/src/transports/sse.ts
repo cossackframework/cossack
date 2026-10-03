@@ -10,6 +10,7 @@ interface SseStoreEntry {
     runtime: SseRuntime;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
+    requestId?: string;
     /** Number of open SSE connections subscribed to this entry. */
     connectionCount: number;
     /** Last time an entry was touched (created or connected). Used for LRU eviction. */
@@ -23,6 +24,14 @@ interface SseStoreEntry {
  */
 const SSE_STORE_MAX = 500;
 const sseStateStore = new Map<string, SseStoreEntry>();
+// Process-local publication order survives replacement/eviction of an entry.
+// This contains no request facilities, identity or user state. Workers use the
+// persisted coordinator cursor instead and never call this backend.
+let localSseCursor = 0;
+function nextLocalSseCursor(): number {
+    if (localSseCursor === Number.MAX_SAFE_INTEGER) throw new Error('Process-local SSE cursor exhausted');
+    return ++localSseCursor;
+}
 
 /** Evict the oldest entry when the store exceeds its bound. */
 function enforceSseStoreBound(): void {
@@ -76,7 +85,7 @@ export interface SseCoordinatorStub {
         resync: boolean;
         events: Array<{ cursor: number; event: string; data: string }>;
     }>;
-    publish(state: string): Promise<{ state: string; cursor: number }>;
+    publish(state: string, requestId?: string): Promise<{ state: string; cursor: number }>;
     broadcast(event: string, data: string): Promise<unknown>;
     execute(action: (state: string) => Promise<Response>, operationId?: string, abort?: () => Promise<void>): Promise<Response>;
     cancel(operationId: string): Promise<void>;
@@ -221,8 +230,8 @@ export function registerSseStoreEntry(
         sseStateStore.set(storeKey, {
             componentInstance: pageInstance,
             runtime,
-            stateVersion: 0,
-            connectionCount: 0,
+            stateVersion: nextLocalSseCursor(),
+            connectionCount: sseStateStore.get(storeKey)?.connectionCount ?? 0,
             lastActive: Date.now(),
         });
     }
@@ -304,7 +313,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
+            entry = { componentInstance, runtime, stateVersion: nextLocalSseCursor(), connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
             enforceSseStoreBound();
         }
@@ -323,12 +332,12 @@ export function handleSseEndpoint(ctx: RouterContext) {
         const writer = writable.getWriter();
         const encoder = new TextEncoder();
 
-        const send = (eventType: string, data: any) => {
-            writer.write(encoder.encode(`event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`)).catch(() => {});
+        const send = (eventType: string, data: any, cursor?: number) => {
+            writer.write(encoder.encode(`event: ${eventType}\n${cursor === undefined ? '' : `id: ${cursor}\n`}data: ${JSON.stringify(data)}\n\n`)).catch(() => {});
         };
 
         // Send initial state + connected
-        send('state-update', componentInstance.getPublicState());
+        send('state-update', componentInstance.getPublicState(), entry.stateVersion);
         send('connected', {});
 
         // Heartbeat every 15s (Cloudflare Workers close idle connections ~30s)
@@ -351,7 +360,8 @@ export function handleSseEndpoint(ctx: RouterContext) {
             // 1. Detect state changes signalled by /crpc (version counter)
             if (currentEntry.stateVersion !== lastVersion) {
                 lastVersion = currentEntry.stateVersion;
-                send('state-update', currentEntry.componentInstance.getPublicState());
+                send('state-update', { ...currentEntry.componentInstance.getPublicState(),
+                    ...(currentEntry.requestId === undefined ? {} : { _cossack_request_id: currentEntry.requestId }) }, lastVersion);
             }
 
         }, 200);
@@ -501,14 +511,18 @@ async function handleCoordinatorSubscription(
 export function syncSseState(
     storeKey: string,
     responseData: Record<string, any>,
-): void {
+    requestId?: string,
+): number | undefined {
     const entry = sseStateStore.get(storeKey);
     if (entry) {
+        const cursor = nextLocalSseCursor();
         for (const k in responseData) {
             if (k !== '_cossack_return') {
                 entry.componentInstance[k] = responseData[k];
             }
         }
-        entry.stateVersion++;
+        entry.stateVersion = cursor;
+        entry.requestId = requestId;
+        return entry.stateVersion;
     }
 }

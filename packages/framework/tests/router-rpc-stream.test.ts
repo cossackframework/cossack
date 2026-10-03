@@ -267,10 +267,14 @@ describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle
         expect(response.status).toBe(200);
         expect(effects).toMatchObject({ runs: 0, components: 0, services: 0 });
         const frames = await middlewareStore.current!.run('different-reader', () => collect(response));
+        const cursors = frames.map(frame => frame.type === 'error' ? undefined : frame.state._cossack_sse_cursor);
+        expect(cursors.every(cursor => Number.isSafeInteger(cursor) && Number(cursor) > 0)).toBe(true);
+        expect(Number(cursors[1])).toBeGreaterThan(Number(cursors[0]));
+        expect(Number(cursors[2])).toBeGreaterThan(Number(cursors[1]));
         expect(frames).toEqual([
-            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', url: 'https://configured.test', path: endpoint() }, state: { count: 1 } },
-            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', serviceCount: 2 }, state: { count: 2 } },
-            { v: 1, type: 'done', requestId: response.headers.get('X-Cossack-Request-Id'), value: 'finished', state: { count: 2 } },
+            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', url: 'https://configured.test', path: endpoint() }, state: { count: 1, _cossack_sse_cursor: cursors[0] } },
+            { v: 1, type: 'yield', requestId: response.headers.get('X-Cossack-Request-Id'), value: { owner: 'owner', serviceCount: 2 }, state: { count: 2, _cossack_sse_cursor: cursors[1] } },
+            { v: 1, type: 'done', requestId: response.headers.get('X-Cossack-Request-Id'), value: 'finished', state: { count: 2, _cossack_sse_cursor: cursors[2] } },
         ]);
         expect(effects).toMatchObject({ runs: 1, closed: 1, components: 1, services: 1 });
     });

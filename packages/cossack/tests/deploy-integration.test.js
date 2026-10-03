@@ -9,6 +9,7 @@ import { createTestHarness } from 'wrangler';
 import { readRpcStream } from '../../core/dist/index.js';
 import { writeWorkerRpcAcceptance, checkWorkerRpcAcceptance } from './fixtures/worker-rpc-acceptance.js';
 import { writeWorkerOptimisticSocket, checkWorkerOptimisticSocket } from './fixtures/worker-optimistic-socket.js';
+import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/worker-optimistic-sse.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
@@ -279,6 +280,7 @@ it('builds a generated staging app and validates deployment without uploading', 
   }
   await writeWorkerRpcAcceptance(projectDir);
   await writeWorkerOptimisticSocket(projectDir);
+  await writeWorkerOptimisticSse(projectDir);
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.env = { staging: {
@@ -328,6 +330,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(code).not.toContain('PRIVATE_RESOURCE_FAILURE_SENTINEL');
     expect(code).not.toContain('PRIVATE_PUBLIC_POLICY_EXCEPTION');
     expect(code).not.toContain('socket_counter'); expect(code).not.toContain('socket_operations');
+    expect(code).not.toContain('optimistic_sse_counter'); expect(code).not.toContain('optimistic_sse_operations');
   }
   expect(staticHome).not.toContain('ssg-user');
   const readHydration = output => JSON.parse(output.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
@@ -485,6 +488,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect(await accepted.json()).toEqual({ success: true });
     const cookie = accepted.headers.getSetCookie().find(value => value.startsWith('session_id='));
     expect(cookie).toBeDefined();
+    await checkWorkerOptimisticSse(server, serverUrl, cookie);
     await checkWorkerRpcAcceptance(server, serverUrl, cookie, readHydration);
     expect((await server.fetch('/me', { redirect: 'manual' })).status).toBe(401);
     const me = await server.fetch('/me', { headers: { cookie } });

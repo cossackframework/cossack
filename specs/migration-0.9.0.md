@@ -506,8 +506,11 @@ See the complete example and limitations in [the optimistic guide](../docs/optim
 Late equal realtime echoes now preserve user edits that survived optimistic
 settlement. Changed broadcasts and explicit reads retain server authority.
 Reconnect and resync clear duplicate history without clearing pending calls.
-The history compares values; it does not order different late snapshots by a
-server revision. Client-only drafts remain the durable browser-owned choice.
+Sources without cursor metadata still compare values. SSE page events now correlate
+pending request IDs and order snapshots by cursor, including HTTP replies and generator
+frames. A late older response cannot undo newer public state. Higher revisions restore
+server authority after settlement. Reopen resets the source baseline. Child-local
+replies never use the parent page cursor. Client-only drafts remain browser-owned.
 
 ## Explicit reads after uncertain mutations
 
@@ -525,7 +528,8 @@ RPC tree reconstruction now suppresses incidental resource loaders, including
 nested components. Generated resource actions perform exactly their selected
 read. Do not depend on render-triggered resource I/O running before an RPC guard
 or mutation. SSR discovery and browser resource rendering keep their behavior.
-RT-06 still requires actual socket loss/reconnect and late-snapshot acceptance.
+Actual native socket loss/reconnect and SSE resync/late-snapshot acceptance now pass.
+RT-06 still requires the remaining optimistic stream/service matrix and criterion audit.
 
 ## Default Durable Object application registry
 

@@ -141,10 +141,12 @@ export class LiveCounter extends Cossack {
   invoke the action. Application work that already started may finish and have
   external side effects. It is never replayed or rolled back. A lost response
   does not prove that a mutation failed.
-- **Broadcasts do not change the authoritative snapshot.** Component
-  `broadcastEvent(...)` calls and scheduled state broadcasts append
-  `event`/`client-action`/partial `state-update` events that every subscriber
-  receives; only action results publish authoritative state.
+- **Component event broadcasts preserve the public snapshot.**
+  `broadcastEvent(...)` and client actions append `event`/`client-action` events.
+  The coordinator runtime suppresses delayed partial-state broadcasts. Action
+  results publish full public state inside their serialization slot. Direct use
+  of the reserved coordinator `state-update` event replaces the snapshot; do not
+  send a partial object through that low-level event.
 - **Serialization is per scope.** Concurrent actions on the same scope execute
   one at a time; different scopes run in parallel. The pending-action queue is
   bounded (HTTP 429 `COSSACK_SSE_BUSY` beyond 32 pending actions per scope).
@@ -158,6 +160,25 @@ export class LiveCounter extends Cossack {
 - **History is bounded.** The event log keeps at most 128 events and 1 MiB of
   event data per scope. Subscribers with older cursors are resynchronized from
   the snapshot.
+
+## Optimistic confirmation and snapshot order
+
+State publications include the originating action's `_cossack_request_id` when available.
+The SQLite snapshot remains plain public state. The event's `id` supplies its cursor.
+A page action's JSON reply carries `X-Cossack-SSE-Cursor`; generator frames carry
+`_cossack_sse_cursor` in their state. These reserved values never hydrate public fields.
+Child replies keep their own state domain and do not carry the parent page cursor.
+
+A matching event confirms the pending public preview once. Loading stays active until
+the action settles. Older replies still return their action result, but cannot replace
+newer public state. A higher cursor supplies authority even for equal values after
+settlement. ClientState and ClientStore drafts remain local. A reopened EventSource
+resets the client's cursor baseline before the server's snapshot is applied.
+
+Node/Deno use increasing process publication IDs across SSR replacement and entry
+recreation. Scopes can observe gaps in these IDs. A restart loses this order, and the
+backend has no durable history or cross-process coordination. Cloudflare retains its
+per-scope SQLite event history and resynchronizes when history expires.
 
 ## Runtime backends
 

@@ -5,7 +5,7 @@ import { collectReactiveMetadata } from './reactive-metadata';
 export type OptimisticOperation = { kind: 'increment'; amount: number } | { kind: 'append' | 'remove'; value: unknown };
 type Change = { sequence: number; value: unknown; operations?: OptimisticOperation[] };
 type Field = { base: unknown; sequence: number; changes: Map<object, Change>; displayed: unknown; local?: Change };
-export type OptimisticCall = { owner: object; sequence: number; name: string; fields: Set<string> };
+export type OptimisticCall = { owner: object; sequence: number; name: string; fields: Set<string>; requestId?: string };
 type Capture = { call: OptimisticCall; before: Map<string, unknown>; operations: Map<string, OptimisticOperation[]> };
 type Ledger = { clock: number; calls: Set<OptimisticCall>; fields: Map<string, Field>; writing: boolean; capturing: boolean; capture?: Capture };
 const ledgers = new WeakMap<object, Ledger>();
@@ -17,6 +17,25 @@ const settledEdits = new WeakMap<object, Map<string, unknown>>();
 /** A reconnect/resync explicitly restores public server authority. */
 export function resetOptimisticSnapshotHistory(target: object): void {
     settledEdits.delete(target);
+}
+
+/** Match only this component's active call, never another subscriber's ID. */
+export function optimisticCallForRequest(target: object, requestId: unknown): OptimisticCall | undefined {
+    if (typeof requestId !== 'string') return undefined;
+    return [...(ledgers.get(target)?.calls ?? [])].find(call => call.requestId === requestId);
+}
+
+/** An older confirmed snapshot removes its contribution without replacing newer state. */
+export function confirmOptimisticFields(call: OptimisticCall, keys: string[]): void {
+    const ledger = ledgers.get(call.owner);
+    if (!ledger?.calls.has(call)) return;
+    for (const key of keys) {
+        const field = ledger.fields.get(key);
+        if (!field || !field.changes.has(call)) continue;
+        observeExternal(call.owner, ledger, key, field);
+        field.changes.delete(call);
+        write(call.owner, ledger, key, field);
+    }
 }
 
 /** Changed broadcasts and explicit reads retain authority; known echoes do not. */

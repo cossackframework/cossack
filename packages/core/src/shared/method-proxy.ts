@@ -1,5 +1,5 @@
 import { collectReactiveMetadata } from './reactive-metadata';
-import { createStateApplier, snapshotTransportState } from './rpc-state';
+import { createStateApplier, snapshotTransportState, rpcSseCursor } from './rpc-state';
 export { applyStateToComponent } from './rpc-state';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers as collectOptimisticHandlers, optimisticHandler, optimisticKeys, type OptimisticCall } from './optimistic-state';
 import { collectServerMethodMetadata } from './server-method-metadata';
@@ -245,6 +245,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
             let requestId: string = crypto.randomUUID();
+            optimisticCall.requestId = requestId;
             const controller = new AbortController();
             let timedOut = false;
             // A deadline aborts the call but never retries it: the mutation may
@@ -328,6 +329,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
                     const response = await request;
                     requestId = response.headers?.get('X-Cossack-Request-Id') ?? requestId;
+                    optimisticCall.requestId = requestId;
                     if (!response.ok) {
                         throw await readRpcHttpError(response, controller.signal);
                     }
@@ -355,7 +357,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             window.location.href = data._cossack_redirect;
                             return;
                         }
-                        apply(data);
+                        const cursor = rpcSseCursor(response);
+                        apply(cursor === undefined ? data : { ...data, _cossack_sse_cursor: cursor });
                         succeed();
                         return data._cossack_return;
                     }

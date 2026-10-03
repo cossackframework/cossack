@@ -58,7 +58,7 @@ RPC surface:
 | `initialize(state)` | `INSERT OR IGNORE`; returns `{state, cursor, fresh}`. First initialization wins; later SSR never resets shared state. |
 | `currentState()` | Snapshot or `null` before initialization (used by the subscription's cold start). |
 | `updates(after)` | Events after a cursor plus a `resync` flag (`after` ahead of the snapshot or behind the pruned history). |
-| `publish(state)` | Appends a `state-update` event and replaces the snapshot (used for ordinary action results). |
+| `publish(state, requestId?)` | Appends a correlated `state-update` event and replaces the plain public snapshot. The optional request ID is event metadata only. |
 | `broadcast(event, data)` | Appends an `event`/`client-action` event without changing the snapshot. Reserved `state-update` entries replace the snapshot; the runtime does not send partial state through this method. |
 | `execute(action)` | Serializes actions per scope; see below. |
 
@@ -215,3 +215,28 @@ checks that a custom streaming Response keeps its action slot until cancellation
 The generated staging application suite still passes against built public exports.
 These are local workerd tests; they do not prove a remote deployment or atomic
 external effects across a mid-action restart.
+
+## Codex optimistic SSE ordering review (2026-10-03)
+
+Publications correlate pending page calls by `_cossack_request_id`. Event IDs order
+ambient snapshots; ordinary page replies use `X-Cossack-SSE-Cursor` and page generator
+frames use reserved `_cossack_sse_cursor` state metadata. Child frames publish separate
+scopeState and never apply the page cursor to child-local state. Metadata is bounded
+and excluded from component hydration and the persisted public snapshot.
+
+A matching publication removes only its confirmed public preview. Terminal response
+ownership still controls loading. Older replies confirm their own contribution without
+replacing a newer base. Higher revisions restore authority after settlement; duplicate
+revisions preserve surviving local edits. Reopening resets the client's baseline.
+Node/Deno publication IDs increase within the process across SSR replacement and
+entry recreation. Replacement preserves active connection counts. These IDs provide
+neither durable history nor ordering across process restarts.
+
+Native browser/workerd/D1 acceptance holds a committed HTTP reply, delivers its real
+SSE publication, publishes different state before and after settlement, then closes
+the actual subscription response. The native EventSource reconnects after 130 test
+publications exceed retained history, receives resync and converges without replaying
+a mutation. Post-yield client-visible failure and cancellation settle once. The
+response-close wrapper exists only in the private test application. Production Node
+acceptance covers ordinary ordering and post-yield failure with its actual SSE backend.
+Read the [release evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03).

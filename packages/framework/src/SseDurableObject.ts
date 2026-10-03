@@ -75,9 +75,14 @@ export class SseDurableObject extends DurableObject {
      * Worker for ordinary (non-streaming) action results; streaming results are
      * published per frame by execute().
      */
-    publish(state: string): SseSnapshot {
+    publish(state: string, requestId?: string): SseSnapshot {
         this.#validateState(state);
-        return this.#appendEvent('state-update', state);
+        if (requestId !== undefined && (typeof requestId !== 'string' || !requestId.trim() || requestId.length > 128)) {
+            throw new Error('Invalid SSE snapshot request ID');
+        }
+        const data = requestId === undefined ? state : JSON.stringify({ ...JSON.parse(state), _cossack_request_id: requestId });
+        if (encoder.encode(data).length > RPC_STREAM_MAX_FRAME_BYTES) throw new Error('SSE correlated state exceeds the byte limit');
+        return this.#appendEvent('state-update', data, state);
     }
 
     /**
@@ -198,9 +203,12 @@ export class SseDurableObject extends DurableObject {
                             throw new Error('COSSACK_RPC_STATE_INVALID: SSE action frame carries no object state.');
                         }
                         if (frame.type === 'yield' || frame.type === 'done') {
-                            this.#publishState(JSON.stringify(frame.scopeState ?? frame.state));
+                            const snapshot = this.publish(JSON.stringify(frame.scopeState ?? frame.state), frame.requestId);
+                            if (!frame.scopeState) frame.state = { ...frame.state, _cossack_sse_cursor: snapshot.cursor };
                         }
-                        controller.enqueue(encoder.encode(`${JSON.stringify(frame)}\n`));
+                        const encoded = encoder.encode(`${JSON.stringify(frame)}\n`);
+                        if (encoded.length - 1 > RPC_STREAM_MAX_FRAME_BYTES) throw new Error('Correlated SSE action frame exceeds the byte limit');
+                        controller.enqueue(encoded);
                         if (frame.type !== 'yield') {
                             await iterator!.return?.(undefined);
                             finish(); controller.close();
@@ -248,7 +256,7 @@ export class SseDurableObject extends DurableObject {
     }
 
     /** Append one event transactionally. State events replace the snapshot; every event advances its cursor. */
-    #appendEvent(event: string, data: string): SseSnapshot {
+    #appendEvent(event: string, data: string, snapshotState = data): SseSnapshot {
         this.ctx.storage.transactionSync(() => {
             const cursor = this.ctx.storage.sql.exec<{ cursor: number }>(
                 'INSERT INTO events (event, data, bytes) VALUES (?, ?, ?) RETURNING cursor',
@@ -257,7 +265,7 @@ export class SseDurableObject extends DurableObject {
                 event === 'state-update'
                     ? 'UPDATE snapshot SET state = ?, cursor = ? WHERE id = 1'
                     : 'UPDATE snapshot SET cursor = ? WHERE id = 1',
-                ...(event === 'state-update' ? [data, cursor] : [cursor]));
+                ...(event === 'state-update' ? [snapshotState, cursor] : [cursor]));
             // Bound both row count and total bytes. A stale subscriber receives a snapshot.
             this.ctx.storage.sql.exec(`DELETE FROM events WHERE cursor NOT IN (
                 SELECT cursor FROM (
@@ -268,8 +276,4 @@ export class SseDurableObject extends DurableObject {
         return this.#snapshot();
     }
 
-    #publishState(state: string): void {
-        this.#validateState(state);
-        this.#appendEvent('state-update', state);
-    }
 }

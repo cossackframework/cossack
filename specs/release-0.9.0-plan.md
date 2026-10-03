@@ -12,7 +12,19 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex retained service consumers (2026-10-03):**
+**Latest checkpoint — Codex optimistic SSE ordering (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03).
+Actual SSE publication confirms its own pending preview once. Cursor order prevents
+older replies from replacing newer state. Native Worker/D1/browser acceptance proves
+expired-history resync after actual response EOF and native EventSource reconnect,
+with zero mutation replay. Native component SSE stream failure/cancellation and
+production Node/SSE ordering/post-yield failure pass. Node cursors span SSR entry
+replacement within one process. Child-local replies keep a separate state domain.
+**20/58 checked, 38 unchecked. All original IDs remain and RT-06 stays open.**
+Finish remaining HTTP/service optimistic streams, malformed payload/cancellation cases,
+the complete published example and original criterion audit. Continue all other gates.
+
+**Previous checkpoint — Codex retained service consumers (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03).
 Service invocations now attach loading to matching late consumers in the retained
 scope. Duplicate subscriptions/rejoin count once. Other declarations and shadowed
@@ -1529,20 +1541,25 @@ Read the [evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03
    resources above. Preserve committed/lost-response acceptance and zero repeated
    mutation dispatches. Recovery reads do not establish transactional rollback.
 3. Native component socket loss/reconnect, eviction, queued cancellation and
-   multiple pending calls now pass. Finish actual SSE resync/recovery, different
-   snapshots before/after cleanup. Retained layouts and late explicit-service
-   consumers now have the acceptance above. Preserve their behavior through the
-   remaining reconnect/resync and streaming changes.
-   Unit state application does not prove the remaining native SSE delivery. Preserve server snapshot authority
-   and client-only drafts. Decide how late action-related broadcasts interact with
-   user edits after settlement; the final browser/native acceptance must cover it.
-4. Native component socket post-yield failure/cancellation now passes. Finish
-   optimistic malformed replies, post-yield errors and cancellation/cleanup across
-   HTTP/SSE and explicit services, with indicators settling once. Keep RT-01's
+   multiple pending calls pass. Actual SSE resync now passes after native response
+   EOF, EventSource reconnect and expired coordinator history. Different snapshots
+   before/after a held committed reply preserve newer authority. Controlled tests
+   cover coalesced publications and same-value higher revisions; production Node
+   verifies real SSE ordering. Retained layouts and late service consumers retain
+   their ownership acceptance. Audit all original combinations before closure.
+   Preserve public snapshot authority and ClientState/ClientStore drafts. Pending
+   user edits retain ownership; a higher SSE revision after settlement is authority.
+   Node process IDs do not prove durability or cross-process generation ordering.
+4. Native component socket and SSE post-yield failure/cancellation now pass.
+   Production Node SSE post-yield failure passes. Controlled malformed SSE cursor
+   replies/frames settle loading once, but do not complete every malformed payload
+   case. Finish optimistic malformed replies, post-yield errors and cancellation/
+   cleanup across remaining HTTP and explicit-service streams, with indicators
+   settling once. Keep RT-01's
    broader boundary and actual incoming disconnect gates separate. Add a published full example
    for the final API, then audit every original RT-06 done criterion.
 
-Read the [latest phase evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03)
+Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03)
 and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
 Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
 

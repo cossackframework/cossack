@@ -2,7 +2,55 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex retained service consumers (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex optimistic SSE ordering (2026-10-03). Author: Codex.**
+> Continued after `4d8fff0`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03),
+> [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and
+> [SSE ordering contract](../docs/sse.md#optimistic-confirmation-and-snapshot-order).
+>
+> **20/58 checked, 38 unchecked. All original IDs remain. RT-06 stays open.**
+> A native D1 write committed once but its own SSE event doubled the pending
+> browser preview. Publications now correlate only their target's pending call.
+> Cursor metadata orders page snapshots across events, ordinary replies and
+> stream frames. A late older reply returns its result without undoing newer
+> state. Confirmation removes only that public contribution; terminal response
+> ownership still settles loading. Higher revisions restore server authority,
+> even for equal public values after settlement. Client-only drafts remain local.
+> The persisted snapshot stays plain public state. Child replies keep their own
+> domain and never use the parent page cursor.
+>
+> Native Chromium/workerd/D1 acceptance now holds a committed HTTP response,
+> receives its actual SSE event, changes state before and after reply settlement,
+> then ends the actual subscription response through private test middleware.
+> Native EventSource reconnects after 130 real coordinator publications exceed
+> retained history. Resync converges without mutation replay. Native optimistic
+> stream post-yield failure and explicit cancellation also settle once. Production
+> Node/browser covers actual SSE ordering and post-yield failure. Controlled tests
+> cover coalesced publications, other callers, duplicate/older snapshots, pending
+> user edits, equal newer authority, malformed cursor replies and reopened sources.
+>
+> Review found a second Node gap: SSR reset a cursor under a live subscriber.
+> Process publication IDs now increase across entry replacement/recreation, and
+> replacement preserves connection counts. An actual stream reader regression
+> verifies updates before and after replacement. These IDs are per-process;
+> they provide no durable history or cross-process generation ordering. EventSource
+> reopen resets the client baseline. Cloudflare uses its persisted per-scope cursor.
+>
+> **Next for GLM: finish RT-06 step 4 and audit step 3's complete criteria.**
+> Extend optimistic malformed payloads, post-yield failures and cancellation across
+> remaining HTTP and explicit-service streams. Preserve call-owned loading,
+> retained consumers, public authority and ClientState/ClientStore drafts. Add the
+> complete published example and audit every original criterion before checking
+> RT-06. Continue all other unchecked tasks and release gates.
+>
+> No server rollback or termination of ignored I/O is established. Native stream
+> cancellation releases held application I/O explicitly in the fixture. Broader
+> RT-01 deadlines/init/incoming disconnect and RT-11 session gates remain open.
+> The Node plain Vite development 404 remains CF-10/REL-03 work. Versions stay
+> 0.8.3 until REL-04. Preserve reports.md/.zcodeignore. No push/publication/live
+> cloud changes, external messages or new chats. Exact checks are in the evidence.
+
+> **Previous checkpoint — Codex retained service consumers (2026-10-03). Author: Codex.**
 > Continued after `43c189a`. Read the
 > [review/evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03),
 > [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and

@@ -1,6 +1,22 @@
 import { RESERVED_STATE_KEYS } from './component-types';
 import { snapshotRpcValue } from './rpc-stream';
-import { applyOptimisticState, acceptSettledOptimisticSnapshot, type OptimisticCall } from './optimistic-state';
+import { applyOptimisticState, acceptSettledOptimisticSnapshot, confirmOptimisticFields, type OptimisticCall } from './optimistic-state';
+import { RpcError } from './rpc-stream';
+
+const sseCursors = new WeakMap<object, number>();
+
+/** A newly opened source can belong to a restarted process-local scope. */
+export function resetSseSnapshotCursor(target: object): void { sseCursors.delete(target); }
+
+/** Parse protocol metadata before hydration; opaque/native responses bypass it. */
+export function rpcSseCursor(response: Response): number | undefined {
+    const value = response.headers.get('X-Cossack-SSE-Cursor');
+    if (value === null) return undefined;
+    const cursor = /^\d+$/.test(value) ? Number(value) : NaN;
+    if (!Number.isSafeInteger(cursor) || cursor < 0) throw new RpcError('COSSACK_RPC_RESPONSE_INVALID',
+        'Invalid SSE snapshot cursor.', { requestId: response.headers.get('X-Cossack-Request-Id') ?? undefined });
+    return cursor;
+}
 
 /**
  * Apply a server-sent state object to a component instance, respecting the
@@ -17,10 +33,22 @@ export function applyStateToComponent(
     requestState?: Record<string, any>,
     call?: OptimisticCall,
 ): void {
+    const cursor = data._cossack_sse_cursor;
+    if (cursor !== undefined) {
+        if (!Number.isSafeInteger(cursor) || cursor < 0) throw new RpcError('COSSACK_RPC_RESPONSE_INVALID',
+            'Invalid SSE snapshot cursor.', { requestId: call?.requestId });
+        const latest = sseCursors.get(component);
+        if (latest !== undefined && cursor <= latest) {
+            if (call) confirmOptimisticFields(call, Object.keys(data).filter(key => !key.startsWith('_cossack_')
+                && !RESERVED_STATE_KEYS.has(key)));
+            return;
+        }
+        sseCursors.set(component, cursor);
+    }
     for (const key in data) {
         if (key.startsWith('_cossack_')) continue;
         if (RESERVED_STATE_KEYS.has(key)) continue;
-        if (!call && !requestState && !acceptSettledOptimisticSnapshot(component, key, data[key], false)) continue;
+        if (!call && !requestState && !acceptSettledOptimisticSnapshot(component, key, data[key], cursor !== undefined)) continue;
         const echo = !!call && !call.fields.has(key) && !!requestState
             && Object.hasOwn(requestState, key) && transportValuesEqual(data[key], requestState[key], key);
         if (applyOptimisticState(component, key, data[key], call, echo)) continue;

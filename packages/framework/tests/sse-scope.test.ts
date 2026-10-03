@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from 'hono';
-import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, __sseStoreSize } from '../src/transports/sse';
+import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, syncSseState, __sseStoreSize } from '../src/transports/sse';
 import type { RouterContext } from '../src/route-ids';
 
 // A Page component carrying the default scope (no scope() in pageOptions).
@@ -127,5 +127,42 @@ describe('SSE store bounding (connection counting)', () => {
         // Disconnect → entry kept (connection count decremented).
         controller.abort();
         expect(__sseStoreSize()).toBe(1);
+    });
+
+    it('publishes a newer cursor to an existing subscriber after SSR replaces its entry', async () => {
+        vi.useFakeTimers();
+        const ctx = makeCtx();
+        const scopeKey = 'user:ssr-replacement';
+        const controller = new AbortController();
+        const instance = (count: number) => ({ count, getPublicState() { return { count: this.count }; } });
+        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(0) as any);
+        const before = syncSseState(`sse_page:${scopeKey}`, { count: 1 });
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'ssr-replacement' }, scopeKey, controller));
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        try {
+            const initial = decoder.decode((await reader.read()).value);
+            expect(initial).toContain(`id: ${before}\n`);
+            expect(initial).toContain('data: {"count":1}');
+            expect(decoder.decode((await reader.read()).value)).toContain('event: connected');
+
+            registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(6) as any);
+            await vi.advanceTimersByTimeAsync(200);
+            const replacement = decoder.decode((await reader.read()).value);
+            const replacementCursor = Number(/id: (\d+)/.exec(replacement)?.[1]);
+            expect(replacementCursor).toBeGreaterThan(before!);
+            expect(replacement).toContain('data: {"count":6}');
+
+            const after = syncSseState(`sse_page:${scopeKey}`, { count: 7 }, 'after-ssr');
+            expect(after).toBeGreaterThan(replacementCursor);
+            await vi.advanceTimersByTimeAsync(200);
+            const update = decoder.decode((await reader.read()).value);
+            expect(update).toContain(`id: ${after}\n`);
+            expect(update).toContain('data: {"count":7,"_cossack_request_id":"after-ssr"}');
+        } finally {
+            controller.abort();
+            await reader.cancel();
+            vi.useRealTimers();
+        }
     });
 });

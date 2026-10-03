@@ -666,9 +666,16 @@ A weak per-target history retains confirmed values only for fields whose later
 user edit survives settlement. An equal ambient echo is ignored before pending
 field merging, including when another call starts. Changed state and explicit
 RPC reads clear that field's history. Socket/EventSource open and SSE resync clear
-history without discarding active invocation ownership. This is duplicate-value
-recognition, not a server revision protocol or ordering proof for different late
-snapshots. The native lost-response/reconnect acceptance remains required.
+history without discarding active invocation ownership. For sources without cursor
+metadata this remains duplicate-value recognition. SSE page publications correlate
+request ownership and use event cursors to order ambient and action snapshots.
+Older replies remove their own confirmed contribution without replacing newer public
+state. A higher revision restores authority after settlement, even for equal values.
+Child-local replies remain outside the page cursor domain. SQLite persists per-scope
+cursors; Node/Deno use process publication IDs across SSR entry replacement. Reopen
+resets the client baseline; this does not establish cross-process generation ordering.
+Actual native SSE resync and socket reconnect acceptance now pass. Wider optimistic
+stream/service cases remain RT-06 work.
 
 Process runtime connection snapshots contain flat public state, matching normal
 broadcasts and Cloudflare snapshots. SSR hydration remains a separate wrapped

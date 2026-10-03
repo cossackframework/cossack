@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './fixtures/worker-optimistic-recovery.js';
+import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/worker-optimistic-sse.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -1363,3 +1364,29 @@ it('reconciles component and service mutations after their committed replies are
     await checkWorkerOptimisticRecovery({fetch:(path, init)=>fetch(server.origin+path,init)}, new URL(server.origin), 'session_id=test');
   } finally { await server.close(); }
 }, 120000);
+
+it('orders SSE action broadcasts and delayed replies against newer server snapshots', async () => {
+  const root=await project('node'); await writeWorkerOptimisticSse(root);
+  await fs.writeFile(path.join(root,'src/private-sse-optimistic.ts'), `
+    let count=0; const operations:Array<{id:string}>=[];
+    export async function read(_db?:unknown) { return {count}; }
+    export async function commit(_db:unknown,id:string) { operations.push({id}); count++; return {count}; }
+    export async function replace(_db:unknown,value:number) { count=value; return count; }
+    export async function waitForRelease(_db:unknown,_id:string) { throw new Error('Node test only uses the failure stream'); }
+    export async function audit(_db?:unknown) { return {count,operations:operations.map(row=>({...row}))}; }
+  `);
+  const pageFile=path.join(root,'src/pages/resource-check/optimistic-sse/index.ts');
+  await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
+  await fs.writeFile(path.join(root,'src/pages/api/rpc-check/optimistic-sse.ts'), `
+    import type {Context} from 'hono';
+    import {audit} from '../../../private-sse-optimistic';
+    export const GET=async(c:Context)=>c.json(await audit());
+  `);
+  try { await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024}); }
+  catch(error) { throw new Error(error.stdout+'\n'+error.stderr); }
+  await vite(root,[]); await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
+  await assertPortableChunks(path.join(root,'dist/server'));
+  const server=await productionServer(root);
+  try { await checkWorkerOptimisticSse({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test',{native:false}); }
+  finally { await server.close(); }
+},120000);

@@ -1,7 +1,8 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
-import { hasOptimisticCalls, resetOptimisticSnapshotHistory } from './optimistic-state';
+import { hasOptimisticCalls, resetOptimisticSnapshotHistory, optimisticCallForRequest } from './optimistic-state';
+import { resetSseSnapshotCursor } from './rpc-state';
 import { isSharedMethod } from './shared-method';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
@@ -293,6 +294,7 @@ export function connectSSE(component: any): void {
         // recovery. A following `resync` event reports whether the snapshot
         // had to replace expired history.
         resetOptimisticSnapshotHistory(component);
+        resetSseSnapshotCursor(component);
         updateStatus(component, 'sse', { state: 'open', attempts: 0, lastError: undefined });
     };
     es.onerror = () => {
@@ -321,7 +323,9 @@ export function connectSSE(component: any): void {
             if (id !== undefined && id !== '') {
                 updateStatus(component, 'sse', { lastEventId: id });
             }
-            applyStateToComponent(component, stateUpdate);
+            const cursor = id !== undefined && id !== '' && /^\d+$/.test(id) ? Number(id) : undefined;
+            applyStateToComponent(component, cursor === undefined ? stateUpdate : { ...stateUpdate, _cossack_sse_cursor: cursor },
+                undefined, optimisticCallForRequest(component, stateUpdate._cossack_request_id));
             component.requestUpdate();
         } catch (e) {
             console.error('[Cossack] Error parsing SSE state-update:', e);

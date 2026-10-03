@@ -7,6 +7,7 @@ interface RpcStreamOptions {
     signal: AbortSignal;
     getState: () => Record<string, unknown>;
     getScopeState?: () => Record<string, unknown>;
+    getStateCursor?: () => number | undefined;
     onState?: (state: Record<string, unknown>) => void | Promise<void>;
     cleanup: () => Promise<void>;
 }
@@ -120,8 +121,10 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     finished = next.done === true;
                     const state = options.getState();
                     await options.onState?.(state);
+                    const cursor = options.getStateCursor?.();
                     const bytes = encode({ v: 1, type: finished ? 'done' : 'yield',
-                        requestId: options.requestId, value: next.value, state,
+                        requestId: options.requestId, value: next.value,
+                        state: cursor === undefined ? state : { ...state, _cossack_sse_cursor: cursor },
                         ...(options.getScopeState ? { scopeState: options.getScopeState() } : {}) });
                     if (finished) await cleanup();
                     if (closed) return;

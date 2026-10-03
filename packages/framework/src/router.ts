@@ -1099,17 +1099,20 @@ export function createApp(options: CreateAppOptions = {}) {
         }
         if (isRpcStream(actionResult)) {
           finishResponseLifetime = retainResponseLifetime(c);
+          let localSseCursor: number | undefined;
           const response = createRpcStreamResponse({
             result: actionResult, requestId, signal: componentContext.req.raw.signal,
             getState: () => targetInstance.getPublicState(),
             getScopeState: sseStub && targetInstance !== componentInstance
               ? () => componentInstance!.getPublicState() : undefined,
+            getStateCursor: !sseStub && targetPageOptions?.transport === 'sse' && targetInstance === componentInstance
+              ? () => localSseCursor : undefined,
             // The coordinator publishes every frame's state itself; only the
             // process-local backend needs the store sync.
             onState: coordinatorRuntime
               ? () => coordinatorRuntime.flush()
               : targetPageOptions?.transport === 'sse'
-                ? () => syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState()) : undefined,
+                ? () => { localSseCursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId); } : undefined,
             cleanup,
           });
           responseOwnsCleanup = true;
@@ -1122,9 +1125,14 @@ export function createApp(options: CreateAppOptions = {}) {
         // store's version counter for the polling endpoint.
         const publishScopeState = async () => {
           await coordinatorRuntime?.flush();
-          if (sseStub) return sseStub.publish(JSON.stringify(componentInstance!.getPublicState()));
+          if (sseStub) {
+            const snapshot = await sseStub.publish(JSON.stringify(componentInstance!.getPublicState()), requestId);
+            if (targetInstance === componentInstance) c.header('X-Cossack-SSE-Cursor', String(snapshot.cursor));
+            return;
+          }
           if (targetPageOptions?.transport === 'sse') {
-            syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState());
+            const cursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId);
+            if (targetInstance === componentInstance && cursor !== undefined) c.header('X-Cossack-SSE-Cursor', String(cursor));
           }
           return Promise.resolve();
         };

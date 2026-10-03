@@ -70,7 +70,9 @@ Closing a socket cancels registered queued work before invocation.
 An already committed write remains committed.
 Stream failure or cancellation after a yield also cannot establish rollback of a prior write.
 Keep application reads and write consistency explicit.
-The full optimistic SSE resync, late-snapshot, and retained-consumer audit remains RT-06 work.
+Actual SSE resync, late-snapshot ordering and retained service consumers now have
+browser/native acceptance. The remaining optimistic stream/service matrix and full
+criterion audit remain RT-06 work. See [SSE snapshot ordering](./sse.md#optimistic-confirmation-and-snapshot-order).
 
 ## Action identity and request context
 
