@@ -2141,6 +2141,26 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
+Codex WebSocket ownership follow-up (2026-10-04): provider retirement now revokes
+socket ownership, clears heartbeat/reconnect timers, sets status closed and
+settles pending calls immediately. Late open/error/close/message callbacks cannot
+mutate retired or replaced owners. Duplicate close delivery cannot schedule two
+reconnects, and destroyed components cannot reconnect. The malformed-known-ID
+protocol test now uses a live owner and explicitly retires it afterward.
+
+Production Node/native workerd tests open sockets with real provider targets,
+change path-derived scope targets, replace a page at the same target and return
+to HTTP. Changed ownership resets drafts and services. Matching target ownership
+preserves drafts/services while the old connection closes. The Cloudflare fixture
+adds a local AppDurableObject binding/migration; no deployment is performed.
+See the [verification](./release-0.9.0.md#codex-websocket-ownership-2026-10-04).
+
+Next audit all original RT-08/RT-09 criteria and run the navigation/guard/transition
+browser suites plus full generated-runtime matrix. The planned ownership scenarios
+now have native evidence. Do not keep listing these completed scenarios as pending,
+and do not close either task solely from focused tests or aggregate suite counts.
+
+
 Codex runtime ownership follow-up (2026-10-03): an actual SSE page opens its
 subscription on Node and native workerd, then returns to HTTP. Root/layout drafts
 and service identity remain stable, page drafts reset and the retired subscription

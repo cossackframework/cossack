@@ -81,6 +81,20 @@ export async function writeNavigationOwnershipAcceptance(root) {
         \${component(Child,{slot:'page-child'})}</main>\`;}
     }
   `);
+  await write('src/pages/owner/socket/[space]/index.ts', `
+    import {Page} from '@cossackframework/core';import Owner from '../../index';
+    @Page({transport:'durable-object',stateful:false,scope:c=>'space:'+c.req.param('space')}) export default class SocketOwner extends Owner {}
+  `);
+  const configPath=path.join(root,'wrangler.jsonc');
+  let config;
+  try { config=JSON.parse(await fs.readFile(configPath,'utf8')); }
+  catch(error) { if(error.code!=='ENOENT') throw error; }
+  if(config) {
+    config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'NavigationObject'});
+    config.migrations.push({tag:'navigation-v2',new_sqlite_classes:['NavigationObject']});
+    await fs.writeFile(configPath,JSON.stringify(config));
+    await fs.appendFile(path.join(root,'src/index.ts'), "\nexport { AppDurableObject as NavigationObject } from '@cossackframework/framework';\n");
+  }
   await write('src/pages/owner/stream.ts', `
     import {Page} from '@cossackframework/core';import Owner from './index';
     @Page({transport:'sse',scope:c=>'space:'+(c.req.query('space')??'one')}) export default class Stream extends Owner {}
@@ -189,6 +203,36 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('page-') ? '' : 'stream '+id);
     await browserExpect.poll(()=>page.evaluate(()=>window.__oldStreamOwner.realtime.sse.state)).toBe('closed');
     for (const id of returned) expect(await page.evaluate(marker=>(window.__ownershipDisposals??[]).includes(marker),id)).toBe(false);
+
+    await fill('before socket');
+    expect(await page.evaluate(async()=>(await window.__ownershipApp.navigate('/owner/socket/two?viewer=bob')).outcome)).toBe('completed');
+    await page.waitForFunction(()=>window.__ownershipPage?.realtime.websockets.page?.state==='open');
+    expect(await ids()).toEqual(returned);
+    for(const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('page-')?'':'before socket '+id);
+    const oldTarget=await page.evaluate(()=>window.__INITIAL_STATE__.providerTargets.page);
+    expect(typeof oldTarget).toBe('string');
+    await page.evaluate(()=>{window.__oldSocketOwner=window.__ownershipPage;});
+    await fill('socket');
+    expect(await page.evaluate(async()=>(await window.__ownershipApp.navigate('/owner/socket/three?viewer=bob')).outcome)).toBe('completed');
+    await page.waitForFunction(()=>window.__ownershipPage?.realtime.websockets.page?.state==='open');
+    expect(await page.evaluate(()=>window.__INITIAL_STATE__.providerTargets.page)).not.toBe(oldTarget);
+    await check('');
+    const socketIds=await ids(); expect(socketIds[0]).not.toBe(returned[0]); expect(socketIds[1]).not.toBe(returned[1]);
+    expect(await page.evaluate(()=>window.__oldSocketOwner.realtime.websockets.page.state)).toBe('closed');
+    for(const id of returned) await browserExpect.poll(()=>page.evaluate(marker=>(window.__ownershipDisposals??[]).filter(value=>value===marker).length,id)).toBe(1);
+    await fill('socket return');
+    const stableTarget=await page.evaluate(()=>window.__INITIAL_STATE__.providerTargets.page);
+    await page.evaluate(()=>{window.__oldSocketOwner=window.__ownershipPage;});
+    expect(await page.evaluate(async()=>(await window.__ownershipApp.navigate('/owner/socket/three?viewer=bob&revision=repeat')).outcome)).toBe('completed');
+    await page.waitForFunction(()=>window.__ownershipPage?.realtime.websockets.page?.state==='open');
+    expect(await page.evaluate(()=>window.__INITIAL_STATE__.providerTargets.page)).toBe(stableTarget);
+    await check('socket return'); expect(await ids()).toEqual(socketIds);
+    expect(await page.evaluate(()=>window.__oldSocketOwner.realtime.websockets.page.state)).toBe('closed');
+    await page.evaluate(()=>{window.__oldSocketOwner=window.__ownershipPage;});
+    expect(await navigate('bob','three','socket-return')).toBe('completed');
+    expect(await ids()).toEqual(socketIds);
+    for(const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('page-')?'':'socket return '+id);
+    expect(await page.evaluate(()=>window.__oldSocketOwner.realtime.websockets.page.state)).toBe('closed');
 
     await fill('private before empty');
     expect(await navigate('bob','empty','5')).toBe('completed');

@@ -86,6 +86,50 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-websocket-ownership-2026-10-04"></a>
+## Codex WebSocket ownership (2026-10-04)
+
+Author: **Codex**. Continued after `3584180`. WebSocket callbacks previously lacked
+source ownership checks. A retired socket could publish state or invoke an event,
+and an obsolete close could overwrite status or schedule a reconnect. Destruction
+also depended on a future close callback to clear heartbeat/pending-call state.
+
+Core now retires provider ownership before closure, sets closed status, clears
+heartbeat/reconnect timers and settles pending calls with the uncertain-outcome
+error. Callback identity and terminal-phase checks reject stale delivery. Duplicate
+close events cannot schedule extra reconnects. Provider replacement closes the old
+connections, and destroyed components cannot open new ones.
+
+Three new unit cases cover retired/replaced callbacks, pending-call settlement,
+zero remaining timers, duplicate close and pending reconnect cancellation. The
+existing malformed-known-ID test used a Destroyed component to avoid reconnects;
+it now uses a live owner and explicit cleanup while preserving protocol assertions.
+
+Production Node/native workerd fixtures open real sockets, change path-derived
+provider targets, replace a page at the same target and return to HTTP. Changed
+ownership resets drafts/services; matching ownership preserves them. Old sockets
+close and retired services dispose once. Cloudflare uses a test-only binding and
+SQLite migration for the existing AppDurableObject export, following the installed
+Wrangler schema and [Cloudflare class-export guidance](https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/).
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run tests/realtime-recovery.test.ts`:
+  13 passed.
+- Core and framework builds passed, including framework SSG.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,442 passed, 85 files.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,453 passed, 68 files.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership|moves between production Node and workerd|parses and navigates typed URL state'`:
+  5 passed, 26 skipped (62 seconds), including the final same-target replacement.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+**No task closes: 22/58 checked, 36 unchecked.** The planned navigation ownership
+scenarios now have native evidence. Next audit the original RT-08/RT-09 requirements
+and run relevant browser suites plus the full generated-runtime file before closure.
+Versions remain 0.8.3. No deployment, publication or full CLI rerun occurred.
+
 <a id="codex-runtime-ownership-2026-10-03"></a>
 ## Codex runtime and SSE ownership (2026-10-03)
 

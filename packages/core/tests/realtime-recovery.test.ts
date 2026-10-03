@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginOptimisticCall, applyOptimisticState, finishOptimisticCall } from '../src/shared/optimistic-state';
-import { connectSSE, disconnectSSE, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
+import { connectSSE, disconnectSSE, disconnectWebSockets, wsPendingCalls, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
 
 /**
  * RT-19: realtime lifecycle and recovery. Connection status, bounded
@@ -220,6 +220,49 @@ describe('realtime recovery: WebSocket reconnect', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it.each(['destroyed','replaced'] as const)('revokes late WebSocket callbacks and timers after %s ownership', reason => {
+        vi.useFakeTimers();
+        try {
+            const component: any=makeComponent(); component.count=1; component.loading={save:1};
+            const action=vi.fn(); component.hasMethod=()=>true; component.getMethod=()=>action;
+            Reflect.defineMetadata('cossack:event-handlers',{notice:['handle']},component.constructor);
+            Reflect.defineMetadata('cossack:client-methods',{run:true},component.constructor);
+            connectWebSocket(component); const first=MockWebSocket.instances[0]; first.onopen?.();
+            const callbacks={open:first.onopen!,message:first.onmessage!,close:first.onclose!,error:first.onerror!};
+            const sink=vi.fn(); wsPendingCalls(first as any).set('pending',sink);
+            if(reason==='destroyed') { component._phase='Destroyed'; disconnectWebSockets(component); }
+            else connectWebSocket(component);
+            expect(sink).toHaveBeenCalledOnce();
+            expect(sink.mock.calls[0][0]).toMatchObject({type:'error',code:'COSSACK_RPC_TRANSPORT_CLOSED'});
+            expect(wsPendingCalls(first as any).size).toBe(0);
+            component.requestUpdate.mockClear();
+            callbacks.open(); callbacks.error(); callbacks.close(); callbacks.close();
+            for(const frame of [
+                {type:'state-update',state:{count:99}}, {type:'action-complete',action:'save'},
+                {type:'event',eventName:'notice',payload:[]}, {type:'client-action',action:'run',payload:[]},
+            ]) callbacks.message({data:JSON.stringify(frame)});
+            expect(component.count).toBe(1); expect(component.loading.save).toBe(1);
+            expect(action).not.toHaveBeenCalled(); expect(component.requestUpdate).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(60_000);
+            expect(MockWebSocket.instances).toHaveLength(reason==='destroyed'?1:2);
+            expect(realtimeStatus(component).websockets.page.state).toBe(reason==='destroyed'?'closed':'connecting');
+            if(reason==='destroyed') {connectWebSocket(component);expect(MockWebSocket.instances).toHaveLength(1);}
+            else {MockWebSocket.instances[1].onopen?.();expect(realtimeStatus(component).websockets.page.state).toBe('open');}
+            disconnectWebSockets(component); expect(vi.getTimerCount()).toBe(0);
+        } finally {vi.useRealTimers();}
+    });
+
+    it('cancels a pending reconnect immediately when its provider is retired', () => {
+        vi.useFakeTimers();
+        try {
+            const component:any=makeComponent(); connectWebSocket(component);
+            const socket=MockWebSocket.instances[0]; socket.onclose?.(); socket.onclose?.();
+            expect(vi.getTimerCount()).toBe(1);
+            disconnectWebSockets(component); expect(vi.getTimerCount()).toBe(0);
+            vi.advanceTimersByTime(60_000); expect(MockWebSocket.instances).toHaveLength(1);
+        } finally {vi.useRealTimers();}
     });
 
     it('does not reconnect after intentional disposal', () => {

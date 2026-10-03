@@ -1,6 +1,6 @@
 # Cossack 0.9.0 agent handoff
 
-Author: **Codex**. Updated on 2026-10-03 after compacting checkpoint `8f084e0`.
+Author: **Codex**. Updated on 2026-10-04. Historical checkpoint narratives remain in the verification log.
 Branch: `fix-084`. **22 of 58 release tasks are complete; 36 remain open.**
 Versions remain **0.8.3** until REL-04. This is a continuation handoff, not a release.
 
@@ -101,16 +101,21 @@ the latter resets the complete ownership tree. SSE retirement now marks status
 closed and rejects callbacks from destroyed or replaced sources. See the
 [verification](./release-0.9.0.md#codex-runtime-ownership-2026-10-03).
 
+WebSocket/provider-target acceptance now opens actual Node/native workerd sockets,
+changes scoped targets, replaces a same-target page and returns to HTTP. Retirement
+closes statuses, clears timers, settles pending calls and rejects late callbacks.
+See the [verification](./release-0.9.0.md#codex-websocket-ownership-2026-10-04).
+
 Continue in this order:
 
-1. Finish provider-target and WebSocket ownership acceptance. User/scope, parent
-   layouts, HTTP/SSE child transports and Node/workerd runtime changes now pass.
-   Use decorated routes; bare re-exports do not establish transport metadata.
-2. Extend the existing backend-read and diagnostic assertions to those remaining
-   ownership cases. Cache events do not substitute for backend read counts.
-3. Audit every original RT-08/RT-09 criterion against the implementation and
-   evidence before checking either task. Same-URL restoration/confirmation and
-   the existing URL-state read-count matrix are now verified, not pending work.
+1. Audit every original RT-08/RT-09 criterion against current implementation and
+   evidence. The planned user/scope, parent-layout, HTTP/SSE/WebSocket/provider-target,
+   Node/workerd runtime, same-URL history and backend-read scenarios now have tests.
+2. Run the relevant navigation/guard/view-transition browser suites and the full
+   generated-runtime matrix on the final implementation. Inspect gaps rather than
+   inferring closure from unit counts. Keep final release gates separate.
+3. Close RT-08/RT-09 only when that audit proves their written criteria, then
+   continue all other unchecked release tasks. Preserve the full 58-task scope.
 
 Start in `packages/core/src/client/navigation.ts`,
 `packages/framework/src/client/app.ts` and `packages/renderer/src/cossack-html.ts`.
@@ -148,14 +153,14 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The [runtime ownership checkpoint](./release-0.9.0.md#codex-runtime-ownership-2026-10-03)
+The [WebSocket ownership checkpoint](./release-0.9.0.md#codex-websocket-ownership-2026-10-04)
 records the latest runs. Older unaffected-suite evidence remains linked below.
 
 | Check | Result |
 | --- | --- |
-| Core tests | 1,439 passed, 85 files |
+| Core tests | 1,442 passed, 85 files |
 | Framework tests | 1,453 passed, 68 files |
-| Production Node/native workerd navigation | 5 passed, 26 skipped, including runtime switch, SSE, backend reads and same-URL history |
+| Production Node/native workerd navigation | 5 passed, 26 skipped, including runtime switch, SSE/WebSocket targets, backend reads and same-URL history |
 | Core/framework builds, including framework SSG | Passed |
 | Root `pnpm tsc --noEmit` and `pnpm typecheck` | Passed; all 11 package checks |
 | Full generated-runtime file at `75609d2` | 30 passed; suite now contains 31 cases |

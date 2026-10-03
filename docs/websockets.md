@@ -48,6 +48,13 @@ Each status entry tracks `state`, `attempts` (reconnects since the last open),
 `this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
 expired history with an authoritative snapshot.
 
+Retiring a component or replacing its provider connections sets the old statuses
+to `closed`, clears heartbeat/reconnect timers and rejects pending socket calls
+with `COSSACK_RPC_TRANSPORT_CLOSED`. Queued callbacks from an old socket cannot
+publish state, invoke actions/events or change its replacement's status. Destroyed
+components cannot open new sockets. Closing an old socket never schedules a
+second reconnect or replays a mutation.
+
 ## Application component registry and lost replies
 
 The default AppDurableObject resolves pages and layouts through the compiler's

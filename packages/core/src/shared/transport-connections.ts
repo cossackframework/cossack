@@ -116,12 +116,38 @@ export function initializeProviders(component: any): void {
     }
 }
 
+const socketDisposers = new WeakMap<object, () => void>();
+
+/** Clear provider ownership and pending work before initiating network closure. */
+export function disconnectWebSockets(component: any): void {
+    const sockets = [...component.websockets.entries()] as [string, WebSocket][];
+    component.websockets.clear();
+    const errors: unknown[] = [];
+    for (const [provider, socket] of sockets) {
+        Object.assign(realtimeStatus(component).websockets[provider] ??= {
+            state: 'closed', attempts: 0, updatedAt: Date.now(),
+        }, { state: 'closed', updatedAt: Date.now() });
+        try {
+            const dispose = socketDisposers.get(socket);
+            if (dispose) dispose();
+            else {
+                (socket as any).__cossack_intentional_close = true;
+                failPendingSocketCalls(socket);
+                socket.close();
+            }
+        } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(errors, '[Cossack] WebSocket cleanup failed.');
+}
+
 /**
  * Connect to WebSocket providers (client-side only).
  * Reads provider targets from initial state and sets up message handlers
  * for state updates, action completions, and events.
  */
 export function connectWebSocket(component: any): void {
+    if (component._phase === 'Destroyed') return;
+    disconnectWebSockets(component);
     const initialState = component.getInitialStateFromWindow();
     const providerTargets = initialState?.providerTargets || {};
 
@@ -151,16 +177,23 @@ export function connectWebSocket(component: any): void {
         const connect = (attempt: number) => {
             const ws = new WebSocket(fullWsUrl);
             component.websockets.set(providerName, ws);
+            let closed = false;
+            let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+            const ownsSocket = () => component.websockets.get(providerName) === ws &&
+                !(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed';
+            const isCurrent = () => !closed && ownsSocket();
             updateStatus(component, { provider: providerName },
                 attempt === 0 ? { state: 'connecting', attempts: 0 } : { state: 'reconnecting', attempts: attempt });
 
             ws.onopen = () => {
+                if (!isCurrent()) return;
                 attempt = 0;
                 resetOptimisticSnapshotHistory(component);
                 updateStatus(component, { provider: providerName },
                     { state: 'open', attempts: 0, lastError: undefined });
             };
         ws.onmessage = (event: MessageEvent) => {
+            if (!isCurrent()) return;
             if (event.data === 'pong') {
                 return; // Server heartbeat response, ignore.
             }
@@ -216,6 +249,7 @@ export function connectWebSocket(component: any): void {
                 const eventHandlers = Reflect.getMetadata('cossack:event-handlers', component.constructor) || {};
                 if (eventHandlers[eventName]) {
                     for (const handlerMethod of eventHandlers[eventName]) {
+                        if (!isCurrent()) return;
                         if (component.hasMethod(handlerMethod)) {
                             const method = component.getMethod(handlerMethod);
                             (method as any)(...payload);
@@ -229,16 +263,20 @@ export function connectWebSocket(component: any): void {
         // (including when Cossack.destroy() closes it) so it doesn't leak a
         // timer — and a closure over the WS — for every provider per page.
         const pingInterval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (isCurrent() && ws.readyState === WebSocket.OPEN) {
                 ws.send('ping');
             }
         }, 25000);
         const stopPing = () => clearInterval(pingInterval);
         ws.onclose = () => {
+            if (closed) return;
+            closed = true;
             stopPing();
             failPendingSocketCalls(ws);
+            if (component.websockets.get(providerName) !== ws) return;
             if ((ws as any).__cossack_intentional_close || component._phase === 'Destroyed') {
-                updateStatus(component, { provider: providerName }, { state: 'closed' });
+                Object.assign(realtimeStatus(component).websockets[providerName], { state: 'closed', updatedAt: Date.now() });
+                if (component._phase !== 'Destroyed') component.requestUpdate?.();
                 return;
             }
             const nextAttempt = attempt + 1;
@@ -247,18 +285,29 @@ export function connectWebSocket(component: any): void {
                 attempts: nextAttempt,
                 lastError: 'WebSocket closed before the component was destroyed.',
             });
-            setTimeout(() => {
-                if (!(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed') {
+            reconnectTimer = setTimeout(() => {
+                if (ownsSocket()) {
                     connect(nextAttempt);
                 }
             }, realtimeReconnectDelay(nextAttempt));
         };
         ws.onerror = () => {
+            if (!isCurrent()) return;
             stopPing();
             updateStatus(component, { provider: providerName }, {
                 lastError: 'WebSocket error; the connection is closed or reconnecting.',
             });
         };
+        socketDisposers.set(ws, () => {
+            closed = true;
+            (ws as any).__cossack_intentional_close = true;
+            stopPing();
+            clearTimeout(reconnectTimer);
+            socketDisposers.delete(ws);
+            ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+            failPendingSocketCalls(ws);
+            ws.close();
+        });
         };
         connect(0);
     }

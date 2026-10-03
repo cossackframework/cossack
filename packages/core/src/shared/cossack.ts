@@ -29,6 +29,7 @@ import {
     connectWebSocket as connectWebSocketFn,
     connectSSE as connectSSEFn,
     disconnectSSE,
+    disconnectWebSockets,
     realtimeStatus,
     type RealtimeStatusRecord,
 } from './transport-connections';
@@ -2969,13 +2970,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._taskCleanups.clear();
         for (const cleanup of this._taskCleanupPending.values()) release(() => cleanup);
         if (!this.isServer) {
-            this.websockets.forEach(ws => {
-                // Marked so the reconnect handler does not revive a socket
-                // that the application closed on purpose.
-                (ws as any).__cossack_intentional_close = true;
-                release(() => ws.close());
-            });
-            this.websockets.clear();
+            release(() => disconnectWebSockets(this));
 
             release(() => disconnectSSE(this));
 

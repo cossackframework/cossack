@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connectWebSocket, wsPendingCalls } from '../src/shared/transport-connections';
+import { connectWebSocket, disconnectWebSockets, wsPendingCalls } from '../src/shared/transport-connections';
 
 describe('connectWebSocket URL protocol', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -9,12 +9,12 @@ describe('connectWebSocket URL protocol', () => {
     class FakeWebSocket {
       static OPEN = 1;
       readyState = 1;
-      send() {}
+      send() {} close() {}
     }
     vi.stubGlobal('window', { location: { protocol: 'http:', host: 'example.test' } });
     vi.stubGlobal('WebSocket', FakeWebSocket);
     const component = {
-      _phase: 'Destroyed',
+      _phase: 'Mounted',
       getInitialStateFromWindow: () => ({ providerTargets: { page: 'scope' }, routePath: '/' }),
       websockets: new Map(), requestUpdate() {},
     };
@@ -27,7 +27,7 @@ describe('connectWebSocket URL protocol', () => {
       expect(sink).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'known' }));
       expect(unrelated).not.toHaveBeenCalled(); expect(wsPendingCalls(socket).has('known')).toBe(false);
       expect(wsPendingCalls(socket).has('other')).toBe(true);
-    } finally { socket.onclose(); }
+    } finally { disconnectWebSockets(component); }
   });
 
   it.each([['https:', 'wss:'], ['http:', 'ws:']])('maps %s pages to %s sockets', (pageProtocol, socketProtocol) => {
@@ -49,6 +49,6 @@ describe('connectWebSocket URL protocol', () => {
     };
     connectWebSocket(component);
     expect(urls[0]).toBe(`${socketProtocol}//example.test/ws/page/scope?routePath=%2F&pathname=%2F&params=%7B%7D`);
-    for (const socket of component.websockets.values()) (socket as any).onclose?.();
+    disconnectWebSockets(component);
   });
 });
