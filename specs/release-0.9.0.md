@@ -6440,3 +6440,50 @@ Next fix Checkbox/Switch disabled appearance in a themed browser fixture. Curren
 browser checks verify native semantics without CSS. Then continue with textarea/select
 wrappers, RadioGroup, Slider, composite controls and the remaining catalog. Keep runtime/distribution and
 release gates open. Status remains 24 complete and 34 open; versions remain 0.8.3.
+
+<a id="codex-choice-controls-2026-10-04"></a>
+## Codex: Themed choice controls and range state (2026-10-04)
+
+Author: **Codex**. RT-23 remains open. Nine component foundations now have focused
+contract coverage; the [UI inventory](./ui-contract-audit.md) retains the remaining
+component, block/icon and full form/runtime work.
+
+The native-control browser fixture now builds Tailwind with the actual UI base
+and theme CSS. It reproduced enabled-looking disabled Checkbox labels: their
+`:disabled` utility could never match a label. Checkbox/Switch/RadioGroup wrappers
+now match their child input's actual disabled state. Slider styles its own native
+`:disabled` state. This covers direct disabled flags, Checkbox/Switch presence
+bindings, and inherited disabled fieldsets without duplicating browser state.
+
+RadioGroup and Slider now have closed native prop contracts. RadioGroup separates
+root div attributes/events from input form flags and the typed onValueChange
+callback. It rejects empty names/duplicate values, keys items by value, and updates
+native checked properties. Parent resets after user selection, callback targets
+and DOM identity across reordered choices are exercised in Chromium.
+
+The browser fixture also reproduced Slider initialization at 1000 when requesting
+1500 with bounds 1000–2000. Assigning value before constraints caused premature
+browser clamping. Slider now applies bounds first and uses a live value binding.
+It recovers a previously clamped requested value when bounds widen. Browser-native
+clamping/step rules remain authoritative. Non-finite values, inverted bounds and
+nonpositive steps fail explicitly. The label alias no longer duplicates aria-label.
+
+Verification:
+
+- Themed Chromium acceptance passed: light/dark opacity and cursor styles,
+  disabled fieldsets, Switch keyboard focus ring, native labels/validation/FormData,
+  radio keyboard selection/reset/reordering/callback targets and range keyboard,
+  initialization/clamping/bounds updates. Log: `/tmp/cossack-themed-controls.log`.
+- 124 UI tests across 10 files passed, including public prop/event types and SSR
+  ownership/validation regressions. Log: `/tmp/cossack-themed-ui-tests.log`.
+- Root and all 11 package type checks passed. Logs:
+  `/tmp/cossack-themed-root-types.log` and `/tmp/cossack-themed-package-types.log`.
+- Installed tarball CLI/MCP acceptance passed with RadioGroup/Slider prop contracts,
+  the radio-and-range guide, six existing executable examples, catalog refresh and
+  Node networking disabled during discovery. Log: `/tmp/cossack-themed-agent-docs.log`.
+- UI build and whitespace checks passed. Build log: `/tmp/cossack-themed-ui-build.log`.
+
+Next audit Textarea, Select/NativeSelect, InputGroup and PasswordInput, including
+initial values during SSR/hydration. Continue the remaining inventory afterward.
+These checks do not close the full UI contrast/layout/cross-browser or release
+matrix. Status remains 24 complete and 34 open. Versions remain 0.8.3.

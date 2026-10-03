@@ -850,3 +850,27 @@ describe('native control prop ownership', () => {
         expect(input.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
     });
 });
+
+describe('radio and range contracts', () => {
+    it('applies radio form flags to inputs and keeps group semantics', () => {
+        const out = renderComp(RadioGroup, {name:'plan',form:'settings',required:true,disabled:true,
+            orientation:'horizontal',value:'pro',items:[{value:'free'},{value:'pro'}]});
+        expect(out).toContain('aria-orientation="horizontal"');
+        const inputs=out.match(/<input\b[^>]*>/g)!;expect(inputs).toHaveLength(2);
+        for(const input of inputs){expect(input).toContain('form="settings"');expect(input).toContain(' required');expect(input).toContain(' disabled');}
+        expect(inputs[1].match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+    it('rejects invalid radio identities and numeric range contracts', () => {
+        expect(()=>renderComp(RadioGroup,{name:'',items:[]})).toThrow(/name/);
+        expect(()=>renderComp(RadioGroup,{name:'plan',items:[{value:'a'},{value:'a'}]})).toThrow(/unique/);
+        expect(()=>renderComp(Slider,{min:20,max:10})).toThrow(/max/);
+        expect(()=>renderComp(Slider,{value:NaN})).toThrow(/finite/);
+        expect(()=>renderComp(Slider,{step:0})).toThrow(/step/);
+    });
+    it('serializes the range value once, after its bounds, with one accessible label', () => {
+        const out=renderComp(Slider,{value:1500,min:1000,max:2000,step:100,label:'Level','aria-label':'Fallback'});
+        const input=out.match(/<input\b[^>]*>/)![0];
+        expect(input.indexOf('value="1500"')).toBeGreaterThan(input.indexOf('max="2000"'));
+        expect(input.match(/aria-label=/g)).toHaveLength(1);expect(input).toContain('aria-label="Level"');
+    });
+});

@@ -1,8 +1,9 @@
-import { html, classMap } from "@cossackframework/renderer";
+import type { RangeAttributes } from "../native-attributes";
+import { html, classMap, live } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface SliderProps {
-    /** Current value. */
+export type SliderProps = RangeAttributes & {
+    /** Controlled value. The browser clamps it to min/max and applies step. */
     value?: number;
     /** Minimum value. Default 0. */
     min?: number;
@@ -14,8 +15,6 @@ export interface SliderProps {
     disabled?: boolean;
     /** Accessible label (required for a11y on a standalone slider). */
     label?: string;
-    /** Pass-through HTML input attributes (name, id, ...). */
-    [key: string]: any;
 }
 
 /**
@@ -40,29 +39,35 @@ export class Slider extends Cossack {
             step = 1,
             disabled = false,
             label,
+            "aria-label": ariaLabel,
             ...rest
         } = this.props;
+
+        if (![value, min, max, step].every(Number.isFinite) || max < min || step <= 0) {
+            throw new Error('Slider requires finite values, max >= min and a positive step.');
+        }
 
         const classes = classMap({
             "cs-slider": true,
             "w-full cursor-pointer": true,
-            "opacity-50 cursor-not-allowed": disabled,
+            "disabled:opacity-50 disabled:cursor-not-allowed": true,
         });
 
         const style = "accent-color: var(--color-primary);";
 
+        // Apply constraints before live value so a formerly clamped value can recover.
         return html`
             <input
                 type="range"
                 class=${classes}
                 style=${style}
-                .value=${value}
                 min=${min}
                 max=${max}
                 step=${step}
                 ?disabled=${disabled}
-                aria-label=${label}
+                aria-label=${label ?? ariaLabel}
                 ...=${rest}
+                .value=${live(value)}
             />
         `;
     }

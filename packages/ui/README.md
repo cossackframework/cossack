@@ -354,3 +354,22 @@ Set `novalidate: false` to keep browser validation, or omit `submit` for native 
 The installed `native-controls` guide documents attributes, event types and
 labeling requirements. The rest of the catalog remains under
 [contract audit](../../specs/ui-contract-audit.md).
+
+## Radio groups and sliders
+
+RadioGroup uses a distinct nonempty `name` per logical group and unique string item
+values. Provide `aria-label` or `aria-labelledby` for the group. `onValueChange(value,
+event)` receives an input event with `HTMLInputElement` currentTarget. A native
+`@change` listener receives the bubbled event on the root div. Update parent `value`
+from the callback. Items retain DOM identity by value when reordered. `disabled`,
+`required` and `form` apply to the inputs; other global attributes apply to the div.
+
+Slider owns a finite numeric `value`, `min`, `max` and positive `step`. The browser
+clamps and rounds values. Constraints apply before value, and widened bounds restore
+a previously clamped requested value. Read `event.currentTarget.valueAsNumber` in
+`@input` to update parent state. Supply `label`, an external Label, or ARIA naming.
+Use Input with `type: 'range'` for direct native property-binding behavior.
+
+Checkbox, Switch and RadioGroup wrappers follow the child's native disabled state.
+Slider styles its own native disabled state. This includes disabled fieldsets.
+The installed `radio-and-range` guide describes attributes, events and accessibility.

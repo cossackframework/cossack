@@ -21,10 +21,17 @@ incorrect event types and competing controlled state. Chromium tests native labe
 keyboard toggles, validation, disabled controls, event targets, controlled reset and
 FormData. Installed guide/catalog acceptance is recorded in the release verification log.
 
-The Chromium fixture checks semantic native behavior without the UI theme. It does
-not prove contrast, layout or focus-ring styling. Checkbox/Switch wrapper disabled
-styles still use label pseudo-classes that do not match the disabled child input;
-verify and correct their appearance in a themed browser fixture.
+The Chromium fixture now builds the real Tailwind/UI theme. It verifies light/dark
+disabled opacity/cursors, inherited fieldsets and a keyboard-visible Switch focus ring.
+Checkbox/Switch/RadioGroup wrappers match their actual child input's disabled state.
+Slider matches its own native disabled state. This is focused style acceptance, not
+a complete contrast, layout or cross-browser audit.
+
+RadioGroup and Slider now have typed props/events. RadioGroup updates checked
+properties, keys items by unique values, and passes form/required/disabled to inputs.
+Slider applies numeric bounds before a live value binding, including recovery when
+widened bounds admit a previously clamped requested value. Browser checks exercise
+keyboard changes, parent resets, callback targets and retained radio DOM identity.
 
 The following are still follow-up requirements, including for reviewed controls:
 error/description and focus behavior within full application form recipes, and the
@@ -80,7 +87,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Popover](../packages/ui/src/components/Popover.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Progress](../packages/ui/src/components/Progress.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Select](../packages/ui/src/components/Select.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -88,7 +95,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Sheet](../packages/ui/src/components/Sheet.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Skeleton](../packages/ui/src/components/Skeleton.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Slider](../packages/ui/src/components/Slider.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Slider](../packages/ui/src/components/Slider.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Spinner](../packages/ui/src/components/Spinner.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Switch](../packages/ui/src/components/Switch.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Table](../packages/ui/src/components/Table.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -102,8 +109,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-First address the disabled-wrapper appearance noted above with themed browser coverage.
-Then audit Textarea, Select/NativeSelect, InputGroup, PasswordInput, RadioGroup and Slider. Audit value/checked ownership after native user edits and during SSR/hydration.
+Next audit Textarea, Select/NativeSelect, InputGroup and PasswordInput. Audit value/checked ownership after native user edits and during SSR/hydration.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

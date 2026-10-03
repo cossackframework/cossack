@@ -896,3 +896,10 @@ directive result classes have declaration-only private brands, matching the runt
 instance checks instead of accepting structurally similar plain objects.
 This is a compile-time contract, not runtime validation of JavaScript callers.
 See the [UI contract inventory](./ui-contract-audit.md) for coverage and remaining work.
+
+Choice-control wrappers derive disabled styles from native input state, so disabled
+fieldsets do not need duplicated framework state. RadioGroup props distinguish
+root div attributes/events from input-level form flags and selection callbacks.
+Unique item values key native input identity. Slider owns numeric bounds and value,
+applying constraints before a live value binding so widened bounds can recover a
+previously clamped requested value. Browser-native step/clamping remains authoritative.

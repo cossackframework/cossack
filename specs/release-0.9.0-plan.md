@@ -3318,7 +3318,11 @@ misspelled props/listeners and invalid values. Chromium verifies native labels,
 keyboard toggles, controlled reset, disabled/required behavior and FormData.
 Checkbox now consumes its label prop; Switch renders children and updates its
 native checked property. Sample and Studio consumers use correct prop/event types.
-The [component inventory](./ui-contract-audit.md) records all remaining audit work.
+Themed follow-up verifies disabled styles from actual native state, including
+fieldsets, and keyboard focus rings. RadioGroup/Slider now have typed native contracts,
+property-based selection, stable radio identities and correct range initialization
+and bounds changes. The [component inventory](./ui-contract-audit.md) records all
+remaining audit work, starting with text/select wrappers and their SSR values.
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 

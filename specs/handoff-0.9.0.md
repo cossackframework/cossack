@@ -32,15 +32,15 @@ CLI-07 and CLI-08 remain open. Their implemented foundations are:
 - Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
 See [setup and usage](../docs/local-agent-tools.md) and the
-[latest native-control checkpoint](./release-0.9.0.md#codex-native-controls-2026-10-04).
+[latest choice-control checkpoint](./release-0.9.0.md#codex-choice-controls-2026-10-04).
 
 Next expand authored API/component/recipe guidance and executable examples,
 and add verified runtime support. Extend the installed-tarball acceptance to cover that content.
 RT-23 now includes generated Node/workerd server-resource/query-state acceptance and stable-ID focus restoration.
-Button/Input/Label/Checkbox/Switch/Form now have typed native props and browser acceptance.
-Continue the [UI contract audit](./ui-contract-audit.md). First fix Checkbox/Switch
-disabled appearance in a themed browser fixture; current browser checks cover native
-semantics without CSS. Then audit text/select wrappers, RadioGroup, Slider and composites.
+Button/Input/Label/Checkbox/Switch/Form/RadioGroup/Slider now have typed native props.
+Themed browser acceptance verifies disabled styles, keyboard behavior and state updates.
+Continue the [UI contract audit](./ui-contract-audit.md) with Textarea, Select/NativeSelect,
+InputGroup and PasswordInput, including initial values across SSR/hydration.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -73,8 +73,8 @@ Carry these unresolved limits into implementation and review:
 
 ## Verification references
 
-The [native-control checkpoint](./release-0.9.0.md#codex-native-controls-2026-10-04)
-records native-control Chromium acceptance, public prop tests, UI/renderer suites
+The [choice-control checkpoint](./release-0.9.0.md#codex-choice-controls-2026-10-04)
+records themed Chromium acceptance, public prop/SSR tests, the UI suite
 and root/package type checks. Earlier DataTable evidence remains in the release log. The
 [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
 records generated-tarball CLI/MCP parity and discovery with Node networking disabled.

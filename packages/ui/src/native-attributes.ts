@@ -61,3 +61,8 @@ export type FormAttributes = GlobalAttributes<HTMLFormElement> & Attributes<{
     name: string; autocomplete: 'on' | 'off'; 'accept-charset': string;
     rel: string; novalidate: boolean;
 }>;
+
+/** Native range attributes; numeric state and disabled behavior belong to Slider. */
+export type RangeAttributes = Omit<GlobalAttributes<HTMLInputElement>, 'role' | 'aria-valuemin' | 'aria-valuemax' | 'aria-valuenow'> & Attributes<{
+    name: string; form: string; list: string;
+}>;

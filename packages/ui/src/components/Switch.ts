@@ -25,7 +25,7 @@ export class Switch extends Cossack {
         const wrapperClasses = classMap({
             "cs-switch": true,
             "relative inline-flex items-center cursor-pointer": true,
-            "disabled:opacity-50 disabled:cursor-not-allowed": !!rest.disabled,
+            "has-[>input:disabled]:opacity-50 has-[>input:disabled]:cursor-not-allowed": true,
         });
 
         return html`

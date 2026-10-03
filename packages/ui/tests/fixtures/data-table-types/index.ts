@@ -66,3 +66,25 @@ component(Input, {'data-record':{value:1}});
 component(Input, {'.value':{value:'name'}});
 // @ts-expect-error An object handler is not a preventDefault directive.
 component(Button, {'@click':{handler:()=>{},novalidate:true}});
+
+import { RadioGroup, Slider, type RadioGroupItem } from '@cossackframework/ui';
+const choices:readonly RadioGroupItem[] = [{value:'free',label:'Free'}, {value:'pro',label:'Pro'}];
+component(RadioGroup, {name:'plan',items:choices,required:true,disabled:false,form:'settings','aria-label':'Plan',
+  onValueChange:(value,event)=>{ const input:HTMLInputElement=event.currentTarget; void [value,input]; },
+  '@change':event=>{const group:HTMLDivElement=event.currentTarget;void group;}});
+component(Slider, {value:1500,min:1000,max:2000,step:100,name:'level',label:'Level',
+  '@input':event=>{const number:number=event.currentTarget.valueAsNumber;void number;}});
+// @ts-expect-error Radio groups require a native group name.
+component(RadioGroup, {items:choices});
+// @ts-expect-error Radio values must be strings.
+component(RadioGroup, {name:'plan',items:[{value:1}]});
+// @ts-expect-error Group-level events target the group, not an input.
+component(RadioGroup, {name:'plan','@change':event=>event.currentTarget.checked});
+// @ts-expect-error Native input placeholder has no meaning on a group div.
+component(RadioGroup, {name:'plan',placeholder:'Plan'});
+// @ts-expect-error Slider bounds are numeric.
+component(Slider, {min:'1000'});
+// @ts-expect-error Numeric state has one owner.
+component(Slider, {'.value':1000});
+// @ts-expect-error Range controls cannot change native type through props.
+component(Slider, {type:'text'});

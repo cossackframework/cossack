@@ -39,7 +39,7 @@ export { Progress, type ProgressProps } from "./components/Progress";
 export { Tabs, type TabsProps } from "./components/Tabs";
 export { Tooltip, type TooltipProps } from "./components/Tooltip";
 export { Popover, type PopoverProps } from "./components/Popover";
-export { RadioGroup, type RadioGroupProps } from "./components/RadioGroup";
+export { RadioGroup, type RadioGroupProps, type RadioGroupItem } from "./components/RadioGroup";
 export { Slider, type SliderProps } from "./components/Slider";
 export {
     Table,
@@ -101,4 +101,4 @@ export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar
 
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
 
-export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
+export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
