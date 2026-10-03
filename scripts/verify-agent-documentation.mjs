@@ -116,7 +116,13 @@ require('node:module').syncBuiltinESMExports();
     assert.equal(ui.ok, true);
     const uiPackage = ui.data.packages[0];
     assert.equal(uiPackage.installed, true);
-    const button = uiPackage.declarations.entries.flatMap(entry => entry.symbols).find(symbol => symbol.name === 'Button');
+    const uiSymbols = uiPackage.declarations.entries.flatMap(entry => entry.symbols);
+    const button = uiSymbols.find(symbol => symbol.name === 'Button');
+    const dataTable = uiSymbols.find(symbol => symbol.name === 'DataTable');
+    assert.equal(dataTable.propsContract.status, 'declared');
+    assert.ok(dataTable.propsContract.members.some(member => member.name === 'onStateChange'));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'server-data-table'));
+
     assert.equal(button.propsContract.status, 'declared');
     assert.match(button.propsContract.members.find(member => member.name === 'variant').documentation, /Visual style/);
     assert.ok(button.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));

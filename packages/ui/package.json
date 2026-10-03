@@ -3,7 +3,7 @@
   "version": "0.8.3",
   "type": "module",
   "sideEffects": false,
-  "description": "UI component library for the Cossack Framework — token-driven, themeable components and Solar icons",
+  "description": "UI component library for the Cossack Framework \u2014 token-driven, themeable components and Solar icons",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -40,13 +40,14 @@
     "src/blocks",
     "src/components",
     "src/internal",
-    "src/theme"
+    "src/theme",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.declarations.json",
+    "build": "vite build && tsc -p tsconfig.declarations.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "prepublishOnly": "pnpm run build",
     "pretest": "pnpm run build",
     "test": "vitest",

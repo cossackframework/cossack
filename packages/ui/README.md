@@ -74,6 +74,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | **Card** | `<div>` | Surface container with optional header/body/footer slots |
 | **Separator** | `<hr>` / `<div>` | Horizontal or vertical divider |
+| **DataTable** | `<table>` | Controlled server paging, filtering, sorting and stable row-ID selection |
 | **Table** | `<table>` | Token-styled table with sub-components (TableHeader, TableBody, TableRow, TableHead, TableCell) |
 | **Avatar** | `<img>` / `<span>` | Image with initials fallback, circle/square |
 | **AvatarGroup** | `<div>` | Stacked avatar set with "+N" overflow counter |
@@ -304,3 +305,28 @@ Available component names (kebab-case, passed to `cossack add ui <name>`):
 `carousel`, `resizable`, `scroll-area`, `sidebar`, `breadcrumb`, `pagination`,
 `button-group`, `toaster`, `bubble`, `message`, `message-scroller`,
 `attachment`.
+
+
+## Controlled DataTable
+
+Import `DataTable`, `DataTableProps<Row>` and `DataTableColumn<Row>` from
+`@cossackframework/ui`. Compose with `component(DataTable<Row>, props)`.
+Provide a caption, typed columns, a stable `getRowId`, current-page rows,
+`rowCount`, query `state` and `onStateChange`. Columns use either a row `key` or
+an `accessor` function. A `cell` callback can render custom content from the row.
+
+The parent fetches each requested state and rejects stale responses. The table
+does not fetch or transform rows. Sort, filter and page-size changes reset page
+to 1. Selection is controlled through `selection` and `onSelectionChange` and
+preserves off-page IDs. Reconcile selection and out-of-range pages in the parent
+when filters, permissions or the underlying records change.
+
+Use `loading`, `error` and `onRetry` for request states. Native controls provide
+keyboard behavior, headers expose sort state and row labels name checkboxes.
+Paging uses focusable `aria-disabled` buttons that ignore inactive actions.
+Retry returns focus to the filter before its callback. The table accepts only
+its declared props, with no general HTML-attribute forwarding.
+
+Run `pnpm exec cossack docs --package @cossackframework/ui --symbols --json` for
+the installed prop contracts and package-owned DataTable guide. The guide also
+explains selection policy, labels and status behavior.

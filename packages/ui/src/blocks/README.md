@@ -23,11 +23,13 @@ components.
 | **SettingsPanel** | Card-section settings page (switch toggles, text inputs, action buttons) |
 | **CommandPalette** | ⌘K command palette with fuzzy search + keyboard navigation |
 
+The controlled `DataTable` is available from `@cossackframework/ui` as a component.
+Its parent owns server queries and row actions.
+
 ## Planned Blocks
 
 | Block | Description |
 |---|---|
-| **DataTable** | Sortable, paginated table with search filter + row actions |
 | **CommentThread** | Nested comments with reply, upvote, and timestamps |
 
 ## Usage

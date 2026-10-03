@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "server-data-table",
+      "title": "Controlled server DataTable",
+      "summary": "Render a server page with typed columns, stable selection and native keyboard controls.",
+      "imports": [
+        "@cossackframework/ui"
+      ],
+      "markdown": "Import DataTable, DataTableProps<Row>, DataTableColumn<Row> and DataTableState from the public UI package. Compose with component(DataTable<Row>, props). Columns use either a key from the row type or an accessor function. An optional cell callback receives the typed row and returns a renderer value. Without a cell callback, values render as escaped text.\n\nProvide rows for the current page, rowCount for all matching records, and a one-based state containing page, pageSize, filter and optional sort. The table does not fetch, sort, filter or slice data. onStateChange receives a new query state. Filtering, sorting and page-size changes reset page to 1. The parent must fetch that state and prevent stale responses from replacing newer results. Reconcile a page beyond the updated total in the parent. The Previous page control can recover to the new last page.\n\ngetRowId must return a stable, nonempty string. Duplicate row and column IDs are rejected. Never derive an ID from the page index. For selection, provide both selection and onSelectionChange. The callback receives a fresh Set. Select-visible affects only selectable rows on this page and preserves off-page IDs. Filtering preserves IDs too. Clear or reconcile selection in the parent when your application policy requires it. Always authorize selected IDs on the server before an action.\n\nUse loading while a query is pending, error for a safe user-facing failure message, and onRetry for retry behavior. Stale rows can remain visible while loading, but selection is blocked. Empty results and an empty out-of-range page have separate status text. The table forwards no arbitrary HTML attributes. Use its declared props rather than relying on an untyped attribute spread.\n\nA visible caption is required. Native table headers, buttons, search input, select and checkboxes provide semantics and keyboard behavior. rowLabel names each selection checkbox and defaults to its ID. Sort headers expose aria-sort. The page-selection checkbox reports a mixed state. Paging buttons remain focusable with aria-disabled and ignore inactive actions, preserving focus during loading and at page boundaries. Retry moves focus to the filter before invoking the callback. Loading and result counts use a polite status region; errors use an alert. Load the UI theme as for other UI components.\n\nThe public-type, SSR and Chromium HTTP-data tests cover this contract. Integration with a generated Cossack application, the full runtime matrix and the broader UI accessibility audit remain separate acceptance work.",
+      "examples": []
+    }
+  ]
+}

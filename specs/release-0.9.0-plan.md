@@ -3290,13 +3290,27 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex catalog preparation (2026-10-04): CLI-08 now exposes class prop declarations,
-member documentation, optional callback signatures and index contracts from
-installed types. This does not close the component audit. Button/Input currently
-allow arbitrary attributes through string/any signatures. Table remains a styled
-native-table wrapper. DataTable is mentioned in the blocks README but no
-implementation is present in the inspected UI sources. Implement the controlled
-server-data contract and browser acceptance below before marking RT-23 complete.
+Codex DataTable implementation (2026-10-04): the UI root now exports a generic
+DataTable and typed row/column/query contracts. Columns select a valid row key or
+an accessor. Parents own HTTP queries, stale-response handling and selection.
+Filtering, sorting and page-size changes reset page to 1. Stable IDs preserve
+selection across pages and filters. Loading, errors, retry and empty states are
+explicit. Native table controls expose labels, sort state and mixed selection.
+Paging preserves focus through loading/boundaries, and retry returns focus to the
+filter. A package-owned guide explains the contract and its accessibility needs.
+
+Public type tests exposed extensionless UI declaration imports. UI builds now
+rewrite relative declaration imports for NodeNext/Deno resolution. Consumer tests
+reject invalid accessors and competing key/accessor definitions without weakening
+DataTableProps with an arbitrary attribute signature.
+
+Unit/SSR and a production-bundled Chromium fixture with real HTTP paging verify
+the component. That fixture uses published dist entries but is not a generated
+Cossack application. Next integrate a generated app with server resources/query
+state and verify its compiler/hydration/runtime path. Then audit native attributes,
+events, labels, keyboard behavior and focus across the remaining UI catalog.
+Button/Input still permit arbitrary string/any attributes. The full RT-23 criteria
+below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 
 Purpose: Applications need a typed table for real server data, and agents need

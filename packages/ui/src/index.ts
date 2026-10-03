@@ -98,3 +98,5 @@ export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 // and pass it to <Icon>:  component(Icon, { entry: ArrowRightIcon })
 export { Icon, normalizeStyle, type IconProps } from "./icons/Icon";
 export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar-icons/types";
+
+export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';

@@ -43,7 +43,7 @@ below link directly to those explanations.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
-- [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog.
+- [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog. Codex (2026-10-04): controlled DataTable, stable selection, public types, SSR, HTTP-backed Chromium keyboard/focus coverage and installed guidance are implemented. Generated Cossack app integration and the broader UI audit remain open. See the [checkpoint](#codex-data-table-2026-10-04).
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop. Codex completion (2026-10-03): one pure core model serves scaffold planning, framework builds, and CLI inspection; selected recipe requirements, transport bindings, durable-state and adapter requirements have source diagnostics. Published-export Node/Deno/Desktop build fixtures preserve the HTTP-only Desktop boundary and reject Workers imports. The [criterion audit](./release-0.9.0-plan.md#rt-25) is complete; Deno execution and Electron launch/packaging remain REL-03 gates.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
@@ -6281,3 +6281,52 @@ keyboard/focus/accessibility acceptance still require implementation. CLI-08 als
 retains broader usage/runtime guidance and its RT-23/REL-02 gates. No checklist
 status changed: 24 complete and 34 open. Versions remain 0.8.3. No publication,
 deployment, push or credential rotation occurred.
+
+<a id="codex-data-table-2026-10-04"></a>
+## Codex: Controlled DataTable foundation (2026-10-04)
+
+Added the generic public DataTable with typed row keys/accessors, column IDs,
+controlled page/filter/sort state, explicit totals and stable string row IDs.
+Parents own data fetching and stale-response handling. The table renders only
+supplied rows. Selection updates copy the controlled set, preserve off-page IDs,
+ignore unavailable/unselectable rows and block changes during loading/errors.
+Column/row identity and query invariants fail explicitly.
+
+The component provides caption, labeled native controls, sort state, mixed page
+selection, status/error/empty views and retry behavior. Chromium exposed focus
+loss when paging buttons became disabled during loading. Focusable aria-disabled
+controls now guard inactive actions and retain focus through loading/boundaries.
+Retry transfers focus to the stable filter before removing its own button.
+The package-owned guide documents these contracts and application responsibilities.
+
+Published type acceptance exposed missing .js suffixes in UI declaration imports.
+UI builds now use the existing declaration rewrite. DataTableProps is a closed
+object type, compatible with renderer composition without an arbitrary attribute
+index signature. Consumer tests reject invalid keys, accessors and competing
+key/accessor definitions. Table remains available as the simpler native wrapper.
+
+Verification:
+
+- **119 UI tests across 10 files passed**, including controlled state/selection,
+  SSR semantics and escaping, invalid inputs and published consumer types.
+  Log: `/tmp/cossack-data-table-final-ui.log`.
+- **Chromium HTTP-data acceptance passed** using a production bundle of public
+  dist exports: server page/filter/sort/size requests, off-page selection, loading,
+  empty/error/retry flows, native keyboard activation and retained focus.
+  Log: `/tmp/cossack-data-table-final-browser.log`.
+- `pnpm test:agent-docs:local` passed: installed DataTable prop and guide discovery,
+  UI CLI/MCP parity, six existing executable examples and zero network attempts.
+  Log: `/tmp/cossack-data-table-tarball.log`.
+- UI build, root `pnpm tsc --noEmit` and all 11 package checks passed.
+  Logs: `/tmp/cossack-data-table-final-build.log`,
+  `/tmp/cossack-data-table-final-root-types.log` and
+  `/tmp/cossack-data-table-final-package-types.log`.
+- Whitespace checks passed, excluding the user's existing reports.md changes.
+
+RT-23 remains open. The browser fixture uses a real HTTP endpoint and compiled
+public components, but is not a generated Cossack app. Next verify that integration
+with server resources/query state, compiler/hydration and runtime ownership, then
+audit native attributes/events/accessibility across the remaining UI catalog.
+CLI-08/REL-02 retain their broader acceptance gates. Status remains 24 complete
+and 34 open. Versions remain 0.8.3. No publication, deployment, push or credential
+rotation occurred.

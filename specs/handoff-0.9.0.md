@@ -37,11 +37,12 @@ CLI-07 and CLI-08 remain open. Their implemented foundations are:
 - Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
 See [setup and usage](../docs/local-agent-tools.md) and the
-[latest catalog checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04).
+[latest DataTable checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 Next expand authored API/component/recipe guidance and executable examples,
 and add verified runtime support. Extend the installed-tarball acceptance to cover that content.
-RT-23 still needs a controlled DataTable and native attribute, keyboard/focus and accessibility acceptance.
+RT-23 now has a controlled DataTable with public-type, SSR and Chromium HTTP-data tests.
+Next verify generated-app server resource/query-state integration and audit the remaining UI attributes, events and accessibility.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -74,9 +75,9 @@ Carry these unresolved limits into implementation and review:
 
 ## Verification references
 
-The [prop-catalog checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04)
-records 36 focused tests, installed UI CLI/MCP parity, six executable examples
-and root/package type checks. Prior scaffold evidence remains in the release log.
+The [DataTable checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04)
+records 119 UI tests, Chromium HTTP-data acceptance, installed catalog/guide parity
+and root/package type checks. Prior evidence remains in the release log.
 
 The [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
 proves CLI/MCP catalog parity, version/export refresh and discovery with Node networking disabled in a generated tarball installation.

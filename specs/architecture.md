@@ -860,3 +860,20 @@ even before its generator first starts. Terminal/finally cleanup cannot release 
 invocation twice. Confirmed yield state remains authoritative when a later frame
 fails; unconfirmed client-only previews roll back. Late scoped consumers keep their
 per-invocation ownership. See the [optimistic guide](../docs/optimistic.md#cancel-a-stream).
+
+
+## Controlled UI data tables
+
+The UI DataTable consumes a current page and an explicit total. Its parent owns
+queries, server data access and stale-response handling. Query callbacks emit new
+state without modifying rows or sorting/filtering them locally. Columns use typed
+row keys or accessors. Selection is a controlled set of stable string IDs. Updates
+copy the set and change only visible selectable rows, preserving off-page IDs.
+Authorization and selection reconciliation remain application responsibilities.
+
+The component uses native table and form controls. It publishes caption/row-label
+requirements and explicit loading/error/empty semantics. Paging keeps focusable
+aria-disabled controls and guards their handlers. Retry transfers focus before
+its conditional button disappears. The library owns no database or framework
+application dependency. UI declaration builds rewrite relative imports for strict
+ESM consumers, as core and renderer already do.
