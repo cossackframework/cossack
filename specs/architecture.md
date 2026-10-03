@@ -142,7 +142,14 @@ provider or service ownership changes prevent draft transfer.
 Retained layouts keep their service instances and browser drafts. Matching SSR
 resource entries replace the previous map before query dependencies change;
 entry identity rejects late results. This does not abort application I/O.
-Full pending-history and ownership-change acceptance remains RT-08 work.
+Framework-created history entries carry an app group and position. Guarded or
+failed precommit traversals restore the prior owned entry by moving through
+browser history, retaining its metadata. Confirmation resumes the original
+traversal without pushing another entry. Restoration events bypass guards and
+fetches. Unknown history positions fail rather than inventing a replacement.
+Page and layout imports resolve before live context/tree mutation. A sequence
+check rejects superseded modules before publishing SSR state or resources.
+Full staged-commit and ownership-change acceptance remains RT-08 work.
 Bounded completion and navigation diagnostics remain RT-09 work.
 
 ## Application socket registry

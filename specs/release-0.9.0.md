@@ -86,6 +86,73 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-pending-history-2026-10-03"></a>
+### Codex checkpoint: pending history and module preflight (2026-10-03)
+
+Author: Codex. Continued after `f53961e`. No checkbox closes. The original 58 IDs
+remain: 22 checked, 36 unchecked. RT-08/RT-09 are still open. Read the
+[criterion audit and next steps](./release-0.9.0-plan.md#rt-08),
+[navigation completion work](./release-0.9.0-plan.md#rt-09),
+[guard contract](../docs/prevent-navigation.md#guards-during-back-and-forward)
+and [Codex handoff](./handoff-0.9.0.md).
+
+Fixed canceled browser traversal leaving the address and visible page at different
+queries. Framework history entries now carry an app group/position while retaining
+scroll and application state. A guard restores the entry it left. The restoration
+popstate does not run guards or fetch again. Confirmation resumes the original
+entry without pushing history. Failed fetches or module imports restore the prior
+owned entry before error reporting. Unknown positions are not invented. A missing
+restoration event fails after two seconds with
+COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED; this is only a history-movement bound.
+Ownership tokens use getRandomValues so ordinary HTTP browser hydration does not
+require secure-context-only crypto.randomUUID.
+
+All requested page/layout imports now resolve before live context/resource/tree
+changes and window.__INITIAL_STATE__ publication. A superseded module fails a
+sequence check before creating a stale owner. Superseded bootstrap skips the
+final framework render. This does not make arbitrary bootstrap or rendering
+side effects atomic, cancel application I/O or release a stalled commit queue.
+
+Both generated production Node and native workerd browser fixtures now verify
+blocked back, restoration and confirmation of the original entry, preserved
+application history state, failed back fetch, and back/replace/forward while an
+old actual SSR query response remains held. Declared page/File/layout/service
+drafts survive; a later query patch uses the restored query and excludes the
+abandoned pending field. Matching resources make zero extra hydration RPCs.
+Controlled cases delay page/layout imports, check unpublished SSR state, exercise
+history restoration/confirmation and bound a missing restoration event.
+
+Final verification:
+
+- Core build and framework declaration/runtime output builds passed before the
+  consumer checks. Generated browser cases build actual client/server artifacts.
+- `pnpm tsc --noEmit` and `pnpm typecheck` passed; all 11 package checks passed
+  again after the final HTTP-compatible history-token change.
+- Full core suite: 1,404 tests in 83 files.
+- Final full framework suite: 1,418 tests in 66 files. New cases include guarded
+  restoration/confirmation, failed traversal, missing-event timeout, delayed
+  page/layout imports and hydration without crypto.randomUUID.
+- Full CLI suite: 608 tests in 44 files. Command:
+  `pnpm --filter cossack exec vitest run --maxWorkers=2`.
+  This includes the wider generated Node/native workerd runtime and retained
+  service acceptance that failed at the preceding checkpoint before correction.
+- After rebuilding the final HTTP-compatible token change, both production URL
+  browser cases passed again using `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state' --maxWorkers=1`.
+  The three full suites total 3,430 tests; the focused rerun is already included
+  in that count, not counted again.
+- All four TypeScript examples from the URL-state/navigation guides compiled
+  through published exports. Fixture syntax and owned whitespace checks passed.
+- All original checklist IDs/order/states remain unchanged: 58 IDs, 22 checked,
+  36 unchecked. The seven touched guides/specs have 400 valid local links/anchors.
+- No owned build/test process remains. User-owned reports.md/.zcodeignore stay
+  excluded from this checkpoint.
+
+Continue RT-08 with changed/nested ownership, actual backend read counts, staged
+bootstrap/render/transition acceptance and a criterion audit. RT-09 still needs
+owned cancellation/deadlines and a staged tree that lets newer navigation proceed
+past a stalled old bootstrap, plus its larger cache/scroll/diagnostic matrix.
+Versions remain 0.8.3 until REL-04. No live deployment or publication occurred.
+
 <a id="codex-query-ownership-2026-10-03"></a>
 ### Codex checkpoint: query ownership review (2026-10-03)
 

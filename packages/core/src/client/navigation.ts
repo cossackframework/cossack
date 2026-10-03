@@ -47,8 +47,33 @@ const COSSACK_NAVIGATION_STATE = '__cossackNavigation';
 type NavigationHistoryState = Record<string, unknown> & {
     [COSSACK_NAVIGATION_STATE]?: {
         scroll?: ScrollPosition;
+        location?: NavigationHistoryLocation;
     };
 };
+
+/** @internal Positions identify entries created by one active browser app. */
+export interface NavigationHistoryLocation {
+    readonly group: string;
+    readonly position: number;
+}
+
+/** @internal Never infer a position for an entry owned by another document. */
+export function getNavigationHistoryLocation(state: unknown): NavigationHistoryLocation | undefined {
+    if (!isRecord(state)) return undefined;
+    const navigation = state[COSSACK_NAVIGATION_STATE];
+    if (!isRecord(navigation) || !isRecord(navigation.location)) return undefined;
+    const { group, position } = navigation.location;
+    if (typeof group !== 'string' || !group || !Number.isSafeInteger(position) || (position as number) < 0) return undefined;
+    return { group, position: position as number };
+}
+
+/** @internal Preserve application state and scroll while marking an entry. */
+export function navigationHistoryStateAt(state: unknown, location: NavigationHistoryLocation): NavigationHistoryState {
+    const base: NavigationHistoryState = isRecord(state) ? { ...state } : {};
+    const existing = isRecord(base[COSSACK_NAVIGATION_STATE]) ? base[COSSACK_NAVIGATION_STATE] : {};
+    base[COSSACK_NAVIGATION_STATE] = { ...existing, location: { ...location } };
+    return base;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

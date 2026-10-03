@@ -2,7 +2,51 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex query ownership review (2026-10-03).
+> Latest checkpoint: Codex pending history review (2026-10-03).
+> Author: **Codex**. Continued after `f53961e`. Read the
+> [verification](./release-0.9.0.md#codex-pending-history-2026-10-03),
+> [updated RT-08 plan](./release-0.9.0-plan.md#rt-08),
+> [RT-09 continuation](./release-0.9.0-plan.md#rt-09) and
+> [public history guard contract](../docs/prevent-navigation.md#guards-during-back-and-forward).
+>
+> Fixed guarded back/forward leaving the browser address ahead of its visible
+> page. Current-app entries carry positions while preserving application/scroll
+> metadata. Restoration uses browser history and skips guard/fetch repetition.
+> Confirmation resumes the original entry without adding another entry. Failed
+> fetches/modules restore the prior owned entry before error reporting. Missing
+> restoration events fail after two seconds with the documented code; foreign
+> or overwritten positions cannot be inferred.
+>
+> All page/layout modules resolve before live contexts/resources/tree or global
+> SSR state publication. Obsolete imports cannot create a stale page/layout.
+> The final framework render is skipped after superseded bootstrap. This is not
+> atomic rollback or bounded application bootstrap. Ordinary HTTP hydration
+> uses getRandomValues for ownership tokens and does not require randomUUID.
+>
+> Actual generated Node/native workerd browsers cover guarded back, confirmation,
+> retained application state, failed back fetch and back/replace/forward while
+> an old actual SSR response stays held. File/page/layout/service drafts survive.
+> Later patches exclude abandoned intent; matching resources make zero extra
+> hydration RPCs. Controlled import/history tests and package checks are recorded
+> in the linked verification. Final results: full core 1,404/83 files,
+> framework 1,418/66 files, CLI 608/44 files (3,430 tests total). Root TypeScript
+> and all 11 package checks passed. Both production browser cases passed again
+> after the final HTTP token rebuild. Four guide examples compile; 400 local
+> links/anchors resolve. No owned build/test process remains.
+>
+> No checkbox closes: **22/58 checked, 36 unchecked**. Next for GLM: finish
+> staged bootstrap/render/transition ownership and cancellation/deadlines so a
+> stalled old bootstrap cannot block a newer valid navigation. Handle interrupted
+> history restoration and unknown entries. Then prove changed/nested owners,
+> cleanup and actual backend read counts before auditing RT-08. RT-09 retains
+> its complete cache/scroll/fragment/transition/diagnostic matrix. Continue all
+> other unchecked release tasks. Versions stay 0.8.3 until REL-04.
+>
+> Preserve user-owned reports.md/.zcodeignore. No push, publication, live cloud
+> changes, external messages or new chats were performed.
+>
+
+> Previous checkpoint: Codex query ownership review (2026-10-03).
 > Author: **Codex**. Continued after `c133495`. Read the
 > [verification](./release-0.9.0.md#codex-query-ownership-2026-10-03),
 > [updated RT-08 context and four next steps](./release-0.9.0-plan.md#rt-08),

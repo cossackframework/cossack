@@ -84,3 +84,28 @@ Guards that throw produce `failed`. A superseded request cannot update history
 or emit completion events. Component commits run in order. A component bootstrap
 that never settles can still block a later commit; cancellation and bounded
 completion for that case remain part of RT-09. Use `redirect()` in server methods.
+
+## Guards during back and forward
+
+Browsers activate a history entry before Cossack can check its guard. For entries
+created by the current Cossack app, a blocked traversal restores the entry it
+left. The visible page, local drafts, scroll metadata and application history
+state stay intact. The restoration event does not run the guard again or fetch
+another page.
+
+`confirmNavigation(true)` resumes the original back/forward entry and bypasses
+the guard once. It does not create a new history entry. Canceling the confirmation
+keeps the restored page. A failed page fetch or module import during traversal
+also restores the previous owned entry before the navigation error event.
+
+Entries carry a private group and position under `__cossackNavigation`. Preserve
+that namespace when changing `history.state`. Cossack does not invent positions
+for foreign or overwritten entries. If it cannot restore an owned entry, or the
+expected browser event does not arrive within two seconds, navigation reports
+`failed` with `COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED`. Applications can handle
+the existing cancelable `cossack:navigation-error` event.
+
+Module imports resolve before the framework changes the live page or layout
+contexts. A superseded page/layout import cannot publish its state. This does
+not make arbitrary application bootstrap or rendering failures atomic. Their
+cancellation and bounded completion remain part of RT-09.

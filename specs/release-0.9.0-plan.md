@@ -1957,7 +1957,7 @@ query transitions. Those requirements remain below.
 | Original RT-08 criterion | Current evidence | Status |
 | --- | --- | --- |
 | Copied filtered URLs show identical state | Production Node/workerd SSR and two tabs have equal query/resource output. Copied tabs receive no browser draft state. | Implemented for page/layout fixture. |
-| Back/forward restores filters and results | Both production browsers restore query/resource data and retain declared page drafts across ordinary history traversal. | Extend to traversal during pending work. |
+| Back/forward restores filters and results | Both production browsers restore filters/resources and declared drafts during ordinary and pending back/replace/forward, guarded confirmation and failed traversal. | Extend to staged user bootstrap and interrupted history restoration. |
 | Invalid numbers and predictable defaults | Pure read/write cases and real invalid page URLs reset to documented defaults. Explicit empty arrays and canonicalization pass. | Implemented. |
 | Browser history, SSR parity and Unicode | Owned destination contexts and push/replace pass unit and production acceptance. | Extend to staged commits and changed ownership. |
 | Rapid changes and resource integration | Typed pending patches merge; guards/failures/disposal clear intent; local drafts survive; retained layout SSR entries avoid extra RPCs; delayed old responses/results cannot overwrite newer data. | Incomplete: pending history, nested/changed owners, actual backend read counts and bounded completion remain. |
@@ -2010,11 +2010,41 @@ newer query data commits first and the old response is discarded. Matching page
 and retained-layout resources issue zero extra /crpc requests. Core tests also
 settle an obsolete resource successfully and exceptionally after the handoff.
 
+Codex continuation (2026-10-03): pending history and module preflight.
+Author: Codex. Continued after `f53961e`. See the
+[verification](./release-0.9.0.md#codex-pending-history-2026-10-03).
+RT-08 and RT-09 remain open; no checklist state changes.
+
+Framework history entries now carry a private app group and position while
+preserving scroll and application state. Guards run after browser back/forward
+activates a destination. A blocked traversal moves back to the committed entry
+without fetching or repeating the guard. Confirmation resumes the original
+entry, bypassing that guard once and creating no new entry. Failed fetches or
+module imports restore the entry before reporting the error. Unknown/overwritten
+positions are not inferred. A missing restoration event fails after two seconds
+with COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED. This bounds only history movement.
+
+All requested page/layout modules resolve before live URL/resource/context
+changes or window.__INITIAL_STATE__ publication. Superseded imports fail their
+sequence check without creating a stale layout/page. Superseded bootstrap cannot
+perform the final framework render. Arbitrary user bootstrap and renderer side
+effects are still not atomic, and a stalled bootstrap can hold the commit queue.
+
+Both production Node and native workerd browsers now cover guarded back,
+confirmation of the same entry, preserved foreign history data, a failed back
+fetch, and back/replace/forward while an old actual SSR response stays held.
+Page, File, layout and service drafts survive. Later query patches use the
+restored query and exclude the abandoned pending field. Matching resources still
+make zero extra hydration RPCs. Controlled cases also delay page/layout imports
+and bound a missing history event. The public guard guide records the contract.
+
 **Next steps for GLM, in order:**
 
-1. **Pending history and staged commit acceptance (RT-08/RT-09).** Drive back,
-   forward and replace while query fetches are pending. Delay page/layout module
-   loading, bootstrap, rendering and view-transition callbacks separately. Check
+1. **Pending history and staged commit acceptance (RT-08/RT-09).** The ordinary
+   pending back/forward/replace, guarded confirmation, failed back
+   fetch and delayed module cases above now pass. Extend them to interrupted
+   restoration/confirmation and foreign history entries. Delay bootstrap,
+   rendering and view-transition callbacks separately. Check
    address, committed readers, drafts and actual visible tree after every outcome.
    Current sequence guards and serialized commits do not prove bounded settlement
    or atomic rollback of application bootstrap. Fetch/guard deadlines and disposal
@@ -2092,6 +2122,27 @@ Treat restored history entries and fragment navigation explicitly.
 
 Start in core `client/navigation.ts`, framework `client/app.ts`, and
 `docs/prevent-navigation.md` and `docs/view-transitions.md`.
+
+Codex continuation after `f53961e` (2026-10-03): owned history restoration and
+module preflight are implemented. Read the
+[RT-08 checkpoint](#rt-08) and
+[verification](./release-0.9.0.md#codex-pending-history-2026-10-03).
+Actual Node/workerd browsers cover guarded/failed traversal and history while a
+query response is pending. Page/layout imports resolve before publishing live
+contexts or SSR state; delayed obsolete modules cannot create a stale tree.
+A missing history restoration event settles with a typed failure after two
+seconds. This is not a general navigation deadline or a fetch cancellation claim.
+
+Next: introduce one owned cancellation/deadline contract across guard, response
+body, imports, bootstrap, renderer and transition completion. Shared prefetches
+need consumer ownership so cancellation cannot break another reader. Stage new
+pages/layouts before publishing them; restore service request bindings and dispose
+staged scopes on failure. Preserve edits made to outgoing drafts while staging.
+Late application I/O may continue, but it cannot publish through revoked owners.
+Prove a stalled old bootstrap cannot block a newer valid navigation. Then add
+cache/invalidation, retained scope, scroll/fragment, transition fallback and
+diagnostic timeline evidence. Audit every original criterion before closure.
+
 
 Done when: Browser tests cover rapid links, back/forward, navigation guards,
 errors, redirects, reused layouts, fragments, and unavailable transition APIs.

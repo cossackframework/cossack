@@ -6,6 +6,8 @@ import {
   createInstance,
   createLayoutServiceScope,
   createRootServiceScope,
+  getNavigationHistoryLocation,
+  navigationHistoryStateAt,
   enableClientNavigation,
   LifecyclePhase,
   saveCurrentScrollPosition,
@@ -14,6 +16,7 @@ import {
   type NavigateOptions,
   type NavigateResult,
   type NavigationScrollBehavior,
+  type NavigationHistoryLocation,
 } from '@cossackframework/core';
 import {
     setSupportedLocales,
@@ -276,6 +279,8 @@ export async function createClientApp({
   // restoration rather than allowing the browser to restore before the
   // destination DOM exists. Seed the initial entry for a later traversal.
   window.history.scrollRestoration = 'manual';
+  let committedHistory: NavigationHistoryLocation = { group: crypto.getRandomValues(new Uint32Array(4)).join('-'), position: 0 };
+  window.history.replaceState(navigationHistoryStateAt(window.history.state, committedHistory), '', window.location.href);
   saveCurrentScrollPosition();
   let scrollSaveFrame: number | undefined;
   window.addEventListener('scroll', () => {
@@ -453,7 +458,8 @@ export async function createClientApp({
     currentPage?._frameworkNavigateComplete(pathname);
   };
 
-  const loadComponent = async (initialState: any, destination?: string) => {
+  const loadComponent = async (initialState: any, destination?: string,
+    isCurrent: () => boolean = () => true, onMutation?: (state: any) => void) => {
     const destinationUrl = destination ?? initialState?.metadata?.url ?? window.location.href;
     initialState = { ...initialState, metadata: { ...initialState?.metadata, url: destinationUrl } };
     // Support both routePath (new) and componentPath (legacy) for backward compatibility
@@ -477,6 +483,20 @@ export async function createClientApp({
     const module = await pageModuleLoader();
     if (!module) throw new Error(`Failed to load module for path: ${componentPath}`);
     const PageComponent = getModuleDefault(module) as new () => Cossack;
+    if (!PageComponent) throw new Error(`Failed to load page component for path: ${componentPath}`);
+    const layoutComponents = new Map<string, new () => Cossack>();
+    await Promise.all(layoutStack.map(async ({ path }: { path: string }) => {
+      const entry = layouts[path];
+      if (!entry) throw new Error(`Layout module loader not found for path: ${path}`);
+      const loaded = typeof entry === 'function' ? await entry() : entry;
+      const LayoutComponent = getModuleDefault(loaded) as new () => Cossack;
+      if (!LayoutComponent) throw new Error(`Failed to load layout module for path: ${path}`);
+      layoutComponents.set(path, LayoutComponent);
+    }));
+    // Imports can settle after a newer intent. Resolve every module before
+    // changing the live contexts, draft owners or renderer tree.
+    if (!isCurrent()) throw new Error('[Cossack] Navigation was superseded during module loading.');
+    onMutation?.(initialState);
 
     appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
     appInstance.updatePath(pathname, destinationUrl);
@@ -517,17 +537,7 @@ export async function createClientApp({
           instance = undefined;
         }
         if (!instance) {
-          const layoutEntry = layouts[layoutFilePath];
-          if (!layoutEntry) {
-            console.warn(`[Cossack] Layout module not found for path: ${layoutFilePath}`);
-            continue;
-          }
-          // On the client, layouts are lazy: the registry holds loader functions
-          // (see vite-plugin.ts). Await to resolve the module.
-          const layoutModule = typeof layoutEntry === 'function'
-            ? await (layoutEntry as () => Promise<any>)()
-            : layoutEntry;
-          const LComp = getModuleDefault(layoutModule) as new () => Cossack;
+          const LComp = layoutComponents.get(layoutFilePath)!;
           const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
             ownerRouteId: componentRouteId,
             ownerRoutePath: layoutFilePath,
@@ -587,6 +597,7 @@ export async function createClientApp({
         };
 
         await componentInstance.bootstrap({ initialState, skipInit: true });
+        if (!isCurrent()) throw new Error('[Cossack] Navigation was superseded during bootstrap.');
         componentInstance.updatePath(pathname, destinationUrl);
         currentPageFile = componentPath;
         currentPageUrl = destinationUrl;
@@ -636,11 +647,46 @@ export async function createClientApp({
   let commitQueue: Promise<void> = Promise.resolve();
   type QueryIntent = { url: string; isCurrent: () => boolean };
   let pendingQuery: QueryIntent | undefined;
+  type HistoryMove = {
+    target: NavigationHistoryLocation; url: string; confirm: boolean;
+    promise: Promise<NavigateResult>; finish: (result: NavigateResult) => void;
+    arrived: () => void;
+  };
+  let historyMove: HistoryMove | undefined;
+  const sameHistory = (left: NavigationHistoryLocation | undefined, right: NavigationHistoryLocation) =>
+    left?.group === right.group && left.position === right.position;
+  const moveHistory = (target: NavigationHistoryLocation, targetUrl: string, confirm = false): Promise<NavigateResult> => {
+    const active = getNavigationHistoryLocation(window.history.state);
+    const failed = () => ({ outcome: 'failed' as const, url: targetUrl,
+      error: Object.assign(new Error('[Cossack] Could not restore the owned history entry.'), { code: 'COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED' }) });
+    if (!active || active.group !== target.group) return Promise.resolve(failed());
+    if (sameHistory(active, target) && new URL(targetUrl, window.location.href).href === window.location.href) {
+      return confirm ? navigate(targetUrl, true, { navigationType: 'traverse' }) : Promise.resolve({ outcome: 'completed', url: targetUrl });
+    }
+    historyMove?.finish({ outcome: 'superseded', url: historyMove.url });
+    let resolve!: (result: NavigateResult) => void;
+    const promise = new Promise<NavigateResult>(done => { resolve = done; });
+    const move: HistoryMove = { target, url: new URL(targetUrl, window.location.href).href, confirm, promise,
+      arrived: () => clearTimeout(timer),
+      finish: result => {
+        clearTimeout(timer);
+        if (historyMove === move) historyMove = undefined;
+        resolve(result);
+      } };
+    const timer = setTimeout(() => move.finish(failed()), 2000);
+    historyMove = move;
+    try { window.history.go(target.position - active.position); }
+    catch { move.finish(failed()); }
+    return promise;
+  };
   const navigate = async (url: string, force = false, options?: NavigateOptions, intent?: QueryIntent): Promise<NavigateResult> => {
     if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
     if (!intent) pendingQuery = undefined;
     const seq = ++navigationSequence;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
+    const requestedHistory = getNavigationHistoryLocation(window.history.state);
+    let treeMutationStarted = false;
+    let restorationAttempted = false;
     if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
       // popstate has already activated the destination entry. Do not let a
       // queued scroll save from the outgoing page overwrite that entry.
@@ -655,8 +701,15 @@ export async function createClientApp({
           if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
           if (prevented) {
               currentPage._pendingNavigation = async () => {
-                  await navigate(url, true, options);
+                  if (navigationType === 'traverse' && requestedHistory) await moveHistory(requestedHistory, url, true);
+                  else await navigate(url, true, options);
               };
+              if (navigationType === 'traverse') {
+                restorationAttempted = true;
+                const restored = await moveHistory(committedHistory, committedUrl);
+                if (seq !== navigationSequence) return { outcome: 'superseded', url };
+                if (restored.outcome !== 'completed') throw restored.error;
+              }
               // Force re-render to show prevention UI if any
               await currentPage.requestUpdate();
               return { outcome: 'canceled', url };
@@ -737,17 +790,22 @@ export async function createClientApp({
       const commit = async () => {
         if (seq !== navigationSequence) return;
         if (intent && !intent.isCurrent()) { ownerDisposed = true; return; }
-        window.__INITIAL_STATE__ = state;
-        await loadComponent(state, destinationUrl);
+        await loadComponent(state, destinationUrl, () => seq === navigationSequence, preparedState => {
+          treeMutationStarted = true;
+          window.__INITIAL_STATE__ = preparedState;
+        });
         if (seq !== navigationSequence) return;
         if (navigationType === 'push') {
-          window.history.pushState(createNavigationHistoryState(), '', destinationUrl);
+          const active = getNavigationHistoryLocation(window.history.state);
+          const position = active?.group === committedHistory.group ? active.position + 1 : committedHistory.position + 1;
+          window.history.pushState(navigationHistoryStateAt(createNavigationHistoryState(), { group: committedHistory.group, position }), '', destinationUrl);
         } else if (navigationType === 'replace') {
           window.history.replaceState(window.history.state, '', destinationUrl);
         } else if (redirected) {
           window.history.replaceState(window.history.state, '', destinationUrl);
         }
         committedUrl = new URL(destinationUrl, window.location.href).href;
+        committedHistory = getNavigationHistoryLocation(window.history.state) ?? committedHistory;
         applyNavigationScroll(
           destinationUrl,
           options?.scroll ?? defaultScrollBehavior,
@@ -801,6 +859,10 @@ export async function createClientApp({
       return { outcome: redirected ? 'redirected' : 'completed', url: destinationUrl };
     } catch (error) {
       if (seq !== navigationSequence) return { outcome: 'superseded', url };
+      if (navigationType === 'traverse' && !treeMutationStarted && !restorationAttempted) {
+        await moveHistory(committedHistory, committedUrl);
+        if (seq !== navigationSequence) return { outcome: 'superseded', url };
+      }
       console.error('Navigation failed:', error);
       // Give the app a chance to handle the failure (show an error UI, retry,
       // or fall back to a cached view) instead of forcing a full reload that
@@ -819,8 +881,26 @@ export async function createClientApp({
     }
   };
 
-  Cossack._onNavigate = (url, options) => navigate(url, false, options);
+  const dispatchNavigate = async (url: string, options?: NavigateOptions): Promise<NavigateResult> => {
+    const move = historyMove;
+    if (move && options?.navigationType === 'traverse') {
+      if (sameHistory(getNavigationHistoryLocation(window.history.state), move.target) &&
+        new URL(url, window.location.href).href === move.url) {
+        // Restoration is a browser traversal, but does not reload the retained
+        // tree or run its guard. Confirmation resumes the original traversal.
+        historyMove = undefined;
+        move.arrived();
+        const result = move.confirm ? await navigate(url, true, options) : { outcome: 'completed' as const, url };
+        move.finish(result);
+        return result;
+      }
+      move.finish({ outcome: 'superseded', url: move.url });
+    } else if (move) await move.promise;
+    return navigate(url, false, options);
+  };
+  Cossack._onNavigate = dispatchNavigate;
   Cossack._onUpdateUrlState = async (sourceUrl, build, isCurrent, options) => {
+    if (historyMove) await historyMove.promise;
     const source = new URL(sourceUrl, window.location.href);
     const committed = new URL(committedUrl, window.location.href);
     if (!isCurrent() || source.pathname !== committed.pathname || source.search !== committed.search) {
@@ -836,12 +916,12 @@ export async function createClientApp({
   };
 
   enableClientNavigation(
-    (url, options) => navigate(url, false, options),
+    dispatchNavigate,
     async (url) => {
       if (!pageCache.has(pageCacheKey(url))) {
         fetchPage(url).catch(() => {});
       }
     }
   );
-  return { navigate: (url: string, options?: NavigateOptions) => navigate(url, false, options) };
+  return { navigate: dispatchNavigate };
 }

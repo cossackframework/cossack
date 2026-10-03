@@ -41,8 +41,9 @@ export async function writeUrlStateAcceptance(root) {
     import {filters} from '../../filters';
     @Page({transport:'http'}) export default class List extends Cossack {
       @ClientState() blocked=false;
+      @ClientState() guardChecks=0;
       @ClientState() outcome='';
-      @PreventNavigation() prevent(){return this.blocked;}
+      @PreventNavigation() prevent(){this.guardChecks++;return this.blocked;}
       @ClientState() file:File|undefined=undefined;
       @ClientStore() draft={text:''};
       get filters(){return this.urlState(filters);}
@@ -60,6 +61,7 @@ export async function writeUrlStateAcceptance(root) {
         <input id="draft-file" type="file" @change=\${(event:Event)=>{this.file=(event.target as HTMLInputElement).files?.[0];}}><span id="file-name">\${this.file?.name??''}</span>
         <button id="page-only" @click=\${this.pageOnly}>Page</button><button id="search-only" @click=\${this.searchOnly}>Search</button>
         <button id="fail-query" @click=\${this.fail}>Fail</button><button id="toggle-guard" @click=\${()=>{this.blocked=!this.blocked;}}>Guard</button>
+        <button id="confirm-history" @click=\${()=>this.confirmNavigation(true)}>Confirm</button><span id="guard-checks">\${this.guardChecks}</span>
         <span id="query-outcome">\${this.outcome}</span>
         <button id="rapid-query" @click=\${this.rapid}>Rapid</button><button id="leave-list" @click=\${this.leave}>Leave</button>
         <button id="change-query" @click=\${this.change}>Change</button><button id="replace-query" @click=\${this.replace}>Replace</button></main>\`;}
@@ -110,12 +112,38 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.locator('#toggle-guard').click(); await page.locator('#page-only').click();
     await browserExpect(page.locator('#query-outcome')).toHaveText('canceled'); expect(page.url()).toBe(beforePrevented);
     await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
-    await page.locator('#toggle-guard').click();
-    await page.evaluate(() => document.addEventListener('cossack:navigation-error', event => event.preventDefault()));
+    // The guard must restore the exact history entry after browser back has
+    // already changed the address. Confirmation resumes that original entry.
+    await page.evaluate(() => history.replaceState({...history.state,applicationKey:'kept'},'',location.href));
+    const checks = Number(await page.locator('#guard-checks').textContent());
+    const historyLength = await page.evaluate(() => history.length);
+    await page.evaluate(() => history.back());
+    await browserExpect.poll(async () => Number(await page.locator('#guard-checks').textContent())).toBeGreaterThan(checks);
+    await browserExpect.poll(() => page.url()).toBe(beforePrevented);
+    await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
+    expect(await page.evaluate(() => history.state.applicationKey)).toBe('kept');
+    await page.locator('#confirm-history').click();
+    await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
+    await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await page.locator('#toggle-guard').click(); await page.evaluate(() => history.forward());
+    await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
+    await browserExpect.poll(() => page.url()).toBe(beforePrevented);
+    await page.evaluate(() => document.addEventListener('cossack:navigation-error', event => {window.__urlErrors=(window.__urlErrors??0)+1;event.preventDefault();}));
     const failedQuery = url => url.pathname === '/list' && url.searchParams.get('search') === 'failing';
     await page.route(failedQuery, route => route.fulfill({status:503,body:'unavailable'}));
     await page.locator('#fail-query').click(); await browserExpect(page.locator('#query-outcome')).toHaveText('failed');
     expect(page.url()).toBe(beforePrevented); await page.unroute(failedQuery);
+    const errorsBeforeBack = await page.evaluate(() => window.__urlErrors);
+    const failedBack = url => url.pathname === '/list' && url.searchParams.get('search') === '雪 & books' && url.searchParams.get('page') === '3';
+    await page.route(failedBack, route => route.fulfill({status:503,body:'unavailable'}));
+    await page.evaluate(() => {window.__cossack_invalidatePageCache();history.back();});
+    await browserExpect.poll(() => page.evaluate(() => window.__urlErrors)).toBe(errorsBeforeBack+1);
+    await browserExpect.poll(() => page.url()).toBe(beforePrevented);
+    await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
+    await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await page.unroute(failedBack);
     // Hold an actual SSR response, edit the still-active drafts, then commit a
     // newer query before releasing the obsolete response.
     let capturedResolve;
@@ -129,11 +157,22 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.locator('#page-only').click();
     await browserExpect.poll(() => Boolean(release)).toBe(true); await captured;
     expect(page.url()).toBe(beforePrevented); await browserExpect(page.locator('#query-loading')).toHaveCount(0);
+    // Back supersedes the pending page-5 intent. Replace the restored entry,
+    // then traverse forward while the obsolete response remains held.
+    await page.evaluate(() => history.back());
+    await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
+    const pendingHistoryLength = await page.evaluate(() => history.length);
     await page.locator('#page-draft').fill('edited while pending');
-    await page.locator('#search-only').click(); await browserExpect(page.locator('#query-items')).toHaveText('latest:5:price:a,b');
-    await browserExpect(page.locator('#layout-summary')).toHaveText('latest:5');
+    await page.locator('#replace-query').click();
+    await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:4:price:a,b');
+    expect(await page.evaluate(() => history.length)).toBe(pendingHistoryLength);
+    await page.evaluate(() => history.forward());
+    await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
+    await browserExpect(page.locator('#page-draft')).toHaveValue('edited while pending');
+    await page.locator('#search-only').click(); await browserExpect(page.locator('#query-items')).toHaveText('latest:4:price:a,b');
+    await browserExpect(page.locator('#layout-summary')).toHaveText('latest:4');
     release(); await page.unrouteAll({behavior:'wait'}); await settled();
-    await browserExpect(page.locator('#query-items')).toHaveText('latest:5:price:a,b');
+    await browserExpect(page.locator('#query-items')).toHaveText('latest:4:price:a,b');
     await browserExpect(page.locator('#page-draft')).toHaveValue('edited while pending');
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');

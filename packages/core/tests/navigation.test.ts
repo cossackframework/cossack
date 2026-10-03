@@ -4,6 +4,8 @@ import {
     applyNavigationScroll,
     createNavigationHistoryState,
     getSavedScrollPosition,
+    getNavigationHistoryLocation,
+    navigationHistoryStateAt,
     saveCurrentScrollPosition,
 } from '../src/client/navigation';
 
@@ -32,6 +34,25 @@ describe('SPA navigation scroll behavior', () => {
 
     it('creates scroll state for a newly pushed entry', () => {
         expect(getSavedScrollPosition(createNavigationHistoryState())).toEqual({ x: 24, y: 480 });
+    });
+
+    it('keeps owned history positions, scroll and application fields through updates', () => {
+        const original = { application: 'kept', __cossackNavigation: { scroll: { x: 1, y: 2 }, custom: 'kept' } };
+        const location = { group: 'this-app', position: 3 };
+        const updated = navigationHistoryStateAt(original, location);
+        expect(getNavigationHistoryLocation(updated)).toEqual(location);
+        expect(updated).toMatchObject({ application: 'kept', __cossackNavigation: { custom: 'kept' } });
+        expect(getSavedScrollPosition(updated)).toEqual({ x: 1, y: 2 });
+        expect(original.__cossackNavigation).not.toHaveProperty('location');
+        location.position = 4; expect(getNavigationHistoryLocation(updated)?.position).toBe(3);
+        window.history.replaceState(updated, '', '/current'); saveCurrentScrollPosition();
+        expect(getNavigationHistoryLocation(window.history.state)?.position).toBe(3);
+    });
+
+    it.each([null, {}, { group: '', position: 1 }, { group: 'app', position: -1 },
+        { group: 'app', position: 1.5 }, { group: 'app', position: Infinity },
+        { group: 'app', position: Number.MAX_SAFE_INTEGER + 1 }])('does not invent positions for invalid or foreign entries (%#)', location => {
+        expect(getNavigationHistoryLocation({ __cossackNavigation: { location } })).toBeUndefined();
     });
 
     it('scrolls new navigation to the top by default', () => {

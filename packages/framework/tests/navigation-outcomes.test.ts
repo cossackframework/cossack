@@ -8,6 +8,7 @@ const fixture = vi.hoisted(() => ({
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
     bootstrapUrls: [] as string[],
+    page: undefined as any,
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: fixture.registry }));
 vi.mock('virtual:cossack-lang', () => ({ supportedLocales: [], defaultLocale: 'en', loadCatalog: async () => ({}) }));
@@ -48,7 +49,7 @@ class Component {
     _checkPreventNavigation() { return fixture.guard(); }
 }
 class App extends Component {
-    setCurrentPage() {}
+    setCurrentPage(page: any) { fixture.page = page; }
     mount() {}
     override async requestUpdate() {
         document.querySelector('#app')!.textContent = this.children;
@@ -91,6 +92,7 @@ beforeEach(async () => {
     navigate = (await createClientApp({ container: '#app', AppComponent: App }))!.navigate;
 });
 afterEach(() => {
+    vi.useRealTimers();
     document.removeEventListener('cossack:navigation-error', handleError);
     vi.unstubAllGlobals();
     Cossack._onNavigate = undefined;
@@ -99,6 +101,86 @@ afterEach(() => {
 });
 
 describe('navigation completion behavior', () => {
+    it('seeds navigation ownership on an HTTP browser without crypto.randomUUID', async () => {
+        const browserCrypto = globalThis.crypto;
+        vi.stubGlobal('crypto', { getRandomValues: browserCrypto.getRandomValues.bind(browserCrypto) });
+        expect(await createClientApp({ container: '#app', AppComponent: App })).toBeDefined();
+        expect(window.history.state.__cossackNavigation.location.group).toMatch(/^\d+-\d+-\d+-\d+$/);
+    });
+    it('restores a prevented back traversal and confirms the original entry without adding history', async () => {
+        const initial = window.history.state;
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        await navigate('/fast'); const current = window.history.state; const length = window.history.length;
+        fixture.guard = vi.fn(async () => true);
+        vi.spyOn(window.history, 'go').mockImplementation(delta => {
+            queueMicrotask(() => {
+                const target = delta === 1 ? '/fast' : '/start';
+                window.history.replaceState(delta === 1 ? current : initial, '', target);
+                void navigate(target, { navigationType: 'traverse' });
+            });
+        });
+        window.history.replaceState(initial, '', '/start');
+        expect(await navigate('/start', { navigationType: 'traverse' })).toMatchObject({ outcome: 'canceled' });
+        expect(window.location.pathname).toBe('/fast'); expect(document.querySelector('#app')!.textContent).toBe('/fast');
+        expect(window.history.go).toHaveBeenCalledWith(1); expect(fetch).toHaveBeenCalledOnce();
+        await fixture.page._pendingNavigation();
+        expect(window.location.pathname).toBe('/start'); expect(document.querySelector('#app')!.textContent).toBe('/start');
+        expect(window.history.go).toHaveBeenLastCalledWith(-1); expect(window.history.length).toBe(length);
+        expect(fixture.guard).toHaveBeenCalledOnce(); expect(fetch).toHaveBeenCalledOnce();
+    });
+
+    it('restores a failed traversal before handing its error to the application', async () => {
+        const initial = window.history.state;
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        await navigate('/fast'); const current = window.history.state;
+        (globalThis as any).__cossack_invalidatePageCache();
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+        vi.spyOn(window.history, 'go').mockImplementation(() => {
+            queueMicrotask(() => {
+                window.history.replaceState(current, '', '/fast');
+                void navigate('/fast', { navigationType: 'traverse' });
+            });
+        });
+        window.history.replaceState(initial, '', '/start');
+        expect(await navigate('/start', { navigationType: 'traverse' })).toMatchObject({ outcome: 'failed' });
+        expect(window.location.pathname).toBe('/fast'); expect(document.querySelector('#app')!.textContent).toBe('/fast');
+        expect(window.history.go).toHaveBeenCalledWith(1); expect(fetch).toHaveBeenCalledOnce();
+    });
+
+    it('bounds a history restoration that never produces the expected browser event', async () => {
+        const initial = window.history.state;
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast'))); await navigate('/fast');
+        fixture.guard = async () => true;
+        vi.spyOn(window.history, 'go').mockImplementation(() => {});
+        window.history.replaceState(initial, '', '/start'); vi.useFakeTimers();
+        const result = navigate('/start', { navigationType: 'traverse' });
+        await vi.advanceTimersByTimeAsync(2001);
+        expect(await result).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED' } });
+    });
+
+    it.each(['page', 'layout'] as const)('does not publish a superseded %s import into live state', async delayed => {
+        let release!: (module: any) => void;
+        const gate = new Promise<any>(resolve => { release = resolve; });
+        const loader = fixture.registry.pages['/src/pages/slow/index.ts'];
+        const layoutCreated = vi.fn(); class Layout extends Component { constructor() { super(); layoutCreated(); } }
+        if (delayed === 'page') fixture.registry.pages['/src/pages/slow/index.ts'] = () => gate;
+        else fixture.registry.layouts['/src/pages/delayed/layout.ts'] = () => gate;
+        const fetcher = vi.fn(async (target: string) => delayed === 'layout' && target === '/slow'
+            ? new Response(`<script>window.__INITIAL_STATE__ = ${JSON.stringify({ routePath: '/slow', pathname: '/slow',
+                _layout_stack: [{ path: '/src/pages/delayed/layout.ts', state: { public: {} } }],
+            })}</script>`) : documentResponse(target.slice(1)));
+        vi.stubGlobal('fetch', fetcher);
+        try {
+            const older = navigate('/slow'); await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(window.__INITIAL_STATE__.pathname).toBe('/start'); expect(document.querySelector('#app')!.textContent).toBe('/start');
+            const newer = navigate('/fast'); await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+            release({ default: delayed === 'page' ? Component : Layout });
+            expect(await older).toMatchObject({ outcome: 'superseded' }); expect(await newer).toMatchObject({ outcome: 'completed' });
+            expect(fixture.bootstrapUrls).not.toContain('/slow'); expect(layoutCreated).not.toHaveBeenCalled();
+            expect(window.__INITIAL_STATE__.pathname).toBe('/fast'); expect(document.querySelector('#app')!.textContent).toBe('/fast');
+        } finally { release({ default: Component }); fixture.registry.pages['/src/pages/slow/index.ts'] = loader; }
+    });
     it('retains a layout when only its child page changes from SSE to HTTP', async () => {
         const created = vi.fn(); const destroyed = vi.fn(); const hydrate = vi.fn();
         class Layout extends Component {

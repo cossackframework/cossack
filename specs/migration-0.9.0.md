@@ -53,6 +53,14 @@ values remain empty after page replacement. Copied URLs and unrelated pages
 start new drafts. Retained layout resources adopt matching SSR data without
 another hydration RPC; late old results cannot overwrite the new query.
 
+Guarded back/forward now restores the prior Cossack-owned history entry.
+Confirmation resumes the original traversal without adding an entry. Failed
+fetches or module imports restore the entry before the navigation error event.
+Preserve `history.state.__cossackNavigation` when adding application history data.
+Foreign or overwritten positions cannot be inferred; restoration failures use
+`COSSACK_NAVIGATION_HISTORY_RESTORE_FAILED`. See the
+[history guard contract](../docs/prevent-navigation.md#guards-during-back-and-forward).
+
 ## Rate-limit configuration and counters reject invalid values
 
 An explicit `rateLimit`/`RATE_LIMIT` now requires a supported non-empty string

@@ -78,7 +78,7 @@ application data. The default is `push`. Existing navigation outcomes and guards
 `updateUrlState(definition, patch, options)` returns the same navigation outcome.
 It merges each patch with the latest pending query intent. A later patch wins
 for a repeated key; patches from separate declarations retain unrelated keys.
-Reads and the address stay at the committed URL until navigation succeeds.
+Outgoing page reads and the address stay committed while a query fetch is pending.
 Guards, failures, ordinary navigation and disposal release pending ownership.
 For repeated relative increments, compute the intended number explicitly:
 two calls that both read `this.filters.page + 1` request the same number.
@@ -97,7 +97,15 @@ into the new entries. Discarding an old result does not terminate application I/
 Query changes keep the current page editable while waiting, including when a
 `loading.ts` component exists.
 
-Bounded navigation completion remains RT-09. The complete pending-history,
+Browser back/forward activates its history entry before Cossack renders it.
+These traversals supersede pending query patches. A later update starts from
+the restored committed query, so abandoned fields cannot reappear. Back,
+forward and replacement preserve matching declared drafts even while an older
+query response remains pending. A blocked or failed traversal restores the
+previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-during-back-and-forward)
+for confirmation and history ownership.
+
+Bounded navigation completion remains RT-09. The complete staged-commit,
 ownership-change and resource-read audit remains open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
