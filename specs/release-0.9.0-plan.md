@@ -2147,9 +2147,17 @@ On cancellation, dispose only newly created page/layout/scope instances. Recheck
 ownership after every awaited operation and before publishing into the live tree.
 Arbitrary application I/O is not stopped by the lifecycle fix.
 
-Next: introduce one owned cancellation/deadline contract across guard, response
-body, imports, bootstrap, renderer and transition completion. Shared prefetches
-need consumer ownership so cancellation cannot break another reader. Stage new
+Codex fetch ownership follow-up (2026-10-03): SharedPageRequests gives each
+navigation/prefetch reader an independent 30-second response/body deadline.
+Supersession releases the old navigation reader immediately. The final reader
+leaving aborts the network request. Late ignored work cannot refill the cache or
+preload modules. Invalidation retains existing reader results while detaching
+future readers, and cache epoch checks still apply. Read the
+[verification](./release-0.9.0.md#codex-fetch-ownership-2026-10-03).
+
+Next: extend ownership across guard, imports, bootstrap, renderer and transition
+completion. Reuse the fetch reader boundary instead of aborting shared prefetches
+indiscriminately. Response deadlines alone do not bound navigation. Stage new
 pages/layouts before publishing them; restore service request bindings and dispose
 staged scopes on failure. Preserve edits made to outgoing drafts while staging.
 Late application I/O may continue, but it cannot publish through revoked owners.

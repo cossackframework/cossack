@@ -101,6 +101,47 @@ afterEach(() => {
 });
 
 describe('navigation completion behavior', () => {
+    it('settles superseded navigation before an ignored body finishes and rejects its stale cache write', async () => {
+        let finishBody!: (html: string) => void;
+        let requestSignal!: AbortSignal;
+        const body = new Promise<string>(resolve => { finishBody = resolve; });
+        let reads = 0;
+        const fetchMock = vi.fn(async (url: string, options: RequestInit) => {
+            if (url.includes('/slow') && reads++ === 0) {
+                requestSignal = options.signal!;
+                return { ok: true, status: 200, url: 'http://localhost/slow', text: () => body };
+            }
+            return documentResponse(url.includes('/slow') ? 'slow' : 'fast');
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        const old = navigate('/slow');
+        await vi.waitFor(() => expect(requestSignal).toBeDefined());
+        const next = navigate('/fast');
+        expect(await old).toMatchObject({ outcome: 'superseded' });
+        expect(requestSignal.aborted).toBe(true);
+        expect(await next).toMatchObject({ outcome: 'completed' });
+        finishBody(await documentResponse('slow').text());
+        await Promise.resolve(); await Promise.resolve();
+        expect(await navigate('/slow')).toMatchObject({ outcome: 'completed' });
+        expect(reads).toBe(2);
+    });
+
+    it('reports a bounded failure for a stalled response body and allows retry', async () => {
+        vi.useFakeTimers();
+        let requestSignal!: AbortSignal;
+        vi.stubGlobal('fetch', vi.fn(async (_url: string, options: RequestInit) => {
+            requestSignal = options.signal!;
+            return { ok: true, status: 200, text: () => new Promise<string>(() => {}) };
+        }));
+        const pending = navigate('/slow');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(await pending).toMatchObject({ outcome: 'failed', error: { code: 'COSSACK_NAVIGATION_FETCH_TIMEOUT' } });
+        expect(requestSignal.aborted).toBe(true);
+        expect(window.location.pathname).toBe('/start');
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('slow')));
+        expect(await navigate('/slow')).toMatchObject({ outcome: 'completed' });
+    });
+
     it('seeds navigation ownership on an HTTP browser without crypto.randomUUID', async () => {
         const browserCrypto = globalThis.crypto;
         vi.stubGlobal('crypto', { getRandomValues: browserCrypto.getRandomValues.bind(browserCrypto) });

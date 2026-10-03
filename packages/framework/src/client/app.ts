@@ -1,3 +1,4 @@
+import { SharedPageRequests } from './shared-page-requests.js';
 import { getModuleDefault } from '../module-default.js';
 import {
   Cossack,
@@ -196,9 +197,10 @@ function preloadPageModules(urls: readonly string[]): void {
  * two identical network requests. Track the live promise per URL and reuse it
  * so only one request is in flight at a time.
  */
-const inFlightPages = new Map<string, Promise<CachedPage>>();
+const inFlightPages = new SharedPageRequests<CachedPage>();
 
-async function fetchPage(url: string) {
+async function fetchPage(url: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const key = pageCacheKey(url);
   const cached = pageCache.get(key);
   if (cached) {
@@ -207,16 +209,13 @@ async function fetchPage(url: string) {
     pageCache.set(key, cached);
     return cached;
   }
-  const existing = inFlightPages.get(key);
-  if (existing) {
-    return existing;
-  }
-
   const requestEpoch = pageCacheEpoch;
-  const promise = (async () => {
-    const response = await fetch(key);
+  return inFlightPages.read(key, async requestSignal => {
+    const response = await fetch(key, { signal: requestSignal });
+    requestSignal.throwIfAborted();
     if (!response.ok && response.status !== 404 && response.status !== 500) throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
     const html = await response.text();
+    requestSignal.throwIfAborted();
     const parsed = parseStateFromHTML(html);
     const boundary = parsed?.state?._cossackBoundary;
     const source = routeIdMap.get(parsed?.state?.componentRouteId);
@@ -243,19 +242,7 @@ async function fetchPage(url: string) {
     }
 
     throw new Error('Failed to load page state');
-  })();
-
-  inFlightPages.set(key, promise);
-  // Always clear the in-flight entry so a failed fetch can be retried later.
-  void promise.then(
-    () => {
-      if (inFlightPages.get(key) === promise) inFlightPages.delete(key);
-    },
-    () => {
-      if (inFlightPages.get(key) === promise) inFlightPages.delete(key);
-    },
-  );
-  return promise;
+  }, signal);
 }
 
 export async function createClientApp({
@@ -644,6 +631,7 @@ export async function createClientApp({
   // Navigation sequence: a newer navigation supersedes any in-flight one;
   // its commit is skipped and its result resolves as 'superseded' (RT-09).
   let navigationSequence = 0;
+  let activeFetchOwner: AbortController | undefined;
   let commitQueue: Promise<void> = Promise.resolve();
   type QueryIntent = { url: string; isCurrent: () => boolean };
   let pendingQuery: QueryIntent | undefined;
@@ -683,6 +671,9 @@ export async function createClientApp({
     if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
     if (!intent) pendingQuery = undefined;
     const seq = ++navigationSequence;
+    activeFetchOwner?.abort();
+    const fetchOwner = new AbortController();
+    activeFetchOwner = fetchOwner;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
     const requestedHistory = getNavigationHistoryLocation(window.history.state);
     let treeMutationStarted = false;
@@ -766,7 +757,7 @@ export async function createClientApp({
           await triggerAppUpdate();
       }
 
-      const { state, url: responseUrl } = await fetchPage(url);
+      const { state, url: responseUrl } = await fetchPage(url, fetchOwner.signal);
       if (seq !== navigationSequence) {
         // A newer navigation began while this page was loading: discard the
         // late response — it must never commit over the newer navigation.
@@ -878,6 +869,9 @@ export async function createClientApp({
       }
       window.location.reload();
       return { outcome: 'failed', url, error };
+    } finally {
+      fetchOwner.abort();
+      if (activeFetchOwner === fetchOwner) activeFetchOwner = undefined;
     }
   };
 

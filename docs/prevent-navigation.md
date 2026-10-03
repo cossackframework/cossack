@@ -85,6 +85,18 @@ or emit completion events. Component commits run in order. A component bootstrap
 that never settles can still block a later commit; cancellation and bounded
 completion for that case remain part of RT-09. Use `redirect()` in server methods.
 
+Page fetches share requests with prefetches, but each reader owns its wait.
+A newer navigation releases the old navigation's reader immediately. The request
+is aborted when no readers remain. Another prefetch or navigation can continue
+reading the same request. Abandoned responses cannot repopulate the page cache.
+
+Each reader has a 30-second deadline for the response and its body. Expiry emits
+the existing cancelable `cossack:navigation-error` event with error code
+`COSSACK_NAVIGATION_FETCH_TIMEOUT`. If the application prevents that event's
+default action, navigation returns `failed`; otherwise the existing reload
+fallback runs. A later navigation can retry the URL. This deadline does not cover
+guards, module imports, bootstrap, rendering, or view transitions.
+
 ## Guards during back and forward
 
 Browsers activate a history entry before Cossack can check its guard. For entries

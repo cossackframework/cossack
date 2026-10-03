@@ -86,6 +86,47 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-fetch-ownership-2026-10-03"></a>
+## Codex navigation fetch ownership (2026-10-03)
+
+Author: **Codex**. Continued after `b0da7d0`. A superseded navigation previously
+waited for its old response/body indefinitely. The deduplication map could not
+abort one reader without also affecting another reader of the shared request.
+
+SharedPageRequests now tracks independent readers and one network controller.
+A newer navigation releases its old reader immediately. The last reader leaving
+aborts the fetch/body. Each reader gets a 30-second deadline. The existing error
+flow reports COSSACK_NAVIGATION_FETCH_TIMEOUT and permits handled failures to
+retry. Cache invalidation detaches old entries without canceling their current
+readers. Identity checks keep old completion from removing a replacement entry.
+Cache epoch checks remain intact. Aborted work checks ownership after fetch and
+body completion, before parsing, module preloading or cache publication.
+
+Six request-owner tests cover shared prefetch survival, ignored abort and late
+rejection, independent deadlines, detached invalidation, already aborted callers,
+and synchronous failures/retry/timer cleanup. Two real navigation tests cover a
+stalled body that settles as superseded before release, rejected stale cache
+publication, and body timeout with failure reporting and retry. These are
+controlled tests, not evidence that arbitrary application I/O stops on abort.
+
+Final verification:
+
+- Full framework: `pnpm --filter @cossackframework/framework exec vitest run`,
+  **1,426 tests / 67 files**, including all eight new tests.
+- `pnpm --filter @cossackframework/framework build`: ESM, declarations and SSG pass.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: all **11 packages** pass.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js
+  -t 'parses and navigates typed URL state'`: **2 passed / 26 skipped**. Actual
+  generated production Node and native workerd browsers retain their query,
+  draft, guarded history, failed traversal and held-response behavior.
+
+Consumer tests ran after the build. No full core/CLI suite or release-wide gate
+was rerun. Public documentation describes the response deadline and its limits.
+All **58 original IDs**, order and states remain unchanged: **22 checked / 36 open**.
+RT-08/RT-09 remain open. Next implement a whole-navigation owner and stage new
+components before publication. Guards, imports, bootstrap, render and transitions
+still lack a shared bound. Versions stay 0.8.3 until REL-04.
+
 <a id="codex-terminal-disposal-2026-10-03"></a>
 ## Codex terminal disposal review (2026-10-03)
 

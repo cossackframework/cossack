@@ -2,7 +2,39 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex terminal disposal review (2026-10-03).
+> Latest checkpoint: Codex navigation fetch ownership (2026-10-03).
+> Author: **Codex**. Continued after `b0da7d0`. Read the
+> [verification](./release-0.9.0.md#codex-fetch-ownership-2026-10-03),
+> [RT-09 plan](./release-0.9.0-plan.md#rt-09) and
+> [public contract](../docs/prevent-navigation.md#navigation-completion-contract-glm-2026-10-02).
+>
+> Navigation and prefetch now own independent readers of a shared page request.
+> Supersession settles the old fetch wait immediately. The last reader leaving
+> aborts the underlying fetch/body. Each reader has a 30-second response deadline
+> with COSSACK_NAVIGATION_FETCH_TIMEOUT. Active readers keep their shared request.
+> Late ignored work cannot preload modules or refill the cache after abandonment.
+> Invalidation detaches old work while preserving existing readers and epoch checks.
+>
+> Eight new tests cover sharing, independent deadlines, invalidation, retry,
+> ignored aborts, late failures and the real navigation fetch/body boundary.
+> Full framework: 1,426 tests / 67 files. Framework ESM/declaration/SSG build,
+> root TypeScript and all 11 package checks pass. Both generated production
+> Node/native workerd URL browser tests pass. Full core/CLI suites were not rerun.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** This bounds response
+> loading only. Guards, imports, bootstrap, rendering, transitions and the commit
+> queue still need owned cancellation/deadlines and staged publication. Extend
+> the existing fetch reader contract when implementing the whole-navigation
+> owner. Do not remove shared-reader isolation or permit late cache writes.
+> Keep retained services bound to the committed request until publication, and
+> preserve outgoing draft edits while new components prepare. Continue every
+> other unchecked release task. Versions remain 0.8.3 until REL-04.
+>
+> Preserve user-owned reports.md/.zcodeignore. No push, publication, live cloud
+> change, external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex terminal disposal review (2026-10-03).
 > Author: **Codex**. Continued after `7b40e71`. Read the
 > [verification](./release-0.9.0.md#codex-terminal-disposal-2026-10-03) and
 > [RT-09 continuation](./release-0.9.0-plan.md#rt-09).
