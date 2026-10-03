@@ -5,8 +5,8 @@ Author: Codex. Compacted on 2026-10-04. Branch: `fix-084`.
 Versions stay at 0.8.3 until REL-04.
 
 The [release checklist](./release-0.9.0.md) owns task status and verification evidence.
-The [detailed plan](./release-0.9.0-plan.md) retains each task's purpose, source locations,
-dependencies, implementation steps and acceptance criteria. All unchecked tasks remain in scope.
+The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
+Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive.md). All unchecked tasks remain in scope.
 
 ## Completed work
 
@@ -18,7 +18,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit InputOTP, then Combobox, MultiSelect and DatePicker.
+   Resume the uncommitted InputOTP changes, then audit Combobox, MultiSelect and DatePicker.
+   InputOTP is not complete: the local UI run passed 134 tests, but browser acceptance,
+   root/package type checks, installed documentation and the audit update remain pending.
+   Its source, public type fixture and new unit test are already in the working tree.
    Fourteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
    RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup and PasswordInput.
    See the [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04) for current evidence and limits.
