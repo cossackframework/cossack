@@ -3304,11 +3304,13 @@ rewrite relative declaration imports for NodeNext/Deno resolution. Consumer test
 reject invalid accessors and competing key/accessor definitions without weakening
 DataTableProps with an arbitrary attribute signature.
 
-Unit/SSR and a production-bundled Chromium fixture with real HTTP paging verify
-the component. That fixture uses published dist entries but is not a generated
-Cossack application. Next integrate a generated app with server resources/query
-state and verify its compiler/hydration/runtime path. Then audit native attributes,
-events, labels, keyboard behavior and focus across the remaining UI catalog.
+Unit/SSR and Chromium HTTP-data tests verify the component. Generated Node and
+local workerd apps now exercise server resources, URL queries, hydration without
+duplicate reads, paging/filtering/sorting, history, selection and refresh retry.
+Same-owner query navigation restores identified controls and unchanged text
+selection. DataTable's optional unique `id` identifies its query/paging controls.
+Next audit native attributes, events, labels, keyboard behavior and focus across
+the remaining UI catalog.
 Button/Input still permit arbitrary string/any attributes. The full RT-23 criteria
 below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 

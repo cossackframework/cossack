@@ -1,3 +1,4 @@
+import { captureNavigationFocus } from './navigation-focus.js';
 import { createNavigationTrace, emitNavigationDiagnostic, type NavigationTrace } from './navigation-diagnostics.js';
 import { NavigationOwner } from './navigation-owner.js';
 import { SharedPageRequests } from './shared-page-requests.js';
@@ -608,6 +609,7 @@ export async function createClientApp({
             currentPage.constructor === nextPage.constructor &&
             new URL(currentPageUrl, window.location.href).pathname === new URL(destinationUrl, window.location.href).pathname &&
             currentPage._getServiceScope() === activeServiceScope && ownershipKey(currentPageState) === ownershipKey(initialState);
+          const restoreFocus = samePage ? captureNavigationFocus(containerEl) : undefined;
           const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
           if (draft) nextPage._frameworkAdoptClientDraft(draft);
           const oldPage = currentPage;
@@ -661,6 +663,7 @@ export async function createClientApp({
             isDisplayingLoadingState = false;
             rollbackDrafts?.restore(() => publication === oldPublication);
             void triggerAppUpdate(() => publication === oldPublication)
+              .then(rendered => { if (rendered !== false && publication === oldPublication) restoreFocus?.(); })
               .catch(error => console.error('Navigation recovery render failed:', error));
           };
           publication = token;
@@ -701,6 +704,7 @@ export async function createClientApp({
           if (rendered === false) throw Object.assign(new Error('[Cossack] App declined the navigation render.'), {
             code: 'COSSACK_NAVIGATION_RENDER_SKIPPED',
           });
+          restoreFocus?.();
           const sourceFile = (nextPage.constructor as any).__source?.file;
           if (import.meta.env.DEV && sourceFile) {
             void import('./devtools.js').then(({ registerDevToolsInstance }) => {

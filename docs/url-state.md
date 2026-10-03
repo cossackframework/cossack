@@ -152,6 +152,12 @@ on failure before history commit. Broader ownership changes, interrupted history
 and the resource-read audit remain open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
+Same-owner page replacements restore focus for a control with a unique DOM `id`.
+The replacement must keep its tag, type and name. Text selection is restored only
+when its value also matches. Retained controls and intentional focus moves keep
+ownership. Duplicate IDs and controls without IDs do not receive inferred focus.
+This restoration does not run when page, scope or route ownership changes.
+
 ## Parsing and defaults
 
 | Codec | Accepted query text | Missing default |

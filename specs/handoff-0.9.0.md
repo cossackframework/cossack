@@ -11,20 +11,15 @@ criteria. All unchecked tasks remain in scope, including partially implemented o
 
 ## Completed work
 
-The 24 completed tasks are grouped below. Details and acceptance evidence remain
-in the [release checklist](./release-0.9.0.md) and linked task plans.
+Completed task IDs: **CLI-01–06; RT-02–09, RT-14, RT-18, RT-19, RT-25;
+CF-03, CF-05–07, CF-11; REL-01.**
 
-| Completed tasks | Summary |
-| --- | --- |
-| CLI-01–06 | Command contracts, static inspection, feature recipes and safe upgrades. |
-| RT-02–09 | Validated actions, resources, state, tasks, optimistic updates, typed routes, URL state and navigation. |
-| RT-14, RT-18, RT-19, RT-25 | Authorization, cache/limiter contracts, realtime recovery and runtime capability checks. |
-| CF-03, CF-05–07, CF-11 | Secret declarations, distributed SSE, workerd acceptance, protected assets and credential removal. External rotation remains unperformed. |
-| REL-01 | Report fixes and package/SSG regressions. |
-
-RT-08/RT-09 passed their [acceptance audit](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
-The [URL-state contract](../docs/url-state.md) records draft and service limits.
-Earlier handoff details remain available with `git show 8f084e0:specs/handoff-0.9.0.md`.
+These cover CLI contracts and recipes, application state/navigation APIs,
+authorization, caching, realtime recovery, runtime checks, Cloudflare acceptance
+and report fixes. Acceptance evidence remains in the
+[release verification log](./release-0.9.0.md#verification-log).
+Earlier handoff details are available with `git show 8f084e0:specs/handoff-0.9.0.md`.
+Open limits for completed tasks remain listed below.
 
 ## Next work
 
@@ -37,12 +32,12 @@ CLI-07 and CLI-08 remain open. Their implemented foundations are:
 - Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
 See [setup and usage](../docs/local-agent-tools.md) and the
-[latest DataTable checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
+[latest DataTable integration checkpoint](./release-0.9.0.md#codex-data-table-integration-2026-10-04).
 
 Next expand authored API/component/recipe guidance and executable examples,
 and add verified runtime support. Extend the installed-tarball acceptance to cover that content.
-RT-23 now has a controlled DataTable with public-type, SSR and Chromium HTTP-data tests.
-Next verify generated-app server resource/query-state integration and audit the remaining UI attributes, events and accessibility.
+RT-23 now includes generated Node/workerd server-resource/query-state acceptance and stable-ID focus restoration.
+Next audit the remaining UI attributes, events, labels, keyboard behavior and focus.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -75,20 +70,13 @@ Carry these unresolved limits into implementation and review:
 
 ## Verification references
 
-The [DataTable checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04)
-records 119 UI tests, Chromium HTTP-data acceptance, installed catalog/guide parity
-and root/package type checks. Prior evidence remains in the release log.
-
-The [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
-proves CLI/MCP catalog parity, version/export refresh and discovery with Node networking disabled in a generated tarball installation.
-
-Use the [discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04)
-for current CLI work and its test logs. The
-[declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04)
-records the previous CLI checks. The
-[navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
-records runtime and browser checks. Older suite results remain in the release log
-under their original checkpoints. They do not prove the current full release matrix.
+The [DataTable checkpoint](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
+records generated runtime/browser acceptance, focus regression tests, 119 UI tests
+and root/package type checks. The
+[installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
+records generated-tarball CLI/MCP parity and discovery with Node networking disabled.
+Other completed checks remain in the release verification log. These focused
+results do not close the full release matrix or the broader UI catalog audit.
 
 ## Working rules
 

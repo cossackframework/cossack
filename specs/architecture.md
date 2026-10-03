@@ -877,3 +877,10 @@ aria-disabled controls and guards their handlers. Retry transfers focus before
 its conditional button disappears. The library owns no database or framework
 application dependency. UI declaration builds rewrite relative imports for strict
 ESM consumers, as core and renderer already do.
+
+Same-owner page replacement captures focus immediately before publication. A
+unique DOM ID identifies the replacement control. Tag, type and name must match.
+Text selection transfers only with an unchanged value. Retained nodes and
+intentional focus moves take precedence. The same guarded restoration runs after
+rollback rendering. Cross-owner navigation does not transfer focus. DataTable's
+optional ID supplies stable IDs for its query and paging controls.

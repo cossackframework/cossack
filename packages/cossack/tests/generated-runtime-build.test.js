@@ -1,3 +1,4 @@
+import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
 import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -1666,4 +1667,25 @@ it('retains confirmed optimistic component and service yields through failures a
   const server=await productionServer(root);
   try {await checkWorkerOptimisticStreams({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test');}
   finally {await server.close();}
+},120000);
+
+it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and server resources in generated %s', async adapter => {
+  const backend=await createDataTableBackend();
+  try {
+    const root=await project(adapter,['ui']);await writeDataTableAcceptance(root,backend.origin);
+    try { await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024}); }
+    catch(error){throw new Error(`Generated DataTable types: ${error.stdout}\n${error.stderr}`);}
+    await vite(root,[]);
+    if(adapter==='node')await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
+    const browser=await chromium.launch({headless:true});
+    try {
+      if(adapter==='node'){
+        const runtime=await productionServer(root);
+        try{await checkDataTableBrowser(browser,runtime.origin,backend);}finally{await runtime.close();}
+      }else{
+        const harness=createTestHarness({root,workers:[{configPath:path.join(root,'dist/ssr/wrangler.json')}]});
+        try{const {url}=await harness.listen();await checkDataTableBrowser(browser,new URL(url).origin,backend);}finally{await harness.close();}
+      }
+    }finally{await browser.close();}
+  }finally{await backend.close();}
 },120000);

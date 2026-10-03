@@ -19,6 +19,8 @@ export type DataTableColumn<Row> = {
 } & ({ key: keyof Row; accessor?: never } | { key?: never; accessor: (row: Row) => unknown });
 
 export type DataTableProps<Row> = {
+    /** Unique DOM ID prefix. Enables control focus restoration across same-page URL navigation. */
+    id?: string;
     /** Current server page only. The table never sorts, filters or slices it. */
     rows: readonly Row[];
     columns: readonly DataTableColumn<Row>[];
@@ -119,14 +121,14 @@ export class DataTable<Row> extends Cossack {
         const mixed = selected > 0 && !all;
         const blocked = !!(p.loading || p.error);
         return html`
-            <section class="cs-data-table space-y-3">
+            <section id=${p.id} class="cs-data-table space-y-3">
                 <div class="flex flex-wrap gap-3">
                     <label>${p.filterLabel ?? 'Filter rows'}
-                        <input type="search" class="rounded-md border border-input bg-background px-2 py-1 focus-visible:outline-2" value=${p.state.filter} .value=${p.state.filter}
+                        <input id=${p.id ? `${p.id}-filter` : undefined} type="search" class="rounded-md border border-input bg-background px-2 py-1 focus-visible:outline-2" .value=${p.state.filter}
                             @input=${(event: Event) => this.change({ filter: (event.currentTarget as HTMLInputElement).value, page: 1 })} />
                     </label>
                     <label>Rows per page
-                        <select class="rounded-md border border-input bg-background px-2 py-1 focus-visible:outline-2" .value=${String(p.state.pageSize)} @change=${(event: Event) => {
+                        <select id=${p.id ? `${p.id}-page-size` : undefined} class="rounded-md border border-input bg-background px-2 py-1 focus-visible:outline-2" .value=${String(p.state.pageSize)} @change=${(event: Event) => {
                             const pageSize = Number((event.currentTarget as HTMLSelectElement).value);
                             if (this.view().sizes.includes(pageSize)) this.change({ pageSize, page: 1 });
                         }}>
@@ -147,16 +149,16 @@ export class DataTable<Row> extends Cossack {
                         <caption>${p.caption}</caption>
                         <thead><tr>
                             ${p.selection ? html`<th scope="col" class="border-b p-2 text-left"><input type="checkbox" class="size-4 accent-primary" aria-label="Select visible rows"
-                                .checked=${all} ?checked=${all} .indeterminate=${mixed} aria-checked=${mixed ? 'mixed' : String(all)}
+                                .checked=${all} .indeterminate=${mixed} aria-checked=${mixed ? 'mixed' : String(all)}
                                 ?disabled=${blocked || !selectable.length}
                                 @change=${(event: Event) => this.selectVisible((event.currentTarget as HTMLInputElement).checked)} /></th>` : null}
                             ${p.columns.map(column => html`<th scope="col" class="border-b p-2 text-left" aria-sort=${p.state.sort?.columnId === column.id ? p.state.sort.direction === 'asc' ? 'ascending' : 'descending' : column.sortable ? 'none' : undefined}>
-                                ${column.sortable ? html`<button type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" @click=${() => this.sortColumn(column.id)}>${column.header}</button>` : column.header}
+                                ${column.sortable ? html`<button id=${p.id ? `${p.id}-sort-${column.id}` : undefined} type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" @click=${() => this.sortColumn(column.id)}>${column.header}</button>` : column.header}
                             </th>`)}
                         </tr></thead>
                         <tbody>${repeat(rows, item => item.id, item => html`<tr>
                             ${p.selection ? html`<td class="border-b p-2"><input type="checkbox" class="size-4 accent-primary" aria-label=${`Select ${p.rowLabel?.(item.row) ?? item.id}`}
-                                .checked=${p.selection.has(item.id)} ?checked=${p.selection.has(item.id)} ?disabled=${blocked || !item.selectable}
+                                .checked=${p.selection.has(item.id)} ?disabled=${blocked || !item.selectable}
                                 @change=${(event: Event) => this.selectRow(item.id, (event.currentTarget as HTMLInputElement).checked)} /></td>` : null}
                             ${p.columns.map(column => {
                                 const value = column.cell ? column.cell(item.row) : column.accessor ? column.accessor(item.row) : item.row[column.key];
@@ -166,10 +168,10 @@ export class DataTable<Row> extends Cossack {
                     </table>
                 </div>
                 <nav aria-label=${`${p.caption} pages`} class="flex gap-3">
-                    <button type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page <= 1)}
+                    <button id=${p.id ? `${p.id}-previous` : undefined} type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page <= 1)}
                         @click=${() => { if (!this.props.loading && !this.props.error && this.props.state.page > 1) this.change({ page: Math.min(this.props.state.page - 1, this.view().pages) }); }}>Previous page</button>
                     <span>Page ${p.state.page} of ${pages}</span>
-                    <button type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page >= pages)}
+                    <button id=${p.id ? `${p.id}-next` : undefined} type="button" class="rounded-md border border-input px-2 py-1 focus-visible:outline-2 aria-disabled:opacity-50" aria-disabled=${String(blocked || p.state.page >= pages)}
                         @click=${() => { if (!this.props.loading && !this.props.error && this.props.state.page < this.view().pages) this.change({ page: this.props.state.page + 1 }); }}>Next page</button>
                 </nav>
             </section>

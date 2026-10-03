@@ -6330,3 +6330,56 @@ audit native attributes/events/accessibility across the remaining UI catalog.
 CLI-08/REL-02 retain their broader acceptance gates. Status remains 24 complete
 and 34 open. Versions remain 0.8.3. No publication, deployment, push or credential
 rotation occurred.
+
+<a id="codex-data-table-integration-2026-10-04"></a>
+## Codex: Generated DataTable integration and navigation focus (2026-10-04)
+
+Author: **Codex**. RT-23 remains open for the remaining UI catalog audit.
+
+Generated Node and local workerd apps now compose DataTable with `server$`,
+`defineUrlState` and client-only selection. Each fixture type-checks and builds
+through public package entries, then runs in Chromium against its production
+runtime and a local HTTP data backend. These fixtures use workspace package
+links, not an installed-tarball distribution or live Cloudflare deployment.
+
+Acceptance covers copied-page SSR, matching hydration without extra backend
+reads/RPC, keyboard selection, paging, browser history, filtering, sorting,
+page-size changes, empty results and resource refresh failure/retry. Off-page
+selected IDs survive those operations. The test waits for committed URL/results
+before refresh so an already-visible row cannot conceal an unfinished navigation.
+A failed route transition is distinct from an existing resource refresh failure.
+
+The focus checks exposed lost focus when query navigation replaces the page.
+Same-owner publication now restores a unique-ID control with matching tag, type
+and name, preserving text selection only for an unchanged value. Retained nodes,
+intentional focus moves, duplicate IDs and ownership changes prevent transfer.
+Rollback rendering uses the same guarded restoration. DataTable exposes an
+optional unique `id` for filter, page-size, sort and paging control IDs.
+Generated browser acceptance checks paging/filter/retry focus. Focus regression
+tests cover ambiguous IDs, mismatched controls, changed values and retained or
+intentionally moved focus. SSR regression assertions also prevent duplicate
+`value` and `checked` attributes in DataTable controls.
+
+Verification:
+
+- Generated DataTable and typed URL-state acceptance: 4 cases passed across Node
+  and workerd. Log: `/tmp/cossack-generated-data-table.log`.
+- Final framework build: generated DataTable and navigation-ownership acceptance
+  passed 4 cases across Node/workerd. Log: `/tmp/cossack-table-integration-final.log`.
+  Both DataTable cases also passed after adding an explicit client-ready wait
+  before hydration read assertions. Log: `/tmp/cossack-table-hydration-final.log`.
+- Focus helper and navigation outcome tests: 56 passed across 2 files.
+  Log: `/tmp/cossack-navigation-focus.log`.
+- UI suite: 119 tests passed across 10 files.
+  Log: `/tmp/cossack-table-integration-ui.log`.
+- Standalone Chromium HTTP-data acceptance passed after the SSR attribute fix.
+  Log: `/tmp/cossack-table-integration-browser.log`.
+- UI/framework builds and root/package type checks are recorded in
+  `/tmp/cossack-table-integration-build.log`,
+  `/tmp/cossack-table-integration-framework-build.log`,
+  `/tmp/cossack-table-integration-root-types.log` and
+  `/tmp/cossack-table-integration-package-types.log`.
+
+Next audit native attributes, event types, labels, keyboard behavior and focus
+across the rest of the UI catalog. Keep CLI-08/REL-02 and the full runtime/release
+matrix open. Status remains 24 complete and 34 open. Versions remain 0.8.3.

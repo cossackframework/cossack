@@ -43,10 +43,16 @@ it('cycles controlled sort and resets page without sorting the supplied rows', (
     table.sortColumn('missing');expect(table.props.onStateChange).toHaveBeenCalledTimes(3);
 });
 it('renders native table semantics, current filter, mixed selection and escaped cells', () => {
-    const table=fixture({selection:new Set(['a']),rows:[{id:'a',name:'<script>x</script>'},{id:'b',name:'Bob'}],state:{page:1,pageSize:2,filter:'active'}});
+    const table=fixture({id:'people',selection:new Set(['a']),rows:[{id:'a',name:'<script>x</script>'},{id:'b',name:'Bob'}],state:{page:1,pageSize:2,filter:'active'}});
     const output=renderToString(table.render());
     expect(output).toContain('<caption>People</caption>'); expect(output).toContain('scope="col"');
-    expect(output).toContain('aria-checked="mixed"');expect(output).toContain('value="active"');
+    expect(output).toContain('aria-checked="mixed"');
+    const searchInput = output.match(/<input\b[^>]*type="search"[^>]*>/)?.[0];
+    expect(searchInput).toContain('id="people-filter"');
+    expect(searchInput?.match(/\bvalue="active"/g)).toHaveLength(1);
+    const selectedInput = output.match(/<input\b[^>]*aria-label="Select a"[^>]*>/)?.[0];
+    expect(selectedInput).toBeDefined();
+    expect(selectedInput?.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
     expect(output).toContain('&lt;script&gt;');expect(output).not.toContain('<script>');
 });
 it('renders explicit loading, error and empty states', () => {

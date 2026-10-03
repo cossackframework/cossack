@@ -311,6 +311,7 @@ Available component names (kebab-case, passed to `cossack add ui <name>`):
 
 Import `DataTable`, `DataTableProps<Row>` and `DataTableColumn<Row>` from
 `@cossackframework/ui`. Compose with `component(DataTable<Row>, props)`.
+Provide a unique `id` to preserve query-control focus across same-page URL navigation.
 Provide a caption, typed columns, a stable `getRowId`, current-page rows,
 `rowCount`, query `state` and `onStateChange`. Columns use either a row `key` or
 an `accessor` function. A `cell` callback can render custom content from the row.
