@@ -2,7 +2,7 @@
   "name": "cossack",
   "version": "0.8.3",
   "type": "module",
-  "description": "The Cossack Framework CLI — scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
+  "description": "The Cossack Framework CLI \u2014 scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -10,7 +10,8 @@
     "directory": "packages/cossack"
   },
   "bin": {
-    "cossack": "./bin/cossack.js"
+    "cossack": "./bin/cossack.js",
+    "cossack-mcp": "./bin/cossack-mcp.js"
   },
   "files": [
     "bin",
@@ -26,10 +27,13 @@
   "dependencies": {
     "@cossackframework/framework": "workspace:*",
     "@cossackframework/scaffold": "workspace:*",
+    "@modelcontextprotocol/server": "^2.3.0",
     "prompts": "^2.4.2",
-    "tsx": "^4.23.0"
+    "tsx": "^4.23.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.0",
     "@playwright/test": "^1.61.1",
     "vitest": "^4.1.11"
   },

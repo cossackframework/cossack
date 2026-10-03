@@ -47,6 +47,18 @@ never erases live quotas; framed scope/caller and namespace/key tuples keep
 distinct identities separate. See the cache/rate-limiting guides for the
 breaking key migration and precise resource/operation limits.
 
+## Local agent inspection boundary
+
+The Node-only CLI owns `inspection-service.js` and the `cossack-mcp` stdio
+entrypoint. CLI route explanations/checks and MCP calls use the same static models.
+Each MCP request owns an isolated worker with captured stdout/stderr, a deadline
+and termination on cancellation. No application runtime package imports the MCP
+SDK. Tool arguments cannot change the startup project root. Dependency resolution
+can read installed package metadata and imported declarations outside that root.
+This project binding is not a sandbox for untrusted local repositories.
+Installed documentation, stored test results and devtools traces will extend this
+boundary through shared services, not shell parsing or arbitrary file reads.
+
 ## Server input boundary
 
 Core owns `input` schemas and their inferred parsed/raw types. Schema parsing

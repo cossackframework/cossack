@@ -52,12 +52,15 @@ and [acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-0
 replace the older pending navigation steps. Do not repeat completed ownership work.
 The public [URL-state contract](../docs/url-state.md) records draft and service limits.
 
-Continue the unchecked checklist, starting with [CLI-07](./release-0.9.0-plan.md#cli-07)
-and [CLI-08](./release-0.9.0-plan.md#cli-08) for local agent tools and installed-version
-guides. Inspect CLI-04 shared inspection services and RT-28 devtools boundaries
-before choosing the MCP package/API. CLI-07 requires versioned, project-bound tools,
-secret redaction, cancellation and resource cleanup. It is a local development
-server. RT-28 snapshots and timelines remain open despite completed navigation events.
+CLI-07 now has a tested read-only `cossack-mcp --project <directory>` entrypoint.
+See [setup](../docs/local-agent-tools.md) and the
+[checkpoint](./release-0.9.0.md#codex-local-mcp-2026-10-04). It shares static inspection,
+reports installed versions and uses bounded cancellable workers. This task remains open.
+
+Next implement CLI-08 installed-version guides/catalogs, then expose documentation,
+stored test results and RT-28 development snapshots/traces through shared services.
+Continue native MCP interruption and packaged-entry acceptance. Do not replace
+these requirements with arbitrary file readers or shell-output parsing.
 
 Keep every other unchecked task in scope. Close tasks only against their original
 criteria. Versions stay 0.8.3 until REL-04.
@@ -91,11 +94,13 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
+The [MCP checkpoint](./release-0.9.0.md#codex-local-mcp-2026-10-04) records current CLI results.
 The [navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
-contains the latest results. Earlier whole-suite results are labeled by checkpoint.
+records unchanged runtime/browser evidence. Earlier suites are labeled by checkpoint.
 
 | Check | Result |
 | --- | --- |
+| MCP / CLI regression suites | 234 passed; final environment follow-up: 23 passed |
 | Full generated-runtime matrix | 31 passed |
 | Navigation/guard/transition browser suites | 27 passed |
 | Focused core / framework navigation suites | 70 / 50 passed |

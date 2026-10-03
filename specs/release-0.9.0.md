@@ -16,7 +16,7 @@ below link directly to those explanations.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. Codex completion (2026-10-03): shared compiler/scaffold/runtime model, imported declarations, authored resource locations, module validity, middleware order, and source-bearing diagnostics. Combined compiler and executed SSG service acceptance pass; unsupported facts remain explicitly unknown. See the [requirement audit](#codex-module-inspection-2026-10-03). Follow-up acceptance now also covers functional HTTP modules and default-export selection across runtime component paths; see [parity corrections](#codex-handler-default-parity-2026-10-03).
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
-- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI.
+- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
 
 ## Runtime and application APIs
@@ -5965,3 +5965,48 @@ events alone do not close it. REL-03 still requires the complete final release
 matrix. Versions remain 0.8.3 until REL-04. Arbitrary external side effects, ignored
 application I/O and legacy global DI remain outside the documented ownership
 contract. No other task status changed.
+
+<a id="codex-local-mcp-2026-10-04"></a>
+## Codex: Local MCP inspection foundation (2026-10-04)
+
+Implemented the `cossack-mcp` package binary with the official MCP server SDK
+2.3.0 and strict Zod input/output schemas. The SDK client is a development-only
+test dependency. pnpm updated the lockfile and added version-specific release-age
+exceptions for the new SDK server/core/client packages. Framework versions remain
+0.8.3. No application runtime imports the SDK.
+
+The read-only `inspect_project` tool shares static route/deployment/provider models
+with CLI inspection. Route explanation/check logic now lives in an output-free
+service. The server binds to the real startup project path and reports installed
+CLI/framework versions. The import-only framework export exposed a version lookup
+bug during testing; manifest lookup now follows package search paths without
+executing modules. Missing framework installation reports null.
+
+Workers capture dependency logs and terminate on cancellation, deadline or shutdown.
+Concurrency and serialized result sizes are bounded. The public setup guide records
+these limits and the remaining tool families. Local project binding does not claim
+a sandbox against malicious dependency/source files.
+
+Verification:
+
+- **234 tests across 8 files** passed: MCP, inspect, inspection acceptance, provider
+  inspection, CLI subprocess, command contracts, JSON matrix and command specs.
+- After aligning default environment selection, **23 tests across 2 files** passed
+  again (MCP and inspect). The follow-up covers inherited environment selection.
+- Root `pnpm tsc --noEmit` and all **11** package type checks passed after final edits.
+- Whitespace check excluding the user's existing `reports.md` passed.
+- Actual SDK subprocess tests cover legacy and `2026-07-28` protocol clients,
+  installed versions, unknown tools/fields/route paths and configured-secret
+  redaction. Raw subprocess tests prove prompt exit on pre/post-initialization EOF
+  and SIGTERM. Worker tests prove synchronous cancellation, timeout, shutdown,
+  concurrency limits and oversized-result rejection.
+
+Logs: `/tmp/cossack-mcp-regression.log`, `/tmp/cossack-mcp-env-verified.log`,
+`/tmp/cossack-mcp-root-types-verified.log` and
+`/tmp/cossack-mcp-package-types-verified.log`.
+
+CLI-07 stays unchecked: installed documentation, stored test results, development
+traces, further native interruption acceptance and packaged-entry acceptance remain.
+The checklist still contains 58 IDs, with 24 complete and 34 open. Nothing was
+published, deployed or pushed. User changes in `reports.md` and `.zcodeignore`
+remain outside this checkpoint.

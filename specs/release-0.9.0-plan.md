@@ -562,6 +562,31 @@ Dependencies: CLI-02, CLI-03, and REL-02 fixture applications.
 <a id="cli-07"></a>
 ### CLI-07: Local MCP tools
 
+Codex implementation checkpoint (2026-10-04): `cossack` now publishes a separate
+`cossack-mcp --project <directory>` stdio entrypoint. The official MCP server SDK
+stays in the Node-only CLI package. `inspection-service.js` shares route
+explanations/checks and the existing static route, deployment and provider models.
+The `inspect_project` tool has strict inputs, a versioned output schema, installed
+CLI/framework versions and read-only annotations. Unknown routes never become
+arbitrary file reads. Default environment selection matches `CLOUDFLARE_ENV`.
+
+Each call owns a worker. Captured dependency output cannot pollute stdout, and
+termination cancels synchronous compiler work. Calls have a 30-second deadline,
+four-worker concurrency limit and 4 MiB result limit. EOF/signals close the server
+and its workers. Tests cover real SDK clients, legacy/current protocol negotiation,
+CLI parity, configured-secret redaction, import-only package version resolution,
+invalid startup/tool/field/path input, deadlines, cancellation and shutdown.
+See the [verification](./release-0.9.0.md#codex-local-mcp-2026-10-04) and
+[setup guide](../docs/local-agent-tools.md).
+
+CLI-07 remains open. Continue with the installed-version documentation service
+(CLI-08), stored test-result access and development snapshot/trace access (RT-28).
+Share those models with the CLI/devtools, define provenance and freshness, and
+avoid arbitrary file reads or shell-output parsing. Add native MCP interruption
+acceptance while these longer-running tools own resources, and verify packaged
+entrypoints/dependencies through the REL-02 tarball fixtures. Audit every original
+requirement before closure. Static inspection alone does not complete this task.
+
 Purpose: MCP gives coding agents a structured tool interface. The intended server
 lets an agent inspect the installed framework and project without reconstructing
 answers from shell output or unrelated online documentation.
