@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-it('checks authored rows and accessors through the published declarations', async () => {
+it('checks authored rows, native props and event targets through the published declarations', async () => {
     const require=createRequire(import.meta.url);
     const tsc=path.join(path.dirname(require.resolve('typescript/package.json')),'bin/tsc');
     const config=fileURLToPath(new URL('./fixtures/data-table-types/tsconfig.json',import.meta.url));

@@ -834,3 +834,19 @@ describe("Form", () => {
         expect(delegated).toBe(event);
     });
 });
+
+describe('native control prop ownership', () => {
+    it('uses the checkbox label prop without leaking it onto the input', () => {
+        const out = renderComp(Checkbox, {checked:true,label:'Accept terms'}, 'Fallback');
+        expect(out).toContain('Accept terms');expect(out).not.toContain('Fallback');
+        expect(out).not.toContain(' label=');
+        const input = out.match(/<input\b[^>]*>/)![0];
+        expect(input.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+    it('renders switch children as its accessible label with one checked attribute', () => {
+        const out = renderComp(Switch, {checked:true}, 'Notifications');
+        expect(out).toContain('Notifications');
+        const input = out.match(/<input\b[^>]*>/)![0].replace(/aria-checked="[^"]*"/g,'');
+        expect(input.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+});

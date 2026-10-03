@@ -100,3 +100,5 @@ export { Icon, normalizeStyle, type IconProps } from "./icons/Icon";
 export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar-icons/types";
 
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
+
+export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";

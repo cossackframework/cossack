@@ -62,9 +62,12 @@ export async function indexDeclarations(folder, exports) {
     valueType: checker.typeToString(info.type, info.declaration, format),
     readonly: info.isReadonly, source: source(info.declaration),
   }));
-  const members = type => checker.getPropertiesOfType(type).filter(isPublic).filter(symbol => symbol.name !== 'prototype').map(symbol => {
+  const members = (type, context) => checker.getPropertiesOfType(type).filter(isPublic).filter(symbol => symbol.name !== 'prototype').map(symbol => {
     const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0];
-    const value = checker.getTypeOfSymbolAtLocation(symbol, declaration);
+    // Remapped properties can have no declaration node. Without an owner location,
+    // TypeScript returns any instead of the instantiated mapped member type.
+    const location = declaration ?? context ?? program.getSourceFile(files[0]);
+    const value = checker.getTypeOfSymbolAtLocation(symbol, location);
     return { name: symbol.name, ...documentation(symbol), optional: !!(symbol.flags & ts.SymbolFlags.Optional),
       type: checker.typeToString(value, declaration, format),
       callSignatures: signatures(checker.getNonNullableType(value), ts.SignatureKind.Call, declaration), source: source(declaration) };
@@ -78,7 +81,7 @@ export async function indexDeclarations(folder, exports) {
     const structured = !!(shape.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection | ts.TypeFlags.Union));
     return { type: checker.typeToString(value, declaration, format), source: source(declaration),
       status: !structured ? 'unknown' : shape.flags & ts.TypeFlags.Union ? 'partial' : 'declared',
-      ...documentation(props), members: structured ? members(shape) : [],
+      ...documentation(props), members: structured ? members(shape, declaration) : [],
       indexSignatures: structured ? indexSignatures(shape) : [],
     };
   };
@@ -105,9 +108,9 @@ export async function indexDeclarations(folder, exports) {
         propsContract: target.flags & ts.SymbolFlags.Class ? propsContract(type) : null,
         callSignatures: signatures(valueType, ts.SignatureKind.Call, declaration),
         constructSignatures: signatures(valueType, ts.SignatureKind.Construct, declaration),
-        members: typeSpace && (type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(type) : [],
-        valueMembers: !(target.flags & ts.SymbolFlags.Class) && (valueType.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(valueType) : [],
-        staticMembers: target.flags & ts.SymbolFlags.Class ? members(valueType) : [],
+        members: typeSpace && (type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(type, declaration) : [],
+        valueMembers: !(target.flags & ts.SymbolFlags.Class) && (valueType.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(valueType, declaration) : [],
+        staticMembers: target.flags & ts.SymbolFlags.Class ? members(valueType, declaration) : [],
         // A class reached through `export type *` still has a class declaration.
         // These are declaration signatures, never proof of a runtime value export.
         runtime: 'not-verified',

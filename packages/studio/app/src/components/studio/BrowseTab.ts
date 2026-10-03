@@ -329,8 +329,8 @@ export class BrowseTab extends Cossack {
                     checked: allSelected,
                     indeterminate: this.props.selectedRows.length > 0 && !allSelected,
                     'aria-label': 'Select all rows on this page',
-                    '@change': (event: InputEvent) => this.props.onToggleAllRows(
-                      (event.target as HTMLInputElement).checked,
+                    '@change': (event) => this.props.onToggleAllRows(
+                      event.currentTarget.checked,
                     ),
                   })}
                 </th>
@@ -405,9 +405,9 @@ export class BrowseTab extends Cossack {
                     ${component(Checkbox, {
                       checked: this.props.selectedRows.includes(rowIndex),
                       'aria-label': `Select row ${rowIndex + 1}`,
-                      '@change': (event: InputEvent) => this.props.onToggleRow(
+                      '@change': (event) => this.props.onToggleRow(
                         rowIndex,
-                        (event.target as HTMLInputElement).checked,
+                        event.currentTarget.checked,
                       ),
                     })}
                   </td>

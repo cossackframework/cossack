@@ -175,3 +175,21 @@ it('preserves prop documentation, optional event signatures and permissive index
   expect(symbols.find(s=>s.name==='Private').propsContract).toBeNull();
   expect(symbols.find(s=>s.name==='Choice').propsContract).toMatchObject({status:'partial',members:[{name:'kind'}]});
 },30000);
+
+it('indexes instantiated remapped props without degrading synthetic members to any', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    type Events<T> = { [K in 'click' | 'input' as \`@\${K}\`]?: (event: {currentTarget:T;kind:K}) => void };
+    type Attributes<T> = { [K in keyof T as \`?\${K & string}\`]?: boolean };
+    export type Props = Events<HTMLButtonElement> & Attributes<{disabled:boolean}> & {label:string};
+    declare class Base<T> { props:T; }
+    export declare class Button extends Base<Props> {}
+  `});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  for(const members of [symbols.find(s=>s.name==='Props').members, symbols.find(s=>s.name==='Button').propsContract.members]) {
+    const click=members.find(member=>member.name==='@click');
+    expect(click.type).toContain('HTMLButtonElement');expect(click.type).toContain('"click"');
+    expect(click.callSignatures[0]).toContain('HTMLButtonElement');
+    expect(click.source).toBeNull();
+    expect(members.find(member=>member.name==='?disabled').type).toBe('boolean | undefined');
+  }
+},30000);

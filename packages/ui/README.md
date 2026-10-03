@@ -331,3 +331,26 @@ its declared props, with no general HTML-attribute forwarding.
 Run `pnpm exec cossack docs --package @cossackframework/ui --symbols --json` for
 the installed prop contracts and package-owned DataTable guide. The guide also
 explains selection policy, labels and status behavior.
+
+## Typed native controls
+
+Button, Input, Label, Checkbox, Switch and Form use typed native attributes and
+`@event` listeners. Unknown props, string boolean values and React-style `onClick`
+are rejected. Pass children as the third argument to `component()`. Listener
+`currentTarget` is typed as the native control; `target` can be a descendant.
+Capture the control before awaiting, because native events clear currentTarget after dispatch.
+Use `disabled: !!loading` for loading counts and an explicit Button `type` in forms.
+Input's visual `size` is `default`, `sm` or `lg`, not a numeric HTML size.
+
+Use `Label` with matching `for`/`id`, or provide `aria-label`. Checkbox's `label`
+prop takes precedence over children. Switch renders children inside its label.
+Both accept controlled `checked` and emit native `@change` events. Update the
+parent from `event.currentTarget.checked`. Their input type, role and checked
+property are component-owned. Input supports `.value`, `.checked`, `bind()` and
+`live()` for direct property binding. Choose names and values for native FormData.
+Form's `submit` callback prevents navigation and defaults to `novalidate`.
+Set `novalidate: false` to keep browser validation, or omit `submit` for native POST.
+
+The installed `native-controls` guide documents attributes, event types and
+labeling requirements. The rest of the catalog remains under
+[contract audit](../../specs/ui-contract-audit.md).

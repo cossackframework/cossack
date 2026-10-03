@@ -884,3 +884,15 @@ Text selection transfers only with an unchanged value. Retained nodes and
 intentional focus moves take precedence. The same guarded restoration runs after
 rollback rendering. Cross-owner navigation does not transfer focus. DataTable's
 optional ID supplies stable IDs for its query and paging controls.
+
+## Native UI contracts
+
+Renderer `component()` accepts the instance's declared props without adding an
+arbitrary string index signature. UI native attribute types live in the UI package.
+The reviewed Button/Input/Label/Checkbox/Switch/Form wrappers declare DOM event
+names and exact currentTarget types, native attribute values, ARIA names and data
+attributes. Wrapper-owned props stay separate from native input attributes. Relevant renderer
+directive result classes have declaration-only private brands, matching the runtime's
+instance checks instead of accepting structurally similar plain objects.
+This is a compile-time contract, not runtime validation of JavaScript callers.
+See the [UI contract inventory](./ui-contract-audit.md) for coverage and remaining work.

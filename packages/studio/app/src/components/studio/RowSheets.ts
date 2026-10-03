@@ -146,9 +146,9 @@ export class ExportSheet extends Cossack {
           <legend class="mb-2 text-sm font-medium">Columns</legend>
           ${columns.map((column) => component(Checkbox, {
             checked: state?.columns.includes(column) ?? false,
-            '@change': (event: InputEvent) => this.props.onToggleColumn(
+            '@change': (event) => this.props.onToggleColumn(
               column,
-              (event.target as HTMLInputElement).checked,
+              event.currentTarget.checked,
             ),
           }, column))}
         </fieldset>
@@ -220,8 +220,8 @@ export class BatchUpdateSheet extends Cossack {
         </label>
         ${column?.nullable ? component(Checkbox, {
           checked: state?.mode === 'null',
-          '@change': (event: InputEvent) => this.props.onNullChange(
-            (event.target as HTMLInputElement).checked,
+          '@change': (event) => this.props.onNullChange(
+            event.currentTarget.checked,
           ),
         }, 'Set an explicit NULL value') : ''}
         ${component(Textarea, {

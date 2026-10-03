@@ -1,11 +1,10 @@
+import type { CheckControlAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface SwitchProps {
+export type SwitchProps = CheckControlAttributes & {
     /** Checked (on) state. */
     checked?: boolean;
-    /** Pass-through HTML input attributes (name, value, disabled, ...). */
-    [key: string]: any;
 }
 
 /**
@@ -36,7 +35,7 @@ export class Switch extends Cossack {
                     role="switch"
                     aria-checked=${checked}
                     class="cs-switch__input peer sr-only"
-                    ?checked=${checked}
+                    .checked=${checked}
                     ...=${rest}
                 />
                 <span
@@ -45,6 +44,7 @@ export class Switch extends Cossack {
                 <span
                     class="cs-switch__thumb absolute left-0.5 top-0.5 inline-block size-5 rounded-full bg-background shadow-lg ring-0 transition-[translate,transform] duration-200 ease-out peer-checked:translate-x-5"
                 ></span>
+                ${this.children}
             </label>
         `;
     }

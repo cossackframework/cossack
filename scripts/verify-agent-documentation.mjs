@@ -110,7 +110,7 @@ require('node:module').syncBuiltinESMExports();
     assert.equal(remote.isError, false);
     assert.deepEqual(remote.structuredContent.data, documented.data);
 
-    // Real UI declarations must expose prop documentation and permissive attributes
+    // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.
     const ui = await invoke(['docs', '--package', '@cossackframework/ui', '--symbols', '--json']);
     assert.equal(ui.ok, true);
@@ -125,7 +125,10 @@ require('node:module').syncBuiltinESMExports();
 
     assert.equal(button.propsContract.status, 'declared');
     assert.match(button.propsContract.members.find(member => member.name === 'variant').documentation, /Visual style/);
-    assert.ok(button.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+    assert.ok(!button.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+    assert.ok(button.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLButtonElement')));
+    assert.ok(button.propsContract.members.some(member => member.name === 'disabled' && member.type.includes('boolean')));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-controls'));
     const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true } });
     assert.equal(uiRemote.isError, false);
     assert.deepEqual(uiRemote.structuredContent.data, ui.data);

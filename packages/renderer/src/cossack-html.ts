@@ -55,7 +55,7 @@ export type SanitizerFactory = (
 
 export const component = <T extends CossackElement>(
   clazz: new () => T,
-  props?: T['props'] & Record<string, unknown>,
+  props?: T['props'],
   children?: unknown,
 ): TemplateResult<1> => {
   const raw: ComponentResult = {

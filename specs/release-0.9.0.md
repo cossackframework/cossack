@@ -6383,3 +6383,60 @@ Verification:
 Next audit native attributes, event types, labels, keyboard behavior and focus
 across the rest of the UI catalog. Keep CLI-08/REL-02 and the full runtime/release
 matrix open. Status remains 24 complete and 34 open. Versions remain 0.8.3.
+
+<a id="codex-native-controls-2026-10-04"></a>
+## Codex: Typed native controls and mapped prop discovery (2026-10-04)
+
+Author: **Codex**. RT-23 and CLI-08 remain open. The
+[UI inventory](./ui-contract-audit.md) tracks 65 component source files, including
+multi-export files, plus a final blocks/icons pass. Seven component foundations
+are reviewed, including the earlier DataTable work; this is not full UI acceptance.
+
+Button, Input, Label, Checkbox, Switch and Form now share explicit native attribute
+and DOM event contracts. ARIA names come from string-valued DOM reflection fields;
+element-reference reflection properties are not advertised as HTML attributes.
+Only data-* retains a patterned scalar-value index signature. Checkbox/Switch
+exclude text-only input attributes. Bind/live/ifDefined/preventDefault result types
+have declaration-only private brands so plain objects cannot impersonate runtime
+directives. This changes type checking without adding runtime fields. Event
+currentTarget is the actual native control. Renderer component() preserves declared prop types
+instead of adding a string index signature that accepted misspelled props.
+
+Checkbox now consumes its label prop, renders a single checked binding and keeps
+children as the fallback label. Switch renders its children and updates the native
+checked property when parent state changes after user interaction. Chromium
+checks native labels, keyboard toggles, controlled reset, disabled state, constraint
+validation, event targets and FormData. Public type tests exercise valid renderer
+directives and reject misspelled props/listeners, incompatible event types, string
+boolean values and competing checked/type overrides.
+
+The stricter types exposed sample/studio issues. Forms now use boolean loading
+flags and matching field IDs. Loading button text uses component()'s third argument.
+Studio checkbox/switch change handlers use inferred native events and currentTarget.
+The new installed native-controls guide explains prop ownership, event syntax,
+labeling, property binding, FormData and Form submission/validation behavior.
+
+Installed-tarball verification exposed an agent catalog bug: synthetic remapped
+members have no declaration node and were reported as any. The declaration indexer
+now supplies the owning declaration when resolving their types, preserving concrete
+generic event targets and boolean attributes. Synthetic source locations remain
+null instead of attributing them to an invented source property. Regression tests
+cover exported mapped aliases and inherited class props.
+
+Verification:
+
+- 121 UI tests across 10 files passed, including public consumer types and SSR
+  label/checked ownership. Log: `/tmp/cossack-native-ui-tests.log`.
+- 284 renderer tests across 22 files passed. Log: `/tmp/cossack-native-renderer-tests.log`.
+- Chromium native-control acceptance passed. Log: `/tmp/cossack-native-browser.log`.
+- 17 declaration-index tests passed. Log: `/tmp/cossack-native-catalog-tests.log`.
+- Installed tarball CLI/MCP acceptance passed with typed native props, the new guide,
+  six existing executable examples, version/export refresh and Node networking
+  disabled during discovery. Log: `/tmp/cossack-native-agent-docs.log`.
+- Root and all 11 package type checks passed after fixing sample/Studio consumers.
+  Logs: `/tmp/cossack-native-root-types.log`, `/tmp/cossack-native-package-types.log`.
+
+Next fix Checkbox/Switch disabled appearance in a themed browser fixture. Current
+browser checks verify native semantics without CSS. Then continue with textarea/select
+wrappers, RadioGroup, Slider, composite controls and the remaining catalog. Keep runtime/distribution and
+release gates open. Status remains 24 complete and 34 open; versions remain 0.8.3.

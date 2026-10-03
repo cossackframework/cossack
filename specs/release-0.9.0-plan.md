@@ -3311,8 +3311,15 @@ Same-owner query navigation restores identified controls and unchanged text
 selection. DataTable's optional unique `id` identifies its query/paging controls.
 Next audit native attributes, events, labels, keyboard behavior and focus across
 the remaining UI catalog.
-Button/Input still permit arbitrary string/any attributes. The full RT-23 criteria
-below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
+Codex native-control audit (2026-10-04): Button, Input, Label, Checkbox, Switch and
+Form now use typed native attributes and DOM event targets. Renderer component()
+no longer adds an arbitrary prop index signature. Public declarations reject
+misspelled props/listeners and invalid values. Chromium verifies native labels,
+keyboard toggles, controlled reset, disabled/required behavior and FormData.
+Checkbox now consumes its label prop; Switch renders children and updates its
+native checked property. Sample and Studio consumers use correct prop/event types.
+The [component inventory](./ui-contract-audit.md) records all remaining audit work.
+The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 
 Purpose: Applications need a typed table for real server data, and agents need
