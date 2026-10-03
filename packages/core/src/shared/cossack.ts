@@ -28,6 +28,7 @@ import {
     initializeProviders as initializeProvidersFn,
     connectWebSocket as connectWebSocketFn,
     connectSSE as connectSSEFn,
+    disconnectSSE,
     realtimeStatus,
     type RealtimeStatusRecord,
 } from './transport-connections';
@@ -2976,10 +2977,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             });
             this.websockets.clear();
 
-            if (this._sseConnection) {
-                release(() => this._sseConnection!.close());
-                this._sseConnection = undefined;
-            }
+            release(() => disconnectSSE(this));
 
             // Disconnect @VisibleTask IntersectionObservers — otherwise they
             // retain references to the destroyed component and keep firing

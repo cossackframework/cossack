@@ -264,11 +264,24 @@ export function connectWebSocket(component: any): void {
     }
 }
 
+/** Retire SSE ownership before closing: EventSource.close() emits no close event. */
+export function disconnectSSE(component: any): void {
+    const source: EventSource | undefined = component._sseConnection;
+    if (!source) return;
+    component._sseConnection = undefined;
+    Object.assign(realtimeStatus(component).sse, { state: 'closed', updatedAt: Date.now() });
+    source.onopen = null;
+    source.onerror = null;
+    source.close();
+}
+
 /**
  * Connect to an SSE endpoint for state updates (client-side only).
  * Uses componentRouteId and scopeKey from initial state.
  */
 export function connectSSE(component: any): void {
+    if (component._phase === 'Destroyed') return;
+    disconnectSSE(component);
     const initialState = component.getInitialStateFromWindow();
     const componentRouteId = initialState?.componentRouteId;
     const scopeKey = initialState?.scopeKey;
@@ -288,8 +301,10 @@ export function connectSSE(component: any): void {
     params.set('params', JSON.stringify(initialState?.metadata?.params || {}));
     const es = new EventSource(`/sse/${componentRouteId}?${params.toString()}`);
     component._sseConnection = es;
+    const isCurrent = () => component._sseConnection === es && component._phase !== 'Destroyed';
     updateStatus(component, 'sse', { state: 'connecting', attempts: 0 });
     es.onopen = () => {
+        if (!isCurrent()) return;
         // EventSource reconnects automatically; onopen after a failure marks
         // recovery. A following `resync` event reports whether the snapshot
         // had to replace expired history.
@@ -298,6 +313,7 @@ export function connectSSE(component: any): void {
         updateStatus(component, 'sse', { state: 'open', attempts: 0, lastError: undefined });
     };
     es.onerror = () => {
+        if (!isCurrent()) return;
         const status = realtimeStatus(component).sse;
         updateStatus(component, 'sse', {
             state: es.readyState === EventSource.CLOSED ? 'closed' : 'reconnecting',
@@ -306,6 +322,7 @@ export function connectSSE(component: any): void {
         });
     };
     es.addEventListener('resync', (event: MessageEvent) => {
+        if (!isCurrent()) return;
         resetOptimisticSnapshotHistory(component);
         updateStatus(component, 'sse', { resynced: true });
         try {
@@ -317,6 +334,7 @@ export function connectSSE(component: any): void {
     });
 
     es.addEventListener('state-update', (event: MessageEvent) => {
+        if (!isCurrent()) return;
         try {
             const stateUpdate = JSON.parse((event as any).data);
             const id = (event as any).lastEventId;
@@ -333,6 +351,7 @@ export function connectSSE(component: any): void {
     });
 
     es.addEventListener('action-complete', (event: MessageEvent) => {
+        if (!isCurrent()) return;
         try {
             const { action } = JSON.parse((event as any).data);
             if (hasOptimisticCalls(component, action)) return;
@@ -357,11 +376,13 @@ export function connectSSE(component: any): void {
     });
 
     es.addEventListener('event', (event: MessageEvent) => {
+        if (!isCurrent()) return;
         try {
             const { eventName, payload } = JSON.parse((event as any).data);
             const eventHandlers = Reflect.getMetadata('cossack:event-handlers', component.constructor) || {};
             if (eventHandlers[eventName]) {
                 for (const handlerMethod of eventHandlers[eventName]) {
+                    if (!isCurrent()) return;
                     if (component.hasMethod(handlerMethod)) {
                         const method = component.getMethod(handlerMethod);
                         (method as any)(...payload);
@@ -374,6 +395,7 @@ export function connectSSE(component: any): void {
     });
 
     es.addEventListener('client-action', (event: MessageEvent) => {
+        if (!isCurrent()) return;
         try {
             const { action, payload } = JSON.parse((event as any).data);
             const clientMethods = Reflect.getMetadata('cossack:client-methods', component.constructor) || {};

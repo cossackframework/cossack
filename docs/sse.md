@@ -414,6 +414,12 @@ snapshot. WebSocket providers expose the same fields per provider under
 transport reject with an explicit uncertain-outcome error and are never
 replayed.
 
+Destroying an SSE page sets its connection status to `closed` before closing the
+EventSource. The browser does not emit a close event for that operation. A retired
+or replaced source cannot publish late state, cursor updates, actions or events.
+A destroyed component cannot reconnect. Shared layout services remain active when
+only their child page changes between HTTP and SSE.
+
 ## SSE Event Types
 
 | Event | Description |

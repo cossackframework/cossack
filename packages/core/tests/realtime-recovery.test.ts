@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginOptimisticCall, applyOptimisticState, finishOptimisticCall } from '../src/shared/optimistic-state';
-import { connectSSE, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
+import { connectSSE, disconnectSSE, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
 
 /**
  * RT-19: realtime lifecycle and recovery. Connection status, bounded
@@ -21,6 +21,7 @@ class MockEventSource {
     addEventListener(type: string, listener: (event: any) => void) {
         (this.listeners.get(type) ?? this.listeners.set(type, []).get(type)!).push(listener);
     }
+    close() { this.readyState = MockEventSource.CLOSED; }
     onopen: (() => void) | null = null;
     onerror: (() => void) | null = null;
     emit(type: string, data: string, lastEventId?: string) {
@@ -115,6 +116,31 @@ describe('realtime recovery: SSE status', () => {
         if (trigger === 'open') es.onopen?.(); else es.emit('resync', '{"cursor":10}');
         es.emit('state-update', '{"count":31}'); expect(component.count).toBe(4);
         finishOptimisticCall(pending, false); expect(component.count).toBe(31);
+    });
+
+    it.each(['destroyed','replaced'] as const)('ignores every late SSE callback from a %s owner', reason => {
+        const component: any = makeComponent(); component.count=1; component.loading={save:1};
+        const action=vi.fn(); component.hasMethod=()=>true; component.getMethod=()=>action;
+        Reflect.defineMetadata('cossack:event-handlers',{notice:['handle']},component.constructor);
+        Reflect.defineMetadata('cossack:client-methods',{run:true},component.constructor);
+        connectSSE(component); const source=MockEventSource.instances[0];
+        const open=source.onopen!; const error=source.onerror!; open();
+        if(reason==='destroyed') { component._phase='Destroyed'; disconnectSSE(component); }
+        else connectSSE(component);
+        component.requestUpdate.mockClear();
+        open(); error();
+        source.emit('resync','{"cursor":9}'); source.emit('state-update','{"count":99}','10');
+        source.emit('action-complete','{"action":"save"}');
+        source.emit('event','{"eventName":"notice","payload":[]}');
+        source.emit('client-action','{"action":"run","payload":[]}');
+        expect(source.readyState).toBe(MockEventSource.CLOSED);
+        expect(component.count).toBe(1); expect(component.loading.save).toBe(1);
+        expect(action).not.toHaveBeenCalled(); expect(component.requestUpdate).not.toHaveBeenCalled();
+        expect(realtimeStatus(component).sse.state).toBe(reason==='destroyed'?'closed':'connecting');
+        expect(realtimeStatus(component).sse.lastEventId).toBeUndefined();
+        expect(realtimeStatus(component).sse.resynced).toBeUndefined();
+        if(reason==='destroyed') { connectSSE(component); expect(MockEventSource.instances).toHaveLength(1); }
+        else { MockEventSource.instances[1].onopen?.(); expect(realtimeStatus(component).sse.state).toBe('open'); }
     });
 
     it('marks a permanently closed source as closed', () => {

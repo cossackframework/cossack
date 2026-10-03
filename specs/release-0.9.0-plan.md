@@ -2141,6 +2141,22 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
+Codex runtime ownership follow-up (2026-10-03): an actual SSE page opens its
+subscription on Node and native workerd, then returns to HTTP. Root/layout drafts
+and service identity remain stable, page drafts reset and the retired subscription
+closes. The test found that EventSource.close() left realtime status open. Core
+now clears source ownership and sets closed explicitly. Every SSE callback checks
+source identity and terminal destruction before applying state or calling methods.
+Replacement closes the prior source, and destroyed components cannot reconnect.
+
+A local HTTP proxy also routes one browser between real built Node and workerd
+applications without editing SSR metadata. Runtime changes in both directions
+reset App/layout/page drafts and services while retaining the same user and scope.
+Retired services dispose once. This covers HTTP runtime transitions, not mixed
+WebSocket provider targets. Finish that remaining matrix before closure. See the
+[verification](./release-0.9.0.md#codex-runtime-ownership-2026-10-03).
+
+
 Codex same-URL history acceptance (2026-10-03): production Node/native workerd
 now exercise two distinct entries with identical URLs. A blocked traversal is
 held before its actual forward restoration. A newer intent waits, then commits

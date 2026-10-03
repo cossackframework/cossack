@@ -86,6 +86,44 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-runtime-ownership-2026-10-03"></a>
+## Codex runtime and SSE ownership (2026-10-03)
+
+Author: **Codex**. Continued after `c5e01d2`. Production Node/native workerd
+acceptance now opens an SSE child page and returns to HTTP. Shared root/layout
+drafts and services remain stable. Page drafts reset and the retired source closes.
+This test reproduced realtime.sse.state remaining open after navigation on both
+runtimes: EventSource.close() does not send a close event.
+
+Core now clears SSE ownership and sets closed before closing the source. Saved
+open/error handlers and named event listeners check source identity and destruction.
+Late state, cursor/resync, action completion, event and client-action callbacks
+cannot mutate retired owners. Replacement closes the old source. Destruction
+prevents reconnection. Two unit cases simulate both destroyed and replaced owners.
+
+A separate local HTTP proxy routes one browser from real built Node to native
+workerd and back. It does not rewrite SSR metadata. With the same user, scope and
+page path, runtime changes reset root/layout/page drafts and create fresh services.
+Old services dispose exactly once. This is HTTP runtime acceptance, not a claim
+about cross-runtime WebSocket provider targets or production load balancing.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run tests/realtime-recovery.test.ts`:
+  10 passed, including both late-callback regressions.
+- Core and framework package builds passed, including framework SSG.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,439 passed, 85 files.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,453 passed, 68 files.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership|moves between production Node and workerd|parses and navigates typed URL state'`:
+  5 passed, 26 skipped (66 seconds), including the existing read-count and same-URL cases.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+**No task closes: 22/58 checked, 36 unchecked.** Finish provider-target/WebSocket
+ownership acceptance and audit every RT-08/RT-09 criterion before closure.
+Versions remain 0.8.3. No live deployment, publication or full CLI rerun occurred.
+
 <a id="codex-same-url-history-2026-10-03"></a>
 ## Codex same-URL history (2026-10-03)
 

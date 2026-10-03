@@ -71,14 +71,19 @@ export async function writeNavigationOwnershipAcceptance(root) {
     }
   `);
   await write('src/pages/owner/index.ts', `
-    import {Cossack,Page,ClientStore} from '@cossackframework/core';
+    import {Cossack,Page,ClientStore,Client} from '@cossackframework/core';
     import {html,component} from '@cossackframework/renderer';import {Child} from '../../Ownership';
     @Page({transport:'http',scope:c=>'space:'+(c.req.query('space')??'one')}) export default class Owner extends Cossack {
       @ClientStore() draft={text:''};
+      @Client() onMount(){(window as any).__ownershipPage=this;}
       render(){return html\`<main><span id="page-user">\${this.user?.id}</span>
         <input id="page-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         \${component(Child,{slot:'page-child'})}</main>\`;}
     }
+  `);
+  await write('src/pages/owner/stream.ts', `
+    import {Page} from '@cossackframework/core';import Owner from './index';
+    @Page({transport:'sse',scope:c=>'space:'+(c.req.query('space')??'one')}) export default class Stream extends Owner {}
   `);
   await write('src/pages/api/inherited.ts', `
     import {Cossack,Page} from '@cossackframework/core';
@@ -171,6 +176,19 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     const returned = await ids();
     expect(returned[0]).toBe(third[0]); expect(returned[1]).not.toBe(third[1]); expect(returned[1]).not.toBe(other[1]);
     await browserExpect.poll(() => page.evaluate(id => (window.__ownershipDisposals??[]).filter(value => value===id).length, other[1])).toBe(1);
+
+    await fill('transport');
+    expect(await page.evaluate(async () => (await window.__ownershipApp.navigate('/owner/stream?viewer=bob&space=two')).outcome)).toBe('completed');
+    await page.waitForFunction(()=>window.__ownershipPage?.realtime.sse?.state==='open');
+    expect(await ids()).toEqual(returned);
+    for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('page-') ? '' : 'transport '+id);
+    await page.evaluate(()=>{window.__oldStreamOwner=window.__ownershipPage;});
+    await fill('stream');
+    expect(await navigate('bob','two','http-return')).toBe('completed');
+    expect(await ids()).toEqual(returned);
+    for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('page-') ? '' : 'stream '+id);
+    await browserExpect.poll(()=>page.evaluate(()=>window.__oldStreamOwner.realtime.sse.state)).toBe('closed');
+    for (const id of returned) expect(await page.evaluate(marker=>(window.__ownershipDisposals??[]).includes(marker),id)).toBe(false);
 
     await fill('private before empty');
     expect(await navigate('bob','empty','5')).toBe('completed');

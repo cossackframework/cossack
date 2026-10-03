@@ -17,6 +17,7 @@ import { createTestHarness } from 'wrangler';
 import { writeRouteBoundaryAcceptance, checkRouteBoundaryAcceptance, checkRouteBoundaryBrowser } from './fixtures/route-boundary-acceptance.js';
 import { checkSameUrlHistory } from './fixtures/same-url-history-acceptance.js';
 import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } from './fixtures/url-state-acceptance.js';
+import { createRuntimeProxy, checkRuntimeOwnership } from './fixtures/runtime-owner-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -90,6 +91,25 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
 }
+it('replaces navigation owners when a browser moves between production Node and workerd', async () => {
+  const nodeRoot=await project('node'); const workerRoot=await project('cloudflare');
+  await writeNavigationOwnershipAcceptance(nodeRoot); await writeNavigationOwnershipAcceptance(workerRoot);
+  await vite(nodeRoot,[]); await vite(nodeRoot,['--ssr','src/index.ts','--outDir','dist/server']);
+  await vite(workerRoot,[]);
+  const node=await productionServer(nodeRoot);
+  try {
+    const harness=createTestHarness({root:workerRoot,workers:[{configPath:path.join(workerRoot,'dist/ssr/wrangler.json')}]});
+    try {
+      const {url}=await harness.listen();
+      const proxy=await createRuntimeProxy(node.origin);
+      try {
+        const browser=await chromium.launch({headless:true});
+        try { await checkRuntimeOwnership(browser,proxy,node.origin,new URL(url).origin); }
+        finally { await browser.close(); }
+      } finally { await proxy.close(); }
+    } finally { await harness.close(); }
+  } finally { await node.close(); }
+},120000);
 it.each(['node', 'cloudflare'])('isolates navigation ownership in a generated production %s app', async adapter => {
   const root = await project(adapter); await writeNavigationOwnershipAcceptance(root);
   await vite(root, []);
