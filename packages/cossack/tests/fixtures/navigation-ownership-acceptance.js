@@ -80,6 +80,25 @@ export async function writeNavigationOwnershipAcceptance(root) {
         \${component(Child,{slot:'page-child'})}</main>\`;}
     }
   `);
+  await write('src/pages/api/inherited.ts', `
+    import {Cossack,Page} from '@cossackframework/core';
+    class BaseApi extends Cossack {
+      async get(){return this.c.json({handler:'inherited-get'});}
+      async post(){return this.c.json({handler:'inherited-post'});}
+    }
+    @Page({transport:'http'}) export default class InheritedApi extends BaseApi {}
+  `);
+  // Decorated subclasses preserve supported route metadata while reusing the
+  // same child component classes and input structure under a different parent.
+  await write('src/pages/other/layout.ts', `
+    import {Page} from '@cossackframework/core';
+    import Layout from '../owner/layout';import {LayoutService} from '../../Ownership';
+    @Page({transport:'http',services:[LayoutService]}) export default class OtherLayout extends Layout {}
+  `);
+  await write('src/pages/other/index.ts', `
+    import {Page} from '@cossackframework/core';import Owner from '../owner/index';
+    @Page({transport:'http',scope:c=>'space:'+(c.req.query('space')??'one')}) export default class Other extends Owner {}
+  `);
 }
 
 export async function checkNavigationOwnershipBrowser(browser, origin) {
@@ -92,6 +111,11 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
   const check = async label => { for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(label ? label+' '+id : ''); };
   const ids = async () => [await page.locator('#root-service-id').textContent(),await page.locator('#layout-service-id').textContent()];
   try {
+    for (const method of ['GET','POST']) {
+      const response = await page.request.fetch(origin+'/api/inherited', {method});
+      expect(response.status()).toBe(200);
+      expect(await response.json()).toEqual({handler:'inherited-'+method.toLowerCase()});
+    }
     await page.goto(origin+'/owner?viewer=alice&space=one&revision=1');
     await browserExpect.poll(() => page.evaluate(() => window.__cossackReady)).toBe(true);
     await fill('private'); const first = await ids();
@@ -128,6 +152,21 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
     await browserExpect.poll(() => page.evaluate(() => window.__ownershipDisposals??[])).toEqual(expect.arrayContaining([...first,...second]));
     const disposed = await page.evaluate(() => window.__ownershipDisposals);
     for (const id of [...abandoned,...first,...second]) expect(disposed.filter(value => value===id)).toHaveLength(1);
+
+
+    await fill('parent');
+    expect(await page.evaluate(async () => { const result=await window.__ownershipApp.navigate('/other?viewer=bob&space=two&revision=parent'); return {outcome:result.outcome,error:result.error?.message}; })).toEqual({outcome:'completed',error:undefined});
+    for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('root-') ? 'parent '+id : '');
+    const other = await ids();
+    expect(other[0]).toBe(third[0]); expect(other[1]).not.toBe(third[1]);
+    await browserExpect.poll(() => page.evaluate(id => (window.__ownershipDisposals??[]).filter(value => value===id).length, third[1])).toBe(1);
+    expect(await page.evaluate(id => (window.__ownershipDisposals??[]).includes(id), third[0])).toBe(false);
+    await fill('other');
+    expect(await navigate('bob','two','return')).toBe('completed');
+    for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(id.startsWith('root-') ? 'other '+id : '');
+    const returned = await ids();
+    expect(returned[0]).toBe(third[0]); expect(returned[1]).not.toBe(third[1]); expect(returned[1]).not.toBe(other[1]);
+    await browserExpect.poll(() => page.evaluate(id => (window.__ownershipDisposals??[]).filter(value => value===id).length, other[1])).toBe(1);
 
     await fill('private before empty');
     expect(await navigate('bob','empty','5')).toBe('completed');

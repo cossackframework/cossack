@@ -1654,6 +1654,14 @@ the original RT-07 plan below and continue every other unchecked task/release ga
 <a id="rt-07"></a>
 ### RT-07: Typed routes and effective route metadata
 
+Codex inheritance regression follow-up (2026-10-03): decorated pages that inherit
+render() now use SSR rather than returning API 405. API method lookup searches
+authored ancestors, stops before Cossack defaults, honors overrides and does not
+invoke accessors. Generated Node/native workerd tests exercise inherited GET/POST
+and inherited page/layout navigation. See the
+[verification](./release-0.9.0.md#codex-route-inheritance-2026-10-03).
+
+
 Purpose: Route construction must catch missing parameters before a request.
 Inspection must show the layouts, middleware, transport, error boundary, and
 SSG settings that actually apply to a route.
@@ -2132,12 +2140,17 @@ cleanup with the original request context. It uses declared layout services.
 Its query-based user identity is a test fixture, not an authentication recipe.
 Legacy global constructor injection is unchanged.
 
+Parent-layout acceptance now passes with decorated inherited routes on Node and
+native workerd. Root drafts/services remain stable, replaced layout/page drafts
+reset, and retired nested services dispose once. Returning creates fresh nested
+services. This test exposed the inherited route lookup bug fixed under RT-07.
+Bare default re-exports remain outside this passing evidence.
+
 Next steps for GLM:
 
-1. Finish the native provider/runtime/transport and parent-layout ownership matrix.
-   Use supported decorated route modules. A bare default re-export route failed
-   build validation because its transport was unknown. That attempted parent
-   fixture is excluded from passing evidence. Preserve compiler fail-closed checks.
+1. Finish the native provider/runtime/transport ownership matrix. Preserve the
+   existing user/scope and parent-layout cases. Use supported decorated modules
+   and preserve compiler fail-closed checks.
 2. Interrupt restoration and confirmation between two history entries with the
    same URL. Hold the old lifecycle callback, publish a newer intent, then release
    the callback. Assert history entry identity, DOM, drafts and service context.

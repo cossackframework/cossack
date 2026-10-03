@@ -175,6 +175,14 @@ check rejects superseded modules before publishing SSR state or resources.
 Full staged-commit and ownership-change acceptance remains RT-08 work.
 Bounded completion and navigation diagnostics remain RT-09 work.
 
+## Authored route inheritance
+
+Route dispatch searches authored prototypes before the Cossack base prototype.
+An inherited render() selects SSR for an HTTP page. Inherited API methods can
+handle requests, with get() taking precedence over the init() alias. Framework
+no-op methods are not authored handlers. A derived declaration shadows its base
+member, and lookup does not invoke accessor handlers.
+
 ## Application socket registry
 
 Framework AppDurableObject reads the same virtual:cossack-pages registry as the

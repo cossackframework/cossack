@@ -83,7 +83,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   c.header('Location', undefined);
   return c.json({ _cossack_redirect: location });
 }
-import { createApiHandler } from './api-handler.js';
+import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
@@ -1317,7 +1317,7 @@ export function createApp(options: CreateAppOptions = {}) {
       // handler as usual (it may still expose post/put/etc. as JSON endpoints).
       const isApiRoute =
         pageOptions?.transport === 'http' &&
-        !Object.getOwnPropertyDescriptor(PageComponent.prototype, 'render');
+        !getAuthoredRouteMember(PageComponent, 'render');
 
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is

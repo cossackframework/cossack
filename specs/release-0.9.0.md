@@ -86,6 +86,45 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-route-inheritance-2026-10-03"></a>
+## Codex route inheritance (2026-10-03)
+
+Author: **Codex**. Continued after `8f084e0` and handoff compaction `d53eab4`.
+The parent-layout fixture reproduced 405 responses on both Node and native workerd.
+Router classification considered only an own render() declaration. API dispatch
+also ignored authored inherited handlers. A decorated subclass therefore built
+successfully but could not render or invoke its inherited API methods.
+
+A shared descriptor lookup now searches authored ancestors and stops before the
+Cossack prototype. Inherited render() selects SSR. API lookup honors get()/init()
+precedence and derived overrides without invoking accessors or falling through a
+shadowing declaration. The framework's default methods remain excluded.
+
+The production fixture uses decorated inherited pages/layouts and the same child
+classes under changed parents. Root drafts/services survive navigation away and
+back. Replaced nested drafts reset, nested services are fresh, and retired services
+dispose exactly once. Inherited GET/POST handlers return their expected JSON on
+both runtimes. Bare default re-export transport discovery is not claimed.
+
+Verification:
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/api-routes-class.test.ts`:
+  14 passed, including 5 new inheritance/override/accessor cases.
+- `pnpm --filter @cossackframework/framework build`: passed, including SSG.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,444 passed, 68 files.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership|parses and navigates typed URL state'`:
+  4 passed, 26 skipped, covering production Node and native workerd.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  all 30 generated-runtime cases passed (216 seconds).
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 packages passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+**No new task closes: 22/58 checked, 36 unchecked.** Parent-layout acceptance is
+now verified. Native provider/runtime/transport ownership, interrupted same-URL
+history, actual backend read counts and navigation diagnostics remain open.
+Versions remain 0.8.3. The compact handoff retains current next steps.
+
 <a id="codex-root-ownership-2026-10-03"></a>
 ## Codex root ownership (2026-10-03)
 

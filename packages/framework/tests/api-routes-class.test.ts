@@ -148,3 +148,34 @@ describe('createApiHandler method resolution', () => {
     expect(res.status).toBe(405);
   });
 });
+
+
+describe('authored API inheritance', () => {
+  it.each(['get', 'init', 'post'] as const)('dispatches inherited %s without calling framework defaults', async method => {
+    class Base extends Cossack {}
+    Object.defineProperty(Base.prototype, method, { value: function (this: Cossack) {
+      return this.c.json({ handler: method, owner: this.constructor.name });
+    } });
+    class Derived extends Base {}
+    const app = new Hono();
+    app.get('/', createApiHandler(Derived, method === 'post' ? 'post' : ['get', 'init']));
+    const response = await app.request('/');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ handler: method, owner: 'Derived' });
+  });
+
+  it('uses the most derived override', async () => {
+    class Base extends Cossack { async get() { return this.c.json({ handler: 'base' }); } }
+    class Derived extends Base { async get() { return this.c.json({ handler: 'derived' }); } }
+    const app = new Hono(); app.get('/', createApiHandler(Derived, ['get', 'init']));
+    expect(await (await app.request('/')).json()).toEqual({ handler: 'derived' });
+  });
+
+  it('does not evaluate accessor handlers or skip a shadowing declaration', async () => {
+    class Base extends Cossack { async get() { throw new Error('shadowed'); } }
+    class Derived extends Base {}
+    Object.defineProperty(Derived.prototype, 'get', { get() { throw new Error('getter executed'); } });
+    const app = new Hono(); app.get('/', createApiHandler(Derived, ['get', 'init']));
+    expect((await app.request('/')).status).toBe(405);
+  });
+});

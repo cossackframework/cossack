@@ -3,13 +3,24 @@ import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { Cossack, enforceMethodRateLimit, createCossackContext, getAuthorizationFailure } from '@cossackframework/core';
 
+/** @internal Find an authored member without treating framework defaults as handlers. */
+export function getAuthoredRouteMember(ComponentClass: new () => Cossack, name: string): PropertyDescriptor | undefined {
+    for (let prototype = ComponentClass.prototype;
+        prototype && prototype !== Cossack.prototype;
+        prototype = Object.getPrototypeOf(prototype)) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+        if (descriptor) return descriptor;
+    }
+    return undefined;
+}
+
 /**
  * Create an API handler for a Cossack class method.
  * This allows page components to expose HTTP method handlers (get, post, etc.)
  * while still being regular page components that render HTML.
  *
  * @param methodNames One or more candidate method names. The first name that is
- *   actually defined on the class prototype is invoked. This lets a single route
+ *   defined on the class or an authored ancestor is invoked. This lets a single route
  *   support a canonical name with a fallback (e.g. `get` with `init` as an alias).
  */
 export function createApiHandler(ComponentClass: new () => Cossack, methodNames: string | string[]) {
@@ -19,11 +30,10 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
         // on the prototype). Hoisted out of `try` so the catch block can log it.
         let methodName: string | undefined;
         try {
-            // Pick the first candidate method actually defined on this class
-            // (own property only — base Cossack defines get()/init(), so `in`
-            // would always match inherited methods and skip the user override).
+            // Prefer authored get() over init(), including inherited handlers.
+            // Stop before the framework's default methods and do not invoke getters.
             for (const name of names) {
-                if (Object.prototype.hasOwnProperty.call(ComponentClass.prototype, name)) {
+                if (typeof getAuthoredRouteMember(ComponentClass, name)?.value === 'function') {
                     methodName = name;
                     break;
                 }

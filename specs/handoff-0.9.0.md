@@ -1,6 +1,6 @@
 # Cossack 0.9.0 agent handoff
 
-Author: **Codex**. Compacted on 2026-10-03 after implementation commit `8f084e0`.
+Author: **Codex**. Updated on 2026-10-03 after compacting checkpoint `8f084e0`.
 Branch: `fix-084`. **22 of 58 release tasks are complete; 36 remain open.**
 Versions remain **0.8.3** until REL-04. This is a continuation handoff, not a release.
 
@@ -65,6 +65,13 @@ The following work is already implemented and tested:
   failed replacement restores the old App, and null output clears the old DOM.
   A child transport change alone does not replace the App.
 
+Parent-layout acceptance now passes with decorated inherited routes. Root drafts
+and services remain live while replaced layout/page drafts reset. Returning to
+the old route creates fresh nested services, with exactly-once retired disposal.
+This exposed and fixed inherited render/API method lookup returning 405. Authored
+ancestors now participate, while framework defaults and accessor handlers do not.
+See the [inheritance verification](./release-0.9.0.md#codex-route-inheritance-2026-10-03).
+
 The latest [root ownership verification](./release-0.9.0.md#codex-root-ownership-2026-10-03)
 records the implementation in `8f084e0`. Tests use declared layout services.
 Legacy undeclared global dependency injection is outside that ownership contract.
@@ -72,10 +79,10 @@ The query-based test identity is not an authentication example.
 
 Continue in this order:
 
-1. Finish the native ownership matrix for provider/runtime/transport and changed
-   parent layouts. Compare drafts, resource contexts and service disposal on Node
-   and native workerd. User/scope changes already pass. Use decorated route modules:
-   a bare default re-export failed compiler transport validation and is not passing evidence.
+1. Finish the native ownership matrix for provider/runtime/transport. Compare
+   drafts, resource contexts and service disposal on Node and native workerd.
+   User/scope and parent-layout changes already pass. Use decorated route modules.
+   Bare default re-exports still do not establish compiler transport metadata.
 2. Interrupt restoration and confirmation between two history entries with the
    same URL. Hold an old lifecycle callback, publish a newer intent, then release
    it. Assert entry identity, DOM, drafts and service context.
@@ -120,8 +127,11 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-Verified on implementation commit `8f084e0`. This compaction changes documentation only.
-Exact commands and limits are in the linked root ownership verification above.
+The root ownership checkpoint records `8f084e0` results below. The inheritance
+follow-up adds 5 framework cases (1,444 total), repeats all 11 type checks and
+production navigation acceptance, and rebuilds framework/SSG. All 30 cases in
+the full generated-runtime file pass. See its linked verification for commands. Other suite counts below
+remain evidence from `8f084e0`, not claims of a new run.
 
 | Check | Result |
 | --- | --- |
