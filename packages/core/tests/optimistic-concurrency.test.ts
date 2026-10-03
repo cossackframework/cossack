@@ -2,9 +2,10 @@ import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { proxyHttpMethods, proxyServerMethods, applyStateToComponent } from '../src/shared/method-proxy';
 import { routeSocketFrame, failPendingSocketCalls } from '../src/shared/transport-connections';
+import { optimistic } from '../src/shared/optimistic';
 import { ServiceScope } from '../src/shared/service-scope';
 import { Cossack } from '../src/shared/cossack';
-import { Service, State, Store, ClientState, Optimistic, Server } from '../src/shared/decorators';
+import { Service, State, Store, ClientState, ClientStore, Optimistic, Server } from '../src/shared/decorators';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -19,7 +20,7 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
         init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
     })));
     const target: any = {
-        constructor: class Counter {}, count: 0, title: 'original', cart: { rows: [1] }, local: 'original',
+        constructor: class Counter {}, count: 0, title: 'original', cart: { rows: [1] }, local: 'original', items: ['base'],
         loading: {}, _optimisticLockedKeys: {}, _optimisticPendingState: {}, __cossack_proxies: new Map(),
         websockets: new Map([['page', ws]]), consume: () => undefined,
         getInitialStateFromWindow: () => ({ componentRouteId: 'counter', scopeKey: 'one', transport }),
@@ -35,6 +36,7 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
     Reflect.defineMetadata('cossack:state', { count: {}, title: {} }, target.constructor);
     Reflect.defineMetadata('cossack:store', { cart: {} }, target.constructor);
     Reflect.defineMetadata('cossack:client-state', new Set(['local']), target.constructor);
+    Reflect.defineMetadata('cossack:client-store', new Set(['items']), target.constructor);
     Reflect.defineMetadata('cossack:optimistic-handlers', { edit: 'optimisticEdit', other: 'optimisticEdit' }, target.constructor);
     if (timeout) Reflect.defineMetadata('cossack:server-methods', { edit: { timeout } }, target.constructor);
     if (transport === 'ws') proxyServerMethods(target, ['edit', 'other'].map(name => ({ name, channel: 'global', provider: 'page' })));
@@ -53,6 +55,26 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
 }
 
 describe.each(['http', 'sse', 'ws'] as const)('%s optimistic call ownership', transport => {
+    it('removes a failed increment while a later increment stays pending', async () => {
+        const f = fixture(transport);
+        f.target.getMethod = () => () => optimistic(f.target).increment('count', 1);
+        const old = f.target.edit(), next = f.target.edit();
+        expect(f.target.count).toBe(2);
+        f.fail(0); await expect(old).rejects.toBeDefined();
+        expect(f.target.count).toBe(1); expect(f.target.loading.edit).toBe(1);
+        f.complete(1, { count: 10 }); await next;
+        expect(f.target.count).toBe(10); expect(f.target.loading).toEqual({});
+    });
+    it('removes an older failed append after a newer local append commits', async () => {
+        const f = fixture(transport);
+        f.target.getMethod = () => (value: string) => optimistic(f.target).append('items', value);
+        const old = f.target.edit('old'), next = f.target.edit('next');
+        f.complete(1); await next;
+        expect(f.target.items).toEqual(['base', 'old', 'next']);
+        f.fail(0); await expect(old).rejects.toBeDefined();
+        expect(f.target.items).toEqual(['base', 'next']); expect(f.target.loading).toEqual({});
+        if (transport !== 'ws') expect(f.pending.every(call => !Object.hasOwn(call.body.state, 'items'))).toBe(true);
+    });
     it('rolls back a rejected edit and settles its loading indicator', async () => {
         const f = fixture(transport); const call = f.target.edit({ count: 1 });
         expect(f.target.count).toBe(1); f.fail(0);
@@ -282,4 +304,59 @@ it('does not turn a later client-only deep value into a throwing setter or a loa
     await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_VALIDATION_FAILED' });
     expect(editor.count).toBe(0); expect((editor.draft as any).next).toBeTruthy();
     expect(editor.loading).toEqual({}); await editor.destroy();
+});
+
+
+it('rebases explicit operations for a scoped service and settles each subscriber once', async () => {
+    @Service() class Counter {
+        @ClientState() count = 0;
+        @ClientStore() items: string[] = [];
+        @Optimistic('save') preview(value: string) { const edits = optimistic<Counter>(this); edits.increment('count', 1); edits.append('items', value); }
+        @Server() save(_value: string) { return 'server'; }
+    }
+    const pending: Array<(response: Response) => void> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => pending.push(resolve))));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const scope = new ServiceScope(undefined, [Counter], { ownerRouteId: 'layout' });
+    const first = { loading: {}, requestUpdate: vi.fn() }, second = { loading: {}, requestUpdate: vi.fn() };
+    const off = [scope.subscribe(Counter, first), scope.subscribe(Counter, second)];
+    const service = scope.resolve(Counter);
+    const old = service.save('old'), next = service.save('next');
+    expect(service.count).toBe(2);
+    pending[1](new Response(JSON.stringify({ _cossack_return: 'ok', _cossack_service_state: {} }), { headers: { 'Content-Type': 'application/json' } }));
+    await next; expect(first.loading).toEqual({ save: 1 }); expect(second.loading).toEqual({ save: 1 });
+    pending[0](new Response(JSON.stringify({ code: 'COSSACK_RPC_VALIDATION_FAILED', error: 'Invalid' }), { status: 422, headers: { 'Content-Type': 'application/json' } }));
+    await expect(old).rejects.toBeDefined();
+    expect(service.count).toBe(1); expect(service.items).toEqual(['next']);
+    expect(first.loading).toEqual({}); expect(second.loading).toEqual({});
+    off.forEach(disconnect => disconnect()); await scope.dispose();
+});
+
+it('does not let a late duplicate snapshot replace a user edit retained at settlement', async () => {
+    const f = fixture('sse'); const call = f.target.edit({ count: 3 });
+    f.target.count = 99;
+    f.complete(0, { count: 30 }); await call;
+    expect(f.target.count).toBe(99);
+    applyStateToComponent(f.target, { count: 30 });
+    expect(f.target.count).toBe(99);
+    applyStateToComponent(f.target, { count: 31 });
+    expect(f.target.count).toBe(31);
+});
+
+
+it('preserves a retained user edit from a late echo even while the next increment is pending', async () => {
+    const f = fixture('sse'); const first = f.target.edit({ count: 3 }); f.target.count = 99;
+    f.complete(0, { count: 30 }); await first;
+    f.target.getMethod = () => () => optimistic(f.target).increment('count', 1);
+    const next = f.target.edit(); expect(f.target.count).toBe(100);
+    applyStateToComponent(f.target, { count: 30 }); expect(f.target.count).toBe(100);
+    f.complete(1, { count: 100 }); await next; expect(f.target.count).toBe(100);
+});
+
+it('lets an explicit read restore authority even when it returns the previous confirmed value', async () => {
+    const f = fixture('http'); const first = f.target.edit({ count: 3 }); f.target.count = 99;
+    f.complete(0, { count: 30 }); await first; expect(f.target.count).toBe(99);
+    const read = f.target.other({}); f.complete(1, { count: 30 }); await read;
+    expect(f.target.count).toBe(30);
+    f.target.count = 100; applyStateToComponent(f.target, { count: 30 }); expect(f.target.count).toBe(30);
 });

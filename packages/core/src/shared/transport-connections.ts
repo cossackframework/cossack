@@ -1,7 +1,7 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
-import { hasOptimisticCalls } from './optimistic-state';
+import { hasOptimisticCalls, resetOptimisticSnapshotHistory } from './optimistic-state';
 import { isSharedMethod } from './shared-method';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
@@ -155,6 +155,7 @@ export function connectWebSocket(component: any): void {
 
             ws.onopen = () => {
                 attempt = 0;
+                resetOptimisticSnapshotHistory(component);
                 updateStatus(component, { provider: providerName },
                     { state: 'open', attempts: 0, lastError: undefined });
             };
@@ -291,6 +292,7 @@ export function connectSSE(component: any): void {
         // EventSource reconnects automatically; onopen after a failure marks
         // recovery. A following `resync` event reports whether the snapshot
         // had to replace expired history.
+        resetOptimisticSnapshotHistory(component);
         updateStatus(component, 'sse', { state: 'open', attempts: 0, lastError: undefined });
     };
     es.onerror = () => {
@@ -302,6 +304,7 @@ export function connectSSE(component: any): void {
         });
     };
     es.addEventListener('resync', (event: MessageEvent) => {
+        resetOptimisticSnapshotHistory(component);
         updateStatus(component, 'sse', { resynced: true });
         try {
             const marker = JSON.parse((event as any).data);

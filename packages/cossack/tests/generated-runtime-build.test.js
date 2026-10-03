@@ -1108,12 +1108,19 @@ it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async (
     const directory = path.join(root, 'src/pages/optimistic', transport);
     await fs.mkdir(directory, { recursive: true });
     await fs.writeFile(path.join(directory, 'index.ts'), `
-      import { Cossack, Page, State, Store, ClientState, Server, Client, Optimistic, input } from '@cossackframework/core';
+      import { Cossack, Page, State, Store, ClientState, ClientStore, Server, Client, Optimistic, optimistic, input } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       @Page({ transport: '${transport}' }) export default class OptimisticPage extends Cossack {
         @State() count = 0;
         @Store() cart = { rows: [1] };
         @ClientState() local = 0;
+        @ClientState() accepted = 0;
+        @ClientStore() items: string[] = [];
+        @Optimistic('append') previewAppend(value: { value: number; label: string }) {
+          const edits = optimistic<OptimisticPage>(this); edits.increment('accepted', 1); edits.append('items', value.label);
+        }
+        @Server({ input: input.object({ value: input.number({ min: 0 }), label: input.string(), delay: input.number({ min: 0 }) }) })
+        async append(value: { value: number; label: string; delay: number }) { await new Promise(resolve => setTimeout(resolve, value.delay)); return value.label; }
         @Optimistic('edit') preview(value: { value: number }) { this.count = value.value; this.cart.rows.push(value.value); this.local = value.value; }
         @Server({ input: input.object({ value: input.number({ min: 0 }), delay: input.number({ min: 0 }) }) })
         async edit(value: { value: number; delay: number }) {
@@ -1122,7 +1129,7 @@ it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async (
         }
         @Client() onMount() { (window as any).__optimistic = this; }
         @Client() editLocal(value: number) { this.count = value; }
-        render() { return html\`<main><span data-testid="count">\${this.count}</span><span data-testid="rows">\${this.cart.rows.join(',')}</span><span data-testid="local">\${this.local}</span><span data-testid="loading">\${this.loading.edit || 0}</span></main>\`; }
+        render() { return html\`<main><span data-testid="count">\${this.count}</span><span data-testid="rows">\${this.cart.rows.join(',')}</span><span data-testid="local">\${this.local}</span><span data-testid="loading">\${this.loading.edit || 0}</span><span data-testid="accepted">\${this.accepted}</span><span data-testid="items">\${this.items.join(',')}</span><span data-testid="append-loading">\${this.loading.append || 0}</span></main>\`; }
       }
     `);
   }
@@ -1168,6 +1175,42 @@ it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async (
       await page.evaluate(async () => { await window.__pending; });
       await browserExpect(page.getByTestId('count')).toHaveText('99');
       await browserExpect(page.getByTestId('loading')).toHaveText('0');
+      for (const [iteration, order] of [['1', 'old-first'], ['2', 'new-first']]) {
+        let releaseOld, releaseNext;
+        const oldHeld = new Promise(resolve => { releaseOld = resolve; });
+        const nextHeld = new Promise(resolve => { releaseNext = resolve; });
+        const sent = [];
+        await page.route('**/crpc**', async route => {
+          const body = route.request().postDataJSON(); sent.push(body);
+          if (body.action === 'append') await (body.payload[0].value < 0 ? oldHeld : nextHeld);
+          await route.continue();
+        });
+        await page.evaluate(() => {
+          window.__oldAppend = window.__optimistic.append({ value: -1, label: 'old', delay: 0 }).catch(error => { window.__appendError = error.code; });
+          window.__nextAppend = window.__optimistic.append({ value: 1, label: 'next', delay: 0 });
+        });
+        await expect.poll(() => sent.length).toBe(2);
+        await browserExpect(page.getByTestId('accepted')).toHaveText(String(Number(iteration) + 1));
+        await browserExpect(page.getByTestId('append-loading')).toHaveText('2');
+        for (const body of sent) { expect(body.state).not.toHaveProperty('accepted'); expect(body.state).not.toHaveProperty('items'); }
+        if (order === 'old-first') {
+          releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
+          await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
+          await browserExpect(page.getByTestId('items')).toHaveText('next');
+          await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
+          releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
+        } else {
+          releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
+          await browserExpect(page.getByTestId('accepted')).toHaveText('3');
+          await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
+          releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
+        }
+        expect(await page.evaluate(() => window.__appendError)).toBe('COSSACK_VALIDATION_FAILED');
+        await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
+        await browserExpect(page.getByTestId('items')).toHaveText(Array(Number(iteration)).fill('next').join(','));
+        await browserExpect(page.getByTestId('append-loading')).toHaveText('0');
+        await page.unroute('**/crpc**');
+      }
     }
     expect(errors).toEqual([]);
   } finally { await browser.close(); await server.close(); }

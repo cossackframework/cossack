@@ -2,12 +2,32 @@
 import './metadata';
 import { collectReactiveMetadata } from './reactive-metadata';
 
-type Change = { sequence: number; value: unknown };
+export type OptimisticOperation = { kind: 'increment'; amount: number } | { kind: 'append' | 'remove'; value: unknown };
+type Change = { sequence: number; value: unknown; operations?: OptimisticOperation[] };
 type Field = { base: unknown; sequence: number; changes: Map<object, Change>; displayed: unknown; local?: Change };
 export type OptimisticCall = { owner: object; sequence: number; name: string; fields: Set<string> };
-type Ledger = { clock: number; calls: Set<OptimisticCall>; fields: Map<string, Field>; writing: boolean; capturing: boolean };
+type Capture = { call: OptimisticCall; before: Map<string, unknown>; operations: Map<string, OptimisticOperation[]> };
+type Ledger = { clock: number; calls: Set<OptimisticCall>; fields: Map<string, Field>; writing: boolean; capturing: boolean; capture?: Capture };
 const ledgers = new WeakMap<object, Ledger>();
 const pendingLoading = new WeakMap<object, Map<string, number>>();
+// Keep only fields whose later user edit survived settlement. A duplicate
+// broadcast of that call's confirmed value must not immediately undo the edit.
+const settledEdits = new WeakMap<object, Map<string, unknown>>();
+
+/** A reconnect/resync explicitly restores public server authority. */
+export function resetOptimisticSnapshotHistory(target: object): void {
+    settledEdits.delete(target);
+}
+
+/** Changed broadcasts and explicit reads retain authority; known echoes do not. */
+export function acceptSettledOptimisticSnapshot(target: object, key: string, value: unknown, authoritative: boolean): boolean {
+    const fields = settledEdits.get(target);
+    if (!fields?.has(key)) return true;
+    if (!authoritative && equal(fields.get(key), value)) return false;
+    fields.delete(key);
+    if (!fields.size) settledEdits.delete(target);
+    return true;
+}
 
 /** Subscriber loading belongs to the service invocation, not ambient broadcasts. */
 export function ownRpcLoading(target: object, name: string): () => void {
@@ -87,6 +107,80 @@ function equal(a: any, b: any, seen = new WeakMap<object, object>()): boolean {
     return keys.every(key => right[key]?.enumerable && 'value' in left[key] && 'value' in right[key] && equal(left[key].value, right[key].value, seen));
 }
 
+export class OptimisticEditError extends Error {
+    constructor(detail: string) {
+        super(`[Cossack] Invalid optimistic edit: ${detail}`);
+        this.name = 'OptimisticEditError';
+    }
+}
+
+/** Data operations accept plain trees, never application callbacks or hooks. */
+function operationValue(value: unknown, ancestors = new Set<object>(), depth = 0): unknown {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (!value || typeof value !== 'object' || depth > 256) throw new OptimisticEditError('operation values must be finite, plain data within the depth limit.');
+    const prototype = Object.getPrototypeOf(value);
+    if ((!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) || ancestors.has(value)) {
+        throw new OptimisticEditError('operation values must be acyclic plain objects or arrays.');
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const result: any = Array.isArray(value) ? new Array(value.length) : Object.create(prototype);
+    ancestors.add(value);
+    try {
+        for (const key of Reflect.ownKeys(descriptors)) {
+            const descriptor = (descriptors as Record<PropertyKey, PropertyDescriptor>)[key];
+            if (!descriptor.enumerable) continue;
+            if (typeof key !== 'string' || !('value' in descriptor)) throw new OptimisticEditError('operation values cannot contain symbols or accessors.');
+            Object.defineProperty(result, key, { value: operationValue(descriptor.value, ancestors, depth + 1), enumerable: true, writable: true, configurable: true });
+        }
+    } finally { ancestors.delete(value); }
+    return result;
+}
+
+function applyOperations(value: unknown, operations: readonly OptimisticOperation[]): unknown {
+    for (const operation of operations) {
+        if (operation.kind === 'increment') {
+            if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isFinite(value + operation.amount)) {
+                throw new OptimisticEditError('increment requires a finite number and finite result.');
+            }
+            value += operation.amount;
+        } else {
+            if (!Array.isArray(value)) throw new OptimisticEditError(`${operation.kind} requires an array.`);
+            if (operation.kind === 'append') value = [...value, copy(operation.value)];
+            else {
+                const index = value.findIndex(item => equal(item, operation.value));
+                value = index < 0 ? value.slice() : [...value.slice(0, index), ...value.slice(index + 1)];
+            }
+        }
+    }
+    return value;
+}
+
+/** A helper belongs to this exact synchronous handler execution. */
+export function optimisticCapture(target: object): OptimisticCall {
+    const ledger = ledgers.get(target);
+    if (!ledger?.capturing || !ledger.capture) throw new OptimisticEditError('use optimistic() inside a synchronous @Optimistic handler.');
+    return ledger.capture.call;
+}
+
+export function recordOptimisticOperation(target: any, call: OptimisticCall, key: string, operation: OptimisticOperation): void {
+    const ledger = ledgers.get(target), capture = ledger?.capture;
+    if (!ledger?.capturing || capture?.call !== call) throw new OptimisticEditError('this handler execution has ended.');
+    if (!capture.before.has(key)) throw new OptimisticEditError(`'${key}' is not an initialized reactive field.`);
+    const operations = capture.operations.get(key) ?? [];
+    if (!equal(target[key], applyOperations(capture.before.get(key), operations))) {
+        throw new OptimisticEditError(`do not mix direct assignments and operations on '${key}' in one handler.`);
+    }
+    const recorded: OptimisticOperation = operation.kind === 'increment'
+        ? { kind: 'increment', amount: operation.amount }
+        : { kind: operation.kind, value: operationValue(operation.value) };
+    if (recorded.kind === 'increment' && !Number.isFinite(recorded.amount)) throw new OptimisticEditError('increment amount must be finite.');
+    const next = applyOperations(target[key], [recorded]);
+    if (typeof target.setProperty === 'function') target.setProperty(key, next); else target[key] = next;
+    operations.push(recorded);
+    capture.operations.set(key, operations);
+}
+
 /** A snapshot limit must not change ordinary client setters or mask settlement. */
 function copyLocal(target: any, key: string, value: unknown): unknown {
     try { return copy(value); }
@@ -97,18 +191,22 @@ function copyLocal(target: any, key: string, value: unknown): unknown {
 }
 
 function write(target: any, ledger: Ledger, key: string, field: Field): void {
-    let selected: Change = { sequence: field.sequence, value: field.base };
-    if (field.local && field.local.sequence > selected.sequence) selected = field.local;
-    for (const change of field.changes.values()) if (change.sequence > selected.sequence) selected = change;
+    let value = field.base;
+    const changes = [...field.changes.values()];
+    if (field.local) changes.push(field.local);
+    for (const change of changes.sort((a, b) => a.sequence - b.sequence)) {
+        if (change.sequence <= field.sequence) continue;
+        value = change.operations ? applyOperations(value, change.operations) : change.value;
+    }
     ledger.writing = true;
     try {
-        if (!equal(target[key], selected.value)) {
-            const value = copyLocal(target, key, selected.value);
-            if (typeof target.setProperty === 'function') target.setProperty(key, value);
-            else target[key] = value;
+        if (!equal(target[key], value)) {
+            const detached = copyLocal(target, key, value);
+            if (typeof target.setProperty === 'function') target.setProperty(key, detached);
+            else target[key] = detached;
         }
         const current = target[key];
-        field.displayed = Object.is(current, selected.value) ? selected.value : copyLocal(target, key, current);
+        field.displayed = Object.is(current, value) ? value : copyLocal(target, key, current);
     } finally { ledger.writing = false; }
 }
 
@@ -138,17 +236,21 @@ export function beginOptimisticCall(target: any, name: string, handler: (() => u
     catch (failure) { console.error(`Error preparing optimistic handler for '${name}':`, failure); return call; }
     let failure: unknown;
     let failed = false;
+    const capture: Capture = { call, before, operations: new Map() };
+    ledger.capture = capture;
     ledger.capturing = true;
     try { handler(); } catch (error) { failure = error; failed = true; }
-    finally { ledger.capturing = false; }
+    finally { ledger.capturing = false; ledger.capture = undefined; }
     for (const [key, value] of before) {
-        if (equal(value, target[key])) continue;
+        const operations = capture.operations.get(key);
+        if (!operations && equal(value, target[key])) continue;
         let field = ledger.fields.get(key);
         if (!field) ledger.fields.set(key, field = { base: value, sequence: 0, changes: new Map(), displayed: value });
         call.fields.add(key);
         try {
             const next = copy(target[key]);
-            field.changes.set(call, { sequence: call.sequence, value: next });
+            if (operations && !equal(next, applyOperations(value, operations))) throw new OptimisticEditError(`do not mix direct assignments and operations on '${key}' in one handler.`);
+            field.changes.set(call, { sequence: call.sequence, value: next, operations });
             field.displayed = next;
         } catch (error) { failure = error; failed = true; }
     }
@@ -206,20 +308,32 @@ export function finishOptimisticCall(call: OptimisticCall, success: boolean): vo
             const change = field.changes.get(call);
             // A successful action with no state frame commits its local contribution.
             // An authoritative response at this sequence has already replaced the base.
-            if (success && change && call.sequence > field.sequence) {
+            if (success && change && !change.operations && call.sequence > field.sequence) {
                 field.base = copy(change.value);
                 field.sequence = call.sequence;
             }
-            if (success && field.local && call.sequence >= field.local.sequence) field.local = undefined;
-            field.changes.delete(call);
+            if (success && !change?.operations && field.local && call.sequence >= field.local.sequence) field.local = undefined;
+            // Committed local operations remain in order until the last call
+            // settles. Older rejection can then remove just its own operation.
+            if (!success || !change?.operations) field.changes.delete(call);
             write(target, ledger, key, field);
         } catch (error) {
             console.error(`[Cossack] Optimistic cleanup for '${call.name}' on ${target.constructor.name} field '${key}' failed:`, error);
         } finally {
-            field.changes.delete(call);
+            if (!success || !field.changes.get(call)?.operations) field.changes.delete(call);
         }
     }
-    if (!ledger.calls.size) ledgers.delete(target);
+    if (!ledger.calls.size) {
+        let settled = settledEdits.get(target);
+        for (const [key, field] of ledger.fields) {
+            if (field.local && field.local.sequence > field.sequence) {
+                if (!settled) settledEdits.set(target, settled = new Map());
+                settled.set(key, field.base);
+            } else settled?.delete(key);
+        }
+        if (settled && !settled.size) settledEdits.delete(target);
+        ledgers.delete(target);
+    }
 }
 
 /** Legacy uncorrelated completion messages cannot settle modern request-scoped calls. */

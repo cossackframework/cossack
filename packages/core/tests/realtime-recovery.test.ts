@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beginOptimisticCall, applyOptimisticState, finishOptimisticCall } from '../src/shared/optimistic-state';
 import { connectSSE, connectWebSocket, realtimeReconnectDelay, realtimeStatus } from '../src/shared/transport-connections';
 
 /**
@@ -101,6 +102,21 @@ describe('realtime recovery: SSE status', () => {
         expect(realtimeStatus(component).sse).toMatchObject({ resynced: true, lastEventId: 9 });
     });
 
+    it.each(['open', 'resync'])('restores authoritative snapshots after %s without clearing active call ownership', trigger => {
+        const component: any = makeComponent(); component.count = 0;
+        connectSSE(component); const es = MockEventSource.instances[0]; es.onopen?.();
+        const call = beginOptimisticCall(component, 'edit', () => { component.count = 3; }, ['count']);
+        component.count = 99;
+        applyOptimisticState(component, 'count', 30, call); finishOptimisticCall(call, true);
+        es.emit('state-update', '{"count":30}'); expect(component.count).toBe(99);
+        if (trigger === 'open') es.onopen?.(); else es.emit('resync', '{"cursor":9}');
+        es.emit('state-update', '{"count":30}'); expect(component.count).toBe(30);
+        const pending = beginOptimisticCall(component, 'edit', () => { component.count = 4; }, ['count']);
+        if (trigger === 'open') es.onopen?.(); else es.emit('resync', '{"cursor":10}');
+        es.emit('state-update', '{"count":31}'); expect(component.count).toBe(4);
+        finishOptimisticCall(pending, false); expect(component.count).toBe(31);
+    });
+
     it('marks a permanently closed source as closed', () => {
         const component: any = makeComponent();
         connectSSE(component);
@@ -120,6 +136,23 @@ describe('realtime recovery: WebSocket reconnect', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('restores public authority after socket open while preserving a pending preview', () => {
+        const component: any = makeComponent(); component.count = 0;
+        connectWebSocket(component); const ws = MockWebSocket.instances[0]; ws.onopen?.();
+        const call = beginOptimisticCall(component, 'edit', () => { component.count = 3; }, ['count']);
+        component.count = 99; applyOptimisticState(component, 'count', 30, call); finishOptimisticCall(call, true);
+        ws.onmessage?.({ data: JSON.stringify({ type: 'state-update', state: { count: 30 } }) });
+        expect(component.count).toBe(99);
+        ws.onopen?.();
+        ws.onmessage?.({ data: JSON.stringify({ type: 'state-update', state: { count: 30 } }) });
+        expect(component.count).toBe(30);
+        const pending = beginOptimisticCall(component, 'edit', () => { component.count = 4; }, ['count']);
+        ws.onopen?.();
+        ws.onmessage?.({ data: JSON.stringify({ type: 'state-update', state: { count: 31 } }) });
+        expect(component.count).toBe(4); finishOptimisticCall(pending, false); expect(component.count).toBe(31);
+        component._phase = 'Destroyed'; ws.close(); ws.onclose?.();
     });
 
     it('reconnects with bounded exponential backoff and resets after open', () => {

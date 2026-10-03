@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Complete authoritative reads for uncertain HTTP outcomes and the real reconnect/contribution-rebasing audit remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Complete authoritative reads for uncertain HTTP outcomes, real reconnect and stream acceptance remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4200,3 +4200,115 @@ mutation with a deliberately lost reply and zero replay, finish native socket/SS
 recovery and late broadcast coverage, and audit operation-aware contribution
 rebasing plus stream failure/cancellation. Follow the detailed next plan before
 checking the task. Preserve all other original unchecked IDs and release gates.
+
+<a id="codex-optimistic-operations-2026-10-03"></a>
+## Codex explicit optimistic operation checkpoint — 2026-10-03
+
+Author: **Codex**. Continued after `231bcc1`. **20/58 checked, 38 unchecked**.
+No task closes. RT-06's contribution audit now has an explicit supported contract;
+uncertain authoritative reads, native reconnect, different late snapshots and
+stream/consumer acceptance remain open. Read its
+[detailed continuation](./release-0.9.0-plan.md#rt-06),
+[operation guide](../docs/optimistic.md#record-relative-operations) and
+[migration](./migration-0.9.0.md#explicit-optimistic-operations).
+
+The initial contribution tests failed **2/3**. Whole-field snapshots retained an
+older failed increment and append after a newer pending or committed local edit.
+Inferring a numeric delta or replaying arbitrary application handlers cannot
+safely establish intent. Public `optimistic<Host>(target)` now records explicit
+finite increment, detached append and first-structurally-equal remove operations
+within the exact synchronous handler capture. Internal replay folds surviving
+operations in invocation order. Handler code executes once. A no-op removal
+still records intent if an older removal later fails. Array duplicate order stays
+stable, and confirmed public replies exclude operations that they confirm.
+
+Successful local operations remain ordered while other calls are pending. A
+later local replacement supplies the base for subsequent relative operations.
+One new regression initially discarded that replacement at local success; cleanup
+now preserves it. Direct assignments keep absolute whole-field semantics. Mixing
+assignment and operations on one field in a handler rejects and restores its
+capture. Stale helpers reject before writes, including during another handler.
+Runtime metadata checks reactive fields; published types check writable numeric/
+array names and item shapes. The guide has a complete public-export example.
+Types within methods require a concrete Host because polymorphic this leaves
+mapped field constraints unresolved. Data operations accept finite acyclic plain
+enumerable properties and do not execute serialization hooks. Native object and
+arbitrary later nested-write limitations still apply.
+
+A full generated browser run found an additional real regression: a late equal
+SSE snapshot replaced count 99 with count 30 after the call settled. A controlled
+regression reproduced it before correction. Weak per-target history now retains
+the confirmed value only for fields with surviving user edits. Equal ambient
+snapshots preserve those edits, including while another increment is pending.
+Changed state and explicit RPC reads clear that field's history. Socket/EventSource
+open and SSE resync clear history while preserving active preview ownership.
+This compares values, not server revisions; it does not prove ordering between
+different late snapshots. Actual native lost-response/reconnect tests remain
+required before RT-06 closes.
+
+Final verification against the rebuilt core:
+
+- `pnpm --filter @cossackframework/core run build` passes, including declarations
+  and rewritten ESM imports. Builds finish before package consumers run.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1225 /71**.
+  New operation journal file **14** cases, including all six completion orders
+  with four success/failure patterns; optimistic concurrency file **58** cases;
+  cleanup **5**, published operations types **1**, realtime recovery **8**.
+  The explicit final targeted command covers these five files (**86** cases).
+  In addition to the prior transport matrix, checks cover stale/mixed/invalid
+  helpers, item detachment, removal intent/duplicates, authoritative rebasing,
+  retained local replacements, explicit service subscribers, late equal echoes,
+  direct reads, and connection-open/resync authority with active previews.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1316 /57**.
+  Final root `pnpm tsc --noEmit` and `pnpm typecheck` pass all **11** package
+  configurations. No full monorepo/runtime release gate is claimed.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  final **18/18**, about **111 seconds**. Generated apps compile through published
+  exports and run actual Node production HTTP/SSE with Chromium. Held negative
+  and valid append requests cover older rejection while the newer call remains
+  pending and newer success before older rejection. Counts/arrays retain only
+  valid contributions; loading releases 2 → 1 → 0; local fields stay absent from
+  actual request state. The earlier count-99 late-echo failure is fixed. Existing
+  state/task/recipe/schema/resource/native-response/portable-build/Node socket
+  production, development and HMR acceptance also passes.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+  tests/websocket-peer-integration.test.js --maxWorkers=1`: final **2/2**, about
+  **120 seconds**. Native Worker HTTP/SSE acceptance now holds two append actions,
+  rejects the older validated input while the newer action remains pending,
+  retains one increment and only the newer array item, and settles loading once.
+  Existing D1/resource/schema/policy/cancellation/stream/limiter/socket acceptance
+  remains passing. This does not yet test a new optimistic mutation whose response
+  is lost after commit and then recovers through a real socket reconnect.
+- Owned whitespace, JS syntax and relative documentation file links pass. All
+  58 IDs and checked states are preserved. Versions remain 0.8.3. reports.md and
+  .zcodeignore remain user-owned and unstaged. No remote/live resource changed.
+
+Intermediate evidence is retained:
+
+- Initial direct-snapshot contribution matrix: **2 failed, 1 passed**. Replacing
+  those previews with the explicit operation contract makes all three pass.
+- The retained-local-replacement regression failed before cleanup was corrected.
+- The first extra transport append cases registered metadata after proxies had
+  already captured their reactive keys. The fixture now registers it before proxy
+  installation; production components already follow that initialization order.
+- Published/service/browser example checks initially failed on mapped polymorphic
+  this. Concrete Host arguments now compile, and the guide names that constraint.
+  The first selected browser run failed its app tsc before reaching a browser.
+- An intermediate full browser suite passed 17/18 and exposed the late equal
+  snapshot regression. It is not final acceptance. The new controlled case also
+  failed before the history fix. Final rebuilt browser **18/18**, native **2/2**,
+  core/framework/types results above supersede those intermediate runs.
+- An intermediate native run passed 2/2 before the history fix. The final rebuilt
+  native run also passes 2/2. No checks were restarted merely on an observation
+  timeout; each restarted run followed an actual fixture/source correction.
+
+**Next:** finish RT-06 steps 2–4. Use an explicit authoritative read/resource
+contract for uncertain HTTP/service outcomes. Start with an actual persisted
+record and hold/consume the mutation response before deliberately failing its
+client delivery. Prove the committed record changes exactly once, the client
+reports uncertainty, one read converges, and no mutation replay occurs. Reuse
+existing `refresh$`/resource identity and RT-19 recovery instead of inventing a
+second state system. Then exercise actual native socket loss/reconnect, SSE
+recovery and different late snapshots, retained layouts/service subscribers,
+post-yield errors and cancellation, with full original criterion audit. Continue
+all other unchecked IDs and the Node plain Vite dev gap afterward.

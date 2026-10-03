@@ -12,7 +12,18 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex optimistic call ownership (2026-10-03):**
+**Latest checkpoint — Codex explicit optimistic operations (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-operations-2026-10-03).
+RT-06 now records explicit finite increments and detached append/remove operations.
+A failed older contribution leaves newer pending or committed local operations.
+Whole-field assignments remain absolute. Handlers run once; internal replay uses
+only declared data operations. Published field/item types and browser/native
+HTTP/SSE contribution cases accompany the existing transport/service matrix.
+**20/58 checked, 38 unchecked**, all original task IDs retained. No task closes.
+Continue RT-06's authoritative read, actual reconnect, late broadcast and stream
+failure acceptance below. All other tasks and the Node CLI dev gap remain open.
+
+**Previous checkpoint — Codex optimistic call ownership (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03).
 RT-06 now has per-call field layers, rollback, confirmed public request state,
 scoped-service parity and flat Node/Deno connection snapshots. The task remains
@@ -1363,6 +1374,45 @@ Node and native Worker HTTP/SSE pages hold an older invalid call until a newer
 success arrives, retain the successful result after rejection, settle loading,
 exclude previews from requests and retain a later public edit. Existing native
 resource/Store/D1/schema/policy/stream/socket acceptance stays intact.
+
+**Codex explicit-operation continuation (2026-10-03), after `231bcc1`:**
+
+The contribution audit reproduced two failures: rejecting the older increment
+and append retained both results, including when the newer client-only operation
+already succeeded. Public `optimistic<Host>(target)` now records explicit
+`increment`, `append` and first-structurally-equal `remove` operations during a
+synchronous handler. The journal folds surviving entries in invocation order.
+Successful local operations stay ordered until pending calls settle; public
+confirmed replies replace operations at or below their sequence. A no-op removal
+still records intent, so it applies if an earlier removal later fails.
+
+A later local replacement is the base for subsequent relative operations.
+A regression first lost that replacement on local success; cleanup now retains it.
+Ordinary direct assignments remain absolute whole-field values. Do not infer
+arithmetic intent from before/after numbers or replay application handlers.
+No arithmetic/array guarantee is claimed for arbitrary direct nested writes.
+Use explicit operations for contribution ownership. These are client state
+operations, not database transactions or a server rollback protocol.
+
+The helper owns one capture identity and rejects outside it, including during
+another call's handler. It checks runtime reactive fields and copies finite plain
+data before preview. Operations and direct assignment on one field in the same
+handler reject and restore the capture. Assignments on other fields remain valid.
+Use a concrete class argument inside methods because TypeScript cannot resolve
+mapped field types for polymorphic this. Published declarations check writable
+number/array fields, item shapes and negative cases; the guide has a complete
+public-export example. Native values and later arbitrary user edits retain the
+previous documented limits. This resolves remaining step 1 for the declared
+operation contract, while the other original RT-06 criteria remain open.
+
+A full generated browser run reproduced a late equal snapshot overwriting a
+later local edit after settlement. The weak history now stores a confirmed value
+only for fields with a surviving local edit. Equal ambient echoes are ignored
+before ledger merging, including while another call is pending. Changed state
+and explicit reads clear the field; socket/EventSource open and SSE resync reset
+history while preserving active previews. Controlled and browser regressions
+cover this correction. It compares values, not server revisions, so step 3 still
+needs different late snapshots and actual native lost-response recovery.
 
 **Required next work, before RT-06 can close:**
 

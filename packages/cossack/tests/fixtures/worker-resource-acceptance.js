@@ -23,7 +23,7 @@ export async function writeWorkerResourceAcceptance(root) {
   `);
   for (const transport of ['http', 'sse']) {
     await write(`src/pages/resource-check/${transport}/index.ts`, `
-      import { Client, ClientState, ClientStore, Computed, Cossack, Page, Server, State, Optimistic, input, server$ } from '@cossackframework/core';
+      import { Client, ClientState, ClientStore, Computed, Cossack, Page, Server, State, Optimistic, optimistic, input, server$ } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       import { readResource } from '../../../private-resource';
       class ResourceBase extends Cossack<{}, {Resources:'record'}> {
@@ -33,6 +33,13 @@ export async function writeWorkerResourceAcceptance(root) {
       @Page({transport:'${transport}'})
       export default class ResourcePage extends ResourceBase {
         @State() optimisticCount = 0;
+        @ClientState() accepted = 0;
+        @ClientStore() optimisticItems: string[] = [];
+        @Optimistic('appendOptimistic') previewAppend(value: {value:number;label:string}) {
+          const edits = optimistic<ResourcePage>(this); edits.increment('accepted', 1); edits.append('optimisticItems', value.label);
+        }
+        @Server({input:input.object({value:input.number({min:0}),label:input.string()})})
+        appendOptimistic(value:{value:number;label:string}) { return value.label; }
         @Optimistic('saveOptimisticCount') preview(value: {value:number}) { this.optimisticCount = value.value; }
         @Server({input:input.object({value:input.number({min:0}),delay:input.number({min:0})})})
         async saveOptimisticCount(value:{value:number;delay:number}) {
@@ -53,7 +60,7 @@ export async function writeWorkerResourceAcceptance(root) {
           const status = this.resourceStatus$('record');
           return html\`<main>
             <h1>Native resource</h1>
-            <span id="optimistic-count">\${this.optimisticCount}</span><span id="optimistic-loading">\${this.loading.saveOptimisticCount || 0}</span>
+            <span id="optimistic-accepted">\${this.accepted}</span><span id="optimistic-items">\${this.optimisticItems.join(',')}</span><span id="append-loading">\${this.loading.appendOptimistic || 0}</span><span id="optimistic-count">\${this.optimisticCount}</span><span id="optimistic-loading">\${this.loading.saveOptimisticCount || 0}</span>
             <span id="local-label">\${this.localLabel}</span>
             <button @click=\${this.editLocal}>Edit local state</button>
             <select aria-label="Record" .value=\${String(this.id)} @change=\${this.select}>
@@ -157,6 +164,33 @@ export async function checkWorkerResourceAcceptance(server, serverUrl, sessionCo
       await page.evaluate(async () => { await window.__pendingOptimistic; });
       await browserExpect(page.locator('#optimistic-count')).toHaveText('99');
       await browserExpect(page.locator('#optimistic-loading')).toHaveText('0');
+      let releaseOldAppend, releaseNextAppend;
+      const oldAppendHeld = new Promise(resolve => { releaseOldAppend = resolve; });
+      const nextAppendHeld = new Promise(resolve => { releaseNextAppend = resolve; });
+      const appendCalls = [];
+      await page.route('**/crpc**', async route => {
+        const body = route.request().postDataJSON(); appendCalls.push(body);
+        if (body.action === 'appendOptimistic') await (body.payload[0].value < 0 ? oldAppendHeld : nextAppendHeld);
+        await route.continue();
+      });
+      await page.evaluate(() => {
+        window.__oldAppend = window.__resourcePage.appendOptimistic({value:-1,label:'old'}).catch(error => {window.__appendError=error.code;});
+        window.__nextAppend = window.__resourcePage.appendOptimistic({value:1,label:'next'});
+      });
+      await expect.poll(() => appendCalls.length).toBe(2);
+      await browserExpect(page.locator('#optimistic-accepted')).toHaveText('2');
+      await browserExpect(page.locator('#append-loading')).toHaveText('2');
+      for (const body of appendCalls) { expect(body.state).not.toHaveProperty('accepted'); expect(body.state).not.toHaveProperty('optimisticItems'); }
+      releaseOldAppend(); await page.evaluate(async () => {await window.__oldAppend;});
+      expect(await page.evaluate(() => window.__appendError)).toBe('COSSACK_VALIDATION_FAILED');
+      await browserExpect(page.locator('#optimistic-accepted')).toHaveText('1');
+      await browserExpect(page.locator('#optimistic-items')).toHaveText('next');
+      await browserExpect(page.locator('#append-loading')).toHaveText('1');
+      releaseNextAppend(); await page.evaluate(async () => {await window.__nextAppend;});
+      await browserExpect(page.locator('#optimistic-accepted')).toHaveText('1');
+      await browserExpect(page.locator('#optimistic-items')).toHaveText('next');
+      await browserExpect(page.locator('#append-loading')).toHaveText('0');
+      await page.unroute('**/crpc**');
       expect(errors).toEqual([]);
       await context.close();
     }

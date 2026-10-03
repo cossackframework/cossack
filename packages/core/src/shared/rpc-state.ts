@@ -1,6 +1,6 @@
 import { RESERVED_STATE_KEYS } from './component-types';
 import { snapshotRpcValue } from './rpc-stream';
-import { applyOptimisticState, type OptimisticCall } from './optimistic-state';
+import { applyOptimisticState, acceptSettledOptimisticSnapshot, type OptimisticCall } from './optimistic-state';
 
 /**
  * Apply a server-sent state object to a component instance, respecting the
@@ -20,6 +20,7 @@ export function applyStateToComponent(
     for (const key in data) {
         if (key.startsWith('_cossack_')) continue;
         if (RESERVED_STATE_KEYS.has(key)) continue;
+        if (!call && !requestState && !acceptSettledOptimisticSnapshot(component, key, data[key], false)) continue;
         const echo = !!call && !call.fields.has(key) && !!requestState
             && Object.hasOwn(requestState, key) && transportValuesEqual(data[key], requestState[key], key);
         if (applyOptimisticState(component, key, data[key], call, echo)) continue;
@@ -35,6 +36,7 @@ export function applyStateToComponent(
         ) {
             continue;
         }
+        if (call || requestState) acceptSettledOptimisticSnapshot(component, key, data[key], true);
         if (component._isOptimisticLocked?.(key)) {
             component._optimisticPendingState[key] = data[key];
         } else {

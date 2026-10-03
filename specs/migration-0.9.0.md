@@ -474,3 +474,31 @@ Timeout, cancellation and network/socket loss still leave the server result
 uncertain. Never retry a mutation automatically. Use an authoritative read or
 resource refresh, and retain the distinction between local preview restoration
 and server rollback. The complete RT-06 uncertainty/reconnect audit is still open.
+
+## Explicit optimistic operations
+
+Use `optimistic<YourClass>(this)` within `@Optimistic` handlers when concurrent
+increments or array edits must retain independent ownership. The helper records
+`increment`, `append`, and first-equal `remove` operations. Handler code runs once.
+A failed call removes its operations; later pending or committed local operations
+remain. Public replies supply a confirmed base and replace confirmed previews.
+Client-only operations stay out of public request state.
+
+Direct assignments still describe absolute field values. They do not infer
+arithmetic intent or array ownership. Replace dependent `this.count++` or
+`this.items.push(item)` previews with explicit operations for contribution rollback.
+Do not mix direct assignment and operations on one field within a handler.
+That capture restores and logs an error while the actual server action can run.
+The helper checks field/item types and runtime reactive metadata. Retained helpers
+reject outside their exact handler execution. Item values must be finite acyclic
+plain data without hooks, accessors, symbols, or native objects.
+
+The server still owns validation, authorization, persistence, and write consistency.
+Local rollback does not establish server rollback after an uncertain result.
+See the complete example and limitations in [the optimistic guide](../docs/optimistic.md).
+
+Late equal realtime echoes now preserve user edits that survived optimistic
+settlement. Changed broadcasts and explicit reads retain server authority.
+Reconnect and resync clear duplicate history without clearing pending calls.
+The history compares values; it does not order different late snapshots by a
+server revision. Client-only drafts remain the durable browser-owned choice.

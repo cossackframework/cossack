@@ -604,6 +604,29 @@ user-authored public edits. Client-only state stays outside that request overlay
 Uncorrelated completion broadcasts cannot settle correlated calls. Loading counts
 settle once through the owning call lifecycle.
 
+Public `optimistic<Host>(target)` helpers bind to the exact synchronous handler
+capture. They record finite increment and detached plain-data append/remove
+operations on reactive fields. Internal replay folds data operations over the
+confirmed base in invocation order; it never reruns application handlers.
+Successful local operations remain in the journal until the last pending call
+settles. An authoritative response advances the field sequence and excludes
+operations that it confirms. This preserves later operations when an older
+failure removes its entry, including a removal that was initially a no-op.
+Later local replacements provide a base for subsequent operations.
+Direct assignments retain absolute whole-field semantics. Mixing operations and
+direct assignment on one field in a handler rejects and restores that capture.
+Saved helpers reject after capture ends, including during a later invocation.
+Field/item types use a concrete Host; polymorphic this needs an explicit class.
+The runtime reactive metadata check remains authoritative.
+
+A weak per-target history retains confirmed values only for fields whose later
+user edit survives settlement. An equal ambient echo is ignored before pending
+field merging, including when another call starts. Changed state and explicit
+RPC reads clear that field's history. Socket/EventSource open and SSE resync clear
+history without discarding active invocation ownership. This is duplicate-value
+recognition, not a server revision protocol or ordering proof for different late
+snapshots. The native lost-response/reconnect acceptance remains required.
+
 Process runtime connection snapshots contain flat public state, matching normal
 broadcasts and Cloudflare snapshots. SSR hydration remains a separate wrapped
 record. Uncertain errors retain existing transport codes and cannot prove server

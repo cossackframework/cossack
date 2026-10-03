@@ -2,7 +2,60 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-06 ownership continuation (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-06 explicit operations (2026-10-03). Author: Codex.**
+> Continued after `231bcc1`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-operations-2026-10-03),
+> [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06),
+> [operation guide](../docs/optimistic.md#record-relative-operations) and
+> [migration](./migration-0.9.0.md#explicit-optimistic-operations).
+>
+> **20/58 checked, 38 unchecked; no task closes and all original IDs remain.**
+> The explicit-operation contribution audit is implemented. RT-06 remains open
+> for authoritative uncertain-result reads, actual reconnect/late broadcasts,
+> retained consumers and stream/cancellation acceptance. Continue every other ID.
+>
+> Use public `optimistic<ConcreteClass>(this)` in synchronous @Optimistic handlers.
+> It records finite increment, detached append and first-structurally-equal remove.
+> Helpers bind one capture and reject after it ends or during another capture.
+> Application handlers execute once. Internal replay folds only data operations.
+> Failed earlier calls remove their operations without losing newer pending or
+> committed local operations. Public confirmed replies replace confirmed entries.
+> No-op removals retain intent; duplicate items preserve first-match order.
+> Later local replacements remain the base of subsequent relative operations.
+>
+> Direct assignments still describe absolute field values. Do not mix them with
+> operations on one field in a handler; that capture restores and logs an error.
+> Operations validate reactive metadata at runtime and writable field/item shapes
+> in published types. Use a concrete Host because polymorphic this cannot resolve
+> these mapped types. Item data is finite and plain, without cycles or enumerable
+> accessors/functions/symbols/native values. Arbitrary later nested writes still
+> protect whole fields. This does not infer server persistence or transactionality.
+>
+> Controlled contributions first failed 2/3; a separate local-replacement test also
+> failed before correction. Transport/scoped-service and published-declaration
+> acceptance now pass. Full proof commands/counts are recorded in the review.
+> A full browser run also reproduced a late equal SSE snapshot erasing count 99
+> after settlement. Weak per-target history now protects surviving user edits
+> from that known echo, even while a new call is pending. Changed state and explicit
+> reads clear it; socket/EventSource open and SSE resync reset history while keeping
+> active calls. Controlled reconnect tests cover those rules. This compares values,
+> not server revisions; different late snapshots still need the remaining audit.
+> Native Worker cases retain one increment/append while an older call rejects and
+> a newer call remains pending. Loading releases once, and local fields are absent
+> from actual requests. Generated Node browser cases cover both completion orders.
+>
+> **Next for GLM: finish RT-06 steps 2–4.** Choose an explicit authoritative read
+> contract for HTTP/service uncertainty. Prove a mutation committed before its reply
+> was deliberately lost, followed by one read and zero mutation replay. Exercise
+> actual native socket loss/reconnect, SSE recovery and late snapshots before/after
+> cleanup, retained layouts/service consumers, then yielded stream errors and
+> cancellation. Audit the original criteria before checking the task. Follow the
+> detailed plan; do not treat local preview rollback as server rollback.
+>
+> Versions remain **0.8.3** until REL-04. Preserve reports.md/.zcodeignore.
+> No push/publication/live cloud changes/external messages/new chats.
+
+> **Previous checkpoint — Codex RT-06 ownership continuation (2026-10-03). Author: Codex.**
 > Continued after `83ea5e4`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03),
 > [RT-06 implementation and remaining plan](./release-0.9.0-plan.md#rt-06),
