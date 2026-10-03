@@ -2259,6 +2259,50 @@ Next implementation steps for GLM:
 4. Audit all RT-08 and RT-09 criteria before checking either box. This cleanup fix
    does not close those tasks or reduce the release checklist.
 
+Codex nested-draft checkpoint (2026-10-03), after `3af248d`:
+rendered child trees now have separate destination and rollback draft checkpoints.
+Renderer part identity, position/repeat keys, class, parent and service scope
+select matching replacement instances. For a same-class/same-owner page change,
+the framework explicitly maps the old page to the prepared page. Fresh child
+owners receive their local core capabilities before initializeState and mount.
+Live retained instances keep current values; destroyed instances remain terminal.
+Late descendant restoration checks the current publication. Consumed child
+initialization maps are released after state setup. No SSR JSON transfer is added.
+
+Actual generated Node/native workerd acceptance covers page and layout children,
+grandchildren, a nested File draft, same-path query changes, post-render rollback
+and restored values observed from mount. Unit cases cover arrays, keyed reordering,
+changed class/parent/scope/key, revoked async restoration, and active cache templates.
+A synchronous slotted render from a changed wrapper must not bypass the wrapper
+match; an explicit no-recovery boundary now prevents that propagation.
+A related regression showed that repeat() lost track of early new siblings when
+a later connection threw. Reconciliation now disposes all owned partial parts.
+Read the [verification](./release-0.9.0.md#codex-nested-drafts-2026-10-03).
+
+This advances steps 1 and 2 from the scope-retirement checkpoint; it does not
+complete them. Continue with:
+
+1. **Inactive cached branches.** Checkpoint hidden cache() stashes as well as the
+   active template. Define how unconsumed local capabilities survive another
+   navigation before their branch becomes visible. Do not read destroyed owners
+   or reuse a one-use capability in both destination and rollback checkpoints.
+   A possible design is a core-owned capability fork that snapshots the remaining
+   plain draft graph while preserving class binding and opaque File identity.
+   Keep that operation local and unforgeable; renderer must not inspect draft
+   values. Test two hidden branches, two intervening navigations, later activation,
+   changed keys/parents/scopes and writes through saved old proxies. Capture live
+   stashes without reviving them, and release abandoned checkpoint references.
+2. **Ownership changes in native browsers.** Change parent, user, runtime/provider,
+   transport and service scope. Prove private drafts do not cross those boundaries.
+   Confirm nested saved-proxy writes cannot mutate restored owners, and test hook
+   failure/cancellation after partial keyed reconciliation.
+3. **Interrupted history and reads.** Finish same-URL entry identity and lifecycle
+   interruption tests, then count actual backend resource reads. RPC absence alone
+   does not prove that a server resource was read exactly once.
+4. **Diagnostics and closure.** Complete cache/layout/scroll/fragment/transition
+   events and audit every original RT-08/RT-09 criterion. Preserve all release IDs
+   and other unchecked tasks. Versions stay 0.8.3 until REL-04.
+
 Done when: Browser tests cover rapid links, back/forward, navigation guards,
 errors, redirects, reused layouts, fragments, and unavailable transition APIs.
 Promises always settle and disposed pages do not receive late updates.

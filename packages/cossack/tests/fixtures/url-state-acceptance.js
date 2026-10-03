@@ -4,6 +4,28 @@ import { expect } from 'vitest';
 import { expect as browserExpect } from '@playwright/test';
 export async function writeUrlStateAcceptance(root) {
   const directory = path.join(root, 'src/pages/list'); await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(root, 'src/NestedDraft.ts'), `
+    import {Cossack,ClientStore,ClientState,Client} from '@cossackframework/core';
+    import {html,component} from '@cossackframework/renderer';
+    class Leaf extends Cossack {
+      props={slot:''};
+      @ClientStore() draft={text:''};
+      @ClientState() file:File|undefined=undefined;
+      @Client() onMount(){
+        const events=(window as any).__nestedMounts??=[];
+        events.push({slot:this.props.slot,text:this.draft.text,file:this.file?.name??''});
+      }
+      render(){return html\`<input id=\${this.props.slot+'-leaf'} .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
+        <input type="file" id=\${this.props.slot+'-file'} @change=\${(event:Event)=>{this.file=(event.target as HTMLInputElement).files?.[0];}}>
+        <span id=\${this.props.slot+'-filename'}>\${this.file?.name??''}</span>\`;}
+    }
+    export class NestedDraft extends Cossack {
+      props={slot:''};
+      @ClientStore() draft={text:''};
+      render(){return html\`<aside><input id=\${this.props.slot+'-outer'} .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
+        \${component(Leaf,{slot:this.props.slot})}</aside>\`;}
+    }
+  `);
   await fs.writeFile(path.join(root, 'src/App.ts'), `
     import {Cossack,Page,Client} from '@cossackframework/core';
     import {html} from '@cossackframework/renderer';
@@ -47,8 +69,9 @@ export async function writeUrlStateAcceptance(root) {
   `);
   await fs.writeFile(path.join(directory, 'layout.ts'), `
     import {Cossack,CossackService,Page,Service,State,Inject,ClientStore,server$} from '@cossackframework/core';
-    import {html} from '@cossackframework/renderer';
+    import {html,component} from '@cossackframework/renderer';
     import {filters} from '../../filters';
+    import {NestedDraft} from '../../NestedDraft';
     @Service() class DraftService extends CossackService { @State() text=''; }
     @Page({transport:'http',services:[DraftService]}) export default class Layout extends Cossack {
       @Inject(DraftService) service!:DraftService;
@@ -57,7 +80,7 @@ export async function writeUrlStateAcceptance(root) {
       render(){return html\`<section><p id="layout-summary">\${this.summary}</p>
         <input id="layout-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         <input id="service-draft" .value=\${this.service.text} @input=\${(event:Event)=>{this.service.text=(event.target as HTMLInputElement).value;}}>
-        \${this.children}</section>\`;}
+        \${component(NestedDraft,{slot:'layout-child'})}\${this.children}</section>\`;}
     }
   `);
   await fs.writeFile(path.join(directory, 'loading.ts'), `
@@ -74,8 +97,9 @@ export async function writeUrlStateAcceptance(root) {
   `);
   await fs.writeFile(path.join(directory, 'index.ts'), `
     import {Cossack,Page,Client,ClientState,ClientStore,PreventNavigation,server$} from '@cossackframework/core';
-    import {html} from '@cossackframework/renderer';
+    import {html,component} from '@cossackframework/renderer';
     import {filters} from '../../filters';
+    import {NestedDraft} from '../../NestedDraft';
     @Page({transport:'http'}) export default class List extends Cossack {
       @ClientState() blocked=false;
       @ClientState() guardChecks=0;
@@ -109,7 +133,8 @@ export async function writeUrlStateAcceptance(root) {
         <button id="redraw-draft" @click=\${()=>{this.revision++;}}>Redraw</button><span id="draft-revision">\${this.revision}</span>
         <span id="query-outcome">\${this.outcome}</span>
         <button id="rapid-query" @click=\${this.rapid}>Rapid</button><button id="leave-list" @click=\${this.leave}>Leave</button>
-        <button id="change-query" @click=\${this.change}>Change</button><button id="replace-query" @click=\${this.replace}>Replace</button></main>\`;}
+        <button id="change-query" @click=\${this.change}>Change</button><button id="replace-query" @click=\${this.replace}>Replace</button>
+        \${component(NestedDraft,{slot:'page-child'})}</main>\`;}
     }
   `);
 }
@@ -117,6 +142,13 @@ export async function checkUrlStateBrowser(browser, origin) {
   const page = await browser.newPage(); const rpc = []; let release;
   page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') rpc.push(request); });
   const settled = async () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const checkNestedDrafts = async () => {
+    for (const owner of ['page-child','layout-child']) {
+      await browserExpect(page.locator('#'+owner+'-outer')).toHaveValue(owner+' outer draft');
+      await browserExpect(page.locator('#'+owner+'-leaf')).toHaveValue(owner+' leaf draft');
+    }
+    await browserExpect(page.locator('#page-child-filename')).toHaveText('nested.txt');
+  };
   try {
     const initial = await page.goto(origin + '/list?search=old&utm=a%20b#rows');
     expect(initial.status()).toBe(200); expect(await initial.text()).toContain('old:1:name:');
@@ -124,6 +156,12 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.locator('#page-draft').fill('unsaved page'); await page.locator('#layout-draft').fill('unsaved layout'); await page.locator('#service-draft').fill('unsaved service');
     await page.locator('#draft-file').setInputFiles({name:'draft.txt',mimeType:'text/plain',buffer:Buffer.from('draft')});
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    for (const owner of ['page-child','layout-child']) {
+      await page.locator('#'+owner+'-outer').fill(owner+' outer draft');
+      await page.locator('#'+owner+'-leaf').fill(owner+' leaf draft');
+    }
+    await page.locator('#page-child-file').setInputFiles({name:'nested.txt',mimeType:'text/plain',buffer:Buffer.from('nested draft')});
+    await checkNestedDrafts();
     await page.locator('#remember-draft').click();
     await page.locator('#change-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
     // An old closure still holds the disposed page's proxy. Force a new-owner
@@ -136,6 +174,7 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
     await browserExpect(page.locator('#layout-summary')).toHaveText('雪 & books:2');
+    await checkNestedDrafts();
     const changed = new URL(page.url()); expect(changed.searchParams.get('utm')).toBe('a b'); expect(changed.hash).toBe('#rows');
     await settled(); expect(rpc).toHaveLength(0); // Matching SSR data satisfies the same query-derived dependencies.
     await page.goBack(); await browserExpect(page.locator('#query-items')).toHaveText('old:1:name:');
@@ -157,6 +196,7 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
     await page.evaluate(() => { window.__scopeEvents=[]; });
+    await page.evaluate(() => { window.__nestedMounts=[]; });
     await page.locator('#fail-retire').click();
     await browserExpect.poll(() => page.evaluate(() => typeof window.__finishScopeCleanup)).toBe('function');
     expect(await page.evaluate(() => window.__scopeEvents)).toEqual([]);
@@ -168,6 +208,11 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await checkNestedDrafts();
+    expect(await page.evaluate(() => window.__nestedMounts)).toEqual(expect.arrayContaining([
+      {slot:'page-child',text:'page-child leaf draft',file:'nested.txt'},
+      {slot:'layout-child',text:'layout-child leaf draft',file:''},
+    ]));
     // The actual App owns an unrelated promise that never settles. Navigation
     // must render through its own completion path and release the stale cache.
     await page.evaluate(() => { window.__queryTestApp.__updatePromise=new Promise(()=>{}); });
@@ -262,6 +307,9 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#layout-draft')).toHaveValue('');
     await browserExpect(page.locator('#service-draft')).toHaveValue('');
     await browserExpect(page.locator('#file-name')).toHaveText('');
+    await browserExpect(page.locator('#page-child-outer')).toHaveValue('');
+    await browserExpect(page.locator('#page-child-leaf')).toHaveValue('');
+    await browserExpect(page.locator('#layout-child-leaf')).toHaveValue('');
     await page.evaluate(async () => {
       window.__scopeEvents=[];
       window.__allowRetire=true;

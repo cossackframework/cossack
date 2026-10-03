@@ -2,7 +2,41 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex scope retirement (2026-10-03).
+> Latest checkpoint: Codex nested drafts (2026-10-03).
+> Author: **Codex**. Continued after `3af248d`. Read the
+> [verification](./release-0.9.0.md#codex-nested-drafts-2026-10-03),
+> [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and
+> [draft contract](../docs/url-state.md).
+>
+> Renderer checkpoints preserve declared drafts in the rendered child tree.
+> Matching checks template/position/key, class, parent and service scope.
+> Separate destination and rollback checkpoints feed fresh child owners before
+> state initialization and mount. Destroyed instances stay destroyed. Publication
+> predicates reject late restores. Core releases consumed initialization maps.
+> Partial repeat() failure now disposes early siblings instead of leaking them.
+>
+> Node/native workerd browsers cover nested page/layout drafts, grandchild File
+> values and restored state observed by mount hooks after post-render rollback.
+> Final renderer: 273 tests; full core: 1,432 before a final one-line map release,
+> then all 9 focused draft tests. Final framework: 1,439. Rebuilt production
+> browsers (Node/workerd), root TypeScript and all 11 package checks passed.
+> Full CLI had 607 passes and one five-second creation-test timeout; that test
+> passed on retry in 1.9 seconds. The full run preceded the final wrapper/map
+> refinements. See the linked checkpoint for commands and precise limits.
+> No owned test/build process remains.
+>
+> **No task closes: 22/58 checked, 36 unchecked.** Next implement inactive cache()
+> stash recovery, including another navigation before a stashed branch is shown.
+> Do not reuse single-use capabilities or read destroyed owners. Expand actual
+> ownership-change/late-proxy/hook-failure cases, then same-URL interrupted history,
+> backend read counts and diagnostic events. The detailed RT-09 plan explains
+> these steps. Keep all other unchecked tasks and versions at 0.8.3 until REL-04.
+>
+> Preserve reports.md/.zcodeignore. No push, publication, live cloud change,
+> external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex scope retirement (2026-10-03).
 > Author: **Codex**. Reviewed and continued after `773c9c3`. Read the
 > [verification](./release-0.9.0.md#codex-scope-retirement-2026-10-03),
 > [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and

@@ -16,6 +16,26 @@ const state = (page = 1) => ({ public: { result: 'SSR' }, metadata: { componentI
 beforeEach(() => window.history.replaceState({}, '', '/list?page=1'));
 afterEach(() => { vi.restoreAllMocks(); Cossack._onUpdateUrlState = undefined; });
 
+it('restores renderer-created child drafts before mount and releases the consumed initialization map', async () => {
+    const previous = new Inherited();
+    await previous.bootstrap({ initialState: state(), skipInit: true, deferMount: true });
+    previous.draft.text = 'nested draft';
+    const file = new File(['nested'], 'nested.txt');
+    previous.file = file;
+    const token = previous._frameworkCaptureClientDraft()!;
+    previous.destroy();
+    const next = new Inherited();
+    const mounted = vi.spyOn(next, 'onMount').mockImplementation(() => {
+        expect(next.draft.text).toBe('nested draft');
+        expect(next.file).toBe(file);
+        expect((next as any)._navigationClientDraft).toBeUndefined();
+    });
+    expect(next._frameworkRestoreClientDraft(token)).toBe(true);
+    next.connectedCallback();
+    expect(mounted).toHaveBeenCalledOnce();
+    next.destroy();
+});
+
 it('transfers inherited browser drafts and File identity without reading serialized internal values', async () => {
     const previous = new Inherited();
     await previous.bootstrap({ initialState: state(), skipInit: true, deferMount: true });

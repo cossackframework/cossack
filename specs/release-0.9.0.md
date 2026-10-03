@@ -86,6 +86,69 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-nested-drafts-2026-10-03"></a>
+## Codex nested drafts (2026-10-03)
+
+Author: **Codex**. Continued after `3af248d`. Page-level draft transfer did not
+preserve renderer-created children destroyed during destination rendering or
+rollback. The renderer now captures a local part-tree checkpoint. Matching uses
+template identity, part position or repeat key, component class, parent and service
+scope. The framework maps an old page to its prepared replacement only when its
+class and ownership match. Separate checkpoints protect rollback values from
+consumption during destination rendering.
+
+Fresh children consume core draft capabilities before state initialization and
+mount. Core drops the consumed initialization map afterward. Live retained
+components keep their latest state; destroyed instances are not reconnected.
+Publication checks reject delayed descendant restoration after supersession.
+No renderer-to-core dependency or serialized draft payload is added.
+
+Renderer tests cover nested restoration, explicit page-owner replacement, arrays,
+keyed reordering, changed class/parent/scope/key, revocation, retained live values,
+and the active cache template. A failing repeated item exposed a separate cleanup
+leak: earlier new siblings were not yet recorded in the owned part list. The
+renderer now records and disposes all partial siblings before propagating failure.
+A synchronous render from a mismatched wrapper also exposed fallback propagation
+into slotted children. The renderer now passes an explicit no-recovery boundary;
+a failing-before/fixed-after regression verifies that no draft crosses it.
+
+Generated production Node/native workerd apps retain page/layout child drafts and
+grandchild File values during query replacement and post-render failure recovery.
+Replacement mount hooks see restored values. Leaving the page resets unrelated
+child drafts. The previous service cleanup and navigation matrix stays enabled.
+
+Verification on 2026-10-03:
+
+- Final renderer: `pnpm --filter @cossackframework/renderer exec vitest run`:
+  **273 / 21 files**, including 12 draft/reconciliation cases.
+- Full core: **1,432 / 85 files** before the final consumed-map release. After
+  that one-line change, `pnpm --filter @cossackframework/core exec vitest run tests/url-state-navigation.test.ts`:
+  **9 passed**, including restored values visible during child mount and the
+  released initialization map.
+- Final renderer, core and framework builds passed, including framework SSG.
+- Final framework: `pnpm --filter @cossackframework/framework exec vitest run`:
+  **1,439 / 68 files**.
+- Final production browser checks:
+  `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state'`:
+  **2 passed / 26 skipped** (Node and native workerd), after the final rebuild.
+- Full CLI `pnpm --filter cossack exec vitest run --maxWorkers=2` completed in
+  356 seconds: **607 passed / 1 failed**, 43 green files and one failed file.
+  The existing creation/JSON matrix case hit Vitest's five-second timeout.
+  `pnpm --filter cossack exec vitest run tests/cli-json-matrix.test.js -t 'create plans without writes'`
+  then passed (**1 passed / 42 skipped**, test body 1.9 seconds). No timeout or
+  assertion was weakened. The broad run preceded the final synchronous-wrapper
+  guard and core map-release refinement; it is not claimed as a clean final run.
+- Final `pnpm tsc --noEmit` and `pnpm typecheck`: passed, all **11 packages**.
+- `git diff --check -- . ':!reports.md'`: passed. All 58 task IDs/check states
+  match the previous commit. No owned test/build process remains.
+
+No live deployment, publication, push or external message was performed.
+
+**No checkbox closes: 22/58 checked, 36 unchecked.** Inactive cache() stashes,
+broader native ownership changes, interrupted same-URL history, actual backend
+read counts and navigation diagnostics remain open. Read the concrete next steps
+in [RT-09](./release-0.9.0-plan.md#rt-09). Versions remain 0.8.3.
+
 <a id="codex-scope-retirement-2026-10-03"></a>
 ## Codex scope retirement (2026-10-03)
 

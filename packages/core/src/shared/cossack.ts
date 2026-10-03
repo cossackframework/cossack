@@ -608,6 +608,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Register first so parent can provide restored child state
             this.registerSelf();
             this.initializeState();
+            this._navigationClientDraft = undefined;
             super.connectedCallback();
 
             // Child components rendered via component() go through

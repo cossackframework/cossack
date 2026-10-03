@@ -100,6 +100,16 @@ Draft records must use data properties. An accessor fails navigation before
 publication with `COSSACK_NAVIGATION_DRAFT_ACCESSOR`; its getter is not executed.
 Keep computed getters on the component and store their inputs in the draft.
 
+Rendered child components also transfer declared drafts into matching replacement
+instances. Matching uses template identity, position (or a `repeat()` key), class,
+parent and service scope. A changed `key()` value starts a fresh child. Matching
+descendants receive their drafts before their mount hooks run. Retained live
+instances keep their current values. After failed publication, rollback can
+recreate destroyed children and restore their captured drafts; it never reconnects
+a destroyed instance. A newer publication revokes pending restoration callbacks.
+This covers the rendered tree and active `cache()` template. Inactive cached
+subtrees and the wider ownership-change matrix still need acceptance coverage.
+
 Unrelated pages and changed ownership start with new drafts. New page tasks,
 transports, onMount and clientInit start at publication. Framework preparation
 keeps the old page editable and does not bind retained services to the destination.
@@ -122,8 +132,8 @@ previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-d
 for confirmation and history ownership.
 
 Navigation has a 30-second completion budget and restores framework-owned state
-on failure before history commit. Nested state after partial DOM teardown,
-ownership changes and the resource-read audit remain open in the
+on failure before history commit. Inactive cached drafts, broader ownership
+changes and the resource-read audit remain open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
 ## Parsing and defaults

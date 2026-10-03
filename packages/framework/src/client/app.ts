@@ -28,7 +28,7 @@ import {
     __hydrateLocale,
     getDefaultLocale,
 } from '@cossackframework/core';
-import { CossackElement } from '@cossackframework/renderer';
+import { CossackElement, captureRenderDrafts } from '@cossackframework/renderer';
 import { classifyRoute, computeRouteIds, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
@@ -493,12 +493,16 @@ export async function createClientApp({
     let abandoned = false;
     let rollback: (() => void) | undefined;
     let retire: (() => void) | undefined;
+    let rollbackDrafts: ReturnType<typeof captureRenderDrafts> | undefined;
+    let destinationDrafts: ReturnType<typeof captureRenderDrafts> | undefined;
     const dispose = () => {
       owner?.signal.removeEventListener('abort', dispose);
       if (finalized || abandoned) return;
       abandoned = true;
+      destinationDrafts?.discard();
       for (const instance of staged) instance._frameworkRetireNavigationScope?.();
-      rollback?.();
+      if (rollback) rollback();
+      else rollbackDrafts?.discard();
       for (const instance of [...staged].reverse()) {
         try { instance.destroy(); } catch (error) { console.error('Navigation cleanup failed:', error); }
       }
@@ -558,11 +562,13 @@ export async function createClientApp({
           finalized = true;
           owner?.signal.removeEventListener('abort', dispose);
           rollback = undefined;
+          rollbackDrafts?.discard();
           retire?.();
         },
         async commit(onMutation?: (state: any) => void) {
           assertCurrent();
           const samePage = currentPage && currentPageFile === componentPath && currentPageUrl &&
+            currentPage.constructor === nextPage.constructor &&
             new URL(currentPageUrl, window.location.href).pathname === new URL(destinationUrl, window.location.href).pathname &&
             currentPage._getServiceScope() === activeServiceScope && ownershipKey(currentPageState) === ownershipKey(initialState);
           const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
@@ -576,6 +582,8 @@ export async function createClientApp({
           const oldInitial = window.__INITIAL_STATE__;
           const oldPublication = publication;
           const token = {};
+          rollbackDrafts = captureRenderDrafts(containerEl);
+          destinationDrafts = captureRenderDrafts(containerEl);
           const restorers = [appInstance, ...oldLayouts, ...(oldPage ? [oldPage] : [])]
             .map(instance => instance._frameworkCaptureNavigationContext?.());
           const staleLayouts = oldLayouts.filter(layout => ![...nextLayouts.values()].includes(layout));
@@ -603,6 +611,7 @@ export async function createClientApp({
             appInstance.setCurrentPage(oldPage!);
             loadingPage = undefined;
             isDisplayingLoadingState = false;
+            rollbackDrafts?.restore(() => publication === oldPublication);
             void triggerAppUpdate(() => publication === oldPublication)
               .catch(error => console.error('Navigation recovery render failed:', error));
           };
@@ -633,6 +642,8 @@ export async function createClientApp({
             await instance._frameworkPublishNavigation?.();
           }
           assertCurrent();
+          destinationDrafts?.restore(() => publication === token,
+            samePage && oldPage ? [[oldPage, nextPage]] : []);
           const rendered = await triggerAppUpdate(isCurrent);
           assertCurrent();
           if (rendered === false) throw Object.assign(new Error('[Cossack] App declined the navigation render.'), {

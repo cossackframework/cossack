@@ -139,6 +139,16 @@ page replacement transfers declared browser ClientState/ClientStore values
 through a single-use local capability. Raw store targets receive fresh proxies.
 Serialized internal fields cannot create this capability. User, transport,
 provider or service ownership changes prevent draft transfer.
+The renderer captures a local checkpoint of its rendered part tree through
+structural component hooks. It imports no core or framework code. Checkpoints
+match template identity, part position or repeat key, class, parent and scope.
+The framework supplies the old-page/new-page pair after checking ownership.
+Core consumes each draft capability before the replacement child initializes
+state and mounts. Separate destination and rollback checkpoints prevent a failed
+publication from consuming rollback values. Publication predicates reject late
+descendant restores. No serialized state can create a draft checkpoint, and no
+destroyed instance is reactivated. The active cache template participates;
+inactive cached branches remain part of the pending acceptance work.
 Retained layouts keep their service instances and browser drafts. Matching SSR
 resource entries replace the previous map before query dependencies change;
 entry identity rejects late results. This does not abort application I/O.

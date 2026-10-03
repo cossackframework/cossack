@@ -100,14 +100,16 @@ navigation returns `failed`; otherwise the existing reload fallback runs.
 
 The deadline settles the framework's wait. It cannot stop arbitrary application
 I/O, synchronous blocking code, or undo effects from a custom render or mount
-hook that already ran. Nested component state after partial DOM teardown still
-needs its RT-08/RT-09 acceptance audit. A later navigation can retry.
+hook that already ran. Before publication, the renderer captures declared drafts
+from the rendered child tree. Rollback restores them into matching fresh owners
+before mount; destroyed children stay destroyed. Inactive cached subtrees and
+the wider ownership matrix still need their RT-08/RT-09 acceptance audit.
 
 During rollback, abandoned components become destroyed and cancel their tasks
 immediately. During both rollback and successful retirement, their owned service
 scopes stay available until the renderer removes their child consumers and those
-consumers finish asynchronous cleanup. New
-consumers cannot attach to a retiring scope. This lifetime hold does not extend
+consumers finish asynchronous cleanup. New consumers cannot attach to a retiring
+scope. This lifetime hold does not extend
 the navigation deadline or impose a deadline on application cleanup. Ordinary
 explicit component destruction keeps its existing behavior.
 
