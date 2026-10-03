@@ -49,62 +49,25 @@ Typed URL state and navigation are implemented in part. Both release tasks remai
 open. Read [RT-08](./release-0.9.0-plan.md#rt-08),
 [RT-09](./release-0.9.0-plan.md#rt-09) and the [URL-state contract](../docs/url-state.md).
 
-The following work is already implemented and tested:
+Completed implementation within these open tasks is summarized below. Detailed
+results remain in the linked verification records. Do not repeat this work unless
+the acceptance audit finds a gap.
 
-- Typed URL codecs, query intents, pending-query merging and matching local drafts.
-- Independent request-reader deadlines, stale-result rejection, a 30-second
-  navigation budget and bounded history restoration.
-- Preparation before publication, terminal destruction, owned rendering and
-  precommit recovery of the tree, contexts, resources, drafts and history.
-- Nested and inactive-cache draft transfer with class, parent, key and scope
-  matching. Plain draft graphs are copied; opaque File/native values retain identity.
-- Service lifetime through DOM removal and asynchronous cleanup. Task publication
-  is revoked immediately while cleanup retains its request facilities.
-- Fresh root App/service scopes for changed user or navigation ownership.
-  Same-owner navigation retains drafts. Guarded root listeners reject stale renders,
-  failed replacement restores the old App, and null output clears the old DOM.
-  A child transport change alone does not replace the App.
+| Implemented and tested | Evidence / contract |
+| --- | --- |
+| Typed URL codecs, merged pending queries, matching drafts, bounded requests/history restoration, stale-result rejection and precommit recovery. | [URL-state contract](../docs/url-state.md) and [RT-08 plan](./release-0.9.0-plan.md#rt-08) |
+| Nested/cache draft transfer matches class, parent, key and scope. Plain graphs are copied; File/native values retain identity. Services survive asynchronous DOM cleanup while task publication stops immediately. | [RT-09 plan](./release-0.9.0-plan.md#rt-09) |
+| Changed user/ownership replaces the root App and services. Failed replacement restores the old App. Stale renders are rejected and null output clears DOM. | [Root ownership](./release-0.9.0.md#codex-root-ownership-2026-10-03) |
+| Parent-layout changes preserve root drafts/services, reset replaced descendants and dispose retired services once. Inherited authored render/API handlers work. | [Route inheritance](./release-0.9.0.md#codex-route-inheritance-2026-10-03) |
+| Development diagnostics correlate cache, layouts, scroll, transitions and outcomes without application data. | [Event contract](../docs/prevent-navigation.md#development-diagnostics), [verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03) |
+| Node/workerd fixtures count actual backend reads across SSR, hydration, cache/history, rapid changes, guards, rollback and late responses. | [Backend reads](./release-0.9.0.md#codex-url-backend-reads-2026-10-03) |
+| Same-URL history restores the correct entry and supersedes held confirmations while preserving drafts, entry positions and backend counts. | [Same-URL history](./release-0.9.0.md#codex-same-url-history-2026-10-03) |
+| HTTP/SSE child transitions retain root/layout ownership. Node/workerd runtime changes reset the tree. Retired SSE callbacks cannot update state. | [Runtime ownership](./release-0.9.0.md#codex-runtime-ownership-2026-10-03) |
+| Actual Node/workerd sockets cover scoped provider targets, same-target replacement and return to HTTP. Retirement closes status, cancels timers, settles calls and rejects late callbacks. | [WebSocket ownership](./release-0.9.0.md#codex-websocket-ownership-2026-10-04) |
 
-Parent-layout acceptance now passes with decorated inherited routes. Root drafts
-and services remain live while replaced layout/page drafts reset. Returning to
-the old route creates fresh nested services, with exactly-once retired disposal.
-This exposed and fixed inherited render/API method lookup returning 405. Authored
-ancestors now participate, while framework defaults and accessor handlers do not.
-See the [inheritance verification](./release-0.9.0.md#codex-route-inheritance-2026-10-03).
-
-The latest [root ownership verification](./release-0.9.0.md#codex-root-ownership-2026-10-03)
-records the implementation in `8f084e0`. Tests use declared layout services.
-Legacy undeclared global dependency injection is outside that ownership contract.
-The query-based test identity is not an authentication example.
-
-Development navigation diagnostics now emit a versioned, frozen decision stream.
-It correlates cache reads, layout commit attempts, actual scroll outcomes,
-transition fallbacks and final outcomes without exposing URLs or application data.
-See the [event contract](../docs/prevent-navigation.md#development-diagnostics) and
-[verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03).
-
-The URL-state fixture now reads from a counting HTTP backend on both production
-Node and native workerd. Fresh SSR reads page/layout once each. Hydration, cached
-history, guards and rollback add no reads. Pending SSR, rapid changes and stale
-response release have exact count assertions. See the
-[backend-read verification](./release-0.9.0.md#codex-url-backend-reads-2026-10-03).
-
-Same-URL history acceptance also passes on Node/native workerd. Delayed restoration
-queues a newer intent behind the correct entry. A newer navigation supersedes a
-held confirmation response. Entry positions, history length, page/service/File
-drafts and actual backend counts remain correct after release. See the
-[verification](./release-0.9.0.md#codex-same-url-history-2026-10-03).
-
-HTTP/SSE child transport transitions and real Node/workerd runtime transitions
-now have browser acceptance. The former retains root/layout drafts and services;
-the latter resets the complete ownership tree. SSE retirement now marks status
-closed and rejects callbacks from destroyed or replaced sources. See the
-[verification](./release-0.9.0.md#codex-runtime-ownership-2026-10-03).
-
-WebSocket/provider-target acceptance now opens actual Node/native workerd sockets,
-changes scoped targets, replaces a same-target page and returns to HTTP. Retirement
-closes statuses, clears timers, settles pending calls and rejects late callbacks.
-See the [verification](./release-0.9.0.md#codex-websocket-ownership-2026-10-04).
+Ownership tests use declared layout services. Legacy global dependency injection
+remains outside that contract. Query-based test identity is not an authentication
+example. A child transport change alone does not replace the root App.
 
 Continue in this order:
 
