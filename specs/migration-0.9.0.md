@@ -665,3 +665,24 @@ Use `render()` or `hydrate()` for DOM updates. If browser code deliberately need
 HTML serialization, import `renderToString` from `@cossackframework/renderer/server`.
 That explicit import includes the SSR parser. Node, Deno, Workers and workerd keep
 the existing root serializer.
+
+
+## Input addons and password controls
+
+InputGroup accepts native input props, plus prefix/suffix content. Its attributes
+and listeners target the input. Adornments do not replace the field label.
+
+PasswordInput owns type, value and disabled. Replace competing `type`, `.value` or
+`?disabled` props with `value`, `onChange` and `disabled`. Its `onChange(value, event)`
+callback runs before a supplied native `@input` listener. Existing callbacks that
+use only the value remain valid. Both callbacks receive the same input event.
+`autocomplete` overrides the current-password default, and an empty placeholder
+stays empty. Use `showLabel` and `hideLabel` to localize the reveal button.
+
+Keyboard reveal keeps focus on the button. Pointer reveal returns focus to the
+field and preserves selection unless the value or focus changed during the update.
+Disabled inputs and inherited disabled fieldsets block reveal.
+
+ARIA relationship attributes accept string IDs, including `aria-controls`,
+`aria-describedby`, `aria-labelledby` and `aria-activedescendant`. DOM reflection
+property names such as `aria-controlselements` remain invalid.

@@ -6577,3 +6577,49 @@ Verification for this checkpoint:
 
 These focused results do not close the complete UI catalog, cross-browser/form
 recipe acceptance, CLI-07/CLI-08 guidance/runtime requirements or REL-03.
+
+<a id="codex-input-addons-2026-10-04"></a>
+## Codex: InputGroup and PasswordInput contracts (2026-10-04)
+
+RT-23 continuation. InputGroup now declares native input props/events and consumes
+prefix/suffix content. Its error border and ring follow the input's `aria-invalid`
+state. The native input remains the destination for names, labels, descriptions,
+values, classes and listeners.
+
+PasswordInput now declares its native attributes and component-owned value/type/
+disabled state. It consumes onChange and label settings instead of serializing them.
+Autocomplete overrides render once, and empty placeholders remain empty. The
+onChange callback and a supplied native @input listener receive the same event in
+that order. preventDefault directives retain their validation settings.
+
+Reveal buttons support localized names and reference the input ID. Disabling the
+field also disables its button; inherited fieldsets and the native disabled state
+block reveal. Pointer reveal restores field focus/selection after the component
+update, without stealing deliberate focus changes. Keyboard reveal retains button
+focus for repeated activation. Parent value changes do not receive stale selection
+restoration.
+
+The audit exposed missing ARIA reference attributes in shared native types. DOM
+Element/Elements reflection properties now map to string ID attributes, including
+aria-controls, aria-describedby, aria-labelledby and aria-activedescendant.
+Reflection property names, element objects and invalid reference values remain
+rejected. This also restores the existing Studio InputGroup combobox contract.
+
+The UI inventory now records fourteen reviewed foundations. Next: InputOTP, then
+Combobox, MultiSelect and DatePicker. The broader UI, form-recipe, cross-browser and
+release acceptance requirements remain open. Release status stays 24 complete and
+34 open. Native guidance, migration notes and the compact handoff are updated.
+
+Verification for this checkpoint:
+
+- UI build and all 126 tests in 11 files passed, including public declaration
+  assertions, callback-free SSR attributes and native attribute forwarding.
+- Both production Chromium fixtures passed. They cover minified SSR without JS,
+  retained hydration, reveal after native edits, pointer selection restoration,
+  keyboard focus and focus rings, parent reset, callback composition, native
+  FormData, direct/fieldset disabling, localized labels and themed error styles.
+- Root `pnpm tsc --noEmit` and all 11 package checks through `pnpm typecheck` passed.
+- Installed-tarball CLI/MCP acceptance passed for the new native/ARIA contracts,
+  filtered PasswordInput declarations, six existing executable guide examples,
+  metadata refresh and discovery with Node networking disabled.
+- Logs: `/tmp/cossack-addons-{build,ui,browser,root-types,package-types,agent-docs}.log`.

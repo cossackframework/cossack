@@ -3329,7 +3329,11 @@ manual selection on unrelated renders. Textarea/select SSR now uses escaped text
 and NativeSelect have closed native contracts and retained-hydration acceptance.
 Plain input/textarea spreads also preserve edits when the bound value is unchanged.
 A browser-specific renderer entry removes the SSR parser from normal UI bundles.
-Explicit browser serialization uses `/server`. InputGroup and PasswordInput remain next.
+Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
+have native contracts, composed callbacks, ARIA reference types and retained SSR
+hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
+Next: InputOTP and composite selection controls. See the
+[input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
 See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 

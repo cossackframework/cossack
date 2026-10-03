@@ -105,3 +105,33 @@ component(NativeSelect, {requried:true});
 component(Textarea, {checked:true});
 // @ts-expect-error Select change handlers target a select, not a text input.
 component(Select, {'@change':event=>event.currentTarget.selectionStart});
+
+
+import { InputGroup, PasswordInput } from '@cossackframework/ui';
+component(InputGroup, {prefix:'$',type:'number',min:0,'.value':12,required:true,
+    '@input':event=>{const input:HTMLInputElement=event.currentTarget;void input;}});
+component(PasswordInput, {value:'secret',disabled:false,autocomplete:'new-password',placeholder:'',required:true,
+    showLabel:'Reveal password',hideLabel:'Conceal password',
+    onChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
+    '@input':event=>{const input:HTMLInputElement=event.currentTarget;void input;}});
+component(PasswordInput, {'@input':preventDefault(()=>{}, {novalidate:false})});
+// @ts-expect-error InputGroup closes arbitrary native attributes.
+component(InputGroup, {placehoder:'Amount'});
+// @ts-expect-error PasswordInput owns the native type.
+component(PasswordInput, {type:'text'});
+// @ts-expect-error PasswordInput owns value through one prop.
+component(PasswordInput, {'.value':'secret'});
+// @ts-expect-error Disabled state belongs to both controls through the disabled prop.
+component(PasswordInput, {'?disabled':true});
+// @ts-expect-error Password fields do not support file inputs.
+component(PasswordInput, {accept:'image/*'});
+// @ts-expect-error Password callbacks do not target a textarea.
+component(PasswordInput, {onChange:(_value,event)=>{const textarea:HTMLTextAreaElement=event.currentTarget;void textarea;}});
+
+
+component(InputGroup, {'aria-controls':'results','aria-activedescendant':'result-1','aria-describedby':'help error','aria-labelledby':'label'});
+component(PasswordInput, {'aria-details':'password-rules','aria-errormessage':'password-error','aria-flowto':'next','aria-owns':'owned'});
+// @ts-expect-error Reference ARIA attributes contain IDs, not DOM reflection elements.
+component(Input, {'aria-controls':document.createElement('div')});
+// @ts-expect-error Reference ARIA attributes do not accept booleans.
+component(Input, {'aria-describedby':false});

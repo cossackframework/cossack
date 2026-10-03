@@ -24,8 +24,8 @@ it('keeps native labels, keyboard state, validation, form data and event targets
 `);
     await fs.writeFile(path.join(root,'main.js'), `
 import './style.css';
-import {Button,Input,Label,Checkbox,Switch,Form,RadioGroup,Slider} from '@cossackframework/ui';
-import {html,component,render,live,nothing} from '@cossackframework/renderer';
+import {Button,Input,Label,Checkbox,Switch,Form,RadioGroup,Slider,InputGroup,PasswordInput} from '@cossackframework/ui';
+import {html,component,render,live,nothing,preventDefault} from '@cossackframework/renderer';
 let email='',accepted=false,enabled=false,disabled=false,fieldsetDisabled=false,disableMode='attribute',submitted=0,plan='free',level=1500,limit=2000,groupDisabled=false;
 let planItems=[{value:'free',label:'Free plan'},{value:'pro',label:'Pro plan'},{value:'team',label:'Team plan',disabled:true}];
 window.events=[];window.choiceEvents=[];window.groupEvents=[];
@@ -57,6 +57,31 @@ window.setFieldsetDisabled=value=>{fieldsetDisabled=value;draw();};
 window.setRange=(value,max)=>{level=value;limit=max;draw();};
 window.setGroupDisabled=value=>{groupDisabled=value;draw();};
 window.reversePlans=()=>{planItems=[...planItems].reverse();draw();};draw();
+
+const addons=document.createElement('section');document.body.append(addons);
+let password='secret123',amount='12',addonDisabled=false,addonFieldset=false,amountInvalid=false,inputDirective=false;
+window.passwordEvents=[];window.amountEvents=[];window.addonSubmits=0;
+function drawAddons(){
+  const nativeInput=event=>window.passwordEvents.push(['native',event.currentTarget.tagName,event.currentTarget.value,event.defaultPrevented]);
+  render(html\`<form id="addons-form" @submit=\${event=>{event.preventDefault();window.addonSubmits++;}}>
+    <fieldset ?disabled=\${addonFieldset}>
+      \${component(Label,{for:'amount'},'Amount')}
+      \${component(InputGroup,{id:'amount',name:'amount',type:'number',min:0,required:true,disabled:addonDisabled,
+        '.value':amount,prefix:'$',suffix:html\`<span id="amount-unit">USD</span>\`,'aria-describedby':'amount-unit','aria-invalid':amountInvalid,
+        '@input':event=>{amount=event.currentTarget.value;window.amountEvents.push(event.currentTarget.tagName);}})}
+      \${component(Label,{for:'account-password'},'Account password')}
+      \${component(PasswordInput,{id:'account-password',name:'password',value:password,required:true,disabled:addonDisabled,
+        autocomplete:'new-password',placeholder:'',showLabel:'Reveal secret',hideLabel:'Conceal secret',
+        onChange:(value,event)=>{password=value;window.passwordEvents.push(['change',event.currentTarget.tagName,value,event.defaultPrevented]);drawAddons();},
+        '@input':inputDirective?preventDefault(nativeInput,{novalidate:false}):nativeInput})}
+    </fieldset>
+  </form>\`,addons);
+}
+window.setAddonDisabled=value=>{addonDisabled=value;drawAddons();};
+window.setAddonFieldset=value=>{addonFieldset=value;drawAddons();};
+window.setAmountInvalid=value=>{amountInvalid=value;drawAddons();};
+window.setInputDirective=()=>{inputDirective=true;drawAddons();};
+window.resetPassword=value=>{password=value;drawAddons();};drawAddons();
 window.verifySelectBindings=async()=>{
   const results=[];
   for(const spread of [false,true]){
@@ -174,6 +199,54 @@ window.verifySelectBindings=async()=>{
     await browserExpect(pro.locator('..')).toHaveCSS('opacity','1');await browserExpect(range).toHaveCSS('opacity','1');
     await browserExpect(page.getByRole('radio',{name:'Team plan',exact:true})).toBeDisabled();
     expect(await page.evaluate(()=>window.verifySelectBindings())).toEqual(['b','a','b','b','b','a','b','a','b','b','b','a']);
+    const password=page.getByLabel('Account password',{exact:true});
+    const amount=page.getByRole('spinbutton',{name:'Amount',exact:true});
+    await browserExpect(password).toHaveAttribute('autocomplete','new-password');
+    await browserExpect(password).toHaveAttribute('placeholder','');
+    await browserExpect(amount).toHaveAccessibleDescription('USD');
+    await password.fill('typed-secret');
+    expect(await page.evaluate(()=>window.passwordEvents)).toEqual([
+      ['change','INPUT','typed-secret',false],['native','INPUT','typed-secret',false],
+    ]);
+    await password.evaluate(input=>input.setSelectionRange(2,5));
+    await page.getByRole('button',{name:'Reveal secret',exact:true}).click();
+    await browserExpect(password).toHaveAttribute('type','text');
+    await browserExpect(password).toHaveValue('typed-secret');await browserExpect(password).toBeFocused();
+    expect(await password.evaluate(input=>[input.selectionStart,input.selectionEnd])).toEqual([2,5]);
+    const reveal=page.getByRole('button',{name:'Conceal secret',exact:true});
+    await browserExpect(reveal).toHaveAttribute('aria-controls','account-password');
+    await page.keyboard.press('Tab');await browserExpect(reveal).toBeFocused();
+    await page.keyboard.press('Space');await browserExpect(password).toHaveAttribute('type','password');
+    const hiddenToggle=page.getByRole('button',{name:'Reveal secret',exact:true});
+    await browserExpect(hiddenToggle).toBeFocused();
+    await browserExpect(hiddenToggle).not.toHaveCSS('box-shadow','none');
+    await page.keyboard.press('Enter');await browserExpect(password).toHaveAttribute('type','text');
+    await browserExpect(page.getByRole('button',{name:'Conceal secret',exact:true})).toBeFocused();
+    expect(await page.evaluate(()=>window.addonSubmits)).toBe(0);
+    await page.evaluate(()=>window.resetPassword('parent-reset'));
+    await browserExpect(password).toHaveValue('parent-reset');
+    await amount.fill('42');
+    expect(await page.evaluate(()=>window.amountEvents)).toEqual(['INPUT']);
+    expect(await page.evaluate(()=>Object.fromEntries(new FormData(document.querySelector('#addons-form'))))).toEqual({amount:'42',password:'parent-reset'});
+    const group=page.locator('.cs-input-group');
+    const border=await group.evaluate(element=>getComputedStyle(element).borderTopColor);
+    await page.evaluate(()=>window.setAmountInvalid(true));
+    await browserExpect(group).not.toHaveCSS('border-top-color',border);
+    await page.evaluate(()=>window.setAmountInvalid(false));
+    await browserExpect(group).toHaveCSS('border-top-color',border);
+    await page.evaluate(()=>window.setAddonDisabled(true));
+    await browserExpect(password).toBeDisabled();await browserExpect(amount).toBeDisabled();
+    await browserExpect(page.getByRole('button',{name:'Conceal secret',exact:true})).toBeDisabled();
+    expect(await page.evaluate(()=>Object.fromEntries(new FormData(document.querySelector('#addons-form'))))).toEqual({});
+    await page.evaluate(()=>{window.setAddonDisabled(false);window.setAddonFieldset(true);});
+    await browserExpect(password).toBeDisabled();
+    await browserExpect(page.getByRole('button',{name:'Conceal secret',exact:true})).toBeDisabled();
+    await page.evaluate(()=>{window.setAddonFieldset(false);window.setInputDirective();});
+    expect(await password.evaluate(input=>{input.value='directive';return input.dispatchEvent(new InputEvent('input',{bubbles:true,cancelable:true}));})).toBe(false);
+    expect(await page.evaluate(()=>window.passwordEvents.slice(-2))).toEqual([
+      ['change','INPUT','directive',true],['native','INPUT','directive',true],
+    ]);
+    await browserExpect(page.locator('#addons-form')).not.toHaveAttribute('novalidate');
     expect(errors).toEqual([]);
   }finally{await browser?.close();if(server)await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});await fs.rm(root,{recursive:true,force:true});}
 },120000);

@@ -18,13 +18,11 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit InputGroup and PasswordInput, including SSR/hydration and native edit ownership.
-   Twelve foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
-   RadioGroup, Slider, Textarea, Select and NativeSelect.
-   See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04) for current evidence and limits.
-   Generated Node/workerd DataTable acceptance and stable-ID focus restoration pass.
-   The [latest checkpoint](./release-0.9.0.md#codex-choice-controls-2026-10-04) records typed props,
-   SSR tests, themed Chromium keyboard/state/disabled-style acceptance and root/package type checks.
+   Next audit InputOTP, then Combobox, MultiSelect and DatePicker.
+   Fourteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
+   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup and PasswordInput.
+   See the [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04) for current evidence and limits.
+   Earlier checkpoints retain generated Node/workerd DataTable and navigation-focus evidence.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing tools provide bounded, cancellable static inspection through `cossack-mcp --project <directory>`.

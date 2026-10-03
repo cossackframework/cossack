@@ -16,6 +16,10 @@ type Attributes<Shape> = { [Key in keyof Shape]?: Attribute<Shape[Key]> } & {
 export type AriaAttributes = {
     [Name in keyof ARIAMixin as ARIAMixin[Name] extends string | null
         ? Name extends `aria${infer Suffix}` ? `aria-${Lowercase<Suffix>}` : never : never]?: Attribute<string | boolean | number>;
+} & {
+    // DOM reflection uses Element/Elements properties; HTML uses string ID references.
+    [Name in keyof ARIAMixin as Name extends `aria${infer Suffix}Elements` ? `aria-${Lowercase<Suffix>}`
+        : Name extends `aria${infer Suffix}Element` ? `aria-${Lowercase<Suffix>}` : never]?: Attribute<string>;
 };
 export type GlobalAttributes<Element extends HTMLElement = HTMLElement> = NativeEvents<Element> & AriaAttributes & Attributes<{
     id: string; class: string; style: string; title: string; role: string;
@@ -78,3 +82,8 @@ export type TextareaAttributes = GlobalAttributes<HTMLTextAreaElement> & Attribu
 export type SelectAttributes = GlobalAttributes<HTMLSelectElement> & Attributes<{
     name: string; form: string; disabled: boolean; required: boolean; multiple: boolean; autocomplete: string;
 }> & { '.value'?: ValueBinding<string> };
+
+/** PasswordInput owns value, type and disabled state across its input and reveal button. */
+export type PasswordAttributes = Pick<InputAttributes, keyof GlobalAttributes<HTMLInputElement> |
+    'name' | 'form' | 'placeholder' | 'readonly' | '?readonly' | 'required' | '?required' |
+    'autocomplete' | 'minlength' | 'maxlength' | 'pattern' | 'inputmode' | 'enterkeyhint'>;

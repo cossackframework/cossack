@@ -42,6 +42,13 @@ HTML; use a matching option for SSR. Interpolated textarea children remain unsup
 A browser-specific renderer entry keeps the SSR parser out of normal UI bundles.
 Deliberate browser serialization uses `@cossackframework/renderer/server`.
 
+InputGroup and PasswordInput now have native input contracts. InputGroup consumes
+its adornments and derives wrapper error styles from the input. PasswordInput consumes
+callbacks and settings without duplicate attributes, composes onChange with native
+input listeners, and disables its reveal button with the field. Pointer reveal
+preserves field focus/selection; keyboard reveal retains button focus. Public types
+also cover string ARIA ID references while rejecting DOM reflection property names.
+
 The following are still follow-up requirements, including for reviewed controls:
 error/description and focus behavior within full application form recipes, and the
 final published-runtime matrix. Type checks cannot prove correct labeling in every app.
@@ -79,7 +86,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Form](../packages/ui/src/components/Form.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [HoverCard](../packages/ui/src/components/HoverCard.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Input](../packages/ui/src/components/Input.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
-| [InputGroup](../packages/ui/src/components/InputGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [InputGroup](../packages/ui/src/components/InputGroup.ts) | Foundation reviewed | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [InputOTP](../packages/ui/src/components/InputOTP.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Item](../packages/ui/src/components/Item.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Kbd](../packages/ui/src/components/Kbd.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -93,7 +100,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [NavigationMenu](../packages/ui/src/components/NavigationMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Pagination](../packages/ui/src/components/Pagination.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Foundation reviewed | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [Popover](../packages/ui/src/components/Popover.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Progress](../packages/ui/src/components/Progress.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
@@ -118,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit InputGroup and PasswordInput, including value ownership during user edits and SSR/hydration.
+Next audit InputOTP, then Combobox, MultiSelect and DatePicker. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

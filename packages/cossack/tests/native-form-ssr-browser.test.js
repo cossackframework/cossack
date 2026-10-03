@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { html, renderToString, minifyHtml } from '../../renderer/dist/server.js';
 import { component } from '../../renderer/dist/index.js';
-import { Textarea, Select, NativeSelect } from '../../ui/dist/index.js';
+import { Textarea, Select, NativeSelect, InputGroup, PasswordInput } from '../../ui/dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const require = createRequire(new URL('../../framework/package.json', import.meta.url));
@@ -26,8 +26,10 @@ it('serves native values without JS and hydrates controls with typed UI controls
       </optgroup>\`)}
     <label for="native">Native choice</label>\${component(NativeSelect,{id:'native',name:'native',required:true,disabled,'.value':choice,'@change':event=>window.controlEvents.push(event.currentTarget.tagName)},html\`
       \${['a','b&c','d'].map(v => html\`<option value=\${v}>\${v}</option>\`)}\`)}
+    <label for="ssr-password">SSR password</label>\${component(PasswordInput,{id:'ssr-password',name:'addonPassword',value:message?'initial-secret':'',autocomplete:'new-password',disabled,required:true})}
+    <label for="ssr-amount">SSR amount</label>\${component(InputGroup,{id:'ssr-amount',name:'addonAmount',type:'number','.value':12,prefix:'$',disabled})}
   </form>\``;
-  const template = new Function('html','component','Textarea','Select','NativeSelect', `return (${templateSource})`)(html,component,Textarea,Select,NativeSelect);
+  const template = new Function('html','component','Textarea','Select','NativeSelect','InputGroup','PasswordInput', `return (${templateSource})`)(html,component,Textarea,Select,NativeSelect,InputGroup,PasswordInput);
   try {
     const scope = path.join(root, 'node_modules/@cossackframework');
     await fs.mkdir(scope, {recursive:true});
@@ -35,15 +37,15 @@ it('serves native values without JS and hydrates controls with typed UI controls
     await fs.writeFile(path.join(root, 'index.html'), `<html><body><main id="app">${minifyHtml(renderToString(template(value, 'b&c'), { hydrate: true }))}</main><script type="module" src="/main.js"></script></body></html>`);
     await fs.writeFile(path.join(root, 'main.js'), `
 import {html,hydrate,render,component,renderToString} from '@cossackframework/renderer';
-import {Textarea,Select,NativeSelect} from '@cossackframework/ui';
+import {Textarea,Select,NativeSelect,InputGroup,PasswordInput} from '@cossackframework/ui';
 const template=${templateSource};
 try { renderToString(html\`<p>Example</p>\`); } catch(error) { window.ssrError=error.message; }
 window.controlEvents=[];
 const container=document.querySelector('#app');
 const textarea=container.querySelector('textarea'),select=container.querySelector('select');
-const options=[...select.options];
+const options=[...select.options], password=container.querySelector('#ssr-password'),amount=container.querySelector('#ssr-amount');
 hydrate(template(${JSON.stringify(value)},'b&c'),container);
-window.retained=textarea===container.querySelector('textarea')&&select===container.querySelector('select')&&options.every((o,i)=>o===select.options[i]);
+window.retained=password===container.querySelector('#ssr-password')&&amount===container.querySelector('#ssr-amount')&&textarea===container.querySelector('textarea')&&select===container.querySelector('select')&&options.every((o,i)=>o===select.options[i]);
 window.update=()=>render(template('Updated','d'),container);
 window.disable=()=>render(template('Updated','d',true),container);
 window.empty=()=>render(template('',''),container);
@@ -68,6 +70,10 @@ window.empty=()=>render(template('',''),container);
     await browserExpect(initial.getByRole('textbox', { name: 'Message' })).toHaveValue(value);
     await browserExpect(initial.getByRole('combobox', { name: 'Choice', exact:true })).toHaveValue('b&c');
     await browserExpect(initial.getByRole('combobox', {name:'Native choice',exact:true})).toHaveValue('b&c');
+    await browserExpect(initial.getByLabel('SSR password',{exact:true})).toHaveValue('initial-secret');
+    await browserExpect(initial.getByLabel('SSR password',{exact:true})).toHaveAttribute('type','password');
+    await browserExpect(initial.getByLabel('SSR password',{exact:true})).toHaveAttribute('autocomplete','new-password');
+    await browserExpect(initial.getByRole('spinbutton',{name:'SSR amount',exact:true})).toHaveValue('12');
     await noJS.close();
     const page = await browser.newPage();
     const errors = [];
@@ -79,7 +85,7 @@ window.empty=()=>render(template('',''),container);
     expect(await page.evaluate(() => window.retained)).toBe(true);
     expect(await page.evaluate(() => window.ssrError)).toContain('@cossackframework/renderer/server');
     await browserExpect(page.getByRole('textbox', { name: 'Message' })).toHaveValue(value);
-    expect(await page.evaluate(() => Object.fromEntries(new FormData(document.querySelector('form'))))).toEqual({ message: value, choice: 'b&c', native:'b&c' });
+    expect(await page.evaluate(() => Object.fromEntries(new FormData(document.querySelector('form'))))).toEqual({ message: value, choice: 'b&c', native:'b&c',addonPassword:'initial-secret',addonAmount:'12' });
     await page.evaluate(() => window.update());
     await browserExpect(page.getByRole('textbox', { name: 'Message' })).toHaveValue('Updated');
     await browserExpect(page.getByRole('combobox', { name: 'Choice', exact:true })).toHaveValue('d');
@@ -92,6 +98,12 @@ window.empty=()=>render(template('',''),container);
     await page.keyboard.press('ArrowUp');
     await browserExpect(page.getByRole('combobox',{name:'Choice',exact:true})).toHaveValue('b&c');
     expect(await page.evaluate(()=>window.controlEvents)).toEqual(['SELECT','TEXTAREA','SELECT']);
+    const passwordControl=page.getByLabel('SSR password',{exact:true});
+    await passwordControl.fill('hydrated-secret');
+    await page.getByRole('button',{name:'Show password',exact:true}).click();
+    await browserExpect(passwordControl).toHaveAttribute('type','text');
+    await browserExpect(passwordControl).toHaveValue('hydrated-secret');
+    await browserExpect(passwordControl).toBeFocused();
     await page.evaluate(()=>window.empty());
     expect(await page.evaluate(()=>document.querySelector('form').checkValidity())).toBe(false);
     await page.evaluate(()=>window.disable());

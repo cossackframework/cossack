@@ -1,13 +1,12 @@
-import { html, classMap } from "@cossackframework/renderer";
+import type { InputAttributes } from "../native-attributes";
+import { html } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface InputGroupProps {
+export type InputGroupProps = InputAttributes & {
     /** Content before the input (icon, unit, "@"). */
     prefix?: unknown;
     /** Content after the input (icon, unit, button). */
     suffix?: unknown;
-    /** Allow arbitrary HTML attributes to spread onto the input. */
-    [key: string]: any;
 }
 
 /**
@@ -35,7 +34,7 @@ export class InputGroup extends Cossack {
         const { prefix, suffix, ...inputAttrs } = this.props;
 
         return html`
-            <div class="cs-input-group flex items-center w-full rounded-md border bg-background shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px] aria-invalid:border-destructive aria-invalid:ring-destructive/20">
+            <div class="cs-input-group flex items-center w-full rounded-md border bg-background shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px] has-[>input[aria-invalid=true]]:border-destructive has-[>input[aria-invalid=true]]:ring-destructive/20">
                 ${prefix != null
                     ? html`<span class="cs-input-group__prefix inline-flex items-center pl-3 text-sm text-muted-foreground shrink-0 [&_svg]:size-4">${prefix}</span>`
                     : null}
