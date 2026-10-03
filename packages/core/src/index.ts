@@ -1,4 +1,5 @@
 // src/index.ts
+export { RPC_JSON_RESPONSE_MAX_BYTES } from './shared/rpc-json';
 export * from './shared/cossack';
 export * from './shared/decorators';
 export * from './shared/environment';

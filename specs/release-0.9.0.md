@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 259-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Remaining: ordinary/error JSON-envelope audit, actual Cloudflare socket/peer/header context and rate-backend guarantees, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rpc-target-limits-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Remaining: actual Cloudflare socket/peer/header context and rate-backend guarantees, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rpc-json-envelopes-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,73 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rpc-json-envelopes-2026-10-03"></a>
+### Codex review: ordinary JSON and HTTP failure envelopes (2026-10-03)
+
+**Author: Codex.** Continued RT-01 after `933f12c`. All **35** new real-handler
+matrix regressions failed before the fix: malformed service state and redirects
+were accepted, diagnostic codes/field errors were copied without structural
+checks, and foreign error body IDs were ignored. The server still executed each
+call once; this checkpoint fixes client interpretation, without mutation replay
+or rollback.
+
+Core `shared/rpc-json.ts` now supplies one decoder for component, SSE and explicit
+service ordinary JSON/error replies. Full bodies have a **1 MiB total byte cap**
+(`RPC_JSON_RESPONSE_MAX_BYTES`), strict UTF-8 decoding and object-root validation.
+Consumption retains cancellation/deadline ownership until EOF and releases its
+reader on completion, failure or overflow. State/result/navigation effects follow
+validation. Overflow reports `COSSACK_RPC_RESPONSE_TOO_LARGE`; malformed JSON or
+metadata reports `COSSACK_RPC_RESPONSE_INVALID`, retaining a known header ID.
+
+Ordinary service replies require an object `_cossack_service_state`; component
+replies reject that service wrapper. Redirects contain only a nonempty
+`_cossack_redirect` using HTTP/HTTPS or a relative URL. Error code/ID values must
+be nonempty strings, messages strings, and field errors objects. Nested field
+errors remain JSON rather than imposing unimplemented RT-02 schema semantics.
+The error body ID must agree with a known header, or supplies correlation if no
+header exists. Ordinary app state named `requestId` remains application data.
+
+Native failures stay opaque even if their body resembles RPC JSON; middleware
+non-JSON/empty failures retain generic status/known-ID diagnostics. A malformed
+declared JSON failure rejects as invalid. Network body errors report uncertain
+outcome without leaking their producer message or retrying. The byte cap does
+not stop a server mutation from having already completed; move large bodies to
+an HTTP endpoint. RPC documentation, architecture and the draft migration guide
+record these behavior changes.
+
+Verification: sequential core build/framework declarations; **775 core tests**
+in 53 files, **966 framework tests** in 50 files, **559 CLI tests** in 39 files,
+root TypeScript and all **11** package configs. CLI includes both real-workerd
+fixtures, all **14** generated runtime cases and the isolated real-pnpm release
+fixture. No live deployment or package publication ran. The matrix now has
+**294** cases (259 previous + 35 ordinary response regressions). **31** new core
+cases cover split Unicode, invalid UTF-8, exact byte boundaries, overflow
+cancellation, typed/opaque errors, EOF gating, body failures and public proxy
+parked-body cancellation/deadlines. Older proxy tests now use actual Web Standard
+Responses instead of object stubs that bypass response-body ownership.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+git diff --check -- . ':!reports.md'
+```
+
+**14/58 tasks checked; no additional task closes. All 44 unchecked tasks remain
+in scope.** Continue actual Cloudflare WebSocket/DO peer context, anonymous/header
+identity, reconnect and custom rate-key acceptance. Audit configured counter
+store failure, ownership, persistence and consistency before making stronger
+claims. Then audit all RT-01 criteria and continue RT-02/RT-14 policies and
+RT-11 secrets/session recipes/rotation/concurrency. Deno execution, Electron
+packaging, full tarball/runtime gates and live deployment keep their separate
+evidence requirements. Keep versions 0.8.3 until REL-04 and preserve unrelated
+`reports.md`/`.zcodeignore`. The detailed plan and latest Codex handoff identify
+this stopping point and retain every task's original intent.
 
 <a id="codex-rpc-target-limits-2026-10-03"></a>
 ### Codex review: child targets and RPC action limit ownership (2026-10-03)

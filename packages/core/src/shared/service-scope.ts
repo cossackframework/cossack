@@ -11,6 +11,7 @@ import {
 } from './service-bootstrap';
 import { isSharedMethod } from './shared-method';
 import { rpcFormData, snapshotRpcPayload } from './rpc-files';
+import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
 import { createRpcCall, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError } from './rpc-stream';
 
 export interface ServiceScopeRequestContext {
@@ -360,12 +361,7 @@ export class ServiceScope {
                         const response = await request;
                         requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
                         if (!response.ok) {
-                            let body: any;
-                            try { body = await response.json(); } catch { /* preserve HTTP status */ }
-                            throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
-                                typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
-                                { status: response.status, requestId: response.headers.get('X-Cossack-Request-Id') ?? undefined,
-                                    fieldErrors: body?.fieldErrors });
+                            throw await readRpcHttpError(response, controller.signal);
                         }
                         if (response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
                             return await readRpcNativeResponse(response, controller.signal);
@@ -381,18 +377,12 @@ export class ServiceScope {
                                 yield frame.value;
                             }
                         }
-                        let data: Record<string, unknown>;
-                        try {
-                            data = await response.json() as Record<string, unknown>;
-                            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a service response object.');
-                        } catch (cause) {
-                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid service RPC response.', { cause, requestId });
-                        }
+                        const data = await readRpcJsonResponse(response, 'service', controller.signal);
                         if (typeof (data as any)._cossack_redirect === 'string') {
                             window.location.href = (data as any)._cossack_redirect;
                             return undefined;
                         }
-                        hydrateServiceState(entry.instance, (data as any)._cossack_service_state || {});
+                        hydrateServiceState(entry.instance, data._cossack_service_state as Record<string, unknown>);
                         return (data as any)._cossack_return;
                     } catch (cause) {
                         if (controller.signal.aborted) {

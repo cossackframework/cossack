@@ -356,6 +356,16 @@ server code keeps its authored types; client code receives data without native
 model prototypes. Parameter and hydrated component property annotations still
 need to describe their JSON representation; this does not add native revival.
 
+Core `shared/rpc-json.ts` owns ordinary HTTP/SSE JSON response validation for
+component and explicit-service clients. It consumes the entire body with a
+1 MiB total byte cap, fatal UTF-8 decoding, abort ownership and reader release
+before hydration/completion. Service success requires an object state wrapper;
+component state cannot carry that wrapper. Redirect metadata is an exclusive
+HTTP/HTTPS-or-relative URL branch. HTTP failure fields have structural checks
+and body/header request IDs must agree. Non-JSON middleware/native failure
+bodies remain opaque generic status errors. The component's ordinary state key
+`requestId` is not diagnostic metadata. Decoder failures cannot undo mutations.
+
 Ordinary native HTTP RPC responses use the reserved `X-Cossack-Rpc-Response:
 native` marker. Component/service clients check this before examining MIME types
 or JSON state, so user JSON and NDJSON bodies cannot become protocol metadata.

@@ -170,6 +170,7 @@ async function harness(transport: Transport, uploadMode = false) {
     let socket: any;
     let damage: ((frame: any) => any) | undefined;
     let damageAt = 0;
+    let jsonDamage: ((data: any) => any) | undefined;
     const rewrite = (frame: any) => {
         // WebSocket initialization/broadcasts share the socket. Only alter the
         // correlated action protocol, never an unrelated state snapshot.
@@ -215,8 +216,12 @@ async function harness(transport: Transport, uploadMode = false) {
                 ...init, headers: { ...init.headers, Origin: 'http://localhost' },
             }), { APP_URL: 'http://localhost' } as any));
             serverJobs.push(job);
-            const response = job.finally(() => vi.stubGlobal('window', browserWindow)).then(res => {
+            const response = job.finally(() => vi.stubGlobal('window', browserWindow)).then(async res => {
                 responses.push(res);
+                if (jsonDamage && res.headers.get('Content-Type')?.includes('application/json')) {
+                    const change = jsonDamage; jsonDamage = undefined;
+                    return new Response(JSON.stringify(change(await res.json())), res);
+                }
                 if (!res.body || !res.headers.get('Content-Type')?.includes('ndjson')) return res;
                 const reader = res.body.getReader();
                 const body = new ReadableStream<Uint8Array>({
@@ -289,6 +294,7 @@ async function harness(transport: Transport, uploadMode = false) {
     return {
         client, target, requests, responses,
         corruptFrame(change: (frame: any) => any, after = 0) { damage = change; damageAt = after; },
+        corruptJson(change: (data: any) => any) { jsonDamage = change; },
         pendingCalls: () => socket ? wsPendingCalls(socket).size : 0,
         disconnect() {
             disconnected = true;
@@ -593,6 +599,39 @@ describe.each(['http', 'sse', 'service'] as const)('%s response-local protocol b
         wire = await harness(transport);
     });
     afterEach(async () => { await wire.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+    it.each([
+        ['numeric redirect', (data: any) => ({ ...data, _cossack_redirect: 7 })],
+        ['blank redirect', (data: any) => ({ _cossack_redirect: ' ' })],
+        ['executable redirect', (data: any) => ({ _cossack_redirect: 'javascript:alert(1)' })],
+        ['redirect with conflicting result', (data: any) => ({ ...data, _cossack_redirect: '/next' })],
+        ['wrong service-state shape', (data: any) => ({ ...data, _cossack_service_state: [] })],
+    ] as const)('rejects %s before hydration or navigation', async (_name, change) => {
+        wire.corruptJson(change);
+        await expect(rpc$(wire.target.ordinary(1))).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID', requestId: expect.any(String) });
+        expect(wire.target.count).toBe(0); expect(wire.client.loading).toEqual({});
+        expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1);
+        expect(window.location.href).toBe('');
+    });
+    it.each([
+        ['numeric error code', (data: any) => ({ ...data, code: 7 })],
+        ['blank error code', (data: any) => ({ ...data, code: ' ' })],
+        ['numeric error message', (data: any) => ({ ...data, error: 7 })],
+        ['array field errors', (data: any) => ({ ...data, fieldErrors: [] })],
+        ['null field errors', (data: any) => ({ ...data, fieldErrors: null })],
+        ['foreign diagnostic ID', (data: any) => ({ ...data, requestId: 'foreign-request' })],
+    ] as const)('rejects %s without accepting malformed HTTP diagnostics', async (_name, change) => {
+        wire.corruptJson(change);
+        const call = rpc$(wire.target.visible());
+        await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID', status: 400, requestId: expect.any(String) });
+        await expect(call).rejects.not.toMatchObject({ requestId: 'foreign-request' });
+        expect(wire.target.count).toBe(0); expect(wire.client.loading).toEqual({});
+        expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1);
+    });
+    if (transport === 'service') it.each([null, undefined])('requires service state on ordinary completion (%j)', async state => {
+        wire.corruptJson(data => ({ ...data, _cossack_service_state: state }));
+        await expect(rpc$(wire.target.ordinary(1))).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID', requestId: expect.any(String) });
+        expect(wire.target.count).toBe(0); expect(wire.client.loading).toEqual({}); expect(wire.requests).toHaveLength(1);
+    });
     it('rejects terminal-following data before applying a false final state', async () => {
         wire.corruptFrame(frame => ({ ...frame, type: 'done', value: 'premature', state: { count: 999 } }));
         await expect(rpc$(wire.target.stream())).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID', requestId: expect.any(String) });

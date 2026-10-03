@@ -5,6 +5,7 @@ import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
 import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
 import { sendRpcUpload } from './rpc-upload';
 import { rpcFormData } from './rpc-files';
 import { wsPendingCalls } from './transport-connections';
@@ -423,12 +424,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     const response = await request;
                     requestId = response.headers?.get('X-Cossack-Request-Id') ?? undefined;
                     if (!response.ok) {
-                        let body: any;
-                        try { body = await response.json(); } catch { /* preserve HTTP status */ }
-                        throw new RpcError(body?.code ?? 'COSSACK_RPC_FAILED',
-                            typeof body?.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
-                            { status: response.status, requestId: response.headers?.get('X-Cossack-Request-Id') ?? undefined,
-                                fieldErrors: body?.fieldErrors });
+                        throw await readRpcHttpError(response, controller.signal);
                     }
                     if (response.headers?.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
                         const result = await readRpcNativeResponse(response, controller.signal);
@@ -447,13 +443,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                             yield frame.value;
                         }
                     } else {
-                        let data: Record<string, unknown>;
-                        try {
-                            data = await response.json() as Record<string, unknown>;
-                            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new TypeError('Expected a state object.');
-                        } catch (cause) {
-                            throw new RpcError('COSSACK_RPC_RESPONSE_INVALID', 'Invalid RPC response.', { cause, requestId });
-                        }
+                        const data = await readRpcJsonResponse(response, 'component', controller.signal);
                         invalidateClientPageCache();
                         if (typeof data._cossack_redirect === 'string') {
                             succeed();

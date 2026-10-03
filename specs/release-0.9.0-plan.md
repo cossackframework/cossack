@@ -12,7 +12,13 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex target/limit checkpoint](./release-0.9.0.md#codex-rpc-target-limits-2026-10-03)
+The latest [Codex ordinary-envelope checkpoint](./release-0.9.0.md#codex-rpc-json-envelopes-2026-10-03)
+records shared bounded UTF-8 decoding before hydration, required service state,
+exclusive redirect metadata and correlated typed HTTP diagnostics. The matrix
+now has 294 cases; 14/58 tasks remain checked. RT-01 stays open for actual
+Cloudflare socket/peer/header context, configured counter-store guarantees and
+the policy/session criteria below. The preceding
+[Codex target/limit checkpoint](./release-0.9.0.md#codex-rpc-target-limits-2026-10-03)
 records page/child snapshot separation on process-local SSE, correlated target
 denials, inherited/forwarded WebSocket limits and shared route budgets across
 HTTP/socket dispatch. Real production workerd proves limited D1 writes and
@@ -676,10 +682,32 @@ spent budget across HTTP/SSE pages. Full core 744, framework 931 and CLI 559 pas
 with root/all 11 package checks. Test-only registry caches and the limiter's
 expiry clock are isolated so these checks do not depend on warm caches or sleep.
 
-Next audit ordinary JSON/error envelopes as rigorously as NDJSON: malformed
-service-state, redirect, error-code/field-error and payload shapes must reject
-before hydration with known IDs and no repeated dispatch. Extend actual
-Cloudflare WebSocket/DO acceptance for authenticated and anonymous peer context,
+Codex ordinary-envelope checkpoint (2026-10-03): the real response matrix
+reproduced 35 malformed service-state, redirect and diagnostic cases before the
+fix. Core now uses one decoder for component/SSE/explicit-service ordinary JSON
+and HTTP errors. It rejects invalid UTF-8, non-object roots, foreign service
+wrappers, missing/null/array service state, invalid/conflicting redirects, and
+untyped code/message/field-error/ID metadata. Redirects are exclusive nonempty
+HTTP/HTTPS-or-relative URL envelopes. Error body IDs must match known headers;
+a valid body ID supplies correlation when a header is absent. Component state
+named `requestId` remains application data. Native failure bodies remain opaque.
+
+The complete ordinary JSON/error body is bounded to 1 MiB, including state,
+results and diagnostics; the public constant is `RPC_JSON_RESPONSE_MAX_BYTES`.
+Overflow cancels the reader and rejects before hydration. Fatal UTF-8 parsing,
+EOF, cancellation, deadline and ownership checks precede completion. This does
+not prevent a server mutation or roll it back. Non-JSON middleware failures
+retain generic status/known-ID errors; malformed declared JSON failures reject.
+Nested field-error values remain JSON, without inventing RT-02 schema semantics.
+
+Evidence: 31 new core cases cover exact byte limits, multibyte/split decoding,
+opaque/invalid errors, EOF gating, body read failure and public-proxy parked-body
+cancellation/deadlines. The matrix has 294 cases (259 previous plus 35 ordinary
+response regressions); full core 775/53 files and framework 966/50 pass with
+root/all 11 package checks. See the linked checkpoint for CLI/runtime evidence.
+No new checkbox closes. The original task scope and all remaining tasks persist.
+
+Next extend actual Cloudflare WebSocket/DO acceptance for authenticated and anonymous peer context,
 reconnect and custom rate keys; the neutral socket matrix is not a substitute.
 Audit configured rate-store failures, namespace ownership, persistence and
 consistency limits before making stronger distributed guarantees. The current DO
@@ -689,7 +717,7 @@ that evidence. Continue schema/file/unknown-key/resource policy with RT-02/RT-14
 and session recipes/secrets/rotation/concurrency with RT-11. RT-01 stays open;
 14/58 checked and all 44 unchecked tasks remain in scope.
 
-Start in core `shared/rpc-stream.ts`, `method-proxy.ts`, `service-scope.ts`,
+Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
 
 Done when: One conformance suite exercises each transport and service calls.

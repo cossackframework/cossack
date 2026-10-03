@@ -112,6 +112,26 @@ present. Malformed data retains the known ID for diagnostics.
 WebSocket calls complete at their correlated terminal frame; their shared
 connection stays open. Unknown IDs do not affect a different pending call.
 
+## Ordinary JSON RPC replies are validated before hydration
+
+Clients now reject malformed service state, redirect metadata, and HTTP error
+fields instead of silently completing or copying untyped diagnostics. Custom
+producers must provide an object `_cossack_service_state` on ordinary service
+successes. Component replies cannot contain that service wrapper. Redirects
+must contain only a nonempty `_cossack_redirect` using HTTP/HTTPS or a relative
+URL. Error codes/IDs must be nonempty strings, messages strings, and field errors
+objects. An error body ID must match the response ID when that header exists.
+Application component state named `requestId` remains ordinary state data.
+
+The total ordinary JSON/error body limit is 1 MiB, including envelope metadata,
+state and results (`RPC_JSON_RESPONSE_MAX_BYTES`). Overflow reports
+`COSSACK_RPC_RESPONSE_TOO_LARGE`. Move larger results to an HTTP endpoint.
+Decoding now requires valid UTF-8 and waits for EOF with deadlines/cancellation
+active. Invalid envelopes report `COSSACK_RPC_RESPONSE_INVALID` and the known
+request ID before hydration. Native failure bodies remain opaque even when
+JSON-shaped; non-JSON middleware errors keep generic HTTP status diagnostics.
+None of these client rejections undo a completed server mutation or retry it.
+
 ## RPC limits and child state ownership
 
 `@RateLimit` now applies to WebSocket action execution, including inherited and

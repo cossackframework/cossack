@@ -184,6 +184,9 @@ yield or terminal value: these, and nested `Response`, `Request`, or `Headers`
 in serialized trees, fail with `COSSACK_RPC_SERIALIZATION_FAILED` and their path.
 
 HTTP/SSE RPC redirects return metadata that the client proxy uses to navigate.
+The redirect envelope contains only `_cossack_redirect`, a nonempty URL using
+HTTP or HTTPS (including relative URLs). Malformed or conflicting metadata
+rejects before navigation or hydration with `COSSACK_RPC_RESPONSE_INVALID`.
 Cookies from the action's native response, `cookie()`, and flash middleware are
 preserved together, including separate `Set-Cookie` values. Background transports
 preserve valid incoming flash for the next page. An RPC HTTP error status (400
@@ -226,6 +229,24 @@ the response's request ID on invalid JSON, mid-stream deadlines, and network
 disconnects. Before response headers arrive, the server-generated HTTP request ID
 may be unavailable; local pre-dispatch failures and cancellation also need not
 have one. `status` describes an HTTP failure and is absent on WebSocket failures.
+
+Ordinary JSON replies and HTTP error bodies have a total 1 MiB byte limit,
+exported as `RPC_JSON_RESPONSE_MAX_BYTES`. The limit includes state, results,
+and diagnostics; overflow rejects with `COSSACK_RPC_RESPONSE_TOO_LARGE`. Use an
+HTTP endpoint for larger bodies. Clients consume the body through EOF before
+hydration or completion, with cancellation and deadlines still active. Invalid
+UTF-8, JSON, or envelope shapes reject with `COSSACK_RPC_RESPONSE_INVALID` and
+the known header ID. Explicit service replies require an object in
+`_cossack_service_state`; component replies cannot contain that service envelope.
+
+HTTP error `code` and `requestId`, when present, must be nonempty strings;
+`error` must be a string and `fieldErrors` must be an object. Nested field errors
+remain JSON data. The body ID must match a known header ID; otherwise a valid
+body ID supplies correlation. Ordinary component state named `requestId` remains
+application data. Non-JSON middleware failures and native failure bodies stay
+opaque, with generic status diagnostics. A malformed declared JSON failure
+rejects as an invalid response. These client checks do not roll back a mutation
+that already ran or retry it.
 
 HTTP/SSE generator frames must use the response's `X-Cossack-Request-Id` when
 present, or the first accepted frame's ID otherwise. Invalid JSON, UTF-8, frame

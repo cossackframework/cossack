@@ -2,7 +2,48 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex child targets and action limits (2026-10-03):** read
+> **Latest checkpoint — Codex ordinary JSON envelopes (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rpc-json-envelopes-2026-10-03),
+> [RT-01 continuation](./release-0.9.0-plan.md#rt-01), and
+> [RPC contract](../docs/rpc.md). **Author: Codex.** Fixed false completion from
+> malformed service-state/redirect metadata and untyped HTTP diagnostic fields.
+> All 35 new real-handler regressions failed before the shared decoder; they now
+> pass without replaying an action. Component and explicit service clients use
+> `core/shared/rpc-json.ts` before state/result/navigation effects.
+>
+> Ordinary JSON/error bodies have a total 1 MiB byte cap, exported as
+> `RPC_JSON_RESPONSE_MAX_BYTES`, strict UTF-8/object validation and EOF ownership.
+> Overflow/abort/body errors cancel and release readers; deadlines remain active.
+> Service state must be an object; component replies reject the service wrapper.
+> Redirects are exclusive HTTP/HTTPS-or-relative URL metadata. HTTP error fields
+> have structural checks; body IDs must match known headers. Ordinary app state
+> named `requestId` is preserved. Native failure bodies stay opaque; non-JSON
+> middleware failures retain generic status diagnostics. These are client checks:
+> a rejected reply cannot undo a mutation that already ran. See the migration
+> guide before writing custom response producers or larger RPC data returns.
+>
+> Verified: sequential core build/framework declarations; core **775**/53 files,
+> framework **966**/50, CLI **559**/39 including both real-workerd fixtures, all
+> **14** generated runtime cases and the real-pnpm release fixture, root TypeScript
+> and all **11** package checks. The matrix has **294** cases; **31** new core
+> cases cover byte/UTF-8/body/EOF/diagnostic and public proxy lifetime boundaries.
+> Older proxy fixtures now use real Responses rather than bypassing body reads.
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks remain in
+> scope.** Next use the existing Cloudflare fixtures to prove WebSocket/DO peer
+> identity/header context, reconnect and custom rate keys; the neutral socket
+> matrix does not prove that runtime boundary. Audit configured counter-store
+> failures, namespace ownership, persistence and consistency. Anonymous/IP parity
+> remains unverified, and route namespaces do not make memory counters distributed.
+> After that evidence, audit RT-01 against its full criteria; continue RT-02/RT-14
+> schema/file/unknown-key/resource policies and RT-11 session recipes, sensitive
+> old-input exclusion, rotation and concurrency. The detailed plan explains every
+> task's purpose and acceptance evidence. Preserve Deno/Electron/tarball/live
+> gates, versions 0.8.3 until REL-04, and unrelated `reports.md`/`.zcodeignore`.
+> Rebuild core then framework declarations before dependent checks; avoid
+> regenerating exports while tests/types consume them.
+
+> **Previous checkpoint — Codex child targets and action limits (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rpc-target-limits-2026-10-03),
 > [RT-01 next audit](./release-0.9.0-plan.md#rt-01), and
 > [rate-limit contract](../docs/rate-limiting.md). **Author: Codex.** Fixed
