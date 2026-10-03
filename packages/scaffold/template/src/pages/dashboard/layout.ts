@@ -168,6 +168,7 @@ export default class DashboardLayout extends Cossack {
                         </div>
                         <div class="h-px bg-border my-1 group-[.is-collapsed]:hidden"></div>
                         ${component(DropdownMenu, {
+                            id: 'dashboard-account-menu',
                             block: true,
                             side: 'right',
                             align: 'end',
@@ -190,14 +191,14 @@ export default class DashboardLayout extends Cossack {
                             </div>
                             ${accountModules.length ? html`<div class="h-px bg-border my-1"></div>` : null}
                             ${accountModules.map((module) => html`
-                                <a href=${module.href} class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted text-foreground no-underline">
+                                <a role="menuitem" tabindex="-1" href=${module.href} class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted text-foreground no-underline">
                                     <span class=${iconClass}>${component(Icon, { entry: module.icon, size: 16 })}</span>
                                     ${__(module.label)}
                                 </a>
                             `)}
                             <div class="h-px bg-border my-1"></div>
                             <button
-                                type="button"
+                                type="button" role="menuitem" tabindex="-1"
                                 @click=${() => this.doLogout()}
                                 class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left text-destructive">
                                 <span class=${iconClass}>${component(Icon, { entry: logoutIcon, size: 16 })}</span>

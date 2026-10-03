@@ -224,3 +224,22 @@ component(Popover, { id: 'details', contentProps: { id: 'other' } });
 component(Popover, { id: 'details', contentProps: { '@click': (event: Event & { currentTarget: HTMLButtonElement }) => {} } });
 // @ts-expect-error Unknown options no longer disappear into an any index.
 component(Popover, { id: 'details', open: true });
+
+import { DropdownMenu, ContextMenu, type MenuItem, type MenuPanelProps } from '@cossackframework/ui';
+const menuItems: readonly MenuItem[] = [{ label: 'Edit', onClick: event => { const button: HTMLButtonElement = event.currentTarget; void button; } }, { separator: true }];
+const menuPanel: MenuPanelProps = { '@keydown': event => { const panel: HTMLDivElement = event.currentTarget; void panel; } };
+component(DropdownMenu, { id: 'actions', trigger: 'Actions', items: menuItems, menuProps: menuPanel, '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } });
+component(ContextMenu, { id: 'document', menuLabel: 'Document actions', items: menuItems, '@contextmenu': event => { const region: HTMLDivElement = event.currentTarget; void region; } });
+// @ts-expect-error Stable IDs are required.
+component(DropdownMenu, { trigger: 'Actions' });
+// @ts-expect-error Context menus require a name.
+component(ContextMenu, { id: 'document' });
+// @ts-expect-error A separator cannot also be an action.
+const invalidSeparator: MenuItem = { separator: true, label: 'Edit', onClick: () => {} };
+// @ts-expect-error Menu roles belong to the component.
+component(DropdownMenu, { id: 'actions', menuProps: { role: 'dialog' } });
+// @ts-expect-error Native trigger targeting belongs to the component.
+component(DropdownMenu, { id: 'actions', popovertarget: 'other' });
+// @ts-expect-error Arbitrary unimplemented options are rejected.
+component(ContextMenu, { id: 'document', menuLabel: 'Actions', open: true });
+void invalidSeparator;

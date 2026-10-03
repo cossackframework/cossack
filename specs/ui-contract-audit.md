@@ -76,11 +76,11 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Collapsible](../packages/ui/src/components/Collapsible.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Combobox](../packages/ui/src/components/Combobox.ts) | Reviewed foundation | Stable IDs, typed input props/events, listbox/active-descendant semantics, controlled/default selection, form values, required/reset behavior, keyboard/pointer and SSR/fresh-render acceptance. |
 | [Command](../packages/ui/src/components/Command.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [ContextMenu](../packages/ui/src/components/ContextMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [ContextMenu](../packages/ui/src/components/ContextMenu.ts) | Reviewed foundation | Stable IDs, typed actions/native events, menu semantics, keyboard/typeahead, disabled actions, focus restoration, bounded placement and SSR/Chromium acceptance. |
 | [DataTable](../packages/ui/src/components/DataTable.ts) | Foundation reviewed | Typed columns/props, generated Node/workerd resource/query acceptance and focus checks. |
 | [DatePicker](../packages/ui/src/components/DatePicker.ts) | Reviewed foundation | Shared Calendar, typed native date input, min/max/required/form/reset behavior, stable labels, controlled/default values, nonmodal popup focus and browser acceptance. |
 | [Drawer](../packages/ui/src/components/Drawer.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
-| [DropdownMenu](../packages/ui/src/components/DropdownMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [DropdownMenu](../packages/ui/src/components/DropdownMenu.ts) | Reviewed foundation | Stable IDs, typed actions/native events, menu semantics, keyboard/typeahead, disabled actions, focus restoration, bounded placement and SSR/Chromium acceptance. |
 | [Empty](../packages/ui/src/components/Empty.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Field](../packages/ui/src/components/Field.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Form](../packages/ui/src/components/Form.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit DropdownMenu and ContextMenu, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Tooltip and HoverCard, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the
@@ -138,3 +138,5 @@ the installed catalog rather than implying that unreviewed components are comple
 Modal, Sheet and Drawer share native lifecycle handling. The [dialog checkpoint](./release-0.9.0.md#codex-dialog-controls-2026-10-04) records public types, SSR, browser and installed-catalog evidence. Twenty-two foundations are reviewed. The full RT-23 acceptance scope remains open.
 
 Popover now preserves native trigger/panel event ownership and accessibility with stable IDs. The [Popover checkpoint](./release-0.9.0.md#codex-popover-2026-10-04) records evidence and limits. Twenty-three foundations are reviewed.
+
+DropdownMenu and ContextMenu now share single-level menu navigation and lifecycle handling. The [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) records evidence and limits. Twenty-five foundations are reviewed.

@@ -18,10 +18,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit DropdownMenu and ContextMenu, then the remaining pending rows.
-   Twenty-three foundations are reviewed. Popover now has stable IDs, typed trigger/panel
-   contracts and native dismissal with bounded positioning.
-   See the [Popover checkpoint](./release-0.9.0.md#codex-popover-2026-10-04) for tests and limits.
+   Next audit Tooltip and HoverCard, then the remaining pending rows.
+   Twenty-five foundations are reviewed. DropdownMenu and ContextMenu now have typed
+   action/native-event contracts, menu semantics and shared keyboard/focus handling.
+   See the [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) for tests and limits.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).

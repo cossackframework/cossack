@@ -190,10 +190,19 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(popover.propsContract.members.some(member => member.name === 'contentProps' && member.type.includes('PopoverContentProps')));
     assert.ok(!popover.propsContract.members.some(member => ['role','popovertarget','aria-expanded','open'].includes(member.name)));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-popover'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Popover', '--json']);
+    for (const [name, target] of [['DropdownMenu','HTMLButtonElement'],['ContextMenu','HTMLDivElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@keydown' && member.type.includes(target)));
+      assert.ok(control.propsContract.members.some(member => member.name === 'menuProps' && member.type.includes('MenuPanelProps')));
+      assert.ok(!control.propsContract.members.some(member => ['popovertarget','aria-expanded','open'].includes(member.name)));
+    }
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'action-menus'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'DropdownMenu', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Popover']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Popover' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['DropdownMenu']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'DropdownMenu' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

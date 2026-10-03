@@ -568,6 +568,7 @@ describe("toast (global API)", () => {
 describe("DropdownMenu", () => {
     it("renders a trigger button with popovertarget and menu items", () => {
         const out = renderComp(DropdownMenu, {
+            id: 'dropdown-1',
             trigger: "Actions",
             items: [
                 { label: "Edit" },
@@ -584,6 +585,7 @@ describe("DropdownMenu", () => {
 
     it("renders a separator when separator is true", () => {
         const out = renderComp(DropdownMenu, {
+            id: 'dropdown-2',
             trigger: "Menu",
             items: [{ label: "A" }, { separator: true }, { label: "B" }],
         });

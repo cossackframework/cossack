@@ -6885,3 +6885,50 @@ Logs: `/tmp/cossack-popover-{build,ui,browser,root-types,types,agent-docs}.log`.
 Twenty-three foundations are reviewed. Continue DropdownMenu and ContextMenu,
 then the remaining pending UI rows. RT-23 and CLI-07/CLI-08 remain open. No release
 checkbox or package version changed.
+
+<a id="codex-action-menus-2026-10-04"></a>
+### Codex: DropdownMenu and ContextMenu contracts (2026-10-04)
+
+Both menus now require stable IDs and expose closed native attribute/event types.
+MenuPanelProps names the panel contract; MenuItem separates labeled actions from
+separators. Disabled actions remain focusable but cannot activate. Custom dropdown
+buttons/links declare their roles explicitly. The dashboard template and demo
+consumers now provide IDs and menu-item semantics. ContextMenu requires a menu name.
+
+A shared controller handles arrow/Home/End navigation, prefix search, Tab exits,
+Escape, focus restoration and bounded positioning. It preserves focus when an
+action opens a dialog and recovers when the focused item disappears. Setup waits
+until refs join the live document, avoiding temporary-document focus/listener
+ownership. Cleanup cancels deferred setup and removes listeners and observers.
+
+DropdownMenu uses native auto dismissal. ContextMenu retains manual popover mode:
+the opening right-click otherwise immediately dismissed an auto popover in Chromium.
+Scoped handlers provide outside-click/Escape dismissal. External scrolling closes
+context menus while internal scrolling remains usable. Public imperative methods
+remain safe before connection and after removal.
+
+Verification: UI build, 193 UI tests across 18 files, root `pnpm tsc --noEmit` and
+all 11 package type checks pass. The themed Chromium fixture covers retained SSR
+hydration, fresh mounts, first/last opening, disabled generated/custom actions,
+wrapping/typeahead/Home/End, callback/default-event vetoes, Tab/Shift+Tab exits,
+context keyboard/pointer invocation, native fieldsets, outside focus, removed-item
+recovery, dialog-opening actions, all four placement sides, oversized panels,
+internal/external scrolling and cleanup before deferred connection.
+
+Installed-tarball acceptance passes for both contracts and the new guide, including
+exact-symbol DropdownMenu CLI/MCP parity with Node networking disabled during
+discovery. All six existing packaged examples compile and execute. The new UI guide
+does not add an executable example. Migration notes describe IDs, callback types,
+separator changes, custom item roles and style ownership.
+
+The keyboard contract follows the [W3C menu-button pattern](https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/)
+and [menu pattern](https://www.w3.org/WAI/ARIA/apg/patterns/menubar/).
+These controls implement single-level actions. Submenus, menu checkbox/radio widgets,
+other browser engines and assistive-technology acceptance are not claimed here.
+
+All 78 scaffold recipe tests also pass after updating the dashboard menu template.
+
+Logs: `/tmp/cossack-menu-{build,ui,browser,root-types,types,agent-docs,scaffold}.log`.
+Twenty-five foundations are reviewed. Continue Tooltip and HoverCard, then pending
+UI audit rows. RT-23 and CLI-07/CLI-08 remain open. The release still has 24 of 58
+completed tasks. Package versions remain 0.8.3 until REL-04.

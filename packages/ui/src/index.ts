@@ -106,3 +106,5 @@ export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, Butt
 export { isCalendarDate } from './internal/date';
 
 export type { DialogControlProps } from './internal/dialog';
+
+export type { MenuItem, MenuPanelProps } from './internal/menu';

@@ -817,3 +817,29 @@ and scrolls oversized content. Use `data-side` for actual placement instead of
 `cs-popover--<side>` classes. The component owns panel positioning and maximum
 viewport dimensions. Use `contentProps.style` width/height for desired size.
 Native targeting works without JavaScript; custom positioning requires hydration.
+
+## DropdownMenu and ContextMenu
+
+Both menus require a stable, page-unique `id`. ContextMenu also requires
+`menuLabel`. Top-level native attributes/events target the dropdown button or
+context div. Use `menuProps` for the menu panel. Arbitrary props are rejected.
+Native targeting, expansion and menu roles belong to the components.
+
+Action labels are required strings. Separators use their own `{ separator: true }`
+entry. Split old ContextMenu entries that combine a separator and action. Disabled
+actions use `aria-disabled` and remain focusable during menu navigation. Custom
+DropdownMenu children must use `role="menuitem"` and `tabindex="-1"` for actions.
+Use `aria-disabled="true"` for custom unavailable actions. Plain buttons and links
+are no longer treated as implicit menu items.
+
+The menus now support arrow navigation, Home/End, typeahead, Escape and Tab exits.
+DropdownMenu supports ArrowUp/Down opening. ContextMenu supports Shift+F10 and the
+ContextMenu key. Item callbacks receive native button events. Prevent default to
+keep the menu open. Callbacks that move focus elsewhere retain that focus.
+
+ContextMenu retains manual popover mode and now owns scoped outside-click/Escape
+listeners. It closes on external scrolling. DropdownMenu uses native auto mode.
+Both release observers/listeners on cleanup and cancel deferred connection work.
+Panel positioning and maximum dimensions belong to the controller. Use width and
+height in `menuProps.style` for desired sizes. Interactive menu behavior requires
+hydration; SSR supplies stable IDs, names and roles.

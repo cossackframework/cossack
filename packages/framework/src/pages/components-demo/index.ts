@@ -455,6 +455,7 @@ export class ComponentsDemo extends Cossack {
                         ${component(Button, { variant: 'secondary', '@click': () => toast.warning('This is a warning.') }, 'Toast: Warning')}
                         ${component(Button, { variant: 'destructive', '@click': () => toast.error('Something went wrong.') }, 'Toast: Error')}
                         ${component(DropdownMenu, {
+                            id: 'demo-actions-menu',
                             trigger: 'Dropdown',
                             side: 'bottom',
                             items: [
@@ -473,6 +474,7 @@ export class ComponentsDemo extends Cossack {
                     Sheet,
                     {
                         open: this.sheetOpen,
+                        'aria-label': 'Sheet panel',
                         side: 'right',
                         onClose: () => { this.sheetOpen = false; },
                     },
@@ -691,6 +693,8 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">ContextMenu</h2>
                     <p class="text-sm text-muted-foreground">Right-click the box below.</p>
                     ${component(ContextMenu, {
+                        id: 'demo-context-menu',
+                        menuLabel: 'Content actions',
                         items: [
                             { label: 'Copy', onClick: () => toast.show('Copied') },
                             { label: 'Paste', onClick: () => toast.show('Pasted') },
@@ -785,6 +789,7 @@ export class ComponentsDemo extends Cossack {
                             // group-[.is-collapsed] classes hide the name/email/chevron
                             // when the sidebar collapses to its icon rail.
                             footer: component(DropdownMenu, {
+                                id: 'demo-account-menu',
                                 block: true,
                                 side: 'right',
                                 align: 'end',
@@ -811,27 +816,27 @@ export class ComponentsDemo extends Cossack {
                                 </div>
                                 <hr class="border-t border-border my-1" />
                                 <!-- Upgrade banner -->
-                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, html`
                                     <svg class="w-4 h-4 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 16.5 5.5 21l2-7.5L2 9h7l3-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
                                     <span class="flex-1">Upgrade to Pro</span>
                                 `)}
                                 <hr class="border-t border-border my-1" />
                                 <!-- Account links -->
-                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                     <span class="flex-1">Account</span>
                                 `)}
-                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 10h18" stroke="currentColor" stroke-width="1.5"/></svg>
                                     <span class="flex-1">Billing</span>
                                 `)}
-                                ${component(Button, { type: 'button', variant: 'ghost', block: true }, html`
+                                ${component(Button, { type: 'button', variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, html`
                                     <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none"><path d="M6 8a6 6 0 0112 0c0 5 2 6 2 6H4s2-1 2-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                     <span class="flex-1">Notifications</span>
                                 `)}
                                 <hr class="border-t border-border my-1" />
                                 <!-- Log out -->
-                                ${component(Button, { type: 'button', variant: 'destructive', block: true }, html`
+                                ${component(Button, { type: 'button', variant: 'destructive', block: true, role: 'menuitem', tabindex: -1 }, html`
                                     <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                     <span class="flex-1">Log out</span>
                                 `)}

@@ -209,6 +209,7 @@ export default class DashboardBlocks extends Cossack {
                         { label: 'Settings', href: '#', icon: SettingsIcon },
                     ],
                     footer: component(DropdownMenu, {
+                        id: 'dashboard-account-menu',
                         block: true,
                         side: 'right',
                         align: 'end',
@@ -227,10 +228,10 @@ export default class DashboardBlocks extends Cossack {
                             <div class="text-xs text-muted-foreground">hi@tan.ng</div>
                         </div>
                         <div class="h-px bg-border my-1"></div>
-                        ${component(Button, { variant: 'ghost', block: true }, 'Account')}
-                        ${component(Button, { variant: 'ghost', block: true }, 'Settings')}
+                        ${component(Button, { variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, 'Account')}
+                        ${component(Button, { variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, 'Settings')}
                         <div class="h-px bg-border my-1"></div>
-                        ${component(Button, { variant: 'destructive', block: true }, 'Log out')}
+                        ${component(Button, { variant: 'destructive', block: true, role: 'menuitem', tabindex: -1 }, 'Log out')}
                     `),
                 })}
                 <div class="flex-1 p-6 space-y-6 overflow-x-hidden">
@@ -347,6 +348,8 @@ export default class DashboardBlocks extends Cossack {
                                     variant: m.status === 'Active' ? 'success' : m.status === 'Away' ? 'warning' : 'secondary',
                                 }, m.status)}
                                 ${component(DropdownMenu, {
+                                    id: `member-actions-${encodeURIComponent(m.email)}`,
+                                    'aria-label': `Actions for ${m.name}`,
                                     trigger: html`<span class="px-2 py-1 text-muted-foreground hover:text-foreground cursor-pointer inline-flex">⋯</span>`,
                                     side: 'bottom',
                                     align: 'end',
