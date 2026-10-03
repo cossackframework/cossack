@@ -1956,40 +1956,86 @@ query transitions. Those requirements remain below.
 
 | Original RT-08 criterion | Current evidence | Status |
 | --- | --- | --- |
-| Copied filtered URLs show identical state | Real Node/workerd SSR and two browser tabs have equal search/page/sort/tags and resource output. | Implemented for page resources. |
-| Back/forward restores filters and results | Both native production browser fixtures navigate away/back/forward with cached SSR documents and matching dependency values. | Implemented for the fixture. Extend to retained scopes and pending queries. |
-| Invalid numbers and predictable defaults | Controlled parsing tests and real invalid page URLs reset to documented defaults. Read/write canonicalization preserves defaults and explicit empty arrays. | Implemented. |
-| Browser history, SSR parity and Unicode | Owned destination context and push/replace paths pass unit and actual production acceptance. | Implemented for normal navigation. |
-| Rapid changes and resource integration | Existing sequence guards protect ordinary stale navigation responses. New acceptance confirms matching initial/page SSR resources do not issue duplicate RPCs. | Incomplete: direct overlapping query patches, drafts, pending resource changes and retained-layout reads still need implementation and acceptance. |
+| Copied filtered URLs show identical state | Production Node/workerd SSR and two tabs have equal query/resource output. Copied tabs receive no browser draft state. | Implemented for page/layout fixture. |
+| Back/forward restores filters and results | Both production browsers restore query/resource data and retain declared page drafts across ordinary history traversal. | Extend to traversal during pending work. |
+| Invalid numbers and predictable defaults | Pure read/write cases and real invalid page URLs reset to documented defaults. Explicit empty arrays and canonicalization pass. | Implemented. |
+| Browser history, SSR parity and Unicode | Owned destination contexts and push/replace pass unit and production acceptance. | Extend to staged commits and changed ownership. |
+| Rapid changes and resource integration | Typed pending patches merge; guards/failures/disposal clear intent; local drafts survive; retained layout SSR entries avoid extra RPCs; delayed old responses/results cannot overwrite newer data. | Incomplete: pending history, nested/changed owners, actual backend read counts and bounded completion remain. |
 
-Next implementation steps for GLM:
 
-1. Add a typed component updater that carries a patch and declaration through
-   navigation ownership. Merge later patches against the latest pending intent,
-   not only this.c.req.url. Keep committed reads separate from pending intent.
-   Clear pending ownership on success, prevention, failure, supersession and
-   disposal. Do not introduce a second global URL store.
-2. Preserve declared browser-owned ClientState/ClientStore drafts during query
-   changes on the same effective page. Normal navigation currently destroys
-   and recreates the page. Either retain it with precise hydration ownership or
-   transfer only local declared fields through a trusted framework path. Remote
-   SSR JSON must not supply client-only draft state. Native File values and
-   store proxies need explicit ownership. Do not preserve drafts across unrelated
-   pages or make failed/superseded navigation restore an older draft.
-3. Hydrate authoritative query-derived resources for retained layouts without
-   issuing a duplicate RPC for the same SSR read. Inspect entry identity,
-   cancellation and service scopes before replacing a pending resource. Preserve
-   layout services and client-only drafts. An older read must not overwrite the
-   new dependency or its URL. Scope/transport changes must rebind appropriately.
-4. Extend the shared Node/workerd browser fixture with overlapping patches,
-   delayed old server reads, a retained layout resource, native draft values,
-   guard prevention, failed navigation, replace and back/forward during pending
-   work. Count actual reads/RPCs and compare both address and rendered state.
-   The current fixture's zero hydration RPCs is not a broader retained-read claim.
-5. Complete bounded cancellation/completion through RT-09 as the integration
-   needs it. Keep its larger cache/scroll/transition/diagnostic matrix open until
-   its own evidence passes. Audit every RT-08 criterion before checking its box.
-   All other 36 unchecked tasks and release gates remain in scope.
+Codex continuation (2026-10-03): query ownership, drafts and retained resources.
+Author: Codex. Continued after `c133495`. See the
+[verification checkpoint](./release-0.9.0.md#codex-query-ownership-2026-10-03).
+RT-08 remains open. The 58 original task IDs remain unchanged: 22 checked,
+36 unchecked. Earlier evidence above describes the previous checkpoint.
+
+The first three implementation steps now have concrete implementations:
+
+1. **Typed updater and pending intent.** `Cossack.updateUrlState` accepts an exact
+   inferred patch and existing NavigateOptions, then delegates to the framework
+   navigation owner. That owner merges against the latest live pending intent.
+   Different declarations preserve unrelated keys; later values replace earlier
+   values for the same key. Committed reads/address remain unchanged while fetching.
+   Matching cleanup clears only its own intent. Ordinary navigation clears query
+   intent. A disposed owner's patch cannot enter a live layout's next update.
+   Controlled framework tests cover overlaps, late responses, stale source URLs,
+   guards, failures and disposal. Published types reject incorrect values and
+   literal/variable/union extras.
+2. **Local page drafts.** The page still recreates on navigation. For the same
+   file, public pathname, class and service/user/transport/provider ownership,
+   the framework captures inherited declared ClientState/ClientStore raw values
+   in an opaque single-use local capability. Only the matching class can consume
+   it before bootstrap. Remote internal JSON and copied tokens cannot supply
+   drafts. Fresh proxies belong to the new page. File identity survives. Public
+   fields still hydrate from SSR. Query loading does not destroy the editable
+   outgoing page. Unrelated pages and changed ownership receive new drafts.
+   DOM file-input values are not restored; applications retain their declared
+   File state explicitly.
+3. **Retained layout resource handoff.** Each retained App/layout replaces its
+   resource entry map with the new SSR data before updating its URL/parameters.
+   Matching dependency keys avoid duplicate RPCs. Older pending entries cannot
+   publish values or errors into the new map. Browser drafts and layout services
+   are preserved. A changed parent scope or serialized user/runtime/layout-transport/
+   scope/provider identity recreates the layout and its descendants. A child page
+   changing between HTTP and SSE does not change its retained layout's transport
+   or cancel that layout's pending service calls. The page
+   module resolves before changing these owners. This does not make all module,
+   bootstrap or transition failures atomic, and it does not stop application I/O.
+
+Both generated Node and native workerd browsers now verify page, layout and
+layout-service drafts, declared File state, copied-tab isolation, unrelated-page
+reset, back/forward and replace, rapid patches, prevented navigation and failed
+fetches. A controlled actual SSR response stays held while the draft is edited;
+newer query data commits first and the old response is discarded. Matching page
+and retained-layout resources issue zero extra /crpc requests. Core tests also
+settle an obsolete resource successfully and exceptionally after the handoff.
+
+**Next steps for GLM, in order:**
+
+1. **Pending history and staged commit acceptance (RT-08/RT-09).** Drive back,
+   forward and replace while query fetches are pending. Delay page/layout module
+   loading, bootstrap, rendering and view-transition callbacks separately. Check
+   address, committed readers, drafts and actual visible tree after every outcome.
+   Current sequence guards and serialized commits do not prove bounded settlement
+   or atomic rollback of application bootstrap. Fetch/guard deadlines and disposal
+   must release navigation ownership without replaying mutations.
+2. **Ownership changes and nested drafts (RT-08/RT-12).** Exercise user, scopeKey,
+   transport/provider and parent-layout changes in real browser applications.
+   Verify old service cleanup exactly once and fresh instances under the new owner.
+   Audit App/root services and nested component draft/resource ownership, not only
+   the declared page and retained layout fields covered here. Capture native values
+   only through local capabilities; never hydrate client drafts from SSR JSON.
+3. **Count actual backend reads (RT-08/REL-02).** Add an isolated audit fixture
+   for actual page/layout resource executions in both production runtimes. Compare
+   SSR reads and /crpc counts for initial load, cached history, invalid values,
+   overlapping delayed queries and refresh during navigation. Current zero-RPC
+   proof does not assert exactly one application backend read or abort ignored I/O.
+   Release all controlled gates in cleanup and keep test deadlines finite.
+4. **Completion audit.** Compare the original criteria below/above against the
+   final evidence. Do not close RT-08 from the new narrow fixtures. Keep RT-09's
+   wider cache, scroll, transitions, cancellation and diagnostics matrix open
+   until its own checks pass. Continue all other 36 unchecked tasks and release
+   gates. Versions remain 0.8.3 until REL-04.
 
 Previous starting context after RT-07 (2026-10-03):
 Path parameters and native API query schemas are now separate completed

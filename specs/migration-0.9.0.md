@@ -44,6 +44,15 @@ Use `defineUrlState` for typed query defaults and serialization. Choose
 Existing calls create a new entry. Read the [URL-state guide](../docs/url-state.md)
 for the API and the remaining RT-08 integration work.
 
+For overlapping query edits, use `this.updateUrlState(definition, patch, options)`.
+It merges against the latest live pending intent. Constructing a URL from the
+committed request for each overlapping edit can lose an earlier field change.
+Same-page query navigation now preserves declared ClientState/ClientStore drafts,
+including local File values, when ownership matches. Browser file-input DOM
+values remain empty after page replacement. Copied URLs and unrelated pages
+start new drafts. Retained layout resources adopt matching SSR data without
+another hydration RPC; late old results cannot overwrite the new query.
+
 ## Rate-limit configuration and counters reject invalid values
 
 An explicit `rateLimit`/`RATE_LIMIT` now requires a supported non-empty string

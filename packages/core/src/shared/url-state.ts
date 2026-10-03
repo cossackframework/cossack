@@ -7,6 +7,8 @@ export type UrlCodecValue<C> = C extends UrlCodec<infer T> ? T : never;
 export type UrlStateValues<S extends Record<string, UrlCodec<UrlValue>>> =
     Readonly<{ [K in keyof S]: UrlCodecValue<S[K]> }>;
 type UnionKeys<T> = T extends unknown ? keyof T : never;
+export type UrlStatePatch<S extends Record<string, UrlCodec<UrlValue>>> = { [K in keyof S]?: UrlCodecValue<S[K]> | undefined };
+export type ExactUrlStatePatch<S extends Record<string, UrlCodec<UrlValue>>, P extends UrlStatePatch<S>> = P & Record<Exclude<UnionKeys<P>, keyof S>, never>;
 export type UrlStateIssueCode = 'invalid-encoding' | 'repeated-scalar' | 'invalid-value';
 export interface UrlStateIssue { readonly field: string; readonly code: UrlStateIssueCode }
 export interface UrlStateRead<T> { readonly values: T; readonly issues: readonly UrlStateIssue[] }
@@ -14,9 +16,9 @@ export interface UrlStateDefinition<S extends Record<string, UrlCodec<UrlValue>>
     readonly keys: readonly (keyof S & string)[];
     read(url: string | URL): UrlStateRead<UrlStateValues<S>>;
     /** Undefined resets a key to its default. Unknown query pairs and fragments survive. */
-    url<P extends { [K in keyof S]?: UrlCodecValue<S[K]> | undefined }>(
+    url<P extends UrlStatePatch<S>>(
         current: string | URL,
-        patch: P & Record<Exclude<UnionKeys<P>, keyof S>, never>,
+        patch: ExactUrlStatePatch<S, P>,
         options?: { defaults?: 'omit' | 'include' },
     ): string;
 }

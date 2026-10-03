@@ -14,7 +14,7 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
-import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues } from './url-state';
+import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues, UrlStatePatch, ExactUrlStatePatch } from './url-state';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
@@ -178,6 +178,10 @@ function attachTemplateOwner(value: unknown, owner: CossackElement): void {
         for (const nested of value) attachTemplateOwner(nested, owner);
     }
 }
+
+// Local capabilities never enter serialized state. Only the original class can
+// consume one, once; raw store targets receive fresh proxies in their new owner.
+const navigationDrafts = new WeakMap<object, { constructor: Function; values: Map<string, unknown> }>();
 
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     private _serviceScope?: ServiceScope;
@@ -991,7 +995,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Access metadata from the new state structure
             const metadata = clientInitialState?.metadata || {};
             this.user = metadata.user;
-            const clientParams = metadata.params || {};
+            this._cossack_params = metadata.params || {};
             this._cossack_path = metadata.pathname || window.location.pathname;
             this._cossack_url = new URL(metadata.url ?? window.location.href, window.location.href).href;
 
@@ -999,7 +1003,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const component = this;
             const hydratedContext: HydratedContext = {
                 req: {
-                    param: (key?: string) => key ? clientParams[key] : clientParams,
+                    param: (key?: string) => key ? component._cossack_params[key] : component._cossack_params,
                     get path() { return (this as any)._component?._cossack_path || component._cossack_path; },
                     get url() { return component._cossack_url ?? window.location.href; },
                     query: (key?: string) => {
@@ -1029,6 +1033,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
 
         this.initializeState(initialState);
+        this._navigationClientDraft = undefined;
 
         for (const [name, resource] of Object.entries(initialState?.serverResources ?? {}) as [string, { argsKey: string; value: unknown }][]) {
             this._serverResources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
@@ -1159,6 +1164,54 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     private _cossack_url?: string;
+    private _cossack_params: Record<string, string> = {};
+    private _navigationClientDraft?: Map<string, unknown>;
+
+    /** @internal Capture browser-owned declarations without serialization or proxy getters. */
+    @Client()
+    public _frameworkCaptureClientDraft(): object | undefined {
+        if (this.isServer || this._phase === LifecyclePhase.Destroyed) return undefined;
+        const { clientState, clientStore } = collectReactiveMetadata(this.constructor);
+        const values = new Map<string, unknown>();
+        for (const key of [...clientState, ...clientStore]) {
+            if (this._stateContainer.isInitialized(key)) values.set(key, this._stateContainer.getInternal(key));
+        }
+        const token = Object.freeze({});
+        navigationDrafts.set(token, { constructor: this.constructor, values });
+        return token;
+    }
+
+    /** @internal Restore only a local capability before the new owner bootstraps. */
+    @Client()
+    public _frameworkRestoreClientDraft(token: object): boolean {
+        if (this.isServer || this._phase !== LifecyclePhase.Creating) return false;
+        const draft = navigationDrafts.get(token);
+        if (!draft || draft.constructor !== this.constructor) return false;
+        navigationDrafts.delete(token);
+        this._navigationClientDraft = draft.values;
+        return true;
+    }
+
+    /** @internal Replace SSR resource ownership in a retained browser component. */
+    @Client()
+    public _frameworkHydrateNavigationResources(state: SerializedComponentState, pathname: string, destination: string): void {
+        if (this.isServer || this._phase === LifecyclePhase.Destroyed) return;
+        const resources = new Map<string, ServerResourceEntry>();
+        for (const [name, resource] of Object.entries(state.serverResources ?? {})) {
+            this.__serverResourceResult(name, resource.value);
+            resources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
+        }
+        // Replace entries before changing dependencies. Late old loads cannot
+        // settle into the new map; matching SSR arguments need no second RPC.
+        this._serverResources = resources;
+        this.updatePath(pathname, destination);
+        this._cossack_params = { ...state.metadata?.params };
+        const user = state.metadata?.user as User | undefined;
+        this.user = user;
+        this.provide(UserContext, user);
+        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        this._childrenStateRegistry = state.children ?? {};
+    }
     private _urlStateCache = new WeakMap<object, { url: string; values: unknown }>();
 
     /** Read immutable query values from this request/destination, including during hydration. */
@@ -1764,7 +1817,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const isPublic = !isClientOnly; // @State / @Store are public; @ClientState / @ClientStore are internal
 
             // Get initial value from state source or from existing property value
-            let value = this.getProperty(key);
+            let value = isClientOnly && this._navigationClientDraft?.has(key)
+                ? this._navigationClientDraft.get(key) : this.getProperty(key);
 
             // Auto-bind from flash/old (server-only). `flash`/`old` are set via
             // @State/@Store options; the bound value wins over the class-field
@@ -2462,6 +2516,26 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<NavigateResult>;
 
+    /** @internal The framework owns pending query intent alongside navigation. */
+    public static _onUpdateUrlState?: (
+        sourceUrl: string, build: (current: string) => string,
+        isCurrent: () => boolean, options?: NavigateOptions,
+    ) => Promise<NavigateResult>;
+
+    /** Merge a typed patch with the latest pending query intent, then navigate. */
+    @Client()
+    public updateUrlState<S extends Record<string, UrlCodec<UrlValue>>, P extends UrlStatePatch<S>>(
+        definition: UrlStateDefinition<S>, patch: ExactUrlStatePatch<S, P>, options?: NavigateOptions,
+    ): Promise<NavigateResult> {
+        const current = () => this._phase !== LifecyclePhase.Destroyed;
+        const sourceUrl = this.c?.req.url;
+        if (!current() || typeof sourceUrl !== 'string' || !Cossack._onUpdateUrlState) {
+            return Promise.resolve({ outcome: 'failed', url: sourceUrl ?? '',
+                error: new Error('[Cossack] URL state updates require an active browser navigation owner.') });
+        }
+        return Cossack._onUpdateUrlState(sourceUrl, base => definition.url(base, patch), current, options);
+    }
+
     /** Await the SPA navigation outcome on the client. */
     @Client()
     public navigate(url: string, options?: NavigateOptions): Promise<NavigateResult> {
@@ -2703,6 +2777,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         ]);
 
         // Revoke task ownership before any application/descendant cleanup runs.
+        this._navigationClientDraft = undefined;
         for (const controller of this._taskExecutions.values()) controller.abort();
         this._taskExecutions.clear();
 

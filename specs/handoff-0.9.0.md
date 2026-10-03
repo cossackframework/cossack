@@ -2,7 +2,60 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex RT-08 query contracts (2026-10-03). Author: Codex.
+> Latest checkpoint: Codex query ownership review (2026-10-03).
+> Author: **Codex**. Continued after `c133495`. Read the
+> [verification](./release-0.9.0.md#codex-query-ownership-2026-10-03),
+> [updated RT-08 context and four next steps](./release-0.9.0-plan.md#rt-08),
+> [public API guide](../docs/url-state.md) and
+> [migration notes](./migration-0.9.0.md#browser-query-context-and-history).
+>
+> Reviewed and fixed same-page draft loss, retained-layout stale resource entries,
+> overlapping patch loss, and merging a disposed owner's abandoned patch.
+> Typed updateUrlState delegates to existing navigation ownership. Reads stay
+> committed while updates merge against pending intent. Guards, failures,
+> supersession and disposal release the matching intent.
+>
+> Same-page replacement transfers only declared local ClientState/ClientStore
+> values through a class-bound, single-use opaque capability. SSR internal JSON
+> cannot restore drafts. Store proxies belong to the new page; declared native
+> File values survive. Browser file-input DOM values do not restore. Query
+> loading leaves the current page editable, so drafts changed during a delayed
+> fetch transfer at commit. Copied tabs and unrelated pages start new drafts.
+>
+> Retained layouts adopt matching SSR resource entries before changing their
+> destination. Old pending results/errors cannot publish into those entries.
+> Layout services and local drafts stay owned by their layout. Review caught
+> an initial ownership check using the child page's transport; it now uses the
+> layout's own transport. SSE/HTTP child-page transitions must retain shared
+> layout services and their in-flight calls. Do not revert this distinction.
+>
+> Controlled core/framework cases and both generated Node/native workerd
+> browsers cover these contracts. Production cases include copied tabs,
+> unrelated-page reset, File/page/layout/service drafts, ordinary back/forward,
+> replace, rapid patches, guards, failed fetches and a held old SSR response.
+> The newer query commits first with zero extra hydration /crpc requests.
+> Final checks: root TypeScript and all 11 package checks; full core 1,396/83
+> files; final full framework 1,412/66 files; revised guide examples; 387 local
+> documentation links/anchors. The first full CLI run had 606 passes and two
+> failures for the layout regression. Both failures plus both URL production
+> cases passed after correction (four tests, two files). The complete CLI suite
+> was not rerun after the focused fix. See the linked verification for commands.
+> No owned build/test process remains.
+>
+> **No checkbox closes:** 22/58 checked, 36 unchecked. RT-08 remains open.
+> Next for GLM: pending back/forward/replace and staged commits; changed/nested
+> ownership and cleanup; actual backend read counts; full criterion audit.
+> RT-09 retains bounded fetch/guard/bootstrap/transition completion and its
+> cache/scroll/diagnostic matrix. Replacing resource entries does not abort
+> application I/O or prove one backend read. The current fixtures do not prove
+> atomic rollback of arbitrary application bootstrap or nested child drafts.
+>
+> Continue every other unchecked task. Versions remain 0.8.3 until REL-04.
+> Preserve user-owned reports.md and .zcodeignore. No push, publication, live
+> cloud changes, external messages or new chats were performed.
+>
+
+> Previous checkpoint: Codex RT-08 query contracts (2026-10-03). Author: Codex.
 > Continued after `25eab9c`. Read the
 > [verification](./release-0.9.0.md#codex-url-state-contracts-2026-10-03),
 > [criterion audit and five next steps](./release-0.9.0-plan.md#rt-08),

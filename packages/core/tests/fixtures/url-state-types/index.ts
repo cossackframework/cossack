@@ -10,6 +10,11 @@ filters.url('/', { page: 2, sort: 'price', tags: ['one'] });
 filters.url('/', { page: undefined, optional: undefined }, { defaults: 'include' });
 class List extends Cossack { get filters() { return this.urlState(filters); } }
 const page: number = new List().filters.page;
+new List().updateUrlState(filters, { page: 2, tags: ['one'], optional: undefined }, { history: 'replace' });
+// @ts-expect-error updater retains numeric patch types
+new List().updateUrlState(filters, { page: '2' });
+// @ts-expect-error updater rejects unknown fields
+new List().updateUrlState(filters, { page: 2, extra: 1 });
 // @ts-expect-error the component reader retains its inferred declaration
 const wrongComponentPage: string = new List().filters.page;
 const navigation: NavigateOptions = { history: 'replace' };
@@ -24,9 +29,17 @@ filters.url('/', { page: '2' });
 // @ts-expect-error unknown declared field
 filters.url('/', { missing: 1 });
 const extra = { page: 2, missing: 1 };
+// @ts-expect-error updater cannot hide extra fields in a variable
+new List().updateUrlState(filters, extra);
 // @ts-expect-error extra variable fields
 filters.url('/', extra);
 declare const union: { page: number } | { page: number; missing: number };
+// @ts-expect-error updater cannot hide extra fields in a union
+new List().updateUrlState(filters, union);
+// @ts-expect-error updater retains narrow enum values
+new List().updateUrlState(filters, { sort: 'other' });
+// @ts-expect-error updater retains array element types
+new List().updateUrlState(filters, { tags: [1] });
 // @ts-expect-error union cannot hide an extra field
 filters.url('/', union);
 // @ts-expect-error literal enum values remain narrow

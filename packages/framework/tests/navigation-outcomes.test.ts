@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NavigateResult } from '@cossackframework/core';
 
 const fixture = vi.hoisted(() => ({
-    registry: { pages: {} as Record<string, any>, layouts: {}, loadings: {} },
+    registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
     guard: async () => false,
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
@@ -14,8 +14,9 @@ vi.mock('virtual:cossack-lang', () => ({ supportedLocales: [], defaultLocale: 'e
 vi.mock('@cossackframework/core', async importOriginal => {
     const actual = await importOriginal<typeof import('@cossackframework/core')>();
     return { ...actual,
-        createInstance: (Component: new () => any) => new Component(),
+        createInstance: (Component: new () => any, options: any) => Object.assign(new Component(), { scope: options?.serviceScope }),
         createRootServiceScope: () => ({}),
+        createLayoutServiceScope: (parent: any) => ({ parent }),
         enableClientNavigation: vi.fn(),
         applyNavigationScroll: vi.fn(),
     };
@@ -25,6 +26,7 @@ const { Cossack } = await import('@cossackframework/core');
 // Keep real navigation/fetch/cache/history code, with a small component lifecycle
 // fixture so module and bootstrap delays can be controlled deterministically.
 class Component {
+    scope: any;
     children: any;
     path = '';
     updateComplete = Promise.resolve();
@@ -39,7 +41,7 @@ class Component {
     }
     async requestUpdate() { return true; }
     destroy() {}
-    _getServiceScope() { return {}; }
+    _getServiceScope() { return this.scope; }
     _getWrappedTemplate() { return this.path; }
     _frameworkNavigateComplete() {}
     _frameworkMount() {}
@@ -92,9 +94,95 @@ afterEach(() => {
     document.removeEventListener('cossack:navigation-error', handleError);
     vi.unstubAllGlobals();
     Cossack._onNavigate = undefined;
+    Cossack._onUpdateUrlState = undefined;
+    for (const key of Object.keys(fixture.registry.layouts)) delete fixture.registry.layouts[key];
 });
 
 describe('navigation completion behavior', () => {
+    it('retains a layout when only its child page changes from SSE to HTTP', async () => {
+        const created = vi.fn(); const destroyed = vi.fn(); const hydrate = vi.fn();
+        class Layout extends Component {
+            constructor() { super(); created(); }
+            override destroy() { destroyed(); }
+            _frameworkHydrateNavigationResources = hydrate;
+        }
+        fixture.registry.layouts['/src/pages/layout.ts'] = async () => ({ default: Layout });
+        vi.stubGlobal('fetch', vi.fn(async (target: string) => new Response(`<script>window.__INITIAL_STATE__ = ${JSON.stringify({
+            routePath: target, pathname: target, transport: target === '/slow' ? 'sse' : 'http', scopeKey: 'same-user',
+            _layout_stack: [{ path: '/src/pages/layout.ts', state: { public: {}, metadata: { componentId: 'layout' } } }],
+        })}</script>`)));
+        expect(await navigate('/slow')).toMatchObject({ outcome: 'completed' });
+        expect(await navigate('/fast')).toMatchObject({ outcome: 'completed' });
+        expect(created).toHaveBeenCalledOnce(); expect(destroyed).not.toHaveBeenCalled(); expect(hydrate).toHaveBeenCalledOnce();
+    });
+    it('merges rapid query patches and discards late responses without changing the pending address', async () => {
+        const { defineUrlState, url } = await import('@cossackframework/core');
+        const fields = defineUrlState({ search: url.string(), page: url.integer({ default: 1 }) });
+        const source = window.location.href;
+        let release!: (response: Response) => void;
+        const olderResponse = new Promise<Response>(resolve => { release = resolve; });
+        vi.stubGlobal('fetch', vi.fn(async (target: string) => target.includes('page=2') ? olderResponse : documentResponse('start')));
+        const older = Cossack._onUpdateUrlState!(source, base => fields.url(base, { page: 2 }), () => true);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+        expect(window.location.search).toBe('');
+        const newer = Cossack._onUpdateUrlState!(source, base => fields.url(base, { search: 'next', page: 3 }), () => true);
+        expect(await newer).toEqual({ outcome: 'completed', url: '/start?page=3&search=next' });
+        release(documentResponse('start')); expect(await older).toMatchObject({ outcome: 'superseded' });
+        expect(window.location.search).toBe('?page=3&search=next');
+        expect(await Cossack._onUpdateUrlState!(source, base => fields.url(base, { page: 4 }), () => true)).toMatchObject({ outcome: 'canceled' });
+    });
+
+    it('keeps separate declaration patches while one query request is pending', async () => {
+        const { defineUrlState, url } = await import('@cossackframework/core');
+        const paging = defineUrlState({ page: url.integer({ default: 1 }) });
+        const search = defineUrlState({ search: url.string() });
+        const source = window.location.href;
+        let release!: (response: Response) => void;
+        vi.stubGlobal('fetch', vi.fn(async (target: string) => target === '/start?page=2'
+            ? new Promise<Response>(resolve => { release = resolve; }) : documentResponse('start')));
+        const older = Cossack._onUpdateUrlState!(source, base => paging.url(base, { page: 2 }), () => true);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+        expect(await Cossack._onUpdateUrlState!(source, base => search.url(base, { search: '雪' }), () => true))
+            .toEqual({ outcome: 'completed', url: '/start?page=2&search=%E9%9B%AA' });
+        release(documentResponse('start')); expect(await older).toMatchObject({ outcome: 'superseded' });
+    });
+
+    it('clears canceled and failed query intents before the next patch', async () => {
+        const { defineUrlState, url } = await import('@cossackframework/core');
+        const fields = defineUrlState({ search: url.string(), page: url.integer({ default: 1 }) });
+        const source = window.location.href;
+        const update = (patch: { page?: number; search?: string }) => Cossack._onUpdateUrlState!(source, base => fields.url(base, patch), () => true);
+        fixture.guard = async () => true;
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+        expect(await update({ page: 2 })).toMatchObject({ outcome: 'canceled' }); expect(fetch).not.toHaveBeenCalled();
+        fixture.guard = async () => false;
+        expect(await update({ page: 3 })).toMatchObject({ outcome: 'failed' });
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('start')));
+        expect(await update({ search: 'next' })).toEqual({ outcome: 'completed', url: '/start?search=next' });
+    });
+
+    it('does not commit a query response after its source owner is disposed', async () => {
+        let active = true; let release!: (response: Response) => void;
+        vi.stubGlobal('fetch', vi.fn(async () => new Promise<Response>(resolve => { release = resolve; })));
+        const update = Cossack._onUpdateUrlState!(window.location.href, () => '/start?page=2', () => active);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce()); active = false;
+        release(documentResponse('start'));
+        expect(await update).toMatchObject({ outcome: 'canceled' }); expect(window.location.search).toBe('');
+    });
+
+    it('does not merge an abandoned patch from a disposed owner into a live layout update', async () => {
+        const { defineUrlState, url } = await import('@cossackframework/core');
+        const fields = defineUrlState({ search: url.string(), page: url.integer({ default: 1 }) });
+        let active = true; let release!: (response: Response) => void;
+        const source = window.location.href;
+        vi.stubGlobal('fetch', vi.fn(async (target: string) => target.includes('page=2')
+            ? new Promise<Response>(resolve => { release = resolve; }) : documentResponse('start')));
+        const abandoned = Cossack._onUpdateUrlState!(source, base => fields.url(base, { page: 2 }), () => active);
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce()); active = false;
+        expect(await Cossack._onUpdateUrlState!(source, base => fields.url(base, { search: 'live' }), () => true))
+            .toEqual({ outcome: 'completed', url: '/start?search=live' });
+        release(documentResponse('start')); expect(await abandoned).toMatchObject({ outcome: 'superseded' });
+    });
     it('boots a destination with its full query URL before committing history', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
         expect(await navigate('/fast?search=%E9%9B%AA&page=2')).toMatchObject({ outcome: 'completed' });

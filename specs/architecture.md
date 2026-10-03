@@ -133,9 +133,17 @@ History replacement runs through the existing navigation owner and retains
 unrelated application history state. URL construction preserves unrelated query
 pairs and fragments. These are page query contracts. RPC methods receive query
 values explicitly because their request URLs identify transport endpoints.
-Draft preservation, overlapping patch intent and retained-layout resource
-handoff remain RT-08 work. Bounded completion and navigation diagnostics remain
-RT-09 work.
+Typed patches merge with the latest live pending intent in this navigation
+owner. Reads remain committed until a successful transition. Same-path, same-class
+page replacement transfers declared browser ClientState/ClientStore values
+through a single-use local capability. Raw store targets receive fresh proxies.
+Serialized internal fields cannot create this capability. User, transport,
+provider or service ownership changes prevent draft transfer.
+Retained layouts keep their service instances and browser drafts. Matching SSR
+resource entries replace the previous map before query dependencies change;
+entry identity rejects late results. This does not abort application I/O.
+Full pending-history and ownership-change acceptance remains RT-08 work.
+Bounded completion and navigation diagnostics remain RT-09 work.
 
 ## Application socket registry
 

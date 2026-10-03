@@ -86,6 +86,78 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-query-ownership-2026-10-03"></a>
+### Codex checkpoint: query ownership review (2026-10-03)
+
+Author: Codex. Continued after `c133495`. No checklist item closes: all 58 IDs
+remain, with 22 checked and 36 unchecked. RT-08 is still open. Read the
+[updated criterion audit and four next steps](./release-0.9.0-plan.md#rt-08),
+[Codex handoff](./handoff-0.9.0.md), [public guide](../docs/url-state.md),
+and [migration notes](./migration-0.9.0.md#browser-query-context-and-history).
+
+Fixed the next query integration gaps:
+
+- Typed updateUrlState merges patches against live pending intent in the existing
+  navigation owner. Committed readers and address remain unchanged during fetch.
+  Guards, failures, disposal and ordinary navigation clear ownership. Later
+  patches cannot inherit a disposed owner's abandoned fields.
+- Same-page replacement preserves inherited declared ClientState/ClientStore
+  values through a local, single-use, class-bound capability. Raw store targets
+  receive new owner proxies; File identity survives. SSR internal JSON cannot
+  supply drafts. Public state still comes from SSR. Unrelated pages reset drafts.
+- Query changes skip the destructive loading component swap. Drafts edited while
+  fetching transfer at commit. Browser file-input DOM values do not restore.
+- Retained App/layout resources adopt matching SSR entries before query changes.
+  Map identity prevents old pending loads from publishing values/errors. Layout
+  drafts/services remain. Parent scope, user, runtime, scope/provider and layout
+  transport changes invalidate retention. A child page's transport change does
+  not invalidate its shared layout's services or pending calls.
+
+Both generated Node and native workerd browsers verify copied query URLs,
+Unicode, defaults, ordinary history and replace, native File/page/layout/service
+local state, copied-tab isolation and unrelated-page reset. Rapid patches merge.
+Guard prevention and a failed fetch leave the committed query intact. A held
+actual SSR response lets the user edit a draft while fetching; a newer query
+commits first and the late old response cannot overwrite it. Matching page and
+retained-layout resources make zero extra hydration /crpc requests. Controlled
+core cases also settle old resource values and exceptions after handoff.
+
+The first production URL run used stale framework output and failed before
+navigation. Rebuilding the public framework output resolved it. The broader CLI
+run then exposed an ownership regression between SSE and HTTP child pages.
+The layout identity initially used the page transport. It now uses the layout's
+own transport, with a focused regression case and production re-verification.
+
+Final verification:
+
+- Core build and final framework declaration/runtime output build passed before
+  the affected production checks. Native cases perform real application builds.
+- `pnpm tsc --noEmit` passed. `pnpm typecheck` passed all 11 packages after
+  the final ownership fix.
+- Full core suite: 1,396 tests in 83 files. The final URL-state hydration and
+  published-type fixtures were rerun: six tests passed, including all negative
+  updater type cases.
+- Final full framework suite: 1,412 tests in 66 files. This includes the new
+  layout-transport regression and pending query ownership cases.
+- Full CLI suite initially passed 606 of 608 tests in 44 files. Its two failures
+  reproduced the same retained-layout service regression in production Node and
+  native workerd acceptance. After the fix, both failing cases and both new URL
+  production cases passed together: four tests in two files, 25 unrelated tests
+  skipped. Command: `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js tests/generated-runtime-build.test.js -t 'builds a generated staging app|reconciles component and service mutations|parses and navigates typed URL state' --maxWorkers=2`.
+  The entire CLI suite was not rerun after that focused correction.
+- Both TypeScript examples in the revised URL-state guide compile through the
+  published package exports. Fixture syntax and owned whitespace checks pass.
+- All 58 original checklist IDs/order/states remain intact. The six touched
+  guides/specs have 387 valid local documentation links and anchors.
+- No owned build/test process remains. User-owned reports.md/.zcodeignore are
+  excluded from the commit. No publication or live deployment was performed.
+
+These fixtures do not prove pending back/forward/replace behavior, nested draft
+ownership, every scope/transport change, one actual backend read or termination
+of application I/O. Arbitrary module/bootstrap/transition failures are not yet
+atomic or bounded. Those remain RT-08/RT-09 acceptance work. Continue all other
+unchecked tasks and release gates. Versions remain 0.8.3 until REL-04.
+
 <a id="codex-url-state-contracts-2026-10-03"></a>
 ### Codex checkpoint: typed query contracts and destination contexts (2026-10-03)
 

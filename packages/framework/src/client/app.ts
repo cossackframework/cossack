@@ -379,6 +379,22 @@ export async function createClientApp({
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
   let isDisplayingLoadingState = false;
+  let currentPageFile: string | undefined;
+  let currentPageUrl: string | undefined;
+  let currentPageState: any;
+  let committedUrl = window.location.href;
+  const ownershipKey = (state: any) => JSON.stringify([
+    state?.metadata?.user ?? null, state?.runtime ?? null,
+    state?.transport ?? 'http', state?.scopeKey ?? null, state?.providerTargets ?? null,
+  ]);
+  const layoutOwnership = new WeakMap<Cossack, string>();
+  const layoutOwnershipKey = (state: any, pageState: any, Component: Function) => ownershipKey({
+    metadata: state?.metadata, runtime: pageState?.runtime, scopeKey: pageState?.scopeKey,
+    // The layout owns its transport. Changing a child page from SSE to HTTP
+    // does not revoke a retained layout's services or their in-flight calls.
+    transport: state?.transport ?? Reflect.getMetadata('page:options', Component)?.transport ?? 'http',
+    providerTargets: state?.providerTargets,
+  });
 
   const composeContent = () => {
     if (!currentPage) return null;
@@ -455,6 +471,14 @@ export async function createClientApp({
       : initialState?.componentPath && pages[initialState.componentPath] ? initialState.componentPath
       : routeToFilePath.get(routePath) || routePath;
 
+    // Resolve the page before changing drafts or retained resource ownership.
+    const pageModuleLoader = pages[componentPath] as (() => Promise<any>) | undefined;
+    if (!pageModuleLoader) throw new Error(`Component module loader not found for path: ${componentPath}`);
+    const module = await pageModuleLoader();
+    if (!module) throw new Error(`Failed to load module for path: ${componentPath}`);
+    const PageComponent = getModuleDefault(module) as new () => Cossack;
+
+    appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
     appInstance.updatePath(pathname, destinationUrl);
 
     // Build a set of active layout file paths (layoutStack now contains file paths)
@@ -486,6 +510,12 @@ export async function createClientApp({
         // with heavy deps (e.g. dashboard sidebar pulling @cossackframework/ui)
         // off routes that don't use it.
         let instance = currentLayoutsMap.get(layoutFilePath);
+        if (instance && (instance._getServiceScope()?.parent !== activeServiceScope ||
+          layoutOwnership.get(instance) !== layoutOwnershipKey(state, initialState, instance.constructor))) {
+          staleLayoutInstances.push(instance);
+          currentLayoutsMap.delete(layoutFilePath);
+          instance = undefined;
+        }
         if (!instance) {
           const layoutEntry = layouts[layoutFilePath];
           if (!layoutEntry) {
@@ -521,32 +551,25 @@ export async function createClientApp({
             skipInit: true,
           });
           currentLayoutsMap.set(layoutFilePath, instance);
+          layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, LComp));
+        } else {
+          instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl);
         }
         instance.updatePath(pathname, destinationUrl);
         currentLayoutInstances.push(instance);
         activeServiceScope = instance._getServiceScope() || activeServiceScope;
       }
 
-      // Dynamic import for page module (code splitting)
-      const pageModuleLoader = pages[componentPath];
-      if (!pageModuleLoader) {
-        throw new Error(`Component module loader not found for path: ${componentPath}`);
-      }
-
-      // Load the page module asynchronously (cast to function type since import.meta.glob returns a loader for lazy builds)
-      const loader = pageModuleLoader as () => Promise<any>;
-      const module = await loader();
-      if (!module) {
-        throw new Error(`Failed to load module for path: ${componentPath}`);
-      }
-
-      const PageComponent = getModuleDefault(module) as new () => Cossack;
-
       if (PageComponent) {
+        const samePage = currentPage && currentPageFile === componentPath && currentPageUrl &&
+          new URL(currentPageUrl, window.location.href).pathname === new URL(destinationUrl, window.location.href).pathname &&
+          currentPage._getServiceScope() === activeServiceScope && ownershipKey(currentPageState) === ownershipKey(initialState);
+        const draft = samePage ? currentPage?._frameworkCaptureClientDraft?.() : undefined;
         if (currentPage) {
           currentPage.destroy();
         }
         const componentInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
+        if (draft) componentInstance._frameworkRestoreClientDraft(draft);
         currentPage = componentInstance;
 
         // Register the page with the app instance for child component state restoration
@@ -565,6 +588,9 @@ export async function createClientApp({
 
         await componentInstance.bootstrap({ initialState, skipInit: true });
         componentInstance.updatePath(pathname, destinationUrl);
+        currentPageFile = componentPath;
+        currentPageUrl = destinationUrl;
+        currentPageState = initialState;
 
         // Register with DevTools for state inspection (use absolute path from Vite injection)
         const sourceFile = (componentInstance.constructor as any).__source?.file;
@@ -608,7 +634,11 @@ export async function createClientApp({
   // its commit is skipped and its result resolves as 'superseded' (RT-09).
   let navigationSequence = 0;
   let commitQueue: Promise<void> = Promise.resolve();
-  const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<NavigateResult> => {
+  type QueryIntent = { url: string; isCurrent: () => boolean };
+  let pendingQuery: QueryIntent | undefined;
+  const navigate = async (url: string, force = false, options?: NavigateOptions, intent?: QueryIntent): Promise<NavigateResult> => {
+    if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
+    if (!intent) pendingQuery = undefined;
     const seq = ++navigationSequence;
     const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
     if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
@@ -622,6 +652,7 @@ export async function createClientApp({
       if (!force && currentPage && !isDisplayingLoadingState) {
           const prevented = await currentPage._checkPreventNavigation();
           if (seq !== navigationSequence) return { outcome: 'superseded', url };
+          if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
           if (prevented) {
               currentPage._pendingNavigation = async () => {
                   await navigate(url, true, options);
@@ -655,7 +686,8 @@ export async function createClientApp({
       const potentialLoadingPath = `/src/pages${cleanPath}/loading.ts`;
       const LoadingCompClass = loadings[potentialLoadingPath] ? getModuleDefault(loadings[potentialLoadingPath]) as new () => Cossack : null;
 
-      if (LoadingCompClass && !isDisplayingLoadingState) {
+      const queryTransition = currentPageUrl && new URL(currentPageUrl, window.location.href).pathname === urlObj.pathname;
+      if (LoadingCompClass && !isDisplayingLoadingState && !queryTransition) {
           isDisplayingLoadingState = true;
           const loadingScope = currentLayoutInstances.at(-1)?._getServiceScope() || clientServiceRoot;
           const loadingInstance = createInstance(LoadingCompClass, { serviceScope: loadingScope });
@@ -687,6 +719,7 @@ export async function createClientApp({
         // late response — it must never commit over the newer navigation.
         return { outcome: 'superseded', url };
       }
+      if (intent && !intent.isCurrent()) return { outcome: 'canceled', url };
       setProgress(100);
 
       // DOM commit: destroy old page, instantiate new page, trigger re-render.
@@ -700,8 +733,10 @@ export async function createClientApp({
       if (!destination.hash) destination.hash = requestedUrl.hash;
       const destinationUrl = destination.pathname + destination.search + destination.hash;
       const redirected = destination.pathname !== requestedUrl.pathname || destination.search !== requestedUrl.search;
+      let ownerDisposed = false;
       const commit = async () => {
         if (seq !== navigationSequence) return;
+        if (intent && !intent.isCurrent()) { ownerDisposed = true; return; }
         window.__INITIAL_STATE__ = state;
         await loadComponent(state, destinationUrl);
         if (seq !== navigationSequence) return;
@@ -712,6 +747,7 @@ export async function createClientApp({
         } else if (redirected) {
           window.history.replaceState(window.history.state, '', destinationUrl);
         }
+        committedUrl = new URL(destinationUrl, window.location.href).href;
         applyNavigationScroll(
           destinationUrl,
           options?.scroll ?? defaultScrollBehavior,
@@ -750,6 +786,7 @@ export async function createClientApp({
       commitQueue = committed.catch(() => {});
       await committed;
       if (seq !== navigationSequence) return { outcome: 'superseded', url };
+      if (ownerDisposed) return { outcome: 'canceled', url };
 
       (window as any).__cossackReady = true;
       document.dispatchEvent(new CustomEvent('cossack:ready', {
@@ -783,6 +820,20 @@ export async function createClientApp({
   };
 
   Cossack._onNavigate = (url, options) => navigate(url, false, options);
+  Cossack._onUpdateUrlState = async (sourceUrl, build, isCurrent, options) => {
+    const source = new URL(sourceUrl, window.location.href);
+    const committed = new URL(committedUrl, window.location.href);
+    if (!isCurrent() || source.pathname !== committed.pathname || source.search !== committed.search) {
+      return { outcome: 'canceled', url: source.pathname + source.search + source.hash };
+    }
+    let target: string;
+    try { target = build(pendingQuery?.isCurrent() ? pendingQuery.url : committedUrl); }
+    catch (error) { return { outcome: 'failed', url: committed.pathname + committed.search + committed.hash, error }; }
+    const intent: QueryIntent = { url: target, isCurrent };
+    pendingQuery = intent;
+    try { return await navigate(target, false, options, intent); }
+    finally { if (pendingQuery === intent) pendingQuery = undefined; }
+  };
 
   enableClientNavigation(
     (url, options) => navigate(url, false, options),

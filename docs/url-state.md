@@ -58,7 +58,7 @@ export default class List extends Cossack {
 
     @Client()
     next() {
-        return this.navigate(filters.url(this.c.req.url, { page: this.filters.page + 1 }), {
+        return this.updateUrlState(filters, { page: this.filters.page + 1 }, {
             history: 'push',
         });
     }
@@ -75,10 +75,30 @@ too. Matching query-derived resource arguments reuse SSR data during hydration.
 `history: 'replace'` replaces the active history entry and preserves its other
 application data. The default is `push`. Existing navigation outcomes and guards apply.
 
-These operations currently use normal page navigation. Client draft preservation,
-overlapping query patch ownership, and resource reuse in retained layouts remain
-part of RT-08. Bounded navigation completion remains RT-09. The complete resource
-and rapid-edit acceptance is still open in the
+`updateUrlState(definition, patch, options)` returns the same navigation outcome.
+It merges each patch with the latest pending query intent. A later patch wins
+for a repeated key; patches from separate declarations retain unrelated keys.
+Reads and the address stay at the committed URL until navigation succeeds.
+Guards, failures, ordinary navigation and disposal release pending ownership.
+For repeated relative increments, compute the intended number explicitly:
+two calls that both read `this.filters.page + 1` request the same number.
+
+Same-path navigation to the same page class preserves declared `ClientState`
+and `ClientStore` drafts when user, transport, provider and service ownership
+match. The framework transfers local values directly. SSR JSON and copied URLs
+cannot restore them. Stores get proxies owned by the new page; declared File
+values retain their identity. Browser file-input DOM values are not restored.
+Unrelated pages and changed ownership start with new drafts.
+
+Retained layouts keep their drafts and service instances. Their resource entries
+are replaced with the new SSR results before changing query dependencies.
+Matching arguments require no extra RPC; old pending results cannot publish
+into the new entries. Discarding an old result does not terminate application I/O.
+Query changes keep the current page editable while waiting, including when a
+`loading.ts` component exists.
+
+Bounded navigation completion remains RT-09. The complete pending-history,
+ownership-change and resource-read audit remains open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
 ## Parsing and defaults
