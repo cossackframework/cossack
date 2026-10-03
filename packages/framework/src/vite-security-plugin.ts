@@ -1705,7 +1705,7 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
   if (!roots.size) return code;
   const program = parseProgram(code);
   if (!program) throw new Error('[Cossack Security] Could not validate server input dependencies.');
-  type Definition = {node:any; statement:any; exported:boolean; importSource?:string; unsupported?:boolean; dependencies:Set<string>};
+  type Definition = {node:any; statement:any; exported:boolean; importSource?:string; typeOnly?:boolean; unsupported?:boolean; dependencies:Set<string>};
   const definitions = new Map<string, Definition>();
   for (const statement of program.body) {
     const exported = statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportDefaultDeclaration';
@@ -1720,7 +1720,8 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
       definitions.set(declaration.id.name, {node:declaration,statement,exported,dependencies:inputRuntimeReferences(declaration)});
     } else if (declaration?.type === 'ImportDeclaration') {
       for (const node of declaration.specifiers) {
-        definitions.set(node.local.name, {node,statement,exported:false,importSource:String(declaration.source.value),dependencies:new Set()});
+        definitions.set(node.local.name, {node,statement,exported:false,importSource:String(declaration.source.value),
+          typeOnly:declaration.importKind==='type'||node.importKind==='type',dependencies:new Set()});
       }
     } else if (['TSEnumDeclaration','TSModuleDeclaration','TSImportEqualsDeclaration'].includes(declaration?.type) && declaration.id?.type === 'Identifier') {
       definitions.set(declaration.id.name,{node:declaration,statement,exported,unsupported:true,dependencies:new Set()});
@@ -1765,6 +1766,8 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
     }
   }
   const removed = new Set([...candidates].filter(name => !live.has(name)));
+  const privateImportSources = new Set([...removed].filter(name=>privateDependencies.has(name))
+    .map(name=>definitions.get(name)?.importSource).filter((source):source is string=>!!source));
   // An unused imported contract can still run module-level initializers if a
   // different export keeps that module in the client graph. Fail closed where
   // this file cannot inspect/strip the foreign module's private declarations.
@@ -1772,7 +1775,7 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
     if (!privateDependencies.has(name)) continue;
     const source = definitions.get(name)?.importSource;
     if (!source || source === '@cossackframework/core' || isServerOnlyImportSource(source)) continue;
-    const retained = [...definitions].some(([binding, definition]) => definition.importSource === source && !removed.has(binding));
+    const retained = [...definitions].some(([binding, definition]) => definition.importSource === source && !definition.typeOnly && !removed.has(binding));
     const sideEffect = program.body.some((statement:any) => statement.type === 'ImportDeclaration'
       && statement.source.value === source && !statement.specifiers.length);
     if (retained || sideEffect) {
@@ -1789,12 +1792,24 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
       edits.push({start:statement.start,end:statement.end,replacement:''});
     } else if (statement.type === 'ImportDeclaration') {
       const remaining=statement.specifiers.filter((node:any)=>!removed.has(node.local.name));
-      if (remaining.length !== statement.specifiers.length) {
+      const typeOnly=statement.importKind==='type'||remaining.every((node:any)=>node.importKind==='type');
+      // Also normalize a separate inline type-only sibling import. Under
+      // verbatimModuleSyntax it otherwise retains an empty runtime import.
+      const privateTypeOnly=remaining.length>0&&typeOnly&&statement.importKind!=='type'
+        &&privateImportSources.has(String(statement.source.value));
+      if (remaining.length !== statement.specifiers.length || privateTypeOnly) {
+        // A mixed import can become type-only after private action dependencies
+        // are stripped. Make that explicit so verbatimModuleSyntax cannot leave
+        // an empty runtime import that executes the private module initializer.
         const defaults=remaining.filter((node:any)=>node.type==='ImportDefaultSpecifier').map((node:any)=>node.local.name);
         const namespace=remaining.filter((node:any)=>node.type==='ImportNamespaceSpecifier').map((node:any)=>`* as ${node.local.name}`);
-        const named=remaining.filter((node:any)=>node.type==='ImportSpecifier').map((node:any)=>code.slice(node.start,node.end));
+        const named=remaining.filter((node:any)=>node.type==='ImportSpecifier').map((node:any)=>{
+          if(!typeOnly)return code.slice(node.start,node.end);
+          const imported=code.slice(node.imported.start,node.imported.end),local=code.slice(node.local.start,node.local.end);
+          return imported===local?imported:`${imported} as ${local}`;
+        });
         const parts=[...defaults,...namespace,...(named.length?[`{ ${named.join(', ')} }`]:[])];
-        edits.push({start:statement.start,end:statement.end,replacement:remaining.length?`import ${statement.importKind==='type'?'type ':''}${parts.join(', ')} from ${JSON.stringify(statement.source.value)};`:''});
+        edits.push({start:statement.start,end:statement.end,replacement:remaining.length?`import ${typeOnly?'type ':''}${parts.join(', ')} from ${JSON.stringify(statement.source.value)};`:''});
       }
     }
   }

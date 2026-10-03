@@ -111,11 +111,11 @@ export interface ServerOptions {
   /**
    * Parsed input contract for an inbound action. Typed schemas describe one
    * argument, clone/normalize input and reject unknown fields by default.
-   * Transitional rule maps retain their first-object/extra-argument behavior.
+   * Rule maps must migrate to explicit input.object() schemas in 0.9.
    * Failures carry `COSSACK_VALIDATION_FAILED` and nested field errors.
    * Native calls to the authored method do not run decorator validation.
    */
-  input?: InputSchema<any, any> | Record<string, unknown>;
+  input?: InputSchema<any, any>;
   /** Server-only, evaluated on parsed input and trusted request context before inbound mutation. */
   authorize?: ServerActionAuthorizer<any>;
   /**
@@ -133,9 +133,13 @@ export interface ServerOptions {
  * This decorator attaches metadata, and the Cossack base class handles the logic
  * of replacing the member with a WebSocket proxy on the client.
  */
-export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }):
-  (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>) => void;
-export function Server(options?: Omit<ServerOptions, 'input'> & { input?: Record<string, unknown> }): any;
+export interface ServerInputDecorator<S extends InputSchema<any, any>> {
+  (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>): void;
+  <Key extends string | symbol>(target: Record<Key, (value: InputOf<S>) => any>, propertyKey: Key): void;
+}
+
+export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }): ServerInputDecorator<S>;
+export function Server(options?: Omit<ServerOptions, 'input'> & { input?: never }): any;
 export function Server(options: ServerOptions = {}): any {
   return registerServer(options);
 }
@@ -872,8 +876,8 @@ export function createTypedDecorators<T extends CossackOptions>() {
   type Channel = T['Channels'] | 'global';
   function typedServer<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize' | 'channel'> & {
     channel?: Channel; input: S; authorize?: ServerActionAuthorizer<InputOf<S>>;
-  }): (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>) => void;
-  function typedServer(options?: Omit<ServerOptions, 'input' | 'channel'> & { channel?: Channel; input?: Record<string, unknown> }): any;
+  }): ServerInputDecorator<S>;
+  function typedServer(options?: Omit<ServerOptions, 'input' | 'channel'> & { channel?: Channel; input?: never }): any;
   function typedServer(options: ServerOptions = {}): any { return registerServer(options); }
   return {
     State: (options: StateOptions & { channel?: T['Channels'] | 'global' } = {}) => State(options),

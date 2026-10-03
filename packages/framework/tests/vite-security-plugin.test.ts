@@ -2419,7 +2419,7 @@ import * as Core from '@cossackframework/core';
 @Core.Page()
 class Demo extends Core.Cossack {
   @Core.Client() local() { return 'CLIENT_NAMESPACE'; }
-  @Core.Server({ input: { parse: () => 'SECRET_VALIDATOR' } }) remote = () => 'SECRET_NAMESPACE';
+  @Core.Server({ input: Core.input.string().refine(() => 'SECRET_VALIDATOR' === '') }) remote = (value:string) => 'SECRET_NAMESPACE';
   @Core.Server() regular() { return 'SECRET_REGULAR'; }
   render() { return 'view'; }
 }`;
@@ -2470,12 +2470,14 @@ ${declaration}
       .toThrow(/Server input binding/);
   });
 
-  it('retains legitimate shared legacy rules without reintroducing a private contract', () => {
-    const code = `import {storeRules, Page, Server} from '@cossackframework/core';
+  it('retains shared form rules without reintroducing a private action schema', () => {
+    const code = `import {storeRules, input, Page, Server} from '@cossackframework/core';
 const rules = storeRules({name:{required:true}});
-@Page() class Demo { @Server({input:rules}) save(value:any) {return value;} render(){return rules.name.required;} }`;
+const contract=input.object({name:input.string(rules.name)});
+@Page() class Demo { @Server({input:contract}) save(value:{name:string}) {return value;} render(){return rules.name.required;} }`;
     const client = transformCossackClass(code, 'rules.ts', isClientSafeMethod, new Set(['render']), false);
     expect(client).toContain('storeRules'); expect(client).toContain('rules.name.required');
+    expect(client).not.toContain('input.object');
   });
   it('removes wholly private imports and rejects a foreign contract module also retained by the client', () => {
     const privateOnly = `import {contract} from './server-contract';
@@ -2489,6 +2491,26 @@ const rules = storeRules({name:{required:true}});
       const source=privateOnly.replace("@Page()", `${retained}\n@Page()`).replace("return 'view'", 'return label');
       expect(()=>transformCossackClass(source,'imports.ts',isClientSafeMethod,new Set(['render']),false)).toThrow(/Server input module/);
     }
+  });
+  it.each([
+    "import {contract,persist,type Data as SchemaData} from './private-contract';",
+    "import {contract,persist} from './private-contract';import type {Data as SchemaData} from './private-contract';",
+    "import {contract,persist} from './private-contract';import {type Data as SchemaData} from './private-contract';",
+    "import {contract,persist,type/* annotation */Data as SchemaData} from './private-contract';",
+  ])('does not retain a private contract module through type-only imports (%#)',async declaration=>{
+    const source=`import {Page,Server,Client} from '@cossackframework/core';
+${declaration}
+import {type Other} from './client-initializer';
+@Page()class Demo{
+  @Server({input:contract})save=(value:SchemaData)=>persist(value);
+  @Client()local(value:SchemaData){return value;}
+  render(){return 'view';}
+}`;
+    const client=transformCossackClass(source,'private-types.ts',isClientSafeMethod,new Set(['render']),false);
+    expect(client).toContain('import type {');expect(client).toContain('Data as SchemaData');
+    const emitted=await transformWithOxc(client,'private-types.ts',{target:'es2022',tsconfig:{compilerOptions:{verbatimModuleSyntax:true}}});
+    expect(emitted.code).not.toContain('./private-contract');expect(emitted.code).not.toContain('persist(value)');
+    expect(emitted.code).toContain('./client-initializer');
   });
   it('does not keep a private schema alive through unrelated local parameters or variables', () => {
     const source=`import {input,Page,Server,Client} from '@cossackframework/core';

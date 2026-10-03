@@ -16,6 +16,8 @@ afterEach(async () => {
   if (parent) await fs.rm(parent, { recursive: true, force: true });
 });
 
+// This includes a generated build and a large schema/policy matrix with real D1
+// audit reads. Its overall budget is separate from the 500 ms abort fixture.
 it('builds a generated staging app and validates deployment without uploading', async () => {
   vi.stubEnv('VITEST', '');
   vi.stubEnv('NODE_ENV', 'production');
@@ -318,6 +320,8 @@ it('builds a generated staging app and validates deployment without uploading', 
   for(const file of clientScripts.filter(file=>file.endsWith('.js'))){
     const code=await fs.readFile(path.join(projectDir,'dist/client/assets',file),'utf8');
     expect(code).not.toContain('PRIVATE_RESOURCE_POLICY_SENTINEL');expect(code).not.toContain('policy_posts');
+    expect(code).not.toContain('PRIVATE_SCHEMA_REFINEMENT_SENTINEL');
+    expect(code).not.toContain('PRIVATE_PUBLIC_POLICY_EXCEPTION');
   }
   expect(staticHome).not.toContain('ssg-user');
   const readHydration = output => JSON.parse(output.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
@@ -553,4 +557,4 @@ it('builds a generated staging app and validates deployment without uploading', 
     diagnostics: [{ code: 'COSSACK_DEPLOY_BUILD_FAILED' }] });
   await expect(fs.access(path.join(projectDir, 'dist/client/index.html'))).rejects.toThrow();
   await expect(fs.access(path.join(projectDir, 'dist/client/sitemap.xml'))).rejects.toThrow();
-}, 90_000);
+}, 180_000);

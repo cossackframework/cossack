@@ -52,7 +52,10 @@ breaking key migration and precise resource/operation limits.
 Core owns `input` schemas and their inferred parsed/raw types. Schema parsing
 uses Web APIs and has no framework, auth or database dependency. The action
 input gate lives separately from legacy form validation to avoid a schema/form
-import cycle. HTTP/SSE/upload component and explicit-service dispatch, plus
+import cycle. Action metadata accepts schemas only in 0.9; plain form rule maps
+remain supported by form validation. Public method/function-field decorators
+check parsed parameters without wrapping native calls or widening browser input
+types to RawInputOf. HTTP/SSE/upload component and explicit-service dispatch, plus
 socket/forwarded-service dispatch, call this gate before mutation with the
 request's owned cancellation signal. Native authored method calls keep their
 normal semantics and do not execute decorator guards.

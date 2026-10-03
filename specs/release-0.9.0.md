@@ -22,7 +22,7 @@ below link directly to those explanations.
 ## Runtime and application APIs
 
 - [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 421-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 421 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
-- [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex typed-input/resource-policy phases (2026-10-03): parsed/raw inference, strict coercion, private compiler dependencies and validation/policy cancellation pass the component/forwarded/explicit-service and multipart matrix. Generated Node browser and native Worker File/resource guards pass. RT-14 is complete. Remaining: transitional rule-map migration, raw client/function-field typing audit and native scalar/refinement acceptance. See the [resource-policy checkpoint](#codex-resource-policies-2026-10-03).
+- [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex completion (2026-10-03): schema-only migration, parsed/native/browser signatures, public function-field inference, private compiler imports and callback failures pass the transport matrix and generated Node/native Worker acceptance. Coerced types, nested errors, File/resource guards and explicit cancellation perform no invalid/denied mutation. See the [criterion audit](./release-0.9.0-plan.md#rt-02) and [schema migration review](#codex-schema-migration-2026-10-03). Native calls explicitly parse/authorize; RT-01, RT-07 native API declarations/error mapping and final release/runtime gates remain separate.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
 - [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex Group 3 review: AbortSignal cancellation, ordered cleanup across rapid changes, skipped canceled starts, and late cleanup disposal are covered. Cancellation is cooperative: tasks must check the signal before writes. Remaining: typed dependency paths, framework-gated result application, and navigation/service-disposal acceptance tests.
@@ -85,6 +85,86 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-schema-migration-2026-10-03"></a>
+### Codex checkpoint: schema-only actions, function fields and private callbacks (2026-10-03)
+
+**Author: Codex.** Continued after `cd478f4` against the original RT-02 criteria.
+Only RT-02 newly closes: **17/58 checked, 41 unchecked**. The complete 58-task
+plan remains in scope; see its [criterion audit](./release-0.9.0-plan.md#rt-02).
+
+Action input metadata now accepts schemas only. Plain maps reject in public
+types and stale JavaScript metadata fails before callbacks or mutation. Form
+rule maps retain their existing API. Direct and typed-channel Server decorators
+check public function fields, including arrow and generator functions, while
+preserving their native return type. Parsed `InputOf` parameters remain the
+authored browser/native signature; `RawInputOf` describes boundary values.
+Forms normalize values before calls; native APIs explicitly parse/authorize.
+JSON date fields need explicit date coercion. The migration and validation
+guides now reflect those decisions and the completed resource kit.
+
+Review found two compiler cases: type-only siblings incorrectly kept a private
+contract module live, and separate inline type-only imports could preserve an
+empty runtime import with verbatim module syntax. Only imports from detached
+private modules are normalized; unrelated initializer imports retain their
+behavior. Names/aliases come from AST spans, including commented inline types.
+Four regressions check actual emitted JS with `verbatimModuleSyntax: true`;
+native chunks exclude both private schema/policy sentinels and record SQL.
+
+Review also reproduced exception leakage in **eight failing transport tests**:
+a callback's `ClientVisibleError` reached the caller as a public message.
+Refinements, structural authorizers and auth-owned lookups/rules now wrap
+unexpected exceptions in private errors, retaining `cause` for server logs.
+Public validation/HTTP error classes cannot leak their fields, messages, stack
+or response through these callbacks. Expected `false` validation/policy decisions
+and normalized kit denials retain their error paths. Deliberate public errors
+in an action body remain public.
+
+Verified evidence:
+
+- Core: **1,095 tests / 63 files**. Parsed/raw schema and authorizer inference,
+  public field negatives, plain-map rejection, cancellation and internal causes.
+- Framework: **1,314 tests / 57 files**. Matrix **472**, existing compiler suite
+  **167**, plus the policy compiler suite. Method/function-field validation,
+  stale metadata refusal and public exception classes are covered across all
+  matrix transport/service paths; multipart guards remain covered separately.
+- Auth: **145 tests / 8 files**. Policy/lookup exception causes and HTTP middleware
+  rejection prevent writes without forwarding a thrown HTTP exception.
+- Final generated Node production/browser tests: **2 selected cases pass**, with
+  **12 skipped**. Authored/public-export types, HTTP/SSE page/service generator
+  fields, multipart schemas and the mutation form's failure/retry flow pass.
+- Final native workerd acceptance: **2 tests / 2 files pass** sequentially after
+  rebuilding the final compiler exports. Generated staging exercises scalar and
+  nested/refinement/enum/literal/optional/null/Date/File guards on HTTP/SSE page
+  and service JSON/multipart fields, actual D1 record/audit stability on rejection,
+  private public-class exceptions, stream values and browser failure/recovery.
+  Native socket cases check parsed fields, nested errors, private exceptions,
+  explicit signal abort, no later mutation/terminal reply and successor progress.
+  The complete final native run takes about **100 seconds** of test execution.
+- Final sequential core/framework builds, root `pnpm tsc --noEmit`, all **11**
+  `pnpm typecheck` package configurations and owned-file whitespace checks pass.
+
+Intermediate failures are not final acceptance: the compiler privacy regression
+first rejected a type-only sibling module, the initial socket cancellation test
+incorrectly awaited a server terminal reply, one fixture cast and a top-level
+Oxc option failed TypeScript, and public callback error tests exposed the leak.
+The socket fixture now checks native signal abort, suppressed later terminal
+frames, unchanged count and successor progress; client cancellation settles
+locally. The expanded staging suite reached browser checks but exceeded its old
+90-second limit twice, then completed successfully in **91 seconds** with the
+larger overall budget. The complete test now permits **180 seconds**, while its
+explicit cancellation signal remains **500 ms**. Temporary diagnostic logging
+has been removed. This proves explicit cancellation, not native incoming
+pre-header disconnect delivery or rollback of ignored application I/O.
+
+Next: finish the remaining RT-03 typed resource/lifecycle criteria with RT-05
+task ownership, then continue all unchecked tasks. RT-01's arbitrary action
+deadlines/init/restoration/disconnect work, RT-11 session freshness and all final
+release gates remain open. RT-07 still owns native API schema declarations and
+error response integration; explicit native parsing owns its error mapping.
+No full CLI/monorepo/tarball/Deno/Electron release
+audit is claimed. Versions remain **0.8.3** until REL-04; no publication or live
+deployment occurred.
 
 <a id="codex-resource-policies-2026-10-03"></a>
 ### Codex checkpoint: typed resource policies and trusted action identity (2026-10-03)

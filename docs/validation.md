@@ -43,6 +43,25 @@ calls do not run decorator validation. Normalize client form values before
 calling the authored method. Validation metadata is not a wrapper around native
 JavaScript calls.
 
+For example, pass `Number(form.count)` and an explicitly parsed boolean to
+`this.save(...)`, then handle server field errors if those values are invalid.
+`RawInputOf` does not widen a browser proxy or native method's parameter type.
+For API handlers and other native entrypoints, explicitly call
+`await contract.parse(raw, { signal })` before using the parsed value.
+Native entrypoints own their error response mapping as well as parsing.
+Keep private server contracts separate from shared browser form rules.
+
+Schemas also check public function fields, including arrow functions and async
+generator functions, with both `Server` and `createTypedDecorators().Server`:
+
+```typescript
+@Server({ input: saveInput })
+save = async (data: SaveInput) => ({ title: data.title, count: data.count });
+```
+
+The decorator does not change the field's native return type. Private/protected
+field inference is not supported; expose the RPC action as a public member.
+
 Compose input parsing with `@Server({ input: contract, authorize })` for record
 access. The authorizer receives parsed values, trusted server context and the
 owned action signal; it must return boolean `true` to allow mutation. Use
@@ -62,6 +81,11 @@ and typed-channel Server decorators retain authorizer input inference.
 | `input.array(item, { minItems, maxItems })` | Dense arrays; each item is parsed. Holes, accessor properties and extra array properties fail. Default maximum: 1,024 items. |
 | `input.file({ maxBytes, mediaTypes })` | Actual uploaded File instances, with optional byte limit and exact declared media type checks. File-shaped JSON objects fail. The media type is upload metadata, not a content inspection. |
 
+JSON RPC serializes a Date as a string. Use `input.date({ coerce: true })` for
+such fields, even when the authored client argument is a Date. Strict
+`input.date()` accepts actual Date instances in imperative parsing and rejects
+date strings received over JSON.
+
 Fields are required by their type unless marked `.optional()`. That permits
 `undefined` and omits absent object fields. `.nullable()` permits `null`; it does
 not make a field optional. Typed action contracts accept at most one argument.
@@ -70,7 +94,7 @@ Object schemas allow at most 1,024 fields. Parsing limits depth to 32, visited
 nodes to 4,096, and reported errors to 128. Cycles and prototype/accessor inputs
 are rejected. Parsing does not mutate incoming objects or arrays.
 
-HTTP validation failures return status 400 and `COSSACK_VALIDATION_FAILED`.
+RPC HTTP validation failures return status 400 and `COSSACK_VALIDATION_FAILED`.
 Socket calls use the same code in their correlated error frame. Client proxies
 expose `RpcError.fieldErrors`, with nested object keys and numeric array indices:
 
@@ -82,7 +106,10 @@ const emailError = error.fieldErrors?.profile;
 
 Use `.refine()` for application validation. A `false` result creates a field
 error; a thrown/rejected callback or a nonboolean result is an internal failure.
-Its private message is not sent to the caller. Use read-only validation here;
+Its private message is not sent to the caller, including when it throws a
+`ClientVisibleError`, `ActionValidationError` or HTTP exception. The original
+exception remains the internal error's `cause` for server diagnostics. Return
+`false` to produce a field error. Use read-only validation here;
 a mutation belongs in the action after all checks succeed.
 
 ```typescript
@@ -111,12 +138,15 @@ Keep separate shared `storeRules` maps for client form validation;
 the mutation recipe demonstrates this composition. Dynamic option objects and
 spreads fail the client build because they can hide server validation code.
 
-Plain rule maps remain a transitional contract. They validate the first object,
-preserve unknown fields and additional arguments, and use the older coercion
-rules documented below. They do not provide schema inference or the strict
-file/array contract. New actions should use `input` schemas. Resource-policy
-enforcement remains open under RT-02/RT-14; check authorization inside server
-methods until that API is implemented.
+In 0.9, plain rule maps are no longer action contracts. Replace
+`@Server({ input: { count: { coerce: 'number' } } })` with
+`@Server({ input: input.object({ count: input.number({ coerce: true }) }) })`.
+Declare every accepted key and nested/file shape, and use one input argument.
+TypeScript rejects maps; stale JavaScript metadata fails before validation
+callbacks or mutation and logs a migration error on the server. The client gets
+a correlated internal failure. Existing form validation, `@Validate` and
+`storeRules` continue to accept their rule maps. See the
+[migration guide](../specs/migration-0.9.0.md#typed-server-input-contracts).
 
 ## Usage
 

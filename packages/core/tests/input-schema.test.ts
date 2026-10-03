@@ -107,8 +107,8 @@ it('validates actual uploaded files and their declared size/media constraints', 
 it('returns refinement field failures but keeps thrown/rejected/nonboolean callbacks internal', async () => {
     expect(await fields(input.object({name:input.string().refine(v=>v==='ok','Not allowed.')}).parse({name:'no'}))).toEqual({name:'Not allowed.'});
     const failure = Error('PRIVATE');
-    await expect(input.string().refine(()=>{throw failure;}).parse('value')).rejects.toBe(failure);
-    await expect(input.string().refine(async()=>{throw failure;}).parse('value')).rejects.toBe(failure);
+    await expect(input.string().refine(()=>{throw failure;}).parse('value')).rejects.toMatchObject({message:'[Cossack] Input refinement failed.',cause:failure});
+    await expect(input.string().refine(async()=>{throw failure;}).parse('value')).rejects.toMatchObject({message:'[Cossack] Input refinement failed.',cause:failure});
     await expect(input.string().refine((()=>1) as any).parse('value')).rejects.toThrow(/boolean/);
 });
 it('does not start callbacks after abort and refuses aborted async refinement completion', async () => {
@@ -164,8 +164,11 @@ it('maps cancellation to the RPC contract and skips later validation callbacks',
     await vi.waitFor(() => expect(release).toBeTypeOf('function')); controller.abort(); await rejection;
     release(true); await Promise.resolve(); await Promise.resolve(); expect(after).not.toHaveBeenCalled();
 });
-it('keeps the transitional rule map coercion, unknown fields and additional arguments', async () => {
-    class Legacy { @Server({input:{age:{coerce:'number',min:1}}}) save(value:unknown, extra:unknown) {return [value,extra];} }
-    expect(await enforceActionInput(Legacy,'save',[{age:'3',unlisted:true},'extra']))
-        .toEqual([{age:3,unlisted:true},'extra']);
+it('rejects unmigrated rule maps without running legacy coercion or callbacks', async () => {
+    const callback=vi.fn(()=>true);
+    class Legacy {save(value:unknown, extra:unknown) {return [value,extra];} }
+    // Simulate stale JavaScript metadata, bypassing both new TypeScript guards.
+    (Server as any)({input:{age:{coerce:'number',min:1,custom:callback}}})(Legacy.prototype,'save');
+    await expect(enforceActionInput(Legacy,'save',[{age:'3',unlisted:true},'extra'])).rejects.toThrow(/rule maps must migrate/);
+    expect(callback).not.toHaveBeenCalled();
 });

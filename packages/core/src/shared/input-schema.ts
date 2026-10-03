@@ -109,7 +109,14 @@ function schema<T, R = T>(reader: Reader): InputSchema<T, R> {
                 if (state.errors !== before) return INVALID;
                 cancelled(state);
                 // Exceptions are application failures, not expected field errors.
-                const accepted = await refinement(() => check(output as T, { signal: state.signal }), state);
+                let accepted:boolean;
+                try { accepted = await refinement(() => check(output as T, { signal: state.signal }), state); }
+                catch (cause) {
+                    cancelled(state);
+                    // A callback cannot turn an internal validator failure into
+                    // a public RPC/HTTP exception by choosing its error class.
+                    throw new Error('[Cossack] Input refinement failed.', {cause});
+                }
                 cancelled(state);
                 if (typeof accepted !== 'boolean') throw new Error('[Cossack] Input refinement must return a boolean.');
                 return accepted ? output : error(state, path, message);

@@ -1,9 +1,10 @@
 import 'reflect-metadata';
 import { Hono, type Context } from 'hono';
+import {HTTPException} from 'hono/http-exception';
 import { createResourcePolicy } from '../../auth/src/index';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    Cossack, CossackService, ClientVisibleError, createInstance, InMemoryWebSocketRuntime,
+    Cossack, CossackService, ClientVisibleError, ActionValidationError, createInstance, InMemoryWebSocketRuntime,
     Page, rpc$, Server, Service, ServiceScope, State, RateLimit, input, type InputOf, setRateLimitStore, __resetRateLimitForTests, RPC_NATIVE_RESPONSE_MAX_BYTES, getRequestContext,
 } from '@cossackframework/core';
 // Wire browser-side transport boundaries from the same built core modules the
@@ -25,6 +26,7 @@ vi.mock('virtual:cossack-config', () => ({ default: {} }));
 // Finite application I/O lets teardown prove eventual remote cleanup even when
 // a caller has already timed out/disconnected. Cancellation is not rollback.
 const normalizedInput = input.object({profile:input.object({age:input.number({coerce:true,integer:true,min:1})}), enabled:input.boolean({coerce:true}), tags:input.array(input.enum(['draft','published']),{maxItems:2}), note:input.string().optional()});
+const privateCallbackFailures=[new ClientVisibleError('PRIVATE_CALLBACK_VISIBLE'),new ActionValidationError({secret:'PRIVATE_CALLBACK_FIELDS'}),new HTTPException(418,{message:'PRIVATE_CALLBACK_HTTP'})];
 interface PolicyPost {id:number;owner:string;tenant:string;}
 interface PolicyActor {id:string;tenant:string;}
 const records:PolicyPost[]=[{id:1,owner:'u1',tenant:'t1'},{id:2,owner:'u2',tenant:'t1'},{id:3,owner:'u1',tenant:'t2'}];
@@ -130,8 +132,17 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         async validated(input: { title: string }) { this.effectOwner.runs++; return input.title; }
         @Server({input:normalizedInput})
         normalized(value:InputOf<typeof normalizedInput>) { this.effectOwner.runs++; return value; }
+        @Server({input:normalizedInput})
+        normalizedField=(value:InputOf<typeof normalizedInput>)=>{this.effectOwner.runs++;return value;};
+        // Exercise stale JavaScript metadata even though TypeScript now rejects maps.
+        @Server({input:{profile:{required:true}}} as any)
+        oldInput(value:unknown){this.effectOwner.runs++;return value;}
         @Server({input:input.string().refine(() => {throw new Error('PRIVATE_SCHEMA_FAILURE');})})
         brokenValidation(value:string) { this.effectOwner.runs++; return value; }
+        @Server({input:input.number().refine(index=>{throw privateCallbackFailures[index];})})
+        publicValidationException(index:number){this.effectOwner.runs++;return index;}
+        @Server({input:input.number(),authorize:index=>{throw privateCallbackFailures[index];}})
+        publicPolicyException(index:number){this.effectOwner.runs++;return index;}
         @Server({input:input.string().refine(async (_value, options) => {
             const owner=effects.current;
             await new Promise<void>(resolve => {
@@ -664,6 +675,19 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         expect(await rpc$(wire.target.normalized(raw))).toEqual({profile:{age:2},enabled:false,tags:['draft']});
         expect(raw.profile.age).toBe('2'); expect(effects.current.runs).toBe(1); settled();
     });
+    it('validates typed function fields before invocation and keeps parsed input',async()=>{
+        await expect(rpc$(wire.target.normalizedField({profile:{age:'bad'},enabled:true,tags:[]})))
+            .rejects.toMatchObject({code:'COSSACK_VALIDATION_FAILED',fieldErrors:{profile:{age:expect.any(String)}},requestId:expect.any(String)});
+        expect(effects.current.runs).toBe(0);
+        expect(await rpc$(wire.target.normalizedField({profile:{age:'3'},enabled:'false',tags:['draft']})))
+            .toEqual({profile:{age:3},enabled:false,tags:['draft']});
+        expect(effects.current.runs).toBe(1);settled();
+    });
+    it('rejects obsolete action rule maps before mutation without exposing migration errors',async()=>{
+        await expect(rpc$(wire.target.oldInput({profile:1,canEdit:true})))
+            .rejects.toMatchObject({code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
+        expect(effects.current.runs).toBe(0);settled();
+    });
     it.each([
         [{profile:{age:'0'},enabled:true,tags:[]}, {profile:{age:'Minimum value is 1'}}],
         [{profile:{age:'bad'},enabled:true,tags:['admin']}, {profile:{age:'Expected a safe integer.'},tags:{0:'Unexpected value.'}}],
@@ -684,6 +708,13 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
     it('redacts unexpected validator exceptions and runs no mutation', async () => {
         await expect(rpc$(wire.target.brokenValidation('x'))).rejects.toMatchObject({code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
         expect(effects.current.runs).toBe(0); settled();
+    });
+    it.each(['publicValidationException','publicPolicyException'])('keeps public exception classes private inside %s',async action=>{
+        for(const index of [0,1,2]){
+            await expect(rpc$(wire.target[action](index))).rejects.toMatchObject({code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
+            expect(effects.current.runs).toBe(0);
+        }
+        settled();
     });
     it('cancels a pending schema callback before mutation and releases the next request', async () => {
         const call=rpc$(wire.target.waitingValidation('x'));

@@ -58,6 +58,11 @@ async function owned<T>(signal: AbortSignal, operation: () => T | Promise<T>): P
     try {
         const result = await Promise.race([Promise.resolve().then(() => { abort(signal); return operation(); }), interrupted]);
         abort(signal); return result;
+    } catch (cause) {
+        abort(signal);
+        // Only this kit's explicit decisions are public denials. A lookup/rule
+        // throwing an HTTP exception still represents an internal failure.
+        throw new Error('[Cossack Auth] Resource policy callback failed.', {cause});
     } finally { signal.removeEventListener('abort', onAbort); }
 }
 

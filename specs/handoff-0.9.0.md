@@ -2,6 +2,77 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
+> **Latest checkpoint — Codex RT-02 completion (2026-10-03). Author: Codex.**
+> Continued after `cd478f4`. Start with the
+> [review and exact evidence](./release-0.9.0.md#codex-schema-migration-2026-10-03),
+> [RT-02 criterion audit](./release-0.9.0-plan.md#rt-02),
+> [validation guide](../docs/validation.md#validated-server-actions) and
+> [migration guide](./migration-0.9.0.md#typed-server-input-contracts).
+>
+> **17/58 checked, 41 unchecked; only RT-02 newly closes.** All original IDs
+> remain. RT-14 is already complete; wider RT-01/RT-11 and release gates remain.
+>
+> Action input metadata now accepts schemas only. Public types reject old maps;
+> stale JS metadata fails before callbacks/mutation. Shared form rule maps remain
+> supported. Direct/typed-channel Server decorators check public function fields,
+> including arrows and generators, without changing native return types. Keep
+> parsed InputOf parameters in authored browser/native methods; RawInputOf is a
+> boundary description. Normalize client form values. JSON dates need explicit
+> coercion. Native entrypoints explicitly parse/authorize and own error mapping;
+> native API schema/error integration remains RT-07. Private/protected field
+> inference is unsupported; keep RPC actions public.
+>
+> Review fixed a compiler false positive for type-only private-module siblings
+> and an empty runtime import retained by separate inline types in verbatim mode.
+> Stripping converts detached private-module imports to explicit import type,
+> prints names/aliases from AST spans and preserves unrelated initializers.
+> Four emitted-JS regressions include separate/mixed/commented type imports.
+>
+> Review also reproduced public callback exception leakage in eight transport
+> tests. Refinements, structural authorizers and auth-owned rule/lookup callbacks
+> now wrap unexpected failures with private errors and retain their original
+> cause for logs. A callback throwing public validation/HTTP classes cannot leak
+> fields/messages/stacks/response. Return false for expected validation/policy
+> failure. Known kit denials retain fixed 401/403 behavior; public errors thrown
+> from action bodies keep their normal semantics.
+>
+> Final evidence: core **1095/63**, framework **1314/57** (matrix **472**, existing
+> compiler **167**), auth **145/8**; all pass. Final core/framework builds, root
+> `pnpm tsc --noEmit` and all **11** package typecheck configs pass. Two affected
+> generated Node production/browser cases pass (12 others skipped). Final rebuilt
+> native workerd staging/socket cases **2/2** pass sequentially. D1 versions/audits
+> prove rejection before mutation for scalar/nested/Date/enum/literal/optional/null/
+> File/unknown-key/positional/refinement cases through HTTP/SSE page/service JSON/
+> multipart fields. Browser forms fail/recover; native socket fields parse, reject
+> private classes, observe signal abort, skip mutation and release successors.
+> Client chunks exclude private contract/policy sentinels and record SQL.
+>
+> The review log preserves intermediate type/compiler/privacy failures and the
+> initial incorrect socket-cancellation expectation. Native socket cancellation
+> suppresses later terminal frames; the client settles locally. The expanded
+> staging test outgrew its old 90-second total limit and passed with a 180-second
+> total budget; its explicit abort signal remains 500 ms. Final native test work
+> takes about 100 seconds. Temporary diagnostics are removed. This proves owned
+> explicit cancellation, not incoming pre-header TCP disconnect delivery,
+> termination of ignored I/O or rollback. No full CLI/monorepo/tarball/native
+> Deno/Electron release audit is claimed.
+>
+> **Next for GLM: RT-03 with the relevant RT-05 lifecycle work.** Use the existing
+> resource/task implementation; finish compile-time resource names/results and
+> typed refresh/invalidation, plus SSR/hydration/unmount acceptance. Keep stale
+> data during refresh failure, reject invalid targets/types, prevent older loads
+> from replacing newer results and avoid duplicate initial hydration loads.
+> For tasks, finish typed dependency paths, contextual errors and framework-gated
+> result application through rapid dependency changes/navigation/service disposal.
+> Follow each task's original criterion text before checking it. Do not rebuild
+> RT-02/RT-14 or widen native action signatures as a shortcut. Continue all other
+> unchecked IDs and separate final provider/runtime/release gates afterward.
+>
+> Versions remain **0.8.3** until REL-04. Preserve user-owned reports.md and
+> .zcodeignore. No push, publication, live deployment, cloud resource changes,
+> external messages or new chats. All phase-owned checks are complete; no
+> test/build process remains running at this checkpoint.
+
 > **Latest checkpoint — Codex resource-policy phase (2026-10-03). Author: Codex.**
 > Continued after `49d3236`. Read the
 > [review/evidence](./release-0.9.0.md#codex-resource-policies-2026-10-03),

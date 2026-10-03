@@ -12,6 +12,15 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
+**Latest checkpoint — Codex schema migration (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-schema-migration-2026-10-03).
+RT-02 now passes its original criterion audit below: **17/58 checked, 41
+unchecked**; all task IDs remain. Schema-only actions, parsed signatures/public
+function fields, private type-only imports and callback exception handling pass
+unit, generated Node/browser and native Worker/D1/socket acceptance. Continue
+RT-03/RT-05 and all later gates. The historical checkpoints below retain their
+earlier counts and follow-ups; this checkpoint supersedes those RT-02 gaps.
+
 The latest [Codex coordinator cancellation checkpoint](./release-0.9.0.md#codex-sse-cancellation-2026-10-03)
 adds private operation IDs, removes cancelled queued callbacks, bridges active
 counter cancellation across Workers and preserves FIFO order. Generated configs
@@ -855,7 +864,7 @@ multipart without changing records/audit tables. Native sockets and browser UI
 also exercise the policy. Read the RT-14 criterion audit below; do not recreate
 that completed implementation or interpret it as RT-02 completion.
 
-**RT-02 remains unchecked.** Next steps for GLM:
+Remaining work recorded before the Codex schema migration below (historical):
 
 1. Extend `worker-policy-acceptance.js`/the native RPC fixture with the remaining
    scalar/refinement matrix: strict/coercing boolean/number/date, enum/literal,
@@ -880,6 +889,88 @@ that completed implementation or interpret it as RT-02 completion.
 3. Add the chosen migration to release/user/agent guides, run meaningful affected
    package/generated checks, and audit every original RT-02 criterion before
    checking it. Keep RT-01 deadlines and RT-11 session freshness separate.
+
+Codex schema migration and callback privacy review (2026-10-03), after `cd478f4`:
+
+- The 0.9 action API accepts `input` schemas only. Plain action rule maps reject
+  at compile time and stale JavaScript metadata rejects before legacy callbacks
+  or mutation. Shared `@Validate`/`storeRules` maps retain their form API. The
+  inventory found one transitional core runtime test; generated recipes already
+  use schemas. Compiler privacy fixtures now use valid schema examples.
+- Native and browser-authored method parameters remain parsed `InputOf` values.
+  `RawInputOf` describes incoming values without changing the proxy signature.
+  Forms normalize their values before calling; native API entrypoints explicitly
+  parse/authorize. JSON date fields require explicit date coercion because Date
+  arguments become strings on the wire. Public arrow/function/generator fields
+  now receive schema parameter checking through direct and typed-channel Server
+  decorators. Native return types remain unchanged; private/protected fields are
+  not supported by this inference. Type negatives cover mismatched fields,
+  additional required arguments, nonfunctions, channel names and raw calls.
+- Native acceptance exposed a compiler false positive for a private module's
+  type-only sibling import. Runtime reachability now excludes type-only imports,
+  and imports containing only types after stripping become explicit `import type`.
+  The regression verifies emitted JavaScript with `verbatimModuleSyntax: true`,
+  so an empty runtime import cannot execute private initializers.
+- Review reproduced callback exception leakage: eight transport regressions
+  received public messages from `ClientVisibleError` thrown inside refinements
+  or authorizers. Refinements, core structural authorizers and auth-owned
+  lookup/rule operations now wrap unexpected exceptions with an internal Error
+  and retain their original `cause` for server diagnostics. Throwing public
+  validation/HTTP classes cannot expose their message or fields. Expected schema
+  `false` results and kit/structural authorization denials retain their normal
+  error paths; intentional public exceptions in action bodies remain supported.
+- `worker-schema-acceptance.js` composes with the existing generated staging,
+  D1 record and audit fixtures. Page/service function fields use parsed
+  number/boolean/date values, strict variants, enum/literal, optional/null,
+  nested arrays, File and unknown-key/extra-argument guards through HTTP/SSE,
+  JSON/multipart. Async false/private/nonboolean/public-class exceptions write
+  neither records nor audit rows. Stream fields retain yielded/final values.
+  Browser submissions show nested refinement failure, keep input and recover
+  through both component and service actions. Native sockets exercise scalar
+  errors, parsed fields, private classes, explicit abort and successor progress.
+- Explicit cancellation uses the owned signal; it does not establish incoming
+  pre-header disconnect delivery, terminate ignored I/O or roll back writes.
+  Native socket cancellation suppresses later result/error frames; the client
+  settles its own cancellation. The fixture asserts native callback abort and
+  no mutation rather than awaiting a nonexistent server cancellation reply.
+  The expanded complete staging matrix required 91 seconds; its overall test
+  budget is now 180 seconds, while its cancellation signal remains 500 ms.
+
+**RT-02 completion audit — Author: Codex (2026-10-03).**
+
+1. Invalid input cannot reach an inbound RPC mutation: shared gates cover
+   component, forwarded/explicit service, HTTP, SSE, socket and multipart.
+   The 472-case matrix plus generated Native D1 cases check record versions and
+   audit rows on strict/coercing scalar, enum/literal, optional/null, nested
+   array/File, unknown-field, positional-argument and refinement rejection.
+   Plain action maps no longer bypass the contract. Unguarded actions remain
+   explicit opt-outs; authored native calls are not decorator wrappers.
+2. Errors map to nested form fields without parsing strings: object/array paths
+   and root/container `_` errors use structured `fieldErrors`, stable validation
+   codes and nonempty correlated request IDs. Browser page/service forms show
+   the refinement error and recover after correcting input.
+3. Coerced input has an inferred server type: strict published-export negatives
+   check `InputOf`/`RawInputOf`, authorizers, methods and public function fields.
+   Generated authored TypeScript and Node browser cases preserve generator
+   yield/result inference. Native actions receive number/boolean/Date values;
+   the date remains an actual Date until response serialization.
+4. Denied resource access performs no mutation: completed RT-14 supplies typed
+   app-owned lookup, trusted actors and policy guards. The same generated/native
+   suites repeat owned, cross-owner/tenant, missing/anonymous and forged-state
+   checks. Unexpected callbacks throwing public/HTTP exception classes remain
+   internal rather than leaking fields, messages, stacks or a response.
+5. Direct forged requests and browser submissions: final generated Node cases
+   pass; final built Worker checks cover HTTP/SSE page/service JSON/multipart
+   actions, D1 versions/audits, client chunk privacy, native sockets and browser
+   failure/recovery. Signal abort skips mutation and releases successor work.
+
+Exact commands/counts are in the
+[release review](./release-0.9.0.md#codex-schema-migration-2026-10-03).
+RT-02 uses the tested RT-01 transport boundary without closing its wider
+deadlines/disconnect/init/restoration work. RT-07 owns native API schema
+declarations/error response integration; native parsing still owns its error
+mapping. RT-11 session freshness and REL-02..05/native Deno/Electron gates remain.
+Do not reimplement RT-02/RT-14 or widen native signatures during the next phase.
 
 Done when: Invalid input cannot reach the mutation on any supported transport.
 Errors map to nested form fields without string parsing. Valid coerced input has

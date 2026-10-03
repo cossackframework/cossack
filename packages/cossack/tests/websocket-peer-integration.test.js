@@ -27,7 +27,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   await fs.writeFile(main, `
     import { Hono } from ${JSON.stringify(hono)};
     import { Cossack, CossackDurableObject, Page, Server, State, RateLimit,
-      RateLimitDurableObject, enforceMethodRateLimit, input } from ${JSON.stringify(core)};
+      RateLimitDurableObject, enforceMethodRateLimit, input, ClientVisibleError, ActionValidationError } from ${JSON.stringify(core)};
     import { createResourcePolicy } from ${JSON.stringify(auth)};
     import { handleWebSocketProxy } from ${JSON.stringify(proxy)};
     export { RateLimitDurableObject };
@@ -36,12 +36,32 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     const policy = createResourcePolicy<{id:number;owner:string;tenant:string},{id:string;tenant:string}>()({
       edit:({user,resource})=>user.id===resource.owner && user.tenant===resource.tenant,
     });
+    // Test-only observability for explicit socket cancellation; never app auth state.
+    const schemaCallbacks={started:0,aborted:0};
+    const schema=input.object({count:input.number({coerce:true,integer:true}),enabled:input.boolean({coerce:true}),
+      when:input.date({coerce:true}),kind:input.literal('record'),status:input.enum(['draft','published']),
+      note:input.string().optional(),nullable:input.string().nullable(),
+      nested:input.object({tags:input.array(input.enum(['small','large']))}),
+    }).refine(async(value,{signal})=>{
+      if(value.count===14)throw new Error('PRIVATE_SOCKET_SCHEMA_FAILURE');
+      if(value.count===15)return 'invalid decision' as any;
+      if(value.count===17)throw new ClientVisibleError('PRIVATE_SOCKET_SCHEMA_FAILURE');
+      if(value.count===18)throw new ActionValidationError({secret:'PRIVATE_SOCKET_SCHEMA_FAILURE'});
+      if(value.count===16){schemaCallbacks.started++;await new Promise<void>(resolve=>{
+        signal!.addEventListener('abort',()=>{schemaCallbacks.aborted++;resolve();},{once:true});
+        if(signal!.aborted)resolve();
+      });}
+      return value.count!==13;
+    },'Disallowed count.');
     class Live extends Cossack {
       count = 0;
       render() { return null; }
       limited() { return ++this.count; }
       custom() { return ++this.count; }
       edit(value) { ++this.count; return value.id; }
+      parsed=(value)=>{++this.count;return {count:value.count,enabled:value.enabled,when:value.when,
+        whenIsDate:value.when instanceof Date,kind:value.kind,status:value.status,note:value.note,nullable:value.nullable,nested:value.nested};};
+      policyException=(value)=>{++this.count;return value.count;};
       inspect() {
         return { user: this.user?.id ?? null, contextUser: this.c.get('user')?.id ?? null,
           ip: this.c.req.header('cf-connecting-ip'), bucket: this.c.req.header('x-bucket'),
@@ -63,12 +83,15 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     Server({input:input.object({id:input.number({coerce:true,integer:true,min:1})}),
       authorize:policy.action('edit',(value:{id:number})=>records.find(record=>record.id===value.id))})
       (Live.prototype,'edit',Object.getOwnPropertyDescriptor(Live.prototype,'edit'));
+    Server({input:schema})(Live.prototype,'parsed');
+    Server({input:schema,authorize:()=>{throw new ClientVisibleError('PRIVATE_SOCKET_POLICY_FAILURE');}})(Live.prototype,'policyException');
     RateLimit({ max: 1, window: 60000, requires: { shared: true, durable: true, atomicIncrement: true } })(Live.prototype, 'limited', Object.getOwnPropertyDescriptor(Live.prototype, 'limited'));
     RateLimit({ max: 1, window: 60000, key: c => JSON.stringify([c.req.param('tenant'), c.req.header('x-bucket')]) })
       (Live.prototype, 'custom', Object.getOwnPropertyDescriptor(Live.prototype, 'custom'));
     export class PeerObject extends CossackDurableObject {
       async getComponentRegistry() { return new Map([[componentPath, Live]]); }
       async fetch(request) {
+        if(new URL(request.url).pathname==='/__test_schema-status')return Response.json(schemaCallbacks);
         // Force the production reconstruction path while keeping the actual
         // native socket attachments and durable storage. No eviction timing.
         if (new URL(request.url).pathname === '/__test_restore') {
@@ -87,6 +110,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     });
     app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName(c.req.query('name') || 'shared').toString() }));
     app.post('/restore', c => c.env.COSSACK_OBJECT.getByName('shared').fetch('https://object/__test_restore'));
+    app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName('shared').fetch('https://object/__test_schema-status'));
     app.get('/ws/:provider/:id/:channel', handleWebSocketProxy({
       pages: { [componentPath]: { default: Live } }, layouts: {}, allowedOrigins: ['http://localhost'],
       routePathToFilePathMap: new Map([['/live', componentPath]]),
@@ -142,7 +166,9 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
       const completion = new Promise(resolve => pending.set(requestId, resolve));
       socket.send(JSON.stringify({ v: 1, type: 'action', requestId, action, payload: [],
         user: { id: 'forged-admin' }, headers: { 'cf-connecting-ip': 'forged' }, ...extraPayload }));
-      return completion;
+      return Object.assign(completion,{requestId,cancel(){
+        socket.send(JSON.stringify({v:1,type:'cancel',requestId}));pending.delete(requestId);
+      }});
     } };
   };
 
@@ -199,6 +225,40 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   }
   expect(await member.call('edit',{payload:[{id:'1'}]})).toMatchObject({type:'done',value:1});
   expect((await member.call('inspect')).value.count).toBe(beforePolicy+1);
+  const raw={count:'3',enabled:'false',when:'2026-10-03T00:00:00.000Z',kind:'record',status:'draft',nullable:null,nested:{tags:['small']}};
+  const beforeSchema=(await member.call('inspect')).value.count;
+  for(const [change,fieldErrors] of [
+    [value=>value.count='NaN',{count:'Expected a safe integer.'}],
+    [value=>value.enabled='maybe',{enabled:'Expected a boolean.'}],
+    [value=>value.when='2026-02-30T00:00:00.000Z',{when:'Expected a valid date.'}],
+    [value=>value.kind='owner',{kind:'Unexpected value.'}],
+    [value=>value.status='admin',{status:'Unexpected value.'}],
+    [value=>value.note=null,{note:'Expected a string.'}],
+    [value=>delete value.nullable,{nullable:'Expected a string.'}],
+    [value=>value.nested.tags=['invalid'],{nested:{tags:{0:'Unexpected value.'}}}],
+    [value=>value.canEdit=true,{canEdit:'Unknown field.'}],
+    [value=>value.count='13',{_:'Disallowed count.'}],
+  ]){
+    const value=structuredClone(raw);change(value);
+    expect(await member.call('parsed',{payload:[value]})).toMatchObject({type:'error',code:'COSSACK_VALIDATION_FAILED',fieldErrors,requestId:expect.any(String)});
+    expect((await member.call('inspect')).value.count).toBe(beforeSchema);
+  }
+  for(const count of ['14','15','17','18']){
+    expect(await member.call('parsed',{payload:[{...raw,count}]})).toMatchObject({type:'error',code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
+    expect((await member.call('inspect')).value.count).toBe(beforeSchema);
+  }
+  expect(await member.call('policyException',{payload:[raw]})).toMatchObject({type:'error',code:'COSSACK_RPC_INTERNAL_ERROR',message:'Internal Server Error',requestId:expect.any(String)});
+  expect((await member.call('inspect')).value.count).toBe(beforeSchema);
+  expect(await member.call('parsed',{payload:[raw]})).toMatchObject({type:'done',value:{...raw,count:3,enabled:false,whenIsDate:true}});
+  expect((await member.call('inspect')).value.count).toBe(beforeSchema+1);
+  const waiting=member.call('parsed',{payload:[{...raw,count:'16'}]});
+  await vi.waitFor(async()=>expect(await(await server.fetch('/schema-status')).json()).toMatchObject({started:1,aborted:0}));
+  // The production client settles its own cancelled call. Native explicit
+  // cancel suppresses later result/error frames; it is not a server reply.
+  waiting.cancel();
+  await vi.waitFor(async()=>expect(await(await server.fetch('/schema-status')).json()).toMatchObject({started:1,aborted:1}));
+  expect((await member.call('inspect')).value.count).toBe(beforeSchema+1);
+  expect(member.inbox.filter(frame=>frame.requestId===waiting.requestId&&['done','error'].includes(frame.type))).toEqual([]);
   await server.getWorker('first').evictDurableObject('RateLimitDurableObject', {
     name: JSON.stringify([JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited', 'user:member']),
   });

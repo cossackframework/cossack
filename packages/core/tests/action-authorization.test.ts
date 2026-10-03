@@ -37,7 +37,7 @@ it('normalizes expected cross-package denials without forwarding an arbitrary me
 });
 it('keeps unexpected exceptions internal',async()=>{
     const failure=Error('PRIVATE');class Actions{@Server({authorize:()=>{throw failure;}})save(){}}
-    await expect(enforceActionAuthorization(Actions,'save',[],await context(),signal())).rejects.toBe(failure);
+    await expect(enforceActionAuthorization(Actions,'save',[],await context(),signal())).rejects.toMatchObject({message:'[Cossack] Server action authorization failed.',cause:failure});
 });
 it('does not execute exception accessors or fail redaction on hostile proxies',()=>{
     const getter=vi.fn(()=>{throw Error('PRIVATE_ACCESSOR');});

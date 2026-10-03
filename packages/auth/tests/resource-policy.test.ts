@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Hono, type Context } from 'hono';
+import {HTTPException} from 'hono/http-exception';
 import { createResourcePolicy, ResourceAuthorizationError } from '../src/index';
 
 interface Actor { id: string; tenant: string; }
@@ -65,8 +66,18 @@ it.each([1, 'allowed', undefined, null])('refuses nonboolean policy decisions (%
 it('keeps lookup/policy exceptions internal rather than changing them into a denial',async()=>{
     const failure=Error('PRIVATE_BACKEND');const c=await context();
     const policy=createResourcePolicy<Post,Actor>()({edit:()=>{throw failure;}});
-    await expect(policy.can(c,'edit',post)).rejects.toBe(failure);
-    await expect(create().action('edit',()=>{throw failure;})({},{context:c,signal:c.req.raw.signal})).rejects.toBe(failure);
+    await expect(policy.can(c,'edit',post)).rejects.toMatchObject({message:'[Cossack Auth] Resource policy callback failed.',cause:failure});
+    await expect(create().action('edit',()=>{throw failure;})({},{context:c,signal:c.req.raw.signal})).rejects.toMatchObject({message:'[Cossack Auth] Resource policy callback failed.',cause:failure});
+});
+it.each(['lookup','rule'])('keeps thrown HTTP exceptions private in middleware %s',async site=>{
+    const failure=new HTTPException(418,{message:'PRIVATE_POLICY_HTTP'}),writes=vi.fn();
+    const policy=createResourcePolicy<Post,Actor>()({edit:()=>{if(site==='rule')throw failure;return true;}});
+    const app=new Hono<{Variables:{user:Actor}}>();
+    app.onError((error,c)=>{expect(error).toMatchObject({cause:failure});return c.text('Internal Server Error',500);});
+    app.use('*',async(c,next)=>{c.set('user',owner);await next();});
+    app.post('/',policy.middleware('edit',()=>{if(site==='lookup')throw failure;return post;}),c=>{writes();return c.json({saved:true});});
+    const response=await app.request('/',{method:'POST'});expect(response.status).toBe(500);
+    expect(await response.text()).toBe('Internal Server Error');expect(writes).not.toHaveBeenCalled();
 });
 it('cancels a stuck lookup before policy evaluation and observes its late failure',async()=>{
     const controller=new AbortController(), c=await context(); let fail!:(error:Error)=>void;

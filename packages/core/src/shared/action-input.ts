@@ -2,12 +2,11 @@ import './metadata';
 import { ActionValidationError } from './errors';
 import { isInputSchema, type InputParseOptions } from './input-schema';
 import { RpcError } from './rpc-stream';
-import { validateObject, type StoreRuleMap } from './validation';
 
 /**
  * Enforce a `@Server({ input })` contract on an inbound RPC payload (RT-02).
- * Typed schemas parse one argument; transitional maps validate the first
- * object and retain extra arguments. Expected failures carry nested errors;
+ * Schemas parse one argument. Rule maps are not action contracts in 0.9.
+ * Expected failures carry nested errors;
  * callback exceptions remain internal. Transport cancellation skips mutation.
  */
 export async function enforceActionInput(
@@ -21,7 +20,6 @@ export async function enforceActionInput(
         throw new ActionValidationError({ _: 'RPC payload must be an array of arguments.' });
     }
     const registration = findServerMethodRegistration(constructor, action);
-    const rules = registration?.input as StoreRuleMap<unknown> | undefined;
     if (!registration || !Object.hasOwn(registration, 'input')) return payload;
     if (isInputSchema(registration.input)) {
         if (payload.length > 1) throw new ActionValidationError({ _: 'This action accepts one input argument.' });
@@ -31,21 +29,7 @@ export async function enforceActionInput(
             throw error;
         }
     }
-    if (!rules || typeof rules !== 'object' || Array.isArray(rules)) {
-        throw new Error('[Cossack] Invalid server action input contract.');
-    }
-    const input = payload?.[0];
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-        throw new ActionValidationError({ _: 'This action requires an object input.' },
-            'Validation failed.');
-    }
-    const result = await validateObject(input as Record<string, unknown>, rules);
-    if (options.signal?.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
-    if (!result.valid) {
-        throw new ActionValidationError(result.errors as unknown as Record<string, unknown>,
-            'Validation failed.');
-    }
-    return [result.data, ...payload.slice(1)];
+    throw new Error('[Cossack] Invalid server action input contract. Use an input schema; rule maps must migrate to input.object().');
 }
 
 /** @internal Shared by the input and authorization gates. */

@@ -5,6 +5,7 @@ import { chromium, expect as browserExpect } from '@playwright/test';
 import { readRpcStream } from '../../../core/dist/index.js';
 import { writeCounterCancellation, checkCounterCancellation } from './worker-counter-cancellation.js';
 import { writeWorkerPolicyAcceptance, checkWorkerPolicyAcceptance } from './worker-policy-acceptance.js';
+import { writeWorkerSchemaAcceptance, checkWorkerSchemaAcceptance } from './worker-schema-acceptance.js';
 
 // These endpoints and D1 audit records exist only in the generated test app.
 // The gate proves an early yield without depending on browser timing; audit
@@ -16,6 +17,7 @@ export async function writeWorkerRpcAcceptance(root) {
   };
   await writeCounterCancellation(root);
   await writeWorkerPolicyAcceptance(root);
+  await writeWorkerSchemaAcceptance(root);
   await write('src/rpc-audit.ts', `
     import { getRequestContext } from '@cossackframework/core';
     import { sql } from '@cossackframework/database';
@@ -198,6 +200,7 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
   expect((await release()).status).toBe(200);
   const audit = async key => (await server.fetch('/api/rpc-check?key=' + encodeURIComponent(key), { headers })).json();
   await checkWorkerPolicyAcceptance(server,serverUrl,sessionCookie,readHydration);
+  await checkWorkerSchemaAcceptance(server,serverUrl,sessionCookie,readHydration);
   await checkCounterCancellation(server, serverUrl, sessionCookie, readHydration);
   const expectClosed = async (key, service, path = '/upload') => {
     await vi.waitFor(async () => expect(await audit(key)).toEqual((service ? ['generator', 'service'] : ['generator', 'page', 'service'])

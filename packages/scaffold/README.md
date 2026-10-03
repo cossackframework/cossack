@@ -127,14 +127,23 @@ pages. The recipe declares HTTP transport capability for every selected target.
 
 Run `cossack add mutation` to add `/mutation`, or select `--features=mutation`
 during creation. This HTTP recipe uses a typed `storeRules` map for built-in
-client form validation and `@Server({ input })` for server validation. Client-only
+client form validation and a separate private `input.object()` schema in
+`@Server({ input })` for server validation. Action metadata no longer accepts
+plain rule maps in 0.9. Declare accepted keys explicitly and normalize browser
+form values before calling a method whose parameter is `InputOf<typeof schema>`.
+`RawInputOf` describes incoming boundary values, not a widened method signature.
+Public function-field actions receive the same schema parameter checking.
+Client-only
 form state is sent as an explicit argument snapshot. The handler displays field
 errors, disables the form while submitting, keeps input after failure, and clears
 it after success. It uses framework RPC proxies; no manual fetch is needed.
 
 The public demonstration returns an acknowledgment. It does not persist data or
 send email. To perform a real write, add authorization and call an application
-service or selected database inside the server method. Component state and client
+service or selected database inside the server method. Use the auth package's
+resource policy with `@Server({ input, authorize: policy.action('edit', lookup) })`
+to enforce record ownership after parsing and before invocation. Native API or
+loader calls explicitly authorize their resource. Component state and client
 input are not a trusted database. The recipe adds no database or UI dependency,
 declares HTTP capability, and preserves edited pages during repeat composition.
 

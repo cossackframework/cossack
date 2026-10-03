@@ -43,18 +43,19 @@ export async function enforceActionAuthorization(constructor: unknown, action: s
         signal.addEventListener('abort', onAbort, { once: true });
         if (signal.aborted) onAbort();
     });
+    let accepted:unknown;
     try {
-        const accepted = await Promise.race([Promise.resolve().then(() => {
+        accepted = await Promise.race([Promise.resolve().then(() => {
             cancelled();
             return (registration.authorize as ServerActionAuthorizer)(payload[0], { context, signal, action });
         }), interrupted]);
         cancelled();
-        if (accepted === false) throw new RpcError('COSSACK_AUTH_FORBIDDEN', 'Forbidden', { status: 403 });
-        if (accepted !== true) throw new Error('[Cossack] Server action authorization must return a boolean.');
     } catch (error) {
         cancelled();
         const denial = getAuthorizationFailure(error);
         if (denial) throw new RpcError(denial.code, denial.message, { status: denial.status });
-        throw error;
+        throw new Error('[Cossack] Server action authorization failed.', {cause:error});
     } finally { signal.removeEventListener('abort', onAbort); }
+    if (accepted === false) throw new RpcError('COSSACK_AUTH_FORBIDDEN', 'Forbidden', { status: 403 });
+    if (accepted !== true) throw new Error('[Cossack] Server action authorization must return a boolean.');
 }

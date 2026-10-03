@@ -151,7 +151,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
         yield await input.nested.files[0].text(); await new Promise(resolve => setTimeout(resolve, 500)); return input.nested.files[0].name;
       }
       @Server() native() { return new Response(new Uint8Array([0, 255, 128]), { headers: { 'Content-Type': 'application/octet-stream', 'X-Native': 'service' } }); }
-      @Server() report = async function* (label: string) {
+      @Server({input:input.string({required:true})}) report = async function* (label: string) {
         const serverMarker = 'private-service-generator-marker';
         yield { label };
         return { length: label.length, marker: serverMarker };
@@ -194,7 +194,7 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
         for (let step = 1; step <= limit; step++) yield { step };
         return { total: limit };
       }
-      @Server() field = async function* (amount: number) {
+      @Server({input:input.number({integer:true,min:1})}) field = async function* (amount: number) {
         const marker = 'private-page-generator-marker';
         yield { amount };
         return { amount, marker };

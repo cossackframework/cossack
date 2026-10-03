@@ -155,10 +155,12 @@ See [RPC examples and timing](../docs/rpc.md).
 
 ## Typed server input contracts
 
-Prefer `@Server({ input: contract })` with an `input` schema and annotate the
-native method parameter with `InputOf<typeof contract>`. Plain rule maps still
-run their previous rules; they do not gain strict unknown-key, positional-argument,
-file or array behavior. See [the schema contract](../docs/validation.md).
+Use `@Server({ input: contract })` with an `input` schema and annotate the
+native method or public function-field parameter with `InputOf<typeof contract>`.
+Plain action rule maps are removed in 0.9. TypeScript rejects them; stale
+JavaScript metadata fails before callbacks or mutation with a private migration
+error. Form rules (`@Validate`/`storeRules`) retain their existing API.
+See [the schema contract](../docs/validation.md).
 
 When migrating a rule map, declare every accepted key and nested/file shape.
 Unknown keys now fail by default; opt into `unknownKeys: 'strip'` where dropping
@@ -175,9 +177,25 @@ contract retained by runtime client code or exports. Expected `.refine()` failur
 returns nested field errors. An exception remains an internal error. Use the
 callback's signal for I/O cancellation and put writes in the actual action.
 
+Refinement and resource policy/lookup exceptions remain internal even if their
+class normally produces a public RPC or HTTP error. Their original cause stays
+available in server logs. Return `false` from a refinement/policy for its expected
+failure; use the kit's explicit authorization methods for fixed 401/403 denials.
+Intentional `ClientVisibleError` exceptions in action bodies retain their normal
+public behavior.
+
 Native server calls retain their authored signature and do not run decorator
-validation. Resource authorization is still an unfinished release gate. These
-changes do not authorize a release or remove that gate.
+validation. Public function fields use the same parsed parameter checking;
+their native return type remains unchanged. Private/protected fields cannot use
+this schema decorator inference. Keep actions public.
+
+`RawInputOf` describes boundary values and does not widen native or browser
+method parameters. Normalize form strings before calling an authored method.
+Native API handlers explicitly parse their request values before use. Use
+`@Server({input:contract,authorize:policy.action('edit',lookup)})` for RPC resource
+access; native handlers/reads explicitly call `policy.authorize`. The
+[resource kit](../docs/authorization.md#typed-resource-policies) is implemented.
+Session freshness and the final release gates remain separate.
 
 ## Service RPC keeps internal exceptions private in development
 
