@@ -1,7 +1,7 @@
 # Cossack 0.9.0 agent handoff
 
 Author: **Codex**. Updated on 2026-10-04. Historical checkpoint narratives remain in the verification log.
-Branch: `fix-084`. **22 of 58 release tasks are complete; 36 remain open.**
+Branch: `fix-084`. **24 of 58 release tasks are complete; 34 remain open.**
 Versions remain **0.8.3** until REL-04. This is a continuation handoff, not a release.
 
 Read the [release checklist](./release-0.9.0.md) for authoritative task status and
@@ -15,7 +15,7 @@ is available with `git show 8f084e0:specs/handoff-0.9.0.md`.
 
 ## Completed release tasks
 
-These are the 22 checked tasks. Use the linked plan sections and their verification
+These are the 24 checked tasks. Use the linked plan sections and their verification
 links when changing these features; do not repeat completed implementation work.
 
 | Task | Completed work |
@@ -32,6 +32,8 @@ links when changing these features; do not repeat completed implementation work.
 | [RT-05](./release-0.9.0-plan.md#rt-05) | Typed task dependencies, owned commits, cleanup and stale-work cancellation. |
 | [RT-06](./release-0.9.0-plan.md#rt-06) | Owned optimistic updates, rollback, concurrency and uncertain-outcome recovery. |
 | [RT-07](./release-0.9.0-plan.md#rt-07) | Typed routes/API contracts and effective route/boundary inspection. |
+| [RT-08](./release-0.9.0-plan.md#rt-08) | Typed URL state, SSR/hydration, merged query intents, drafts and history. |
+| [RT-09](./release-0.9.0-plan.md#rt-09) | Bounded navigation outcomes, stale ownership, cache/layout/scroll/transition diagnostics and browser acceptance. |
 | [RT-14](./release-0.9.0-plan.md#rt-14) | Typed resource authorization and boolean client visibility projections. |
 | [RT-18](./release-0.9.0-plan.md#rt-18) | Cache/limiter capabilities, millisecond TTL contracts and shared durable budgets. |
 | [RT-19](./release-0.9.0-plan.md#rt-19) | Realtime status, reconnect/resync and pending-call errors without mutation replay. |
@@ -43,53 +45,26 @@ links when changing these features; do not repeat completed implementation work.
 | [CF-11](./release-0.9.0-plan.md#cf-11) | Removed tracked credential values; external rotation remains unperformed. |
 | [REL-01](./release-0.9.0-plan.md#rel-01) | Original report fixes and package/SSG regressions. |
 
-## Current work: RT-08 and RT-09
+## Next work
 
-Typed URL state and navigation are implemented in part. Both release tasks remain
-open. Read [RT-08](./release-0.9.0-plan.md#rt-08),
-[RT-09](./release-0.9.0-plan.md#rt-09) and the [URL-state contract](../docs/url-state.md).
+RT-08 and RT-09 are complete. Their [criterion audits](./release-0.9.0-plan.md#rt-08)
+and [acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
+replace the older pending navigation steps. Do not repeat completed ownership work.
+The public [URL-state contract](../docs/url-state.md) records draft and service limits.
 
-Completed implementation within these open tasks is summarized below. Detailed
-results remain in the linked verification records. Do not repeat this work unless
-the acceptance audit finds a gap.
+Continue the unchecked checklist, starting with [CLI-07](./release-0.9.0-plan.md#cli-07)
+and [CLI-08](./release-0.9.0-plan.md#cli-08) for local agent tools and installed-version
+guides. Inspect CLI-04 shared inspection services and RT-28 devtools boundaries
+before choosing the MCP package/API. CLI-07 requires versioned, project-bound tools,
+secret redaction, cancellation and resource cleanup. It is a local development
+server. RT-28 snapshots and timelines remain open despite completed navigation events.
 
-| Implemented and tested | Evidence / contract |
-| --- | --- |
-| Typed URL codecs, merged pending queries, matching drafts, bounded requests/history restoration, stale-result rejection and precommit recovery. | [URL-state contract](../docs/url-state.md) and [RT-08 plan](./release-0.9.0-plan.md#rt-08) |
-| Nested/cache draft transfer matches class, parent, key and scope. Plain graphs are copied; File/native values retain identity. Services survive asynchronous DOM cleanup while task publication stops immediately. | [RT-09 plan](./release-0.9.0-plan.md#rt-09) |
-| Changed user/ownership replaces the root App and services. Failed replacement restores the old App. Stale renders are rejected and null output clears DOM. | [Root ownership](./release-0.9.0.md#codex-root-ownership-2026-10-03) |
-| Parent-layout changes preserve root drafts/services, reset replaced descendants and dispose retired services once. Inherited authored render/API handlers work. | [Route inheritance](./release-0.9.0.md#codex-route-inheritance-2026-10-03) |
-| Development diagnostics correlate cache, layouts, scroll, transitions and outcomes without application data. | [Event contract](../docs/prevent-navigation.md#development-diagnostics), [verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03) |
-| Node/workerd fixtures count actual backend reads across SSR, hydration, cache/history, rapid changes, guards, rollback and late responses. | [Backend reads](./release-0.9.0.md#codex-url-backend-reads-2026-10-03) |
-| Same-URL history restores the correct entry and supersedes held confirmations while preserving drafts, entry positions and backend counts. | [Same-URL history](./release-0.9.0.md#codex-same-url-history-2026-10-03) |
-| HTTP/SSE child transitions retain root/layout ownership. Node/workerd runtime changes reset the tree. Retired SSE callbacks cannot update state. | [Runtime ownership](./release-0.9.0.md#codex-runtime-ownership-2026-10-03) |
-| Actual Node/workerd sockets cover scoped provider targets, same-target replacement and return to HTTP. Retirement closes status, cancels timers, settles calls and rejects late callbacks. | [WebSocket ownership](./release-0.9.0.md#codex-websocket-ownership-2026-10-04) |
-
-Ownership tests use declared layout services. Legacy global dependency injection
-remains outside that contract. Query-based test identity is not an authentication
-example. A child transport change alone does not replace the root App.
-
-Continue in this order:
-
-1. Audit every original RT-08/RT-09 criterion against current implementation and
-   evidence. The planned user/scope, parent-layout, HTTP/SSE/WebSocket/provider-target,
-   Node/workerd runtime, same-URL history and backend-read scenarios now have tests.
-2. Run the relevant navigation/guard/view-transition browser suites and the full
-   generated-runtime matrix on the final implementation. Inspect gaps rather than
-   inferring closure from unit counts. Keep final release gates separate.
-3. Close RT-08/RT-09 only when that audit proves their written criteria, then
-   continue all other unchecked release tasks. Preserve the full 58-task scope.
-
-Start in `packages/core/src/client/navigation.ts`,
-`packages/framework/src/client/app.ts` and `packages/renderer/src/cossack-html.ts`.
-Generated browser fixtures live in `packages/cossack/tests/fixtures/`:
-`url-state-acceptance.js` and `navigation-ownership-acceptance.js`.
-Same-URL cases live in `same-url-history-acceptance.js`. Their runner is
-`packages/cossack/tests/generated-runtime-build.test.js`.
+Keep every other unchecked task in scope. Close tasks only against their original
+criteria. Versions stay 0.8.3 until REL-04.
 
 ## Remaining release scope and known limits
 
-After the navigation work, continue every unchecked row in the release checklist.
+Continue every unchecked row in the release checklist.
 Use its linked task plans rather than old checkpoint instructions. Remaining areas
 include local MCP/offline agent guides, transport/session parity, application APIs,
 background services, deployment environments/resources, observability and release gates.
@@ -116,18 +91,18 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The [WebSocket ownership checkpoint](./release-0.9.0.md#codex-websocket-ownership-2026-10-04)
-records the latest runs. Older unaffected-suite evidence remains linked below.
+The [navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
+contains the latest results. Earlier whole-suite results are labeled by checkpoint.
 
 | Check | Result |
 | --- | --- |
-| Core tests | 1,442 passed, 85 files |
-| Framework tests | 1,453 passed, 68 files |
-| Production Node/native workerd navigation | 5 passed, 26 skipped, including runtime switch, SSE/WebSocket targets, backend reads and same-URL history |
-| Core/framework builds, including framework SSG | Passed |
+| Full generated-runtime matrix | 31 passed |
+| Navigation/guard/transition browser suites | 27 passed |
+| Focused core / framework navigation suites | 70 / 50 passed |
 | Root `pnpm tsc --noEmit` and `pnpm typecheck` | Passed; all 11 package checks |
-| Full generated-runtime file at `75609d2` | 30 passed; suite now contains 31 cases |
-| Renderer / full CLI at `8f084e0` | 284 / 610 passed; not rerun for this checkpoint |
+| Full core / framework at `bd96db4` | 1,442 / 1,453 passed; not rerun for this audit |
+| Core/framework builds including SSG at `bd96db4` | Passed; not rerun for this audit |
+| Renderer / full CLI at `8f084e0` | 284 / 610 passed; not rerun for this audit |
 
 ## Working rules
 

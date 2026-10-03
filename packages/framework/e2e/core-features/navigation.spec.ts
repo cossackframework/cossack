@@ -118,6 +118,43 @@ test.describe('Navigation', () => {
     expect(requests.filter(({ type }) => type === 'document')).toHaveLength(0);
   });
 
+  test('a newer link wins when an earlier page response arrives late', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let held = false;
+    let delivered = false;
+    await page.route('**/lifecycle', async route => {
+      const response = await route.fetch();
+      held = true;
+      await gate;
+      try { await route.fulfill({ response }); } finally { delivered = true; }
+    });
+    try {
+      await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.href = '/lifecycle'; document.body.append(link); link.click(); link.remove();
+      });
+      await expect.poll(() => held).toBe(true);
+      await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.href = '/optimistic-counter'; document.body.append(link); link.click(); link.remove();
+      });
+      await expect(page).toHaveURL(/\/optimistic-counter$/);
+      await expect(page.getByRole('heading', { name: 'Optimistic Counter', exact: true })).toBeVisible();
+      release();
+      await expect.poll(() => delivered).toBe(true);
+      // Let queued rendering run after the obsolete response is released.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(page).toHaveURL(/\/optimistic-counter$/);
+      await expect(page.getByRole('heading', { name: 'Optimistic Counter', exact: true })).toBeVisible();
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+
   test('successful mutation clears cached redirect destinations before soft navigation', async ({ page }) => {
     await page.goto('/cache-regression/detail');
     await page.waitForFunction(() => (window as any).__cossackReady === true);

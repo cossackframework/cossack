@@ -1907,6 +1907,21 @@ checks and CLI inspection now share that classification.
 <a id="rt-08"></a>
 ### RT-08: Typed URL state
 
+Codex criterion audit (2026-10-04): the original URL-state requirements now have
+implementation and acceptance evidence. Earlier checkpoint next steps below are
+historical. Use this audit and the current handoff for continuation.
+
+| Requirement | Evidence |
+| --- | --- |
+| Inferred declarations, parsing, serialization, defaults and invalid values | Core `shared/url-state.ts`, `url-state.test.ts` and published-export `url-state-types.test.ts` cover typed patches, immutable values, invalid integers and default omission/inclusion. |
+| Empty values, repeated scalars, arrays, Unicode and unrelated keys | Portable codec tests distinguish empty arrays/items, reject repeated scalars and malformed encoding, and preserve unrelated query bytes/fragments. |
+| Push/replace and browser back/forward | The production Node/workerd URL fixture checks entry lengths, replacement metadata, restored values/results, guards and failed traversals. The same-URL fixture checks entry identity during interrupted restoration/confirmation. |
+| Copied URLs and SSR/hydration parity | A second browser tab reproduces Unicode search, sort, tags and pagination. Invalid page zero uses page one. Page/layout backend counters prove SSR reads and no duplicate hydration reads. |
+| Resources and rapid changes | Pending patches merge while committed reads remain stable. Exact backend counts cover coalesced updates, stale responses, cache, rollback and retained layouts. Native ownership fixtures cover changed user, scope, parent, runtime and providers. |
+
+RT-03 and RT-07 are complete. RT-09 is audited separately below. See the
+[final navigation verification](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
+
 Codex backend-read acceptance (2026-10-03): the production URL-state fixture now
 uses an actual counting HTTP backend for page and retained-layout resources.
 Node and native workerd each read page/layout once per fresh SSR document.
@@ -2140,6 +2155,23 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
+
+Codex criterion audit (2026-10-04): the completion and diagnostic contract now
+has evidence for each original criterion. Earlier checkpoint next steps below
+are historical, including ownership scenarios that later checkpoints completed.
+
+| Requirement | Evidence |
+| --- | --- |
+| Completed, superseded, canceled, redirected and failed outcomes | Core result types and framework navigation-outcome tests exercise the public promises, effective redirect URLs, failed modules and guards. Native browser fixtures check failed/canceled results and actual redirect destinations. |
+| Defined completion and bounded stalled work | `NavigationOwner` applies a 30-second budget. Owned rendering and commit serialization settle at the documented lifecycle boundary. Controlled tests cover stalled body, bootstrap/render, guards and history restoration. Native apps cover a stuck ordinary App render promise. |
+| Stale fetches and disposed owners | Shared request readers release ownership independently and abort unused fetches. Unit/native fixtures release obsolete responses after newer commits. Retired task, SSE and WebSocket callbacks cannot publish into replacement owners. Arbitrary external I/O remains outside cancellation guarantees. |
+| Cache, invalidation, layout, scroll and transition decisions | Versioned development events have correlation IDs and frozen fields. Tests check order, privacy, layout counts, cache sharing and production suppression. This completes RT-09 diagnostics, not the separate RT-28 devtools snapshot/timeline UI. |
+| Rapid links, back/forward, guards, errors, redirects and reused layouts | Framework browser suites plus production Node/workerd fixtures cover these cases. The rapid-link test holds an actual SSR response until a newer linked page commits. |
+| Fragments and unavailable transition APIs | Browser tests navigate to `#item-preview`, verify its viewport position, and verify top fallback for a missing fragment. Removing `startViewTransition` still commits navigation and emits the unsupported/completed diagnostics. |
+
+RT-05 and RT-08 provide the lifecycle and URL-state contracts. RT-28 remains open
+for its broader devtools deliverables. See the
+[final navigation verification](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
 
 Codex WebSocket ownership follow-up (2026-10-04): provider retirement now revokes
 socket ownership, clears heartbeat/reconnect timers, sets status closed and

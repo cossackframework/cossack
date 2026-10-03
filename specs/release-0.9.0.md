@@ -28,8 +28,8 @@ below link directly to those explanations.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
 - [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. Codex completion (2026-10-03): shared discovery/manifest, published URL and API contracts, actual Node/native workerd/D1 handlers, source-specific boundaries and middleware ownership pass. Grouped/dynamic unknown URLs, literal/catch-all selection, ambiguous source groups, guards, status-preserving browser hydration/navigation and read-only source explanations now meet the original criteria. The unused PageOptions.route is removed with type/runtime/compiler diagnostics and migration guidance. See the [criterion audit](./release-0.9.0-plan.md#rt-07) and [completion review](#codex-route-boundaries-2026-10-03). Broader RPC, session and runtime/release gates remain separate.
-- [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults. Codex checkpoint (2026-10-03): portable inferred codecs, strict defaults/encoding/arrays, destination-owned SSR/browser query contexts and push/replace history pass published types and actual Node/native Worker browser acceptance. Remaining: pending patch ownership, local draft preservation, retained-layout resource handoff and the full rapid-change matrix. See the [checkpoint](#codex-url-state-contracts-2026-10-03).
-- [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
+- [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination. Codex completion (2026-10-04): inferred codecs/defaults, copied Unicode URLs, SSR/hydration, push/replace/history, merged pending patches, draft ownership and exact backend reads pass the criterion audit and production Node/workerd matrix. See the [acceptance record](#codex-navigation-acceptance-2026-10-04).
+- [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex completion (2026-10-04): bounded outcomes, stale/disposed ownership, rapid links, guarded/interrupted history, errors/redirects, retained layouts, fragments and unavailable transitions pass the criterion audit. RT-28 devtools UI and full release gates remain separate. See the [acceptance record](#codex-navigation-acceptance-2026-10-04).
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
@@ -5921,3 +5921,47 @@ Broader RT-01 initialization/incoming disconnect/server-execution deadlines, RT-
 sessions and Node plain Vite development 404 remain open. Versions stay 0.8.3 until
 REL-04. reports.md/.zcodeignore remain user-owned and unstaged. No push/publication,
 live cloud operation, external message or new chat was performed.
+
+<a id="codex-navigation-acceptance-2026-10-04"></a>
+## Codex: RT-08/RT-09 acceptance audit (2026-10-04)
+
+Audited the original Purpose, Approach and Done when requirements against source,
+public contracts and behavioral assertions. The criterion tables are in
+[RT-08](./release-0.9.0-plan.md#rt-08) and [RT-09](./release-0.9.0-plan.md#rt-09).
+Both tasks are complete. The checklist retains all 58 IDs: 24 checked, 34 open.
+
+Added browser regressions for an older linked-page response arriving after a newer
+commit, actual fragment scrolling with missing-target fallback, and navigation
+without `document.startViewTransition`. The transition example now exposes the
+stable `item-preview` target. The rapid-link fixture uses temporary anchors because
+collapsed sidebar groups do not render their links. Its initial fixture timeout was
+corrected before the final complete browser run.
+
+Verification on the final implementation:
+
+- Full generated-runtime file: **31 passed**, including actual production Node and
+  native workerd ownership, backend-read and interrupted same-URL history fixtures.
+- Navigation, guard and view-transition browser suites: **27 passed**.
+- Focused core URL-state, published type, SSR/hydration and navigation suites:
+  **70 passed across 6 files**.
+- Framework navigation outcome/owner suites: **50 passed across 2 files**.
+- Root `pnpm tsc --noEmit` and all **11** package type checks: passed.
+- Whitespace check excluding the user's existing `reports.md`: passed.
+
+Logs: `/tmp/cossack-navigation-matrix-audit.log`,
+`/tmp/cossack-navigation-browser-verified.log`,
+`/tmp/cossack-navigation-audit-core.log`,
+`/tmp/cossack-navigation-audit-framework.log`,
+`/tmp/cossack-navigation-audit-root-types-verified.log` and
+`/tmp/cossack-navigation-audit-package-types-verified.log`.
+
+The initial Playwright startup probe delayed server launch. A locally started
+server supplied the final browser runs. A concurrent automatic startup hit the
+occupied devtools port during the first run; the final run reused the single
+server and passed. No credentials, remote resources or deployment were required.
+
+RT-28 still needs its broader devtools snapshots/timeline interface. Navigation
+events alone do not close it. REL-03 still requires the complete final release
+matrix. Versions remain 0.8.3 until REL-04. Arbitrary external side effects, ignored
+application I/O and legacy global DI remain outside the documented ownership
+contract. No other task status changed.
