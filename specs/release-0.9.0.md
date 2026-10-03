@@ -6623,3 +6623,43 @@ Verification for this checkpoint:
   filtered PasswordInput declarations, six existing executable guide examples,
   metadata refresh and discovery with Node networking disabled.
 - Logs: `/tmp/cossack-addons-{build,ui,browser,root-types,package-types,agent-docs}.log`.
+
+<a id="codex-input-otp-2026-10-04"></a>
+## Codex: Native InputOTP contract (2026-10-04)
+
+InputOTP previously ignored native attributes and parent value changes. Its
+completion condition could never pass. Separate digit inputs also lost empty
+positions and pasted only at the beginning.
+
+The component now uses one native text field and decorative, aria-hidden slots.
+Closed props expose labels, ARIA references, native events and form attributes.
+The component owns numeric input mode, digit validation and length (1–32).
+Controlled values require parent acceptance. Uncontrolled defaults remain stable.
+Changed complete codes invoke onComplete after onChange. Initial values and parent
+updates do not trigger callbacks. Completion does not prove server verification.
+
+Selection-aware paste preserves leading zeroes, strips separators and respects
+application cancellation. Composition text survives rerenders until composition
+ends. Native form reset restores the initial uncontrolled code or current
+controlled value. Canceled reset preserves the edit. Reset listeners attach with
+the input ref and are removed during component cleanup.
+
+Verification: UI build, 134 UI tests across 12 files, root `pnpm tsc --noEmit` and
+all 11 package type checks pass. The production Chromium fixture checks no-JS SSR,
+retained hydration, one accessible textbox, typing/deletion, paste, completion,
+FormData, validation, parent acceptance/rejection, composition, readonly/fieldset
+disabling and canceled/native reset. The real Tailwind theme verifies slot size,
+focus ring and pointer caret placement. Public types reject competing native value
+controls, invalid callbacks and misspelled attributes.
+
+Installed guidance describes attribute ownership and state behavior. The tarball
+verifier checks the InputOTP declaration and exact-symbol CLI/MCP parity.
+Installed-tarball acceptance passed with Node networking disabled during discovery.
+All six existing packaged examples compiled and executed. Logs for this checkpoint
+are `/tmp/cossack-otp-{build,ui,browser,root-types,package-types,agent-docs}.log`.
+
+Fifteen UI foundations are reviewed. RT-23 and CLI-07/CLI-08 remain open.
+Next: Combobox, MultiSelect and DatePicker. Combobox currently drops native props,
+lacks combobox ARIA semantics and can retain a stale selected label after parent
+updates. The broader application/accessibility and release runtime matrix remain.
+No release checkbox or package version changed.

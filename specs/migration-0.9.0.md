@@ -686,3 +686,19 @@ Disabled inputs and inherited disabled fieldsets block reveal.
 ARIA relationship attributes accept string IDs, including `aria-controls`,
 `aria-describedby`, `aria-labelledby` and `aria-activedescendant`. DOM reflection
 property names such as `aria-controlselements` remain invalid.
+
+## InputOTP uses one native field
+
+InputOTP now renders one text input with decorative digit slots. Apply labels,
+ARIA attributes, native events and form attributes to the component's input props.
+Replace selectors that expect one input per digit. The component owns type,
+inputmode, maxlength, minlength, pattern and `.value`.
+
+Use `defaultValue` for an initial uncontrolled code. When supplying `value`, accept
+edits in `onChange` by updating that value. Codes contain ASCII digits and preserve
+leading zeroes. Length must be an integer from 1 to 32 (default 6).
+
+`onComplete` now fires after `onChange` for changed complete codes. Parent updates
+and initial values do not emit either callback. Both receive the native input target.
+Completion reports an edited code and does not imply server verification.
+Native form reset restores the uncontrolled default or current controlled value.

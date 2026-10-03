@@ -135,3 +135,19 @@ component(PasswordInput, {'aria-details':'password-rules','aria-errormessage':'p
 component(Input, {'aria-controls':document.createElement('div')});
 // @ts-expect-error Reference ARIA attributes do not accept booleans.
 component(Input, {'aria-describedby':false});
+
+import { InputOTP } from '@cossackframework/ui';
+component(InputOTP,{length:6,defaultValue:'012345',name:'code',required:true,'aria-label':'Code',
+    onChange:(value,event)=>{const input:HTMLInputElement=event.currentTarget;void [value,input];},
+    onComplete:code=>{const text:string=code;void text;},
+    '@paste':event=>event.clipboardData?.getData('text'),'?disabled':false});
+// @ts-expect-error OTP owns its native input type.
+component(InputOTP,{type:'number'});
+// @ts-expect-error OTP owns value through its value/defaultValue props.
+component(InputOTP,{'.value':'123456'});
+// @ts-expect-error OTP derives native length from digit count.
+component(InputOTP,{maxlength:4});
+// @ts-expect-error OTP completion receives text, including leading zeros.
+component(InputOTP,{onComplete:(value:number)=>{void value;}});
+// @ts-expect-error OTP no longer accepts arbitrary ignored attributes.
+component(InputOTP,{placehoder:'Code'});

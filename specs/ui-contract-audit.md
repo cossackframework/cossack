@@ -87,7 +87,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [HoverCard](../packages/ui/src/components/HoverCard.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Input](../packages/ui/src/components/Input.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [InputGroup](../packages/ui/src/components/InputGroup.ts) | Foundation reviewed | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
-| [InputOTP](../packages/ui/src/components/InputOTP.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [InputOTP](../packages/ui/src/components/InputOTP.ts) | Reviewed foundation | One labeled native field, typed props/events, controlled/default values, selection-aware paste, composition, completion, reset, validation, themed focus and SSR/hydration browser acceptance. |
 | [Item](../packages/ui/src/components/Item.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Kbd](../packages/ui/src/components/Kbd.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Label](../packages/ui/src/components/Label.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit InputOTP, then Combobox, MultiSelect and DatePicker. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Combobox, then MultiSelect and DatePicker. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

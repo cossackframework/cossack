@@ -18,13 +18,12 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Resume the uncommitted InputOTP changes, then audit Combobox, MultiSelect and DatePicker.
-   InputOTP is not complete: the local UI run passed 134 tests, but browser acceptance,
-   root/package type checks, installed documentation and the audit update remain pending.
-   Its source, public type fixture and new unit test are already in the working tree.
-   Fourteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
-   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup and PasswordInput.
-   See the [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04) for current evidence and limits.
+   Next audit Combobox, then MultiSelect and DatePicker.
+   Fifteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
+   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup, PasswordInput and InputOTP.
+   InputOTP uses one native field with decorative slots, controlled/default values and reset handling.
+   See the [InputOTP checkpoint](./release-0.9.0.md#codex-input-otp-2026-10-04) for evidence and limits.
+   Combobox review must address dropped native props, missing ARIA semantics and stale selected labels after parent changes.
    Earlier checkpoints retain generated Node/workerd DataTable and navigation-focus evidence.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.

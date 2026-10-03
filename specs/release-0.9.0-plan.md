@@ -1013,6 +1013,11 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
+Codex checkpoint (2026-10-04): InputOTP now has one native field with decorative
+slots, typed props/events, controlled/default values, completion and native reset
+handling. See the [review evidence](./release-0.9.0.md#codex-input-otp-2026-10-04).
+Continue Combobox, MultiSelect and DatePicker through the UI audit. RT-23 stays open.
+
 Codex DataTable implementation (2026-10-04): the UI root now exports a generic
 DataTable and typed row/column/query contracts. Columns select a valid row key or
 an accessor. Parents own HTTP queries, stale-response handling and selection.
@@ -1045,7 +1050,7 @@ Themed follow-up verifies disabled styles from actual native state, including
 fieldsets, and keyboard focus rings. RadioGroup/Slider now have typed native contracts,
 property-based selection, stable radio identities and correct range initialization
 and bounds changes. The [component inventory](./ui-contract-audit.md) records all
-remaining audit work, starting with text/select wrappers and their SSR values.
+remaining audit work.
 Renderer plain/live select values now commit after dynamic options, with stale queued
 writes canceled on replacement or removal. Plain spread select values preserve
 manual selection on unrelated renders. Textarea/select SSR now uses escaped text and selected options. Textarea, Select
@@ -1055,7 +1060,7 @@ A browser-specific renderer entry removes the SSR parser from normal UI bundles.
 Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
 have native contracts, composed callbacks, ARIA reference types and retained SSR
 hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
-Next: InputOTP and composite selection controls. See the
+Next: Combobox, MultiSelect and DatePicker. See the
 [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
 See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
