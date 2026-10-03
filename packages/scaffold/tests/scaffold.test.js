@@ -740,7 +740,7 @@ describe('composition', () => {
       }
       if (adapter === 'cloudflare') {
         expect(files.get('wrangler.jsonc').content.toString())
-          .toContain(`"compatibility_flags": ["${compatibilityFlag}"]`);
+          .toContain(`"compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"]`);
         expect(runtime).not.toContain('wrangler');
       } else {
         expect(files.has('wrangler.jsonc')).toBe(false);

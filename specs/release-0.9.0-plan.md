@@ -12,7 +12,15 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex rate-store contract checkpoint](./release-0.9.0.md#codex-rate-store-contracts-2026-10-03)
+The latest [Codex coordinator cancellation checkpoint](./release-0.9.0.md#codex-sse-cancellation-2026-10-03)
+adds private operation IDs, removes cancelled queued callbacks, bridges active
+counter cancellation across Workers and preserves FIFO order. Generated configs
+include incoming request-signal flags; preflight checks selected environments and
+built compatibility settings. Wrangler upgrade exclusions are preserved.
+Production router tests use explicit middleware request signals. Actual pre-header
+TCP disconnect notifications were not observed on the installed workerd, including
+a minimal direct-socket probe, and remain a separate acceptance gap. No task closes;
+14/58 remain checked. The preceding [Codex rate-store contract checkpoint](./release-0.9.0.md#codex-rate-store-contracts-2026-10-03)
 fixes invalid configuration fallback, first-environment ownership and unchecked
 runtime options/counter replies. Per-action peer environments select their own
 backend. Redis now uses millisecond expiry; KV retains records for at least 60
@@ -1274,15 +1282,25 @@ callbacks were not observed after cancelling the subrequest; do not claim them.
 
 Next steps, with each goal kept separate:
 
-1. Finish native disconnect and coordinator acceptance. Incoming Cloudflare
-   request signals require `enable_request_signal`; audit scaffold/upgrade and
-   named environment flags and prove a real client disconnect during a pending
-   decision. The native body-abort fixture uses an explicit request controller.
-   The shared matrix's SSE path uses the local backend. Prove current distributed
-   coordinator cancellation behavior during a queued or pending counter decision
-   before claiming no late mutation there. Keep native Deno/Electron release
-   gates separate. Audit cancellation/resource ownership for unsupported custom
-   direct stores without implying a guarantee the interface does not enforce.
+1. Finish actual native disconnect acceptance. Coordinator cancellation now has
+   cross-Worker native RPC evidence: 32-entry saturation, duplicate-ID refusal,
+   cancelled queued callbacks never starting, capacity reuse, preserved FIFO,
+   and active counter cancellation before an ignoring provider replies. Built
+   production routes prove explicit request-signal cancellation for HTTP/SSE
+   JSON/multipart page and service calls, and a queued SSE call never hitting
+   its store. Hono proxy getters and response setters retain their real receivers; a real
+   Hono assignment regression and compiled page/service response headers verify it. A cancelled
+   pre-header response carries the public correlation ID and cancellation code.
+   New Cloudflare recipes enable `enable_request_signal`; named environments
+   inherit it unless overridden. Selected-config preflight and artifact date/flag
+   comparison reject missing/changed settings. Upgrades explicitly exclude
+   Wrangler files, so existing apps must add the flag manually; neither template
+   application nor force overwrites that exclusion. The installed workerd did
+   **not** emit a pre-header TCP disconnect event in a minimal direct-socket
+   Worker, even with the flag and waitUntil. Do not describe explicit signal
+   cancellation as proof of that delivery. Arbitrary already-started methods
+   and initialization/restoration still need policy/deadline audits. Keep actual
+   Deno/Electron release gates separate; native producer shutdown remains unproven.
 2. Finish provider-specific configuration/resource validation. Audit Redis URL
    schemes, optional namespace values, key UTF-8 bounds, memory prune/capacity
    semantics and backend maximum durations. Check namespace encoding/collision

@@ -69,6 +69,14 @@ state and broadcasts across Worker requests. Generated apps export
 in each named environment too. Node and Deno use a process-local SSE backend;
 multiple server processes need a shared coordinator for cross-process state.
 
+Generated Cloudflare configurations include `enable_request_signal` in
+`compatibility_flags` so incoming disconnects can cancel pending RPC work.
+Existing apps must add it explicitly: upgrades preserve Wrangler files.
+Named environments inherit flags unless they override them. A coordinator
+without the flag fails preflight with `COSSACK_REQUEST_SIGNAL_REQUIRED`.
+The built artifact must retain the selected compatibility date and flags,
+as well as its bindings. See [Cloudflare's compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests).
+
 ### Inspect configuration
 
 Inspect and check local configuration without writing build files:

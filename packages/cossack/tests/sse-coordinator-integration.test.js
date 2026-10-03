@@ -86,10 +86,9 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
       },
     };
   `);
-  // The harness enables the experimental abort_signal compatibility flag for
-  // AbortSignal-over-RPC only where the installed workerd supports it; the
-  // framework itself must work without it (see the router's stream-cancel
-  // fallback). Request-body cancel propagation is the baseline mechanism.
+  // Direct legacy execute(callback) calls test response-body cancellation.
+  // The production router supplies a private operation ID and cancellation
+  // callback; the next native case and generated app test that protocol.
   const common = { main, compatibility_date: '2026-06-06', compatibility_flags: ['nodejs_compat'] };
   const options = { root: directory, workers: [
     { config: { ...common, name: 'first', vars: { MARK: 'first' },
@@ -143,9 +142,8 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
   expect(JSON.parse(updates.snapshot.state)).toEqual({ count: 101 });
   expect(updates.events.at(-1)).toMatchObject({ event: 'event', data: '{"eventName":"ping","payload":["hello"]}' });
 
-  // A caller that disconnects while queued cannot deadlock the scope: its
-  // action runs at most once (result discarded, never replayed) and later
-  // actions still acquire the serialization slot.
+  // A direct legacy caller without an operation ID/cancel bridge cannot
+  // cancel its queued callback. It still runs at most once and does not deadlock.
   const slow = invoke('first', '/slow');
   await new Promise(resolve => setTimeout(resolve, 20));
   const abandoned = new AbortController();
@@ -203,4 +201,89 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
   expect((await (await server.fetch('/counts')).json()).started).toBe(beforeQueued.started);
   await customReader.cancel();
   expect((await afterCustom).at(-1).type).toBe('done');
+}, 60_000);
+
+it('cancels native queued callbacks and pending guards without releasing another action’s slot', async () => {
+  vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-sse-cancellation-'));
+  const coordinator = fileURLToPath(new URL('../../framework/src/SseDurableObject.ts', import.meta.url));
+  const limiter = fileURLToPath(new URL('../../core/src/shared/rate-limit-io.ts', import.meta.url));
+  const main = path.join(directory, 'worker.ts');
+  await fs.writeFile(main, `
+    import { SseDurableObject } from ${JSON.stringify(coordinator)};
+    import { runRateLimitOperation } from ${JSON.stringify(limiter)};
+    export { SseDurableObject };
+    const gates = new Map(); const started = []; const invoked = []; const signals = new Map();
+    export default { async fetch(request, env) {
+      const url = new URL(request.url); const id = url.searchParams.get('id');
+      const stub = env.COSSACK_SSE.getByName('cancellation');
+      if (url.pathname === '/initialize') return Response.json(await stub.initialize('{}'));
+      if (url.pathname === '/status') return Response.json({ queue: await stub.queueStatus(), started, invoked,
+        aborted: [...signals].filter(([, signal]) => signal.aborted).map(([id]) => id) });
+      if (url.pathname === '/cancel') { await stub.cancel(id); return new Response('cancelled'); }
+      if (url.pathname === '/release') { gates.get(id)?.(); return new Response('released'); }
+      const controller = new AbortController();
+      return stub.execute(async () => {
+        started.push(id); const observation = { aborted: false }; signals.set(id, observation);
+        controller.signal.addEventListener('abort', () => { observation.aborted = true; }, { once: true });
+        if (url.pathname === '/raw') return new Response(new ReadableStream({
+          start(output) { output.enqueue(new TextEncoder().encode('first')); },
+          pull() { return new Promise(resolve => gates.set(id, resolve)); },
+          cancel() { return new Promise(() => {}); },
+        }, { highWaterMark: 0 }));
+        try {
+          if (url.pathname === '/held') await runRateLimitOperation({ signal: controller.signal, timeoutMs: 30000 },
+            () => new Promise(resolve => gates.set(id, resolve)));
+          invoked.push(id); return Response.json({ id });
+        } catch { return Response.json({ cancelled: true }, { status: 499 }); }
+      }, id, async () => { controller.abort(); });
+    } };
+  `);
+  const common = { main, compatibility_date: '2026-06-06', compatibility_flags: ['nodejs_compat'] };
+  server = createTestHarness({ root: directory, workers: [{ config: {
+    ...common, name: 'queue',
+    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+    migrations: [{ tag: 'v1', new_sqlite_classes: ['SseDurableObject'] }],
+  } }, { config: { ...common, name: 'peer',
+    durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject', script_name: 'queue' }] },
+  } }] });
+  const { url } = await server.listen();
+  await server.fetch('/initialize');
+  const origin = server.getWorker('peer');
+  const status = async () => (await origin.fetch(new URL('/status', url))).json();
+  const invoke = (route, id) => origin.fetch(new URL(`${route}?id=${id}`, url))
+    .then(async response => ({ status: response.status, body: await response.json() }));
+  const first = invoke('/held', 'first');
+  await vi.waitFor(async () => expect((await status()).started).toEqual(['first']));
+  expect((await invoke('/held', 'first')).status).toBe(409);
+  const queued = Array.from({ length: 31 }, (_, index) => invoke('/held', `queued-${index}`));
+  await vi.waitFor(async () => expect((await status()).queue).toEqual({ pending: 32, queued: 31, active: true }));
+  expect((await invoke('/held', 'overflow')).status).toBe(429);
+  for (let index = 0; index < 31; index++) await server.fetch(`/cancel?id=queued-${index}`);
+  expect((await Promise.all(queued)).map(result => result.status)).toEqual(Array(31).fill(499));
+  expect((await status()).started).toEqual(['first']);
+  expect((await status()).queue).toEqual({ pending: 1, queued: 0, active: true });
+  const successor = invoke('/increment', 'successor');
+  await vi.waitFor(async () => expect((await status()).queue.queued).toBe(1));
+  expect((await status()).invoked).toEqual([]);
+  await server.fetch('/cancel?id=first');
+  expect((await first).status).toBe(499);
+  expect(await successor).toEqual({ status: 200, body: { id: 'successor' } });
+  expect((await status()).aborted).toContain('first');
+  expect((await status()).queue).toEqual({ pending: 0, queued: 0, active: false });
+  // The provider deliberately ignores abort. Its late success must never invoke
+  // application work, and progress above occurred before that success.
+  await origin.fetch(new URL('/release?id=first', url));
+  expect((await status()).invoked).toEqual(['successor']);
+  expect((await invoke('/increment', 'queued-0')).status).toBe(200);
+  const raw = await origin.fetch(new URL('/raw?id=raw', url));
+  const afterRaw = invoke('/increment', 'after-raw');
+  await vi.waitFor(async () => expect((await status()).queue.queued).toBe(1));
+  await server.fetch('/cancel?id=raw');
+  expect((await afterRaw).status).toBe(200);
+  void raw.body.cancel().catch(() => {});
+  expect((await status()).queue.pending).toBe(0);
+  // Remote producer shutdown is not asserted. The local coordinator releases
+  // ownership even though that producer's cancel hook never resolves.
+  await origin.fetch(new URL('/release?id=raw', url));
 }, 60_000);

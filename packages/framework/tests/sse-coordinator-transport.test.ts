@@ -4,10 +4,11 @@ import { Cossack, CossackService, getRequestContext, Inject, Page, readRpcStream
 import { component, html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
 
-// A faithful in-memory stand-in for the SseDurableObject namespace: one scope
+// An in-memory stand-in for snapshot/publication tests: one scope
 // per collision-safe tuple name, first-initialization-wins snapshots, an
 // append-only event log, and execute() serialization that publishes stream
-// frames and passes materialized responses through.
+// frames and passes materialized responses through. Cancellation is deliberately
+// a no-op here; native workerd and generated deployment fixtures test that contract.
 type FakeEvent = { cursor: number; event: string; data: string };
 type FakeSnapshot = { state: string; cursor: number };
 
@@ -16,6 +17,8 @@ class FakeSseScope {
     events: FakeEvent[] = [];
     executed = 0;
     #tail: Promise<void> = Promise.resolve();
+
+    async cancel(_operationId: string) {}
 
     async initialize(state: string) {
         if (!this.snapshot) {

@@ -13,7 +13,7 @@ const RESOURCE_GROUPS = {
   services: ['binding', 'service'],
   workflows: ['binding', 'name'],
 };
-const TARGET_FIELDS = ['name', 'vars', 'secrets', ...Object.keys(RESOURCE_GROUPS),
+const TARGET_FIELDS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'secrets', ...Object.keys(RESOURCE_GROUPS),
   'durable_objects', 'queues'];
 const SECRET_NAME = /(?:SECRET|TOKEN|PASSWORD|PRIVATE_KEY|ACCESS_KEY)/i;
 const PLACEHOLDER = /^(?:0{8}-0{4}-0{4}-0{4}-0{12}|0{32}|PLEASE_CHANGE.*|YOUR[_ -].*|<.*>|xxx)$/i;
@@ -81,6 +81,12 @@ export async function inspectDeployment(root, environment) {
   const diagnostics = [];
   const bindings = [];
   const error = (code, message) => diagnostics.push({ code, severity: 'error', message });
+  if (config.durable_objects?.bindings?.some(binding => binding.name === 'COSSACK_SSE') &&
+      (!config.compatibility_flags?.includes('enable_request_signal') ||
+       config.compatibility_flags.includes('disable_request_signal'))) {
+    error('COSSACK_REQUEST_SIGNAL_REQUIRED',
+      `Add enable_request_signal to compatibility_flags${environment ? ` for env.${environment}` : ''} and remove disable_request_signal so disconnected RPC callers cancel pending work.`);
+  }
   if (environment) {
     // Wrangler does not inherit bindings into named environments. Compare the
     // raw top-level Durable Object bindings with the selected environment so a

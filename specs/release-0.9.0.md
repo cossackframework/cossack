@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 354-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Remaining: backend I/O bounds/abort/cleanup, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-store-contracts-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 354-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -65,7 +65,7 @@ below link directly to those explanations.
 - [ ] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system.
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
 - [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
-- [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. GLM (2026-10-02): coordinator wired through SSR, `/crpc`, and `/sse`; scaffolded `COSSACK_SSE` binding (`new_sqlite_classes`) and `SseDurableObject` entry; missing-binding and environment-inheritance diagnostics; cursor reconnect with bounded history; broadcasts. Node/Deno keep the documented process-local backend (see [specs/sse.md](./sse.md)). Not claimed: exactly-once external side effects, queued-caller cancellation on the pinned wrangler baseline, stream-response cookie handling (RT-11).
+- [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. GLM (2026-10-02): coordinator wired through SSR, `/crpc`, and `/sse`; scaffolded `COSSACK_SSE` binding (`new_sqlite_classes`) and `SseDurableObject` entry; missing-binding and environment-inheritance diagnostics; cursor reconnect with bounded history; broadcasts. Node/Deno keep the documented process-local backend (see [specs/sse.md](./sse.md)). Not claimed: exactly-once external side effects, native pre-header TCP disconnect delivery (explicit coordinator cancellation is now verified), stream-response cookie handling (RT-11).
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime. GLM (2026-10-02): the generated staging app runs under workerd through published packages covering D1-backed credentials auth (login/protected route/authenticated SSE scope isolation), component+service RPC with streams and cancellation, protected assets with policies, public SSG validation, binding/artifact comparison, the SSE coordinator (subscriptions, cursors, reconnect, broadcasts), and the migration system applying real migrations against the bound D1 (recorded bookkeeping, idempotent re-runs) plus schema-serving reads.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
@@ -85,6 +85,86 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-sse-cancellation-2026-10-03"></a>
+### Codex continuation: native coordinator cancellation (2026-10-03)
+
+**Author: Codex.** Continued RT-18/RT-01 after `87495f7`. The coordinator's
+promise tail admitted cancelled queued callbacks, retained their queue position,
+and had no private cancel protocol for active counter decisions. New Cloudflare
+recipes also omitted the incoming request-signal flag.
+
+The coordinator now reserves private operation IDs, rejects duplicates, bounds
+all pending entries to 32, and removes cancelled queued entries without invoking
+them or releasing another action's slot. FIFO order survives cancellation and
+capacity reuse. An RPC abort callback reaches the originating Worker while its
+counter guard is pending; an ignoring provider's late reply cannot invoke the
+action. Response-body cancellation releases local ownership without awaiting
+producer cleanup. Started application methods may finish; no retry or rollback.
+`queueStatus()` reports counts and active status without exposing operation IDs.
+
+The router preserves the request/ALS/service context while replacing only the
+action signal. Hono proxies now read branded getters on their actual receiver:
+the shared matrix exposed three erroneous 500 responses from rate-limit guards.
+A real Hono response-assignment regression also reproduced a 500 from the
+setter; both context proxies now preserve its receiver. Generated page/service
+actions assign a response and verify retained headers. A separate generated-app
+test exposed an empty 500 cancellation race. The router
+now emits a correlated cancellation response when its signal aborts before the
+coordinator response is returned, regardless of which guard/RPC message wins.
+
+Generated Cloudflare configs include `enable_request_signal` alongside their
+existing Node compatibility flag. Named environments inherit flags unless they
+override them. Preflight rejects a selected coordinator without the flag or with
+`disable_request_signal`; artifact checks compare compatibility dates and flags.
+Wrangler files remain excluded from template upgrades, including unchanged ones.
+Two upgrade regressions prove preservation; existing apps must add the flag
+explicitly. Docs explain that migration and the required flag.
+
+Native evidence: two Workers share a real SQLite coordinator. Tests exercise
+32-entry saturation, duplicate refusal, removal of 31 queued callers without any
+callback invocation, active-counter abort, FIFO progress before provider release,
+late replies, and capacity/ID reuse. The compiled generated staging app exercises
+explicit middleware request signals through HTTP/SSE JSON/multipart page/service
+calls, a cancelled queued SSE caller that never hits its store, and pending
+counter deadlines before late success. The no-op cancellation test fake remains
+limited to snapshots/publication; these contracts use native workerd fixtures.
+
+**Native disconnect limitation:** actual pre-header TCP disconnect notifications
+were not observed on the installed workerd (Miniflare 4.20260722.0), including a
+minimal Worker on a direct socket with `enable_request_signal`, with and without
+`waitUntil`. Production-router acceptance uses an explicitly aborted request
+signal; it does not prove incoming disconnect delivery. Keep that acceptance gap,
+remote producer shutdown, arbitrary method deadlines, initialization/restoration,
+provider policy/capabilities, and native Deno/Electron gates open. Cloudflare
+[documents the required incoming flag](https://developers.cloudflare.com/workers/runtime-apis/request/);
+that documentation does not replace this runtime evidence.
+
+Verification after the final response-setter fix:
+
+- `pnpm --filter @cossackframework/framework run build:types` passes before
+  dependent consumers run; core exports are unchanged from the prior checkpoint.
+- `pnpm --filter @cossackframework/framework exec vitest run` — **1033** tests,
+  **50** files; shared matrix **354**. The new real-Hono setter regression failed
+  before fixing the proxy receiver.
+- `pnpm --filter cossack exec vitest run` — **569** tests, **41** files;
+  all **14** generated cases, real-pnpm release fixture, native coordinator/rate
+  fixtures and compiled staging JSON/multipart page/service cancellation,
+  deadlines, FIFO and response headers pass. Native queue cancellation also
+  releases a raw response slot with a never-resolving producer cancel hook;
+  remote producer shutdown/first-byte delivery are not claimed for that case.
+- `pnpm --filter @cossackframework/scaffold exec vitest run` — **108** tests,
+  **4** files, with recipe/provider compatibility-flag assertions.
+- `pnpm tsc --noEmit` and `pnpm typecheck` — root and all **11** package configs
+  pass. `git diff --check -- docs packages specs` passes; user-owned files are
+  excluded. Unchanged core/Node/Deno suites retain their previous checkpoint
+  evidence; this slice does not claim a new complete monorepo/release audit.
+
+**Checklist audit:** **14/58 checked; no new checkbox closes.** All 44 unchecked
+tasks remain in scope. Next complete provider URL/key/namespace/capacity/duration
+policies, cache provider ownership/units, and capability inspection/rejection;
+then audit the remaining RT-01/RT-02/RT-11/RT-14 criteria. Versions stay 0.8.3
+until REL-04. Preserve user-owned `reports.md` and `.zcodeignore`.
 
 <a id="codex-rate-decision-io-2026-10-03"></a>
 ### Codex continuation: bounded counter decisions and cancellation (2026-10-03)

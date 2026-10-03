@@ -34,6 +34,32 @@ function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
   return serviceClass !== undefined && isRpcCallableAction(serviceClass, action);
 }
 
+/** Change only the action's signal; preserve Hono/native Request receivers. */
+function withRpcSignal(c: Context, signal: AbortSignal): Context {
+  const raw = new Proxy(c.req.raw, {
+    get(target, property) {
+      if (property === 'signal') return signal;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const req = new Proxy(c.req, {
+    get(target, property) {
+      if (property === 'raw') return raw;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return new Proxy(c, {
+    set(target, property, value) { return Reflect.set(target, property, value, target); },
+    get(target, property) {
+      if (property === 'req') return req;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 function serializeRpcResult(value: unknown, state: unknown) {
   return { value: snapshotRpcValue(value, 'value'), state: snapshotRpcValue(state, 'state') };
 }
@@ -82,6 +108,7 @@ import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
+import { runWithContext } from './request-context-als.js';
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
@@ -914,8 +941,11 @@ export function createApp(options: CreateAppOptions = {}) {
       return sseBindingMissingResponse();
     }
 
+    const actionCancellation = sseStub ? new AbortController() : undefined;
+    if (actionCancellation) componentContext = withRpcSignal(componentContext, actionCancellation.signal);
+
     const requestScope = createRootServiceScope();
-    requestScope.bindRequest({ context: c, user, env: c.env });
+    requestScope.bindRequest({ context: componentContext, user, env: c.env });
     let componentInstance: Cossack | undefined;
     let responseOwnsCleanup = false;
     let finishResponseLifetime: (() => Promise<void>) | undefined;
@@ -953,6 +983,7 @@ export function createApp(options: CreateAppOptions = {}) {
       authoritativeState: Record<string, unknown> | undefined,
     ): Promise<Response> => {
       try {
+        if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
         let activeScope = requestScope;
         for (const layoutPath of getLayoutStack(componentPath)) {
           const LayoutClass = getModuleDefault(layouts[layoutPath] as object) as new () => Cossack;
@@ -1000,7 +1031,7 @@ export function createApp(options: CreateAppOptions = {}) {
           ? targetInstance.constructor
           : getForwardedServerMethodClass(targetInstance, action);
 
-        const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action,
+        const rateLimited = await enforceMethodRateLimit(componentContext, rateLimitConstructor, action,
           JSON.stringify(['crpc', componentPath, (rateLimitConstructor as typeof Cossack).name]));
         if (rateLimited) return rateLimited;
 
@@ -1020,7 +1051,7 @@ export function createApp(options: CreateAppOptions = {}) {
           throw validation;
         }
 
-        if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+        if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
 
         // Await promises before inspecting the result. Awaiting an async generator
         // does not pull it; its response owns iteration and request-context lifetime.
@@ -1038,10 +1069,14 @@ export function createApp(options: CreateAppOptions = {}) {
           console.error('[/crpc] internal error:', { requestId, error: e });
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
+        if (componentContext.req.raw.signal.aborted) {
+          if (actionResult instanceof Response) void actionResult.body?.cancel().catch(() => {});
+          throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+        }
         if (isRpcStream(actionResult)) {
           finishResponseLifetime = retainResponseLifetime(c);
           const response = createRpcStreamResponse({
-            result: actionResult, requestId, signal: c.req.raw.signal,
+            result: actionResult, requestId, signal: componentContext.req.raw.signal,
             getState: () => targetInstance.getPublicState(),
             getScopeState: sseStub && targetInstance !== componentInstance
               ? () => componentInstance!.getPublicState() : undefined,
@@ -1078,7 +1113,7 @@ export function createApp(options: CreateAppOptions = {}) {
           await publishScopeState();
           finishResponseLifetime = retainResponseLifetime(c);
           responseOwnsCleanup = true;
-          return await retainRpcResponseBody(actionResult, c.req.raw.signal, cleanup);
+          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup);
         }
 
         // Get the state of the component that was actually modified
@@ -1104,29 +1139,81 @@ export function createApp(options: CreateAppOptions = {}) {
     };
 
     if (sseStub) {
-      // The action executes exactly once inside the coordinator's per-scope
-      // serialization slot. Request middleware, layout DI, ORM, and config
-      // contexts are restored from this request's AsyncLocalStorage snapshot.
+      // A private operation ID is distinct from caller-controlled correlation.
+      const operationId = crypto.randomUUID();
       const inRequest = AsyncLocalStorage.snapshot();
+      const signal = c.req.raw.signal;
+      let cancelSent = false;
+      let bodyOwnsCancellation = false;
+      let stopBody: (() => void) | undefined;
+      const cancel = () => {
+        actionCancellation!.abort();
+        if (cancelSent) { stopBody?.(); return; }
+        cancelSent = true;
+        const pending = sseStub.cancel(operationId).catch(error => {
+          console.error('[/crpc sse coordinator] cancellation failed:', { requestId, error });
+        });
+        // Incoming disconnect cleanup must survive the cancelled invocation.
+        try { c.executionCtx.waitUntil(pending); } catch { /* process-local test adapter */ }
+        void pending;
+        stopBody?.();
+      };
       try {
-        const response = await sseStub.execute(
-          snapshot => inRequest(async () => runComponentAction(JSON.parse(snapshot))),
+        if (signal.aborted) return Response.json({ error: 'RPC call was cancelled.', code: 'COSSACK_RPC_CANCELLED', requestId }, { status: 499 });
+        const responsePromise = sseStub.execute(
+          snapshot => inRequest(async () => runWithContext(componentContext,
+            () => runComponentAction(JSON.parse(snapshot)))),
+          operationId, async () => { actionCancellation!.abort(); },
         );
-        // When this request aborts before the response is returned, cancel the
-        // coordinator's stream explicitly so the serialization slot releases
-        // instead of waiting for runtime teardown.
-        const signal = (c.req.raw as any).signal as AbortSignal | undefined;
-        if (signal && response.body) {
-          const abortBody = () => { void response.body!.cancel().catch(() => {}); };
-          if (signal.aborted) abortBody();
-          else signal.addEventListener('abort', abortBody, { once: true });
+        signal.addEventListener('abort', cancel, { once: true });
+        if (signal.aborted) cancel();
+        const response = await responsePromise;
+        if (signal.aborted) {
+          cancel();
+          void response.body?.cancel().catch(() => {});
+          return Response.json({ error: 'RPC call was cancelled.', code: 'COSSACK_RPC_CANCELLED', requestId }, { status: 499 });
         }
-        return response;
+        if (!response.body) return response;
+        const reader = response.body.getReader();
+        let closed = false;
+        let output!: ReadableStreamDefaultController<Uint8Array>;
+        const finishBody = () => {
+          if (closed) return;
+          closed = true;
+          signal.removeEventListener('abort', cancel);
+          reader.releaseLock();
+        };
+        stopBody = () => {
+          if (closed) return;
+          void reader.cancel().catch(() => {});
+          finishBody();
+          try { output.close(); } catch { /* consumer already cancelled */ }
+        };
+        const ownedBody = new ReadableStream<Uint8Array>({
+          start: controller => { output = controller; },
+          pull: async controller => {
+            if (closed) return;
+            try {
+              const next = await reader.read();
+              if (closed) return;
+              if (next.done) { finishBody(); controller.close(); }
+              else controller.enqueue(next.value);
+            } catch (error) {
+              if (closed) return;
+              finishBody(); controller.error(error);
+            }
+          },
+          cancel,
+        }, { highWaterMark: 0 });
+        bodyOwnsCancellation = true;
+        if (signal.aborted) cancel();
+        return new Response(ownedBody, { status: response.status, statusText: response.statusText, headers: response.headers });
       } catch (error) {
         await cleanup();
         console.error('[/crpc sse coordinator] action failed:', { requestId, error });
         return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
+        if (!bodyOwnsCancellation) signal.removeEventListener('abort', cancel);
         if (!responseOwnsCleanup) await cleanup();
       }
     }

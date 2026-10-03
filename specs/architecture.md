@@ -335,15 +335,22 @@ and reader locks released, without waiting indefinitely for producer cleanup.
 HTTP request abort or socket call cancellation/close suppresses late action
 invocation and releases the decision queue. Backend increments already dispatched
 are not rolled back or retried. Incoming Cloudflare disconnect notifications
-require `enable_request_signal`; native queued coordinator cancellation remains
-separate. HTTP/multipart/service proxies send a bounded UUID v4 correlation ID
+require `enable_request_signal`. Native cross-Worker RPC cancellation removes
+queued callbacks without invoking them or releasing the active slot. The router
+uses a private operation ID and an abort callback to cancel pending counter
+decisions in the originating Worker; response cancellation releases its slot
+without waiting for producer cleanup. Started application work may finish.
+The installed workerd baseline did not report a pre-header TCP disconnect,
+even in a minimal direct-socket Worker; explicit-signal tests do not prove that
+notification. Full application deadlines and native disconnect acceptance remain
+open. HTTP/multipart/service proxies send a bounded UUID v4 correlation ID
 before dispatch, retained by the transport guard without changing authorization.
 
 Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they
-never retain or pull an action generator. Distributed SSE state coordination
-remains a separate, incomplete requirement.
+never retain or pull an action generator. Distributed SSE scopes use a SQLite
+snapshot and bounded event log in `SseDurableObject`; Node/Deno stay process-local.
 
 Request-context middleware exposes a structural response lifetime under
 `cossack:response-lifetime`. A middleware can call

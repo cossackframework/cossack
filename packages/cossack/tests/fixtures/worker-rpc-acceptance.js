@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expect, vi } from 'vitest';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { readRpcStream } from '../../../core/dist/index.js';
+import { writeCounterCancellation, checkCounterCancellation } from './worker-counter-cancellation.js';
 
 // These endpoints and D1 audit records exist only in the generated test app.
 // The gate proves an early yield without depending on browser timing; audit
@@ -12,6 +13,7 @@ export async function writeWorkerRpcAcceptance(root) {
     await fs.mkdir(path.dirname(path.join(root, name)), { recursive: true });
     await fs.writeFile(path.join(root, name), source);
   };
+  await writeCounterCancellation(root);
   await write('src/rpc-audit.ts', `
     import { getRequestContext } from '@cossackframework/core';
     import { sql } from '@cossackframework/database';
@@ -29,6 +31,13 @@ export async function writeWorkerRpcAcceptance(root) {
     export class RpcAcceptance extends CossackService {
       @State() visits = 0;
       private key = '';
+      @Server() @RateLimit({ max: 100, backendTimeoutMs: 100, key: c => c.req.header('X-Counter-Case')! })
+      async counterDeadline(key: string) { await audit(key, 'guarded'); return 'saved'; }
+      @Server() @RateLimit({ max: 100, backendTimeoutMs: 10000, key: c => c.req.header('X-Counter-Case')! })
+      async counterGuarded(key: string) {
+        getRequestContext()!.res = new Response(null, { headers: { 'X-Counter-Context': 'set' } });
+        await audit(key, 'guarded'); return 'saved';
+      }
       @Server() @RateLimit({ max: 1, window: 60000 })
       async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
       @Server({ input: { title: { required: true } } })
@@ -92,7 +101,7 @@ export async function writeWorkerRpcAcceptance(root) {
   `);
   for (const transport of ['http', 'sse']) {
     await write(`src/pages/rpc-check/${transport}/index.ts`, `
-      import { Cossack, Page, Server, Client, ClientState, State, Inject, RateLimit, rpc$ } from '@cossackframework/core';
+      import { Cossack, Page, Server, Client, ClientState, State, Inject, RateLimit, getRequestContext, rpc$ } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       import { RpcAcceptance } from '../../../services/RpcAcceptance';
       import { audit } from '../../../rpc-audit';
@@ -102,7 +111,14 @@ export async function writeWorkerRpcAcceptance(root) {
         @State() count = 0;
         @ClientState() output = ''; @ClientState() failure = ''; @ClientState() filesProgress = 0;
         private key = '';
-        @Server() @RateLimit({ max: 1, window: 60000 })
+        @Server() @RateLimit({ max: 100, backendTimeoutMs: 100, key: c => c.req.header('X-Counter-Case')! })
+      async counterDeadline(key: string) { await audit(key, 'guarded'); return 'saved'; }
+      @Server() @RateLimit({ max: 100, backendTimeoutMs: 10000, key: c => c.req.header('X-Counter-Case')! })
+      async counterGuarded(key: string) {
+        getRequestContext()!.res = new Response(null, { headers: { 'X-Counter-Context': 'set' } });
+        await audit(key, 'guarded'); return 'saved';
+      }
+      @Server() @RateLimit({ max: 1, window: 60000 })
         async limited(key: string) { this.key = key; await audit(key, 'limited'); return 'saved'; }
         @Server({ input: { title: { required: true } } })
         files(input: { title: string; key: string; nested: { files: File[] } }) {
@@ -175,6 +191,7 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
   const release = key => server.fetch('/api/rpc-check', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ release: key }) });
   expect((await release()).status).toBe(200);
   const audit = async key => (await server.fetch('/api/rpc-check?key=' + encodeURIComponent(key), { headers })).json();
+  await checkCounterCancellation(server, serverUrl, sessionCookie, readHydration);
   const expectClosed = async (key, service, path = '/upload') => {
     await vi.waitFor(async () => expect(await audit(key)).toEqual((service ? ['generator', 'service'] : ['generator', 'page', 'service'])
       .map(kind => ({ kind, path, user: 'u1' }))), { timeout: 3000 });

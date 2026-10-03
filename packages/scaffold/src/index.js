@@ -441,7 +441,7 @@ function wranglerConfig(recipe, projectName) {
   return `{
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "${projectName}",
-  "compatibility_flags": ["${compatibilityFlag}"],
+  "compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
   "assets": { "binding": "ASSETS", "run_worker_first": true },

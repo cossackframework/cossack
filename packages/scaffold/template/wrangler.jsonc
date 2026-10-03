@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "my-cossack-app",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "enable_request_signal"
   ],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",

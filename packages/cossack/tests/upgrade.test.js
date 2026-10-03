@@ -138,6 +138,24 @@ describe('classifyFile', () => {
 });
 
 describe('schema-v3 recipe upgrades', () => {
+  it.each([false, true])('preserves excluded Wrangler configuration for explicit disconnect-flag migration (%s)', async modified => {
+    const project = await seedProject({ adapter: 'cloudflare' });
+    const relative = 'wrangler.jsonc';
+    const manifest = await readManifest(project.projectDir);
+    const config = JSON.parse(await fs.readFile(path.join(project.projectDir, relative), 'utf8'));
+    config.compatibility_flags = config.compatibility_flags.filter(flag => flag !== 'enable_request_signal');
+    const previous = JSON.stringify(config, null, 2) + '\n';
+    manifest.files[relative].hash = await write(project.projectDir, relative, previous);
+    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest));
+    if (modified) await write(project.projectDir, relative, previous + '// User environment configuration\n');
+    await runUpgrade(project.projectDir, ['--apply-template']);
+    const after = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
+    if (modified) expect(after).toBe(previous + '// User environment configuration\n');
+    else expect(after).toBe(previous);
+    expect(after).not.toContain('enable_request_signal');
+    expect((await renderRecipe(project.recipe, { projectName: 'app' })).get(relative).content.toString()).toContain('enable_request_signal');
+  });
+
   it('migrates legacy pnpm build approvals before reinstalling', async () => {
     const project = await seedProject();
     const packagePath = path.join(project.projectDir, 'package.json');

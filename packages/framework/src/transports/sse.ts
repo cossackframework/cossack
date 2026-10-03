@@ -78,7 +78,8 @@ export interface SseCoordinatorStub {
     }>;
     publish(state: string): Promise<{ state: string; cursor: number }>;
     broadcast(event: string, data: string): Promise<unknown>;
-    execute(action: (state: string) => Promise<Response>): Promise<Response>;
+    execute(action: (state: string) => Promise<Response>, operationId?: string, abort?: () => Promise<void>): Promise<Response>;
+    cancel(operationId: string): Promise<void>;
 }
 
 /** Workers exposes itself through the navigator API; Node and Deno do not. */

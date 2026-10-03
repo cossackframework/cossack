@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "cossack",
   "compatibility_date": "2025-08-03",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "enable_request_signal"],
   "main": "./src/index.ts",
   "durable_objects": {
     "bindings": [

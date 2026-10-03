@@ -30,6 +30,7 @@ Worker entry:
 
 ```jsonc
 {
+  "compatibility_flags": ["nodejs_als", "enable_request_signal"],
   "durable_objects": {
     "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
   },
@@ -53,6 +54,14 @@ selected environment is missing it. An SSE page running on Cloudflare without
 the binding fails with `COSSACK_SSE_BINDING_MISSING` (HTTP 500 on `/crpc`,
 `/sse`, and the SSR route) instead of silently falling back to process-local
 state.
+
+Keep `enable_request_signal` in the selected environment's compatibility flags.
+It enables incoming HTTP disconnect notifications. `cossack check cloudflare`
+and deploy preflight report `COSSACK_REQUEST_SIGNAL_REQUIRED` for a coordinator
+configuration without it. Compatibility flags inherit unless the named
+environment overrides them. Preserve `nodejs_compat` if your app needs it.
+Upgrades report Wrangler files as excluded; add the flag to existing configuration
+explicitly. See [Cloudflare's Request.signal documentation](https://developers.cloudflare.com/workers/runtime-apis/request/).
 
 ## Usage
 
@@ -124,13 +133,14 @@ export class LiveCounter extends Cossack {
 - **A stale browser snapshot cannot overwrite shared state.** `/crpc` hydrates
   from the coordinator's snapshot; the client-sent state is only applied to
   child targets, whose state the scope does not track.
-- **Actions execute at most once per request and are never replayed.** A
-  caller that disconnects mid-action cannot cancel a queued callback on the
-  tested runtime baseline; that action still runs once and its result is
-  discarded. A lost response does not prove failure, so the framework never
-  retries a mutation automatically. The framework does not claim exactly-once
-  external side effects (for example database writes) for actions that were
-  interrupted mid-flight.
+- **Cancelled queued actions do not start.** The router assigns a private
+  operation ID, distinct from the caller's correlation ID, and cancels it when
+  the request signal aborts or the response body is cancelled. Cancellation removes that queued entry without
+  releasing the active action's slot or changing the order of other callers.
+  A pending counter decision receives an abort signal; its late reply cannot
+  invoke the action. Application work that already started may finish and have
+  external side effects. It is never replayed or rolled back. A lost response
+  does not prove that a mutation failed.
 - **Broadcasts do not change the authoritative snapshot.** Component
   `broadcastEvent(...)` calls and scheduled state broadcasts append
   `event`/`client-action`/partial `state-update` events that every subscriber
@@ -138,6 +148,13 @@ export class LiveCounter extends Cossack {
 - **Serialization is per scope.** Concurrent actions on the same scope execute
   one at a time; different scopes run in parallel. The pending-action queue is
   bounded (HTTP 429 `COSSACK_SSE_BUSY` beyond 32 pending actions per scope).
+  `queueStatus()` reports pending/queued counts and whether a slot is active;
+  it contains no caller or operation IDs. Cancellation releases response-body
+  ownership without waiting for an uncooperative producer's cancel hook.
+  Arbitrary application methods do not yet have a server execution deadline.
+  Native tests prove explicit signal/cancel callback propagation. The installed
+  workerd baseline did not deliver a pre-header TCP disconnect notification,
+  even in a minimal Worker with the flag; this is still an acceptance gap.
 - **History is bounded.** The event log keeps at most 128 events and 1 MiB of
   event data per scope. Subscribers with older cursors are resynchronized from
   the snapshot.

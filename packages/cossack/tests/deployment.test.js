@@ -67,12 +67,23 @@ describe('deployment inspection with project Wrangler', () => {
     }));
     // Re-declaring the binding in the environment clears the diagnostic.
     const fixed = await project({
+      compatibility_flags: ['enable_request_signal'],
       durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
       env: { staging: { vars: { APP_URL: 'https://staging.test' },
         durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] } } },
     });
     expect((await inspectDeployment(fixed, 'staging')).diagnostics).toEqual([]);
     expect((await inspectDeployment(fixed)).diagnostics).toEqual([]);
+  });
+
+  it.each([{ flags: [] }, { flags: ['disable_request_signal'] }])('rejects selected coordinator flags without disconnect signals (%j)', async ({ flags }) => {
+    const bindings = { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] };
+    const root = await project({ compatibility_flags: ['enable_request_signal'], durable_objects: bindings,
+      env: { staging: { compatibility_flags: flags, durable_objects: bindings } } });
+    expect((await inspectDeployment(root)).diagnostics).toEqual([]);
+    expect((await inspectDeployment(root, 'staging')).diagnostics).toContainEqual(expect.objectContaining({
+      code: 'COSSACK_REQUEST_SIGNAL_REQUIRED', message: expect.stringContaining('env.staging'),
+    }));
   });
 
   it('reports secret names and placeholder resources without disclosing values', async () => {
@@ -103,6 +114,20 @@ describe('deployment inspection with project Wrangler', () => {
     await fs.writeFile(artifact, JSON.stringify(built));
     expect(await inspectBuiltDeployment(root, inspection.config)).toBe(artifact);
     await fs.writeFile(artifact, JSON.stringify({ ...built, vars: { APP_URL: 'https://wrong.test' } }));
+    await expect(inspectBuiltDeployment(root, inspection.config)).rejects.toMatchObject({ code: 'COSSACK_DEPLOY_TARGET_MISMATCH' });
+  });
+
+  it.each([{ compatibility_flags: [] }, { compatibility_date: '2026-01-01' }])('rejects changed built compatibility settings (%j)', async change => {
+    const root = await project({ compatibility_flags: ['enable_request_signal'] });
+    const inspection = await inspectDeployment(root);
+    await fs.mkdir(path.join(root, '.wrangler/deploy'), { recursive: true });
+    await fs.mkdir(path.join(root, 'dist'));
+    await fs.writeFile(path.join(root, '.wrangler/deploy/config.json'), JSON.stringify({ configPath: '../../dist/wrangler.json' }));
+    const artifact = path.join(root, 'dist/wrangler.json');
+    const built = { name: 'fixture', main: '../index.ts', compatibility_date: '2026-06-06', compatibility_flags: ['enable_request_signal'] };
+    await fs.writeFile(artifact, JSON.stringify(built));
+    expect(await inspectBuiltDeployment(root, inspection.config)).toBe(artifact);
+    await fs.writeFile(artifact, JSON.stringify({ ...built, ...change }));
     await expect(inspectBuiltDeployment(root, inspection.config)).rejects.toMatchObject({ code: 'COSSACK_DEPLOY_TARGET_MISMATCH' });
   });
 

@@ -12,6 +12,16 @@ export type SseInitResult = SseSnapshot & { fresh: boolean };
 export type SseUpdate = { cursor: number; event: string; data: string };
 export interface SseUpdates { snapshot: SseSnapshot; resync: boolean; events: SseUpdate[] }
 type Action = (state: string) => Promise<Response>;
+type CancelAction = () => Promise<void>;
+interface PendingAction {
+    id: string;
+    ready: Promise<void>;
+    enter: () => void;
+    cancelled: boolean;
+    closed: boolean;
+    close?: () => void;
+    abort?: RpcStub<CancelAction>;
+}
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -19,8 +29,9 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 
 /** Cloudflare-only entry. One namespace instance per [componentRouteId, scopeKey]. */
 export class SseDurableObject extends DurableObject {
-    #tail: Promise<void> = Promise.resolve();
-    #pending = 0;
+    #actions = new Map<string, PendingAction>();
+    #queue: PendingAction[] = [];
+    #active?: PendingAction;
 
     constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
         super(ctx, env);
@@ -81,66 +92,106 @@ export class SseDurableObject extends DurableObject {
         return this.#appendEvent(event, data);
     }
 
+    /** Scope-local queue diagnostics contain no caller or operation IDs. */
+    queueStatus(): { pending: number; queued: number; active: boolean } {
+        return { pending: this.#actions.size, queued: this.#queue.length, active: this.#active !== undefined };
+    }
+
+    /** Cancel this operation without replaying it or releasing another action's slot. */
+    cancel(operationId: string): void {
+        const entry = this.#actions.get(operationId);
+        if (!entry || entry.closed || entry.cancelled) return;
+        entry.cancelled = true;
+        if (entry !== this.#active) {
+            this.#finish(entry);
+            entry.enter();
+        } else {
+            // Abort the originating Worker's pending guard. Application work that
+            // already started may finish; it is not retried or rolled back.
+            try { void entry.abort?.().catch(() => {}); }
+            catch { /* the originating callback may already have ended */ }
+            entry.close?.();
+        }
+    }
+
     /**
-     * No replay: an action executes once and owns the serialization slot until
-     * its response closes. Streaming responses release the slot when their body
-     * finishes, fails, or is cancelled by the caller, including custom Responses.
-     * Responses without a body release it on return.
-     * A caller that disconnects while queued cannot cancel its callback
-     * on the tested runtime baseline; that action still runs once and its
-     * result is discarded — it is never replayed.
+     * One operation owns the scope until its response ends. Cancelled queued
+     * operations never invoke their callbacks. A pending callback is aborted
+     * through its originating Worker; a counter guard releases it before action
+     * invocation. Already started application work may still finish.
      */
-    async execute(action: RpcStub<Action>): Promise<Response> {
-        if (this.#pending >= MAX_PENDING) return Response.json({
+    async execute(action: RpcStub<Action>, operationId: string = crypto.randomUUID(), abort?: RpcStub<CancelAction>): Promise<Response> {
+        if (typeof operationId !== 'string' || !operationId.trim() || operationId.length > 128) {
+            return Response.json({ code: 'COSSACK_RPC_REQUEST_INVALID', error: 'Invalid SSE operation ID.' }, { status: 400 });
+        }
+        if (this.#actions.has(operationId)) return Response.json({
+            code: 'COSSACK_RPC_REQUEST_DUPLICATE', error: 'An SSE operation with this ID is already active.' }, { status: 409 });
+        if (this.#actions.size >= MAX_PENDING) return Response.json({
             code: 'COSSACK_SSE_BUSY', error: 'Too many pending actions for this scope.' }, { status: 429 });
-        this.#pending++;
-        const before = this.#tail;
-        let release!: () => void;
-        this.#tail = new Promise<void>(resolve => { release = resolve; });
-        let closed = false;
-        let iterator: AsyncGenerator<RpcStreamFrame> | undefined;
-        const finish = () => {
-            if (closed) return;
-            closed = true;
-            this.#pending--;
-            release();
-        };
-        await before;
+        let enter!: () => void;
+        const ready = new Promise<void>(resolve => { enter = resolve; });
+        const entry: PendingAction = { id: operationId, ready, enter, cancelled: false, closed: false, abort };
+        this.#actions.set(operationId, entry);
+        if (this.#active) this.#queue.push(entry);
+        else { this.#active = entry; enter(); }
+        await ready;
+        if (entry.cancelled) return this.#cancelledResponse();
+        const finish = () => this.#finish(entry);
+        let iterator: AsyncIterator<RpcStreamFrame> | undefined;
         try {
             const response = await action(this.#snapshot().state);
+            if (entry.cancelled) {
+                void response.body?.cancel().catch(() => {});
+                finish();
+                return this.#cancelledResponse();
+            }
             if (!response.ok || response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native' ||
                 response.headers.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) {
-                // Custom bodies may perform application I/O during pulls. Hold
-                // the same serialization slot until their owned body closes.
                 if (!response.body) { finish(); return response; }
                 const reader = response.body.getReader();
-                let cancelling = false;
+                let output!: ReadableStreamDefaultController<Uint8Array>;
+                entry.close = () => {
+                    if (entry.closed) return;
+                    void reader.cancel().catch(() => {});
+                    reader.releaseLock();
+                    finish();
+                    try { output.close(); } catch { /* cancelled by consumer */ }
+                };
                 const body = new ReadableStream<Uint8Array>({
+                    start: controller => { output = controller; },
                     pull: async controller => {
-                        if (closed || cancelling) return;
+                        if (entry.closed) return;
                         try {
                             const next = await reader.read();
-                            if (closed || cancelling) return;
+                            if (entry.closed) return;
                             if (next.done) { reader.releaseLock(); finish(); controller.close(); }
                             else controller.enqueue(next.value);
-                        } catch (error) { reader.releaseLock(); finish(); controller.error(error); }
+                        } catch (error) {
+                            if (entry.closed) return;
+                            reader.releaseLock(); finish(); controller.error(error);
+                        }
                     },
-                    cancel: async () => {
-                        cancelling = true;
-                        try { await reader.cancel(); }
-                        finally { reader.releaseLock(); finish(); }
-                    },
+                    cancel: () => entry.close?.(),
                 }, { highWaterMark: 0 });
                 return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
             }
             const cancellation = new AbortController();
             iterator = readRpcStream(response, cancellation.signal)[Symbol.asyncIterator]();
+            let output!: ReadableStreamDefaultController<Uint8Array>;
+            entry.close = () => {
+                if (entry.closed) return;
+                cancellation.abort();
+                void iterator!.return?.(undefined).catch(() => {});
+                finish();
+                try { output.close(); } catch { /* cancelled by consumer */ }
+            };
             const body = new ReadableStream<Uint8Array>({
+                start: controller => { output = controller; },
                 pull: async controller => {
-                    if (closed) { try { controller.close(); } catch { /* already closed */ } return; }
+                    if (entry.closed) return;
                     try {
                         const next = await iterator!.next();
-                        if (closed) return;
+                        if (entry.closed) return;
                         if (next.done) { finish(); controller.close(); return; }
                         const frame = next.value;
                         if ((frame.type === 'yield' || frame.type === 'done') && !isJsonObject(frame.state)) {
@@ -151,23 +202,37 @@ export class SseDurableObject extends DurableObject {
                         }
                         controller.enqueue(encoder.encode(`${JSON.stringify(frame)}\n`));
                         if (frame.type !== 'yield') {
-                            await iterator!.return(undefined);
-                            finish();
-                            controller.close();
+                            await iterator!.return?.(undefined);
+                            finish(); controller.close();
                         }
                     } catch (error) {
-                        try { await iterator!.return(undefined); }
-                        finally { finish(); controller.error(error); }
+                        if (entry.closed) return;
+                        controller.error(error); entry.close?.();
                     }
                 },
-                cancel: async () => {
-                    cancellation.abort();
-                    try { await iterator!.return(undefined); }
-                    finally { finish(); }
-                },
+                cancel: () => entry.close?.(),
             }, { highWaterMark: 0 });
             return new Response(body, { status: response.status, headers: response.headers });
         } catch (error) { finish(); throw error; }
+    }
+
+    #cancelledResponse(): Response {
+        return Response.json({ code: 'COSSACK_RPC_CANCELLED', error: 'RPC call was cancelled.' }, { status: 499 });
+    }
+
+    #finish(entry: PendingAction): void {
+        if (entry.closed) return;
+        entry.closed = true;
+        entry.close = undefined;
+        entry.abort = undefined;
+        this.#actions.delete(entry.id);
+        if (this.#active === entry) {
+            this.#active = this.#queue.shift();
+            this.#active?.enter();
+        } else {
+            const index = this.#queue.indexOf(entry);
+            if (index >= 0) this.#queue.splice(index, 1);
+        }
     }
 
     #snapshot(): SseSnapshot {

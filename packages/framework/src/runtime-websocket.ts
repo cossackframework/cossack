@@ -20,18 +20,19 @@ export function withRuntimeRouteParams(
   params: Record<string, string>,
 ): Context {
   const request = new Proxy(context.req, {
-    get(target, property, receiver) {
+    get(target, property) {
       if (property === 'param') {
         return (key?: string) => key === undefined ? { ...params } : params[key];
       }
-      const value = Reflect.get(target, property, receiver);
+      const value = Reflect.get(target, property, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });
   return new Proxy(context, {
-    get(target, property, receiver) {
+    set(target, property, value) { return Reflect.set(target, property, value, target); },
+    get(target, property) {
       if (property === 'req') return request;
-      const value = Reflect.get(target, property, receiver);
+      const value = Reflect.get(target, property, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
   });

@@ -2,7 +2,56 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex bounded rate decisions (2026-10-03):** read
+> **Latest checkpoint — Codex coordinator cancellation (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-sse-cancellation-2026-10-03),
+> [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
+> [SSE semantics](../docs/sse.md). **Author: Codex.** Continued after `87495f7`.
+> Private operation IDs now own bounded coordinator entries; cancellation removes
+> queued callbacks without starting them or releasing the active slot. Native
+> cross-Worker RPC abort reaches a pending counter guard; late provider replies
+> cannot invoke it. FIFO/capacity/duplicate/ID-reuse behavior is verified. Started
+> methods may finish; no external rollback/replay is promised. Queue diagnostics
+> contain counts only. Response ownership does not wait on producer cancellation.
+>
+> New Cloudflare recipes include `enable_request_signal`. Preflight checks the
+> selected named environment, and artifact checks include compatibility date/flags.
+> Wrangler files are deliberately excluded from template upgrades; regressions
+> verify preservation, so existing apps must add the flag explicitly. Hono getter/setter
+> receivers and a pre-header SSE cancellation response race are fixed.
+>
+> **Actual pre-header disconnect delivery remains unverified.** The installed
+> workerd did not emit an abort for a TCP disconnect before headers, even in a
+> minimal direct-socket Worker with the flag and waitUntil. Generated production
+> acceptance uses explicit middleware request signals for JSON/multipart page and
+> service calls, including a queued SSE caller that never hits the counter store.
+> Counter deadlines release pending decisions before ignored providers respond.
+> Neither that acceptance nor local body ownership proves native remote producer
+> shutdown. No full server execution deadline/rollback is claimed for arbitrary
+> application work that already started. Keep Deno/Electron/live-provider gates.
+>
+> Verified after final fixes: framework **1033**/50 files (matrix **354**),
+> CLI **569**/41 including all **14** generated cases/native fixtures/real-pnpm
+> release fixture, scaffold **108**/4. Native raw-body cancellation releases the
+> queue despite a never-settling producer hook; remote shutdown/first-byte delivery
+> are not asserted for that case. Sequential framework declarations, root
+> `pnpm tsc --noEmit` and all **11** `pnpm typecheck` configs pass. Core/Node/Deno
+> retain prior unchanged-source evidence; this is not a full release audit.
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks persist.**
+> Next finish provider URL/key/namespace/capacity/duration policies, cache units
+> and configured-provider ownership, capability inspection and rejection of
+> unsupported guarantees. `cache.ts` currently memoizes by driver/binding NAME/
+> namespace before reading the request's actual binding; custom spec fields are
+> omitted. Its memory-factory sentinel also skips other built-in registration
+> when memory is extended first. Add regressions before correcting these paths.
+> Cache seconds and limiter milliseconds still need the planned public convention. Follow the detailed plan, then audit component
+> init/restoration concurrency and remaining RT-01/RT-02/RT-11/RT-14 criteria.
+> Keep the entire release scope active; versions stay 0.8.3 until REL-04.
+> Preserve `reports.md` and `.zcodeignore`. Run consumers after declaration builds;
+> framework `pretest` rebuilds declarations, so use `pnpm exec vitest run` for
+> parallel suites. Do not run declaration rebuilds during CLI/generated tests.
+
+> **Previous checkpoint — Codex bounded rate decisions (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rate-decision-io-2026-10-03),
 > [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
 > [rate-limit guide](../docs/rate-limiting.md). **Author: Codex.** Continued after
