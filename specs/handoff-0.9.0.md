@@ -57,10 +57,15 @@ See [setup](../docs/local-agent-tools.md) and the
 [checkpoint](./release-0.9.0.md#codex-local-mcp-2026-10-04). It shares static inspection,
 reports installed versions and uses bounded cancellable workers. This task remains open.
 
-Next implement CLI-08 installed-version guides/catalogs, then expose documentation,
-stored test results and RT-28 development snapshots/traces through shared services.
-Continue native MCP interruption and packaged-entry acceptance. Do not replace
-these requirements with arbitrary file readers or shell-output parsing.
+CLI-08 now has `cossack docs` and MCP `read_documentation` for fresh installed
+export targets, command schemas and packaged/scaffolded agent guidance. See the
+[catalog checkpoint](./release-0.9.0.md#codex-installed-catalog-2026-10-04).
+
+Next add named-symbol/signature indexing, authored API/component/recipe guidance,
+verified runtime support and executable examples. Prove offline behavior from
+installed tarballs. Then continue CLI-07 stored test results and RT-28 snapshots/
+traces through shared services. Both CLI tasks remain open. A present export file
+does not prove runtime importability. Preserve the original acceptance criteria.
 
 Keep every other unchecked task in scope. Close tasks only against their original
 criteria. Versions stay 0.8.3 until REL-04.
@@ -94,13 +99,14 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The [MCP checkpoint](./release-0.9.0.md#codex-local-mcp-2026-10-04) records current CLI results.
+The [catalog checkpoint](./release-0.9.0.md#codex-installed-catalog-2026-10-04) records current CLI/scaffold results.
 The [navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
 records unchanged runtime/browser evidence. Earlier suites are labeled by checkpoint.
 
 | Check | Result |
 | --- | --- |
-| MCP / CLI regression suites | 234 passed; final environment follow-up: 23 passed |
+| Documentation / MCP / CLI regressions | 212 passed; final malformed-manifest follow-up: 18 passed |
+| Scaffold tests | 78 passed |
 | Full generated-runtime matrix | 31 passed |
 | Navigation/guard/transition browser suites | 27 passed |
 | Focused core / framework navigation suites | 70 / 50 passed |

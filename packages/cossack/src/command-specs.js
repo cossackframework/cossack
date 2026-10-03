@@ -1,3 +1,4 @@
+import { COSSACK_PACKAGES } from './installed-packages.js';
 /**
  * Built-in command contracts. Parsing, preflight validation, and help all use
  * these definitions; lifecycle commands explicitly forward their raw argv.
@@ -142,6 +143,7 @@ export const commandSpecs = {
     markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),
   }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
     ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for routes.' }] : [] }),
+  docs: new CommandSpec({ name: 'docs', globals: readonly, flags: { package: choices('Installed package to inspect.', COSSACK_PACKAGES) } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {

@@ -1,3 +1,4 @@
+import { docsCommand, docsHelp } from './commands/docs.js';
 import { commandSpecs } from './command-specs.js';
 /**
  * Command resolution + top-level dispatch.
@@ -50,6 +51,7 @@ const COMMANDS = {
   seeder: { run: seederCommand, help: seederHelp },
   schema: { run: schemaCommand, help: schemaHelp },
   studio: { run: studioCommand, help: studioHelp },
+  docs: { run: docsCommand, help: docsHelp },
   // introspection
   inspect: { run: inspectCommand, help: inspectHelp },
   check: { run: checkCommand, help: checkHelp },
@@ -191,6 +193,7 @@ Commands:
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.
+  docs                         Read offline installed-version API export and command catalogs.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

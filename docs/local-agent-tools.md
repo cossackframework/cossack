@@ -66,12 +66,39 @@ Results larger than 4 MiB fail with `COSSACK_MCP_RESULT_TOO_LARGE`. Dependency l
 are drained inside workers and cannot corrupt protocol output. EOF, SIGINT and
 SIGTERM close the server and its active workers.
 
+## Offline documentation
+
+Use `read_documentation` with an optional `package` name from the Cossack package
+allowlist. The same service backs `pnpm exec cossack docs --json`. To inspect one
+package through the CLI:
+
+```sh
+pnpm exec cossack docs --package @cossackframework/core --json
+```
+
+The catalog reads installed manifests on each call. Each package includes its
+version, a manifest hash and declared public export targets. Conditions and array
+fallback order remain visible. Targets report present, missing, blocked, invalid
+or an unexpanded pattern. Missing packages report `installed: false`.
+
+File presence does not prove that an import executes or that a named symbol exists.
+The catalog explicitly reports named-symbol indexing, runtime verification and
+executable examples as incomplete. It does not replace type checking. Command
+schemas and the packaged agent guide belong to the reported CLI version, which
+can differ from installed library versions. MCP refreshes framework version
+metadata for each response too.
+
+Generated applications receive an AGENTS guide that points to local discovery.
+No network request or application-module execution is needed to read the catalog.
+Unknown package paths are rejected. Malformed manifest diagnostics omit raw content.
+
 ## Current scope
 
-The initial tool exposes static inspection and configuration diagnostics. Installed
-API documentation, stored test results and development traces still need the CLI-08
-and RT-28 shared services. The server does not yet expose those tools. It does not
-build, test, mutate, deploy or provision an application.
+These tools expose static inspection, configuration diagnostics and the initial
+offline catalog. Full API/component signatures, authored usage examples and verified
+runtime guidance remain CLI-08 work. Stored test results and development traces
+still need shared services. The server does not build, test, mutate, deploy or
+provision an application.
 
 The implementation uses the official SDK's
 [stdio server entrypoint](https://ts.sdk.modelcontextprotocol.io/v2/api/%40modelcontextprotocol/server/server/serveStdio.html).

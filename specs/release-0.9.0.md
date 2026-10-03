@@ -17,7 +17,7 @@ below link directly to those explanations.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples.
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures, runtime guidance, authored examples and offline tarball acceptance remain open. See the [checkpoint](#codex-installed-catalog-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -6010,3 +6010,42 @@ traces, further native interruption acceptance and packaged-entry acceptance rem
 The checklist still contains 58 IDs, with 24 complete and 34 open. Nothing was
 published, deployed or pushed. User changes in `reports.md` and `.zcodeignore`
 remain outside this checkpoint.
+
+<a id="codex-installed-catalog-2026-10-04"></a>
+## Codex: Installed-version catalog foundation (2026-10-04)
+
+Added `cossack docs` and MCP `read_documentation` through one offline service.
+The catalog follows installed package search paths rather than repository source
+paths. It reads versions, manifest hashes and declared export targets with their
+conditions and availability. No entrypoint executes. Re-reading after a manifest
+change removes stale exports and refreshes versions. Unknown package paths reject
+before file access, and malformed manifest errors omit raw contents.
+
+Command schemas come from CLI command metadata. A packaged agent guide identifies
+its CLI version and states discovery limits. New scaffolded AGENTS files point to
+local discovery commands. MCP keeps its outer framework-version metadata fresh,
+including packages installed after the server started. Both tools use strict input
+and versioned output schemas and the existing cancellable worker runner.
+
+Verification:
+
+- **212 tests across 6 CLI files** passed: documentation, MCP, command contracts,
+  command specs, CLI subprocess and JSON matrix.
+- **78 scaffold tests** passed, including generated offline-discovery guidance.
+- After allowing startup with malformed framework metadata, **18 MCP/catalog tests**
+  passed again. A broken manifest now produces a redacted tool diagnostic instead
+  of preventing the agent from inspecting the project.
+- Root `pnpm tsc --noEmit` and all **11** package type checks passed.
+- Whitespace check excluding the user's existing `reports.md` passed.
+
+Logs: `/tmp/cossack-docs-regression.log`, `/tmp/cossack-docs-scaffold-final.log`,
+`/tmp/cossack-docs-malformed-verified.log`,
+`/tmp/cossack-docs-root-types-verified.log` and
+`/tmp/cossack-docs-package-types-verified.log`.
+
+CLI-07 and CLI-08 remain open. File presence is not evidence of a valid runtime
+import. Named API/component symbols, signatures, runtime support, authored and
+executable examples, wildcard expansion and offline installed-tarball verification
+still need implementation/evidence. Test-result and devtools trace tools remain
+CLI-07/RT-28 work. All 58 task IDs remain: 24 complete, 34 open. Versions stay
+0.8.3 until REL-04. No remote publication, deployment or push occurred.

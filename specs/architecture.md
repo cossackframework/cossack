@@ -56,8 +56,12 @@ and termination on cancellation. No application runtime package imports the MCP
 SDK. Tool arguments cannot change the startup project root. Dependency resolution
 can read installed package metadata and imported declarations outside that root.
 This project binding is not a sandbox for untrusted local repositories.
-Installed documentation, stored test results and devtools traces will extend this
-boundary through shared services, not shell parsing or arbitrary file reads.
+The CLI and MCP share `documentation-service.js`. It reads fresh manifests for an
+explicit Cossack package allowlist, without executing module entrypoints. Export
+conditions and availability are facts; named symbols and runtime compatibility are
+not inferred from file presence. Command schemas and packaged guidance belong to
+the CLI version. Stored test results and devtools traces will extend this boundary
+through shared services, not shell parsing or arbitrary file reads.
 
 ## Server input boundary
 

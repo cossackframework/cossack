@@ -611,6 +611,30 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex catalog checkpoint (2026-10-04): `cossack docs [--package <name>] --json`
+and MCP `read_documentation` now share `documentation-service.js`. It reads fresh
+installed manifests through a fixed Cossack package allowlist. Results contain
+versions, manifest hashes, declared export targets/conditions, target presence,
+command schemas and a packaged CLI-version agent guide. Missing, blocked, invalid
+and wildcard targets remain explicit. No module entrypoints execute. MCP's outer
+framework version also refreshes per call. Malformed manifest diagnostics omit
+raw contents, and removed exports disappear on the next catalog read.
+
+Scaffolded AGENTS guidance now starts with offline CLI discovery instead of
+requiring remote skills installation. SDK/CLI parity, manifest changes, package
+selection, malformed metadata and generated guide content have tests. See the
+[verification](./release-0.9.0.md#codex-installed-catalog-2026-10-04).
+
+This is an initial discovery catalog, not completion of CLI-08. Continue by indexing
+named exports and their type/signature information through a compiler-backed
+service. Add authored API/component and recipe explanations, explicit runtime
+support backed by capability metadata, and examples that compile and execute.
+Resolve concrete wildcard exports or retain an explicit unsupported result.
+Verify the catalogs and guides from installed tarballs in an offline generated
+application. Keep command metadata tied to the CLI version and library guidance
+tied to each installed package version. Do not equate file presence with a valid
+runtime import. RT-23 component coverage and REL-02 acceptance remain dependencies.
+
 Purpose: An agent must use the APIs installed in the project. A generic guide
 can recommend symbols, command flags, or components from a different release.
 

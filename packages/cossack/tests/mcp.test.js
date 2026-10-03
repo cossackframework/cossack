@@ -37,7 +37,7 @@ it('serves the same route facts and diagnostics as CLI with versions and read-on
   const root = await fixture();
   const { client, stderr } = await connect(root);
   const tools = await client.listTools();
-  expect(tools.tools).toHaveLength(1);
+  expect(tools.tools.map(tool => tool.name).sort()).toEqual(['inspect_project', 'read_documentation']);
   expect(tools.tools[0]).toMatchObject({ name: 'inspect_project', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } });
   const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'routes' } });
   expect(result.structuredContent).toMatchObject({ schemaVersion: 1, versions: { cli: readPackageVersion(), framework: null }, ok: true });
@@ -180,3 +180,24 @@ it('bounds concurrent worker calls and large results', async () => {
   await expect(large.run({})).rejects.toMatchObject({ code: 'COSSACK_MCP_RESULT_TOO_LARGE' });
   expect(large.activeCount).toBe(0);
 });
+it('shares the installed documentation catalog with the CLI service', async () => {
+  const root = await fixture(); const {client}=await connect(root);
+  const {readDocumentation}=await import('../src/documentation-service.js');
+  const result=await client.callTool({name:'read_documentation',arguments:{package:'@cossackframework/core'}});
+  const direct=await readDocumentation(root,{package:'@cossackframework/core'});
+  expect(result.structuredContent).toMatchObject(direct);
+  expect(result.structuredContent.data.guide.version).toBe(readPackageVersion());
+  const folder = path.join(root, 'node_modules/@cossackframework/framework');
+  await fs.mkdir(folder, { recursive: true });
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: '@cossackframework/framework', version: '9.9.9', exports: { '.': './missing.js' } }));
+  const refreshed = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/framework' } });
+  expect(refreshed.structuredContent.versions.framework).toBe('9.9.9');
+  expect(refreshed.structuredContent.data.packages[0].version).toBe('9.9.9');
+  await fs.writeFile(path.join(folder, 'package.json'), '{"private-fixture-value":');
+  const broken = await connect(root);
+  const diagnostic = await broken.client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/framework' } });
+  expect(diagnostic.structuredContent).toMatchObject({ ok: false, versions: { framework: null }, diagnostics: [{ code: 'COSSACK_DOCS_MANIFEST_INVALID' }] });
+  expect(JSON.stringify(diagnostic)).not.toContain('private-fixture-value');
+  const invalid=await client.callTool({name:'read_documentation',arguments:{package:'../../private'}});
+  expect(invalid.isError).toBe(true);
+},30000);

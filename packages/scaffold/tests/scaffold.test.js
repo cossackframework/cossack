@@ -827,6 +827,8 @@ describe('composition', () => {
       .resolves.toContain('# Cossack Framework');
     await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
       .resolves.toContain('Cossack Framework');
+    await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
+      .resolves.toContain('pnpm exec cossack docs --json');
 
     const auth = await fs.readFile(path.join(project.projectDir, 'src/auth.ts'), 'utf8');
     expect(auth).toContain('Session database is unavailable; continuing as guest.');
